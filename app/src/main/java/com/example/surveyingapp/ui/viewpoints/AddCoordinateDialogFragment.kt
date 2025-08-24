@@ -14,14 +14,14 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.fragment.app.DialogFragment
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.data.Coordinate
 import java.util.UUID
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 
-class AddPointDialogFragment(private val onPointAdded: (Point) -> Unit) : DialogFragment() {
+class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit) : DialogFragment() {
     private var latitude: Double = 0.0
     private var longitude: Double = 0.0
     private var altitude: Double = 0.0
@@ -77,10 +77,10 @@ class AddPointDialogFragment(private val onPointAdded: (Point) -> Unit) : Dialog
             .setTitle(getString(R.string.add_coordinate_title))
             .setView(view)
             .setPositiveButton("Add") { _, _ ->
-                val name = nameEdit.text.toString().ifBlank { "Unnamed Point" }
+                val name = nameEdit.text.toString().ifBlank { "Unnamed Coordinate" }
                 val icon = icons[iconSpinner.selectedItemPosition]
                 val color = colors[colorSpinner.selectedItemPosition].second
-                val point = Point(
+                val point = Coordinate(
                     id = UUID.randomUUID().toString(),
                     name = name,
                     latitude = latitude,

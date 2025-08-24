@@ -10,7 +10,7 @@ import com.example.surveyingapp.R
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.data.Coordinate
 import java.util.Locale
 
 class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
@@ -24,7 +24,7 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_ICON = "arg_icon"
         private const val ARG_COLOR = "arg_color"
 
-        fun newInstance(point: Point): CoordinateInfoBottomSheet {
+        fun newInstance(point: Coordinate): CoordinateInfoBottomSheet {
             return CoordinateInfoBottomSheet().apply {
                 arguments = Bundle().apply {
                     putString(ARG_ID, point.id)

@@ -10,13 +10,14 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.HapticFeedbackConstants
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.databinding.FragmentCoordinatesBinding
 import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.google.android.material.snackbar.Snackbar
@@ -61,23 +62,23 @@ class CoordinatesFragment : Fragment() {
 
         val viewModel = ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory(requireActivity().application)).get(CoordinatesViewModel::class.java)
         adapter = SimpleCoordinatesAdapter(
-            onEdit = { point -> showEditPointDialog(point, viewModel) },
-            onDelete = { point -> confirmDelete(point, viewModel) }
+            onEdit = { coordinate -> showEditCoordinateDialog(coordinate, viewModel) },
+            onDelete = { coordinate -> confirmDelete(coordinate, viewModel) }
         )
         binding.pointsRecyclerView.layoutManager = LinearLayoutManager(requireContext())
         binding.pointsRecyclerView.adapter = adapter
 
-        viewModel.allPoints.observe(viewLifecycleOwner) { points ->
-            Log.d("CoordinatesFragment", "Loaded ${points.size} coordinates: ${points.joinToString { it.id }}")
-            adapter.submit(points)
-            binding.emptyCoordinatesText.visibility = if (points.isEmpty()) View.VISIBLE else View.GONE
+        viewModel.allCoordinates.observe(viewLifecycleOwner) { coordinates ->
+            Log.d("CoordinatesFragment", "Loaded ${coordinates.size} coordinates: ${coordinates.joinToString { it.id }}")
+            adapter.submit(coordinates)
+            binding.emptyCoordinatesText.visibility = if (coordinates.isEmpty()) View.VISIBLE else View.GONE
         }
 
         binding.fabAddCoordinate.setOnClickListener {
             if (ContextCompat.checkSelfPermission(requireContext(), android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), 1001)
             } else {
-                showAddPointDialog(viewModel)
+                showAddCoordinateDialog(viewModel)
             }
         }
 
@@ -87,34 +88,38 @@ class CoordinatesFragment : Fragment() {
         return root
     }
 
-    private fun showAddPointDialog(viewModel: CoordinatesViewModel) {
+    private fun showAddCoordinateDialog(viewModel: CoordinatesViewModel) {
         try {
-            val dialog = AddPointDialogFragment { point ->
-                viewModel.addPoint(point)
+            val dialog = AddCoordinateDialogFragment { coordinate ->
+                viewModel.addCoordinate(coordinate)
+                // Provide haptic feedback to confirm capture
+                _binding?.root?.post {
+                    _binding?.root?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                }
             }
-            dialog.show(parentFragmentManager, "AddPointDialog")
-        } catch (e: Exception) {}
+            dialog.show(parentFragmentManager, "AddCoordinateDialog")
+        } catch (_: Exception) {}
     }
 
-    private fun showEditPointDialog(point: Point, viewModel: CoordinatesViewModel) {
-        val dialog = EditCoordinateDialogFragment(point) { updated ->
-            viewModel.updatePoint(updated)
+    private fun showEditCoordinateDialog(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
+        val dialog = EditCoordinateDialogFragment(coordinate) { updated ->
+            viewModel.updateCoordinate(updated)
         }
         dialog.show(parentFragmentManager, "EditCoordinateDialog")
     }
 
-    private fun confirmDelete(point: Point, viewModel: CoordinatesViewModel) {
+    private fun confirmDelete(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
         AlertDialog.Builder(requireContext())
             .setTitle("Delete Coordinate")
-            .setMessage("Delete \"${point.name}\"?")
+            .setMessage("Delete \"${coordinate.name}\"?")
             .setPositiveButton("Delete") { _, _ ->
                 // Perform delete
-                viewModel.deletePoint(point.id)
+                viewModel.deleteCoordinate(coordinate.id)
                 // Offer undo via Snackbar
-                Snackbar.make(binding.root, "Deleted ${point.name}", Snackbar.LENGTH_LONG)
+                Snackbar.make(binding.root, "Deleted ${coordinate.name}", Snackbar.LENGTH_LONG)
                     .setAction("UNDO") {
                         // Reinsert the same point (id preserved so it is restored)
-                        viewModel.addPoint(point)
+                        viewModel.addCoordinate(coordinate)
                     }
                     .show()
             }
@@ -126,7 +131,7 @@ class CoordinatesFragment : Fragment() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 1001 && grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
             val viewModel = ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory(requireActivity().application)).get(CoordinatesViewModel::class.java)
-            showAddPointDialog(viewModel)
+            showAddCoordinateDialog(viewModel)
         }
     }
 

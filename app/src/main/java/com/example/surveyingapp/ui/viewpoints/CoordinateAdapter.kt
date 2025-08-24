@@ -10,15 +10,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.ui.settings.SettingsFragment
 
-class PointAdapter(
-    private var points: List<Point>,
+class CoordinateAdapter(
+    private var coordinates: List<Coordinate>,
     private val onDelete: (String) -> Unit,
-    private val onEdit: (Point) -> Unit,
+    private val onEdit: (Coordinate) -> Unit,
     private val context: Context
-) : RecyclerView.Adapter<PointAdapter.PointViewHolder>() {
+) : RecyclerView.Adapter<CoordinateAdapter.PointViewHolder>() {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PointViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_point, parent, false)
@@ -26,11 +26,11 @@ class PointAdapter(
     }
 
     override fun onBindViewHolder(holder: PointViewHolder, position: Int) {
-        val point = points[position]
-        holder.title.text = point.name
+        val coordinate = coordinates[position]
+        holder.title.text = coordinate.name
 
         // Set icon and apply the user-selected color
-        val iconResId = holder.itemView.context.resources.getIdentifier(point.icon, "drawable", holder.itemView.context.packageName)
+        val iconResId = holder.itemView.context.resources.getIdentifier(coordinate.icon, "drawable", holder.itemView.context.packageName)
         if (iconResId != 0) {
             holder.icon.setImageResource(iconResId)
         } else {
@@ -38,7 +38,7 @@ class PointAdapter(
         }
 
         // Apply the user-selected color to the icon
-        holder.icon.setColorFilter(point.color)
+        holder.icon.setColorFilter(coordinate.color)
 
         // Check if coordinates should be shown
         val preferences = context.getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
@@ -48,9 +48,9 @@ class PointAdapter(
         if (showCoordinates) {
             holder.coordinates.visibility = View.VISIBLE
             if (showElevation) {
-                holder.coordinates.text = String.format("%.6f, %.6f, %.2fm", point.latitude, point.longitude, point.altitude)
+                holder.coordinates.text = String.format("%.6f, %.6f, %.2fm", coordinate.latitude, coordinate.longitude, coordinate.altitude)
             } else {
-                holder.coordinates.text = String.format("%.6f, %.6f", point.latitude, point.longitude)
+                holder.coordinates.text = String.format("%.6f, %.6f", coordinate.latitude, coordinate.longitude)
             }
         } else {
             holder.coordinates.visibility = View.GONE
@@ -60,23 +60,23 @@ class PointAdapter(
         holder.delete.setOnClickListener {
             AlertDialog.Builder(holder.itemView.context)
                 .setTitle("Delete Coordinate")
-                .setMessage("Are you sure you want to delete \"${point.name}\"? This action cannot be undone.")
+                .setMessage("Are you sure you want to delete \"${coordinate.name}\"? This action cannot be undone.")
                 .setPositiveButton("Delete") { _, _ ->
-                    onDelete(point.id)
+                    onDelete(coordinate.id)
                 }
                 .setNegativeButton("Cancel", null)
                 .show()
         }
         // Set up edit button
         holder.edit.setOnClickListener {
-            onEdit(point)
+            onEdit(coordinate)
         }
     }
 
-    override fun getItemCount(): Int = points.size
+    override fun getItemCount(): Int = coordinates.size
 
-    fun updatePoints(newPoints: List<Point>) {
-        points = newPoints
+    fun updatePoints(newPoints: List<Coordinate>) {
+        coordinates = newPoints
         notifyDataSetChanged()
     }
 

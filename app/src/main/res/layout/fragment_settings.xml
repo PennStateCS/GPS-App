@@ -80,7 +80,42 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Import Points"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="8dp" />
+
+    <!-- Progress container for import -->
+    <LinearLayout
+        android:id="@+id/import_progress_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:padding="8dp"
+        android:background="@android:color/background_light"
+        android:layout_marginBottom="16dp">
+
+        <ProgressBar
+            android:id="@+id/progress_import"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="0" />
+
+        <TextView
+            android:id="@+id/text_import_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Import progress"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:paddingTop="4dp"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_cancel_import"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Cancel Import" />
+    </LinearLayout>
 
     <TextView
         android:layout_width="match_parent"

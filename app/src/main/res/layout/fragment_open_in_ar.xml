@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:padding="16dp">
+    android:layout_height="match_parent">
+
+    <android.opengl.GLSurfaceView
+        android:id="@+id/glSurfaceViewAr"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <TextView
-        android:id="@+id/textOpenInAr"
+        android:id="@+id/textArStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Open in AR"
-        android:textAppearance="@style/TextAppearance.AppCompat.Large"
-        android:layout_gravity="center" />
+        android:padding="8dp"
+        android:background="#66000000"
+        android:textColor="#FFFFFF"
+        android:text="Initializing AR..."
+        android:layout_gravity="top|center_horizontal" />
 </FrameLayout>
-

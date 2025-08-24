@@ -54,6 +54,7 @@ dependencies {
     kapt("androidx.room:room-compiler:2.6.1")
     implementation("com.google.android.gms:play-services-location:21.0.1")
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.google.ar:core:1.44.0")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
