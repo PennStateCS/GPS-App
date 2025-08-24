@@ -27,109 +27,36 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun insertFakePoints() = viewModelScope.launch {
-        val fakePoints = listOf(
+        repository.deleteAll()
+        val baseLat = 41.347900
+        val baseLon = -76.022400
+        val maxRadiusMeters = 1609.344 // 1 mile in meters
+        val metersPerDegLat = 111_320.0
+        val metersPerDegLon = 111_320.0 * kotlin.math.cos(Math.toRadians(baseLat))
+        val colors = listOf(0xFFE57373.toInt(),0xFF64B5F6.toInt(),0xFF81C784.toInt(),0xFFFFB74D.toInt(),0xFFBA68C8.toInt())
+        val icons = listOf("ic_menu_camera","ic_menu_gallery","ic_menu_slideshow")
+        val now = System.currentTimeMillis()
+        val random = kotlin.random.Random(System.currentTimeMillis())
+        val points = (0 until 10).map { i ->
+            val u = random.nextDouble()
+            val r = maxRadiusMeters * kotlin.math.sqrt(u)
+            val theta = random.nextDouble() * (2 * Math.PI)
+            val dxMeters = r * kotlin.math.cos(theta)
+            val dyMeters = r * kotlin.math.sin(theta)
+            val lat = baseLat + (dyMeters / metersPerDegLat)
+            val lon = baseLon + (dxMeters / metersPerDegLon)
             Point(
-                id = "1",
-                name = "Test Coordinate 1",
-                latitude = 37.4219983,
-                longitude = -122.084,
-                altitude = 10.0,
-                timestamp = System.currentTimeMillis(),
-                icon = "ic_menu_camera",
-                color = 0xFFE57373.toInt()
-            ),
-            Point(
-                id = "2",
-                name = "Test Coordinate 2",
-                latitude = 40.7128,
-                longitude = -74.0060,
-                altitude = 20.0,
-                timestamp = System.currentTimeMillis() - 100_000,
-                icon = "ic_menu_gallery",
-                color = 0xFF64B5F6.toInt()
-            ),
-            Point(
-                id = "3",
-                name = "Test Coordinate 3",
-                latitude = 34.0522,
-                longitude = -118.2437,
-                altitude = 30.0,
-                timestamp = System.currentTimeMillis() - 200_000,
-                icon = "ic_menu_slideshow",
-                color = 0xFF81C784.toInt()
-            ),
-            Point(
-                id = "4",
-                name = "Test Coordinate 4",
-                latitude = 47.6062,
-                longitude = -122.3321,
-                altitude = 15.3,
-                timestamp = System.currentTimeMillis() - 300_000,
-                icon = "ic_menu_camera",
-                color = 0xFFFFB74D.toInt()
-            ),
-            Point(
-                id = "5",
-                name = "Test Coordinate 5",
-                latitude = 51.5074,
-                longitude = -0.1278,
-                altitude = 5.5,
-                timestamp = System.currentTimeMillis() - 400_000,
-                icon = "ic_menu_gallery",
-                color = 0xFFBA68C8.toInt()
-            ),
-            Point(
-                id = "6",
-                name = "Test Coordinate 6",
-                latitude = 48.8566,
-                longitude = 2.3522,
-                altitude = 35.2,
-                timestamp = System.currentTimeMillis() - 500_000,
-                icon = "ic_menu_slideshow",
-                color = 0xFF4DB6AC.toInt()
-            ),
-            Point(
-                id = "7",
-                name = "Test Coordinate 7",
-                latitude = 52.5200,
-                longitude = 13.4050,
-                altitude = 42.0,
-                timestamp = System.currentTimeMillis() - 600_000,
-                icon = "ic_menu_camera",
-                color = 0xFFA1887F.toInt()
-            ),
-            Point(
-                id = "8",
-                name = "Test Coordinate 8",
-                latitude = -33.8688,
-                longitude = 151.2093,
-                altitude = 8.0,
-                timestamp = System.currentTimeMillis() - 700_000,
-                icon = "ic_menu_gallery",
-                color = 0xFF90A4AE.toInt()
-            ),
-            Point(
-                id = "9",
-                name = "Test Coordinate 9",
-                latitude = 35.6895,
-                longitude = 139.6917,
-                altitude = 55.0,
-                timestamp = System.currentTimeMillis() - 800_000,
-                icon = "ic_menu_slideshow",
-                color = 0xFF7986CB.toInt()
-            ),
-            Point(
-                id = "10",
-                name = "Test Coordinate 10",
-                latitude = 55.7558,
-                longitude = 37.6173,
-                altitude = 25.0,
-                timestamp = System.currentTimeMillis() - 900_000,
-                icon = "ic_menu_camera",
-                color = 0xFF009688.toInt()
+                id = (i + 1).toString(),
+                name = "Random Mile Point ${(i + 1)}",
+                latitude = lat,
+                longitude = lon,
+                altitude = 10.0 + (i % 4) * 1.0,
+                timestamp = now - i * 1_000L,
+                icon = icons[i % icons.size],
+                color = colors[i % colors.size]
             )
-        )
-        repository.insertAll(fakePoints)
+        }
+        repository.insertAll(points)
     }
 
     fun deletePoint(id: String) = viewModelScope.launch {

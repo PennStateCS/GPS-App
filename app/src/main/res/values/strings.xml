@@ -9,9 +9,8 @@
 
     <string name="menu_home">Home</string>
     <string name="menu_view_coordinates">Coordinates</string>
-    <string name="menu_view_map">View Map</string>
     <string name="menu_open_in_ar">Open in AR</string>
-    <string name="menu_development">Development</string>
+    <string name="menu_development">Dev. Tools</string>
     <string name="menu_export_data">Export Data</string>
     <string name="menu_render_map">Render Map</string>
 

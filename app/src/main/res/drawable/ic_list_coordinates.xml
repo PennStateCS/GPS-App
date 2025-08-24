@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!-- Three horizontal list bars -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,6h16v2H4zM4,11h16v2H4zM4,16h16v2H4z" />
+    <!-- Optional bullets (small squares) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,6h2v2H6zM6,11h2v2H6zM6,16h2v2H6z" />
+</vector>
+

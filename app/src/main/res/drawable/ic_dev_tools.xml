@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <!-- Simple wrench + gear hybrid icon drawn manually -->
+    <!-- Gear outer (simplified hex / cog) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,8.2l1,0.3 0.6,-0.9 1.2,1.2 -0.9,0.6 0.3,1L15,11.5l-0.3,1 -1,0.3 -0.6,0.9 -1.2,-1.2 0.9,-0.6 -0.3,-1L9,10.5l0.3,-1 1,-0.3 0.6,-0.9 1.2,1.2z"/>
+    <!-- Wrench handle -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.2,14.2c0.4,-0.4 1,-0.4 1.4,0l4.2,4.2c0.4,0.4 0.4,1 0,1.4l-0.6,0.6c-0.4,0.4 -1,0.4 -1.4,0l-4.2,-4.2c-0.4,-0.4 -0.4,-1 0,-1.4l0.6,-0.6z"/>
+    <!-- Wrench head (open end) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16.3,6.3c-0.6,0.6 -1.5,0.8 -2.2,0.5l-0.9,0.9c0.8,1.2 0.7,2.8 -0.4,3.9 -1.4,1.4 -3.6,1.4 -5,0 -1.4,-1.4 -1.4,-3.6 0,-5 1.1,-1.1 2.7,-1.2 3.9,-0.4l0.9,-0.9c-0.3,-0.7 -0.1,-1.6 0.5,-2.2 0.9,-0.9 2.3,-0.9 3.2,0 0.9,0.9 0.9,2.3 0,3.2zM11,10c0.6,-0.6 0.6,-1.5 0,-2.1 -0.6,-0.6 -1.5,-0.6 -2.1,0 -0.6,0.6 -0.6,1.5 0,2.1 0.6,0.6 1.5,0.6 2.1,0z"/>
+</vector>
+
