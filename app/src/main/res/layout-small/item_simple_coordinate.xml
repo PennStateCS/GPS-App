@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small screen variant: icon buttons instead of text buttons -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:background="@android:color/white"
+    android:gravity="center_vertical">
+
+    <ImageView
+        android:id="@+id/image_icon"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_marginEnd="8dp"
+        android:contentDescription="@string/icon_content_desc"
+        android:src="@drawable/ic_menu_camera" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginEnd="4dp">
+
+        <TextView
+            android:id="@+id/text_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="@android:color/black"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/text_coords"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="11sp"
+            android:textColor="@android:color/darker_gray" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/button_edit"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?android:selectableItemBackgroundBorderless"
+        android:contentDescription="@string/edit_coordinate"
+        android:src="@android:drawable/ic_menu_edit"
+        android:tint="@android:color/holo_blue_light"
+        android:layout_marginEnd="4dp" />
+
+    <ImageButton
+        android:id="@+id/button_delete"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?android:selectableItemBackgroundBorderless"
+        android:contentDescription="@string/delete_coordinate"
+        android:src="@android:drawable/ic_menu_delete"
+        android:tint="@android:color/holo_red_light" />
+</LinearLayout>
+

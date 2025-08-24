@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="App Settings"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:paddingBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location Settings"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:paddingBottom="8dp" />
+
+    <Switch
+        android:id="@+id/switch_high_accuracy"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="High Accuracy Location"
+        android:layout_marginBottom="8dp" />
+
+    <Switch
+        android:id="@+id/switch_auto_save"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Auto-save Points"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Display Settings"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:paddingBottom="8dp" />
+
+    <Switch
+        android:id="@+id/switch_show_coordinates"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show Coordinates in List"
+        android:layout_marginBottom="8dp" />
+
+    <Switch
+        android:id="@+id/switch_show_elevation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show Elevation with Coordinates"
+        android:layout_marginBottom="8dp" />
+
+    <Switch
+        android:id="@+id/switch_dark_mode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Dark Mode"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Data Management"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:paddingBottom="8dp" />
+
+    <Button
+        android:id="@+id/btn_export_data"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Export All Points"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btn_import_data"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Import Points"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="About"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray" />
+
+</LinearLayout>
