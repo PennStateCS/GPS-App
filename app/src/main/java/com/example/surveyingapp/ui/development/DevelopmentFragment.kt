@@ -19,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import com.example.surveyingapp.R
 import com.example.surveyingapp.databinding.FragmentDevelopmentBinding
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
 import com.google.ar.core.ArCoreApk
@@ -60,7 +61,7 @@ class DevelopmentFragment : Fragment() {
                     results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
             Toast.makeText(
                 requireContext(),
-                if (granted) "Location permissions granted!" else "Location permissions denied.",
+                if (granted) getString(R.string.location_permissions_granted) else getString(R.string.location_permissions_denied),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -70,7 +71,7 @@ class DevelopmentFragment : Fragment() {
             updateArStatus()
             Toast.makeText(
                 requireContext(),
-                if (granted) "Camera permission granted" else "Camera permission denied",
+                if (granted) getString(R.string.camera_permission_granted) else getString(R.string.camera_permission_denied_toast),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -110,12 +111,12 @@ class DevelopmentFragment : Fragment() {
         binding.btnFakePoints.setOnClickListener { coordinatesViewModel.insertFakeCoordinates() }
         binding.btnClearAllPoints.setOnClickListener {
             androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                .setTitle("Clear All Coordinates")
-                .setMessage("Are you sure you want to delete all coordinates? This action cannot be undone.")
-                .setPositiveButton("Yes, Clear All") { _, _ ->
+                .setTitle(R.string.clear_all_coordinates_title)
+                .setMessage(R.string.clear_all_coordinates_message)
+                .setPositiveButton(R.string.yes_clear_all) { _, _ ->
                     coordinatesViewModel.deleteAllCoordinates()
                 }
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(android.R.string.cancel, null)
                 .show()
         }
         binding.btnCopyDevReport.setOnClickListener { copyDiagnosticsToClipboard() }
@@ -213,7 +214,7 @@ class DevelopmentFragment : Fragment() {
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
-            Toast.makeText(requireContext(), "Camera already granted", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.camera_already_granted), Toast.LENGTH_SHORT).show()
         } else {
             requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -249,8 +250,7 @@ class DevelopmentFragment : Fragment() {
             if (_binding != null) binding.textPermissionStatus.text = statusText
             updateDiagnostics()
         } catch (e: Exception) {
-            if (_binding != null) binding.textPermissionStatus.text =
-                "Error checking permissions: ${e.message}"
+            if (_binding != null) binding.textPermissionStatus.text = getString(R.string.error_checking_permissions, e.message ?: "?")
         }
     }
 
@@ -266,7 +266,7 @@ class DevelopmentFragment : Fragment() {
         if (!availability.isSupported || availability.isTransient) {
             Toast.makeText(
                 ctx,
-                if (availability.isTransient) "Checking AR availability…" else "This device is not AR-capable.",
+                if (availability.isTransient) getString(R.string.checking_ar_availability) else getString(R.string.device_not_ar_capable),
                 Toast.LENGTH_LONG
             ).show()
             updateArStatus()
@@ -280,30 +280,30 @@ class DevelopmentFragment : Fragment() {
                     arInstallRequested = true
                     installingArcore = true
                     arInstallRetryCount = 0 // reset retries on fresh request
-                    updateInstallButtonState(disable = true, label = "Installing ARCore…", showProgress = true)
-                    Toast.makeText(ctx, "ARCore install requested…", Toast.LENGTH_SHORT).show()
+                    updateInstallButtonState(disable = true, label = getString(R.string.installing_arcore), showProgress = true)
+                    Toast.makeText(ctx, getString(R.string.arcore_install_requested_toast), Toast.LENGTH_SHORT).show()
                 }
                 InstallStatus.INSTALLED -> {
                     installingArcore = false
-                    updateInstallButtonState(disable = false, label = "Install / Update ARCore", showProgress = false)
-                    Toast.makeText(ctx, "ARCore installed", Toast.LENGTH_SHORT).show()
+                    updateInstallButtonState(disable = false, label = getString(R.string.install_update_arcore), showProgress = false)
+                    Toast.makeText(ctx, getString(R.string.ar_session_created), Toast.LENGTH_SHORT).show()
                     updateArStatus()
                 }
             }
         } catch (e: UnavailableUserDeclinedInstallationException) {
             installingArcore = false
-            updateInstallButtonState(disable = false, label = "Install ARCore", showProgress = false)
-            Toast.makeText(requireContext(), "User declined ARCore install", Toast.LENGTH_LONG).show()
+            updateInstallButtonState(disable = false, label = getString(R.string.install_arcore), showProgress = false)
+            Toast.makeText(requireContext(), getString(R.string.user_declined_arcore_install), Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             // If the device isn’t compatible, don’t keep retrying.
             val fatal = e.javaClass.simpleName.contains("NotCompatible", ignoreCase = true)
             installingArcore = false
             val willRetry = if (fatal) false else scheduleArInstallRetry()
             val msg = if (willRetry)
-                "Install failed (${e.javaClass.simpleName}). Retrying…"
+                getString(R.string.install_failed_retrying, e.javaClass.simpleName)
             else
-                "Install failed: ${e.javaClass.simpleName}"
-            updateInstallButtonState(disable = willRetry, label = if (willRetry) "Retrying…" else "Install ARCore", showProgress = willRetry)
+                getString(R.string.install_failed, e.javaClass.simpleName)
+            updateInstallButtonState(disable = willRetry, label = if (willRetry) getString(R.string.retrying_ellipsis) else getString(R.string.install_arcore), showProgress = willRetry)
             Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
         }
     }
@@ -483,17 +483,17 @@ class DevelopmentFragment : Fragment() {
                 when (availability) {
                     ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
                         binding.btnInstallArcore.visibility = View.VISIBLE
-                        updateInstallButtonState(false, "Install ARCore (Play Store)", false)
+                        updateInstallButtonState(false, getString(R.string.install_arcore_play_store), false)
                         binding.btnInstallArcore.setOnClickListener { openPlayServicesForArInStore() }
                     }
                     ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> {
                         binding.btnInstallArcore.visibility = View.VISIBLE
-                        updateInstallButtonState(false, "Update ARCore (Play Store)", false)
+                        updateInstallButtonState(false, getString(R.string.update_arcore_play_store), false)
                         binding.btnInstallArcore.setOnClickListener { openPlayServicesForArInStore() }
                     }
                     ArCoreApk.Availability.SUPPORTED_INSTALLED -> {
                         binding.btnInstallArcore.visibility = View.VISIBLE
-                        updateInstallButtonState(false, "Re-check ARCore", false)
+                        updateInstallButtonState(false, getString(R.string.recheck_arcore), false)
                         binding.btnInstallArcore.setOnClickListener { attemptArCoreInstall() }
                     }
                     else -> {
@@ -512,7 +512,7 @@ class DevelopmentFragment : Fragment() {
             }
             updateDiagnostics()
         } catch (e: Exception) {
-            if (_binding != null) binding.textArStatus.text = "Error checking AR status: ${e.message}"
+            if (_binding != null) binding.textArStatus.text = getString(R.string.error_checking_ar_status, e.message ?: "?")
         }
     }
 
@@ -539,7 +539,7 @@ class DevelopmentFragment : Fragment() {
             @Suppress("DEPRECATION")
             versionCode = if (Build.VERSION.SDK_INT >= 28) pInfo.longVersionCode else pInfo.versionCode.toLong()
         } catch (e: Exception) {
-            binding.textDiagnostics.text = "Error reading app version: ${e.message}"
+            binding.textDiagnostics.text = getString(R.string.error_reading_app_version, e.message ?: "?")
             return
         }
         val runtime = Runtime.getRuntime()
@@ -567,7 +567,7 @@ class DevelopmentFragment : Fragment() {
         val text = binding.textDiagnostics.text?.toString() ?: return
         val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("Dev Report", text))
-        Toast.makeText(requireContext(), "Dev report copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.dev_report_copied), Toast.LENGTH_SHORT).show()
     }
 
     // ---------------- Lifecycle ----------------
@@ -595,9 +595,9 @@ class DevelopmentFragment : Fragment() {
     }
 
     companion object {
-        private const val KEY_LOC_EXP = "location_expanded"
-        private const val KEY_AR_EXP = "ar_expanded"
-        private const val KEY_DIAG_EXP = "diagnostics_expanded"
-        private const val KEY_DATA_EXP = "data_expanded"
+        private const val KEY_LOC_EXP = "expanded_location"
+        private const val KEY_AR_EXP = "expanded_ar"
+        private const val KEY_DIAG_EXP = "expanded_diagnostics"
+        private const val KEY_DATA_EXP = "expanded_data"
     }
 }

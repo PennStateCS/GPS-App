@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Small screen variant: icon buttons instead of text buttons -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -48,7 +49,7 @@
         android:background="?android:selectableItemBackgroundBorderless"
         android:contentDescription="@string/edit_coordinate"
         android:src="@android:drawable/ic_menu_edit"
-        android:tint="@android:color/holo_blue_light"
+        app:tint="@android:color/holo_blue_light"
         android:layout_marginEnd="4dp" />
 
     <ImageButton
@@ -58,6 +59,5 @@
         android:background="?android:selectableItemBackgroundBorderless"
         android:contentDescription="@string/delete_coordinate"
         android:src="@android:drawable/ic_menu_delete"
-        android:tint="@android:color/holo_red_light" />
+        app:tint="@android:color/holo_red_light" />
 </LinearLayout>
-

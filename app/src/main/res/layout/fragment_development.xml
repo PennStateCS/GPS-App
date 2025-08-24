@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true">
@@ -15,7 +16,7 @@
             android:id="@+id/text_dev_intro"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="This page contains development and testing tools for the surveying app."
+            android:text="@string/development_intro"
             android:textAppearance="@style/TextAppearance.AppCompat.Small"
             android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="16dp" />
@@ -35,20 +36,20 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_section_location"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="12dp"
-                android:text="Location Settings"
+                android:text="@string/location_settings_header"
                 android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
             <ImageView
                 android:id="@+id/arrow_location"
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:src="@drawable/ic_section_arrow"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
         </LinearLayout>
 
         <LinearLayout
@@ -63,7 +64,7 @@
                 android:id="@+id/text_permission_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Checking permissions..."
+                android:text="@string/checking_permissions"
                 android:textAppearance="@style/TextAppearance.AppCompat.Small"
                 android:background="@android:color/background_light"
                 android:padding="8dp"
@@ -72,13 +73,13 @@
                 android:id="@+id/btn_refresh_permissions"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Refresh Location Status"
+                android:text="@string/refresh_location_status"
                 android:layout_marginBottom="8dp" />
             <Button
                 android:id="@+id/btn_request_permissions"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Request Location Access"
+                android:text="@string/request_location_access"
                 android:layout_marginBottom="0dp" />
         </LinearLayout>
 
@@ -96,20 +97,20 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_section_ar"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="12dp"
-                android:text="AR Settings"
+                android:text="@string/ar_settings_header"
                 android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
             <ImageView
                 android:id="@+id/arrow_ar"
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:src="@drawable/ic_section_arrow"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
         </LinearLayout>
 
         <LinearLayout
@@ -124,7 +125,7 @@
                 android:id="@+id/text_ar_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Checking AR status..."
+                android:text="@string/checking_ar_status"
                 android:textAppearance="@style/TextAppearance.AppCompat.Small"
                 android:background="@android:color/background_light"
                 android:padding="8dp"
@@ -133,7 +134,7 @@
                 android:id="@+id/btn_check_ar_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Refresh AR Status"
+                android:text="@string/refresh_ar_status"
                 android:layout_marginBottom="8dp" />
             <!-- Row containing install button and progress indicator -->
             <LinearLayout
@@ -148,7 +149,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Install ARCore"
+                    android:text="@string/install_arcore"
                     android:visibility="gone" />
                 <ProgressBar
                     android:id="@+id/progress_ar_install"
@@ -162,7 +163,7 @@
                 android:id="@+id/btn_request_camera"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Request Camera Access"
+                android:text="@string/request_camera_access"
                 android:layout_marginBottom="0dp" />
         </LinearLayout>
 
@@ -180,20 +181,20 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_section_diagnostics"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="12dp"
-                android:text="App Diagnostics"
+                android:text="@string/diagnostics_header"
                 android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
             <ImageView
                 android:id="@+id/arrow_diagnostics"
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:src="@drawable/ic_section_arrow"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
         </LinearLayout>
 
         <LinearLayout
@@ -208,7 +209,7 @@
                 android:id="@+id/text_diagnostics"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Gathering diagnostics..."
+                android:text="@string/gathering_diagnostics"
                 android:textAppearance="@style/TextAppearance.AppCompat.Small"
                 android:background="@android:color/background_light"
                 android:padding="8dp"
@@ -217,7 +218,7 @@
                 android:id="@+id/btn_copy_dev_report"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Copy Diagnostics Report"
+                android:text="@string/copy_diagnostics_report"
                 android:layout_marginBottom="0dp" />
         </LinearLayout>
 
@@ -235,20 +236,20 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_section_data"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="12dp"
-                android:text="Data"
+                android:text="@string/data_header"
                 android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
             <ImageView
                 android:id="@+id/arrow_data"
                 android:layout_width="20dp"
                 android:layout_height="20dp"
                 android:src="@drawable/ic_section_arrow"
-                android:tint="?attr/colorPrimary" />
+                app:tint="?attr/colorPrimary" />
         </LinearLayout>
 
         <LinearLayout
@@ -263,13 +264,13 @@
                 android:id="@+id/btn_fake_points"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Add Fake Points"
+                android:text="@string/add_fake_points"
                 android:layout_marginBottom="8dp" />
             <Button
                 android:id="@+id/btn_clear_all_points"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Clear All Points"
+                android:text="@string/clear_all_points"
                 android:layout_marginBottom="0dp" />
         </LinearLayout>
 

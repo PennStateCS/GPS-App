@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.ui.settings.SettingsFragment
+import android.content.DialogInterface
 
 class CoordinateAdapter(
     private var coordinates: List<Coordinate>,
@@ -48,9 +49,15 @@ class CoordinateAdapter(
         if (showCoordinates) {
             holder.coordinates.visibility = View.VISIBLE
             if (showElevation) {
-                holder.coordinates.text = String.format("%.6f, %.6f, %.2fm", coordinate.latitude, coordinate.longitude, coordinate.altitude)
+                holder.coordinates.text = holder.itemView.context.getString(
+                    R.string.coords_with_elevation_format,
+                    coordinate.latitude, coordinate.longitude, coordinate.altitude
+                )
             } else {
-                holder.coordinates.text = String.format("%.6f, %.6f", coordinate.latitude, coordinate.longitude)
+                holder.coordinates.text = holder.itemView.context.getString(
+                    R.string.coords_no_elevation_format,
+                    coordinate.latitude, coordinate.longitude
+                )
             }
         } else {
             holder.coordinates.visibility = View.GONE
@@ -59,12 +66,12 @@ class CoordinateAdapter(
         // Set up delete button with confirmation dialog
         holder.delete.setOnClickListener {
             AlertDialog.Builder(holder.itemView.context)
-                .setTitle("Delete Coordinate")
-                .setMessage("Are you sure you want to delete \"${coordinate.name}\"? This action cannot be undone.")
-                .setPositiveButton("Delete") { _, _ ->
+                .setTitle(R.string.delete_coordinate)
+                .setMessage(holder.itemView.context.getString(R.string.delete_coordinate_message, coordinate.name))
+                .setPositiveButton(R.string.delete) { _: DialogInterface, _: Int ->
                     onDelete(coordinate.id)
                 }
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(android.R.string.cancel, null)
                 .show()
         }
         // Set up edit button
@@ -75,8 +82,8 @@ class CoordinateAdapter(
 
     override fun getItemCount(): Int = coordinates.size
 
-    fun updatePoints(newPoints: List<Coordinate>) {
-        coordinates = newPoints
+    fun updateCoordinates(newCoordinates: List<Coordinate>) {
+        coordinates = newCoordinates
         notifyDataSetChanged()
     }
 

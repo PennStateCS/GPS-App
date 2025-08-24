@@ -19,14 +19,14 @@
         android:textAppearance="@style/TextAppearance.AppCompat.Medium"
         android:paddingBottom="8dp" />
 
-    <Switch
+    <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/switch_high_accuracy"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="High Accuracy Location"
         android:layout_marginBottom="8dp" />
 
-    <Switch
+    <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/switch_auto_save"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -40,21 +40,21 @@
         android:textAppearance="@style/TextAppearance.AppCompat.Medium"
         android:paddingBottom="8dp" />
 
-    <Switch
+    <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/switch_show_coordinates"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Show Coordinates in List"
         android:layout_marginBottom="8dp" />
 
-    <Switch
+    <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/switch_show_elevation"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Show Elevation with Coordinates"
         android:layout_marginBottom="8dp" />
 
-    <Switch
+    <androidx.appcompat.widget.SwitchCompat
         android:id="@+id/switch_dark_mode"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
