@@ -1,5 +1,8 @@
 package com.example.surveyingapp.ui.rendermap
 
+// BottomSheetDialogFragment that displays details for a single Coordinate.
+// Expects a Coordinate passed via arguments (see newInstance) and renders
+// its name, lat/lon (6 decimal places), altitude, and a tinted icon.
 import android.graphics.PorterDuff
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -16,6 +19,7 @@ import java.util.Locale
 class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
+        // Argument keys for bundling the coordinate fields.
         private const val ARG_ID = "arg_id"
         private const val ARG_NAME = "arg_name"
         private const val ARG_LAT = "arg_lat"
@@ -24,18 +28,20 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_ICON = "arg_icon"
         private const val ARG_COLOR = "arg_color"
 
-        fun newInstance(point: Coordinate): CoordinateInfoBottomSheet {
-            return CoordinateInfoBottomSheet().apply {
-                arguments = Bundle().apply {
-                    putString(ARG_ID, point.id)
-                    putString(ARG_NAME, point.name)
-                    putDouble(ARG_LAT, point.latitude)
-                    putDouble(ARG_LON, point.longitude)
-                    putDouble(ARG_ALT, point.altitude)
-                    putString(ARG_ICON, point.icon)
-                    putInt(ARG_COLOR, point.color)
-                }
+        // Factory method to create the sheet with all needed data serialized into arguments.
+        fun newInstance(coordinate: Coordinate): CoordinateInfoBottomSheet {
+            val fragment = CoordinateInfoBottomSheet()
+            val bundle = Bundle().apply {
+                putString(ARG_ID, coordinate.id)
+                putString(ARG_NAME, coordinate.name)
+                putDouble(ARG_LAT, coordinate.latitude)
+                putDouble(ARG_LON, coordinate.longitude)
+                putDouble(ARG_ALT, coordinate.altitude)
+                putString(ARG_ICON, coordinate.icon)
+                putInt(ARG_COLOR, coordinate.color)
             }
+            fragment.arguments = bundle
+            return fragment
         }
     }
 
@@ -44,31 +50,39 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        // Inflate simple static layout for the bottom sheet.
         return inflater.inflate(R.layout.bottom_sheet_coordinate_info, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // Bind views.
         val iconView: ImageView = view.findViewById(R.id.bs_icon)
         val titleView: TextView = view.findViewById(R.id.bs_title)
         val coordsView: TextView = view.findViewById(R.id.bs_coords)
         val altView: TextView = view.findViewById(R.id.bs_altitude)
 
+        // Extract arguments with safe fallbacks (useful if something missing).
         val name = arguments?.getString(ARG_NAME) ?: "(Unnamed)"
         val lat = arguments?.getDouble(ARG_LAT) ?: 0.0
         val lon = arguments?.getDouble(ARG_LON) ?: 0.0
         val alt = arguments?.getDouble(ARG_ALT) ?: 0.0
         val iconName = arguments?.getString(ARG_ICON) ?: "ic_menu_camera"
-        val color = arguments?.getInt(ARG_COLOR) ?: 0xFF2196F3.toInt()
+        val color = arguments?.getInt(ARG_COLOR) ?: 0xFF2196F3.toInt() // Default blue
 
+        // Populate text fields.
         titleView.text = name
         coordsView.text = String.format(Locale.US, "%.6f, %.6f", lat, lon)
         altView.text = String.format(Locale.US, "Altitude: %.2f m", alt)
 
+        // Dynamically resolve icon resource name; fallback to a default if not found.
         val resId = resources.getIdentifier(iconName, "drawable", requireContext().packageName)
-        val drawable = if (resId != 0) ContextCompat.getDrawable(requireContext(), resId) else ContextCompat.getDrawable(requireContext(), R.drawable.ic_menu_camera)
-        drawable?.mutate()?.setColorFilter(color, PorterDuff.Mode.SRC_IN)
+        val drawable = (if (resId != 0) ContextCompat.getDrawable(requireContext(), resId)
+                        else ContextCompat.getDrawable(requireContext(), R.drawable.ic_menu_camera))
+            ?.mutate()
+
+        // Apply tint based on the coordinate's color and set the drawable.
+        drawable?.setColorFilter(color, PorterDuff.Mode.SRC_IN)
         iconView.setImageDrawable(drawable)
     }
 }
-

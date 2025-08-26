@@ -1,6 +1,7 @@
 package com.example.surveyingapp.ui.rendermap
 
 import android.Manifest
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.PorterDuff
@@ -9,6 +10,8 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.DrawableCompat
@@ -26,7 +29,6 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-import android.widget.Toast
 import java.util.Locale
 
 class RenderMapFragment : Fragment() {
@@ -36,7 +38,6 @@ class RenderMapFragment : Fragment() {
 
     // Keep overlays/components around
     private var locationOverlay: MyLocationNewOverlay? = null
-    private val markers = mutableListOf<Marker>()           // track only markers
     private val markerIconCache = mutableMapOf<String, Drawable>()
 
     private var isSatellite = false
@@ -50,6 +51,19 @@ class RenderMapFragment : Fragment() {
             else Toast.makeText(requireContext(), "Location permission denied", Toast.LENGTH_SHORT).show()
         }
 
+    // Data class for displaying points with visibility
+    data class MapPointDisplay(
+        val geoPoint: GeoPoint,
+        val name: String,
+        val iconName: String,
+        val color: Int,
+        var isVisible: Boolean = true,
+        var marker: Marker? = null
+    )
+
+    private lateinit var pointsAdapter: PointsAdapter
+    private val displayPoints = mutableListOf<MapPointDisplay>()
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -60,7 +74,6 @@ class RenderMapFragment : Fragment() {
         placeholder = root.findViewById(R.id.text_render_map)
 
         setupMap(requireContext())
-        bindData()
 
         root.findViewById<FloatingActionButton>(R.id.fab_toggle_sat)
             ?.setOnClickListener { toggleSatellite() }
@@ -69,6 +82,104 @@ class RenderMapFragment : Fragment() {
 
         enableMyLocationIfPermitted()
         return root
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        // Initialize RecyclerView and adapter
+        val recyclerView = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.pointsRecyclerView)
+        pointsAdapter = PointsAdapter(displayPoints) { position, isChecked ->
+            displayPoints[position].isVisible = isChecked
+            updateMarkerVisibility(position)
+        }
+        recyclerView.adapter = pointsAdapter
+        recyclerView.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(requireContext())
+
+        // Setup collapsible points list
+        setupCollapsiblePointsList(view)
+
+        // Now that adapter is initialized, bind data
+        bindData()
+    }
+
+    private fun setupCollapsiblePointsList(view: View) {
+        val pointsListContainer = view.findViewById<View>(R.id.pointsListContainer)
+        val btnTogglePointsList = view.findViewById<ImageButton>(R.id.btnTogglePointsList)
+        val btnShowPointsList = view.findViewById<ImageButton>(R.id.btnShowPointsList)
+
+        // Initially show the list
+        var isListExpanded = true
+
+        // Toggle button (collapse) click listener
+        btnTogglePointsList.setOnClickListener {
+            isListExpanded = false
+            animateListCollapse(pointsListContainer, btnShowPointsList)
+        }
+
+        // Show button (expand) click listener
+        btnShowPointsList.setOnClickListener {
+            isListExpanded = true
+            animateListExpand(pointsListContainer, btnShowPointsList)
+        }
+    }
+
+    private fun animateListCollapse(container: View, showButton: ImageButton) {
+        // Animate the container sliding out to the left
+        ObjectAnimator.ofFloat(container, "translationX", 0f, -container.width.toFloat()).apply {
+            duration = 300
+            start()
+        }
+
+        // Show the expand button after animation
+        showButton.postDelayed({
+            showButton.visibility = View.VISIBLE
+            showButton.alpha = 0f
+            ObjectAnimator.ofFloat(showButton, "alpha", 0f, 1f).apply {
+                duration = 200
+                start()
+            }
+        }, 300)
+    }
+
+    private fun animateListExpand(container: View, showButton: ImageButton) {
+        // Hide the show button first
+        ObjectAnimator.ofFloat(showButton, "alpha", 1f, 0f).apply {
+            duration = 200
+            start()
+        }
+
+        showButton.postDelayed({
+            showButton.visibility = View.GONE
+
+            // Animate the container sliding in from the left
+            ObjectAnimator.ofFloat(container, "translationX", -container.width.toFloat(), 0f).apply {
+                duration = 300
+                start()
+            }
+        }, 200)
+    }
+
+    private fun updateMarkerVisibility(position: Int) {
+        val point = displayPoints[position]
+        val map = mapView ?: return
+
+        if (point.isVisible) {
+            if (point.marker == null) {
+                val marker = Marker(map)
+                marker.position = point.geoPoint
+                marker.title = point.name
+                marker.icon = getTintedMarkerDrawable(requireContext(), point.iconName, point.color)
+                map.overlays.add(marker)
+                point.marker = marker
+            }
+        } else {
+            point.marker?.let {
+                map.overlays.remove(it)
+                point.marker = null
+            }
+        }
+        map.invalidate()
     }
 
     private fun setupMap(context: Context) {
@@ -101,44 +212,23 @@ class RenderMapFragment : Fragment() {
         viewModel.allCoordinates.observe(viewLifecycleOwner) { points ->
             val map = mapView ?: return@observe
 
-            // remove old markers only, keep other overlays (e.g., location)
-            if (markers.isNotEmpty()) {
-                markers.forEach { map.overlays.remove(it) }
-                markers.clear()
+            // Remove all markers managed by displayPoints
+            for (point in displayPoints) {
+                point.marker?.let { map.overlays.remove(it) }
+                point.marker = null
             }
+            displayPoints.clear()
 
             if (points.isEmpty()) {
                 placeholder?.visibility = View.VISIBLE
                 lastGeoPoints = emptyList()
             } else {
                 placeholder?.visibility = View.GONE
-
                 val geoPoints = mutableListOf<GeoPoint>()
-                points.forEach { p ->
+                points.forEachIndexed { i, p ->
                     val gp = GeoPoint(p.latitude, p.longitude)
                     geoPoints.add(gp)
-
-                    val m = Marker(map).apply {
-                        position = gp
-                        title = p.name
-                        subDescription = String.format(
-                            Locale.US,
-                            "%.6f, %.6f\nAlt: %.2f m",
-                            p.latitude, p.longitude, p.altitude
-                        )
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        icon = getTintedMarkerDrawable(requireContext(), p.icon, p.color)
-                        setOnMarkerClickListener { _, _ ->
-                            if (isAdded) {
-                                CoordinateInfoBottomSheet
-                                    .newInstance(p)
-                                    .show(parentFragmentManager, "coordinate_info")
-                            }
-                            true
-                        }
-                    }
-                    markers += m
-                    map.overlays.add(m)
+                    displayPoints.add(MapPointDisplay(gp, p.name ?: "Point ${i + 1}", p.icon ?: "default_marker", p.color ?: 0, true))
                 }
                 lastGeoPoints = geoPoints
 
@@ -154,14 +244,15 @@ class RenderMapFragment : Fragment() {
                     map.controller?.setCenter(geoPoints.first())
                 } else {
                     val bb = BoundingBox.fromGeoPointsSafe(geoPoints)
-                    // add small padding; zoomToBoundingBox signature varies by version
                     val padded = BoundingBox(
                         bb.latNorth + 0.01, bb.lonEast + 0.01,
                         bb.latSouth - 0.01, bb.lonWest - 0.01
                     )
-                    map.zoomToBoundingBox(padded, true) // animate
+                    map.zoomToBoundingBox(padded, true)
                 }
             }
+            pointsAdapter.notifyDataSetChanged()
+            updateAllMarkers()
             map.invalidate()
         }
     }
@@ -266,6 +357,27 @@ class RenderMapFragment : Fragment() {
         mv.invalidate()
     }
 
+    private fun updateAllMarkers() {
+        val map = mapView ?: return
+        // Remove all markers from overlays
+        for (point in displayPoints) {
+            point.marker?.let { map.overlays.remove(it) }
+            point.marker = null
+        }
+        // Add visible markers with custom icons
+        for (point in displayPoints) {
+            if (point.isVisible) {
+                val marker = Marker(map)
+                marker.position = point.geoPoint
+                marker.title = point.name
+                marker.icon = getTintedMarkerDrawable(requireContext(), point.iconName, point.color)
+                map.overlays.add(marker)
+                point.marker = marker
+            }
+        }
+        map.invalidate()
+    }
+
     // ---- Lifecycle ----
 
     override fun onResume() {
@@ -282,10 +394,67 @@ class RenderMapFragment : Fragment() {
 
     override fun onDestroyView() {
         // Clear references
-        markers.clear()
         locationOverlay = null
         mapView = null
         placeholder = null
         super.onDestroyView()
+    }
+
+    // RecyclerView Adapter for points
+    class PointsAdapter(
+        private val points: List<MapPointDisplay>,
+        private val onToggle: (Int, Boolean) -> Unit
+    ) : androidx.recyclerview.widget.RecyclerView.Adapter<PointsAdapter.PointViewHolder>() {
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PointViewHolder {
+            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_map_point, parent, false)
+            return PointViewHolder(view)
+        }
+        override fun getItemCount() = points.size
+        override fun onBindViewHolder(holder: PointViewHolder, position: Int) {
+            val point = points[position]
+            holder.title.text = point.name
+
+            // Set the colored icon
+            val context = holder.itemView.context
+            val drawable = getTintedMarkerDrawable(context, point.iconName, point.color)
+            holder.icon.setImageDrawable(drawable)
+
+            // Clear any previous listener to avoid issues
+            holder.switch.setOnCheckedChangeListener(null)
+            holder.switch.isChecked = point.isVisible
+
+            // Set the listener after setting the checked state
+            holder.switch.setOnCheckedChangeListener { _, isChecked ->
+                onToggle(position, isChecked)
+            }
+        }
+
+        private fun getTintedMarkerDrawable(context: Context, iconName: String, color: Int): Drawable? {
+            val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
+            val base = (if (resId != 0)
+                ContextCompat.getDrawable(context, resId)
+            else
+                ContextCompat.getDrawable(context, R.drawable.ic_menu_camera))?.mutate()
+
+            if (base == null) return null
+
+            // Use DrawableCompat for broad tint support
+            val wrapped = DrawableCompat.wrap(base)
+            try {
+                DrawableCompat.setTint(wrapped, color)
+                DrawableCompat.setTintMode(wrapped, PorterDuff.Mode.SRC_IN)
+            } catch (_: Exception) {
+                // fallback
+                @Suppress("DEPRECATION")
+                base.setColorFilter(color, PorterDuff.Mode.SRC_IN)
+            }
+            return wrapped
+        }
+
+        class PointViewHolder(view: View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(view) {
+            val title: android.widget.TextView = view.findViewById(R.id.map_point_title)
+            val icon: android.widget.ImageView = view.findViewById(R.id.map_point_icon)
+            val switch: android.widget.Switch = view.findViewById(R.id.map_point_visibility_switch)
+        }
     }
 }

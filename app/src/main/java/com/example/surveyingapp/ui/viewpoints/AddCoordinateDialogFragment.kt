@@ -21,24 +21,44 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 
+/**
+ * Dialog Fragment for adding new coordinate points using GPS location.
+ *
+ * DialogFragment is used for modal dialogs that survive configuration changes.
+ * This dialog demonstrates:
+ * - GPS location access using LocationManager
+ * - Permission handling for location services
+ * - Custom spinners with icons
+ * - Callback pattern for returning data to parent
+ *
+ * The constructor takes a callback function that's called when a coordinate is added.
+ */
 class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit) : DialogFragment() {
+
+    // Variables to store the GPS coordinates
     private var latitude: Double = 0.0
     private var longitude: Double = 0.0
     private var altitude: Double = 0.0
 
+    /**
+     * Creates and configures the dialog.
+     * This is where we set up the UI and handle GPS location fetching.
+     */
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val inflater = requireActivity().layoutInflater
         val view = inflater.inflate(R.layout.dialog_add_point, null)
+
+        // Get references to the UI elements
         val nameEdit = view.findViewById<EditText>(R.id.edit_point_name)
         val locationText = view.findViewById<TextView>(R.id.text_location)
         val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
 
-        // Icon choices
+        // Set up icon choices with custom adapter
         val icons = listOf("ic_menu_camera", "ic_menu_gallery", "ic_menu_slideshow")
         iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
 
-        // Color choices
+        // Set up color choices with predefined colors
         val colors = listOf(
             "Red" to 0xFFE57373.toInt(),
             "Blue" to 0xFF64B5F6.toInt(),
@@ -48,73 +68,105 @@ class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit
         )
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
 
-        // Fetch location using Android LocationManager
+        // Fetch current GPS location using Android LocationManager
         if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
 
             val locationManager = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
             try {
+                // Try to get the most recent location from GPS or network
                 @Suppress("MissingPermission")
                 val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                     ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
 
                 if (location != null) {
+                    // Successfully got location - store the coordinates
                     latitude = location.latitude
                     longitude = location.longitude
                     altitude = location.altitude
                     locationText.text = getString(R.string.location_label, latitude, longitude, altitude)
                 } else {
+                    // No location available
                     locationText.text = getString(R.string.location_unavailable)
                 }
             } catch (e: SecurityException) {
+                // Permission was revoked between check and usage
                 locationText.text = getString(R.string.location_unavailable)
             }
         } else {
+            // No location permissions granted
             locationText.text = getString(R.string.location_permission_required)
         }
 
+        // Build and return the AlertDialog
         return AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.add_coordinate_title))
             .setView(view)
             .setPositiveButton("Add") { _, _ ->
+                // Create a new Coordinate object with user input
                 val name = nameEdit.text.toString().ifBlank { "Unnamed Coordinate" }
                 val icon = icons[iconSpinner.selectedItemPosition]
                 val color = colors[colorSpinner.selectedItemPosition].second
+
                 val point = Coordinate(
-                    id = UUID.randomUUID().toString(),
+                    id = UUID.randomUUID().toString(),  // Generate unique ID
                     name = name,
                     latitude = latitude,
                     longitude = longitude,
                     altitude = altitude,
-                    timestamp = System.currentTimeMillis(),
+                    timestamp = System.currentTimeMillis(),  // Current time
                     icon = icon,
                     color = color
                 )
+
+                // Call the callback function to return the new coordinate
                 onPointAdded(point)
             }
             .setNegativeButton("Cancel", null)
             .create()
     }
 
+    /**
+     * Custom adapter for the icon spinner that displays icons with text.
+     *
+     * This demonstrates how to create custom adapters for Spinners.
+     * It shows both an icon image and the icon name in each dropdown item.
+     */
     class IconSpinnerAdapter(
         context: Context,
         private val icons: List<String>
     ) : ArrayAdapter<String>(context, 0, icons) {
+
+        // View shown when spinner is closed (selected item)
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
             return createIconView(position, convertView, parent)
         }
+
+        // View shown in the dropdown list
         override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
             return createIconView(position, convertView, parent)
         }
+
+        /**
+         * Creates a view for a single icon item.
+         * Uses view recycling for performance (convertView).
+         */
         private fun createIconView(position: Int, convertView: View?, parent: ViewGroup): View {
             val inflater = LayoutInflater.from(context)
             val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
+
             val imageView = view.findViewById<ImageView>(R.id.image_icon)
             val textView = view.findViewById<TextView>(R.id.text_icon_name)
+
             val iconName = icons[position]
+
+            // Load the icon by name using resource reflection
             val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
             imageView.setImageResource(resId)
+
+            // Create a user-friendly name from the icon name
             textView.text = iconName.replace("ic_menu_", "").replaceFirstChar { it.uppercase() }
+
             return view
         }
     }

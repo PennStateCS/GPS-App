@@ -99,4 +99,7 @@
     <string name="error_checking_ar_status">Error checking AR status: %s</string>
     <string name="error_reading_app_version">Error reading app version: %s</string>
     <string name="camera_permission_denied_toast">Camera permission denied</string>
+    <string name="location_permission_needed">Location permission needed for AR geospatial features</string>
+    <string name="ar_running_status">AR running • Planes: %1$d • Points: %2$d • GeoPins: %3$d • %4$s</string>
+    <string name="geospatial_stopped">Geospatial stopped. Check Location + Internet, then reopen AR</string>
 </resources>

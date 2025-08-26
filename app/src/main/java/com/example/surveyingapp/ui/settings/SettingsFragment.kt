@@ -1,5 +1,9 @@
 package com.example.surveyingapp.ui.settings
 
+// SettingsFragment handles user preferences (toggles) and data import/export (JSON).
+// It uses coroutines for file I/O and provides progress / cancellation for long imports.
+// Import strategy supports MERGE or REPLACE existing points; export writes all points to JSON.
+
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
@@ -32,24 +36,33 @@ import kotlin.coroutines.coroutineContext
 
 class SettingsFragment : Fragment() {
 
+    // View binding (cleared in onDestroyView to avoid leaks)
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
+    // SharedPreferences for simple UI flags / user settings
     private lateinit var preferences: SharedPreferences
+    // Repository abstraction over Room DB for coordinate persistence
     private lateinit var repository: CoordinateRepository
 
+    // State for a pending file selection before user chooses merge/replace
     private var pendingImportUri: Uri? = null
+    // Active import coroutine job (used for cancellation)
     private var currentImportJob: Job? = null
+    // Progress counters for import UI
     private var importTotal: Int = 0
     private var importProcessed: Int = 0
 
+    // Activity Result API launcher: prompts for file name & destination to create JSON export
     private val exportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (uri != null) {
+            // Launch export in lifecycleScope (main -> suspends into IO)
             lifecycleScope.launch { performExport(uri) }
         }
     }
 
+    // Activity Result API launcher: opens file picker to select an import source file
     private val importLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -59,6 +72,7 @@ class SettingsFragment : Fragment() {
     }
 
     companion object {
+        // Preference keys (defaults noted where applied when loading UI state)
         const val PREFS_NAME = "SurveyingAppPrefs"
         const val PREF_SHOW_COORDINATES = "show_coordinates"
         const val PREF_SHOW_ELEVATION = "show_elevation"
@@ -78,14 +92,14 @@ class SettingsFragment : Fragment() {
         preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         repository = CoordinateRepository(AppDatabase.getDatabase(requireContext()).coordinateDao())
 
-        // Load saved preferences
+        // --- Initialize switches from stored preferences ---
         binding.switchHighAccuracy.isChecked = preferences.getBoolean(PREF_HIGH_ACCURACY, true)
         binding.switchAutoSave.isChecked = preferences.getBoolean(PREF_AUTO_SAVE, true)
         binding.switchShowCoordinates.isChecked = preferences.getBoolean(PREF_SHOW_COORDINATES, false)
         binding.switchShowElevation.isChecked = preferences.getBoolean(PREF_SHOW_ELEVATION, false)
         binding.switchDarkMode.isChecked = preferences.getBoolean(PREF_DARK_MODE, false)
 
-        // Switch listeners
+        // --- Switch listeners: persist change immediately (apply() async) ---
         binding.switchHighAccuracy.setOnCheckedChangeListener { _, isChecked ->
             preferences.edit().putBoolean(PREF_HIGH_ACCURACY, isChecked).apply()
             Toast.makeText(requireContext(), "High accuracy: $isChecked", Toast.LENGTH_SHORT).show()
@@ -107,12 +121,13 @@ class SettingsFragment : Fragment() {
             Toast.makeText(requireContext(), "Dark mode: $isChecked", Toast.LENGTH_SHORT).show()
         }
 
-        // Data buttons
+        // Data management buttons (export/import + cancel)
         binding.btnExportData.setOnClickListener { startExportFlow() }
         binding.btnImportData.setOnClickListener { startImportFlow() }
         binding.btnCancelImport.setOnClickListener {
             val job = currentImportJob
             if (job?.isActive == true) {
+                // Cancel cooperative coroutine (will throw CancellationException in loop)
                 job.cancel()
                 showImportProgress(false, 0, "Canceled")
                 Toast.makeText(requireContext(), "Import canceled ($importProcessed / $importTotal parsed)", Toast.LENGTH_LONG).show()
@@ -122,17 +137,17 @@ class SettingsFragment : Fragment() {
         return root
     }
 
+    // Launch document creation intent for exporting all points as JSON
     private fun startExportFlow() {
         exportLauncher.launch("survey_points_${System.currentTimeMillis()}.json")
     }
 
+    // Launch file picker after confirmation if not already importing
     private fun startImportFlow() {
-        // Prevent launching if an import is already running
         if (currentImportJob?.isActive == true) {
             Toast.makeText(requireContext(), "Import already in progress", Toast.LENGTH_SHORT).show()
             return
         }
-        // Show confirmation dialog before opening system file picker
         AlertDialog.Builder(requireContext())
             .setTitle("Import Points")
             .setMessage("Select a JSON file containing points to import. You can cancel after choosing merge or replace. Proceed?")
@@ -143,6 +158,7 @@ class SettingsFragment : Fragment() {
             .show()
     }
 
+    // Serialize current DB contents to JSON array and write to chosen URI
     private suspend fun performExport(uri: Uri) {
         runCatching {
             val points = withContext(Dispatchers.IO) { repository.getAllPointsList() }
@@ -160,6 +176,7 @@ class SettingsFragment : Fragment() {
                 }
                 jsonArray.put(obj)
             }
+            // Write pretty (indent=2) JSON on IO dispatcher
             withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
                     os.write(jsonArray.toString(2).toByteArray(StandardCharsets.UTF_8))
@@ -173,11 +190,10 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    // Decide whether to prompt for merge/replace; skip prompt if DB empty.
     private suspend fun prepareImportWithConfirmation(uri: Uri) {
-        // Check existing points count
         val existingCount = withContext(Dispatchers.IO) { repository.getAllPointsList().size }
         if (existingCount == 0) {
-            // No existing points, just import (merge semantics identical)
             performImport(uri, replace = false)
             return
         }
@@ -196,15 +212,18 @@ class SettingsFragment : Fragment() {
             .show()
     }
 
+    // Fire off import in coroutine (stored in currentImportJob for cancellation)
     private fun launchImport(uri: Uri, replace: Boolean) {
         currentImportJob = lifecycleScope.launch { performImport(uri, replace) }
     }
 
+    // Parse JSON array, build Coordinate list, optionally replace DB contents, show progressive status.
     private suspend fun performImport(uri: Uri, replace: Boolean) {
         showImportProgress(true, 0, "Starting import...")
         importProcessed = 0
         importTotal = 0
         runCatching {
+            // Read entire JSON file text (UTF-8) off main thread
             val jsonText = withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openInputStream(uri)?.use { input ->
                     BufferedReader(InputStreamReader(input, StandardCharsets.UTF_8)).readText()
@@ -213,11 +232,11 @@ class SettingsFragment : Fragment() {
             val arr = JSONArray(jsonText)
             importTotal = arr.length().coerceAtLeast(1)
             val list = mutableListOf<Coordinate>()
-            // Threshold for showing detailed progress (e.g., more than 50 points)
-            val detailed = importTotal > 50
+            val detailed = importTotal > 50 // show more granular progress only for larger imports
             for (i in 0 until arr.length()) {
                 if (!coroutineContext.isActive) throw CancellationException("Import canceled")
                 val obj = arr.getJSONObject(i)
+                // Provide fallbacks: generate ID if missing, name defaults to ID
                 val id = obj.optString("id").ifBlank { UUID.randomUUID().toString() }
                 val name = obj.optString("name", id)
                 val latitude = obj.optDouble("latitude")
@@ -228,6 +247,7 @@ class SettingsFragment : Fragment() {
                 val color = obj.optInt("color", 0xFF64B5F6.toInt())
                 list.add(Coordinate(id, name, latitude, longitude, altitude, timestamp, icon, color))
                 importProcessed = i + 1
+                // Periodic progress update (avoids UI flood)
                 if (detailed && i % 10 == 0) {
                     val pct = ((i + 1) * 100 / importTotal).coerceAtMost(85)
                     showImportProgress(true, pct, "Parsing $importProcessed/$importTotal...")
@@ -246,7 +266,6 @@ class SettingsFragment : Fragment() {
         }.onFailure { e ->
             currentImportJob = null
             if (e is CancellationException) {
-                // UI already handled in cancel click; ensure progress hidden
                 showImportProgress(false, 0, "Canceled")
             } else {
                 showImportProgress(false, 0, "Error")
@@ -255,6 +274,10 @@ class SettingsFragment : Fragment() {
         }
     }
 
+    /**
+     * Update import progress UI. Hidden if visible=false. Guards against detached binding.
+     * percent: 0..100 (will clamp). status: brief human-readable state label.
+     */
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
         if (_binding == null) return
         binding.importProgressContainer.visibility = if (visible) View.VISIBLE else View.GONE
@@ -265,6 +288,7 @@ class SettingsFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        // Cancel any running import to avoid leaks & orphan callbacks
         currentImportJob?.cancel()
         currentImportJob = null
         super.onDestroyView()

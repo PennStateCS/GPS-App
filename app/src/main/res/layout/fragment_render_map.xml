@@ -20,6 +20,35 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
+    <!-- Collapsible Points List Container -->
+    <LinearLayout
+        android:id="@+id/pointsListContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:layout_gravity="start"
+        android:orientation="horizontal"
+        android:background="#AAFFFFFF">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/pointsRecyclerView"
+            android:layout_width="220dp"
+            android:layout_height="match_parent"
+            android:padding="4dp"
+            android:scrollbars="vertical" />
+
+        <!-- Toggle Button for collapsing/expanding -->
+        <ImageButton
+            android:id="@+id/btnTogglePointsList"
+            android:layout_width="24dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center_vertical"
+            android:background="#AAFFFFFF"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:contentDescription="Toggle points list"
+            android:scaleType="fitCenter"
+            android:padding="4dp" />
+    </LinearLayout>
+
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab_toggle_sat"
         android:layout_width="wrap_content"
@@ -37,4 +66,17 @@
         android:layout_margin="16dp"
         android:contentDescription="Recenter map"
         android:src="@android:drawable/ic_menu_mylocation" />
+
+    <!-- Show button when list is collapsed -->
+    <ImageButton
+        android:id="@+id/btnShowPointsList"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|start"
+        android:layout_margin="16dp"
+        android:background="@android:color/white"
+        android:src="@android:drawable/ic_menu_sort_by_size"
+        android:contentDescription="Show points list"
+        android:visibility="gone"
+        android:elevation="4dp" />
 </FrameLayout>

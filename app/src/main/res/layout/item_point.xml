@@ -37,20 +37,24 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <Button
+    <ImageButton
         android:id="@+id/point_edit"
-        android:layout_width="wrap_content"
+        android:layout_width="40dp"
         android:layout_height="40dp"
-        android:text="@string/edit_coordinate"
-        android:textColor="@android:color/white"
-        android:background="@android:color/holo_blue_light"
-        android:layout_marginEnd="8dp" />
+        android:src="@android:drawable/ic_menu_edit"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/edit_coordinate"
+        android:scaleType="fitCenter"
+        android:layout_marginEnd="8dp"
+        android:padding="8dp" />
 
-    <Button
+    <ImageButton
         android:id="@+id/point_delete"
-        android:layout_width="wrap_content"
+        android:layout_width="40dp"
         android:layout_height="40dp"
-        android:text="@string/delete_coordinate"
-        android:textColor="@android:color/white"
-        android:background="@android:color/holo_red_light" />
+        android:src="@android:drawable/ic_menu_delete"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/delete_coordinate"
+        android:scaleType="fitCenter"
+        android:padding="8dp" />
 </LinearLayout>

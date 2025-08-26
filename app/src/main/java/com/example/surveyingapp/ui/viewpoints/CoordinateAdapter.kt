@@ -4,7 +4,7 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -91,7 +91,7 @@ class CoordinateAdapter(
         val icon: ImageView = itemView.findViewById(R.id.point_icon)
         val title: TextView = itemView.findViewById(R.id.point_title)
         val coordinates: TextView = itemView.findViewById(R.id.point_coordinates)
-        val delete: Button = itemView.findViewById(R.id.point_delete)
-        val edit: Button = itemView.findViewById(R.id.point_edit)
+        val delete: ImageButton = itemView.findViewById(R.id.point_delete)
+        val edit: ImageButton = itemView.findViewById(R.id.point_edit)
     }
 }

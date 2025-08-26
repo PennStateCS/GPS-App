@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Location
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +23,11 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.surveyingapp.R
 import com.example.surveyingapp.databinding.FragmentDevelopmentBinding
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
+import com.example.surveyingapp.data.Coordinate
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.ArCoreApk.InstallStatus
 import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException
@@ -38,6 +44,7 @@ class DevelopmentFragment : Fragment() {
     private val ARCORE_SDK_VERSION = "1.44.0" // Keep in sync with build.gradle dependency
 
     private lateinit var coordinatesViewModel: CoordinatesViewModel
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var lastPermissionStatus: String = ""
     private var lastArStatus: String = ""
     private var lastPointCount: Int = 0
@@ -108,7 +115,7 @@ class DevelopmentFragment : Fragment() {
         binding.btnRequestPermissions.setOnClickListener { requestLocationPermissions() }
         binding.btnCheckArStatus.setOnClickListener { updateArStatus() }
         binding.btnRequestCamera.setOnClickListener { requestCameraPermission() }
-        binding.btnFakePoints.setOnClickListener { coordinatesViewModel.insertFakeCoordinates() }
+        binding.btnFakePoints.setOnClickListener { createLocationBasedFakePoints() }
         binding.btnClearAllPoints.setOnClickListener {
             androidx.appcompat.app.AlertDialog.Builder(requireContext())
                 .setTitle(R.string.clear_all_coordinates_title)
@@ -131,6 +138,9 @@ class DevelopmentFragment : Fragment() {
         }
         setupCollapsibles()
         applyExpandedStates(animated = false)
+
+        // Initialize FusedLocationProviderClient
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(requireActivity())
 
         return root
     }
@@ -388,19 +398,21 @@ class DevelopmentFragment : Fragment() {
                     if (!hw.hasAccel) append("; missing accelerometer")
                     if (!hw.hasBackCam) append("; missing back camera")
                 }
-                append(". Some devices (incl. certain tablets) are not on Google’s supported list.")
+                append(". Some devices (incl. certain tablets) are not on Google's supported list.")
             }
             ArCoreApk.Availability.UNKNOWN_ERROR -> "Play Services/ARCore reported an unknown error"
             ArCoreApk.Availability.UNKNOWN_TIMED_OUT -> "Availability check timed out (network/Play Services)"
             ArCoreApk.Availability.UNKNOWN_CHECKING -> "Still checking availability"
-            else -> "Unsupported state: ${av.name}; ARCore APK=$apkVersion; HW=${hw?.summary ?: "n/a"}"
+            ArCoreApk.Availability.SUPPORTED_INSTALLED,
+            ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
+            ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> "Supported"
         }
     }
 
     private fun openPlayServicesForArInStore() {
         val pkg = "com.google.ar.core"
-        val market = Uri.parse("market://details?id=$pkg")
-        val web = Uri.parse("https://play.google.com/store/apps/details?id=$pkg")
+        val market = "market://details?id=$pkg".let { Uri.parse(it) }
+        val web = "https://play.google.com/store/apps/details?id=$pkg".let { Uri.parse(it) }
         val i = android.content.Intent(android.content.Intent.ACTION_VIEW, market).apply {
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
@@ -427,93 +439,98 @@ class DevelopmentFragment : Fragment() {
     }
 
     private fun updateArStatus() {
-        try {
-            val ctx = requireContext()
-            val availability = ArCoreApk.getInstance().checkAvailability(ctx)
-            val cameraGranted =
-                ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) ==
-                        PackageManager.PERMISSION_GRANTED
-            val arCoreApkVersion = getArCoreApkVersion()
-            val (glOk, glVersionStr) = checkOpenGlSupport()
-            val availabilityLabel = availability.toString()
-            val supportCategory = when (availability) {
-                ArCoreApk.Availability.SUPPORTED_INSTALLED -> "Supported (installed)"
-                ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> "Supported (APK too old)"
-                ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> "Supported (not installed)"
-                ArCoreApk.Availability.UNKNOWN_CHECKING -> "Checking"
-                ArCoreApk.Availability.UNKNOWN_TIMED_OUT -> "Timed out (will retry)"
-                ArCoreApk.Availability.UNKNOWN_ERROR -> "Unknown error"
-                ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "Unsupported (not capable)"
-                else -> if (availability.isSupported) "Supported" else "Unsupported"
-            }
-            val hardwareInfo = collectArHardwareInfo()
-            val reason = if (!availability.isSupported && !availability.isTransient) {
-                deriveUnsupportedReason(availability, arCoreApkVersion, glOk, glVersionStr, hardwareInfo)
-            } else ""
-
-            val statusText = buildString {
-                appendLine("AR Status:")
-                appendLine("• Availability Enum: $availabilityLabel")
-                appendLine("• Support Category: $supportCategory")
-                appendLine("• Camera Permission: ${if (cameraGranted) "✓ GRANTED" else "✗ DENIED"}")
-                appendLine("• ARCore APK Version: $arCoreApkVersion")
-                appendLine("• SDK Dependency: $ARCORE_SDK_VERSION")
-                appendLine("• OpenGL ES >= 3.0: ${if (glOk) "✓ ($glVersionStr)" else "✗ ($glVersionStr)"}")
-                appendLine("• Hardware: ${hardwareInfo.summary}")
-                if (reason.isNotBlank()) appendLine("• Reason: $reason")
-                appendLine("• Known Enums: ${ArCoreApk.Availability.values().joinToString { it.name }}")
-                appendLine()
-                when {
-                    !glOk -> appendLine("Result: OpenGL ES < 3.0.")
-                    availability.isTransient -> appendLine("Result: Checking… will refresh shortly.")
-                    !availability.isSupported -> appendLine("Result: Device not supported ($availabilityLabel).")
-                    cameraGranted -> appendLine("Result: Ready for AR session.")
-                    else -> appendLine("Result: Request camera permission.")
+        // Move heavy operations off UI thread to prevent freezing
+        Thread {
+            try {
+                val ctx = requireContext()
+                val availability = ArCoreApk.getInstance().checkAvailability(ctx)
+                val cameraGranted =
+                    ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) ==
+                            PackageManager.PERMISSION_GRANTED
+                val arCoreApkVersion = getArCoreApkVersion()
+                val (glOk, glVersionStr) = checkOpenGlSupport()
+                val availabilityLabel = availability.toString()
+                val supportCategory = when (availability) {
+                    ArCoreApk.Availability.SUPPORTED_INSTALLED -> "Supported (installed)"
+                    ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> "Supported (APK too old)"
+                    ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> "Supported (not installed)"
+                    ArCoreApk.Availability.UNKNOWN_CHECKING -> "Checking"
+                    ArCoreApk.Availability.UNKNOWN_TIMED_OUT -> "Timed out (will retry)"
+                    ArCoreApk.Availability.UNKNOWN_ERROR -> "Unknown error"
+                    ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "Unsupported (not capable)"
                 }
-            }
+                val hardwareInfo = collectArHardwareInfo()
+                val reason = if (!availability.isSupported && !availability.isTransient) {
+                    deriveUnsupportedReason(availability, arCoreApkVersion, glOk, glVersionStr, hardwareInfo)
+                } else ""
 
-            lastArStatus = statusText.trimEnd()
-            if (_binding != null) {
-                binding.textArStatus.text = statusText
+                val statusText = buildString {
+                    appendLine("AR Status:")
+                    appendLine("• Availability Enum: $availabilityLabel")
+                    appendLine("• Support Category: $supportCategory")
+                    appendLine("• Camera Permission: ${if (cameraGranted) "✓ GRANTED" else "✗ DENIED"}")
+                    appendLine("• ARCore APK Version: $arCoreApkVersion")
+                    appendLine("• SDK Dependency: $ARCORE_SDK_VERSION")
+                    appendLine("• OpenGL ES >= 3.0: ${if (glOk) "✓ ($glVersionStr)" else "✗ ($glVersionStr)"}")
+                    appendLine("• Hardware: ${hardwareInfo.summary}")
+                    if (reason.isNotBlank()) appendLine("• Reason: $reason")
+                    @Suppress("DEPRECATION")
+                    appendLine("• Known Enums: ${ArCoreApk.Availability.values().joinToString { it.name }}")
+                    appendLine()
+                    when {
+                        !glOk -> appendLine("Result: OpenGL ES < 3.0.")
+                        availability.isTransient -> appendLine("Result: Checking… will refresh shortly.")
+                        !availability.isSupported -> appendLine("Result: Device not supported ($availabilityLabel).")
+                        cameraGranted -> appendLine("Result: Ready for AR session.")
+                        else -> appendLine("Result: Request camera permission.")
+                    }
+                }
 
-                // Button logic:
-                // - If supported but not installed → take user to Play Store
-                // - If APK too old → Play Store "Update"
-                // - If unsupported or transient → hide install btn
-                when (availability) {
-                    ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
-                        binding.btnInstallArcore.visibility = View.VISIBLE
-                        updateInstallButtonState(false, getString(R.string.install_arcore_play_store), false)
-                        binding.btnInstallArcore.setOnClickListener { openPlayServicesForArInStore() }
-                    }
-                    ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> {
-                        binding.btnInstallArcore.visibility = View.VISIBLE
-                        updateInstallButtonState(false, getString(R.string.update_arcore_play_store), false)
-                        binding.btnInstallArcore.setOnClickListener { openPlayServicesForArInStore() }
-                    }
-                    ArCoreApk.Availability.SUPPORTED_INSTALLED -> {
-                        binding.btnInstallArcore.visibility = View.VISIBLE
-                        updateInstallButtonState(false, getString(R.string.recheck_arcore), false)
-                        binding.btnInstallArcore.setOnClickListener { attemptArCoreInstall() }
-                    }
-                    else -> {
-                        if (availability.isTransient) {
-                            binding.btnInstallArcore.visibility = View.GONE
-                            scheduleArTransientRefresh()
-                        } else {
-                            binding.btnInstallArcore.visibility = View.GONE
+                // Update UI on main thread
+                requireActivity().runOnUiThread {
+                    if (!isAdded || _binding == null) return@runOnUiThread
+
+                    lastArStatus = statusText.trimEnd()
+                    binding.textArStatus.text = statusText
+
+                    // Button logic - moved to UI thread
+                    when (availability) {
+                        ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> {
+                            binding.btnInstallArcore.visibility = View.VISIBLE
+                            updateInstallButtonState(false, getString(R.string.install_arcore_play_store), false)
+                            binding.btnInstallArcore.setOnClickListener { openPlayServicesForArInStore() }
+                        }
+                        ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD -> {
+                            binding.btnInstallArcore.visibility = View.VISIBLE
+                            updateInstallButtonState(false, getString(R.string.update_arcore_play_store), false)
+                            binding.btnInstallArcore.setOnClickListener { openPlayServicesForArInStore() }
+                        }
+                        ArCoreApk.Availability.SUPPORTED_INSTALLED -> {
+                            binding.btnInstallArcore.visibility = View.VISIBLE
+                            updateInstallButtonState(false, getString(R.string.recheck_arcore), false)
+                            binding.btnInstallArcore.setOnClickListener { attemptArCoreInstall() }
+                        }
+                        else -> {
+                            if (availability.isTransient) {
+                                binding.btnInstallArcore.visibility = View.GONE
+                                scheduleArTransientRefresh()
+                            } else {
+                                binding.btnInstallArcore.visibility = View.GONE
+                            }
                         }
                     }
+
+                    if (availability.isTransient) {
+                        scheduleArTransientRefresh()
+                    }
+                    updateDiagnostics()
+                }
+            } catch (e: Exception) {
+                requireActivity().runOnUiThread {
+                    if (_binding != null) binding.textArStatus.text = "Error checking AR status: ${e.message ?: "Unknown error"}"
                 }
             }
-
-            if (availability.isTransient) {
-                scheduleArTransientRefresh()
-            }
-            updateDiagnostics()
-        } catch (e: Exception) {
-            if (_binding != null) binding.textArStatus.text = getString(R.string.error_checking_ar_status, e.message ?: "?")
-        }
+        }.start()
     }
 
     private fun updateInstallButtonState(disable: Boolean, label: String, showProgress: Boolean) {
@@ -570,6 +587,248 @@ class DevelopmentFragment : Fragment() {
         Toast.makeText(requireContext(), getString(R.string.dev_report_copied), Toast.LENGTH_SHORT).show()
     }
 
+    // ---------------- Location ----------------
+
+    private fun createLocationBasedFakePoints() {
+        if (!isAdded || _binding == null) return
+
+        // Check for location permissions first
+        val hasLocationPermission = ContextCompat.checkSelfPermission(
+            requireContext(),
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(
+            requireContext(),
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasLocationPermission) {
+            Toast.makeText(
+                requireContext(),
+                "Location permission required to create location-based fake points",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        // Get the current location
+        try {
+            @Suppress("MissingPermission")
+            fusedLocationClient.getCurrentLocation(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                CancellationTokenSource().token
+            ).addOnSuccessListener { location: Location? ->
+                if (location != null) {
+                    // Create fake points around the current location
+                    val baseLat = location.latitude
+                    val baseLon = location.longitude
+                    val now = System.currentTimeMillis()
+                    val colors = listOf(
+                        0xFFE57373.toInt(), 0xFF64B5F6.toInt(), 0xFF81C784.toInt(),
+                        0xFFFFB74D.toInt(), 0xFFBA68C8.toInt(), 0xFFA1C181.toInt(),
+                        0xFFFF8A65.toInt(), 0xFF9FA8DA.toInt(), 0xFF4DB6AC.toInt(),
+                        0xFFFFF176.toInt(), 0xFFAED581.toInt(), 0xFFFFAB91.toInt(),
+                        0xFF90CAF9.toInt(), 0xFFCE93D8.toInt(), 0xFFF48FB1.toInt()
+                    )
+                    val icons = listOf("ic_menu_camera", "ic_menu_gallery", "ic_menu_slideshow")
+
+                    val fakePoints: List<Coordinate> = listOf(
+                        // Very close points (1-5 feet) - approximately 0.0003-0.0015 degrees
+                        Coordinate(
+                            id = "fake_1",
+                            name = "Very Close Point 1",
+                            latitude = baseLat + 0.000003, // ~1 foot north
+                            longitude = baseLon + 0.000002,
+                            altitude = 100.0,
+                            timestamp = now,
+                            icon = icons[0],
+                            color = colors[0]
+                        ),
+                        Coordinate(
+                            id = "fake_2",
+                            name = "Very Close Point 2",
+                            latitude = baseLat - 0.000005, // ~1.5 feet south
+                            longitude = baseLon - 0.000003,
+                            altitude = 100.5,
+                            timestamp = now,
+                            icon = icons[1],
+                            color = colors[1]
+                        ),
+                        Coordinate(
+                            id = "fake_3",
+                            name = "Very Close Point 3",
+                            latitude = baseLat + 0.000008, // ~2.5 feet north
+                            longitude = baseLon,
+                            altitude = 99.8,
+                            timestamp = now,
+                            icon = icons[2],
+                            color = colors[2]
+                        ),
+                        Coordinate(
+                            id = "fake_4",
+                            name = "Very Close Point 4",
+                            latitude = baseLat,
+                            longitude = baseLon + 0.000012, // ~4 feet east
+                            altitude = 100.2,
+                            timestamp = now,
+                            icon = icons[0],
+                            color = colors[3]
+                        ),
+                        Coordinate(
+                            id = "fake_5",
+                            name = "Very Close Point 5",
+                            latitude = baseLat - 0.000015, // ~5 feet south
+                            longitude = baseLon - 0.000010, // ~3 feet west
+                            altitude = 99.5,
+                            timestamp = now,
+                            icon = icons[1],
+                            color = colors[4]
+                        ),
+
+                        // Medium distance points (10-100 feet) - approximately 0.003-0.03 degrees
+                        Coordinate(
+                            id = "fake_6",
+                            name = "Medium Point 1",
+                            latitude = baseLat + 0.0003, // ~100 feet north
+                            longitude = baseLon,
+                            altitude = 102.0,
+                            timestamp = now,
+                            icon = icons[2],
+                            color = colors[5]
+                        ),
+                        Coordinate(
+                            id = "fake_7",
+                            name = "Medium Point 2",
+                            latitude = baseLat,
+                            longitude = baseLon + 0.0002, // ~65 feet east
+                            altitude = 98.5,
+                            timestamp = now,
+                            icon = icons[0],
+                            color = colors[6]
+                        ),
+                        Coordinate(
+                            id = "fake_8",
+                            name = "Medium Point 3",
+                            latitude = baseLat - 0.0001, // ~35 feet south
+                            longitude = baseLon - 0.00015, // ~50 feet west
+                            altitude = 101.5,
+                            timestamp = now,
+                            icon = icons[1],
+                            color = colors[7]
+                        ),
+                        Coordinate(
+                            id = "fake_9",
+                            name = "Medium Point 4",
+                            latitude = baseLat + 0.00025, // ~80 feet north
+                            longitude = baseLon + 0.0001, // ~35 feet east
+                            altitude = 99.2,
+                            timestamp = now,
+                            icon = icons[2],
+                            color = colors[8]
+                        ),
+
+                        // Far points (0.5-2 km) - approximately 0.005-0.02 degrees
+                        Coordinate(
+                            id = "fake_10",
+                            name = "Far Point 1",
+                            latitude = baseLat + 0.009, // ~1 km north
+                            longitude = baseLon,
+                            altitude = 105.0,
+                            timestamp = now,
+                            icon = icons[0],
+                            color = colors[9]
+                        ),
+                        Coordinate(
+                            id = "fake_11",
+                            name = "Far Point 2",
+                            latitude = baseLat - 0.009, // ~1 km south
+                            longitude = baseLon,
+                            altitude = 95.0,
+                            timestamp = now,
+                            icon = icons[1],
+                            color = colors[10]
+                        ),
+                        Coordinate(
+                            id = "fake_12",
+                            name = "Far Point 3",
+                            latitude = baseLat,
+                            longitude = baseLon + 0.009, // ~1 km east
+                            altitude = 110.0,
+                            timestamp = now,
+                            icon = icons[2],
+                            color = colors[11]
+                        ),
+                        Coordinate(
+                            id = "fake_13",
+                            name = "Far Point 4",
+                            latitude = baseLat,
+                            longitude = baseLon - 0.009, // ~1 km west
+                            altitude = 90.0,
+                            timestamp = now,
+                            icon = icons[0],
+                            color = colors[12]
+                        ),
+                        // Create a far diagonal point (2km northeast)
+                        Coordinate(
+                            id = "fake_14",
+                            name = "Far Point 5",
+                            latitude = baseLat + 0.018, // ~2 km north
+                            longitude = baseLon + 0.018, // ~2 km east (diagonal)
+                            altitude = 120.0,
+                            timestamp = now,
+                            icon = icons[1],
+                            color = colors[13]
+                        ),
+                        // Create a far diagonal point (0.5km southwest)
+                        Coordinate(
+                            id = "fake_15",
+                            name = "Far Point 6",
+                            latitude = baseLat - 0.0045, // ~0.5 km south
+                            longitude = baseLon - 0.0045, // ~0.5 km west (diagonal)
+                            altitude = 85.0,
+                            timestamp = now,
+                            icon = icons[2],
+                            color = colors[14]
+                        )
+                    )
+
+                    // Add all fake points to the ViewModel for display
+                    fakePoints.forEach { coordinate ->
+                        coordinatesViewModel.addCoordinate(coordinate)
+                    }
+
+                    // Show success message with count of created points
+                    Toast.makeText(
+                        requireContext(),
+                        "Created ${fakePoints.size} fake points around current location (5 very close, 4 medium distance, 6 far)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    // Handle case where location is null
+                    Toast.makeText(
+                        requireContext(),
+                        "Unable to get current location",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }.addOnFailureListener { e ->
+                // Handle location request failure
+                Toast.makeText(
+                    requireContext(),
+                    "Error getting location: ${e.message}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        } catch (e: Exception) {
+            // Handle any other exceptions during location request
+            Toast.makeText(
+                requireContext(),
+                "Error getting location: ${e.message}",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     // ---------------- Lifecycle ----------------
 
     override fun onResume() {
@@ -595,9 +854,9 @@ class DevelopmentFragment : Fragment() {
     }
 
     companion object {
-        private const val KEY_LOC_EXP = "expanded_location"
-        private const val KEY_AR_EXP = "expanded_ar"
-        private const val KEY_DIAG_EXP = "expanded_diagnostics"
-        private const val KEY_DATA_EXP = "expanded_data"
+        private const val KEY_LOC_EXP = "key_location_expanded"
+        private const val KEY_AR_EXP = "key_ar_expanded"
+        private const val KEY_DIAG_EXP = "key_diagnostics_expanded"
+        private const val KEY_DATA_EXP = "key_data_expanded"
     }
 }
