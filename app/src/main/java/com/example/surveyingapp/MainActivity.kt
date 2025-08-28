@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -36,10 +37,21 @@ class MainActivity : AppCompatActivity() {
         if (key == SettingsFragment.PREF_DEV_TOOLS) {
             updateDevToolsVisibility()
         }
+        if (key == SettingsFragment.PREF_DARK_MODE) {
+            applyDarkModePreference()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Init preferences early so we can apply dark mode before view inflation (prevents flicker)
+        prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        val initialDark = prefs.getBoolean(SettingsFragment.PREF_DARK_MODE, false)
+        AppCompatDelegate.setDefaultNightMode(
+            if (initialDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -49,9 +61,6 @@ class MainActivity : AppCompatActivity() {
         val drawerLayout: DrawerLayout = binding.drawerLayout
         val navView: NavigationView = binding.navView
 
-        // Init preferences early so we can set initial top-level destinations correctly
-        prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
         val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
 
         // Nav setup
@@ -107,19 +116,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun attachDaoToOpenInARFragment() {
-        // (kept for compatibility; not strictly needed with lifecycle callback above)
-        val navHostFragment =
-            supportFragmentManager.findFragmentById(R.id.nav_host_fragment_content_main) as? NavHostFragment
-                ?: return
-        navHostFragment.childFragmentManager.executePendingTransactions()
-        val current = navHostFragment.childFragmentManager.primaryNavigationFragment
-            ?: navHostFragment.childFragmentManager.fragments.firstOrNull()
-        if (current is OpenInARFragment) {
-            current.attachCoordinateDao(database.coordinateDao())
-        }
-    }
-
     private fun updateDevToolsVisibility() {
         val enabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
         val menu = binding.navView.menu
@@ -138,6 +134,14 @@ class MainActivity : AppCompatActivity() {
         setupActionBarWithNavController(navController, appBarConfiguration)
         if (!enabled && navController.currentDestination?.id == R.id.nav_development) {
             navController.navigate(R.id.nav_home)
+        }
+    }
+
+    private fun applyDarkModePreference() {
+        val enabled = prefs.getBoolean(SettingsFragment.PREF_DARK_MODE, false)
+        val mode = if (enabled) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        if (AppCompatDelegate.getDefaultNightMode() != mode) {
+            AppCompatDelegate.setDefaultNightMode(mode)
         }
     }
 
