@@ -14,6 +14,8 @@ import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.os.Build
 import android.os.Bundle
+import android.content.SharedPreferences
+import com.example.surveyingapp.ui.settings.SettingsFragment
 import kotlin.math.max
 
 import android.view.LayoutInflater
@@ -133,6 +135,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             if (!granted) binding.textArStatus.text = getString(R.string.location_permission_needed)
         }
 
+    // SharedPreferences for high accuracy setting
+    private var prefs: SharedPreferences? = null
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == SettingsFragment.PREF_HIGH_ACCURACY) {
+            applyHighAccuracyPreference()
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Fragment Lifecycle Methods
 
@@ -148,6 +158,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         rotationHelper = DisplayRotationHelper(this)
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
+        // Load preferences
+        prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        applyHighAccuracyPreference()
         return binding.root
     }
 
@@ -210,6 +223,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onDestroyView() {
         super.onDestroyView()
+        prefs = null
         // Clean up anchors
         try { demoAnchor?.detach() } catch (_: Exception) {}
         demoAnchor = null
@@ -416,6 +430,27 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val nw = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(nw) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    /**
+     * Apply the high accuracy preference based on user settings
+     */
+    private fun applyHighAccuracyPreference() {
+        val wantHigh = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+        if (!isAdded || _binding == null) return
+        if (wantHigh) {
+            // If user wants high accuracy but GPS provider is off, prompt them
+            val lm = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            if (!gpsOn) {
+                binding.textArStatus.text = "Enable GPS for high accuracy AR positioning"
+            }
+        } else {
+            // Balanced mode: we can note that network is sufficient (only update if current text is our prior warning)
+            if (binding.textArStatus.text.toString().contains("high accuracy", true)) {
+                binding.textArStatus.text = "Balanced accuracy mode"
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------------------------

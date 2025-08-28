@@ -141,7 +141,8 @@ class CoordinatesFragment : Fragment() {
      */
     private fun showAddCoordinateDialog(viewModel: CoordinatesViewModel) {
         try {
-            val dialog = AddCoordinateDialogFragment { coordinate ->
+            val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+            val dialog = AddCoordinateDialogFragment(highAcc) { coordinate ->
                 viewModel.addCoordinate(coordinate)
                 // Provide haptic feedback to confirm the action
                 _binding?.root?.post {

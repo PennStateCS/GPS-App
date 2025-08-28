@@ -1,5 +1,7 @@
 package com.example.surveyingapp
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -17,6 +19,7 @@ import androidx.navigation.ui.setupWithNavController
 import com.example.surveyingapp.data.AppDatabase
 import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.ui.openinar.OpenInARFragment
+import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.google.android.material.navigation.NavigationView
 
 class MainActivity : AppCompatActivity() {
@@ -27,6 +30,13 @@ class MainActivity : AppCompatActivity() {
 
     // Use applicationContext to avoid leaking the Activity
     private val database by lazy { AppDatabase.getDatabase(applicationContext) }
+
+    private lateinit var prefs: SharedPreferences
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == SettingsFragment.PREF_DEV_TOOLS) {
+            updateDevToolsVisibility()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,21 +49,27 @@ class MainActivity : AppCompatActivity() {
         val drawerLayout: DrawerLayout = binding.drawerLayout
         val navView: NavigationView = binding.navView
 
+        // Init preferences early so we can set initial top-level destinations correctly
+        prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
+        val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
+
         // Nav setup
         navController = findNavController(R.id.nav_host_fragment_content_main)
-        appBarConfiguration = AppBarConfiguration(
-            setOf(
-                R.id.nav_home,
-                R.id.nav_view_coordinates,
-                R.id.nav_render_map,
-                R.id.nav_open_in_ar,
-                R.id.nav_development,
-                R.id.nav_settings
-            ),
-            drawerLayout
+        val initialTopLevel = mutableSetOf(
+            R.id.nav_home,
+            R.id.nav_view_coordinates,
+            R.id.nav_render_map,
+            R.id.nav_open_in_ar,
+            R.id.nav_settings
         )
+        if (devEnabled) initialTopLevel.add(R.id.nav_development)
+        appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
         navView.setupWithNavController(navController)
+
+        // Apply initial visibility state for dev tools (after menu inflated by setupWithNavController)
+        updateDevToolsVisibility()
 
         // Ensure we hook into fragments CREATED inside the NavHost
         val navHostFragment = supportFragmentManager
@@ -104,6 +120,27 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateDevToolsVisibility() {
+        val enabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
+        val menu = binding.navView.menu
+        val devItem = menu.findItem(R.id.nav_development)
+        devItem?.isVisible = enabled
+        // Rebuild top-level destinations to keep proper Up behavior
+        val topLevel = mutableSetOf(
+            R.id.nav_home,
+            R.id.nav_view_coordinates,
+            R.id.nav_render_map,
+            R.id.nav_open_in_ar,
+            R.id.nav_settings
+        )
+        if (enabled) topLevel.add(R.id.nav_development)
+        appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
+        setupActionBarWithNavController(navController, appBarConfiguration)
+        if (!enabled && navController.currentDestination?.id == R.id.nav_development) {
+            navController.navigate(R.id.nav_home)
+        }
+    }
+
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main, menu)
         return true
@@ -122,5 +159,10 @@ class MainActivity : AppCompatActivity() {
     override fun onSupportNavigateUp(): Boolean {
         val navController = findNavController(R.id.nav_host_fragment_content_main)
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    }
+
+    override fun onDestroy() {
+        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        super.onDestroy()
     }
 }

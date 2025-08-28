@@ -33,7 +33,10 @@ import android.widget.ImageView
  *
  * The constructor takes a callback function that's called when a coordinate is added.
  */
-class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit) : DialogFragment() {
+class AddCoordinateDialogFragment(
+    private val highAccuracy: Boolean = true,
+    private val onPointAdded: (Coordinate) -> Unit
+) : DialogFragment() {
 
     // Variables to store the GPS coordinates
     private var latitude: Double = 0.0
@@ -68,23 +71,25 @@ class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit
         )
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
 
-        // Fetch current GPS location using Android LocationManager
+        // Fetch current location (provider order depends on highAccuracy preference)
         if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
 
             val locationManager = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val primaryProvider = if (highAccuracy) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+            val secondaryProvider = if (highAccuracy) LocationManager.NETWORK_PROVIDER else LocationManager.GPS_PROVIDER
             try {
-                // Try to get the most recent location from GPS or network
                 @Suppress("MissingPermission")
-                val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                val location = locationManager.getLastKnownLocation(primaryProvider)
+                    ?: locationManager.getLastKnownLocation(secondaryProvider)
 
                 if (location != null) {
                     // Successfully got location - store the coordinates
                     latitude = location.latitude
                     longitude = location.longitude
                     altitude = location.altitude
-                    locationText.text = getString(R.string.location_label, latitude, longitude, altitude)
+                    val mode = if (highAccuracy) "HIGH" else "BALANCED"
+                    locationText.text = getString(R.string.location_label, latitude, longitude, altitude) + " ($mode)"
                 } else {
                     // No location available
                     locationText.text = getString(R.string.location_unavailable)

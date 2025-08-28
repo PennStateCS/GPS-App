@@ -1,127 +1,161 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Added ScrollView root to allow vertical scrolling when content exceeds screen height -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:fillViewport="true"
+    android:fadeScrollbars="false">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Location Settings"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_high_accuracy"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="High Accuracy Location"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_auto_save"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Auto-save Points"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Display Settings"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_show_coordinates"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Show Coordinates in List"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_show_elevation"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Show Elevation with Coordinates"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_dark_mode"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Dark Mode"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Data Management"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <Button
-        android:id="@+id/btn_export_data"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Export All Points"
-        android:layout_marginBottom="8dp" />
-
-    <Button
-        android:id="@+id/btn_import_data"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Import Points"
-        android:layout_marginBottom="8dp" />
-
-    <!-- Progress container for import -->
     <LinearLayout
-        android:id="@+id/import_progress_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:visibility="gone"
-        android:padding="8dp"
-        android:background="@android:color/background_light"
-        android:layout_marginBottom="16dp">
-
-        <ProgressBar
-            android:id="@+id/progress_import"
-            style="@android:style/Widget.ProgressBar.Horizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="100"
-            android:progress="0" />
+        android:padding="16dp">
 
         <TextView
-            android:id="@+id/text_import_progress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Import progress"
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
-            android:paddingTop="4dp"
+            android:text="Location Settings"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:paddingBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_high_accuracy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="High Accuracy Location"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Display Settings"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_show_coordinates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Show Coordinates in List"
+            android:layout_marginBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_show_elevation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Show Elevation in List"
+            android:layout_marginBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_dark_mode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dark Mode"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Data Management"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_export_coordinates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Export Coordinates"
             android:layout_marginBottom="8dp" />
 
         <Button
-            android:id="@+id/btn_cancel_import"
+            android:id="@+id/btn_import_coordinates"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Cancel Import" />
+            android:text="Import Coordinates"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Progress container for import -->
+        <LinearLayout
+            android:id="@+id/import_progress_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:padding="8dp"
+            android:background="@android:color/background_light"
+            android:layout_marginBottom="16dp">
+
+            <ProgressBar
+                android:id="@+id/progress_import"
+                style="@android:style/Widget.ProgressBar.Horizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0" />
+
+            <TextView
+                android:id="@+id/text_import_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Import progress"
+                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:paddingTop="4dp"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btn_cancel_import"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Cancel Import" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Developer"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_dev_tools"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable Developer Tools"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="About"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textColor="@android:color/darker_gray" />
+
     </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="About"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray" />
-
-</LinearLayout>
+</ScrollView>
