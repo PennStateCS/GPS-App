@@ -29,6 +29,130 @@
             android:text="High Accuracy Location"
             android:layout_marginBottom="16dp" />
 
+        <!-- New Location Source selection -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Location Source"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <RadioGroup
+            android:id="@+id/radio_location_source"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+            <RadioButton
+                android:id="@+id/radio_internal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Internal" />
+            <RadioButton
+                android:id="@+id/radio_external"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="External RS2+"
+                android:layout_marginStart="16dp" />
+        </RadioGroup>
+
+        <LinearLayout
+            android:id="@+id/group_external_config"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:padding="8dp"
+            android:background="#10111111"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Connection Type" />
+
+            <Spinner
+                android:id="@+id/spinner_conn_type"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+
+            <!-- Bluetooth config -->
+            <LinearLayout
+                android:id="@+id/group_bt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btn_pick_bt"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pick Device" />
+
+                <TextView
+                    android:id="@+id/text_bt_selected"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:text="None" />
+            </LinearLayout>
+
+            <!-- TCP config -->
+            <LinearLayout
+                android:id="@+id/group_tcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
+
+                <EditText
+                    android:id="@+id/edit_tcp_host"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Host" />
+
+                <EditText
+                    android:id="@+id/edit_tcp_port"
+                    android:layout_width="80dp"
+                    android:layout_height="wrap_content"
+                    android:hint="Port"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btn_test_nmea"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Test Connection" />
+
+                <Button
+                    android:id="@+id/btn_save_external"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Save"
+                    android:layout_marginStart="12dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/text_nmea_preview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:padding="4dp"
+                android:background="#08000000" />
+        </LinearLayout>
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

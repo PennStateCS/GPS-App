@@ -3,6 +3,8 @@ package com.example.surveyingapp.ui.settings
 // SettingsFragment handles user preferences (toggles) and coordinate import/export (JSON).
 // Uses coroutines for I/O with cancellable long-running import and progress UI.
 
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
@@ -10,21 +12,31 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.RadioGroup
+import android.widget.Spinner
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.core.content.edit
+import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.data.AppDatabase
 import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.data.CoordinateRepository
+import com.example.surveyingapp.data.settings.SettingsRepository
 import com.example.surveyingapp.databinding.FragmentSettingsBinding
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
@@ -36,6 +48,7 @@ class SettingsFragment : Fragment() {
 
     private lateinit var preferences: SharedPreferences
     private lateinit var repository: CoordinateRepository
+    private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
 
     // Active import coroutine job (for cancellation)
     private var coordinatesImportJob: Job? = null
@@ -60,6 +73,22 @@ class SettingsFragment : Fragment() {
     ) { uri ->
         if (uri != null) lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri) }
     }
+
+    // Views for new location source UI
+    private val radioGroupSource: RadioGroup by lazy { binding.radioLocationSource }
+    private val radioInternal get() = binding.radioInternal
+    private val radioExternal get() = binding.radioExternal
+    private val externalGroup get() = binding.groupExternalConfig
+    private val spinnerConnType: Spinner by lazy { binding.spinnerConnType }
+    private val btGroup get() = binding.groupBt
+    private val tcpGroup get() = binding.groupTcp
+    private val btPickBtn get() = binding.btnPickBt
+    private val btSelectedText get() = binding.textBtSelected
+    private val tcpHostEdit: EditText by lazy { binding.editTcpHost }
+    private val tcpPortEdit: EditText by lazy { binding.editTcpPort }
+    private val testBtn get() = binding.btnTestNmea
+    private val saveBtn get() = binding.btnSaveExternal
+    private val previewText get() = binding.textNmeaPreview
 
     companion object {
         const val PREFS_NAME = "SurveyingAppPrefs"
@@ -115,7 +144,134 @@ class SettingsFragment : Fragment() {
         binding.btnImportCoordinates.setOnClickListener { startImportCoordinatesFlow() }
         binding.btnCancelImport.setOnClickListener { cancelActiveImport() }
 
+        setupLocationSourceUi()
+
         return root
+    }
+
+    private fun setupLocationSourceUi() {
+        // Spinner entries
+        spinnerConnType.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, listOf("Bluetooth", "TCP"))
+        lifecycleScope.launch {
+            val source = settingsRepo.locationSource.first()
+            val connType = settingsRepo.externalConnType.first()
+            val btName = settingsRepo.externalBtName.first()
+            val btAddr = settingsRepo.externalBtAddress.first()
+            val tcpHost = settingsRepo.externalTcpHost.first()
+            val tcpPort = settingsRepo.externalTcpPort.first()
+            if (source == "external") radioExternal.isChecked else radioInternal.isChecked = true
+            updateExternalVisibility(source == "external")
+            if (connType == "tcp") spinnerConnType.setSelection(1) else spinnerConnType.setSelection(0)
+            updateConnTypeVisibility(connType)
+            if (!btName.isNullOrBlank()) btSelectedText.text = "$btName ($btAddr)" else btSelectedText.text = "None"
+            tcpHostEdit.setText(tcpHost ?: "")
+            tcpPortEdit.setText(tcpPort?.toString() ?: "")
+        }
+        radioGroupSource.setOnCheckedChangeListener { _, checkedId ->
+            val external = checkedId == radioExternal.id
+            updateExternalVisibility(external)
+            lifecycleScope.launch { settingsRepo.setLocationSource(if (external) "external" else "internal") }
+        }
+        spinnerConnType.setOnItemSelectedListener(object: android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>, view: View?, position: Int, id: Long) {
+                val ct = if (position == 1) "tcp" else "bt"
+                updateConnTypeVisibility(ct)
+                lifecycleScope.launch { settingsRepo.setExternalConnType(ct) }
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>) {}
+        })
+        btPickBtn.setOnClickListener { showBluetoothPicker() }
+        testBtn.setOnClickListener { lifecycleScope.launch { testNmeaConnection() } }
+        saveBtn.setOnClickListener { lifecycleScope.launch { saveExternalConfig() } }
+    }
+
+    private fun updateExternalVisibility(show: Boolean) {
+        externalGroup.visibility = if (show) View.VISIBLE else View.GONE
+    }
+    private fun updateConnTypeVisibility(type: String) {
+        btGroup.visibility = if (type == "bt") View.VISIBLE else View.GONE
+        tcpGroup.visibility = if (type == "tcp") View.VISIBLE else View.GONE
+    }
+
+    private fun showBluetoothPicker() {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+            Toast.makeText(requireContext(), "Bluetooth not available", Toast.LENGTH_SHORT).show(); return
+        }
+        val bonded = adapter.bondedDevices?.toList().orEmpty()
+        if (bonded.isEmpty()) {
+            Toast.makeText(requireContext(), "No paired devices", Toast.LENGTH_SHORT).show(); return
+        }
+        val names = bonded.map { d -> "${d.name} (${d.address})" }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Select RS2+ Device")
+            .setItems(names) { _, which ->
+                val dev = bonded[which]
+                btSelectedText.text = "${dev.name} (${dev.address})"
+                lifecycleScope.launch { settingsRepo.setExternalBt(dev.address, dev.name ?: "RS2+") }
+            }
+            .show()
+    }
+
+    private suspend fun saveExternalConfig() {
+        val connType = if (spinnerConnType.selectedItemPosition == 1) "tcp" else "bt"
+        if (connType == "tcp") {
+            val host = tcpHostEdit.text.toString().trim()
+            val port = tcpPortEdit.text.toString().toIntOrNull()
+            if (host.isBlank() || port == null) {
+                Toast.makeText(requireContext(), "Enter host & port", Toast.LENGTH_SHORT).show(); return
+            }
+            settingsRepo.setExternalTcp(host, port)
+        }
+        Toast.makeText(requireContext(), "External config saved", Toast.LENGTH_SHORT).show()
+    }
+
+    private suspend fun testNmeaConnection() {
+        previewText.text = "Testing..."
+        val ct = if (spinnerConnType.selectedItemPosition == 1) "tcp" else "bt"
+        val lines = mutableListOf<String>()
+        withContext(Dispatchers.IO) {
+            try {
+                if (ct == "tcp") {
+                    val host = tcpHostEdit.text.toString().trim()
+                    val port = tcpPortEdit.text.toString().toIntOrNull()
+                    if (host.isNotBlank() && port != null) {
+                        Socket().use { s ->
+                            s.connect(InetSocketAddress(host, port), 4000)
+                            BufferedReader(InputStreamReader(s.getInputStream())).use { r ->
+                                var count = 0
+                                while (count < 3) {
+                                    val l = r.readLine() ?: break
+                                    if (l.startsWith("$") ) {
+                                        lines += l
+                                        count++
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    val addr = settingsRepo.externalBtAddress.first()
+                    if (!addr.isNullOrBlank()) {
+                        val adapter = BluetoothAdapter.getDefaultAdapter()
+                        val dev: BluetoothDevice = adapter.getRemoteDevice(addr)
+                        val sock = dev.createRfcommSocketToServiceRecord(java.util.UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"))
+                        adapter.cancelDiscovery()
+                        sock.connect()
+                        sock.inputStream.bufferedReader().use { r ->
+                            var count = 0
+                            while (count < 3) {
+                                val l = r.readLine() ?: break
+                                if (l.startsWith("$")) { lines += l; count++ }
+                            }
+                        }
+                        try { sock.close() } catch (_:Exception){}
+                    }
+                }
+            } catch (e: Exception) {
+                lines += "ERROR: ${e.message}" }
+        }
+        previewText.text = if (lines.isEmpty()) "No data" else lines.joinToString("\n")
     }
 
     private fun startExportCoordinatesFlow() {
