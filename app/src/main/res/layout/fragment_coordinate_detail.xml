@@ -6,97 +6,222 @@
     android:padding="16dp"
     android:fadeScrollbars="false">
 
+    <!-- Root vertical stack (card removed; using plain layout for a flatter look) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:divider="@android:color/transparent"
+        android:showDividers="none">
 
-        <!-- Main coordinate card -->
-        <com.google.android.material.card.MaterialCardView
+        <!-- Main info block -->
+        <LinearLayout
+            android:id="@+id/coord_detail_block"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardUseCompatPadding="true"
-            app:cardElevation="2dp"
-            app:strokeWidth="1dp"
-            app:strokeColor="@color/coordinate_card_stroke_normal"
-            android:layout_marginBottom="16dp">
+            android:orientation="vertical"
+            android:padding="4dp">
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/text_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
+                android:textStyle="bold"
+                android:textSize="22sp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@android:color/black"
+                android:text="Name"
+                android:paddingBottom="4dp"/>
 
+            <com.google.android.material.divider.MaterialDivider
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Coordinates (monospace for alignment) -->
+            <TextView
+                android:id="@+id/text_coords"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:fontFamily="monospace"
+                android:textColor="@android:color/black"
+                android:text="Lat/Lon/Alt" />
+
+            <!-- Altitudes / heights -->
+            <TextView
+                android:id="@+id/text_altitudes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Altitudes" />
+
+            <!-- Accuracy (horizontal / vertical) -->
+            <TextView
+                android:id="@+id/text_accuracy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Accuracy" />
+
+            <!-- Satellites -->
+            <TextView
+                android:id="@+id/text_sats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Satellites" />
+
+            <!-- Timing -->
+            <TextView
+                android:id="@+id/text_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Timestamp" />
+
+            <!-- Provider / Source -->
+            <TextView
+                android:id="@+id/text_provider"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Provider" />
+
+            <!-- Badge row -->
+            <LinearLayout
+                android:id="@+id/row_badges"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
                 <TextView
-                    android:id="@+id/text_name"
-                    android:layout_width="match_parent"
+                    android:id="@+id/badge_rtk"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="RTK"
+                    android:textSize="12sp"
                     android:textStyle="bold"
-                    android:textSize="20sp"
-                    android:textColor="@android:color/black"
-                    android:text="Name" />
-
-                <com.google.android.material.divider.MaterialDivider
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:layout_marginBottom="12dp" />
-
-                <!-- Coordinate values -->
+                    android:textColor="@android:color/white"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/badge_bg"
+                    android:visibility="gone"/>
                 <TextView
-                    android:id="@+id/text_coords"
-                    android:layout_width="match_parent"
+                    android:id="@+id/badge_accuracy"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="@android:color/black"
-                    android:text="Lat/Lon/Alt" />
-
-                <TextView
-                    android:id="@+id/text_time"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="Timestamp" />
-
-                <TextView
-                    android:id="@+id/text_provider"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="Provider" />
-
-                <TextView
-                    android:id="@+id/text_rtk"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="RTK" />
-
-                <TextView
-                    android:id="@+id/text_hdop"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:text="HDOP" />
-
-                <TextView
-                    android:id="@+id/text_empty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
-                    android:text="Coordinate not found"
-                    android:visibility="gone"
-                    android:textStyle="italic"
-                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    android:paddingLeft="10dp"
+                    android:paddingRight="10dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:text="ACC"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white"
+                    android:background="@drawable/badge_bg"
+                    android:visibility="gone"/>
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
 
-        <!-- Future: secondary info / actions card placeholder (kept for extensibility) -->
-        <!-- <com.google.android.material.card.MaterialCardView .../> -->
+            <!-- RTK status -->
+            <TextView
+                android:id="@+id/text_rtk"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="RTK" />
+
+            <!-- HDOP / quality -->
+            <TextView
+                android:id="@+id/text_hdop"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="HDOP" />
+
+            <!-- Correction source / age -->
+            <TextView
+                android:id="@+id/text_correction"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Correction" />
+
+            <!-- UTM / projection info -->
+            <TextView
+                android:id="@+id/text_projection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Projection" />
+
+            <!-- Std devs -->
+            <TextView
+                android:id="@+id/text_stddev"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Std Dev" />
+
+            <!-- Averaging info -->
+            <TextView
+                android:id="@+id/text_averaging"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Averaging" />
+
+            <!-- Note -->
+            <TextView
+                android:id="@+id/text_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="@android:color/black"
+                android:text="Note" />
+
+            <!-- Empty / not found state -->
+            <TextView
+                android:id="@+id/text_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:text="Coordinate not found"
+                android:visibility="gone"
+                android:textStyle="italic"
+                android:textColor="@android:color/darker_gray"
+                android:textAppearance="?attr/textAppearanceBodyMedium" />
+        </LinearLayout>
+
+        <!-- Optional future: Add secondary sections here (e.g., accuracy stats, actions) -->
 
     </LinearLayout>
 </ScrollView>

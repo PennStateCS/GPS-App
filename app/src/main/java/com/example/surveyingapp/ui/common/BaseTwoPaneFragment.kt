@@ -40,13 +40,17 @@ abstract class BaseTwoPaneFragment : Fragment() {
 
         onRootCreated(root)
 
-        adapter = SettingsCategoryAdapter(provideCategories()) { cat -> showCategory(cat) }
+        val cats = provideCategories() // avoid multiple calls
+        adapter = com.example.surveyingapp.ui.settings.SettingsCategoryAdapter(cats) { cat -> showCategory(cat) }
         categoriesRecycler.layoutManager = LinearLayoutManager(requireContext())
         categoriesRecycler.adapter = adapter
 
-        val initialIdx = initialCategoryIndex().coerceIn(0, (provideCategories().size - 1).coerceAtLeast(0))
-        if (provideCategories().isNotEmpty()) {
-            showCategory(provideCategories()[initialIdx])
+        val initialIdx = initialCategoryIndex().coerceIn(0, (cats.size - 1).coerceAtLeast(0))
+        if (cats.isNotEmpty()) {
+            val initialCat = cats[initialIdx]
+            showCategory(initialCat)
+            // Sync adapter selection if initial index not default first (or even if it is for clarity)
+            adapter.setSelectedCategoryId(initialCat.id)
         }
         return root
     }

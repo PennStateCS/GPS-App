@@ -1,7 +1,6 @@
 package com.example.surveyingapp.ui.development
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
@@ -17,25 +16,20 @@ import com.google.ar.core.Config
 
 class DevelopmentFragment : BaseTwoPaneFragment() {
 
-    private lateinit var preferences: SharedPreferences
-
-    // Developer categories (trimmed to only System Info & Permissions per request)
+    // Developer categories: lightweight side list for specialized debug panes.
+    // Add/remove here to extend; IDs must remain stable for state restoration.
     private val devCategories = listOf(
         SettingsCategory(1, "System Info", R.drawable.ic_home),
         SettingsCategory(2, "Permissions", R.drawable.ic_section_location),
         SettingsCategory(3, "AR Debug", R.drawable.ic_dev_tools)
     )
 
-    override fun onRootCreated(root: View) {
-        preferences = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
-    }
-
     override fun provideCategories(): List<SettingsCategory> = devCategories
 
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? = when (category.id) {
-        1 -> setupSystemInfoContent()
-        2 -> setupPermissionsContent()
-        3 -> setupArDebugContent()
+        1 -> setupSystemInfoContent()    // App & device/runtime diagnostics
+        2 -> setupPermissionsContent()   // Manifest + grant snapshot (static read; no live observer)
+        3 -> setupArDebugContent()       // ARCore capability probe (no camera start)
         else -> null
     }
 
@@ -44,7 +38,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 16, 16, 16)
-            // Removed redundant top title (App Permissions) per request
+            // Title intentionally omitted per prior request.
             addView(createPermissionsTable())
         }
     }
@@ -53,6 +47,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val ctx = requireContext()
         val pm = ctx.packageManager
         val pkg = ctx.packageName
+        // NOTE: getPackageInfo + GET_PERMISSIONS is deprecated in API 33+ in favor of PackageManager.PackageInfoFlags; acceptable here for dev-only screen.
         return try {
             val info = pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
             val perms = info.requestedPermissions
@@ -75,7 +70,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     private fun createPermissionsTableLayout(permissions: Array<String>, pm: android.content.pm.PackageManager, packageName: String): View {
         val ctx = requireContext()
         val table = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        // Summary
+        // Summary row
         table.addView(TextView(ctx).apply {
             text = getString(R.string.dev_perm_total, permissions.size)
             textSize = 14f
@@ -83,7 +78,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
             setPadding(0, 0, 0, 16)
         })
-        // Header
+        // Header definition helper
         val header = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(12, 12, 12, 12)
@@ -101,7 +96,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         header.addView(headerCell(R.string.dev_perm_name, 1.6f))
         header.addView(headerCell(R.string.dev_perm_full_path, 2.6f))
         table.addView(header)
-        // Rows
+        // Data rows
         permissions.forEachIndexed { idx, perm ->
             val granted = pm.checkPermission(perm, packageName) == android.content.pm.PackageManager.PERMISSION_GRANTED
             val row = LinearLayout(ctx).apply {
@@ -115,7 +110,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, weight)
                 setPadding(4, 2, 4, 2)
                 if (center) gravity = android.view.Gravity.CENTER
-                setTextIsSelectable(true)
+                setTextIsSelectable(true) // Allow copy for debugging
                 color?.let { setTextColor(ContextCompat.getColor(ctx, it)) } ?: setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
                 if (bold) setTypeface(null, android.graphics.Typeface.BOLD)
             }
@@ -123,8 +118,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             row.addView(cell(perm.substringAfterLast('.'), 1.6f, 12f, false, null, true))
             row.addView(cell(perm, 2.6f, 11f, false, null, false).apply { ellipsize = android.text.TextUtils.TruncateAt.MIDDLE; maxLines = 2 })
             table.addView(row)
-            // Divider between rows (except after last row)
-            if (idx < permissions.lastIndex) {
+            if (idx < permissions.lastIndex) { // Divider between rows for readability
                 table.addView(View(ctx).apply {
                     setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_perm_row_divider))
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
@@ -139,10 +133,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val container = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 16, 16, 16)
-            // Section background optional: keep transparent to blend with right pane or uncomment:
-            // setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
+            // Optional themed background could be added here.
         }
-
         fun sectionHeader(titleRes: Int) = TextView(ctx).apply {
             text = getString(titleRes)
             textSize = 16f
@@ -150,8 +142,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
             setPadding(0, 24, 0, 12)
         }
-
-        // Collect app/package info
+        // Package/application metadata
         val pm = ctx.packageManager
         val packageName = ctx.packageName
         val pkgInfo = runCatching { pm.getPackageInfo(packageName, 0) }.getOrNull()
@@ -167,23 +158,20 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val systemApp = appInfo?.let { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 } ?: false
         val apkFile = appInfo?.sourceDir?.let { java.io.File(it) }
         val apkSize = apkFile?.length() ?: -1L
-
-        // Device info
+        // Device fingerprint subset
         val model = android.os.Build.MODEL ?: getString(R.string.dev_value_unknown)
         val manufacturer = android.os.Build.MANUFACTURER ?: getString(R.string.dev_value_unknown)
         val brand = android.os.Build.BRAND ?: getString(R.string.dev_value_unknown)
         val sdkInt = android.os.Build.VERSION.SDK_INT.toString()
         val androidVersion = android.os.Build.VERSION.RELEASE ?: getString(R.string.dev_value_unknown)
         val abis = android.os.Build.SUPPORTED_ABIS?.joinToString(", ") ?: getString(R.string.dev_value_unknown)
-
-        // Runtime / memory
+        // Runtime snapshot (heap + threads) – coarse, not for profiling accuracy
         val rt = Runtime.getRuntime()
         val heapUsed = rt.totalMemory() - rt.freeMemory()
         val heapFree = rt.freeMemory()
         val heapMax = rt.maxMemory()
         val threadCount = Thread.getAllStackTraces().keys.size
-
-        // Storage (internal)
+        // Storage basics (internal app storage)
         val filesDir = ctx.filesDir
         val stat = runCatching { android.os.StatFs(filesDir.path) }.getOrNull()
         val blkSize = stat?.blockSizeLong ?: 1L
@@ -191,8 +179,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val availBlocks = stat?.availableBlocksLong ?: 0L
         val internalTotal = blkSize * totalBlocks
         val internalFree = blkSize * availBlocks
-
-        // Process name
+        // Process naming (Android P+ helper or fallback)
         val processName = runCatching {
             if (android.os.Build.VERSION.SDK_INT >= 28) {
                 val procInfo = android.app.ActivityManager.RunningAppProcessInfo()
@@ -200,7 +187,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 procInfo.processName ?: packageName
             } else packageName
         }.getOrElse { getString(R.string.dev_value_unknown) }
-
+        // App info section
         container.addView(sectionHeader(R.string.dev_section_app_info))
         val appTable = buildInfoTable(ctx).apply {
             addRow(ctx.getString(R.string.dev_label_package_name), packageName, 0)
@@ -217,7 +204,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             addRow(ctx.getString(R.string.dev_label_data_dir), appInfo?.dataDir ?: getString(R.string.dev_value_unknown), 11)
         }
         container.addView(appTable)
-
+        // Device/runtime section
         container.addView(sectionHeader(R.string.dev_section_device_info))
         val deviceTable = buildInfoTable(ctx).apply {
             addRow(ctx.getString(R.string.dev_label_android_version), androidVersion, 0)
@@ -235,7 +222,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             addRow(ctx.getString(R.string.dev_label_internal_total), formatBytes(internalTotal), 12)
         }
         container.addView(deviceTable)
-
         return container
     }
 
@@ -247,16 +233,14 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }
         val infoTable = buildInfoTable(ctx)
         fun add(label: String, value: String, idx: Int) = infoTable.addRow(label, value, idx)
-        // We gather data on demand; also provide a refresh button
+        // Collect ARCore capability snapshot (no camera permission or session resume invoked here).
         fun gather(): List<Pair<String,String>> {
             val list = mutableListOf<Pair<String,String>>()
-            // Basic availability
             val availability = runCatching { ArCoreApk.getInstance().checkAvailability(ctx).toString() }.getOrElse { it.javaClass.simpleName }
             list += "ARCore Availability" to availability
-            // Attempt session creation & capability probing
             var session: Session? = null
             val sessionResult = runCatching {
-                session = Session(ctx)
+                session = Session(ctx) // Will fail if ARCore services missing/outdated.
                 val s = session
                 val cfg = Config(s).apply {
                     if (s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) geospatialMode = Config.GeospatialMode.ENABLED
@@ -269,55 +253,47 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 val s = session
                 val geospatialSupported = runCatching { s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED) }.getOrDefault(false)
                 val depthSupported = runCatching { s.isDepthModeSupported(Config.DepthMode.AUTOMATIC) }.getOrDefault(false)
-                // Detect Instant Placement support by attempting to configure it (older ARCore SDKs may lack direct query API)
                 val instantPlacement = runCatching {
                     val testCfg = Config(s)
                     testCfg.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
-                    s.configure(testCfg)
+                    s.configure(testCfg) // Reconfig just to probe support
                     true
                 }.getOrDefault(false)
                 list += "Geospatial Supported" to geospatialSupported.toString()
                 list += "Depth Supported" to depthSupported.toString()
                 list += "Instant Placement Supported" to instantPlacement.toString()
-                // Earth tracking state (only after resume; we don't resume to avoid camera use). Provide placeholder.
-                list += "Earth Tracking" to "(Session not resumed)"
+                list += "Earth Tracking" to "(Session not resumed)" // Not resumed: no camera usage for quick diagnostics
             }
-            // Permissions quick check
+            // Permissions snapshot (not requesting here – purely informative)
             val camGranted = ctx.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
             val locGranted = ctx.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
             list += "Camera Permission" to camGranted.toString()
             list += "Location Permission" to locGranted.toString()
-            // Device info quick
             list += "Device Model" to android.os.Build.MODEL
             list += "Android SDK" to android.os.Build.VERSION.SDK_INT.toString()
-            // Cleanup
-            runCatching { session?.close() }
+            runCatching { session?.close() } // Cleanup
             return list
         }
         fun populate() {
-            // Clear existing rows (children after initial added rows) by rebuilding table
-            infoTable.removeAllViews()
+            infoTable.removeAllViews() // Clear stale rows before repopulating
             val data = gather()
             data.forEachIndexed { idx, pair -> add(pair.first, pair.second, idx) }
         }
-        // Initial populate
-        populate()
-        // Add refresh button
+        populate() // Initial load
         val refresh = androidx.appcompat.widget.AppCompatButton(ctx).apply {
             setText(R.string.dev_refresh)
-            setOnClickListener { populate() }
+            setOnClickListener { populate() } // Manual refresh triggers capability re-probe
         }
         container.addView(refresh, 0)
         container.addView(infoTable)
         return container
     }
 
-    // Helper: build a simple table layout (LinearLayout) and extension to add rows
+    // Helper: root table container builder
     private fun buildInfoTable(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
-        // Rounded corners could be added with a shape drawable if desired
-        elevation = 1f
+        elevation = 1f // Subtle elevation for separation
     }
 
     private fun LinearLayout.addRow(label: String, value: String, index: Int) {
@@ -346,7 +322,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         row.addView(labelView)
         row.addView(valueView)
         addView(row)
-        // Divider (except last will be handled by caller if needed)
+        // Divider between rows (visual grouping)
         val divider = View(ctx).apply {
             setBackgroundColor(0x14000000)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
