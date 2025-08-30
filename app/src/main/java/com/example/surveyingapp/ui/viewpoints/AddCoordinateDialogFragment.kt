@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
-import android.location.LocationManager
 import android.os.Bundle
 import android.widget.ArrayAdapter
 import android.widget.EditText
@@ -13,13 +12,25 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
+import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.data.Coordinate
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import kotlin.coroutines.resume
 
 /**
  * Dialog Fragment for adding new coordinate points using GPS location.
@@ -71,36 +82,15 @@ class AddCoordinateDialogFragment(
         )
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
 
-        // Fetch current location (provider order depends on highAccuracy preference)
-        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-
-            val locationManager = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val primaryProvider = if (highAccuracy) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
-            val secondaryProvider = if (highAccuracy) LocationManager.NETWORK_PROVIDER else LocationManager.GPS_PROVIDER
-            try {
-                @Suppress("MissingPermission")
-                val location = locationManager.getLastKnownLocation(primaryProvider)
-                    ?: locationManager.getLastKnownLocation(secondaryProvider)
-
-                if (location != null) {
-                    // Successfully got location - store the coordinates
-                    latitude = location.latitude
-                    longitude = location.longitude
-                    altitude = location.altitude
-                    val mode = if (highAccuracy) "HIGH" else "BALANCED"
-                    locationText.text = getString(R.string.location_label, latitude, longitude, altitude) + " ($mode)"
-                } else {
-                    // No location available
-                    locationText.text = getString(R.string.location_unavailable)
-                }
-            } catch (e: SecurityException) {
-                // Permission was revoked between check and usage
-                locationText.text = getString(R.string.location_unavailable)
+        // Begin one-shot location acquisition based on settings
+        locationText.text = getString(R.string.fetching_location)
+        lifecycleScope.launch {
+            val sourceSetting = try { SurveyingApp.settingsRepo.locationSource.first() } catch (_: Exception) { "internal" }
+            if (sourceSetting == "internal") {
+                fetchInternalOneShot(locationText)
+            } else {
+                fetchExternalOneShot(locationText)
             }
-        } else {
-            // No location permissions granted
-            locationText.text = getString(R.string.location_permission_required)
         }
 
         // Build and return the AlertDialog
@@ -130,6 +120,56 @@ class AddCoordinateDialogFragment(
             .setNegativeButton("Cancel", null)
             .create()
     }
+
+    private suspend fun fetchInternalOneShot(locationText: TextView) {
+        // Require FINE permission explicitly
+        val fineGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted) {
+            locationText.text = getString(R.string.location_permission_required)
+            return
+        }
+        val fused: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(requireActivity())
+        val cts = CancellationTokenSource()
+        val priority = if (highAccuracy) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val result = withTimeoutOrNull(10_000L) {
+            @Suppress("MissingPermission")
+            fused.getCurrentLocation(priority, cts.token).awaitSafe()
+        }
+        if (result != null) {
+            latitude = result.latitude
+            longitude = result.longitude
+            altitude = result.altitude
+            val mode = if (highAccuracy) "INTERNAL-HIGH" else "INTERNAL-BALANCED"
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
+        } else {
+            locationText.text = getString(R.string.location_unavailable)
+        }
+    }
+
+    private suspend fun fetchExternalOneShot(locationText: TextView) {
+        val fix = withTimeoutOrNull(12_000L) {
+            withContext(Dispatchers.IO) {
+                try { SurveyingApp.nmeaSource.fixes().first() } catch (_: Exception) { null }
+            }
+        }
+        if (fix != null) {
+            latitude = fix.lat
+            longitude = fix.lon
+            altitude = fix.altEllipsoidalM ?: 0.0
+            val state = fix.rtkStatus?.name ?: "SINGLE"
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, state)
+        } else {
+            locationText.text = getString(R.string.location_unavailable)
+        }
+    }
+
+    // Small helper to await a Task<Location?> safely without adding full dependency
+    private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitSafe(): T? =
+        kotlinx.coroutines.suspendCancellableCoroutine<T?> { cont ->
+            addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+            addOnFailureListener { if (cont.isActive) cont.resume(null) }
+            addOnCanceledListener { if (cont.isActive) cont.resume(null) }
+        }
 
     /**
      * Custom adapter for the icon spinner that displays icons with text.

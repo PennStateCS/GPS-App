@@ -13,43 +13,17 @@
         android:id="@+id/text_source"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="SRC"
+        android:text="@string/source_internal"
         android:textAppearance="?attr/textAppearanceCaption"
         android:textColor="?attr/colorOnPrimary" />
 
     <TextView
-        android:id="@+id/text_fix_age"
+        android:id="@+id/text_status"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="16dp"
-        android:text="age"
+        android:text="Status: Idle"
         android:textAppearance="?attr/textAppearanceCaption"
         android:textColor="?attr/colorOnPrimary" />
 
-    <TextView
-        android:id="@+id/text_rtk"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:text="rtk"
-        android:textAppearance="?attr/textAppearanceCaption"
-        android:textColor="?attr/colorSecondary" />
-
-    <TextView
-        android:id="@+id/text_sats"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:text="sats"
-        android:textAppearance="?attr/textAppearanceCaption"
-        android:textColor="?attr/colorOnPrimary" />
-
-    <TextView
-        android:id="@+id/text_hdop"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:text="hdop"
-        android:textAppearance="?attr/textAppearanceCaption"
-        android:textColor="?attr/colorOnPrimary" />
 </LinearLayout>

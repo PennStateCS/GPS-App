@@ -10,4 +10,25 @@
     <!-- Added for alternating rows -->
     <color name="coordinate_row_even">#FFFFFFFF</color>
     <color name="coordinate_row_odd">#FFF5F5F5</color>
+    <color name="coordinate_card_stroke_normal">#33000000</color>
+    <color name="coordinate_card_stroke_selected">#FF6200EE</color>
+    <color name="coordinate_list_bg">#FFF4F4F6</color>
+    <color name="coordinate_divider">#33000000</color>
+    <!-- Developer panel colors -->
+    <color name="dev_panel_bg">#F5F5F5</color>
+    <color name="dev_category_selected_bg">#E0E0E0</color>
+    <color name="dev_category_selected_accent">#FF6200EE</color>
+    <color name="dev_category_ripple_mask">#33000000</color>
+    <color name="dev_info_label">#212121</color>
+    <color name="dev_info_value">#000000</color>
+    <color name="dev_info_section_bg">#FFFFFFFF</color>
+    <color name="dev_info_row_alt">#FFF7F7F7</color>
+    <!-- Permissions table colors -->
+    <color name="dev_perm_header_bg">#263238</color>
+    <color name="dev_perm_header_text">#FFFFFFFF</color>
+    <color name="dev_perm_row_even">#FFFFFFFF</color>
+    <color name="dev_perm_row_odd">#EEF3F8</color>
+    <color name="dev_perm_row_divider">#1F000000</color>
+    <color name="dev_perm_status_granted">#1B5E20</color>
+    <color name="dev_perm_status_denied">#B71C1C</color>
 </resources>

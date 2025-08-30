@@ -3,159 +3,232 @@
  *
  * This is the main screen of the app where users can:
  * - View all saved coordinate points in a list
- * - Add new coordinate points using GPS
+ * - Add new coordinate points using the selected source (Internal GPS or External RS2+)
  * - Edit existing points
  * - Delete points with undo functionality
- *
- * Key Android concepts demonstrated:
- * - Fragment lifecycle management
- * - View binding for safe view access
- * - RecyclerView for efficient list display
- * - LiveData observation for automatic UI updates
- * - SharedPreferences for user settings
  */
-// This file was renamed from ViewPointsFragment.kt
-// See CoordinatesFragment implementation above.
 
 package com.example.surveyingapp.ui.viewpoints
 
-import android.content.SharedPreferences
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.HapticFeedbackConstants
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory
+import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.data.Coordinate
-import com.example.surveyingapp.data.Point
 import com.example.surveyingapp.databinding.FragmentCoordinatesBinding
 import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.google.android.material.snackbar.Snackbar
+import com.example.surveyingapp.SurveyingApp
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import android.graphics.Rect
 
 class CoordinatesFragment : Fragment() {
-    // View binding - safer than findViewById, null when view is destroyed
+
+    // View binding (valid between onCreateView and onDestroyView)
     private var _binding: FragmentCoordinatesBinding? = null
     private val binding get() = _binding!!
 
-    // RecyclerView adapter for displaying the coordinate list
+    // RecyclerView adapter
     private lateinit var adapter: SimpleCoordinatesAdapter
 
-    // SharedPreferences for listening to user setting changes
+    // UI display preferences (show coords/elevation)
     private var prefs: SharedPreferences? = null
 
-    /**
-     * Listener that responds to changes in user preferences.
-     * When display settings change (like showing coordinates or elevation),
-     * the list automatically refreshes to reflect the new settings.
-     */
+    // ViewModel (survives configuration changes)
+    private val viewModel: CoordinatesViewModel by viewModels {
+        AndroidViewModelFactory(requireActivity().application)
+    }
+
+    // Modern permission request for fine location (internal source only)
+    private val requestFineLocation = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            showAddCoordinateDialog(viewModel)
+        } else {
+            Snackbar.make(requireView(), "Location permission denied", Snackbar.LENGTH_SHORT)
+                .setAnchorView(binding.fabAddCoordinate)
+                .show()
+        }
+    }
+
+    /** Preferences change listener to refresh list formatting */
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == SettingsFragment.PREF_SHOW_COORDINATES || key == SettingsFragment.PREF_SHOW_ELEVATION) {
-            // Check if fragment and views are still valid before updating
             if (isAdded && _binding != null && ::adapter.isInitialized) {
                 try {
-                    // Post to recycler to ensure we aren't mid-layout
-                    // This prevents crashes during RecyclerView layout operations
                     binding.pointsRecyclerView.post {
                         if (isAdded && _binding != null) {
                             try {
                                 adapter.notifyDataSetChanged()
-                                Log.d("CoordinatesFragment","Preferences changed ($key) -> list refreshed")
+                                Log.d("CoordinatesFragment", "Preferences changed ($key) -> list refreshed")
                             } catch (inner: Exception) {
-                                Log.e("CoordinatesFragment","notifyDataSetChanged failed: ${inner.message}")
+                                Log.e("CoordinatesFragment", "notifyDataSetChanged failed: ${inner.message}")
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("CoordinatesFragment","Pref listener outer failure: ${e.message}")
+                    Log.e("CoordinatesFragment", "Pref listener outer failure: ${e.message}")
                 }
             } else {
-                Log.w("CoordinatesFragment","Pref change received while fragment not fully active")
+                Log.w("CoordinatesFragment", "Pref change received while fragment not fully active")
             }
         }
     }
 
-    /**
-     * Called when the fragment's view is being created.
-     * This is where we inflate the layout and set up the UI components.
-     */
+    // --- Fragment lifecycle ---
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        // Inflate the layout using view binding
         _binding = FragmentCoordinatesBinding.inflate(inflater, container, false)
-        val root: View = binding.root
+        val root = binding.root
 
-        // Create the ViewModel that manages our data
-        // ViewModelProvider ensures the same instance survives configuration changes
-        val viewModel = ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory(requireActivity().application)).get(CoordinatesViewModel::class.java)
-
-        // Set up the RecyclerView adapter with callback functions for user actions
+        // Adapter (handles selection & detail navigation)
         adapter = SimpleCoordinatesAdapter(
-            onEdit = { coordinate -> showEditCoordinateDialog(coordinate, viewModel) },    // When user taps edit
-            onDelete = { coordinate -> confirmDelete(coordinate, viewModel) }              // When user taps delete
+            onClick = { coordinate ->
+                try {
+                    Log.d("CoordinatesFragment", "Item clicked: ${coordinate.id}")
+                    val fragmentTwoPane = root.findViewById<View?>(R.id.detail_container) != null
+                    if (fragmentTwoPane && isAdded) {
+                        currentSelectionId = coordinate.id
+                        // Temporarily remove setSelectedId call to isolate freezing
+                        // adapter.setSelectedId(coordinate.id)
+                        if (!childFragmentManager.isStateSaved) {
+                            childFragmentManager.beginTransaction()
+                                .replace(R.id.detail_container, CoordinateDetailFragment.newInstance(coordinate.id))
+                                .commitAllowingStateLoss()
+                        }
+                    } else {
+                        val host = activity
+                        if (host is CoordinatesActivity) {
+                            host.showDetail(coordinate.id)
+                        } else {
+                            val ctx = requireContext()
+                            val intent = Intent(ctx, CoordinateDetailActivity::class.java).apply {
+                                putExtra(CoordinateDetailActivity.EXTRA_ID, coordinate.id)
+                            }
+                            startActivity(intent)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("CoordinatesFragment", "Click handler error: ${e.message}")
+                }
+            }
         )
 
-        // Configure the RecyclerView
-        binding.pointsRecyclerView.layoutManager = LinearLayoutManager(requireContext())  // Vertical list layout
-        binding.pointsRecyclerView.adapter = adapter
-
-        // Observe changes to the coordinate data
-        // LiveData automatically updates the UI when database data changes
-        viewModel.allCoordinates.observe(viewLifecycleOwner) { coordinates ->
-            Log.d("CoordinatesFragment", "Loaded ${coordinates.size} coordinates: ${coordinates.joinToString { it.id }}")
-            adapter.submit(coordinates)  // Update the list display
-            // Show/hide empty state message
-            binding.emptyCoordinatesText.visibility = if (coordinates.isEmpty()) View.VISIBLE else View.GONE
+        // Recycler
+        val spanCount = resources.getInteger(R.integer.coord_span_count)
+        val recycler = binding.pointsRecyclerView
+        if (spanCount <= 1) {
+            recycler.layoutManager = LinearLayoutManager(requireContext())
+        } else {
+            recycler.layoutManager = GridLayoutManager(requireContext(), spanCount)
         }
+        recycler.adapter = adapter
+        recycler.setHasFixedSize(true)
 
-        // Set up the floating action button to add new coordinates
-        binding.fabAddCoordinate.setOnClickListener {
-            // Check for location permission before opening the add dialog
-            if (ContextCompat.checkSelfPermission(requireContext(), android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                // Request permission if not granted
-                requestPermissions(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION), 1001)
-            } else {
-                // Permission already granted, show the add dialog
-                showAddCoordinateDialog(viewModel)
+        val fragmentTwoPane = root.findViewById<View?>(R.id.detail_container) != null
+        if (!fragmentTwoPane) {
+            val horizPad = resources.getDimensionPixelSize(R.dimen.coord_horizontal_padding)
+            val itemSpace = resources.getDimensionPixelSize(R.dimen.coord_item_spacing)
+            recycler.setPadding(horizPad, recycler.paddingTop, horizPad, recycler.paddingBottom)
+            recycler.clipToPadding = false
+            if (spanCount > 1 && recycler.itemDecorationCount == 0) {
+                recycler.addItemDecoration(GridSpacingDecoration(spanCount, itemSpace))
+            }
+        } else {
+            // Two-pane: compact vertical list with thin dividers
+            if (recycler.itemDecorationCount == 0) {
+                val decor = DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL)
+                ContextCompat.getDrawable(requireContext(), R.drawable.coordinate_list_divider)?.let { decor.setDrawable(it) }
+                recycler.addItemDecoration(decor)
             }
         }
 
-        // Set up SharedPreferences for listening to setting changes
+        // Observe DB
+        viewModel.allCoordinates.observe(viewLifecycleOwner) { coordinates ->
+            Log.d(
+                "CoordinatesFragment",
+                "Loaded ${coordinates.size} coordinates: ${coordinates.joinToString { it.id }}"
+            )
+            adapter.submit(coordinates)
+            binding.emptyCoordinatesText.visibility =
+                if (coordinates.isEmpty()) View.VISIBLE else View.GONE
+
+            // Completely disable two-pane auto-selection logic for now to prevent freezing
+        }
+
+        // FAB: add new coordinate (one-shot capture from selected source)
+        binding.fabAddCoordinate.setOnClickListener {
+            viewLifecycleOwner.lifecycleScope.launch {
+                val source = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
+                    .getOrDefault("internal")
+                val needsFine = source.equals("internal", ignoreCase = true)
+                if (needsFine) {
+                    val granted = ContextCompat.checkSelfPermission(
+                        requireContext(),
+                        Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (granted) {
+                        showAddCoordinateDialog(viewModel)
+                    } else {
+                        requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
+                } else {
+                    // External source (RS2+) selected: no FINE permission needed here.
+                    showAddCoordinateDialog(viewModel)
+                }
+            }
+        }
+
+        // Preferences for UI display toggles
         prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
 
         return root
     }
 
-    /**
-     * Shows the dialog for adding a new coordinate point.
-     * Uses the device's GPS to get the current location.
-     */
+    // --- Dialogs / Actions ---
+
+    /** Show dialog to add a coordinate (captures one fix and saves on Save) */
     private fun showAddCoordinateDialog(viewModel: CoordinatesViewModel) {
         try {
             val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
             val dialog = AddCoordinateDialogFragment(highAcc) { coordinate ->
                 viewModel.addCoordinate(coordinate)
-                // Provide haptic feedback to confirm the action
+                // haptic confirm
                 _binding?.root?.post {
                     _binding?.root?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
                 }
             }
             dialog.show(parentFragmentManager, "AddCoordinateDialog")
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            // no-op
+        }
     }
 
-    /**
-     * Shows the dialog for editing an existing coordinate point.
-     */
+    /** Show dialog to edit an existing coordinate */
     private fun showEditCoordinateDialog(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
         val dialog = EditCoordinateDialogFragment(coordinate) { updated ->
             viewModel.updateCoordinate(updated)
@@ -163,66 +236,76 @@ class CoordinatesFragment : Fragment() {
         dialog.show(parentFragmentManager, "EditCoordinateDialog")
     }
 
-    /**
-     * Shows a confirmation dialog before deleting a coordinate.
-     * Includes undo functionality using a Snackbar.
-     */
+    /** Confirm deletion with undo via Snackbar */
     private fun confirmDelete(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
         AlertDialog.Builder(requireContext())
             .setTitle("Delete Coordinate")
             .setMessage("Delete \"${coordinate.name}\"?")
             .setPositiveButton("Delete") { _, _ ->
-                // Perform delete
                 viewModel.deleteCoordinate(coordinate.id)
-                // Offer undo via Snackbar - good UX practice
                 Snackbar.make(binding.root, "Deleted ${coordinate.name}", Snackbar.LENGTH_LONG)
-                    .setAction("UNDO") {
-                        // Reinsert the same coordinate (id preserved so it is restored)
-                        viewModel.addCoordinate(coordinate)
-                    }
+                    .setAnchorView(binding.fabAddCoordinate)
+                    .setAction("UNDO") { viewModel.addCoordinate(coordinate) }
                     .show()
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /**
-     * Handles the result of permission requests.
-     * Called when user responds to permission dialog.
-     */
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 1001 && grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            val viewModel = ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory(requireActivity().application)).get(CoordinatesViewModel::class.java)
-            showAddCoordinateDialog(viewModel)
-        }
-    }
+    // --- More lifecycle ---
 
-    // Fragment lifecycle methods
     override fun onStart() {
         super.onStart()
-        // Register preference listener when fragment becomes visible
         prefs?.registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     override fun onStop() {
-        // Unregister preference listener when fragment is no longer visible
         prefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         super.onStop()
     }
 
     override fun onResume() {
         super.onResume()
-        // Refresh the list when returning to this fragment
-        if (::adapter.isInitialized) {
-            adapter.notifyDataSetChanged()
-        }
+        if (::adapter.isInitialized) adapter.notifyDataSetChanged()
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Clean up references to avoid memory leaks
         prefs = null
         _binding = null
     }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        currentSelectionId = savedInstanceState?.getString("coord_selected_id")
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        currentSelectionId?.let { outState.putString("coord_selected_id", it) }
+    }
+
+    // Grid spacing decoration
+    private class GridSpacingDecoration(
+        private val spanCount: Int,
+        private val spacing: Int
+    ) : RecyclerView.ItemDecoration() {
+        override fun getItemOffsets(outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State) {
+            val position = parent.getChildAdapterPosition(view)
+            if (position == RecyclerView.NO_POSITION) return
+            val column = position % spanCount
+            val total = spacing * (spanCount - 1)
+            val per = if (spanCount > 1) total.toFloat() / spanCount else 0f
+            // Distribute left/right spacing so total between items remains uniform
+            val left = (column * (per / (spanCount - 1))).toInt()
+            val right = (per - left).toInt()
+            outRect.left = if (column == 0) 0 else left
+            outRect.right = if (column == spanCount - 1) 0 else right
+            outRect.top = spacing / 2
+            outRect.bottom = spacing / 2
+        }
+    }
+
+    // Current selection ID (for detail view navigation)
+    private var currentSelectionId: String? = null
 }
