@@ -21,7 +21,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.AppDatabase
 import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.data.CoordinateRepository
-import com.example.surveyingapp.data.Point
 import kotlinx.coroutines.launch
 
 class CoordinatesViewModel(application: Application) : AndroidViewModel(application) {
@@ -29,9 +28,6 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
 
     // LiveData automatically notifies observers (like UI) when data changes
     val allCoordinates: LiveData<List<Coordinate>>
-
-    // Backward compatibility: legacy observers
-    val allPoints: LiveData<List<Point>> get() = allCoordinates
 
     init {
         // Initialize the database and repository
@@ -101,10 +97,5 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
         repository.insertAll(coords)
     }
 
-    // Backward compatible wrappers for legacy code that still uses "Point" terminology
-    fun addPoint(point: Point) = addCoordinate(point)
-    fun updatePoint(point: Point) = updateCoordinate(point)
-    fun deletePoint(id: String) = deleteCoordinate(id)
-    fun deleteAllPoints() = deleteAllCoordinates()
-    fun insertFakePoints() = insertFakeCoordinates()
+    suspend fun getById(id: String): Coordinate? = repository.getById(id)
 }

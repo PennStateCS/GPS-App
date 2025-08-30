@@ -27,6 +27,22 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="High Accuracy Location"
+            android:layout_marginBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_allow_bg_logging"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Allow background logging"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:id="@+id/text_allow_bg_logging_desc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="When enabled the app keeps recording location (foreground notification) after you leave the app. Turn off to stop logging when in background to save battery."
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="16dp" />
 
         <!-- New Location Source selection -->
@@ -49,10 +65,10 @@
                 android:layout_height="wrap_content"
                 android:text="Internal" />
             <RadioButton
-                android:id="@+id/radio_external"
+                android:id="@+id/radio_es2_tcp"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="External RS2+"
+                android:text="ES2+ TCP"
                 android:layout_marginStart="16dp" />
         </RadioGroup>
 
@@ -76,28 +92,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp" />
-
-            <!-- Bluetooth config -->
-            <LinearLayout
-                android:id="@+id/group_bt"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
-
-                <Button
-                    android:id="@+id/btn_pick_bt"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Pick Device" />
-
-                <TextView
-                    android:id="@+id/text_bt_selected"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:text="None" />
-            </LinearLayout>
 
             <!-- TCP config -->
             <LinearLayout
@@ -177,13 +171,6 @@
             android:layout_height="wrap_content"
             android:text="Show Elevation in List"
             android:layout_marginBottom="8dp" />
-
-        <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/switch_dark_mode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Dark Mode"
-            android:layout_marginBottom="16dp" />
 
         <TextView
             android:layout_width="match_parent"

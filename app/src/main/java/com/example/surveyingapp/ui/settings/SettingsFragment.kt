@@ -1,35 +1,26 @@
 package com.example.surveyingapp.ui.settings
 
-// SettingsFragment handles user preferences (toggles) and coordinate import/export (JSON).
-// Uses coroutines for I/O with cancellable long-running import and progress UI.
-
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.content.Context
-import android.content.SharedPreferences
+import android.content.*
 import android.net.Uri
-import android.os.Bundle
+import android.net.wifi.WifiManager
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
-import android.widget.ArrayAdapter
-import android.widget.EditText
-import android.widget.RadioGroup
-import android.widget.Spinner
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import androidx.core.content.edit
+import androidx.lifecycle.lifecycleScope
+import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.data.AppDatabase
 import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.data.CoordinateRepository
 import com.example.surveyingapp.data.settings.SettingsRepository
-import com.example.surveyingapp.databinding.FragmentSettingsBinding
+import com.example.surveyingapp.service.LocationService
+import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
@@ -39,280 +30,439 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.util.UUID
-import kotlin.coroutines.coroutineContext
+import javax.jmdns.JmDNS
 
-class SettingsFragment : Fragment() {
 
-    private var _binding: FragmentSettingsBinding? = null
-    private val binding get() = _binding!!
+class SettingsFragment : BaseTwoPaneFragment() {
 
+    // ─────────────────────────── Preferences / Data ───────────────────────────
     private lateinit var preferences: SharedPreferences
     private lateinit var repository: CoordinateRepository
     private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
 
-    // Active import coroutine job (for cancellation)
+    // Selected device for TCP connection (class scope)
+    private var selectedDevice: Pair<String, Int>? = null
+    private var selectedDeviceLabel: String? = null
+    private var selectedDeviceName: String? = null
+
+    private fun updateDeviceBox() {
+        val root = currentContentView ?: return
+        val box = root.findViewById<LinearLayout>(R.id.container_selected_device)
+        val nameTv = root.findViewById<TextView>(R.id.text_device_name)
+        val optionsLayout = root.findViewById<LinearLayout>(R.id.layout_rs2_options)
+        val radioGroup = root.findViewById<RadioGroup>(R.id.radio_location_source)
+        val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
+        val dev = selectedDevice
+        if (!externalActive) {
+            // Internal source: hide both
+            box?.visibility = View.GONE
+            optionsLayout?.visibility = View.GONE
+            return
+        }
+        if (dev == null) {
+            // No device selected yet: show options, hide box
+            box?.visibility = View.GONE
+            optionsLayout?.visibility = View.VISIBLE
+            return
+        }
+        // Device present: show box, hide options
+        optionsLayout?.visibility = View.GONE
+        val label = selectedDeviceLabel
+        val parsedName = selectedDeviceName ?: label?.substringBefore("(")?.trim()?.takeIf { it.isNotBlank() }
+        val host = dev.first
+        nameTv?.text = (parsedName ?: host ?: "Device")
+        box?.visibility = View.VISIBLE
+    }
+
+    // Sidebar categories
+    private val categories = listOf(
+        SettingsCategory(1, "Location", R.drawable.ic_section_location),
+        SettingsCategory(2, "Display", R.drawable.ic_menu_gallery),
+        SettingsCategory(3, "Data", R.drawable.ic_section_data),
+        SettingsCategory(4, "Developer Tools", R.drawable.ic_dev_tools),
+        SettingsCategory(5, "About", R.drawable.ic_home)
+    )
+
+    // Import/Export jobs
     private var coordinatesImportJob: Job? = null
-
-    // Pending file chosen before merge/replace decision
     private var pendingImportUri: Uri? = null
-
-    // Import progress counters
     private var importTotal = 0
     private var importProcessed = 0
 
-    // Export launcher (create JSON document)
     private val exportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) lifecycleScope.launch { exportCoordinates(uri) }
-    }
+    ) { uri -> if (uri != null) lifecycleScope.launch { exportCoordinates(uri) } }
 
-    // Import launcher (open existing JSON file)
     private val importLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri) }
-    }
+    ) { uri -> if (uri != null) lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri) } }
 
-    // Views for new location source UI
-    private val radioGroupSource: RadioGroup by lazy { binding.radioLocationSource }
-    private val radioInternal get() = binding.radioInternal
-    private val radioExternal get() = binding.radioExternal
-    private val externalGroup get() = binding.groupExternalConfig
-    private val spinnerConnType: Spinner by lazy { binding.spinnerConnType }
-    private val btGroup get() = binding.groupBt
-    private val tcpGroup get() = binding.groupTcp
-    private val btPickBtn get() = binding.btnPickBt
-    private val btSelectedText get() = binding.textBtSelected
-    private val tcpHostEdit: EditText by lazy { binding.editTcpHost }
-    private val tcpPortEdit: EditText by lazy { binding.editTcpPort }
-    private val testBtn get() = binding.btnTestNmea
-    private val saveBtn get() = binding.btnSaveExternal
-    private val previewText get() = binding.textNmeaPreview
+    // ───────────────────────────── Bluetooth state ─────────────────────────────
+    private var tcpDiscoveryJob: Job? = null
+    private var jmdns: JmDNS? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private var deviceStatusJob: Job? = null // added for RS2+ live status collection
 
     companion object {
         const val PREFS_NAME = "SurveyingAppPrefs"
         const val PREF_SHOW_COORDINATES = "show_coordinates"
         const val PREF_SHOW_ELEVATION = "show_elevation"
         const val PREF_HIGH_ACCURACY = "high_accuracy"
-        const val PREF_DARK_MODE = "dark_mode"
         const val PREF_DEV_TOOLS = "dev_tools"
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?
-    ): View {
-        _binding = FragmentSettingsBinding.inflate(inflater, container, false)
-        val root = binding.root
-
+    // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
+    override fun onRootCreated(root: View) {
         preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         repository = CoordinateRepository(AppDatabase.getDatabase(requireContext()).coordinateDao())
-
-        // Initialize switches
-        binding.switchHighAccuracy.isChecked = preferences.getBoolean(PREF_HIGH_ACCURACY, true)
-        binding.switchShowCoordinates.isChecked = preferences.getBoolean(PREF_SHOW_COORDINATES, false)
-        binding.switchShowElevation.isChecked = preferences.getBoolean(PREF_SHOW_ELEVATION, false)
-        binding.switchDarkMode.isChecked = preferences.getBoolean(PREF_DARK_MODE, false)
-        binding.switchDevTools.isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
-
-        // Listeners
-        binding.switchHighAccuracy.setOnCheckedChangeListener { _, v ->
-            preferences.edit { putBoolean(PREF_HIGH_ACCURACY, v) }
-            Toast.makeText(requireContext(), "High accuracy: $v", Toast.LENGTH_SHORT).show()
-        }
-        binding.switchShowCoordinates.setOnCheckedChangeListener { _, v ->
-            preferences.edit { putBoolean(PREF_SHOW_COORDINATES, v) }
-            Toast.makeText(requireContext(), "Show coordinates: $v", Toast.LENGTH_SHORT).show()
-        }
-        binding.switchShowElevation.setOnCheckedChangeListener { _, v ->
-            preferences.edit { putBoolean(PREF_SHOW_ELEVATION, v) }
-            Toast.makeText(requireContext(), "Show elevation: $v", Toast.LENGTH_SHORT).show()
-        }
-        binding.switchDarkMode.setOnCheckedChangeListener { _, v ->
-            preferences.edit { putBoolean(PREF_DARK_MODE, v) }
-            Toast.makeText(requireContext(), "Dark mode: $v", Toast.LENGTH_SHORT).show()
-        }
-        binding.switchDevTools.setOnCheckedChangeListener { _, v ->
-            preferences.edit { putBoolean(PREF_DEV_TOOLS, v) }
-            Toast.makeText(requireContext(), "Developer tools: $v", Toast.LENGTH_SHORT).show()
-        }
-
-        // Buttons
-        binding.btnExportCoordinates.setOnClickListener { startExportCoordinatesFlow() }
-        binding.btnImportCoordinates.setOnClickListener { startImportCoordinatesFlow() }
-        binding.btnCancelImport.setOnClickListener { cancelActiveImport() }
-
-        setupLocationSourceUi()
-
-        return root
     }
 
-    private fun setupLocationSourceUi() {
-        // Spinner entries
-        spinnerConnType.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, listOf("Bluetooth", "TCP"))
+    override fun provideCategories(): List<SettingsCategory> = categories
+
+    override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
+        when (category.id) {
+            1 -> setupLocationContent(inflater)
+            2 -> setupDisplayContent(inflater)
+            3 -> setupDataContent(inflater)
+            4 -> setupDeveloperContent(inflater)
+            5 -> setupAboutContent(inflater)
+            else -> null
+        }
+
+    // ───────────────────────────── Category builders ───────────────────────────
+    private fun setupLocationContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
+        setupLocationSourceUi(view)
+        return view
+    }
+
+    private fun setupDisplayContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_display, contentContainer, false)
+        preferences.edit {
+            putBoolean(PREF_SHOW_COORDINATES, true)
+            putBoolean(PREF_SHOW_ELEVATION, true)
+        }
+        return view
+    }
+
+    private fun setupDataContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_data, contentContainer, false)
+        view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { startExportCoordinatesFlow() }
+        view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { startImportCoordinatesFlow() }
+        view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { cancelActiveImport() }
+        return view
+    }
+
+    private fun setupDeveloperContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
+        view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_dev_tools)?.apply {
+            isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
+            setOnCheckedChangeListener { _, v ->
+                preferences.edit { putBoolean(PREF_DEV_TOOLS, v) }
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.dev_toggle_developer_tools_toast),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        return view
+    }
+
+    private fun setupAboutContent(inflater: LayoutInflater): View =
+        inflater.inflate(R.layout.content_settings_about, contentContainer, false)
+
+    // ───────────────────────────── Location Source UI ─────────────────────────
+    private fun setupLocationSourceUi(view: View) {
+        val radioGroup = view.findViewById<RadioGroup>(R.id.radio_location_source)
+        val internalGpsGroup = view.findViewById<LinearLayout>(R.id.group_internal_gps)
+        val switchHighAccuracy = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_high_accuracy)
+        val rs2OptionsLayout = view.findViewById<LinearLayout>(R.id.layout_rs2_options)
+        val btnManualEntry = view.findViewById<Button>(R.id.btn_manual_entry)
+        val btnScanDevice = view.findViewById<Button>(R.id.btn_scan_device)
+        val deviceBox = view.findViewById<LinearLayout>(R.id.container_selected_device)
+        val btnDisconnect = view.findViewById<Button>(R.id.btn_disconnect_device)
+        val textDeviceStatus = view.findViewById<TextView>(R.id.text_device_status)
+
+        btnDisconnect?.setOnClickListener {
+            lifecycleScope.launch {
+                settingsRepo.clearExternalTcp()
+                selectedDevice = null
+                selectedDeviceLabel = null
+                selectedDeviceName = null
+                updateDeviceBox() // will show options layout again
+            }
+        }
+
+        // Observe stored TCP host/port to populate selected device label (covers app restart)
+        viewLifecycleOwner.lifecycleScope.launch {
+            settingsRepo.externalTcpHost.combine(settingsRepo.externalTcpPort) { h, p -> h to p }.collect { (host, port) ->
+                if (host != null && port != null) {
+                    val changed = selectedDevice?.first != host || selectedDevice?.second != port
+                    if (changed || selectedDevice == null) {
+                        selectedDevice = host to port
+                        selectedDeviceLabel = selectedDeviceLabel ?: "$host:$port"
+                        selectedDeviceName = selectedDeviceName ?: host
+                        updateDeviceBox()
+                    }
+                } else {
+                    // Cleared
+                    selectedDevice = null
+                    updateDeviceBox()
+                }
+            }
+        }
+
+        deviceStatusJob?.cancel()
+        deviceStatusJob = viewLifecycleOwner.lifecycleScope.launch {
+            var lastFix: com.example.surveyingapp.data.location.Fix? = null
+            var lastStatus: com.example.surveyingapp.data.location.LocationStatus = com.example.surveyingapp.data.location.LocationStatus.Idle
+            fun applyColor(tv: TextView?, fix: com.example.surveyingapp.data.location.Fix?, external: Boolean) {
+                val colorRes = if (!external) android.R.color.holo_blue_dark else when (fix?.rtkStatus) {
+                    com.example.surveyingapp.data.location.RtkStatus.FIX -> android.R.color.holo_green_dark
+                    com.example.surveyingapp.data.location.RtkStatus.FLOAT -> android.R.color.holo_orange_dark
+                    com.example.surveyingapp.data.location.RtkStatus.DGPS -> android.R.color.holo_blue_dark
+                    com.example.surveyingapp.data.location.RtkStatus.SINGLE -> android.R.color.darker_gray
+                    com.example.surveyingapp.data.location.RtkStatus.INVALID, null -> android.R.color.holo_red_dark
+                }
+                tv?.setTextColor(requireContext().getColor(colorRes))
+            }
+            fun update() {
+                val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
+                val devLabel = if (externalActive) (selectedDeviceLabel ?: selectedDevice?.let { "${it.first}:${it.second}" }) else null
+                textDeviceStatus?.text = buildUnifiedStatusLine(
+                    lastStatus,
+                    lastFix,
+                    externalActive,
+                    devLabel
+                )
+                applyColor(textDeviceStatus, lastFix, externalActive)
+            }
+            val mgr = SurveyingApp.locationManager
+            launch { mgr.fixes.collect { f -> lastFix = f; update(); updateDeviceBox() } }
+            launch { mgr.status.collectLatest { s -> lastStatus = s; update() } }
+        }
+        textDeviceStatus?.text = ""
+
+        switchHighAccuracy?.apply {
+            isChecked = preferences.getBoolean(PREF_HIGH_ACCURACY, true)
+            setOnCheckedChangeListener { _, v ->
+                preferences.edit { putBoolean(PREF_HIGH_ACCURACY, v) }
+                Toast.makeText(requireContext(), "High accuracy: $v", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        var initializing = true
         lifecycleScope.launch {
             val source = settingsRepo.locationSource.first()
-            val connType = settingsRepo.externalConnType.first()
-            val btName = settingsRepo.externalBtName.first()
-            val btAddr = settingsRepo.externalBtAddress.first()
-            val tcpHost = settingsRepo.externalTcpHost.first()
-            val tcpPort = settingsRepo.externalTcpPort.first()
-            if (source == "external") radioExternal.isChecked else radioInternal.isChecked = true
-            updateExternalVisibility(source == "external")
-            if (connType == "tcp") spinnerConnType.setSelection(1) else spinnerConnType.setSelection(0)
-            updateConnTypeVisibility(connType)
-            if (!btName.isNullOrBlank()) btSelectedText.text = "$btName ($btAddr)" else btSelectedText.text = "None"
-            tcpHostEdit.setText(tcpHost ?: "")
-            tcpPortEdit.setText(tcpPort?.toString() ?: "")
+            val sel = if (source == "external") R.id.radio_es2_tcp else R.id.radio_internal
+            radioGroup?.check(sel)
+            updateLocationSourceVisibility(source, internalGpsGroup)
+            rs2OptionsLayout?.visibility = if (sel == R.id.radio_es2_tcp) View.VISIBLE else View.GONE
+            deviceBox?.visibility = if (sel == R.id.radio_es2_tcp && selectedDevice != null) View.VISIBLE else View.GONE
+            initializing = false
         }
-        radioGroupSource.setOnCheckedChangeListener { _, checkedId ->
-            val external = checkedId == radioExternal.id
-            updateExternalVisibility(external)
-            lifecycleScope.launch { settingsRepo.setLocationSource(if (external) "external" else "internal") }
-        }
-        spinnerConnType.setOnItemSelectedListener(object: android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>, view: View?, position: Int, id: Long) {
-                val ct = if (position == 1) "tcp" else "bt"
-                updateConnTypeVisibility(ct)
-                lifecycleScope.launch { settingsRepo.setExternalConnType(ct) }
+
+        radioGroup?.setOnCheckedChangeListener { _, checkedId ->
+            if (initializing) return@setOnCheckedChangeListener
+            when (checkedId) {
+                R.id.radio_internal -> {
+                    updateLocationSourceVisibility("internal", internalGpsGroup)
+                    rs2OptionsLayout?.visibility = View.GONE
+                    selectedDevice = null // ignore any previously selected external while switching
+                    updateDeviceBox()
+                    lifecycleScope.launch { settingsRepo.setLocationSource("internal") }
+                    if (!LocationService.isRunning) LocationService.start(requireContext())
+                }
+                R.id.radio_es2_tcp -> {
+                    updateLocationSourceVisibility("external", internalGpsGroup)
+                    // Show either the device box (if already selected) or options
+                    updateDeviceBox()
+                    lifecycleScope.launch {
+                        settingsRepo.setLocationSource("external")
+                        settingsRepo.setExternalConnType("tcp")
+                    }
+                    if (!LocationService.isRunning) LocationService.start(requireContext())
+                }
             }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>) {}
-        })
-        btPickBtn.setOnClickListener { showBluetoothPicker() }
-        testBtn.setOnClickListener { lifecycleScope.launch { testNmeaConnection() } }
-        saveBtn.setOnClickListener { lifecycleScope.launch { saveExternalConfig() } }
+        }
+
+        btnManualEntry?.setOnClickListener { showManualEntryDialog() }
+        btnScanDevice?.setOnClickListener { showScanDeviceDialog() }
     }
 
-    private fun updateExternalVisibility(show: Boolean) {
-        externalGroup.visibility = if (show) View.VISIBLE else View.GONE
-    }
-    private fun updateConnTypeVisibility(type: String) {
-        btGroup.visibility = if (type == "bt") View.VISIBLE else View.GONE
-        tcpGroup.visibility = if (type == "tcp") View.VISIBLE else View.GONE
-    }
-
-    private fun showBluetoothPicker() {
-        val adapter = BluetoothAdapter.getDefaultAdapter()
-        if (adapter == null) {
-            Toast.makeText(requireContext(), "Bluetooth not available", Toast.LENGTH_SHORT).show(); return
+    private fun showManualEntryDialog() {
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 16, 32, 0)
         }
-        val bonded = adapter.bondedDevices?.toList().orEmpty()
-        if (bonded.isEmpty()) {
-            Toast.makeText(requireContext(), "No paired devices", Toast.LENGTH_SHORT).show(); return
+        val hostEdit = EditText(requireContext()).apply { hint = "IP Address or Hostname" }
+        val portEdit = EditText(requireContext()).apply {
+            hint = "Port"; inputType = android.text.InputType.TYPE_CLASS_NUMBER; setText(R.string.default_port)
         }
-        val names = bonded.map { d -> "${d.name} (${d.address})" }.toTypedArray()
+        container.addView(hostEdit); container.addView(portEdit)
         AlertDialog.Builder(requireContext())
-            .setTitle("Select RS2+ Device")
-            .setItems(names) { _, which ->
-                val dev = bonded[which]
-                btSelectedText.text = "${dev.name} (${dev.address})"
-                lifecycleScope.launch { settingsRepo.setExternalBt(dev.address, dev.name ?: "RS2+") }
+            .setTitle("Manual Entry")
+            .setView(container)
+            .setPositiveButton("Connect") { _, _ ->
+                val host = hostEdit.text.toString().trim()
+                val port = portEdit.text.toString().trim().toIntOrNull() ?: 9001
+                selectedDevice = host to port
+                selectedDeviceLabel = "$host:$port"
+                selectedDeviceName = host
+                updateDeviceBox()
+                lifecycleScope.launch { connectViaTcpFlow(host, port) }
             }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private suspend fun saveExternalConfig() {
-        val connType = if (spinnerConnType.selectedItemPosition == 1) "tcp" else "bt"
-        if (connType == "tcp") {
-            val host = tcpHostEdit.text.toString().trim()
-            val port = tcpPortEdit.text.toString().toIntOrNull()
-            if (host.isBlank() || port == null) {
-                Toast.makeText(requireContext(), "Enter host & port", Toast.LENGTH_SHORT).show(); return
-            }
-            settingsRepo.setExternalTcp(host, port)
-        }
-        Toast.makeText(requireContext(), "External config saved", Toast.LENGTH_SHORT).show()
-    }
-
-    private suspend fun testNmeaConnection() {
-        previewText.text = "Testing..."
-        val ct = if (spinnerConnType.selectedItemPosition == 1) "tcp" else "bt"
-        val lines = mutableListOf<String>()
-        withContext(Dispatchers.IO) {
-            try {
-                if (ct == "tcp") {
-                    val host = tcpHostEdit.text.toString().trim()
-                    val port = tcpPortEdit.text.toString().toIntOrNull()
-                    if (host.isNotBlank() && port != null) {
-                        Socket().use { s ->
-                            s.connect(InetSocketAddress(host, port), 4000)
-                            BufferedReader(InputStreamReader(s.getInputStream())).use { r ->
-                                var count = 0
-                                while (count < 3) {
-                                    val l = r.readLine() ?: break
-                                    if (l.startsWith("$") ) {
-                                        lines += l
-                                        count++
-                                    }
-                                }
-                            }
+    private fun showScanDeviceDialog() {
+        val ctx = requireContext()
+        val dialogView = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(32,16,32,0) }
+        val progressBar = ProgressBar(ctx).apply { isIndeterminate = true }
+        val statusText = TextView(ctx).apply { text = ctx.getString(R.string.scan_scanning_rs2); setPadding(0,12,0,12); textSize = 14f }
+        val spinner = Spinner(ctx).apply { visibility = View.GONE }
+        dialogView.addView(progressBar); dialogView.addView(statusText); dialogView.addView(spinner)
+        val foundLabels = mutableListOf<String>()
+        val deviceMap = LinkedHashMap<String, Pair<String, Int>>()
+        val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, foundLabels)
+        spinner.adapter = adapter
+        var discoveryJob: Job? = null
+        fun startDiscovery() {
+            discoveryJob?.cancel(); foundLabels.clear(); deviceMap.clear(); adapter.notifyDataSetChanged()
+            progressBar.visibility = View.VISIBLE; spinner.visibility = View.GONE
+            statusText.text = ctx.getString(R.string.scan_scanning_rs2)
+            discoveryJob = viewLifecycleOwner.lifecycleScope.launch {
+                withTimeoutOrNull(10000L) {
+                    com.example.surveyingapp.util.ReachDiscoveryHelper.discoverReachDevices(ctx).collect { device ->
+                        if (!device.port9001Open) return@collect
+                        val label = (device.hostname ?: "RS2+") + " (${device.ip})"
+                        if (deviceMap.containsKey(label)) return@collect
+                        deviceMap[label] = device.ip to 9001
+                        foundLabels += label; adapter.notifyDataSetChanged()
+                        if (spinner.visibility != View.VISIBLE) {
+                            spinner.visibility = View.VISIBLE; progressBar.visibility = View.GONE
+                            statusText.text = ctx.getString(R.string.scan_select_device)
                         }
-                    }
-                } else {
-                    val addr = settingsRepo.externalBtAddress.first()
-                    if (!addr.isNullOrBlank()) {
-                        val adapter = BluetoothAdapter.getDefaultAdapter()
-                        val dev: BluetoothDevice = adapter.getRemoteDevice(addr)
-                        val sock = dev.createRfcommSocketToServiceRecord(java.util.UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"))
-                        adapter.cancelDiscovery()
-                        sock.connect()
-                        sock.inputStream.bufferedReader().use { r ->
-                            var count = 0
-                            while (count < 3) {
-                                val l = r.readLine() ?: break
-                                if (l.startsWith("$")) { lines += l; count++ }
-                            }
-                        }
-                        try { sock.close() } catch (_:Exception){}
                     }
                 }
-            } catch (e: Exception) {
-                lines += "ERROR: ${e.message}" }
+                if (isActive) {
+                    if (deviceMap.isEmpty()) { progressBar.visibility = View.GONE; statusText.text = ctx.getString(R.string.scan_none_found) }
+                    else if (statusText.text.toString() == ctx.getString(R.string.scan_scanning_rs2)) statusText.text = ctx.getString(R.string.scan_select_device)
+                }
+            }
         }
-        previewText.text = if (lines.isEmpty()) "No data" else lines.joinToString("\n")
+        val alertDialog = AlertDialog.Builder(ctx)
+            .setTitle("Scan for RS2+ Devices")
+            .setView(dialogView)
+            .setPositiveButton("Connect", null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton("Rescan") { _, _ -> }
+            .create()
+        alertDialog.setOnShowListener {
+            alertDialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { startDiscovery() }
+            alertDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val selected = spinner.selectedItem as? String ?: return@setOnClickListener
+                val (ip, port) = deviceMap[selected] ?: return@setOnClickListener
+                selectedDevice = ip to port
+                selectedDeviceLabel = selected
+                selectedDeviceName = selected.substringBefore("(").trim()
+                updateDeviceBox()
+                alertDialog.dismiss()
+                viewLifecycleOwner.lifecycleScope.launch { connectViaTcpFlow(ip, port) }
+            }
+            startDiscovery()
+        }
+        alertDialog.setOnDismissListener { discoveryJob?.cancel() }
+        alertDialog.show()
     }
 
+    // ───────────────────────────── Source Visibility ───────────────────────────
+    private fun updateLocationSourceVisibility(selected: String, internal: LinearLayout?) {
+        internal?.visibility = if (selected == "internal") View.VISIBLE else View.GONE
+    }
+
+    // ─────────────────────────── TCP connect + read ────────────────────────────
+    private suspend fun connectAndReadTcpNmea(host: String, port: Int): Boolean = withContext(Dispatchers.IO) {
+        var socket: Socket? = null
+        var reader: BufferedReader? = null
+        var gotData = false
+        try {
+            socket = Socket()
+            runCatching { socket.connect(InetSocketAddress(host, port), 4000) }.onFailure { return@withContext false }
+            runCatching { socket.soTimeout = 3000 }
+            reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val start = System.currentTimeMillis()
+            while (System.currentTimeMillis() - start < 5000L) {
+                val line = withTimeoutOrNull(1000L) { runCatching { reader.readLine() }.getOrNull() }
+                if (line == null) continue
+                if (line.startsWith("$")) { gotData = true; break }
+            }
+            if (!gotData) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.no_nmea_hint),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+            gotData
+        } catch (_: Exception) {
+            false
+        } finally {
+            runCatching { reader?.close() }
+            runCatching { socket?.close() }
+        }
+    }
+
+    private fun connectViaTcpFlow(host: String, port: Int) {
+        lifecycleScope.launch {
+            val success = connectAndReadTcpNmea(host, port)
+            if (success) {
+                Toast.makeText(requireContext(), "TCP connection successful", Toast.LENGTH_SHORT).show()
+                settingsRepo.setLocationSource("external")
+                settingsRepo.setExternalConnType("tcp")
+                settingsRepo.setExternalTcp(host, port)
+            } else {
+                Toast.makeText(requireContext(), "TCP connection failed", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // ───────────────────────────── Import / Export ─────────────────────────────
     private fun startExportCoordinatesFlow() {
         exportLauncher.launch("coordinates_${System.currentTimeMillis()}.json")
     }
 
     private fun startImportCoordinatesFlow() {
         if (coordinatesImportJob?.isActive == true) {
-            Toast.makeText(requireContext(), "Import already in progress", Toast.LENGTH_SHORT).show()
-            return
+            Toast.makeText(requireContext(), R.string.import_in_progress, Toast.LENGTH_SHORT).show(); return
         }
         AlertDialog.Builder(requireContext())
-            .setTitle("Import Coordinates")
-            .setMessage("Select a JSON file containing coordinates to import. Proceed?")
-            .setPositiveButton("Select File") { _, _ ->
+            .setTitle(R.string.import_select_file_title)
+            .setMessage(R.string.import_select_file_message)
+            .setPositiveButton(R.string.import_select_file_positive) { _, _ ->
                 importLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.import_cancel, null)
             .show()
     }
 
     private suspend fun exportCoordinates(uri: Uri) {
         runCatching {
-            val coords = withContext(Dispatchers.IO) { repository.getAllPointsList() }
+            val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
             val arr = JSONArray()
             coords.forEach { c ->
                 arr.put(JSONObject().apply {
-                    put("id", c.id)
-                    put("name", c.name)
-                    put("latitude", c.latitude)
-                    put("longitude", c.longitude)
-                    put("altitude", c.altitude)
-                    put("timestamp", c.timestamp)
-                    put("icon", c.icon)
-                    put("color", c.color)
+                    put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
+                    put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
                 })
             }
             withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
-                    os.write(arr.toString(2).toByteArray(StandardCharsets.UTF_8))
-                    os.flush()
+                    os.write(arr.toString(2).toByteArray(StandardCharsets.UTF_8)); os.flush()
                 } ?: error("Unable to open output stream")
             }
         }.onSuccess {
@@ -323,19 +473,16 @@ class SettingsFragment : Fragment() {
     }
 
     private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri) {
-        val existing = withContext(Dispatchers.IO) { repository.getAllPointsList().size }
-        if (existing == 0) {
-            launchImportCoordinates(uri, replace = false)
-            return
-        }
+        val existing = withContext(Dispatchers.IO) { repository.getAllCoordinatesList().size }
+        if (existing == 0) { launchImportCoordinates(uri, replace = false); return }
         pendingImportUri = uri
         if (!isAdded) return
         AlertDialog.Builder(requireContext())
-            .setTitle("Import Coordinates")
-            .setMessage("Existing: $existing. Merge adds; Replace clears first.")
-            .setPositiveButton("Merge") { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false) } }
-            .setNeutralButton("Replace") { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true) } }
-            .setNegativeButton("Cancel", null)
+            .setTitle(R.string.import_select_file_title)
+            .setMessage(getString(R.string.import_merge_replace_message).replace("%1\$d", existing.toString()))
+            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false) } }
+            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true) } }
+            .setNegativeButton(R.string.import_cancel, null)
             .show()
     }
 
@@ -345,9 +492,8 @@ class SettingsFragment : Fragment() {
     }
 
     private suspend fun importCoordinates(uri: Uri, replace: Boolean) {
-        showImportProgress(true, 0, "Starting import…")
-        importProcessed = 0
-        importTotal = 0
+        showImportProgress(true, 0, "Scanning...") // reuse label or create new progress strings
+        importProcessed = 0; importTotal = 0
         runCatching {
             val raw = withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openInputStream(uri)?.use { inp ->
@@ -359,7 +505,7 @@ class SettingsFragment : Fragment() {
             val list = mutableListOf<Coordinate>()
             val detailed = importTotal > 50
             for (i in 0 until arr.length()) {
-                if (!coroutineContext.isActive) throw CancellationException("Import canceled")
+                if (!isAdded) break
                 val obj = arr.getJSONObject(i)
                 val id = obj.optString("id").ifBlank { UUID.randomUUID().toString() }
                 val name = obj.optString("name", id)
@@ -377,10 +523,7 @@ class SettingsFragment : Fragment() {
                 }
             }
             showImportProgress(true, 90, "Writing to database…")
-            withContext(Dispatchers.IO) {
-                if (replace) repository.deleteAll()
-                repository.insertAll(list)
-            }
+            withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(list) }
             list.size to replace
         }.onSuccess { (count, replaced) ->
             showImportProgress(false, 100, "Completed")
@@ -397,26 +540,79 @@ class SettingsFragment : Fragment() {
     }
 
     private fun cancelActiveImport() {
-        val job = coordinatesImportJob
-        if (job?.isActive == true) {
-            job.cancel()
-            Toast.makeText(requireContext(), "Canceling import…", Toast.LENGTH_SHORT).show()
-        }
+        coordinatesImportJob?.takeIf { it.isActive }?.cancel()
+            ?.also { Toast.makeText(requireContext(), R.string.import_cancel, Toast.LENGTH_SHORT).show() }
     }
 
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
-        val b = _binding ?: return
-        b.importProgressContainer.visibility = if (visible) View.VISIBLE else View.GONE
-        if (visible) {
-            b.progressImport.progress = percent.coerceIn(0, 100)
-            b.textImportProgress.text = status
+        currentContentView?.findViewById<LinearLayout>(R.id.import_progress_container)?.let { c ->
+            c.visibility = if (visible) View.VISIBLE else View.GONE
+            if (visible) {
+                c.findViewById<ProgressBar>(R.id.progress_import)?.progress = percent.coerceIn(0, 100)
+                c.findViewById<TextView>(R.id.text_import_progress)?.text = status
+            }
         }
     }
 
+    private fun buildUnifiedStatusLine(
+        lmStatus: com.example.surveyingapp.data.location.LocationStatus,
+        fix: com.example.surveyingapp.data.location.Fix?,
+        isExternal: Boolean,
+        deviceLabel: String?
+    ): String {
+        // Source
+        val sourcePart = if (isExternal) {
+            val dev = deviceLabel ?: "(no device)"
+            "RS2+ TCP $dev"
+        } else "Internal GPS"
+        // Connection status
+        val connPart = when (lmStatus) {
+            is com.example.surveyingapp.data.location.LocationStatus.Connecting -> "Connecting"
+            is com.example.surveyingapp.data.location.LocationStatus.Error -> "Error"
+            com.example.surveyingapp.data.location.LocationStatus.Idle -> if (isExternal) "Disconnected" else "Idle"
+            is com.example.surveyingapp.data.location.LocationStatus.Streaming -> "Connected"
+        }
+        // Fix type
+        val fixPart = if (!isExternal) {
+            if (fix != null) "Fused" else "Fused (pending)"
+        } else {
+            when (fix?.rtkStatus) {
+                com.example.surveyingapp.data.location.RtkStatus.FIX -> "Fixed RTK"
+                com.example.surveyingapp.data.location.RtkStatus.FLOAT -> "Float"
+                com.example.surveyingapp.data.location.RtkStatus.DGPS -> "DGPS"
+                com.example.surveyingapp.data.location.RtkStatus.SINGLE -> "Single"
+                com.example.surveyingapp.data.location.RtkStatus.INVALID -> "No Fix"
+                null -> if (lmStatus is com.example.surveyingapp.data.location.LocationStatus.Streaming) "No Fix" else "--"
+            }
+        }
+        // Satellites
+        val satsUsed = fix?.satsUsed
+        val satsVis = fix?.satsVisible
+        val satsPart = when {
+            satsUsed != null && satsVis != null -> "${satsUsed}/${satsVis} sats"
+            satsUsed != null -> "${satsUsed} sats"
+            else -> "-- sats"
+        }
+        // PDOP/HDOP
+        val pdop = fix?.pdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
+        val hdop = fix?.hdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
+        val dopPart = when {
+            pdop != null && hdop != null -> "PDOP $pdop / HDOP $hdop"
+            pdop != null -> "PDOP $pdop"
+            hdop != null -> "HDOP $hdop"
+            else -> "PDOP -- / HDOP --"
+        }
+        val basePart = if (isExternal) fix?.baseStationId?.let { "Base ID $it" } else null
+        return listOfNotNull(sourcePart, connPart, fixPart, satsPart, dopPart, basePart).joinToString(" • ")
+    }
+
     override fun onDestroyView() {
-        coordinatesImportJob?.cancel()
-        coordinatesImportJob = null
+        deviceStatusJob?.cancel(); deviceStatusJob = null
+        tcpDiscoveryJob?.cancel(); tcpDiscoveryJob = null
+        lifecycleScope.launch(Dispatchers.IO) { runCatching { jmdns?.close() } }
+        jmdns = null
+        multicastLock?.let { if (it.isHeld) runCatching { it.release() } }
+        multicastLock = null
         super.onDestroyView()
-        _binding = null
     }
 }

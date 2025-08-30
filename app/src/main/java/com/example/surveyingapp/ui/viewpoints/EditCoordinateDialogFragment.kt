@@ -9,15 +9,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.data.Coordinate
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 
 class EditCoordinateDialogFragment(
-    private val coordinate: Point,
-    private val onCoordinateEdited: (Point) -> Unit
+    private val coordinate: Coordinate,
+    private val onCoordinateEdited: (Coordinate) -> Unit
 ) : DialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val inflater = requireActivity().layoutInflater
@@ -84,4 +84,3 @@ class EditCoordinateDialogFragment(
         }
     }
 }
-

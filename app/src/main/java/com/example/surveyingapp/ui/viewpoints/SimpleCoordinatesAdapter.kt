@@ -5,13 +5,14 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.data.Coordinate
 import com.example.surveyingapp.ui.settings.SettingsFragment
+import com.google.android.material.card.MaterialCardView
 
 /**
  * RecyclerView Adapter for displaying coordinate points in a list.
@@ -26,19 +27,24 @@ import com.example.surveyingapp.ui.settings.SettingsFragment
  * - Higher-order functions: onEdit and onDelete are callback functions
  */
 class SimpleCoordinatesAdapter(
-    private val onEdit: (Point) -> Unit,    // Callback function called when user taps edit
-    private val onDelete: (Point) -> Unit   // Callback function called when user taps delete
+    private val onClick: (Coordinate) -> Unit // new item click callback
 ) : RecyclerView.Adapter<SimpleCoordinatesAdapter.Holder>() {
 
     // The list of coordinate points to display
-    private var items: List<Point> = emptyList()
+    private var items: List<Coordinate> = emptyList()
+    private var selectedId: String? = null
 
     /**
      * Updates the list with new data and refreshes the display.
      * Called when the database data changes.
      */
-    fun submit(list: List<Point>) {
+    fun submit(list: List<Coordinate>) {
+        // preserve selection if still present
+        val currentSel = selectedId
         items = list
+        if (currentSel != null && list.none { it.id == currentSel }) {
+            selectedId = null
+        }
         notifyDataSetChanged()  // Tells RecyclerView to refresh all visible items
     }
 
@@ -103,12 +109,24 @@ class SimpleCoordinatesAdapter(
         holder.icon.setColorFilter(p.color)  // Apply the coordinate's color to the icon
 
         // Set up click listeners for the action buttons
-        holder.editBtn.setOnClickListener { onEdit(p) }      // Call the edit callback
-        holder.deleteBtn.setOnClickListener { onDelete(p) }  // Call the delete callback
+        holder.itemView.setOnClickListener {
+            onClick(p)
+        }
 
-        // Alternate row colors for better visual separation
-        val bgRes = if (position % 2 == 0) R.color.coordinate_row_even else R.color.coordinate_row_odd
-        holder.itemView.setBackgroundResource(bgRes)
+        // Temporarily disable selection highlighting to isolate freezing issue
+        /*
+        // Selection highlighting (stroke color change)
+        val card = holder.itemView as? MaterialCardView
+        if (card != null) {
+            val ctx = card.context
+            val sel = p.id == selectedId
+            val colorRes = if (sel) R.color.coordinate_card_stroke_selected else R.color.coordinate_card_stroke_normal
+            card.strokeColor = ContextCompat.getColor(ctx, colorRes)
+        }
+        */
+
+        // Remove old alternating background resource application since card provides surface; could keep subtle alt if desired
+        // (Optional) If you want alternating subtle backgrounds plus stroke, comment back in with card.setCardBackgroundColor(...)
     }
 
     /**
@@ -121,7 +139,19 @@ class SimpleCoordinatesAdapter(
         val icon: ImageView = v.findViewById(R.id.image_icon)        // The coordinate point icon
         val name: TextView = v.findViewById(R.id.text_name)          // The coordinate point name
         val coords: TextView = v.findViewById(R.id.text_coords)      // The coordinate values (lat/lon)
-        val editBtn: ImageButton = v.findViewById(R.id.button_edit)  // Edit button
-        val deleteBtn: ImageButton = v.findViewById(R.id.button_delete)  // Delete button
+    }
+
+    fun setSelectedId(newId: String?) {
+        if (selectedId == newId) return
+        val oldId = selectedId
+        selectedId = newId
+        oldId?.let { id ->
+            val oldPos = items.indexOfFirst { it.id == id }
+            if (oldPos >= 0) notifyItemChanged(oldPos)
+        }
+        newId?.let { id ->
+            val newPos = items.indexOfFirst { it.id == id }
+            if (newPos >= 0) notifyItemChanged(newPos)
+        }
     }
 }
