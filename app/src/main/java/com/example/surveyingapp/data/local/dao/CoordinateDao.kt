@@ -1,7 +1,8 @@
-package com.example.surveyingapp.data
+package com.example.surveyingapp.data.local.dao
 
 import androidx.lifecycle.LiveData
 import androidx.room.*
+import com.example.surveyingapp.data.local.entity.CoordinateEntity
 
 /**
  * Data Access Object (DAO) for Coordinate database operations.
@@ -17,20 +18,20 @@ import androidx.room.*
 interface CoordinateDao {
     // --- Core retrieval ---
     @Query("SELECT * FROM coordinates ORDER BY timestamp DESC")
-    fun getAllCoordinates(): LiveData<List<Coordinate>> // Legacy reactive stream (UI auto-updates)
+    fun getAllCoordinates(): LiveData<List<CoordinateEntity>> // Legacy reactive stream (UI auto-updates)
 
     @Query("SELECT * FROM coordinates ORDER BY timestamp DESC")
-    suspend fun getAllCoordinatesList(): List<Coordinate> // Snapshot list
+    suspend fun getAllCoordinatesList(): List<CoordinateEntity> // Snapshot list
 
     // --- Mutations ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(coordinate: Coordinate)
+    suspend fun insert(coordinate: CoordinateEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(coordinates: List<Coordinate>)
+    suspend fun insertAll(coordinates: List<CoordinateEntity>)
 
     @Update
-    suspend fun update(coordinate: Coordinate)
+    suspend fun update(coordinate: CoordinateEntity)
 
     @Query("DELETE FROM coordinates")
     suspend fun deleteAll()
@@ -40,14 +41,14 @@ interface CoordinateDao {
 
     // --- Reactive Flow (preferred for new Compose screens) ---
     @Query("SELECT * FROM coordinates ORDER BY timestamp DESC")
-    fun observeAll(): kotlinx.coroutines.flow.Flow<List<Coordinate>>
+    fun observeAll(): kotlinx.coroutines.flow.Flow<List<CoordinateEntity>>
 
     // --- Targeted retrieval helpers ---
     @Query("SELECT * FROM coordinates ORDER BY timestamp DESC LIMIT :limit")
-    suspend fun getRecent(limit: Int): List<Coordinate> // Ensure caller bounds 'limit'
+    suspend fun getRecent(limit: Int): List<CoordinateEntity> // Ensure caller bounds 'limit'
 
     @Query("SELECT * FROM coordinates WHERE timestamp BETWEEN :startMs AND :endMs ORDER BY timestamp DESC")
-    suspend fun getBetween(startMs: Long, endMs: Long): List<Coordinate> // Inclusive range
+    suspend fun getBetween(startMs: Long, endMs: Long): List<CoordinateEntity> // Inclusive range
 
     // Bounding box: parameter order (minLat, minLon, maxLat, maxLon) differs from common (minLat, maxLat, minLon, maxLon) => documented here
     // NOTE: Does not handle anti-meridian spanning boxes; caller must split if crossing +/-180°.
@@ -60,7 +61,7 @@ interface CoordinateDao {
     suspend fun getWithinBBox(
         minLat: Double, minLon: Double,
         maxLat: Double, maxLon: Double
-    ): List<Coordinate>
+    ): List<CoordinateEntity>
 
     // Nearest (simple planar distance approximation in degrees). Good for small radii; for large distances or high latitudes adapt with cos(lat).
     @Query("""
@@ -68,10 +69,10 @@ interface CoordinateDao {
         ORDER BY ((latitude - :lat)*(latitude - :lat) + (longitude - :lon)*(longitude - :lon)) ASC
         LIMIT :limit
     """)
-    suspend fun getNearest(lat: Double, lon: Double, limit: Int = 1): List<Coordinate>
+    suspend fun getNearest(lat: Double, lon: Double, limit: Int = 1): List<CoordinateEntity>
 
     @Query("SELECT * FROM coordinates WHERE id = :id LIMIT 1")
-    suspend fun getById(id: String): Coordinate?
+    suspend fun getById(id: String): CoordinateEntity?
 
     @Query("SELECT COUNT(*) FROM coordinates")
     suspend fun count(): Int
@@ -82,15 +83,15 @@ interface CoordinateDao {
 
     // Provider filter (currently UNUSED). Values expected: "fused", "rs2-bt", "rs2-tcp". Remove if not needed.
     @Query("SELECT * FROM coordinates WHERE provider = :provider ORDER BY timestamp DESC")
-    suspend fun getByProvider(provider: String): List<Coordinate>
+    suspend fun getByProvider(provider: String): List<CoordinateEntity>
 
     // RTK status filter (currently UNUSED). Status values: FIX, FLOAT, DGPS, SINGLE.
     @Query("SELECT * FROM coordinates WHERE rtkStatus = :rtk ORDER BY timestamp DESC")
-    suspend fun getByRtkStatus(rtk: String): List<Coordinate>
+    suspend fun getByRtkStatus(rtk: String): List<CoordinateEntity>
 
     // HDOP quality filter (currently UNUSED). Null HDOP treated as passing (could invert depending on policy).
     @Query("SELECT * FROM coordinates WHERE hdop IS NULL OR hdop <= :maxHdop ORDER BY timestamp DESC")
-    suspend fun getWithMaxHdop(maxHdop: Double): List<Coordinate>
+    suspend fun getWithMaxHdop(maxHdop: Double): List<CoordinateEntity>
 
     // Quick aggregate for status distribution (currently UNUSED in codebase).
     @Query("SELECT rtkStatus AS status, COUNT(*) AS count FROM coordinates GROUP BY rtkStatus")

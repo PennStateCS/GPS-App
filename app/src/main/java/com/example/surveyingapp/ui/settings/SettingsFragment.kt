@@ -12,10 +12,15 @@ import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.data.AppDatabase
-import com.example.surveyingapp.data.Coordinate
-import com.example.surveyingapp.data.CoordinateRepository
-import com.example.surveyingapp.data.settings.SettingsRepository
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.Fix
+import com.example.surveyingapp.domain.model.LocationStatus
+import com.example.surveyingapp.domain.model.RtkStatus
+import com.example.surveyingapp.domain.model.ExternalConnectionType
+import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.service.LocationService
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import kotlinx.coroutines.*
@@ -37,7 +42,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
     private lateinit var preferences: SharedPreferences
-    private lateinit var repository: CoordinateRepository
+    private lateinit var repository: CoordinateRepositoryImpl
     private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
 
     // Selected device for TCP connection (class scope)
@@ -70,14 +75,14 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val label = selectedDeviceLabel
         val parsedName = selectedDeviceName ?: label?.substringBefore("(")?.trim()?.takeIf { it.isNotBlank() }
         val host = dev.first
-        nameTv?.text = (parsedName ?: host ?: "Device")
+        nameTv?.text = parsedName ?: host
         box?.visibility = View.VISIBLE
     }
 
     // Sidebar categories
     private val categories = listOf(
         SettingsCategory(1, "Location", R.drawable.ic_section_location),
-        SettingsCategory(2, "Display", R.drawable.ic_menu_gallery),
+        SettingsCategory(2, "Display", R.drawable.ic_star), // replaced legacy gallery icon
         SettingsCategory(3, "Data", R.drawable.ic_section_data),
         SettingsCategory(4, "Developer Tools", R.drawable.ic_dev_tools),
         SettingsCategory(5, "About", R.drawable.ic_home)
@@ -114,7 +119,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
     override fun onRootCreated(root: View) {
         preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        repository = CoordinateRepository(AppDatabase.getDatabase(requireContext()).coordinateDao())
+        repository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
     }
 
     override fun provideCategories(): List<SettingsCategory> = categories
@@ -198,8 +203,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             settingsRepo.externalTcpHost.combine(settingsRepo.externalTcpPort) { h, p -> h to p }.collect { (host, port) ->
                 if (host != null && port != null) {
-                    val changed = selectedDevice?.first != host || selectedDevice?.second != port
-                    if (changed || selectedDevice == null) {
+                    val prev = selectedDevice
+                    if (prev == null || prev.first != host || prev.second != port) {
                         selectedDevice = host to port
                         selectedDeviceLabel = selectedDeviceLabel ?: "$host:$port"
                         selectedDeviceName = selectedDeviceName ?: host
@@ -215,15 +220,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
         deviceStatusJob?.cancel()
         deviceStatusJob = viewLifecycleOwner.lifecycleScope.launch {
-            var lastFix: com.example.surveyingapp.data.location.Fix? = null
-            var lastStatus: com.example.surveyingapp.data.location.LocationStatus = com.example.surveyingapp.data.location.LocationStatus.Idle
-            fun applyColor(tv: TextView?, fix: com.example.surveyingapp.data.location.Fix?, external: Boolean) {
+            var lastFix: Fix? = null
+            var lastStatus: LocationStatus = LocationStatus.Idle
+            fun applyColor(tv: TextView?, fix: Fix?, external: Boolean) {
                 val colorRes = if (!external) android.R.color.holo_blue_dark else when (fix?.rtkStatus) {
-                    com.example.surveyingapp.data.location.RtkStatus.FIX -> android.R.color.holo_green_dark
-                    com.example.surveyingapp.data.location.RtkStatus.FLOAT -> android.R.color.holo_orange_dark
-                    com.example.surveyingapp.data.location.RtkStatus.DGPS -> android.R.color.holo_blue_dark
-                    com.example.surveyingapp.data.location.RtkStatus.SINGLE -> android.R.color.darker_gray
-                    com.example.surveyingapp.data.location.RtkStatus.INVALID, null -> android.R.color.holo_red_dark
+                    RtkStatus.FIX -> android.R.color.holo_green_dark
+                    RtkStatus.FLOAT -> android.R.color.holo_orange_dark
+                    RtkStatus.DGPS -> android.R.color.holo_blue_dark
+                    RtkStatus.SINGLE -> android.R.color.darker_gray
+                    RtkStatus.INVALID, null -> android.R.color.holo_red_dark
                 }
                 tv?.setTextColor(requireContext().getColor(colorRes))
             }
@@ -239,8 +244,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 applyColor(textDeviceStatus, lastFix, externalActive)
             }
             val mgr = SurveyingApp.locationManager
-            launch { mgr.fixes.collect { f -> lastFix = f; update(); updateDeviceBox() } }
-            launch { mgr.status.collectLatest { s -> lastStatus = s; update() } }
+            launch { mgr.fixFlow.collect { f: Fix -> lastFix = f; update(); updateDeviceBox() } }
+            launch { mgr.statusFlow.collectLatest { s: LocationStatus -> lastStatus = s; update() } }
         }
         textDeviceStatus?.text = ""
 
@@ -255,7 +260,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         var initializing = true
         lifecycleScope.launch {
             val source = settingsRepo.locationSource.first()
-            val sel = if (source == "external") R.id.radio_es2_tcp else R.id.radio_internal
+            val sel = if (source == LocationSourceType.EXTERNAL) R.id.radio_es2_tcp else R.id.radio_internal
             radioGroup?.check(sel)
             updateLocationSourceVisibility(source, internalGpsGroup)
             rs2OptionsLayout?.visibility = if (sel == R.id.radio_es2_tcp) View.VISIBLE else View.GONE
@@ -267,20 +272,20 @@ class SettingsFragment : BaseTwoPaneFragment() {
             if (initializing) return@setOnCheckedChangeListener
             when (checkedId) {
                 R.id.radio_internal -> {
-                    updateLocationSourceVisibility("internal", internalGpsGroup)
+                    updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
                     rs2OptionsLayout?.visibility = View.GONE
-                    selectedDevice = null // ignore any previously selected external while switching
+                    selectedDevice = null
                     updateDeviceBox()
-                    lifecycleScope.launch { settingsRepo.setLocationSource("internal") }
+                    lifecycleScope.launch { settingsRepo.setLocationSource(LocationSourceType.INTERNAL) }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
                 R.id.radio_es2_tcp -> {
-                    updateLocationSourceVisibility("external", internalGpsGroup)
+                    updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)
                     // Show either the device box (if already selected) or options
                     updateDeviceBox()
                     lifecycleScope.launch {
-                        settingsRepo.setLocationSource("external")
-                        settingsRepo.setExternalConnType("tcp")
+                        settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
+                        settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                     }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
@@ -379,8 +384,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     // ───────────────────────────── Source Visibility ───────────────────────────
-    private fun updateLocationSourceVisibility(selected: String, internal: LinearLayout?) {
-        internal?.visibility = if (selected == "internal") View.VISIBLE else View.GONE
+    private fun updateLocationSourceVisibility(selected: LocationSourceType, internal: LinearLayout?) {
+        internal?.visibility = if (selected == LocationSourceType.INTERNAL) View.VISIBLE else View.GONE
     }
 
     // ─────────────────────────── TCP connect + read ────────────────────────────
@@ -422,8 +427,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
             val success = connectAndReadTcpNmea(host, port)
             if (success) {
                 Toast.makeText(requireContext(), "TCP connection successful", Toast.LENGTH_SHORT).show()
-                settingsRepo.setLocationSource("external")
-                settingsRepo.setExternalConnType("tcp")
+                settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
+                settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                 settingsRepo.setExternalTcp(host, port)
             } else {
                 Toast.makeText(requireContext(), "TCP connection failed", Toast.LENGTH_SHORT).show()
@@ -513,7 +518,13 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 val lon = obj.optDouble("longitude")
                 val alt = obj.optDouble("altitude", 0.0)
                 val ts = obj.optLong("timestamp", System.currentTimeMillis())
-                val icon = obj.optString("icon", "ic_menu_camera")
+                val rawIcon = obj.optString("icon", "ic_pin")
+                val icon = when (rawIcon) {
+                    "ic_menu_camera" -> "ic_pin"
+                    "ic_menu_gallery" -> "ic_star"
+                    "ic_menu_slideshow" -> "ic_home"
+                    else -> rawIcon
+                }
                 val color = obj.optInt("color", 0xFF64B5F6.toInt())
                 list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
                 importProcessed = i + 1
@@ -555,8 +566,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     private fun buildUnifiedStatusLine(
-        lmStatus: com.example.surveyingapp.data.location.LocationStatus,
-        fix: com.example.surveyingapp.data.location.Fix?,
+        lmStatus: LocationStatus,
+        fix: Fix?,
         isExternal: Boolean,
         deviceLabel: String?
     ): String {
@@ -567,22 +578,22 @@ class SettingsFragment : BaseTwoPaneFragment() {
         } else "Internal GPS"
         // Connection status
         val connPart = when (lmStatus) {
-            is com.example.surveyingapp.data.location.LocationStatus.Connecting -> "Connecting"
-            is com.example.surveyingapp.data.location.LocationStatus.Error -> "Error"
-            com.example.surveyingapp.data.location.LocationStatus.Idle -> if (isExternal) "Disconnected" else "Idle"
-            is com.example.surveyingapp.data.location.LocationStatus.Streaming -> "Connected"
+            is LocationStatus.Connecting -> "Connecting"
+            is LocationStatus.Error -> "Error"
+            LocationStatus.Idle -> if (isExternal) "Disconnected" else "Idle"
+            is LocationStatus.Streaming -> "Connected"
         }
         // Fix type
         val fixPart = if (!isExternal) {
             if (fix != null) "Fused" else "Fused (pending)"
         } else {
             when (fix?.rtkStatus) {
-                com.example.surveyingapp.data.location.RtkStatus.FIX -> "Fixed RTK"
-                com.example.surveyingapp.data.location.RtkStatus.FLOAT -> "Float"
-                com.example.surveyingapp.data.location.RtkStatus.DGPS -> "DGPS"
-                com.example.surveyingapp.data.location.RtkStatus.SINGLE -> "Single"
-                com.example.surveyingapp.data.location.RtkStatus.INVALID -> "No Fix"
-                null -> if (lmStatus is com.example.surveyingapp.data.location.LocationStatus.Streaming) "No Fix" else "--"
+                RtkStatus.FIX -> "Fixed RTK"
+                RtkStatus.FLOAT -> "Float"
+                RtkStatus.DGPS -> "DGPS"
+                RtkStatus.SINGLE -> "Single"
+                RtkStatus.INVALID -> "No Fix"
+                null -> if (lmStatus is LocationStatus.Streaming) "No Fix" else "--"
             }
         }
         // Satellites

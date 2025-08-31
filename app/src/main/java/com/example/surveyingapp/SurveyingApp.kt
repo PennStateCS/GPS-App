@@ -6,10 +6,13 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.example.surveyingapp.data.location.LocationSourceManager
+import com.example.surveyingapp.domain.location.LocationSourceManager
 import com.example.surveyingapp.data.location.fused.FusedSource
 import com.example.surveyingapp.data.location.nmea.NmeaSource
-import com.example.surveyingapp.data.settings.SettingsRepository
+import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
+import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
+import com.example.surveyingapp.domain.model.ExternalConnectionType
+import com.example.surveyingapp.domain.repository.SettingsRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.osmdroid.config.Configuration
@@ -59,7 +62,8 @@ class SurveyingApp : Application() {
         // NOTE: Consider adding a structured dispatcher (e.g., Dispatchers.IO) for I/O heavy NMEA parsing.
         appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-        settingsRepo = SettingsRepository(this)
+        val localDs = SettingsLocalDataSource(this)
+        settingsRepo = SettingsRepositoryImpl(localDs)
         val fused = FusedSource(this) // Android fused/location provider wrapper
 
         // NMEA source configured with suspend lambdas pulling latest prefs each (re)connection.
@@ -69,9 +73,9 @@ class SurveyingApp : Application() {
             btAddressProvider = { settingsRepo.externalBtAddress.first() },
             tcpHostProvider = { settingsRepo.externalTcpHost.first() to settingsRepo.externalTcpPort.first() },
             connectionTypeProvider = {
-                when (settingsRepo.externalConnType.first().lowercase()) {
-                    "tcp" -> NmeaSource.ConnectionType.TCP
-                    else -> NmeaSource.ConnectionType.BT
+                when (settingsRepo.externalConnType.first()) {
+                    ExternalConnectionType.TCP -> NmeaSource.ConnectionType.TCP
+                    ExternalConnectionType.BT -> NmeaSource.ConnectionType.BT
                 }
             }
         )

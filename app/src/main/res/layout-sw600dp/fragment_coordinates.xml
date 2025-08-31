@@ -1,56 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Tablet (sw600dp) two-pane variant: master list + detail pane within the fragment so drawer stays visible -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:weightSum="10">
+    android:layout_height="match_parent">
 
-    <!-- Master list container (30%) with subtle background -->
-    <FrameLayout
-        android:layout_width="0dp"
+    <!-- Two-pane horizontal layout -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_weight="3"
-        android:background="@color/coordinate_list_bg"
-        android:elevation="1dp">
+        android:orientation="horizontal"
+        android:weightSum="10">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/pointsRecyclerView"
-            android:layout_width="match_parent"
+        <FrameLayout
+            android:id="@+id/list_pane_container"
+            android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:padding="0dp"
-            android:clipToPadding="false" />
+            android:layout_weight="3">
 
-        <TextView
-            android:id="@+id/emptyCoordinatesText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/empty_coordinates_text"
-            android:layout_gravity="center"
-            android:visibility="gone"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/pointsRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
 
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_add_coordinate"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="16dp"
-            android:contentDescription="@string/capture_coordinates"
-            android:src="@android:drawable/ic_input_add" />
-    </FrameLayout>
+            <TextView
+                android:id="@+id/emptyCoordinatesText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/empty_coordinates_text"
+                android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                android:layout_gravity="center"
+                android:visibility="gone" />
+        </FrameLayout>
 
-    <!-- Enhanced divider -->
-    <View
-        android:layout_width="2dp"
-        android:layout_height="match_parent"
-        android:background="@color/coordinate_divider" />
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/coordinate_divider" />
 
-    <!-- Detail pane (70%) -->
-    <FrameLayout
-        android:id="@+id/detail_container"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="7"
-        android:background="@color/white" />
-</LinearLayout>
+        <FrameLayout
+            android:id="@+id/coord_detail_container"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="7"
+            android:background="@android:color/white" />
+    </LinearLayout>
+
+    <!-- FAB anchored to overall bottom-right -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab_add_coordinate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="24dp"
+        android:contentDescription="@string/capture_coordinates"
+        android:src="@android:drawable/ic_input_add" />
+</FrameLayout>

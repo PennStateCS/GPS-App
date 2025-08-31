@@ -1,15 +1,15 @@
-package com.example.surveyingapp.data.location
+package com.example.surveyingapp.domain.location
 
+import android.location.GnssStatus
 import com.example.surveyingapp.data.location.fused.FusedSource
 import com.example.surveyingapp.data.location.nmea.NmeaSource
-import com.example.surveyingapp.data.settings.LocationSettings
-import com.example.surveyingapp.data.settings.LocationSourceType
-import com.example.surveyingapp.data.settings.SettingsRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
+import com.example.surveyingapp.domain.model.Fix
+import com.example.surveyingapp.domain.model.LocationSettings
+import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.domain.model.LocationStatus
+import com.example.surveyingapp.domain.repository.SettingsRepository
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 /**
  * Manages active location source based on DataStore settings and exposes unified fix & status flows.
@@ -23,11 +23,14 @@ class LocationSourceManager(
     private val nmea: NmeaSource,
     private val scope: CoroutineScope
 ) {
-    private val _fixes = kotlinx.coroutines.flow.MutableSharedFlow<Fix>(replay = 1, extraBufferCapacity = 32)
-    val fixes: kotlinx.coroutines.flow.Flow<Fix> = _fixes
+    private val _fixes = MutableSharedFlow<Fix>(replay = 1, extraBufferCapacity = 32)
+    val fixFlow: Flow<Fix> = _fixes
 
-    private val _status = kotlinx.coroutines.flow.MutableStateFlow<LocationStatus>(LocationStatus.Idle)
-    val status: kotlinx.coroutines.flow.StateFlow<LocationStatus> = _status
+    private val _status = MutableStateFlow<LocationStatus>(LocationStatus.Idle)
+    val statusFlow: StateFlow<LocationStatus> = _status
+
+    private val _gnssStatus = MutableStateFlow<GnssStatus?>(null)
+    val gnssStatusFlow: StateFlow<GnssStatus?> = _gnssStatus
 
     private var activeJob: Job? = null
     private var nmeaStatusJob: Job? = null

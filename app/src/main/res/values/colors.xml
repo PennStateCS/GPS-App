@@ -31,4 +31,10 @@
     <color name="dev_perm_row_divider">#1F000000</color>
     <color name="dev_perm_status_granted">#1B5E20</color>
     <color name="dev_perm_status_denied">#B71C1C</color>
+    <!-- RTK status colors -->
+    <color name="status_fix">#4CAF50</color>
+    <color name="status_float">#FFA000</color>
+    <color name="status_dgps">#1976D2</color>
+    <color name="status_single">#B0BEC5</color>
+    <color name="status_no_fix">#E53935</color>
 </resources>

@@ -7,10 +7,12 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.data.location.Fix
-import com.example.surveyingapp.data.location.LocationStatus
-import com.example.surveyingapp.data.location.Provider
-import com.example.surveyingapp.data.location.TimestampSource
+import com.example.surveyingapp.domain.model.Fix
+import com.example.surveyingapp.domain.model.LocationStatus
+import com.example.surveyingapp.domain.model.Provider
+import com.example.surveyingapp.domain.model.TimestampSource
+import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.domain.model.ExternalConnectionType
 import kotlin.time.Duration
 import kotlin.time.DurationUnit
 import kotlinx.coroutines.*
@@ -22,8 +24,8 @@ import java.util.Locale
 class LocationService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var lastFix: Fix? = null
-    @Volatile private var lastConnType: String = "bt" // bt | tcp
-    @Volatile private var lastSource: String = "internal" // internal | external
+    @Volatile private var lastConnType: ExternalConnectionType = ExternalConnectionType.BT
+    @Volatile private var lastSource: LocationSourceType = LocationSourceType.INTERNAL
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -38,11 +40,10 @@ class LocationService : Service() {
     }
 
     private fun initialTitle(): String = try {
-        // Synchronously read current preference for quick initial title
         val src = runBlocking { SurveyingApp.settingsRepo.locationSource.first() }
-        if (src == "external") {
+        if (src == LocationSourceType.EXTERNAL) {
             val ct = runBlocking { SurveyingApp.settingsRepo.externalConnType.first() }
-            "Location: RS2+ (${ct.uppercase()})"
+            "Location: RS2+ (${ct.name})"
         } else "Location: Internal"
     } catch (_: Exception) { "Location: Internal" }
 
@@ -64,17 +65,16 @@ class LocationService : Service() {
     private fun collectStreams() {
         val mgr = SurveyingApp.locationManager
         scope.launch {
-            mgr.fixes.collectLatest { fix ->
+            mgr.fixFlow.collectLatest { fix ->
                 lastFix = fix
                 updateNotification()
             }
         }
-        scope.launch { mgr.status.collectLatest { _ -> updateNotification() } }
+        scope.launch { mgr.statusFlow.collectLatest { _ -> updateNotification() } }
     }
 
     private fun updateNotification() {
-        // Snapshot current status & last fix (avoid multiple volatile reads inside when chains)
-        val status = SurveyingApp.locationManager.status.value
+        val status = SurveyingApp.locationManager.statusFlow.value
         val fix = lastFix
         // Build the notification title: reflects high‑level streaming / connection state
         val baseTitle = when (status) {
@@ -82,10 +82,10 @@ class LocationService : Service() {
             is LocationStatus.Error -> "Location: Error" // error state; details in text body
             LocationStatus.Idle -> "Location: Idle" // no active streams
             is LocationStatus.Streaming -> {
-                // Decide which label to show based on provider or last source preference
-                val internal = fix?.provider == Provider.INTERNAL || (fix == null && lastSource == "internal")
-                if (internal) "Location: Internal" else "Location: RS2+ (${lastConnType.uppercase()})"
+                val internal = fix?.provider == Provider.INTERNAL || (fix == null && lastSource == LocationSourceType.INTERNAL)
+                if (internal) "Location: Internal" else "Location: RS2+ (${lastConnType.name})"
             }
+            else -> "Location: Idle"
         }
         // Build the detail text line (compact, comma‑separated telemetry)
         val text = when (status) {
@@ -138,7 +138,8 @@ class LocationService : Service() {
                 listOf(state, satsPart, hdopPart, pdopPart, hAccPart, vAccPart, altPart, geoidPart, agePart, tsSrcPart)
                     .filterNotNull()
                     .joinToString(", ")
-            } ?: if (lastSource == "internal") "Waiting for fused fix…" else "Waiting for RS2+ fix…"
+            } ?: if (lastSource == LocationSourceType.INTERNAL) "Waiting for fused fix…" else "Waiting for RS2+ fix…"
+            else -> "Idle"
         }
         // Post / update the foreground notification
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

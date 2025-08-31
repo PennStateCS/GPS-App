@@ -8,7 +8,7 @@
     <string name="dev_category_placeholder">Development Category</string>
     <string name="render_map_placeholder">Map will render here.</string>
     <string name="menu_view_coordinates">View Coordinates</string>
-    <string name="edit_coordinate">Edit Coordinate</string>
+    <string name="edit_coordinate">Edit coordinate</string>
     <string name="delete_coordinate">Delete Coordinate</string>
     <string name="dev_category_icon_desc">Development Category Icon</string>
     <string name="twopane_placeholder_select">Please select an item.</string>
@@ -18,7 +18,7 @@
     <string name="menu_home">Home</string>
     <string name="menu_render_map">Render Map</string>
     <string name="menu_open_in_ar">Open in AR</string>
-    <string name="menu_development">Development</string>
+    <string name="menu_development">Developer Tools</string>
     <string name="action_settings">Settings</string>
     <string name="dev_perm_none">No permissions requested.</string>
     <string name="dev_perm_error">Error loading permissions: %1$s</string>
@@ -68,6 +68,8 @@
     <string name="location_rs2_bluetooth">Location: RS2+ Bluetooth</string>
     <string name="source_internal">Internal</string>
     <string name="source_rs2">RS2+</string>
+    <string name="status_placeholder_gps">GPS --</string>
+    <string name="status_initial_no_fix">%1$s • No Fix</string>
 
     <!-- Development Fragment - Memory and Storage labels -->
     <string name="dev_label_heap_used">Heap Used</string>
@@ -110,4 +112,10 @@
     <string name="scan_scanning_rs2">Scanning for RS2+ (TCP) devices…</string>
     <string name="scan_select_device">Select a device</string>
     <string name="scan_none_found">No RS2+ TCP devices found</string>
+
+    <!-- Coordinates Development Page strings -->
+    <string name="dev_coord_clear_all">Clear All Coordinates</string>
+    <string name="dev_coord_generate">Generate 15 Coordinates</string>
+    <string name="dev_coord_hint">Generates 15 test coordinates within ~20 ft of current location (first is exact position).</string>
+    <string name="title_coordinate_detail">Coordinate Detail</string>
 </resources>

@@ -1,7 +1,7 @@
 package com.example.surveyingapp.ui.viewpoints
 
-import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.surveyingapp.R
 
@@ -18,17 +18,18 @@ class CoordinatesActivity : AppCompatActivity() {
     }
 
     fun showDetail(id: String) {
-        val detailContainer = findViewById<android.view.View?>(R.id.detail_container)
-        if (detailContainer != null) {
-            // Two-pane: show / replace fragment in detail container
-            supportFragmentManager.beginTransaction()
-                .replace(R.id.detail_container, CoordinateDetailFragment.newInstance(id))
-                .commit()
+        Log.d("CoordinatesActivity", "showDetail called with id=$id")
+        val fm = supportFragmentManager
+        val existing = fm.findFragmentById(R.id.detail_container) as? CoordinateDetailFragment
+        if (existing != null) {
+            Log.d("CoordinatesActivity", "Updating existing detail fragment")
+            existing.updateId(id)
         } else {
-            // Single-pane: launch detail activity
-            startActivity(Intent(this, CoordinateDetailActivity::class.java).apply {
-                putExtra(CoordinateDetailActivity.EXTRA_ID, id)
-            })
+            Log.d("CoordinatesActivity", "Creating new detail fragment")
+            // Immediate commit to reduce perceived delay
+            fm.beginTransaction()
+                .replace(R.id.detail_container, CoordinateDetailFragment.newInstance(id))
+                .commitNowAllowingStateLoss()
         }
     }
 }

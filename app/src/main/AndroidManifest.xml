@@ -55,22 +55,15 @@
             android:name="com.google.ar.core"
             android:value="optional" />
 
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyDQ-H0n9g1Fsbriz6Xb4mKk-qGb6xiKHcc"/>
+
         <activity
             android:name=".ui.viewpoints.CoordinatesActivity"
             android:exported="true"
             android:theme="@style/Theme.SurveyingApp.NoActionBar"
             android:screenOrientation="landscape" />
-
-        <activity
-            android:name=".ui.viewpoints.CoordinateDetailActivity"
-            android:exported="false"
-            android:theme="@style/Theme.SurveyingApp.NoActionBar"
-            android:parentActivityName=".MainActivity"
-            android:screenOrientation="landscape">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value="com.example.surveyingapp.MainActivity" />
-        </activity>
 
         <activity
             android:name=".MainActivity"

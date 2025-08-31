@@ -8,27 +8,24 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Coordinate
+import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.ui.settings.SettingsFragment
-import com.google.android.material.card.MaterialCardView
+import java.util.Locale
 
 /**
  * RecyclerView Adapter for displaying coordinate points in a list.
  *
  * RecyclerView is Android's efficient way to display large lists by recycling views.
  * The Adapter pattern connects your data to the UI views.
- *
- * Key concepts:
- * - ViewHolder pattern: Holds references to views to avoid expensive findViewById calls
- * - onCreateViewHolder: Creates new view holders when needed
- * - onBindViewHolder: Binds data to existing view holders
- * - Higher-order functions: onEdit and onDelete are callback functions
  */
 class SimpleCoordinatesAdapter(
     private val onClick: (Coordinate) -> Unit // new item click callback
 ) : RecyclerView.Adapter<SimpleCoordinatesAdapter.Holder>() {
+
+    init { setHasStableIds(true) }
 
     // The list of coordinate points to display
     private var items: List<Coordinate> = emptyList()
@@ -39,13 +36,27 @@ class SimpleCoordinatesAdapter(
      * Called when the database data changes.
      */
     fun submit(list: List<Coordinate>) {
-        // preserve selection if still present
-        val currentSel = selectedId
-        items = list
-        if (currentSel != null && list.none { it.id == currentSel }) {
-            selectedId = null
+        val old = items
+        val newList = list.toList()
+        // Fast path if first load
+        if (old.isEmpty()) {
+            items = newList
+            notifyItemRangeInserted(0, newList.size)
+            return
         }
-        notifyDataSetChanged()  // Tells RecyclerView to refresh all visible items
+        val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = old.size
+            override fun getNewListSize() = newList.size
+            override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                old[oldItemPosition].id == newList[newItemPosition].id
+            override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                val o = old[oldItemPosition]
+                val n = newList[newItemPosition]
+                return o == n // data class equality
+            }
+        })
+        items = newList
+        diff.dispatchUpdatesTo(this)
     }
 
     /**
@@ -55,6 +66,19 @@ class SimpleCoordinatesAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         // Inflate the layout for a single list item
         val v = LayoutInflater.from(parent.context).inflate(R.layout.item_simple_coordinate, parent, false)
+        // Inject accent view if layout (old cached version) missing it
+        if (v.findViewById<View>(R.id.selection_accent) == null) {
+            val container = v as? ViewGroup
+            if (container != null) {
+                val accent = View(parent.context)
+                accent.id = R.id.selection_accent
+                val widthPx = (parent.resources.displayMetrics.density * 4).toInt().coerceAtLeast(2)
+                accent.layoutParams = ViewGroup.LayoutParams(widthPx, ViewGroup.LayoutParams.MATCH_PARENT)
+                accent.setBackgroundColor(ContextCompat.getColor(parent.context, R.color.dev_category_selected_accent))
+                // Insert at start
+                container.addView(accent, 0)
+            }
+        }
         return Holder(v)
     }
 
@@ -63,6 +87,8 @@ class SimpleCoordinatesAdapter(
      * RecyclerView uses this to know how many items to display.
      */
     override fun getItemCount(): Int = items.size
+
+    override fun getItemId(position: Int): Long = items[position].id.hashCode().toLong()
 
     /**
      * Binds data to a ViewHolder - this is where the magic happens!
@@ -90,43 +116,46 @@ class SimpleCoordinatesAdapter(
             holder.coords.visibility = View.VISIBLE
             holder.coords.text = if (showElevation) {
                 // Show latitude, longitude, and elevation
-                String.format("%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
+                String.format(Locale.US, "%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
             } else {
                 // Show only latitude and longitude
-                String.format("%.6f, %.6f", p.latitude, p.longitude)
+                String.format(Locale.US, "%.6f, %.6f", p.latitude, p.longitude)
             }
         } else {
             holder.coords.visibility = View.GONE  // Hide coordinates completely
         }
-
-        // Set the icon for this coordinate point
-        val resId = holder.itemView.context.resources.getIdentifier(p.icon, "drawable", holder.itemView.context.packageName)
-        if (resId != 0) {
-            holder.icon.setImageResource(resId)  // Use the specified icon
-        } else {
-            holder.icon.setImageResource(R.drawable.ic_menu_camera)  // Fallback icon
+        // Icon mapping without reflection
+        val resId = when (p.icon) {
+            "ic_pin" -> R.drawable.ic_pin
+            "ic_home", "ic_menu_slideshow" -> R.drawable.ic_home
+            "ic_star", "ic_menu_gallery" -> R.drawable.ic_star
+            "ic_circle" -> R.drawable.ic_circle
+            "ic_square" -> R.drawable.ic_square
+            "ic_triangle" -> R.drawable.ic_triangle
+            "ic_diamond" -> R.drawable.ic_diamond
+            else -> R.drawable.ic_pin
         }
+        holder.icon.setImageResource(resId)
         holder.icon.setColorFilter(p.color)  // Apply the coordinate's color to the icon
 
         // Set up click listeners for the action buttons
         holder.itemView.setOnClickListener {
+            Log.d("SimpleCoordinatesAdapter", "Item view clicked for coordinate: ${p.id}")
             onClick(p)
         }
 
-        // Temporarily disable selection highlighting to isolate freezing issue
-        /*
-        // Selection highlighting (stroke color change)
-        val card = holder.itemView as? MaterialCardView
-        if (card != null) {
-            val ctx = card.context
-            val sel = p.id == selectedId
-            val colorRes = if (sel) R.color.coordinate_card_stroke_selected else R.color.coordinate_card_stroke_normal
-            card.strokeColor = ContextCompat.getColor(ctx, colorRes)
+        holder.itemView.findViewById<View>(R.id.coordinate_row_body)?.setOnClickListener {
+            Log.d("SimpleCoordinatesAdapter", "Row body clicked for coordinate: ${p.id}")
+            onClick(p)
         }
-        */
 
-        // Remove old alternating background resource application since card provides surface; could keep subtle alt if desired
-        // (Optional) If you want alternating subtle backgrounds plus stroke, comment back in with card.setCardBackgroundColor(...)
+        val accent = holder.itemView.findViewById<View>(R.id.selection_accent)
+        val selected = p.id == selectedId
+        if (accent != null) {
+            accent.visibility = if (selected) View.VISIBLE else View.INVISIBLE
+        } else {
+            Log.w("SimpleCoordinatesAdapter", "Accent view still missing after injection attempt")
+        }
     }
 
     /**
@@ -143,6 +172,7 @@ class SimpleCoordinatesAdapter(
 
     fun setSelectedId(newId: String?) {
         if (selectedId == newId) return
+        Log.d("SimpleCoordinatesAdapter", "Selection change: old=$selectedId new=$newId")
         val oldId = selectedId
         selectedId = newId
         oldId?.let { id ->
@@ -154,4 +184,6 @@ class SimpleCoordinatesAdapter(
             if (newPos >= 0) notifyItemChanged(newPos)
         }
     }
+
+    fun positionOf(id: String): Int = items.indexOfFirst { it.id == id }
 }

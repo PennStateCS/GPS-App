@@ -3,13 +3,11 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Recycler list of coordinates -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/pointsRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Empty state text -->
     <TextView
         android:id="@+id/emptyCoordinatesText"
         android:layout_width="wrap_content"
@@ -19,7 +17,6 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
-    <!-- FAB to add coordinate -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/fab_add_coordinate"
         android:layout_width="wrap_content"
