@@ -1,4 +1,4 @@
-package com.example.surveyingapp.data
+package com.example.surveyingapp.data.local.entity
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -16,7 +16,7 @@ import androidx.room.Index
         Index(value = ["latitude","longitude"]) // lightweight spatial filter
     ]
 )
-data class Coordinate(
+data class CoordinateEntity(
     @PrimaryKey val id: String,            // Unique ID (e.g., UUID)
     val name: String,                      // Friendly label
     val latitude: Double,                  // WGS84 lat

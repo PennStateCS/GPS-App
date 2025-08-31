@@ -1,6 +1,11 @@
 package com.example.surveyingapp.ui.viewpoints
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.PorterDuff
+import androidx.core.content.ContextCompat
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,6 +18,16 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.widget.TextView
+import com.example.surveyingapp.domain.model.Coordinate
+import com.google.android.gms.maps.MapView
+import com.google.android.gms.maps.OnMapReadyCallback
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.gms.maps.model.BitmapDescriptor
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
+import com.example.surveyingapp.ui.viewpoints.EditCoordinateDialogFragment
 
 class CoordinateDetailFragment : Fragment() {
 
@@ -24,25 +39,30 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     private lateinit var viewModel: CoordinatesViewModel
+    private var currentId: String? = null
 
     private var textName: TextView? = null
-    private var textCoords: TextView? = null
+    private var textLatitude: TextView? = null
+    private var textLongitude: TextView? = null
+    private var textAltitude: TextView? = null
     private var textTime: TextView? = null
     private var textProvider: TextView? = null
     private var textRtk: TextView? = null
     private var textHdop: TextView? = null
     private var textEmpty: TextView? = null
-    private var textAltitudes: TextView? = null
     private var textAccuracy: TextView? = null
     private var textSats: TextView? = null
     private var textCorrection: TextView? = null
     private var textProjection: TextView? = null
     private var textStdDev: TextView? = null
     private var textAveraging: TextView? = null
-    private var textNote: TextView? = null
     private var badgeRtk: TextView? = null
     private var badgeAccuracy: TextView? = null
     private var rowBadges: View? = null
+    private var mapView: MapView? = null
+    private var googleMap: GoogleMap? = null
+    private var lastCoordinate: Coordinate? = null
+    private var textDate: TextView? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -51,24 +71,74 @@ class CoordinateDetailFragment : Fragment() {
     ): View? {
         val v = inflater.inflate(R.layout.fragment_coordinate_detail, container, false)
         textName = v.findViewById(R.id.text_name)
-        textCoords = v.findViewById(R.id.text_coords)
+        textLatitude = v.findViewById(R.id.text_latitude)
+        textLongitude = v.findViewById(R.id.text_longitude)
+        textAltitude = v.findViewById(R.id.text_altitude)
         textTime = v.findViewById(R.id.text_time)
         textProvider = v.findViewById(R.id.text_provider)
         textRtk = v.findViewById(R.id.text_rtk)
         textHdop = v.findViewById(R.id.text_hdop)
         textEmpty = v.findViewById(R.id.text_empty)
-        textAltitudes = v.findViewById(R.id.text_altitudes)
         textAccuracy = v.findViewById(R.id.text_accuracy)
         textSats = v.findViewById(R.id.text_sats)
         textCorrection = v.findViewById(R.id.text_correction)
         textProjection = v.findViewById(R.id.text_projection)
         textStdDev = v.findViewById(R.id.text_stddev)
         textAveraging = v.findViewById(R.id.text_averaging)
-        textNote = v.findViewById(R.id.text_note)
         badgeRtk = v.findViewById(R.id.badge_rtk)
         badgeAccuracy = v.findViewById(R.id.badge_accuracy)
         rowBadges = v.findViewById(R.id.row_badges)
+        mapView = v.findViewById(R.id.mapView)
+        textDate = v.findViewById(R.id.text_date)
+        mapView?.onCreate(savedInstanceState)
+        mapView?.getMapAsync(OnMapReadyCallback { map ->
+            googleMap = map
+            lastCoordinate?.let { updateMapMarker(it) }
+        })
         return v
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mapView?.onResume()
+    }
+    override fun onPause() {
+        super.onPause()
+        mapView?.onPause()
+    }
+    override fun onDestroy() {
+        super.onDestroy()
+        mapView?.onDestroy()
+    }
+    override fun onLowMemory() {
+        super.onLowMemory()
+        mapView?.onLowMemory()
+    }
+
+    private fun updateMapMarker(c: Coordinate) {
+        googleMap?.let { map ->
+            val latLng = LatLng(c.latitude, c.longitude)
+            map.clear()
+            val opts = MarkerOptions().position(latLng).title(c.name)
+            buildMarkerDescriptor(c.icon, c.color)?.let { opts.icon(it) }
+            map.addMarker(opts)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 17f))
+        }
+    }
+
+    private fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
+        val ctx = context ?: return null
+        if (iconName.isNullOrBlank()) return null
+        val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
+        if (resId == 0) return null
+        val d = ContextCompat.getDrawable(ctx, resId) ?: return null
+        val size = (32 * resources.displayMetrics.density).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        d.setBounds(0, 0, size, size)
+        try { d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_IN) } catch (_: Exception) {}
+        d.draw(canvas)
+        return BitmapDescriptorFactory.fromBitmap(bmp)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -77,142 +147,120 @@ class CoordinateDetailFragment : Fragment() {
             this,
             ViewModelProvider.AndroidViewModelFactory(requireActivity().application)
         ).get(CoordinatesViewModel::class.java)
+        view.findViewById<View>(R.id.btn_edit_coordinate)?.setOnClickListener { launchEditDialog() }
 
-        val id = arguments?.getString(ARG_ID)
+        currentId = arguments?.getString(ARG_ID)
+        loadCurrentId()
+    }
+
+    private fun loadCurrentId() {
+        val id = currentId
+        Log.d("CoordinateDetailFragment", "loadCurrentId called with id=$id")
         if (id.isNullOrBlank()) {
-            showEmpty()
-            return
+            Log.w("CoordinateDetailFragment", "ID is null or blank, showing empty")
+            showEmpty(); return
         }
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
+            Log.d("CoordinateDetailFragment", "Getting coordinate from ViewModel for id=$id")
             val coord = viewModel.getById(id)
             if (coord == null) {
+                Log.w("CoordinateDetailFragment", "Coordinate not found for id=$id")
                 showEmpty()
             } else {
+                Log.d("CoordinateDetailFragment", "Found coordinate: ${coord.name}")
                 bindCoordinate(coord)
             }
         }
     }
 
-    private fun showEmpty() {
-        textEmpty?.visibility = View.VISIBLE
-        listOf(
-            textName, textCoords, textTime, textProvider, textRtk, textHdop,
-            textAltitudes, textAccuracy, textSats, textCorrection, textProjection,
-            textStdDev, textAveraging, textNote, badgeRtk, badgeAccuracy, rowBadges
-        ).forEach { it?.visibility = View.GONE }
+    fun updateId(newId: String) {
+        Log.d("CoordinateDetailFragment", "updateId called: old=$currentId new=$newId")
+        if (newId == currentId) return
+        currentId = newId
+        loadCurrentId()
     }
 
-    private fun bindCoordinate(c: com.example.surveyingapp.data.Coordinate) {
-        val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        textName?.text = c.name
-        textCoords?.text = String.format(Locale.US, "Lat: %.6f\nLon: %.6f\nAlt (ellip): %.2f m", c.latitude, c.longitude, c.altitude)
-        textTime?.text = "Time: ${fmt.format(Date(c.timestamp))}"
-        textProvider?.text = "Provider: ${c.provider}"
-        textRtk?.text = "RTK: ${c.rtkStatus ?: "--"}"
-        textHdop?.text = "HDOP: ${c.hdop?.let { String.format(Locale.US, "%.1f", it) } ?: "--"}"
+    private fun showEmpty() {
+        // Show not found message but keep table placeholders visible
+        textEmpty?.visibility = View.VISIBLE
+        textName?.text = "--"
+        textLatitude?.text = "--"
+        textLongitude?.text = "--"
+        textAltitude?.text = "--"
+        textTime?.text = "--"
+        textProvider?.text = "--"
+        textRtk?.text = "--"
+        textHdop?.text = "--"
+        textAccuracy?.text = "--"
+        textSats?.text = "--"
+        textCorrection?.text = "--"
+        textProjection?.text = "--"
+        textStdDev?.text = "--"
+        textAveraging?.text = "--"
+        textDate?.text = "--"
+        // Keep everything visible (remove hiding logic)
+    }
 
-        // Altitudes block
-        val altParts = mutableListOf<String>()
-        c.altitudeMsl?.let { altParts += String.format(Locale.US, "MSL: %.2f m", it) }
-        c.geoidSeparationM?.let { altParts += String.format(Locale.US, "Geoid sep: %.2f m", it) }
-        textAltitudes?.apply {
-            if (altParts.isNotEmpty()) {
-                text = "Altitudes: ${altParts.joinToString(" · ")}"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+    private fun bindCoordinate(c: Coordinate) {
+        lastCoordinate = c
+        updateMapMarker(c)
+        val dateObj = Date(c.timestamp)
+        val numericDate = SimpleDateFormat("MM/dd/yyyy", Locale.US).format(dateObj)
+        val time12 = SimpleDateFormat("h:mm:ss a", Locale.US).format(dateObj).lowercase(Locale.US)
+        textEmpty?.visibility = View.GONE
+        textName?.text = c.name.ifBlank { "--" }
+        // Set date and time separately
+        textDate?.text = numericDate
+        textTime?.text = time12
+        textLatitude?.text = String.format(Locale.US, "%.6f", c.latitude)
+        textLongitude?.text = String.format(Locale.US, "%.6f", c.longitude)
+        textAltitude?.text = String.format(Locale.US, "%.2f m", c.altitude)
+        textProvider?.text = c.provider.ifBlank { "--" }
+        textRtk?.text = c.rtkStatus?.ifBlank { "--" } ?: "--"
+        textHdop?.text = c.hdop?.let { String.format(Locale.US, "%.1f", it) } ?: "--"
 
-        // Accuracy block
-        val accParts = mutableListOf<String>()
-        c.horizontalAccuracyM?.let { accParts += String.format(Locale.US, "H: %.2f m", it) }
-        c.verticalAccuracyM?.let { accParts += String.format(Locale.US, "V: %.2f m", it) }
-        textAccuracy?.apply {
-            if (accParts.isNotEmpty()) {
-                text = "Accuracy: ${accParts.joinToString(" / ")}"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+        // Accuracy (values only H/V)
+        val accVals = mutableListOf<String>()
+        c.horizontalAccuracyM?.let { accVals += String.format(Locale.US, "%.2f m", it) }
+        c.verticalAccuracyM?.let { accVals += String.format(Locale.US, "%.2f m", it) }
+        textAccuracy?.text = if (accVals.isNotEmpty()) accVals.joinToString(" / ") else "--"
 
         // Satellites
-        textSats?.apply {
-            val sats = c.satsUsed
-            if (sats != null) {
-                text = "Satellites used: $sats"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+        textSats?.text = c.satsUsed?.toString() ?: "--"
 
-        // Correction info
-        val corrParts = mutableListOf<String>()
-        c.correctionSource?.let { if (it.isNotBlank()) corrParts += it }
-        c.correctionAgeS?.let { corrParts += String.format(Locale.US, "age %.1fs", it) }
-        textCorrection?.apply {
-            if (corrParts.isNotEmpty()) {
-                text = "Correction: ${corrParts.joinToString(" · ")}"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+        // Correction (source · age) values only (age in s)
+        val corrVals = mutableListOf<String>()
+        c.correctionSource?.let { if (it.isNotBlank()) corrVals += it }
+        c.correctionAgeS?.let { corrVals += String.format(Locale.US, "%.1fs", it) }
+        textCorrection?.text = if (corrVals.isNotEmpty()) corrVals.joinToString(" · ") else "--"
 
-        // Projection info
-        val projParts = mutableListOf<String>()
-        if (c.easting != null && c.northing != null) {
-            projParts += String.format(Locale.US, "E: %.2f", c.easting)
-            projParts += String.format(Locale.US, "N: %.2f", c.northing)
-        }
-        c.utmZone?.let { if (it.isNotBlank()) projParts += it }
-        c.crsEpsg?.let { projParts += "EPSG:$it" }
-        textProjection?.apply {
-            if (projParts.isNotEmpty()) {
-                text = "Projection: ${projParts.joinToString(" · ")}"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+        // Projection (E · N · Zone · EPSG) values only (drop prefixes and 'EPSG:')
+        val projVals = mutableListOf<String>()
+        if (c.easting != null) projVals += String.format(Locale.US, "%.2f", c.easting)
+        if (c.northing != null) projVals += String.format(Locale.US, "%.2f", c.northing)
+        c.utmZone?.let { if (it.isNotBlank()) projVals += it }
+        c.crsEpsg?.let { projVals += "$it" }
+        textProjection?.text = if (projVals.isNotEmpty()) projVals.joinToString(" · ") else "--"
 
-        // Standard deviations
-        val stdParts = mutableListOf<String>()
-        c.stdLatM?.let { stdParts += String.format(Locale.US, "Lat ±%.2f m", it) }
-        c.stdLonM?.let { stdParts += String.format(Locale.US, "Lon ±%.2f m", it) }
-        c.stdAltM?.let { stdParts += String.format(Locale.US, "Alt ±%.2f m", it) }
-        textStdDev?.apply {
-            if (stdParts.isNotEmpty()) {
-                text = "Std Dev: ${stdParts.joinToString(", ")}"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+        // Standard deviations (Lat · Lon · Alt) values only with ± symbol
+        val stdVals = mutableListOf<String>()
+        c.stdLatM?.let { stdVals += String.format(Locale.US, "±%.2f m", it) }
+        c.stdLonM?.let { stdVals += String.format(Locale.US, "±%.2f m", it) }
+        c.stdAltM?.let { stdVals += String.format(Locale.US, "±%.2f m", it) }
+        textStdDev?.text = if (stdVals.isNotEmpty()) stdVals.joinToString(" · ") else "--"
 
-        // Averaging info
-        val avgParts = mutableListOf<String>()
-        c.averagedSamples?.let { avgParts += "$it samples" }
-        c.averageDurationMs?.let { avgParts += String.format(Locale.US, "%.1fs", it / 1000.0) }
-        textAveraging?.apply {
-            if (avgParts.isNotEmpty()) {
-                text = "Averaging: ${avgParts.joinToString(", ")}"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
+        // Averaging (samples · duration)
+        val avgVals = mutableListOf<String>()
+        c.averagedSamples?.let { avgVals += "$it samples" }
+        c.averageDurationMs?.let { avgVals += String.format(Locale.US, "%.1fs", it / 1000.0) }
+        textAveraging?.text = if (avgVals.isNotEmpty()) avgVals.joinToString(" · ") else "--"
 
-        // Note
-        textNote?.apply {
-            val noteVal = c.note?.trim()
-            if (!noteVal.isNullOrEmpty()) {
-                text = "Note: $noteVal"
-                visibility = View.VISIBLE
-            } else visibility = View.GONE
-        }
-
-        // Badges
         applyRtkBadge(c)
         applyAccuracyBadge(c)
-        // Hide badge row if both hidden
         rowBadges?.visibility = if ((badgeRtk?.visibility == View.VISIBLE) || (badgeAccuracy?.visibility == View.VISIBLE)) View.VISIBLE else View.GONE
-
-        textEmpty?.visibility = View.GONE
-        listOf(
-            textName, textCoords, textTime, textProvider, textRtk, textHdop
-        ).forEach { it?.visibility = View.VISIBLE }
     }
 
-    private fun applyRtkBadge(c: com.example.surveyingapp.data.Coordinate) {
+    private fun applyRtkBadge(c: Coordinate) {
         val status = c.rtkStatus
         val tv = badgeRtk ?: return
         if (status.isNullOrBlank()) { tv.visibility = View.GONE; return }
@@ -230,7 +278,7 @@ class CoordinateDetailFragment : Fragment() {
         tv.visibility = View.VISIBLE
     }
 
-    private fun applyAccuracyBadge(c: com.example.surveyingapp.data.Coordinate) {
+    private fun applyAccuracyBadge(c: Coordinate) {
         val tv = badgeAccuracy ?: return
         val hAcc = c.horizontalAccuracyM ?: c.hdop?.let { // derive rough horizontal from HDOP * 0.6 (base UERE assumption)
             it * 0.6
@@ -250,5 +298,16 @@ class CoordinateDetailFragment : Fragment() {
             tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
         }
         tv.visibility = View.VISIBLE
+    }
+
+    fun launchEditDialog() {
+        val current = lastCoordinate ?: return
+        EditCoordinateDialogFragment(current) { updated ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewModel.updateCoordinate(updated)
+                lastCoordinate = updated
+                bindCoordinate(updated)
+            }
+        }.show(parentFragmentManager, "edit_coordinate_dialog")
     }
 }

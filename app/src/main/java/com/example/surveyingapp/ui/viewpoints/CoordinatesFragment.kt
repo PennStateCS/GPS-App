@@ -12,8 +12,8 @@ package com.example.surveyingapp.ui.viewpoints
 
 import android.Manifest
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.HapticFeedbackConstants
@@ -27,12 +27,14 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Coordinate
+import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.databinding.FragmentCoordinatesBinding
 import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.google.android.material.snackbar.Snackbar
@@ -40,8 +42,18 @@ import com.example.surveyingapp.SurveyingApp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.graphics.Rect
+import com.example.surveyingapp.domain.model.LocationSourceType
 
 class CoordinatesFragment : Fragment() {
+
+    companion object {
+        private const val PREF_LAST_OPENED_ID = "last_coord_opened_id"
+    }
+
+    private var detailInitialized = false
+
+    // Track whether we've already added the vertical divider decoration
+    private var dividerAdded = false
 
     // View binding (valid between onCreateView and onDestroyView)
     private var _binding: FragmentCoordinatesBinding? = null
@@ -110,30 +122,29 @@ class CoordinatesFragment : Fragment() {
             onClick = { coordinate ->
                 try {
                     Log.d("CoordinatesFragment", "Item clicked: ${coordinate.id}")
-                    val fragmentTwoPane = root.findViewById<View?>(R.id.detail_container) != null
-                    if (fragmentTwoPane && isAdded) {
-                        currentSelectionId = coordinate.id
-                        // Temporarily remove setSelectedId call to isolate freezing
-                        // adapter.setSelectedId(coordinate.id)
-                        if (!childFragmentManager.isStateSaved) {
-                            childFragmentManager.beginTransaction()
-                                .replace(R.id.detail_container, CoordinateDetailFragment.newInstance(coordinate.id))
-                                .commitAllowingStateLoss()
-                        }
+                    currentSelectionId = coordinate.id
+                    saveLastOpenedId(coordinate.id)
+                    adapter.setSelectedId(coordinate.id)
+                    val pos = adapter.positionOf(coordinate.id)
+                    if (pos >= 0) binding.pointsRecyclerView.smoothScrollToPosition(pos)
+
+                    val hostActivity = activity
+                    Log.d("CoordinatesFragment", "Host activity: $hostActivity")
+
+                    if (hostActivity is CoordinatesActivity) {
+                        hostActivity.showDetail(coordinate.id)
                     } else {
-                        val host = activity
-                        if (host is CoordinatesActivity) {
-                            host.showDetail(coordinate.id)
+                        // Embedded two-pane inside this fragment (MainActivity host)
+                        if (binding.root.findViewById<View>(R.id.coord_detail_container) != null) {
+                            showEmbeddedDetail(coordinate.id)
                         } else {
-                            val ctx = requireContext()
-                            val intent = Intent(ctx, CoordinateDetailActivity::class.java).apply {
-                                putExtra(CoordinateDetailActivity.EXTRA_ID, coordinate.id)
-                            }
-                            startActivity(intent)
+                            // Fallback: navigate if container not present (should not happen normally)
+                            val args = Bundle().apply { putString("arg_id", coordinate.id) }
+                            findNavController().navigate(R.id.nav_coordinate_detail, args)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("CoordinatesFragment", "Click handler error: ${e.message}")
+                    Log.e("CoordinatesFragment", "Click handler error: ${e.message}", e)
                 }
             }
         )
@@ -143,28 +154,27 @@ class CoordinatesFragment : Fragment() {
         val recycler = binding.pointsRecyclerView
         if (spanCount <= 1) {
             recycler.layoutManager = LinearLayoutManager(requireContext())
+            // Add divider once
+            if (!dividerAdded) {
+                val decoration = DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL)
+                ContextCompat.getDrawable(requireContext(), R.drawable.coordinate_list_divider)?.let { decoration.setDrawable(it) }
+                recycler.addItemDecoration(decoration)
+                dividerAdded = true
+            }
         } else {
             recycler.layoutManager = GridLayoutManager(requireContext(), spanCount)
         }
         recycler.adapter = adapter
         recycler.setHasFixedSize(true)
+        recycler.itemAnimator = null
+        recycler.setPadding(0, recycler.paddingTop, 0, recycler.paddingBottom)
+        recycler.clipToPadding = false
 
-        val fragmentTwoPane = root.findViewById<View?>(R.id.detail_container) != null
-        if (!fragmentTwoPane) {
-            val horizPad = resources.getDimensionPixelSize(R.dimen.coord_horizontal_padding)
+        // Removed previous horizontal padding logic so items fill full width
+        // If future multi-column grid needed, add conditional spacing only when spanCount > 1
+        if (spanCount > 1 && recycler.itemDecorationCount == 0) {
             val itemSpace = resources.getDimensionPixelSize(R.dimen.coord_item_spacing)
-            recycler.setPadding(horizPad, recycler.paddingTop, horizPad, recycler.paddingBottom)
-            recycler.clipToPadding = false
-            if (spanCount > 1 && recycler.itemDecorationCount == 0) {
-                recycler.addItemDecoration(GridSpacingDecoration(spanCount, itemSpace))
-            }
-        } else {
-            // Two-pane: compact vertical list with thin dividers
-            if (recycler.itemDecorationCount == 0) {
-                val decor = DividerItemDecoration(requireContext(), DividerItemDecoration.VERTICAL)
-                ContextCompat.getDrawable(requireContext(), R.drawable.coordinate_list_divider)?.let { decor.setDrawable(it) }
-                recycler.addItemDecoration(decor)
-            }
+            recycler.addItemDecoration(GridSpacingDecoration(spanCount, itemSpace))
         }
 
         // Observe DB
@@ -177,27 +187,58 @@ class CoordinatesFragment : Fragment() {
             binding.emptyCoordinatesText.visibility =
                 if (coordinates.isEmpty()) View.VISIBLE else View.GONE
 
-            // Completely disable two-pane auto-selection logic for now to prevent freezing
+            if (coordinates.isEmpty()) {
+                currentSelectionId = null
+                adapter.setSelectedId(null)
+                clearLastOpenedId()
+                return@observe
+            }
+
+            if (currentSelectionId == null || coordinates.none { it.id == currentSelectionId }) {
+                val stored = loadLastOpenedId()
+                val target = if (stored != null && coordinates.any { it.id == stored }) stored else coordinates.first().id
+                currentSelectionId = target
+                saveLastOpenedId(target)
+            }
+            adapter.setSelectedId(currentSelectionId)
+
+            // Ensure selected item visible (initial load)
+            currentSelectionId?.let { idSel ->
+                val pos = adapter.positionOf(idSel)
+                if (pos >= 0) binding.pointsRecyclerView.post { binding.pointsRecyclerView.scrollToPosition(pos) }
+            }
+
+            // Always update the detail pane with the current selection
+            currentSelectionId?.let { id ->
+                if (activity is CoordinatesActivity) {
+                    (activity as? CoordinatesActivity)?.showDetail(id)
+                } else if (binding.root.findViewById<View>(R.id.coord_detail_container) != null) {
+                    if (!detailInitialized) {
+                        // Defer first detail load slightly to let drawer animation finish smoothly
+                        binding.root.findViewById<View>(R.id.coord_detail_container)?.postDelayed({
+                            if (isAdded) showEmbeddedDetail(id)
+                        }, 120)
+                        detailInitialized = true
+                    } else {
+                        showEmbeddedDetail(id)
+                    }
+                }
+            }
         }
 
         // FAB: add new coordinate (one-shot capture from selected source)
         binding.fabAddCoordinate.setOnClickListener {
             viewLifecycleOwner.lifecycleScope.launch {
                 val source = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
-                    .getOrDefault("internal")
-                val needsFine = source.equals("internal", ignoreCase = true)
+                    .getOrDefault(LocationSourceType.INTERNAL)
+                val needsFine = source == LocationSourceType.INTERNAL
                 if (needsFine) {
                     val granted = ContextCompat.checkSelfPermission(
                         requireContext(),
                         Manifest.permission.ACCESS_FINE_LOCATION
                     ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    if (granted) {
-                        showAddCoordinateDialog(viewModel)
-                    } else {
-                        requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                    }
+                    if (granted) showAddCoordinateDialog(viewModel) else requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 } else {
-                    // External source (RS2+) selected: no FINE permission needed here.
                     showAddCoordinateDialog(viewModel)
                 }
             }
@@ -219,7 +260,14 @@ class CoordinatesFragment : Fragment() {
                 viewModel.addCoordinate(coordinate)
                 // haptic confirm
                 _binding?.root?.post {
-                    _binding?.root?.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                    val view = _binding?.root
+                    if (view != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        } else {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        }
+                    }
                 }
             }
             dialog.show(parentFragmentManager, "AddCoordinateDialog")
@@ -308,4 +356,23 @@ class CoordinatesFragment : Fragment() {
 
     // Current selection ID (for detail view navigation)
     private var currentSelectionId: String? = null
+
+    private fun loadLastOpenedId(): String? = prefs?.getString(PREF_LAST_OPENED_ID, null)
+    private fun saveLastOpenedId(id: String) { prefs?.edit()?.putString(PREF_LAST_OPENED_ID, id)?.apply() }
+    private fun clearLastOpenedId() { prefs?.edit()?.remove(PREF_LAST_OPENED_ID)?.apply() }
+
+    private fun showEmbeddedDetail(id: String) {
+        try {
+            val existing = childFragmentManager.findFragmentById(R.id.coord_detail_container) as? CoordinateDetailFragment
+            if (existing != null) {
+                existing.updateId(id)
+            } else {
+                childFragmentManager.beginTransaction()
+                    .replace(R.id.coord_detail_container, CoordinateDetailFragment.newInstance(id))
+                    .commit()
+            }
+        } catch (e: Exception) {
+            Log.e("CoordinatesFragment", "showEmbeddedDetail failed: ${e.message}")
+        }
+    }
 }

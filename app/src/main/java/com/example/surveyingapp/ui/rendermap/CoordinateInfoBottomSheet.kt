@@ -13,7 +13,7 @@ import com.example.surveyingapp.R
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import com.example.surveyingapp.data.Coordinate
+import com.example.surveyingapp.domain.model.Coordinate
 import java.util.Locale
 
 class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
@@ -67,7 +67,13 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
         val lat = arguments?.getDouble(ARG_LAT) ?: 0.0
         val lon = arguments?.getDouble(ARG_LON) ?: 0.0
         val alt = arguments?.getDouble(ARG_ALT) ?: 0.0
-        val iconName = arguments?.getString(ARG_ICON) ?: "ic_menu_camera"
+        val iconNameRaw = arguments?.getString(ARG_ICON)
+        val iconName = when (iconNameRaw) {
+            null, "", "ic_menu_camera" -> "ic_pin"
+            "ic_menu_gallery" -> "ic_star"
+            "ic_menu_slideshow" -> "ic_home"
+            else -> iconNameRaw
+        } ?: "ic_pin"
         val color = arguments?.getInt(ARG_COLOR) ?: 0xFF2196F3.toInt() // Default blue
 
         // Populate text fields.
@@ -78,7 +84,7 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
         // Dynamically resolve icon resource name; fallback to a default if not found.
         val resId = resources.getIdentifier(iconName, "drawable", requireContext().packageName)
         val drawable = (if (resId != 0) ContextCompat.getDrawable(requireContext(), resId)
-                        else ContextCompat.getDrawable(requireContext(), R.drawable.ic_menu_camera))
+                        else ContextCompat.getDrawable(requireContext(), R.drawable.ic_pin))
             ?.mutate()
 
         // Apply tint based on the coordinate's color and set the drawable.

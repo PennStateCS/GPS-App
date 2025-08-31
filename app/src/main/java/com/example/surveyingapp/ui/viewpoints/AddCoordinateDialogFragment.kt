@@ -15,7 +15,8 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.data.Coordinate
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.LocationSourceType
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -30,6 +31,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import java.util.Locale
 import kotlin.coroutines.resume
 
 /**
@@ -68,8 +70,10 @@ class AddCoordinateDialogFragment(
         val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
 
-        // Set up icon choices with custom adapter
-        val icons = listOf("ic_menu_camera", "ic_menu_gallery", "ic_menu_slideshow")
+        // Set up icon choices with custom adapter (updated icons)
+        val icons = listOf(
+            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
+        )
         iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
 
         // Set up color choices with predefined colors
@@ -85,8 +89,9 @@ class AddCoordinateDialogFragment(
         // Begin one-shot location acquisition based on settings
         locationText.text = getString(R.string.fetching_location)
         lifecycleScope.launch {
-            val sourceSetting = try { SurveyingApp.settingsRepo.locationSource.first() } catch (_: Exception) { "internal" }
-            if (sourceSetting == "internal") {
+            val sourceSetting = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
+                .getOrDefault(LocationSourceType.INTERNAL)
+            if (sourceSetting == LocationSourceType.INTERNAL) {
                 fetchInternalOneShot(locationText)
             } else {
                 fetchExternalOneShot(locationText)
@@ -210,7 +215,9 @@ class AddCoordinateDialogFragment(
             imageView.setImageResource(resId)
 
             // Create a user-friendly name from the icon name
-            textView.text = iconName.replace("ic_menu_", "").replaceFirstChar { it.uppercase() }
+            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
+                .replace('_', ' ') // allow future multi-word
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
             return view
         }

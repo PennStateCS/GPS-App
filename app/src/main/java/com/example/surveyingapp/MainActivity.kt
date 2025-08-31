@@ -14,7 +14,9 @@ import androidx.core.content.ContextCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.findNavController
 import androidx.navigation.fragment.NavHostFragment
@@ -22,17 +24,22 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
-import com.example.surveyingapp.data.AppDatabase
-import com.example.surveyingapp.data.location.Fix
-import com.example.surveyingapp.data.location.LocationStatus
-import com.example.surveyingapp.data.location.RtkStatus
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.domain.model.Fix
+import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.domain.model.RtkStatus
 import com.example.surveyingapp.service.LocationService
 import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.ui.openinar.OpenInARFragment
 import com.example.surveyingapp.ui.settings.SettingsFragment
+import com.example.surveyingapp.ui.common.updateStatusBar
 import com.google.android.material.navigation.NavigationView
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -61,6 +68,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private lateinit var statusBarTv: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Preferences early to reduce potential UI flicker (e.g. theming decisions before inflate)
@@ -69,6 +78,8 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Cache status bar TextView (inside included layouts)
+        statusBarTv = findViewById(R.id.text_status_bar_compact)
         setSupportActionBar(binding.appBarMain.toolbar)
 
         val drawerLayout: DrawerLayout = binding.drawerLayout
@@ -138,75 +149,44 @@ class MainActivity : AppCompatActivity() {
         LocationService.start(this)
     }
 
+    @OptIn(FlowPreview::class)
+    // Option B: lifecycle + combine + debounce with GNSS status flow
     private fun startStatusBarObservers() {
-        val sourceTv: TextView = findViewById(R.id.text_source)
-        val statusTv: TextView = findViewById(R.id.text_status)
-        statusCollectJob?.cancel() // Avoid duplicate collectors after recreation
-        val manager = SurveyingApp.locationManager
-        val settingsRepo = SurveyingApp.settingsRepo
-
+        statusCollectJob?.cancel()
         statusCollectJob = lifecycleScope.launch {
-            // Local state cache (prefer combine() in future for cleaner reactive style)
-            var latestFix: Fix? = null
-            var latestStatus: LocationStatus = LocationStatus.Idle
-            var externalConnType: String = settingsRepo.externalConnType.first() // initial snapshot
-            var locationSource: String = settingsRepo.locationSource.first()
-
-            // Update fields reactively; using separate coroutines avoids blocking one another
-            launch { settingsRepo.externalConnType.collectLatest { externalConnType = it } }
-            launch { settingsRepo.locationSource.collectLatest { locationSource = it } }
-
-            fun mapFixType(fix: Fix?, external: Boolean, streaming: Boolean): String =
-                if (!external) {
-                    if (fix != null) "Fused" else if (streaming) "Fused (pending)" else "Fused"
-                } else when (fix?.rtkStatus) {
-                    RtkStatus.FIX -> "Fixed RTK"
-                    RtkStatus.FLOAT -> "Float"
-                    RtkStatus.DGPS -> "DGPS"
-                    RtkStatus.SINGLE -> "Single"
-                    RtkStatus.INVALID, null -> if (streaming) "No Fix" else "--"
-                }
-
-            fun mapConnection(status: LocationStatus, external: Boolean): String = when (status) {
-                is LocationStatus.Connecting -> "Connecting"
-                is LocationStatus.Error -> "Error"
-                LocationStatus.Idle -> if (external) "Disconnected" else "Idle"
-                is LocationStatus.Streaming -> "Connected"
+            val settingsRepo = SurveyingApp.settingsRepo
+            val initialSource = settingsRepo.locationSource.first()
+            val initialLabel = if (initialSource == LocationSourceType.INTERNAL) "Internal" else "RS2+"
+            statusBarTv.text = getString(R.string.status_initial_no_fix, initialLabel)
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val manager = SurveyingApp.locationManager
+                combine(
+                    manager.fixFlow,
+                    settingsRepo.locationSource,
+                    manager.gnssStatusFlow
+                ) { fix: Fix, source: LocationSourceType, gnss -> Triple(fix, source, gnss) }
+                    .debounce(200)
+                    .distinctUntilChanged { old, new ->
+                        // Distinct based on text produced; quick compare without recomputing full string by key parts
+                        val oldKey = "${old.second}|${old.first.rtkStatus}|${old.first.lat}|${old.first.lon}|${old.first.hAccM}|${old.first.vAccM}"
+                        val newKey = "${new.second}|${new.first.rtkStatus}|${new.first.lat}|${new.first.lon}|${new.first.hAccM}|${new.first.vAccM}"
+                        oldKey == newKey
+                    }
+                    .collectLatest { (fix, source, gnss) ->
+                        val sourceLabel = if (source == LocationSourceType.INTERNAL) "Internal" else "RS2+"
+                        val text = updateStatusBar(sourceLabel, fix, gnss)
+                        statusBarTv.text = text
+                        val colorRes = when {
+                            source == LocationSourceType.INTERNAL -> android.R.color.white
+                            fix.rtkStatus == RtkStatus.FIX -> R.color.status_fix
+                            fix.rtkStatus == RtkStatus.FLOAT -> R.color.status_float
+                            fix.rtkStatus == RtkStatus.DGPS -> R.color.status_dgps
+                            fix.rtkStatus == RtkStatus.SINGLE -> R.color.status_single
+                            else -> R.color.status_no_fix
+                        }
+                        statusBarTv.setTextColor(ContextCompat.getColor(this@MainActivity, colorRes))
+                    }
             }
-            fun mapSourceLabel(source: String, connType: String): String =
-                if (source == "external") "RS2+ ${connType.uppercase()}" else "Internal GPS"
-
-            fun satsPart(f: Fix?): String {
-                val used = f?.satsUsed; val vis = f?.satsVisible
-                return when {
-                    used != null && vis != null -> "${used}/${vis} sats"
-                    used != null -> "${used} sats"
-                    else -> "-- sats"
-                }
-            }
-            fun dopPart(f: Fix?): String {
-                val pdop = f?.pdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
-                val hdop = f?.hdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
-                return when {
-                    pdop != null && hdop != null -> "PDOP $pdop / HDOP $hdop"
-                    pdop != null -> "PDOP $pdop"
-                    hdop != null -> "HDOP $hdop"
-                    else -> "PDOP -- / HDOP --"
-                }
-            }
-            fun updateUi() {
-                val external = locationSource == "external"
-                val streaming = latestStatus is LocationStatus.Streaming
-                val sourceLine = mapSourceLabel(locationSource, externalConnType) + " • " + mapConnection(latestStatus, external)
-                val fixType = mapFixType(latestFix, external, streaming)
-                val detailLine = listOf(fixType, satsPart(latestFix), dopPart(latestFix)).joinToString(" • ")
-                sourceTv.text = sourceLine
-                statusTv.text = detailLine
-            }
-
-            // Collect location fixes & status concurrently and update when either changes
-            launch { manager.fixes.collectLatest { latestFix = it; updateUi() } }
-            launch { manager.status.collectLatest { latestStatus = it; updateUi() } }
         }
     }
 
@@ -256,7 +236,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // onStart/onStop overrides currently no-op – safe to remove unless future hooks needed
+    // onStart/onStop overrides currently no-op
     override fun onStart() { super.onStart() }
     override fun onStop() { super.onStop() }
 }

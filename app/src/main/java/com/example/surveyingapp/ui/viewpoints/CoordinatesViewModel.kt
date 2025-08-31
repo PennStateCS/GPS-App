@@ -18,9 +18,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.viewModelScope
-import com.example.surveyingapp.data.AppDatabase
-import com.example.surveyingapp.data.Coordinate
-import com.example.surveyingapp.data.CoordinateRepository
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.repository.CoordinateRepository
+import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import kotlinx.coroutines.launch
 
 class CoordinatesViewModel(application: Application) : AndroidViewModel(application) {
@@ -33,7 +34,7 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
         // Initialize the database and repository
         // This happens once when the ViewModel is created
         val dao = AppDatabase.getDatabase(application).coordinateDao()
-        repository = CoordinateRepository(dao)
+        repository = CoordinateRepositoryImpl(dao)
         allCoordinates = repository.allCoordinates
     }
 
@@ -66,7 +67,7 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
 
         // Colors and icons for variety in the fake data
         val colors = listOf(0xFFE57373.toInt(),0xFF64B5F6.toInt(),0xFF81C784.toInt(),0xFFFFB74D.toInt(),0xFFBA68C8.toInt())
-        val icons = listOf("ic_menu_camera","ic_menu_gallery","ic_menu_slideshow")
+        val icons = listOf("ic_pin","ic_home","ic_star","ic_circle","ic_square","ic_triangle","ic_diamond")
         val now = System.currentTimeMillis()
         val random = kotlin.random.Random(System.currentTimeMillis())
 

@@ -27,8 +27,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Coordinate
-import com.example.surveyingapp.data.CoordinateDao
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.data.local.dao.CoordinateDao
+import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.databinding.FragmentOpenInArBinding
 import com.google.ar.core.*
 import com.google.ar.core.Point
@@ -1056,8 +1057,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (liveObserverAttached) return
         val dao = coordinateDao ?: return
         if (!isAdded || _binding == null) return
-        dao.getAllCoordinates().observe(viewLifecycleOwner) { rows ->
-            setCoordinates(rows)
+        dao.getAllCoordinates().observe(viewLifecycleOwner) { entities ->
+            val coords = entities.map { it.toDomainForAr() }
+            setCoordinates(coords)
         }
         liveObserverAttached = true
     }
@@ -1086,4 +1088,37 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             } else false
         }
     }
+
+    private fun CoordinateEntity.toDomainForAr(): Coordinate = Coordinate(
+        id = id,
+        name = name,
+        latitude = latitude,
+        longitude = longitude,
+        altitude = altitude,
+        timestamp = timestamp,
+        icon = icon,
+        color = color,
+        provider = provider,
+        rtkStatus = rtkStatus,
+        satsUsed = satsUsed,
+        hdop = hdop,
+        horizontalAccuracyM = horizontalAccuracyM,
+        verticalAccuracyM = verticalAccuracyM,
+        correctionSource = correctionSource,
+        correctionAgeS = correctionAgeS,
+        altitudeMsl = altitudeMsl,
+        geoidSeparationM = geoidSeparationM,
+        crsEpsg = crsEpsg,
+        easting = easting,
+        northing = northing,
+        utmZone = utmZone,
+        note = note,
+        averagedSamples = averagedSamples,
+        averageDurationMs = averageDurationMs,
+        stdLatM = stdLatM,
+        stdLonM = stdLonM,
+        stdAltM = stdAltM,
+        sourceDevice = sourceDevice,
+        appVersion = appVersion
+    )
 }
