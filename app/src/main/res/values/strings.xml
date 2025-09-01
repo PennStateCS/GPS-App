@@ -118,4 +118,10 @@
     <string name="dev_coord_generate">Generate 15 Coordinates</string>
     <string name="dev_coord_hint">Generates 15 test coordinates within ~20 ft of current location (first is exact position).</string>
     <string name="title_coordinate_detail">Coordinate Detail</string>
+
+    <!-- New Development Fragment strings -->
+    <string name="dev_request_core_permissions">Request Core Permissions</string>
+    <string name="dev_reveal_key">Reveal Key</string>
+    <string name="dev_copy_key">Copy Key</string>
+    <string name="dev_status_ready">Ready</string>
 </resources>

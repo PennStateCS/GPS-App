@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Generate Coordinates Button -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btnGenerateCoords"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/dev_coord_generate" />
+
+    <!-- Clear All Coordinates Button -->
+    <androidx.appcompat.widget.AppCompatButton
+        android:id="@+id/btnClearAllCoords"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/dev_coord_clear_all" />
+
+    <!-- Spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="8dp" />
+
+    <!-- Status Text -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/dev_status_ready"
+        android:textColor="@color/dev_info_label"
+        android:textSize="14sp" />
+
+    <!-- Hint Text -->
+    <TextView
+        android:id="@+id/hintText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/dev_coord_hint"
+        android:textSize="12sp"
+        android:textColor="@color/dev_info_value"
+        android:paddingTop="12dp" />
+
+</LinearLayout>

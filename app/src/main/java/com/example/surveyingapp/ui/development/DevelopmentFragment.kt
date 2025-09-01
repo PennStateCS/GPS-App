@@ -81,11 +81,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     override fun provideCategories(): List<SettingsCategory> = devCategories
 
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? = when (category.id) {
-        1 -> setupSystemInfoContent()    // App & device/runtime diagnostics
-        2 -> setupPermissionsContent()   // Manifest + grant snapshot (static read; no live observer)
-        3 -> setupArDebugContent()       // ARCore capability probe (no camera start)
-        4 -> setupMapsDebugContent()     // Google Maps / Play Services debug
-        5 -> setupCoordinatesDevContent() // Coordinate generation and management
+        1 -> setupSystemInfoContent(inflater)    // App & device/runtime diagnostics
+        2 -> setupPermissionsContent(inflater)   // Manifest + grant snapshot (static read; no live observer)
+        3 -> setupArDebugContent(inflater)       // ARCore capability probe (no camera start)
+        4 -> setupMapsDebugContent(inflater)     // Google Maps / Play Services debug
+        5 -> setupCoordinatesDevContent(inflater) // Coordinate generation and management
         else -> null
     }
 
@@ -116,40 +116,30 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         return bar
     }
 
-    private fun setupPermissionsContent(): View {
-        val ctx = requireContext()
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-        }
-        val tableHolder = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    private fun setupPermissionsContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_permissions, null)
+
+        // Get references to the layout components
+        val refreshBarContainer = view.findViewById<LinearLayout>(R.id.refreshBarContainer)
+        val tableHolder = view.findViewById<LinearLayout>(R.id.permissionsTableContainer)
+        val requestButton = view.findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnRequestCorePermissions)
+
         fun rebuild() {
             tableHolder.removeAllViews()
             tableHolder.addView(createPermissionsTable())
         }
-        // Replace text button with right‑aligned icon bar
-        container.addView(createRefreshBar { rebuild() })
-        container.addView(tableHolder)
 
-        // Add core permissions request button
-        val requestButton = androidx.appcompat.widget.AppCompatButton(ctx).apply {
-            text = "Request Core Permissions"
-            setPadding(dpToPx(16f), dpToPx(12f), dpToPx(16f), dpToPx(12f))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dpToPx(16f)
-            }
-            setOnClickListener {
-                requestCorePermissions()
-            }
+        // Add refresh bar
+        refreshBarContainer.addView(createRefreshBar { rebuild() })
+
+        // Set up the request button click listener
+        requestButton.setOnClickListener {
+            requestCorePermissions()
         }
-        container.addView(requestButton)
 
         rebuild()
         permissionsTableHolder = tableHolder // Track reference for refreshing
-        return container
+        return view
     }
 
     private fun requestCorePermissions() {
@@ -268,20 +258,14 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         return table
     }
 
-    private fun setupSystemInfoContent(): View {
+    private fun setupSystemInfoContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_system_info, null)
+
+        // Get references to the layout components
+        val appInfoTableContainer = view.findViewById<LinearLayout>(R.id.appInfoTableContainer)
+        val deviceInfoTableContainer = view.findViewById<LinearLayout>(R.id.deviceInfoTableContainer)
+
         val ctx = requireContext()
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-            // Optional themed background could be added here.
-        }
-        fun sectionHeader(titleRes: Int) = TextView(ctx).apply {
-            text = getString(titleRes)
-            textSize = 16f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-            setPadding(0, 24, 0, 12)
-        }
         // Package/application metadata
         val pm = ctx.packageManager
         val packageName = ctx.packageName
@@ -298,6 +282,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val systemApp = appInfo?.let { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0 } ?: false
         val apkFile = appInfo?.sourceDir?.let { java.io.File(it) }
         val apkSize = apkFile?.length() ?: -1L
+
         // Device fingerprint subset
         val model = android.os.Build.MODEL ?: getString(R.string.dev_value_unknown)
         val manufacturer = android.os.Build.MANUFACTURER ?: getString(R.string.dev_value_unknown)
@@ -305,12 +290,14 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val sdkInt = android.os.Build.VERSION.SDK_INT.toString()
         val androidVersion = android.os.Build.VERSION.RELEASE ?: getString(R.string.dev_value_unknown)
         val abis = android.os.Build.SUPPORTED_ABIS?.joinToString(", ") ?: getString(R.string.dev_value_unknown)
+
         // Runtime snapshot (heap + threads) – coarse, not for profiling accuracy
         val rt = Runtime.getRuntime()
         val heapUsed = rt.totalMemory() - rt.freeMemory()
         val heapFree = rt.freeMemory()
         val heapMax = rt.maxMemory()
         val threadCount = Thread.getAllStackTraces().keys.size
+
         // Storage basics (internal app storage)
         val filesDir = ctx.filesDir
         val stat = runCatching { android.os.StatFs(filesDir.path) }.getOrNull()
@@ -319,6 +306,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val availBlocks = stat?.availableBlocksLong ?: 0L
         val internalTotal = blkSize * totalBlocks
         val internalFree = blkSize * availBlocks
+
         // Process naming (Android P+ helper or fallback)
         val processName = runCatching {
             if (android.os.Build.VERSION.SDK_INT >= 28) {
@@ -327,8 +315,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 procInfo.processName ?: packageName
             } else packageName
         }.getOrElse { getString(R.string.dev_value_unknown) }
-        // App info section
-        container.addView(sectionHeader(R.string.dev_section_app_info))
+
+        // Populate app info table
         val appTable = buildInfoTable(ctx).apply {
             addRow(ctx.getString(R.string.dev_label_package_name), packageName, 0)
             addRow(ctx.getString(R.string.dev_label_version_name), versionName, 1)
@@ -343,9 +331,9 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             addRow(ctx.getString(R.string.dev_label_source_dir), appInfo?.sourceDir ?: getString(R.string.dev_value_unknown), 10)
             addRow(ctx.getString(R.string.dev_label_data_dir), appInfo?.dataDir ?: getString(R.string.dev_value_unknown), 11)
         }
-        container.addView(appTable)
-        // Device/runtime section
-        container.addView(sectionHeader(R.string.dev_section_device_info))
+        appInfoTableContainer.addView(appTable)
+
+        // Populate device info table
         val deviceTable = buildInfoTable(ctx).apply {
             addRow(ctx.getString(R.string.dev_label_android_version), androidVersion, 0)
             addRow(ctx.getString(R.string.dev_label_sdk_int), sdkInt, 1)
@@ -361,16 +349,19 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             addRow(ctx.getString(R.string.dev_label_internal_free), formatBytes(internalFree), 11)
             addRow(ctx.getString(R.string.dev_label_internal_total), formatBytes(internalTotal), 12)
         }
-        container.addView(deviceTable)
-        return container
+        deviceInfoTableContainer.addView(deviceTable)
+
+        return view
     }
 
-    private fun setupArDebugContent(): View {
+    private fun setupArDebugContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_ar_debug, null)
+
+        // Get references to the layout components
+        val refreshBarContainer = view.findViewById<LinearLayout>(R.id.refreshBarContainer)
+        val tableContainer = view.findViewById<LinearLayout>(R.id.arInfoTableContainer)
+
         val ctx = requireContext()
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-        }
         val infoTable = buildInfoTable(ctx)
         fun add(label: String, value: String, idx: Int) = infoTable.addRow(label, value, idx)
         fun gather(): List<Pair<String,String>> {
@@ -420,18 +411,28 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             data.forEachIndexed { idx, pair -> add(pair.first, pair.second, idx) }
         }
         populate()
-        // Replace text button with right‑aligned icon bar
-        container.addView(createRefreshBar { populate() }, 0)
-        container.addView(infoTable)
-        return container
+
+        // Add refresh bar and table to containers
+        refreshBarContainer.addView(createRefreshBar { populate() })
+        tableContainer.addView(infoTable)
+
+        return view
     }
 
-    private fun setupMapsDebugContent(): View {
+    private fun setupMapsDebugContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_maps_debug, null)
+
+        // Get references to the layout components
+        val refreshBarContainer = view.findViewById<LinearLayout>(R.id.refreshBarContainer)
+        val tableContainer = view.findViewById<LinearLayout>(R.id.mapsInfoTableContainer)
+        val apiKeyControls = view.findViewById<LinearLayout>(R.id.apiKeyControls)
+        val revealBtn = view.findViewById<Button>(R.id.btnRevealKey)
+        val copyBtn = view.findViewById<Button>(R.id.btnCopyKey)
+        val apiKeyFullView = view.findViewById<TextView>(R.id.apiKeyFullView)
+        val mapViewTestContainer = view.findViewById<FrameLayout>(R.id.mapViewTestContainer)
+
         val ctx = requireContext()
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-        }
+
         // Table container (we'll build custom rows for color coding)
         val table = buildInfoTable(ctx)
         var rowIndex = 0
@@ -472,7 +473,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             })
             rowIndex++
         }
-        // Remove local enum definition, use MapsStatus
 
         // Gather statuses
         val availabilityCode = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(ctx)
@@ -541,32 +541,31 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         // Placeholder for runtime MapView test (async result inserted below)
         val mapTestLabel = "Runtime MapView Test"
         addRow(mapTestLabel, "PENDING", MapsStatus.WARN)
-        val runtimeStatusIndex = rowIndex - 1 // last added row index in table children*2? We'll update the value view directly by tag.
-        // We'll tag value TextView for later update
+        val runtimeStatusIndex = rowIndex - 1
         val valueHolder = (table.getChildAt(runtimeStatusIndex*2 -1) as? LinearLayout)?.getChildAt(1) as? TextView
 
-        // Reveal / Copy controls for API key
-        val apiKeyControls = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 8, 12, 8)
+        // Add refresh bar and table to containers
+        fun refresh() {
+            val parent = view.parent as? ViewGroup
+            if (parent != null) {
+                val idx = parent.indexOfChild(view)
+                parent.removeViewAt(idx)
+                parent.addView(setupMapsDebugContent(inflater), idx)
+            }
         }
-        val revealBtn = Button(ctx).apply { text = "Reveal Key" }
-        val copyBtn = Button(ctx).apply { text = "Copy Key"; isEnabled = false }
-        val apiKeyFullView = TextView(ctx).apply {
-            visibility = View.GONE
-            text = apiKeyFull
-            textSize = 12f
-            setTextIsSelectable(true)
-            setPadding(12,4,12,12)
-        }
+        refreshBarContainer.addView(createRefreshBar { refresh() })
+        tableContainer.addView(table)
+
+        // Set up API key reveal/copy functionality
+        apiKeyFullView.text = apiKeyFull
         revealBtn.setOnClickListener {
             if (apiKeyFullView.visibility == View.GONE) {
                 apiKeyFullView.visibility = View.VISIBLE
                 copyBtn.isEnabled = apiKeyFull != "(not set)" && !apiKeyFull.startsWith("(error")
-                revealBtn.text = "Hide Key"
+                revealBtn.text = getString(R.string.dev_reveal_key).replace("Reveal", "Hide")
             } else {
                 apiKeyFullView.visibility = View.GONE
-                revealBtn.text = "Reveal Key"
+                revealBtn.text = getString(R.string.dev_reveal_key)
             }
         }
         copyBtn.setOnClickListener {
@@ -575,37 +574,14 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             cm.setPrimaryClip(clip)
             Toast.makeText(ctx, "API key copied", Toast.LENGTH_SHORT).show()
         }
-        apiKeyControls.addView(revealBtn)
-        apiKeyControls.addView(copyBtn)
-
-        container.addView(table)
-        container.addView(apiKeyControls)
-        container.addView(apiKeyFullView)
-
-        // Replace text refresh button with right-aligned icon bar at top
-        container.addView(createRefreshBar {
-            val parent = container.parent as? ViewGroup
-            if (parent != null) {
-                val idx = parent.indexOfChild(container)
-                parent.removeViewAt(idx)
-                parent.addView(setupMapsDebugContent(), idx)
-            }
-        }, 0)
 
         // Runtime MapView test
-        val testFrame = FrameLayout(ctx).apply {
-            setPadding(0,16,0,0)
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(120f)).apply {
-                topMargin = dpToPx(8f)
-            }
-        }
         val miniMapView = MapView(ctx)
-        testFrame.addView(miniMapView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        container.addView(testFrame)
+        mapViewTestContainer.addView(miniMapView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         miniMapView.onCreate(null)
         val handler = Handler(Looper.getMainLooper())
         var completed = false
-        // For runtime MapView test updateRuntimeStatus signature
+
         fun updateRuntimeStatus(text: String, status: MapsStatus) {
             valueHolder?.text = text
             valueHolder?.setTextColor(
@@ -620,68 +596,49 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             miniMapView.getMapAsync { gMap ->
                 completed = true
                 updateRuntimeStatus("MAP_READY", MapsStatus.OK)
-                // Light camera move (no network heavy call)
                 gMap.moveCamera(com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(LatLng(0.0,0.0), 1f))
             }
-            // Timeout
             handler.postDelayed({ if(!completed) updateRuntimeStatus("TIMEOUT", MapsStatus.ERROR) }, 5000)
         } catch (e: Exception) {
             updateRuntimeStatus("ERROR: ${e.message}", MapsStatus.ERROR)
         }
+
         // Manage mini MapView lifecycle via fragment callbacks
         lifecycle.addObserver(object: androidx.lifecycle.DefaultLifecycleObserver {
             override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onResume() }
             override fun onPause(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onPause() }
             override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onDestroy() }
-            // removed invalid onLowMemory override
         })
 
-        return container
+        return view
     }
 
-    private fun setupCoordinatesDevContent(): View {
-        val ctx = requireContext()
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-        }
-        val status = TextView(ctx).apply {
-            text = "Ready"
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-            textSize = 14f
-        }
-        fun setStatus(msg: String) { status.text = msg }
+    private fun setupCoordinatesDevContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_coordinates, null)
 
-        val btnClear = androidx.appcompat.widget.AppCompatButton(ctx).apply {
-            text = ctx.getString(R.string.dev_coord_clear_all)
-            setOnClickListener {
-                setStatus("Clearing…")
-                viewLifecycleOwner.lifecycleScope.launch {
-                    runCatching { coordinateRepository.deleteAll() }
-                        .onSuccess { setStatus("All coordinates cleared") }
-                        .onFailure { setStatus("Clear failed: ${it.message}") }
-                }
+        // Get references to the layout components
+        val generateButton = view.findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnGenerateCoords)
+        val clearButton = view.findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnClearAllCoords)
+        val statusText = view.findViewById<TextView>(R.id.statusText)
+
+        fun setStatus(msg: String) { statusText.text = msg }
+
+        // Set up button click listeners
+        generateButton.setOnClickListener {
+            setStatus("Generating…")
+            viewLifecycleOwner.lifecycleScope.launch { generateCoordinates(::setStatus) }
+        }
+
+        clearButton.setOnClickListener {
+            setStatus("Clearing…")
+            viewLifecycleOwner.lifecycleScope.launch {
+                runCatching { coordinateRepository.deleteAll() }
+                    .onSuccess { setStatus("All coordinates cleared") }
+                    .onFailure { setStatus("Clear failed: ${it.message}") }
             }
         }
-        val btnGenerate = androidx.appcompat.widget.AppCompatButton(ctx).apply {
-            text = ctx.getString(R.string.dev_coord_generate)
-            setOnClickListener {
-                setStatus("Generating…")
-                viewLifecycleOwner.lifecycleScope.launch { generateCoordinates(::setStatus) }
-            }
-        }
-        container.addView(btnGenerate)
-        container.addView(btnClear)
-        container.addView(View(ctx).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(8f)) })
-        container.addView(status)
-        val hint = TextView(ctx).apply {
-            text = ctx.getString(R.string.dev_coord_hint)
-            textSize = 12f
-            setPadding(0, dpToPx(12f), 0, 0)
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-        }
-        container.addView(hint)
-        return container
+
+        return view
     }
 
     private suspend fun generateCoordinates(setStatus: (String) -> Unit) {
