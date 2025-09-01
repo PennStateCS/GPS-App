@@ -30,8 +30,8 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
-    <!-- Make AR optional so the app still installs/runs on unsupported devices -->
-    <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
+    <!-- Make AR required for devices that support ARCore geospatial features -->
+    <uses-feature android:name="android.hardware.camera.ar" android:required="true" />
     <!-- General back camera optional (don’t block install on devices without it) -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- ARCore needs GLES 3.0, but keep optional so non-AR paths still work -->
@@ -55,6 +55,12 @@
             android:name="com.google.ar.core"
             android:value="optional" />
 
+        <!-- ARCore API Key for geospatial features -->
+        <meta-data
+            android:name="com.google.android.ar.API_KEY"
+            android:value="YOUR_API_KEY_HERE"/>
+
+        <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="YOUR_API_KEY_HERE"/>
