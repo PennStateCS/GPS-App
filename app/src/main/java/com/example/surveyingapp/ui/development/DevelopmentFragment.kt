@@ -10,6 +10,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
@@ -53,6 +54,24 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     )
 
     private lateinit var coordinateRepository: CoordinateRepositoryImpl
+
+    // Permission request launcher for core permissions
+    private val corePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.values.all { it }
+        val message = if (granted) {
+            "All core permissions granted!"
+        } else {
+            val denied = permissions.filterValues { !it }.keys
+            "Permissions denied: ${denied.joinToString(", ") { it.substringAfterLast('.') }}"
+        }
+        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+        // Refresh the permissions table to show updated status
+        refreshPermissionsTable()
+    }
+
+    private var permissionsTableHolder: LinearLayout? = null
 
     override fun onRootCreated(root: View) {
         // Initialize repository for coordinates operations
@@ -111,8 +130,42 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         // Replace text button with right‑aligned icon bar
         container.addView(createRefreshBar { rebuild() })
         container.addView(tableHolder)
+
+        // Add core permissions request button
+        val requestButton = androidx.appcompat.widget.AppCompatButton(ctx).apply {
+            text = "Request Core Permissions"
+            setPadding(dpToPx(16f), dpToPx(12f), dpToPx(16f), dpToPx(12f))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(16f)
+            }
+            setOnClickListener {
+                requestCorePermissions()
+            }
+        }
+        container.addView(requestButton)
+
         rebuild()
+        permissionsTableHolder = tableHolder // Track reference for refreshing
         return container
+    }
+
+    private fun requestCorePermissions() {
+        val corePermissions = arrayOf(
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.CAMERA
+        )
+        corePermissionsLauncher.launch(corePermissions)
+    }
+
+    private fun refreshPermissionsTable() {
+        permissionsTableHolder?.let { holder ->
+            holder.removeAllViews()
+            holder.addView(createPermissionsTable())
+        }
     }
 
     private fun createPermissionsTable(): View {
