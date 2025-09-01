@@ -82,10 +82,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // Sidebar categories
     private val categories = listOf(
         SettingsCategory(1, "Location", R.drawable.ic_section_location),
-        SettingsCategory(2, "Display", R.drawable.ic_star), // replaced legacy gallery icon
-        SettingsCategory(3, "Data", R.drawable.ic_section_data),
-        SettingsCategory(4, "Developer Tools", R.drawable.ic_dev_tools),
-        SettingsCategory(5, "About", R.drawable.ic_home)
+        SettingsCategory(2, "Data", R.drawable.ic_section_data),
+        SettingsCategory(3, "Developer Tools", R.drawable.ic_dev_tools),
+        SettingsCategory(4, "About", R.drawable.ic_home)
     )
 
     // Import/Export jobs
@@ -94,13 +93,24 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private var importTotal = 0
     private var importProcessed = 0
 
-    private val exportLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> if (uri != null) lifecycleScope.launch { exportCoordinates(uri) } }
+    // Track format for pending import (true if CSV)
+    private var pendingImportIsCsv: Boolean = false
 
-    private val importLauncher = registerForActivityResult(
+    // Export launchers (JSON & CSV)
+    private val exportJsonLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) lifecycleScope.launch { exportCoordinatesJson(uri) } }
+    private val exportCsvLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> if (uri != null) lifecycleScope.launch { exportCoordinatesCsv(uri) } }
+
+    // Import launchers (JSON & CSV)
+    private val importJsonLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri) } }
+    ) { uri -> if (uri != null) lifecycleScope.launch { pendingImportIsCsv = false; prepareImportCoordinatesWithConfirmation(uri, isCsv = false) } }
+    private val importCsvLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) lifecycleScope.launch { pendingImportIsCsv = true; prepareImportCoordinatesWithConfirmation(uri, isCsv = true) } }
 
     // ───────────────────────────── Bluetooth state ─────────────────────────────
     private var tcpDiscoveryJob: Job? = null
@@ -110,8 +120,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     companion object {
         const val PREFS_NAME = "SurveyingAppPrefs"
-        const val PREF_SHOW_COORDINATES = "show_coordinates"
-        const val PREF_SHOW_ELEVATION = "show_elevation"
         const val PREF_HIGH_ACCURACY = "high_accuracy"
         const val PREF_DEV_TOOLS = "dev_tools"
     }
@@ -127,10 +135,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
         when (category.id) {
             1 -> setupLocationContent(inflater)
-            2 -> setupDisplayContent(inflater)
-            3 -> setupDataContent(inflater)
-            4 -> setupDeveloperContent(inflater)
-            5 -> setupAboutContent(inflater)
+            2 -> setupDataContent(inflater)
+            3 -> setupDeveloperContent(inflater)
+            4 -> setupAboutContent(inflater)
             else -> null
         }
 
@@ -141,19 +148,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
         return view
     }
 
-    private fun setupDisplayContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.content_settings_display, contentContainer, false)
-        preferences.edit {
-            putBoolean(PREF_SHOW_COORDINATES, true)
-            putBoolean(PREF_SHOW_ELEVATION, true)
-        }
-        return view
-    }
-
     private fun setupDataContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_data, contentContainer, false)
-        view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { startExportCoordinatesFlow() }
-        view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { startImportCoordinatesFlow() }
+        view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { showExportFormatDialog() }
+        view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { showImportFormatDialog() }
         view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { cancelActiveImport() }
         return view
     }
@@ -437,108 +435,124 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     // ───────────────────────────── Import / Export ─────────────────────────────
-    private fun startExportCoordinatesFlow() {
-        exportLauncher.launch("coordinates_${System.currentTimeMillis()}.json")
-    }
-
-    private fun startImportCoordinatesFlow() {
-        if (coordinatesImportJob?.isActive == true) {
-            Toast.makeText(requireContext(), R.string.import_in_progress, Toast.LENGTH_SHORT).show(); return
-        }
+    private fun showExportFormatDialog() {
         AlertDialog.Builder(requireContext())
-            .setTitle(R.string.import_select_file_title)
-            .setMessage(R.string.import_select_file_message)
-            .setPositiveButton(R.string.import_select_file_positive) { _, _ ->
-                importLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+            .setTitle("Export Format")
+            .setItems(arrayOf("JSON", "CSV")) { d, which ->
+                val ts = System.currentTimeMillis()
+                when (which) {
+                    0 -> exportJsonLauncher.launch("coordinates_${ts}.json")
+                    1 -> exportCsvLauncher.launch("coordinates_${ts}.csv")
+                }
+                d.dismiss()
             }
-            .setNegativeButton(R.string.import_cancel, null)
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private suspend fun exportCoordinates(uri: Uri) {
+    private fun showImportFormatDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle("Import Format")
+            .setItems(arrayOf("JSON", "CSV")) { d, which ->
+                when (which) {
+                    0 -> importJsonLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+                    1 -> importCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain"))
+                }
+                d.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    // --- Export helpers ---
+    private suspend fun exportCoordinatesJson(uri: Uri) {
         runCatching {
             val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-            val arr = JSONArray()
+            val arr = org.json.JSONArray()
             coords.forEach { c ->
-                arr.put(JSONObject().apply {
+                arr.put(org.json.JSONObject().apply {
                     put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
                     put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
                 })
             }
             withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
-                    os.write(arr.toString(2).toByteArray(StandardCharsets.UTF_8)); os.flush()
+                    os.write(arr.toString(2).toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
                 } ?: error("Unable to open output stream")
             }
         }.onSuccess {
-            Toast.makeText(requireContext(), "Exported coordinates to file", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), "Exported JSON", Toast.LENGTH_LONG).show()
         }.onFailure { e ->
             Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri) {
+    private suspend fun exportCoordinatesCsv(uri: Uri) {
+        runCatching {
+            val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+            val sb = StringBuilder()
+            sb.append("id,name,latitude,longitude,altitude,timestamp,icon,color\n")
+            coords.forEach { c ->
+                fun esc(v: String): String = if (v.contains(',') || v.contains('"') || v.contains('\n')) '"' + v.replace("\"", "\"\"") + '"' else v
+                sb.append(esc(c.id)).append(',')
+                    .append(esc(c.name)).append(',')
+                    .append(c.latitude).append(',')
+                    .append(c.longitude).append(',')
+                    .append(c.altitude).append(',')
+                    .append(c.timestamp).append(',')
+                    .append(esc(c.icon)).append(',')
+                    .append(c.color)
+                    .append('\n')
+            }
+            withContext(Dispatchers.IO) {
+                requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
+                    os.write(sb.toString().toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
+                } ?: error("Unable to open output stream")
+            }
+        }.onSuccess {
+            Toast.makeText(requireContext(), "Exported CSV", Toast.LENGTH_LONG).show()
+        }.onFailure { e ->
+            Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // --- Import pipeline (extended for CSV) ---
+    private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri, isCsv: Boolean) {
         val existing = withContext(Dispatchers.IO) { repository.getAllCoordinatesList().size }
-        if (existing == 0) { launchImportCoordinates(uri, replace = false); return }
+        if (existing == 0) { launchImportCoordinates(uri, replace = false, isCsv = isCsv); return }
         pendingImportUri = uri
         if (!isAdded) return
         AlertDialog.Builder(requireContext())
-            .setTitle(R.string.import_select_file_title)
-            .setMessage(getString(R.string.import_merge_replace_message).replace("%1\$d", existing.toString()))
-            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false) } }
-            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true) } }
+            .setTitle(if (isCsv) "Import CSV" else getString(R.string.import_select_file_title))
+            .setMessage(getString(R.string.import_merge_replace_message))
+            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false, isCsv) } }
+            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true, isCsv) } }
             .setNegativeButton(R.string.import_cancel, null)
             .show()
     }
 
-    private fun launchImportCoordinates(uri: Uri, replace: Boolean) {
+    private fun launchImportCoordinates(uri: Uri, replace: Boolean, isCsv: Boolean) {
         if (coordinatesImportJob?.isActive == true) return
-        coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace) }
+        coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace, isCsv) }
     }
 
-    private suspend fun importCoordinates(uri: Uri, replace: Boolean) {
-        showImportProgress(true, 0, "Scanning...") // reuse label or create new progress strings
+    private suspend fun importCoordinates(uri: Uri, replace: Boolean, isCsv: Boolean) {
+        showImportProgress(true, 0, "Scanning…")
         importProcessed = 0; importTotal = 0
         runCatching {
             val raw = withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openInputStream(uri)?.use { inp ->
-                    BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
+                    java.io.BufferedReader(java.io.InputStreamReader(inp, java.nio.charset.StandardCharsets.UTF_8)).readText()
                 } ?: error("Unable to open input stream")
             }
-            val arr = JSONArray(raw)
-            importTotal = arr.length().coerceAtLeast(1)
-            val list = mutableListOf<Coordinate>()
-            val detailed = importTotal > 50
-            for (i in 0 until arr.length()) {
-                if (!isAdded) break
-                val obj = arr.getJSONObject(i)
-                val id = obj.optString("id").ifBlank { UUID.randomUUID().toString() }
-                val name = obj.optString("name", id)
-                val lat = obj.optDouble("latitude")
-                val lon = obj.optDouble("longitude")
-                val alt = obj.optDouble("altitude", 0.0)
-                val ts = obj.optLong("timestamp", System.currentTimeMillis())
-                val rawIcon = obj.optString("icon", "ic_pin")
-                val icon = when (rawIcon) {
-                    "ic_menu_camera" -> "ic_pin"
-                    "ic_menu_gallery" -> "ic_star"
-                    "ic_menu_slideshow" -> "ic_home"
-                    else -> rawIcon
-                }
-                val color = obj.optInt("color", 0xFF64B5F6.toInt())
-                list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
-                importProcessed = i + 1
-                if (detailed && i % 10 == 0) {
-                    val pct = ((i + 1) * 100 / importTotal).coerceAtMost(85)
-                    showImportProgress(true, pct, "Parsing $importProcessed/$importTotal…")
-                }
-            }
-            showImportProgress(true, 90, "Writing to database…")
+            val list = if (isCsv) parseCsvCoordinates(raw) else parseJsonCoordinates(raw)
+            importTotal = list.size.coerceAtLeast(1)
+            showImportProgress(true, 70, "Writing ${list.size}…")
             withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(list) }
             list.size to replace
         }.onSuccess { (count, replaced) ->
             showImportProgress(false, 100, "Completed")
-            Toast.makeText(requireContext(), "Imported $count coordinates (${if (replaced) "replaced" else "merged"})", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), "Imported $count ${if (isCsv) "CSV" else "JSON"} (${if (replaced) "replaced" else "merged"})", Toast.LENGTH_LONG).show()
         }.onFailure { e ->
             if (e is CancellationException) {
                 showImportProgress(false, 0, "Canceled")
@@ -550,9 +564,71 @@ class SettingsFragment : BaseTwoPaneFragment() {
         coordinatesImportJob = null
     }
 
-    private fun cancelActiveImport() {
-        coordinatesImportJob?.takeIf { it.isActive }?.cancel()
-            ?.also { Toast.makeText(requireContext(), R.string.import_cancel, Toast.LENGTH_SHORT).show() }
+    private fun parseJsonCoordinates(raw: String): List<Coordinate> {
+        val arr = org.json.JSONArray(raw)
+        val list = mutableListOf<Coordinate>()
+        val now = System.currentTimeMillis()
+        for (i in 0 until arr.length()) {
+            val obj = arr.getJSONObject(i)
+            val id = obj.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
+            val name = obj.optString("name", id)
+            val lat = obj.optDouble("latitude")
+            val lon = obj.optDouble("longitude")
+            val alt = obj.optDouble("altitude", 0.0)
+            val ts = obj.optLong("timestamp", now)
+            val rawIcon = obj.optString("icon", "ic_pin")
+            val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
+            val color = obj.optInt("color", 0xFF64B5F6.toInt())
+            list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
+        }
+        return list
+    }
+
+    private fun parseCsvCoordinates(raw: String): List<Coordinate> {
+        val lines = raw.split('\n').filter { it.isNotBlank() }
+        if (lines.isEmpty()) return emptyList()
+        val header = lines.first().trim().lowercase()
+        val hasHeader = header.contains("latitude") && header.contains("longitude")
+        val dataLines = if (hasHeader) lines.drop(1) else lines
+        val list = mutableListOf<Coordinate>()
+        val now = System.currentTimeMillis()
+        dataLines.forEach { line ->
+            val cols = parseCsvLine(line)
+            if (cols.size < 4) return@forEach
+            fun col(i: Int): String = cols.getOrNull(i)?.trim().orEmpty()
+            val idRaw = col(0)
+            val name = col(1).ifBlank { idRaw }
+            val lat = col(2).toDoubleOrNull() ?: return@forEach
+            val lon = col(3).toDoubleOrNull() ?: return@forEach
+            val alt = col(4).toDoubleOrNull() ?: 0.0
+            val ts = col(5).toLongOrNull() ?: now
+            val rawIcon = col(6).ifBlank { "ic_pin" }
+            val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
+            val color = col(7).toLongOrNull()?.toInt() ?: 0xFF64B5F6.toInt()
+            val id = if (idRaw.isBlank()) java.util.UUID.randomUUID().toString() else idRaw
+            list.add(Coordinate(id, if (name.isBlank()) id else name, lat, lon, alt, ts, icon, color))
+        }
+        return list
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        val sb = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when (c) {
+                '"' -> {
+                    if (inQuotes && i + 1 < line.length && line[i + 1] == '"') { sb.append('"'); i++ } else { inQuotes = !inQuotes }
+                }
+                ',' -> if (!inQuotes) { result.add(sb.toString()); sb.setLength(0) } else sb.append(c)
+                else -> sb.append(c)
+            }
+            i++
+        }
+        result.add(sb.toString())
+        return result
     }
 
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
@@ -565,38 +641,40 @@ class SettingsFragment : BaseTwoPaneFragment() {
         }
     }
 
+    private fun cancelActiveImport() {
+        coordinatesImportJob?.takeIf { it.isActive }?.cancel()?.also {
+            Toast.makeText(requireContext(), R.string.import_cancel, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun buildUnifiedStatusLine(
-        lmStatus: LocationStatus,
-        fix: Fix?,
+        lmStatus: com.example.surveyingapp.domain.model.LocationStatus,
+        fix: com.example.surveyingapp.domain.model.Fix?,
         isExternal: Boolean,
         deviceLabel: String?
     ): String {
-        // Source
         val sourcePart = if (isExternal) {
             val dev = deviceLabel ?: "(no device)"
             "RS2+ TCP $dev"
         } else "Internal GPS"
-        // Connection status
         val connPart = when (lmStatus) {
-            is LocationStatus.Connecting -> "Connecting"
-            is LocationStatus.Error -> "Error"
-            LocationStatus.Idle -> if (isExternal) "Disconnected" else "Idle"
-            is LocationStatus.Streaming -> "Connected"
+            is com.example.surveyingapp.domain.model.LocationStatus.Connecting -> "Connecting"
+            is com.example.surveyingapp.domain.model.LocationStatus.Error -> "Error"
+            com.example.surveyingapp.domain.model.LocationStatus.Idle -> if (isExternal) "Disconnected" else "Idle"
+            is com.example.surveyingapp.domain.model.LocationStatus.Streaming -> "Connected"
         }
-        // Fix type
         val fixPart = if (!isExternal) {
             if (fix != null) "Fused" else "Fused (pending)"
         } else {
             when (fix?.rtkStatus) {
-                RtkStatus.FIX -> "Fixed RTK"
-                RtkStatus.FLOAT -> "Float"
-                RtkStatus.DGPS -> "DGPS"
-                RtkStatus.SINGLE -> "Single"
-                RtkStatus.INVALID -> "No Fix"
-                null -> if (lmStatus is LocationStatus.Streaming) "No Fix" else "--"
+                com.example.surveyingapp.domain.model.RtkStatus.FIX -> "Fixed RTK"
+                com.example.surveyingapp.domain.model.RtkStatus.FLOAT -> "Float"
+                com.example.surveyingapp.domain.model.RtkStatus.DGPS -> "DGPS"
+                com.example.surveyingapp.domain.model.RtkStatus.SINGLE -> "Single"
+                com.example.surveyingapp.domain.model.RtkStatus.INVALID -> "No Fix"
+                null -> if (lmStatus is com.example.surveyingapp.domain.model.LocationStatus.Streaming) "No Fix" else "--"
             }
         }
-        // Satellites
         val satsUsed = fix?.satsUsed
         val satsVis = fix?.satsVisible
         val satsPart = when {
@@ -604,7 +682,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
             satsUsed != null -> "${satsUsed} sats"
             else -> "-- sats"
         }
-        // PDOP/HDOP
         val pdop = fix?.pdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
         val hdop = fix?.hdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
         val dopPart = when {
@@ -615,15 +692,5 @@ class SettingsFragment : BaseTwoPaneFragment() {
         }
         val basePart = if (isExternal) fix?.baseStationId?.let { "Base ID $it" } else null
         return listOfNotNull(sourcePart, connPart, fixPart, satsPart, dopPart, basePart).joinToString(" • ")
-    }
-
-    override fun onDestroyView() {
-        deviceStatusJob?.cancel(); deviceStatusJob = null
-        tcpDiscoveryJob?.cancel(); tcpDiscoveryJob = null
-        lifecycleScope.launch(Dispatchers.IO) { runCatching { jmdns?.close() } }
-        jmdns = null
-        multicastLock?.let { if (it.isHeld) runCatching { it.release() } }
-        multicastLock = null
-        super.onDestroyView()
     }
 }

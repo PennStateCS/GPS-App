@@ -83,30 +83,6 @@ class CoordinatesFragment : Fragment() {
         }
     }
 
-    /** Preferences change listener to refresh list formatting */
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == SettingsFragment.PREF_SHOW_COORDINATES || key == SettingsFragment.PREF_SHOW_ELEVATION) {
-            if (isAdded && _binding != null && ::adapter.isInitialized) {
-                try {
-                    binding.pointsRecyclerView.post {
-                        if (isAdded && _binding != null) {
-                            try {
-                                adapter.notifyDataSetChanged()
-                                Log.d("CoordinatesFragment", "Preferences changed ($key) -> list refreshed")
-                            } catch (inner: Exception) {
-                                Log.e("CoordinatesFragment", "notifyDataSetChanged failed: ${inner.message}")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("CoordinatesFragment", "Pref listener outer failure: ${e.message}")
-                }
-            } else {
-                Log.w("CoordinatesFragment", "Pref change received while fragment not fully active")
-            }
-        }
-    }
-
     // --- Fragment lifecycle ---
 
     override fun onCreateView(
@@ -330,12 +306,12 @@ class CoordinatesFragment : Fragment() {
 
     override fun onStart() {
         super.onStart()
-        prefs?.registerOnSharedPreferenceChangeListener(prefListener)
+        // no pref listener registration needed
     }
 
     override fun onStop() {
-        prefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         super.onStop()
+        // no pref listener unregistration needed
     }
 
     override fun onResume() {
