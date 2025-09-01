@@ -14,6 +14,7 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
 import androidx.core.content.ContextCompat
 import com.example.surveyingapp.R
+import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -21,6 +22,8 @@ import com.google.android.gms.maps.*
 import com.google.android.gms.maps.model.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import androidx.core.animation.doOnEnd
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 
 class RenderMapFragment : Fragment() {
     private var mapView: MapView? = null
@@ -43,6 +46,11 @@ class RenderMapFragment : Fragment() {
     private val minPanelDp = 160f
     private val maxPanelDp = 480f
 
+    private var toggleRecycler: RecyclerView? = null
+    private lateinit var toggleAdapter: CoordinateToggleAdapter
+    private val markerMap = mutableMapOf<String, Marker>()
+    private val visibilityMap = mutableMapOf<String, Boolean>() // id -> visible
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -51,6 +59,13 @@ class RenderMapFragment : Fragment() {
         val root = inflater.inflate(R.layout.fragment_render_map, container, false)
         mapView = root.findViewById(R.id.mapView)
         placeholder = root.findViewById(R.id.text_render_map)
+        toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
+        toggleAdapter = CoordinateToggleAdapter { id, checked ->
+            visibilityMap[id] = checked
+            markerMap[id]?.isVisible = checked
+        }
+        toggleRecycler?.layoutManager = LinearLayoutManager(requireContext())
+        toggleRecycler?.adapter = toggleAdapter
         mapView?.onCreate(savedInstanceState)
         mapView?.getMapAsync { map ->
             googleMap = map
@@ -108,28 +123,35 @@ class RenderMapFragment : Fragment() {
             .get(CoordinatesViewModel::class.java)
         vm.allCoordinates.observe(viewLifecycleOwner) { points ->
             if (googleMap == null) return@observe
-            // Clear old markers
-            markers.forEach { it.remove() }
-            markers.clear()
+            markerMap.values.forEach { it.remove() }
+            markerMap.clear()
             if (points.isEmpty()) {
                 placeholder?.visibility = View.VISIBLE
                 lastLatLngs = emptyList()
+                toggleAdapter.submit(emptyList())
                 return@observe
             }
             placeholder?.visibility = View.GONE
-            val latLngs = ArrayList<LatLng>(points.size)
+            val latLngsVisible = ArrayList<LatLng>()
+            val toggleItems = mutableListOf<CoordinateToggleItem>()
             points.forEach { p ->
                 val ll = LatLng(p.latitude, p.longitude)
-                latLngs.add(ll)
-                val title = p.name
+                val visible = visibilityMap[p.id] ?: true
+                visibilityMap.putIfAbsent(p.id, visible)
                 val descriptor = buildMarkerDescriptor(p.icon, p.color)
-                val opts = MarkerOptions().position(ll).title(title)
+                val opts = MarkerOptions().position(ll).title(p.name)
                 if (descriptor != null) opts.icon(descriptor)
                 val marker = googleMap!!.addMarker(opts)
-                if (marker != null) markers += marker
+                if (marker != null) {
+                    marker.isVisible = visible
+                    markerMap[p.id] = marker
+                    if (visible) latLngsVisible.add(ll)
+                }
+                toggleItems += CoordinateToggleItem(p.id, p.name, visible)
             }
-            lastLatLngs = latLngs
-            updateCamera(latLngs)
+            lastLatLngs = latLngsVisible
+            toggleAdapter.submit(toggleItems)
+            updateCamera(latLngsVisible)
         }
     }
 
@@ -170,7 +192,7 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    private fun recenterMap() { updateCamera(lastLatLngs) }
+    private fun recenterMap() { updateCamera(markerMap.filter { it.value.isVisible }.values.map { it.position }) }
     private fun toggleSatellite() { isSatellite = !isSatellite; googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL }
 
     private fun setupPanelInteractions() {

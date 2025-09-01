@@ -68,6 +68,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        // If denied we can proceed without AR camera until user grants later.
+    }
+
     private lateinit var statusBarTv: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,6 +140,11 @@ class MainActivity : AppCompatActivity() {
         startStatusBarObservers()
         // Ensure location service running early (starts GNSS streaming + notification)
         ensureLocationServiceStarted()
+
+        // Request camera permission early if not granted (runtime >= 23)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     private fun ensureLocationServiceStarted() {
