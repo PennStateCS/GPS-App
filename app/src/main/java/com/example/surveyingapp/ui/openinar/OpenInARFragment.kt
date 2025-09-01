@@ -113,9 +113,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val vp = FloatArray(16)      // View-projection matrix
     private val mvp = FloatArray(16)     // Model-view-projection matrix
 
-    // Helper for handling screen rotation and display changes
-    private lateinit var rotationHelper: DisplayRotationHelper
-
     // Thread-safe touch input handling
     @Volatile private var queuedTap: PointF? = null
 
@@ -156,7 +153,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentOpenInArBinding.inflate(inflater, container, false)
-        rotationHelper = DisplayRotationHelper(this)
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
         // Load preferences
@@ -200,7 +196,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Resume AR session and related components
         try {
             session?.resume()
-            rotationHelper.onResume()
             binding.glSurfaceViewAr.onResume()
             binding.textArStatus.text = getString(R.string.ar_running)
         } catch (_: CameraNotAvailableException) {
@@ -215,7 +210,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onPause() {
         super.onPause()
         binding.glSurfaceViewAr.onPause()
-        rotationHelper.onPause()
         try { session?.pause() } catch (_: Exception) {}
     }
 
@@ -473,7 +467,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
-        rotationHelper.onSurfaceChanged(width, height)
+        // rotationHelper.onSurfaceChanged(width, height) // removed
+        // Fixed landscape: set display geometry once
+        try { session?.setDisplayGeometry(Surface.ROTATION_90, width, height) } catch (_: Exception) {}
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -481,7 +477,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         val s = session ?: return
         try {
-            rotationHelper.updateSessionIfNeeded(s)
+            // rotationHelper.updateSessionIfNeeded(s) // removed (fixed landscape)
             if (cameraTextureId > 0) s.setCameraTextureName(cameraTextureId)
 
             val frame: Frame = s.update()
@@ -1006,39 +1002,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 GLES30.glDeleteShader(vs); GLES30.glDeleteShader(fs)
                 return prog
-            }
-        }
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Display rotation helper
-
-    private class DisplayRotationHelper(private val fragment: Fragment) {
-        private var viewportWidth = 0
-        private var viewportHeight = 0
-        private var isActive = false
-
-        fun onResume() { isActive = true }
-        fun onPause() { isActive = false }
-
-        fun onSurfaceChanged(width: Int, height: Int) {
-            viewportWidth = width
-            viewportHeight = height
-        }
-
-        fun updateSessionIfNeeded(session: Session) {
-            if (!isActive || viewportWidth == 0 || viewportHeight == 0) return
-            val rotation = getDisplayRotation(fragment)
-            session.setDisplayGeometry(rotation, viewportWidth, viewportHeight)
-        }
-
-        private fun getDisplayRotation(fragment: Fragment): Int {
-            val activity = fragment.requireActivity()
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                activity.display?.rotation ?: Surface.ROTATION_0
-            } else {
-                @Suppress("DEPRECATION")
-                activity.windowManager.defaultDisplay.rotation
             }
         }
     }
