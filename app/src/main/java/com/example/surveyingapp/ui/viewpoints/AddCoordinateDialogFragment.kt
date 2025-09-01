@@ -127,16 +127,20 @@ class AddCoordinateDialogFragment(
     }
 
     private suspend fun fetchInternalOneShot(locationText: TextView) {
-        // Require FINE permission explicitly
         val fineGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted) {
+        val coarseGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted && !coarseGranted) {
             locationText.text = getString(R.string.location_permission_required)
             return
         }
         val fused: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(requireActivity())
         val cts = CancellationTokenSource()
-        val priority = if (highAccuracy) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-        val result = withTimeoutOrNull(10_000L) {
+        val priority = when {
+            fineGranted && highAccuracy -> Priority.PRIORITY_HIGH_ACCURACY
+            fineGranted -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            else -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        }
+        val result = withTimeoutOrNull(6_000L) { // shorter timeout to move to fallback quickly on emulator
             @Suppress("MissingPermission")
             fused.getCurrentLocation(priority, cts.token).awaitSafe()
         }
@@ -144,11 +148,27 @@ class AddCoordinateDialogFragment(
             latitude = result.latitude
             longitude = result.longitude
             altitude = result.altitude
-            val mode = if (highAccuracy) "INTERNAL-HIGH" else "INTERNAL-BALANCED"
+            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL";
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
-        } else {
-            locationText.text = getString(R.string.location_unavailable)
+            return
         }
+        // Try last known location
+        val last = try {
+            @Suppress("MissingPermission")
+            fused.lastLocation.awaitSafe()
+        } catch (_: Exception) { null }
+        if (last != null) {
+            latitude = last.latitude
+            longitude = last.longitude
+            altitude = last.altitude
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, "LAST-KNOWN") + " (fallback)"
+            return
+        }
+        // Final emulator fallback: use a stable default (Googleplex) so user can edit name and save quickly
+        latitude = 37.4219999
+        longitude = -122.0840575
+        altitude = 0.0
+        locationText.text = String.format(Locale.US, "%.6f, %.6f, %.2fm (emulator fallback)", latitude, longitude, altitude)
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {

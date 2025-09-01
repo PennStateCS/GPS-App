@@ -79,6 +79,8 @@ class RenderMapFragment : Fragment() {
         }
         root.findViewById<FloatingActionButton>(R.id.fab_toggle_sat)?.setOnClickListener { toggleSatellite() }
         root.findViewById<FloatingActionButton>(R.id.fab_recenter)?.setOnClickListener { recenterMap() }
+        root.findViewById<FloatingActionButton>(R.id.fab_zoom_in)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomIn()) }
+        root.findViewById<FloatingActionButton>(R.id.fab_zoom_out)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomOut()) }
         if (savedInstanceState != null) {
             panelWidthPx = savedInstanceState.getInt("panelWidthPx", 0)
             panelCollapsed = savedInstanceState.getBoolean("panelCollapsed", false)
