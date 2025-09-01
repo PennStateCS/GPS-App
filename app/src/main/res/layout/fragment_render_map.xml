@@ -101,6 +101,26 @@
             android:contentDescription="Recenter map"
             android:src="@android:drawable/ic_menu_mylocation" />
 
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_zoom_in"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="88dp"
+            android:contentDescription="Zoom in"
+            android:src="@drawable/ic_zoom_in" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_zoom_out"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="144dp"
+            android:contentDescription="Zoom out"
+            android:src="@drawable/ic_zoom_out" />
+
         <!-- Expand button appears when panel collapsed -->
         <ImageButton
             android:id="@+id/btn_expand_panel"

@@ -72,6 +72,16 @@ class MainActivity : AppCompatActivity() {
         // If denied we can proceed without AR camera until user grants later.
     }
 
+    private val locationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val fine = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarse = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fine || coarse) {
+            ensureLocationServiceStarted()
+        } else {
+            // User denied; you could show rationale or fallback behavior here.
+        }
+    }
+
     private lateinit var statusBarTv: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -138,13 +148,26 @@ class MainActivity : AppCompatActivity() {
 
         // Start live status observers (satellite / RTK info banner)
         startStatusBarObservers()
-        // Ensure location service running early (starts GNSS streaming + notification)
-        ensureLocationServiceStarted()
 
         // Request camera permission early if not granted (runtime >= 23)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
+        if (!hasLocationPermission()) {
+            requestLocationPermissions()
+        } else {
+            ensureLocationServiceStarted()
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return fine || coarse
+    }
+
+    private fun requestLocationPermissions() {
+        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
     }
 
     private fun ensureLocationServiceStarted() {
