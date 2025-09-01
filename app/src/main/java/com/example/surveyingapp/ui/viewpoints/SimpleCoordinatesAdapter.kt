@@ -1,6 +1,5 @@
 package com.example.surveyingapp.ui.viewpoints
 
-import android.content.Context
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -12,7 +11,6 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
-import com.example.surveyingapp.ui.settings.SettingsFragment
 import java.util.Locale
 
 /**
@@ -101,30 +99,10 @@ class SimpleCoordinatesAdapter(
         // Set the name text
         holder.name.text = p.name
 
-        // Check user preferences to see what information to display
-        var showCoords = false
-        var showElevation = false
-        try {
-            val prefs = holder.itemView.context.getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
-            showCoords = prefs.getBoolean(SettingsFragment.PREF_SHOW_COORDINATES, false)
-            showElevation = prefs.getBoolean(SettingsFragment.PREF_SHOW_ELEVATION, false)
-        } catch (e: Exception) {
-            Log.e("SimpleCoordinatesAdapter", "Preference read failed: ${e.message}")
-        }
+        // Always show coords with altitude
+        holder.coords.visibility = View.VISIBLE
+        holder.coords.text = String.format(Locale.US, "%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
 
-        // Show/hide coordinates based on user preferences
-        if (showCoords) {
-            holder.coords.visibility = View.VISIBLE
-            holder.coords.text = if (showElevation) {
-                // Show latitude, longitude, and elevation
-                String.format(Locale.US, "%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
-            } else {
-                // Show only latitude and longitude
-                String.format(Locale.US, "%.6f, %.6f", p.latitude, p.longitude)
-            }
-        } else {
-            holder.coords.visibility = View.GONE  // Hide coordinates completely
-        }
         // Icon mapping without reflection
         val resId = when (p.icon) {
             "ic_pin" -> R.drawable.ic_pin
