@@ -22,7 +22,8 @@ import java.util.Locale
  * The Adapter pattern connects your data to the UI views.
  */
 class SimpleCoordinatesAdapter(
-    private val onClick: (Coordinate) -> Unit // new item click callback
+    private val onClick: (Coordinate) -> Unit, // item click callback
+    private val onDelete: (Coordinate) -> Unit // delete callback
 ) : RecyclerView.Adapter<SimpleCoordinatesAdapter.Holder>() {
 
     init { setHasStableIds(true) }
@@ -148,6 +149,16 @@ class SimpleCoordinatesAdapter(
             Log.d("SimpleCoordinatesAdapter", "Row body clicked for coordinate: ${p.id}")
             onClick(p)
         }
+        // Delete button
+        val deleteBtn = holder.itemView.findViewById<View>(R.id.button_delete)
+        if (deleteBtn != null) {
+            deleteBtn.setOnClickListener {
+                Log.d("SimpleCoordinatesAdapter", "Delete clicked for coordinate: ${p.id}")
+                onDelete(p)
+            }
+        } else {
+            Log.w("SimpleCoordinatesAdapter", "Delete button not found in layout (pos=$position id=${p.id})")
+        }
 
         val accent = holder.itemView.findViewById<View>(R.id.selection_accent)
         val selected = p.id == selectedId
@@ -186,4 +197,5 @@ class SimpleCoordinatesAdapter(
     }
 
     fun positionOf(id: String): Int = items.indexOfFirst { it.id == id }
+    fun idAt(position: Int): String? = if (position in items.indices) items[position].id else null
 }
