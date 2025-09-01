@@ -146,6 +146,15 @@ class CoordinatesFragment : Fragment() {
                 } catch (e: Exception) {
                     Log.e("CoordinatesFragment", "Click handler error: ${e.message}", e)
                 }
+            },
+            onDelete = { coordinate ->
+                // Determine replacement selection if deleting the currently selected item
+                if (coordinate.id == currentSelectionId) {
+                    val pos = adapter.positionOf(coordinate.id)
+                    val replacement = adapter.idAt(pos + 1) ?: adapter.idAt(pos - 1)
+                    pendingDeleteSelectionReplacement = replacement
+                }
+                confirmDeleteWithSelection(coordinate, viewModel)
             }
         )
 
@@ -191,7 +200,17 @@ class CoordinatesFragment : Fragment() {
                 currentSelectionId = null
                 adapter.setSelectedId(null)
                 clearLastOpenedId()
+                pendingDeleteSelectionReplacement = null
                 return@observe
+            }
+
+            // If we have a pending selection from a deletion, prefer it
+            pendingDeleteSelectionReplacement?.let { desired ->
+                if (coordinates.any { it.id == desired }) {
+                    currentSelectionId = desired
+                    saveLastOpenedId(desired)
+                }
+                pendingDeleteSelectionReplacement = null
             }
 
             if (currentSelectionId == null || coordinates.none { it.id == currentSelectionId }) {
@@ -285,18 +304,25 @@ class CoordinatesFragment : Fragment() {
     }
 
     /** Confirm deletion with undo via Snackbar */
-    private fun confirmDelete(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
+    private fun confirmDeleteWithSelection(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
         AlertDialog.Builder(requireContext())
-            .setTitle("Delete Coordinate")
+            .setTitle(getString(R.string.delete_coordinate))
             .setMessage("Delete \"${coordinate.name}\"?")
-            .setPositiveButton("Delete") { _, _ ->
+            .setPositiveButton(getString(R.string.delete_coordinate)) { _, _ ->
+                // Perform deletion
                 viewModel.deleteCoordinate(coordinate.id)
+                // If user UNDOs, restore selection to this coordinate
                 Snackbar.make(binding.root, "Deleted ${coordinate.name}", Snackbar.LENGTH_LONG)
                     .setAnchorView(binding.fabAddCoordinate)
-                    .setAction("UNDO") { viewModel.addCoordinate(coordinate) }
+                    .setAction("UNDO") {
+                        viewModel.addCoordinate(coordinate)
+                        currentSelectionId = coordinate.id
+                        saveLastOpenedId(coordinate.id)
+                        adapter.setSelectedId(coordinate.id)
+                    }
                     .show()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
@@ -356,6 +382,9 @@ class CoordinatesFragment : Fragment() {
 
     // Current selection ID (for detail view navigation)
     private var currentSelectionId: String? = null
+
+    // Track a desired selection after a deletion
+    private var pendingDeleteSelectionReplacement: String? = null
 
     private fun loadLastOpenedId(): String? = prefs?.getString(PREF_LAST_OPENED_ID, null)
     private fun saveLastOpenedId(id: String) { prefs?.edit()?.putString(PREF_LAST_OPENED_ID, id)?.apply() }
