@@ -57,6 +57,9 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.osmdroid)
     implementation(libs.arcore)
+    // 3D Model Rendering
+    implementation("io.github.sceneview:sceneview:0.10.0")
+    implementation("com.google.android.filament:filament-android:1.17.1")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
