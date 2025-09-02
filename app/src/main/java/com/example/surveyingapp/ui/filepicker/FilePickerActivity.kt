@@ -19,6 +19,13 @@ class FilePickerActivity : AppCompatActivity() {
         const val EXTRA_FILE_URI = "file_uri"
         const val EXTRA_FILE_EXTENSIONS = "file_extensions"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_FILTER_MODE = "filter_mode"
+
+        // Filter modes
+        const val FILTER_MODE_MODELS = "models"
+        const val FILTER_MODE_IMPORT_DATA = "import_data"
+        const val FILTER_MODE_CUSTOM = "custom"
+        const val FILTER_MODE_FOLDER_SELECT = "folder_select"
     }
 
     private lateinit var binding: ActivityFilePickerBinding
@@ -26,6 +33,7 @@ class FilePickerActivity : AppCompatActivity() {
     private var currentDirectory: File? = null
     private var allowedExtensions: Array<String> = arrayOf()
     private var isInCloudMode = false
+    private var filterMode: String = FILTER_MODE_CUSTOM
 
     // Cloud storage file picker launcher
     private val cloudFilePickerLauncher = registerForActivityResult(
@@ -44,12 +52,44 @@ class FilePickerActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         // Get parameters from intent
-        allowedExtensions = intent.getStringArrayExtra(EXTRA_FILE_EXTENSIONS) ?: arrayOf(".glb")
-        val title = intent.getStringExtra(EXTRA_TITLE) ?: "Select File"
+        filterMode = intent.getStringExtra(EXTRA_FILTER_MODE) ?: FILTER_MODE_CUSTOM
+        allowedExtensions = getExtensionsForMode(filterMode)
+        val title = intent.getStringExtra(EXTRA_TITLE) ?: getDefaultTitleForMode(filterMode)
 
         setupToolbar(title)
         setupRecyclerView()
+        setupSelectFolderButton()
         loadStorageOptions()
+    }
+
+    private fun getExtensionsForMode(filterMode: String): Array<String> {
+        return when (filterMode) {
+            FILTER_MODE_MODELS -> arrayOf(".glb")
+            FILTER_MODE_IMPORT_DATA -> arrayOf(".json", ".csv")
+            FILTER_MODE_CUSTOM -> intent.getStringArrayExtra(EXTRA_FILE_EXTENSIONS) ?: arrayOf()
+            else -> arrayOf()
+        }
+    }
+
+    private fun getDefaultTitleForMode(filterMode: String): String {
+        return when (filterMode) {
+            FILTER_MODE_MODELS -> "Select 3D Model"
+            FILTER_MODE_IMPORT_DATA -> "Select Data File"
+            FILTER_MODE_CUSTOM -> "Select File"
+            FILTER_MODE_FOLDER_SELECT -> "Select Folder"
+            else -> "Select File"
+        }
+    }
+
+    private fun getEmptyMessageForMode(): String {
+        val filterMode = intent.getStringExtra(EXTRA_FILTER_MODE) ?: FILTER_MODE_CUSTOM
+        return when (filterMode) {
+            FILTER_MODE_MODELS -> "No .glb model files found in this directory"
+            FILTER_MODE_IMPORT_DATA -> "No .json or .csv files found in this directory"
+            FILTER_MODE_CUSTOM -> "No matching files found in this directory"
+            FILTER_MODE_FOLDER_SELECT -> "No folders found in this directory"
+            else -> "No files found in this directory"
+        }
     }
 
     private fun setupToolbar(title: String) {
@@ -84,6 +124,17 @@ class FilePickerActivity : AppCompatActivity() {
         )
         binding.recyclerFiles.layoutManager = LinearLayoutManager(this)
         binding.recyclerFiles.adapter = adapter
+    }
+
+    private fun setupSelectFolderButton() {
+        if (filterMode == FILTER_MODE_FOLDER_SELECT) {
+            binding.btnSelectFolder.visibility = View.VISIBLE
+            binding.btnSelectFolder.setOnClickListener {
+                selectCurrentFolder()
+            }
+        } else {
+            binding.btnSelectFolder.visibility = View.GONE
+        }
     }
 
     private fun loadStorageOptions() {
@@ -155,16 +206,20 @@ class FilePickerActivity : AppCompatActivity() {
                 items.add(FileItem.BackItem)
             }
 
-            // Add directories first
-            directory.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
+            // Add directories first (excluding hidden folders that start with .)
+            directory.listFiles()?.filter {
+                it.isDirectory && !it.name.startsWith(".")
+            }?.sortedBy { it.name }?.forEach { dir ->
                 items.add(FileItem.DirectoryItem(dir))
             }
 
-            // Add files with allowed extensions
+            // Add files with allowed extensions (excluding hidden files that start with .)
             directory.listFiles()?.filter { file ->
-                file.isFile && allowedExtensions.any { ext ->
-                    file.name.lowercase().endsWith(ext.lowercase())
-                }
+                file.isFile &&
+                        !file.name.startsWith(".") &&
+                        allowedExtensions.any { ext ->
+                            file.name.lowercase().endsWith(ext.lowercase())
+                        }
             }?.sortedBy { it.name }?.forEach { file ->
                 items.add(FileItem.RegularFileItem(file))
             }
@@ -173,7 +228,7 @@ class FilePickerActivity : AppCompatActivity() {
 
             if (items.isEmpty() || (items.size == 1 && items[0] is FileItem.BackItem)) {
                 binding.textEmptyMessage.visibility = View.VISIBLE
-                binding.textEmptyMessage.text = "No .glb files found in this directory"
+                binding.textEmptyMessage.text = getEmptyMessageForMode()
             } else {
                 binding.textEmptyMessage.visibility = View.GONE
             }
@@ -196,6 +251,16 @@ class FilePickerActivity : AppCompatActivity() {
         }
         setResult(Activity.RESULT_OK, resultIntent)
         finish()
+    }
+
+    private fun selectCurrentFolder() {
+        currentDirectory?.let { directory ->
+            val resultIntent = Intent().apply {
+                data = Uri.fromFile(directory)
+            }
+            setResult(Activity.RESULT_OK, resultIntent)
+            finish()
+        }
     }
 
     private fun returnSelectedFile(uri: Uri) {

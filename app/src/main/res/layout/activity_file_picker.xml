@@ -31,6 +31,17 @@
         android:ellipsize="start"
         android:singleLine="true" />
 
+    <!-- Select folder button - only visible in folder selection mode -->
+    <Button
+        android:id="@+id/btn_select_folder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        android:text="Select This Folder"
+        android:textColor="@android:color/white"
+        android:background="?attr/colorPrimary"
+        android:visibility="gone" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_files"
         android:layout_width="match_parent"

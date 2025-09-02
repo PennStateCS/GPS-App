@@ -77,6 +77,15 @@ class ModelsFragment : Fragment() {
             },
             onEditClick = { model ->
                 showEditModelDialog(model)
+            },
+            onModelClick = { model ->
+                // Launch 3D model viewer
+                val intent = ModelViewerActivity.newIntent(
+                    requireContext(),
+                    model.filePath,
+                    model.name
+                )
+                startActivity(intent)
             }
         )
 
@@ -133,7 +142,7 @@ class ModelsFragment : Fragment() {
     private fun openFilePicker() {
         // Use custom file picker for guaranteed landscape orientation
         val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILE_EXTENSIONS, arrayOf(".glb"))
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_MODELS)
             putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select 3D Model File")
         }
         filePickerLauncher.launch(intent)

@@ -3,6 +3,7 @@ package com.example.surveyingapp.ui.settings
 import android.content.*
 import android.net.Uri
 import android.net.wifi.WifiManager
+import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.*
@@ -464,66 +465,24 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     // --- Export helpers ---
     private fun exportJson(ts: Long) {
-        currentOperation = "export_json"
-        val fileName = "coordinates_${ts}.json"
-        val uri = Uri.parse("file://${requireContext().getExternalFilesDir(null)}/$fileName")
-        lifecycleScope.launch {
-            runCatching {
-                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                val arr = org.json.JSONArray()
-                coords.forEach { c ->
-                    arr.put(org.json.JSONObject().apply {
-                        put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
-                        put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
-                    })
-                }
-                withContext(Dispatchers.IO) {
-                    requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
-                        os.write(arr.toString(2).toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
-                    } ?: error("Unable to open output stream")
-                }
-            }.onSuccess {
-                Toast.makeText(requireContext(), "Exported JSON", Toast.LENGTH_LONG).show()
-            }.onFailure { e ->
-                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
+        currentOperation = "export_json_$ts"
+        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_FOLDER_SELECT)
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Folder to Export JSON")
         }
+        customFilePickerLauncher.launch(intent)
     }
 
     private fun exportCsv(ts: Long) {
-        currentOperation = "export_csv"
-        val fileName = "coordinates_${ts}.csv"
-        val uri = Uri.parse("file://${requireContext().getExternalFilesDir(null)}/$fileName")
-        lifecycleScope.launch {
-            runCatching {
-                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                val sb = StringBuilder()
-                sb.append("id,name,latitude,longitude,altitude,timestamp,icon,color\n")
-                coords.forEach { c ->
-                    fun esc(v: String): String = if (v.contains(',') || v.contains('"') || v.contains('\n')) '"' + v.replace("\"", "\"\"") + '"' else v
-                    sb.append(esc(c.id)).append(',')
-                        .append(esc(c.name)).append(',')
-                        .append(c.latitude).append(',')
-                        .append(c.longitude).append(',')
-                        .append(c.altitude).append(',')
-                        .append(c.timestamp).append(',')
-                        .append(esc(c.icon)).append(',')
-                        .append(c.color)
-                        .append('\n')
-                }
-                withContext(Dispatchers.IO) {
-                    requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
-                        os.write(sb.toString().toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
-                    } ?: error("Unable to open output stream")
-                }
-            }.onSuccess {
-                Toast.makeText(requireContext(), "Exported CSV", Toast.LENGTH_LONG).show()
-            }.onFailure { e ->
-                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
-            }
+        currentOperation = "export_csv_$ts"
+        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_FOLDER_SELECT)
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Folder to Export CSV")
         }
+        customFilePickerLauncher.launch(intent)
     }
 
+    // --- Import helpers using custom file picker ---
     private fun importJson() {
         currentOperation = "import_json"
         val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
@@ -542,18 +501,151 @@ class SettingsFragment : BaseTwoPaneFragment() {
         customFilePickerLauncher.launch(intent)
     }
 
+    private fun importDataFiles() {
+        currentOperation = "import_data"
+        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_IMPORT_DATA)
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Data File to Import")
+        }
+        customFilePickerLauncher.launch(intent)
+    }
+
     private fun handleCustomFilePickerResult(uri: Uri) {
-        when (currentOperation) {
-            "import_json" -> {
+        when {
+            currentOperation?.startsWith("export_json_") == true -> {
+                val timestamp = currentOperation?.substringAfter("export_json_")?.toLongOrNull() ?: System.currentTimeMillis()
+                performJsonExport(uri, timestamp)
+            }
+            currentOperation?.startsWith("export_csv_") == true -> {
+                val timestamp = currentOperation?.substringAfter("export_csv_")?.toLongOrNull() ?: System.currentTimeMillis()
+                performCsvExport(uri, timestamp)
+            }
+            currentOperation == "import_json" -> {
                 pendingImportIsCsv = false
                 lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = false) }
             }
-            "import_csv" -> {
+            currentOperation == "import_csv" -> {
                 pendingImportIsCsv = true
                 lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = true) }
             }
+            currentOperation == "import_data" -> {
+                // Auto-detect file type based on extension
+                val fileName = getFileNameFromUri(uri) ?: ""
+                val isCsvFile = fileName.lowercase().endsWith(".csv")
+                pendingImportIsCsv = isCsvFile
+                lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = isCsvFile) }
+            }
         }
         currentOperation = null
+    }
+
+    private fun performJsonExport(folderUri: Uri, timestamp: Long) {
+        lifecycleScope.launch {
+            runCatching {
+                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                val arr = org.json.JSONArray()
+                coords.forEach { c ->
+                    arr.put(org.json.JSONObject().apply {
+                        put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
+                        put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
+                    })
+                }
+
+                // Create file in selected folder
+                val fileName = "coordinates_${timestamp}.json"
+
+                withContext(Dispatchers.IO) {
+                    if (folderUri.scheme == "file") {
+                        // Handle file:// URIs directly
+                        val folderPath = folderUri.path ?: throw Exception("Invalid folder path")
+                        val file = java.io.File(folderPath, fileName)
+                        file.writeText(arr.toString(2), StandardCharsets.UTF_8)
+                    } else {
+                        // Handle content:// URIs using DocumentsContract
+                        val mimeType = "application/json"
+                        val fileUri = DocumentsContract.createDocument(
+                            requireContext().contentResolver,
+                            folderUri,
+                            mimeType,
+                            fileName
+                        ) ?: throw Exception("Failed to create document")
+
+                        requireContext().contentResolver.openOutputStream(fileUri)?.use { outputStream ->
+                            outputStream.write(arr.toString(2).toByteArray(StandardCharsets.UTF_8))
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(requireContext(), "JSON exported successfully: $fileName", Toast.LENGTH_LONG).show()
+                }
+            }.onFailure { e ->
+                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun performCsvExport(folderUri: Uri, timestamp: Long) {
+        lifecycleScope.launch {
+            runCatching {
+                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                val sb = StringBuilder()
+                sb.append("id,name,latitude,longitude,altitude,timestamp,icon,color\n")
+                coords.forEach { c ->
+                    fun esc(v: String): String = if (v.contains(',') || v.contains('"') || v.contains('\n')) '"' + v.replace("\"", "\"\"") + '"' else v
+                    sb.append(esc(c.id)).append(',')
+                        .append(esc(c.name)).append(',')
+                        .append(c.latitude).append(',')
+                        .append(c.longitude).append(',')
+                        .append(c.altitude).append(',')
+                        .append(c.timestamp).append(',')
+                        .append(esc(c.icon)).append(',')
+                        .append(c.color)
+                        .append('\n')
+                }
+
+                // Create file in selected folder
+                val fileName = "coordinates_${timestamp}.csv"
+
+                withContext(Dispatchers.IO) {
+                    if (folderUri.scheme == "file") {
+                        // Handle file:// URIs directly
+                        val folderPath = folderUri.path ?: throw Exception("Invalid folder path")
+                        val file = java.io.File(folderPath, fileName)
+                        file.writeText(sb.toString(), StandardCharsets.UTF_8)
+                    } else {
+                        // Handle content:// URIs using DocumentsContract
+                        val mimeType = "text/csv"
+                        val fileUri = DocumentsContract.createDocument(
+                            requireContext().contentResolver,
+                            folderUri,
+                            mimeType,
+                            fileName
+                        ) ?: throw Exception("Failed to create document")
+
+                        requireContext().contentResolver.openOutputStream(fileUri)?.use { outputStream ->
+                            outputStream.write(sb.toString().toByteArray(StandardCharsets.UTF_8))
+                        }
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(requireContext(), "CSV exported successfully: $fileName", Toast.LENGTH_LONG).show()
+                }
+            }.onFailure { e ->
+                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        val cursor = requireContext().contentResolver.query(uri, null, null, null, null)
+        return cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) it.getString(nameIndex) else null
+            } else null
+        }
     }
 
     // --- Import pipeline (extended for CSV) ---

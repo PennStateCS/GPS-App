@@ -25,7 +25,8 @@ import java.util.*
 
 class ModelsAdapter(
     private val onDeleteClick: (Model) -> Unit,
-    private val onEditClick: (Model) -> Unit
+    private val onEditClick: (Model) -> Unit,
+    private val onModelClick: (Model) -> Unit
 ) : ListAdapter<Model, ModelsAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
@@ -62,6 +63,11 @@ class ModelsAdapter(
 
             btnDeleteModel.setOnClickListener {
                 onDeleteClick(model)
+            }
+
+            // Handle model click to view in 3D
+            itemView.setOnClickListener {
+                onModelClick(model)
             }
 
             // Load GLB preview
