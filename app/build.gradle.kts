@@ -16,6 +16,25 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Enable support for 16KB page size devices (required for Android 15+ and Play Store)
+        ndk {
+            debugSymbolLevel = "SYMBOL_TABLE"
+        }
+    }
+
+    // Add packaging options for 16KB page size support
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+        resources {
+            excludes += listOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "/META-INF/LICENSE*",
+                "/META-INF/NOTICE*"
+            )
+        }
     }
 
     buildTypes {
@@ -25,6 +44,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Ensure proper alignment for 16KB page size
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
+        }
+        debug {
+            // Ensure proper alignment for 16KB page size in debug builds too
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
     }
     compileOptions {
@@ -37,6 +66,19 @@ android {
     }
     buildFeatures {
         viewBinding = true
+    }
+
+    // Configure Android App Bundle for 16KB page size support
+    bundle {
+        language {
+            enableSplit = true
+        }
+        density {
+            enableSplit = true
+        }
+        abi {
+            enableSplit = true
+        }
     }
 }
 
@@ -57,9 +99,6 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.osmdroid)
     implementation(libs.arcore)
-    // 3D Model Rendering
-    implementation("io.github.sceneview:sceneview:0.10.0")
-    implementation("com.google.android.filament:filament-android:1.17.1")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
