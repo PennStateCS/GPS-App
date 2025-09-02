@@ -130,7 +130,9 @@
             android:layout_margin="8dp"
             android:background="#AAFFFFFF"
             android:contentDescription="Expand panel"
-            android:src="@android:drawable/ic_input_add"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="@android:color/black"
+            android:elevation="4dp"
             android:visibility="gone" />
 
     </FrameLayout>
