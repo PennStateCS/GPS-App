@@ -5,15 +5,18 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.surveyingapp.data.local.dao.CoordinateDao
+import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
+import com.example.surveyingapp.data.local.entity.ModelEntity
 
 @Database(
-    entities = [CoordinateEntity::class],
-    version = 1,
+    entities = [CoordinateEntity::class, ModelEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun coordinateDao(): CoordinateDao
+    abstract fun modelDao(): ModelDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

@@ -13,6 +13,12 @@
 
 
     <fragment
+        android:id="@+id/nav_models"
+        android:name="com.example.surveyingapp.ui.models.ModelsFragment"
+        android:label="@string/menu_models"
+        tools:layout="@layout/fragment_models" />
+
+    <fragment
         android:id="@+id/nav_open_in_ar"
         android:name="com.example.surveyingapp.ui.openinar.OpenInARFragment"
         android:label="@string/menu_open_in_ar"
