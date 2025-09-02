@@ -96,21 +96,19 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // Track format for pending import (true if CSV)
     private var pendingImportIsCsv: Boolean = false
 
-    // Export launchers (JSON & CSV)
-    private val exportJsonLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> if (uri != null) lifecycleScope.launch { exportCoordinatesJson(uri) } }
-    private val exportCsvLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri -> if (uri != null) lifecycleScope.launch { exportCoordinatesCsv(uri) } }
+    // Custom file picker launchers for export and import
+    private val customFilePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                handleCustomFilePickerResult(uri)
+            }
+        }
+    }
 
-    // Import launchers (JSON & CSV)
-    private val importJsonLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) lifecycleScope.launch { pendingImportIsCsv = false; prepareImportCoordinatesWithConfirmation(uri, isCsv = false) } }
-    private val importCsvLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) lifecycleScope.launch { pendingImportIsCsv = true; prepareImportCoordinatesWithConfirmation(uri, isCsv = true) } }
+    // State to track current operation
+    private var currentOperation: String? = null // "export_json", "export_csv", "import_json", "import_csv"
 
     // ───────────────────────────── Bluetooth state ─────────────────────────────
     private var tcpDiscoveryJob: Job? = null
@@ -441,8 +439,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
             .setItems(arrayOf("JSON", "CSV")) { d, which ->
                 val ts = System.currentTimeMillis()
                 when (which) {
-                    0 -> exportJsonLauncher.launch("coordinates_${ts}.json")
-                    1 -> exportCsvLauncher.launch("coordinates_${ts}.csv")
+                    0 -> exportJson(ts)
+                    1 -> exportCsv(ts)
                 }
                 d.dismiss()
             }
@@ -455,8 +453,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
             .setTitle("Import Format")
             .setItems(arrayOf("JSON", "CSV")) { d, which ->
                 when (which) {
-                    0 -> importJsonLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
-                    1 -> importCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain"))
+                    0 -> importJson()
+                    1 -> importCsv()
                 }
                 d.dismiss()
             }
@@ -465,55 +463,97 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     // --- Export helpers ---
-    private suspend fun exportCoordinatesJson(uri: Uri) {
-        runCatching {
-            val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-            val arr = org.json.JSONArray()
-            coords.forEach { c ->
-                arr.put(org.json.JSONObject().apply {
-                    put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
-                    put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
-                })
+    private fun exportJson(ts: Long) {
+        currentOperation = "export_json"
+        val fileName = "coordinates_${ts}.json"
+        val uri = Uri.parse("file://${requireContext().getExternalFilesDir(null)}/$fileName")
+        lifecycleScope.launch {
+            runCatching {
+                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                val arr = org.json.JSONArray()
+                coords.forEach { c ->
+                    arr.put(org.json.JSONObject().apply {
+                        put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
+                        put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
+                    })
+                }
+                withContext(Dispatchers.IO) {
+                    requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
+                        os.write(arr.toString(2).toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
+                    } ?: error("Unable to open output stream")
+                }
+            }.onSuccess {
+                Toast.makeText(requireContext(), "Exported JSON", Toast.LENGTH_LONG).show()
+            }.onFailure { e ->
+                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
-            withContext(Dispatchers.IO) {
-                requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
-                    os.write(arr.toString(2).toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
-                } ?: error("Unable to open output stream")
-            }
-        }.onSuccess {
-            Toast.makeText(requireContext(), "Exported JSON", Toast.LENGTH_LONG).show()
-        }.onFailure { e ->
-            Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private suspend fun exportCoordinatesCsv(uri: Uri) {
-        runCatching {
-            val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-            val sb = StringBuilder()
-            sb.append("id,name,latitude,longitude,altitude,timestamp,icon,color\n")
-            coords.forEach { c ->
-                fun esc(v: String): String = if (v.contains(',') || v.contains('"') || v.contains('\n')) '"' + v.replace("\"", "\"\"") + '"' else v
-                sb.append(esc(c.id)).append(',')
-                    .append(esc(c.name)).append(',')
-                    .append(c.latitude).append(',')
-                    .append(c.longitude).append(',')
-                    .append(c.altitude).append(',')
-                    .append(c.timestamp).append(',')
-                    .append(esc(c.icon)).append(',')
-                    .append(c.color)
-                    .append('\n')
+    private fun exportCsv(ts: Long) {
+        currentOperation = "export_csv"
+        val fileName = "coordinates_${ts}.csv"
+        val uri = Uri.parse("file://${requireContext().getExternalFilesDir(null)}/$fileName")
+        lifecycleScope.launch {
+            runCatching {
+                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                val sb = StringBuilder()
+                sb.append("id,name,latitude,longitude,altitude,timestamp,icon,color\n")
+                coords.forEach { c ->
+                    fun esc(v: String): String = if (v.contains(',') || v.contains('"') || v.contains('\n')) '"' + v.replace("\"", "\"\"") + '"' else v
+                    sb.append(esc(c.id)).append(',')
+                        .append(esc(c.name)).append(',')
+                        .append(c.latitude).append(',')
+                        .append(c.longitude).append(',')
+                        .append(c.altitude).append(',')
+                        .append(c.timestamp).append(',')
+                        .append(esc(c.icon)).append(',')
+                        .append(c.color)
+                        .append('\n')
+                }
+                withContext(Dispatchers.IO) {
+                    requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
+                        os.write(sb.toString().toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
+                    } ?: error("Unable to open output stream")
+                }
+            }.onSuccess {
+                Toast.makeText(requireContext(), "Exported CSV", Toast.LENGTH_LONG).show()
+            }.onFailure { e ->
+                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
-            withContext(Dispatchers.IO) {
-                requireContext().contentResolver.openOutputStream(uri, "w")?.use { os ->
-                    os.write(sb.toString().toByteArray(java.nio.charset.StandardCharsets.UTF_8)); os.flush()
-                } ?: error("Unable to open output stream")
-            }
-        }.onSuccess {
-            Toast.makeText(requireContext(), "Exported CSV", Toast.LENGTH_LONG).show()
-        }.onFailure { e ->
-            Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun importJson() {
+        currentOperation = "import_json"
+        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILE_EXTENSIONS, arrayOf(".json"))
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select JSON File to Import")
+        }
+        customFilePickerLauncher.launch(intent)
+    }
+
+    private fun importCsv() {
+        currentOperation = "import_csv"
+        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILE_EXTENSIONS, arrayOf(".csv"))
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select CSV File to Import")
+        }
+        customFilePickerLauncher.launch(intent)
+    }
+
+    private fun handleCustomFilePickerResult(uri: Uri) {
+        when (currentOperation) {
+            "import_json" -> {
+                pendingImportIsCsv = false
+                lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = false) }
+            }
+            "import_csv" -> {
+                pendingImportIsCsv = true
+                lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = true) }
+            }
+        }
+        currentOperation = null
     }
 
     // --- Import pipeline (extended for CSV) ---
