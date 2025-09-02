@@ -9,15 +9,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Point
+import com.example.surveyingapp.domain.model.Coordinate
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 
 class EditCoordinateDialogFragment(
-    private val coordinate: Point,
-    private val onCoordinateEdited: (Point) -> Unit
+    private val coordinate: Coordinate,
+    private val onCoordinateEdited: (Coordinate) -> Unit
 ) : DialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val inflater = requireActivity().layoutInflater
@@ -31,10 +31,10 @@ class EditCoordinateDialogFragment(
         // Pre-fill values
         nameEdit.setText(coordinate.name)
 
-        // Icon choices
-        val icons = listOf("ic_menu_camera", "ic_menu_gallery", "ic_menu_slideshow")
+        // Icon choices updated
+        val icons = listOf("ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond")
         iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
-        iconSpinner.setSelection(icons.indexOf(coordinate.icon).coerceAtLeast(0))
+        iconSpinner.setSelection(icons.indexOf(coordinate.icon).takeIf { it >= 0 } ?: 0)
 
         // Color choices
         val colors = listOf(
@@ -54,8 +54,10 @@ class EditCoordinateDialogFragment(
                 val name = nameEdit.text.toString().ifBlank { coordinate.name }
                 val icon = icons[iconSpinner.selectedItemPosition]
                 val color = colors[colorSpinner.selectedItemPosition].second
-                val updated = coordinate.copy(name = name, icon = icon, color = color)
-                onCoordinateEdited(updated)
+                if (name != coordinate.name || icon != coordinate.icon || color != coordinate.color) {
+                    val updated = coordinate.copy(name = name, icon = icon, color = color)
+                    onCoordinateEdited(updated)
+                }
             }
             .setNegativeButton("Cancel", null)
             .create()
@@ -78,10 +80,11 @@ class EditCoordinateDialogFragment(
             val textView = view.findViewById<TextView>(R.id.text_icon_name)
             val iconName = icons[position]
             val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
-            imageView.setImageResource(resId)
-            textView.text = iconName.replace("ic_menu_", "").replaceFirstChar { it.uppercase() }
+            imageView.setImageResource(if (resId != 0) resId else R.drawable.ic_pin)
+            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
+                .replace('_',' ')
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
             return view
         }
     }
 }
-

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- Location Source Selection (Radio Buttons) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_marginBottom="8dp">
+
+        <RadioGroup
+            android:id="@+id/radio_location_source"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <RadioButton
+                android:id="@+id/radio_internal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Internal GPS"
+                android:layout_marginBottom="8dp" />
+            <RadioButton
+                android:id="@+id/radio_es2_tcp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Emlid Reach RS2+ (TCP)"
+                android:layout_marginBottom="8dp" />
+        </RadioGroup>
+
+        <!-- Options for Emlid Reach RS2+ (TCP) now only buttons (manual/scanning) -->
+        <LinearLayout
+            android:id="@+id/layout_rs2_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            android:layout_marginTop="8dp">
+            <Button
+                android:id="@+id/btn_manual_entry"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Manual Entry"
+                android:layout_marginEnd="8dp" />
+            <Button
+                android:id="@+id/btn_scan_device"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Scan for device"
+                android:layout_marginStart="8dp" />
+        </LinearLayout>
+
+        <!-- Selected Device Container -->
+        <LinearLayout
+            android:id="@+id/container_selected_device"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            android:layout_marginTop="8dp"
+            android:padding="8dp"
+            android:background="@drawable/bg_device_box">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_weight="1">
+                <TextView
+                    android:id="@+id/text_device_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Device Name"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/black"
+                    android:textSize="15sp" />
+                <TextView
+                    android:id="@+id/text_device_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Status"
+                    android:textSize="13sp"
+                    android:textColor="@android:color/holo_green_dark"
+                    android:layout_marginTop="2dp" />
+                <TextView
+                    android:id="@+id/text_device_address"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="IP:Port"
+                    android:textColor="@android:color/darker_gray"
+                    android:textSize="13sp"
+                    android:layout_marginTop="2dp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btn_disconnect_device"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Disconnect" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Internal GPS Settings -->
+    <LinearLayout
+        android:id="@+id/group_internal_gps"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:layout_marginBottom="16dp"
+        android:paddingHorizontal="16dp">
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_high_accuracy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="High Accuracy Location"
+            android:textSize="16sp"
+            android:padding="12dp" />
+
+        <TextView
+            android:id="@+id/text_high_accuracy_explanation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable this to use the device's most precise location mode, which may use GPS and other sensors. May increase battery usage."
+            android:textSize="13sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:layout_marginBottom="8dp"
+            android:textColor="@android:color/darker_gray" />
+
+    </LinearLayout>
+
+</LinearLayout>

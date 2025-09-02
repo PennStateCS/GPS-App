@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#000000">
+    <!-- Material-style map icon, matching style of other icons -->
+    <path
+        android:fillColor="@android:color/black"
+        android:pathData="M20.5,3l-5.81,2.26L9,3 3.5,5v16l5.69,-2.21L15,21l6.5,-2.5V3zM10,5.47l4,1.53v11.53l-4,-1.53V5.47z" />
+</vector>

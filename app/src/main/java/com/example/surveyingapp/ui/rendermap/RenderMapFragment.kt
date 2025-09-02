@@ -1,68 +1,73 @@
 package com.example.surveyingapp.ui.rendermap
 
-import android.Manifest
-import android.animation.ObjectAnimator
-import android.content.Context
-import android.content.pm.PackageManager
+import android.animation.ValueAnimator
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.PorterDuff
-import android.graphics.drawable.Drawable
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.DrawableCompat
+import com.example.surveyingapp.R
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
-import com.example.surveyingapp.R
-import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
+import com.google.android.gms.maps.*
+import com.google.android.gms.maps.model.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.CustomZoomButtonsController
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
-import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
-import java.util.Locale
+import androidx.core.animation.doOnEnd
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import android.widget.TextView
+import android.widget.Button
 
 class RenderMapFragment : Fragment() {
-
     private var mapView: MapView? = null
+    private var googleMap: GoogleMap? = null
     private var placeholder: View? = null
-
-    // Keep overlays/components around
-    private var locationOverlay: MyLocationNewOverlay? = null
-    private val markerIconCache = mutableMapOf<String, Drawable>()
-
+    private var lastLatLngs: List<LatLng> = emptyList()
+    private val markers = mutableListOf<Marker>()
     private var isSatellite = false
-    private var lastGeoPoints: List<GeoPoint> = emptyList()
+    private var dataObserved = false
+    private var cameraInitialized = false
 
-    private val requestLocationPermissions =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-            val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                    grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-            if (granted) enableMyLocationOverlay()
-            else Toast.makeText(requireContext(), "Location permission denied", Toast.LENGTH_SHORT).show()
-        }
+    private var leftPanel: View? = null
+    private var panelHandle: View? = null
+    private var collapseBtn: ImageButton? = null
+    private var expandBtn: ImageButton? = null
 
-    // Data class for displaying points with visibility
-    data class MapPointDisplay(
-        val geoPoint: GeoPoint,
-        val name: String,
-        val iconName: String,
-        val color: Int,
-        var isVisible: Boolean = true,
-        var marker: Marker? = null
-    )
+    private var panelWidthPx: Int = 0
+    private var panelCollapsed = false
 
-    private lateinit var pointsAdapter: PointsAdapter
-    private val displayPoints = mutableListOf<MapPointDisplay>()
+    private val minPanelDp = 160f
+    private val maxPanelDp = 480f
+
+    private var toggleRecycler: RecyclerView? = null
+    private lateinit var toggleAdapter: CoordinateToggleAdapter
+    private val markerMap = mutableMapOf<String, Marker>()
+    private val visibilityMap = mutableMapOf<String, Boolean>() // id -> visible
+    private val coordinateMap = mutableMapOf<String, Coordinate>() // id -> coordinate data
+    private var toggleSatBtn: FloatingActionButton? = null
+    private var measureBtn: FloatingActionButton? = null
+    private var gridBtn: FloatingActionButton? = null
+    private var showAllBtn: Button? = null
+    private var hideAllBtn: Button? = null
+    private var isMeasuring = false
+    private val measurementPoints = mutableListOf<LatLng>()
+    private val measurementMarkers = mutableListOf<Marker>()
+    private var measurementPolyline: Polyline? = null
+
+    private var showGrid = false
+    private val gridLines = mutableListOf<Polyline>()
+
+    private val boundaryLines = mutableListOf<Polyline>()
+    private var showBoundaries = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -72,389 +77,562 @@ class RenderMapFragment : Fragment() {
         val root = inflater.inflate(R.layout.fragment_render_map, container, false)
         mapView = root.findViewById(R.id.mapView)
         placeholder = root.findViewById(R.id.text_render_map)
+        toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
+        toggleSatBtn = root.findViewById(R.id.fab_toggle_sat)
+        gridBtn = root.findViewById(R.id.fab_toggle_grid)
+        showAllBtn = root.findViewById(R.id.btn_show_all)
+        hideAllBtn = root.findViewById(R.id.btn_hide_all)
+        // measureBtn = root.findViewById(R.id.fab_measure) // Commented out - button doesn't exist in layout yet
+        toggleAdapter = CoordinateToggleAdapter { id, checked ->
+            visibilityMap[id] = checked
+            markerMap[id]?.isVisible = checked
+        }
+        toggleRecycler?.layoutManager = LinearLayoutManager(requireContext())
+        toggleRecycler?.adapter = toggleAdapter
+        mapView?.onCreate(savedInstanceState)
+        mapView?.getMapAsync { map ->
+            googleMap = map
+            googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL
 
-        setupMap(requireContext())
+            // Allow much closer zooming - set maximum zoom level to 22 (very close)
+            googleMap?.setMaxZoomPreference(22f)
+            googleMap?.setMinZoomPreference(2f)
 
-        root.findViewById<FloatingActionButton>(R.id.fab_toggle_sat)
-            ?.setOnClickListener { toggleSatellite() }
-        root.findViewById<FloatingActionButton>(R.id.fab_recenter)
-            ?.setOnClickListener { recenterMap() }
+            // Set up custom info window adapter
+            googleMap?.setInfoWindowAdapter(object : GoogleMap.InfoWindowAdapter {
+                override fun getInfoWindow(marker: Marker): View? = null // Use default frame
 
-        enableMyLocationIfPermitted()
+                override fun getInfoContents(marker: Marker): View? {
+                    return createInfoWindowView(marker)
+                }
+            })
+
+            // Set up marker click listener to show info window
+            googleMap?.setOnMarkerClickListener { marker ->
+                marker.showInfoWindow()
+                true // Return true to consume the event
+            }
+
+            Log.d("RenderMap", "GoogleMap ready")
+            googleMap?.setOnMapLoadedCallback {
+                Log.d("RenderMap", "Map loaded callback")
+                if (!cameraInitialized && lastLatLngs.isNotEmpty()) updateCamera(lastLatLngs)
+            }
+            bindData()
+        }
+        toggleSatBtn?.setOnClickListener { toggleSatellite() }
+        gridBtn?.setOnClickListener { toggleGrid() }
+        showAllBtn?.setOnClickListener { showAllCoordinates() }
+        hideAllBtn?.setOnClickListener { hideAllCoordinates() }
+        root.findViewById<FloatingActionButton>(R.id.fab_recenter)?.setOnClickListener { recenterMap() }
+        root.findViewById<FloatingActionButton>(R.id.fab_zoom_in)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomIn()) }
+        root.findViewById<FloatingActionButton>(R.id.fab_zoom_out)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomOut()) }
+        if (savedInstanceState != null) {
+            panelWidthPx = savedInstanceState.getInt("panelWidthPx", 0)
+            panelCollapsed = savedInstanceState.getBoolean("panelCollapsed", false)
+        }
         return root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // init panel references
+        leftPanel = view.findViewById(R.id.left_panel)
+        panelHandle = view.findViewById(R.id.panel_handle)
+        collapseBtn = view.findViewById(R.id.btn_collapse_panel)
+        expandBtn = view.findViewById(R.id.btn_expand_panel)
 
-        // Initialize RecyclerView and adapter
-        val recyclerView = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.pointsRecyclerView)
-        pointsAdapter = PointsAdapter(displayPoints) { position, isChecked ->
-            displayPoints[position].isVisible = isChecked
-            updateMarkerVisibility(position)
+        // Set initial satellite button icon
+        updateSatelliteButtonIcon()
+
+        if (panelWidthPx == 0) {
+            panelWidthPx = dpToPx(260f)
         }
-        recyclerView.adapter = pointsAdapter
-        recyclerView.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(requireContext())
-
-        // Setup collapsible points list
-        setupCollapsiblePointsList(view)
-
-        // Now that adapter is initialized, bind data
-        bindData()
+        applyPanelState()
+        setupPanelInteractions()
     }
 
-    private fun setupCollapsiblePointsList(view: View) {
-        val pointsListContainer = view.findViewById<View>(R.id.pointsListContainer)
-        val btnTogglePointsList = view.findViewById<ImageButton>(R.id.btnTogglePointsList)
-        val btnShowPointsList = view.findViewById<ImageButton>(R.id.btnShowPointsList)
-
-        // Initially show the list
-        var isListExpanded = true
-
-        // Toggle button (collapse) click listener
-        btnTogglePointsList.setOnClickListener {
-            isListExpanded = false
-            animateListCollapse(pointsListContainer, btnShowPointsList)
-        }
-
-        // Show button (expand) click listener
-        btnShowPointsList.setOnClickListener {
-            isListExpanded = true
-            animateListExpand(pointsListContainer, btnShowPointsList)
-        }
+    // Lifecycle pass-throughs
+    override fun onStart() { super.onStart(); mapView?.onStart() }
+    override fun onResume() { super.onResume(); mapView?.onResume() }
+    override fun onPause() { mapView?.onPause(); super.onPause() }
+    override fun onStop() { mapView?.onStop(); super.onStop() }
+    override fun onDestroy() { super.onDestroy(); mapView?.onDestroy() }
+    override fun onLowMemory() { super.onLowMemory(); mapView?.onLowMemory() }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("panelWidthPx", panelWidthPx)
+        outState.putBoolean("panelCollapsed", panelCollapsed)
+        mapView?.onSaveInstanceState(outState)
     }
-
-    private fun animateListCollapse(container: View, showButton: ImageButton) {
-        // Animate the container sliding out to the left
-        ObjectAnimator.ofFloat(container, "translationX", 0f, -container.width.toFloat()).apply {
-            duration = 300
-            start()
-        }
-
-        // Show the expand button after animation
-        showButton.postDelayed({
-            showButton.visibility = View.VISIBLE
-            showButton.alpha = 0f
-            ObjectAnimator.ofFloat(showButton, "alpha", 0f, 1f).apply {
-                duration = 200
-                start()
-            }
-        }, 300)
-    }
-
-    private fun animateListExpand(container: View, showButton: ImageButton) {
-        // Hide the show button first
-        ObjectAnimator.ofFloat(showButton, "alpha", 1f, 0f).apply {
-            duration = 200
-            start()
-        }
-
-        showButton.postDelayed({
-            showButton.visibility = View.GONE
-
-            // Animate the container sliding in from the left
-            ObjectAnimator.ofFloat(container, "translationX", -container.width.toFloat(), 0f).apply {
-                duration = 300
-                start()
-            }
-        }, 200)
-    }
-
-    private fun updateMarkerVisibility(position: Int) {
-        val point = displayPoints[position]
-        val map = mapView ?: return
-
-        if (point.isVisible) {
-            if (point.marker == null) {
-                val marker = Marker(map)
-                marker.position = point.geoPoint
-                marker.title = point.name
-                marker.icon = getTintedMarkerDrawable(requireContext(), point.iconName, point.color)
-                map.overlays.add(marker)
-                point.marker = marker
-            }
-        } else {
-            point.marker?.let {
-                map.overlays.remove(it)
-                point.marker = null
-            }
-        }
-        map.invalidate()
-    }
-
-    private fun setupMap(context: Context) {
-        // IMPORTANT: set user agent so tile servers don’t block
-        Configuration.getInstance().load(
-            context,
-            context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
-        )
-        if (Configuration.getInstance().userAgentValue.isNullOrBlank()) {
-            Configuration.getInstance().userAgentValue = context.packageName
-        }
-
-        mapView?.apply {
-            setTileSource(TileSourceFactory.MAPNIK)
-            setMultiTouchControls(true)
-            zoomController.setVisibility(CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT)
-
-            // Reasonable default: continental US
-            controller.setZoom(4.0)
-            controller.setCenter(GeoPoint(39.5, -98.35))
-        }
-    }
+    override fun onDestroyView() { mapView = null; placeholder = null; super.onDestroyView() }
 
     private fun bindData() {
-        val viewModel = ViewModelProvider(
-            this,
-            ViewModelProvider.AndroidViewModelFactory(requireActivity().application)
-        ).get(CoordinatesViewModel::class.java)
-
-        viewModel.allCoordinates.observe(viewLifecycleOwner) { points ->
-            val map = mapView ?: return@observe
-
-            // Remove all markers managed by displayPoints
-            for (point in displayPoints) {
-                point.marker?.let { map.overlays.remove(it) }
-                point.marker = null
-            }
-            displayPoints.clear()
-
+        if (dataObserved) return
+        dataObserved = true
+        val vm = ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory(requireActivity().application))
+            .get(CoordinatesViewModel::class.java)
+        vm.allCoordinates.observe(viewLifecycleOwner) { points ->
+            if (googleMap == null) return@observe
+            markerMap.values.forEach { it.remove() }
+            markerMap.clear()
             if (points.isEmpty()) {
                 placeholder?.visibility = View.VISIBLE
-                lastGeoPoints = emptyList()
-            } else {
-                placeholder?.visibility = View.GONE
-                val geoPoints = mutableListOf<GeoPoint>()
-                points.forEachIndexed { i, p ->
-                    val gp = GeoPoint(p.latitude, p.longitude)
-                    geoPoints.add(gp)
-                    displayPoints.add(MapPointDisplay(gp, p.name ?: "Point ${i + 1}", p.icon ?: "default_marker", p.color ?: 0, true))
-                }
-                lastGeoPoints = geoPoints
-
-                // Keep location overlay on top of markers if already present
-                locationOverlay?.let {
-                    map.overlays.remove(it)
-                    map.overlays.add(it)
-                }
-
-                // Auto-fit
-                if (geoPoints.size == 1) {
-                    map.controller?.setZoom(16.0)
-                    map.controller?.setCenter(geoPoints.first())
-                } else {
-                    val bb = BoundingBox.fromGeoPointsSafe(geoPoints)
-                    val padded = BoundingBox(
-                        bb.latNorth + 0.01, bb.lonEast + 0.01,
-                        bb.latSouth - 0.01, bb.lonWest - 0.01
-                    )
-                    map.zoomToBoundingBox(padded, true)
-                }
+                lastLatLngs = emptyList()
+                toggleAdapter.submit(emptyList())
+                return@observe
             }
-            pointsAdapter.notifyDataSetChanged()
-            updateAllMarkers()
-            map.invalidate()
+            placeholder?.visibility = View.GONE
+            val latLngsVisible = ArrayList<LatLng>()
+            val toggleItems = mutableListOf<CoordinateToggleItem>()
+            points.forEach { p ->
+                val ll = LatLng(p.latitude, p.longitude)
+                val visible = visibilityMap[p.id] ?: true
+                visibilityMap.putIfAbsent(p.id, visible)
+                val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                val opts = MarkerOptions().position(ll).title(p.name)
+                if (descriptor != null) opts.icon(descriptor)
+                val marker = googleMap!!.addMarker(opts)
+                if (marker != null) {
+                    marker.isVisible = visible
+                    marker.tag = p.id // Store coordinate ID in marker tag
+                    markerMap[p.id] = marker
+                    if (visible) latLngsVisible.add(ll)
+                }
+                toggleItems += CoordinateToggleItem(p.id, p.name, visible, p.icon, p.color)
+                coordinateMap[p.id] = p // Add to coordinate map
+            }
+            lastLatLngs = latLngsVisible
+            toggleAdapter.submit(toggleItems)
+            updateCamera(latLngsVisible)
         }
     }
 
-    private fun getTintedMarkerDrawable(context: Context, iconName: String, color: Int): Drawable? {
-        val key = "$iconName-$color"
-        markerIconCache[key]?.let { return it }
-
-        val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
-        val base = (if (resId != 0)
-            ContextCompat.getDrawable(context, resId)
-        else
-            ContextCompat.getDrawable(context, R.drawable.ic_menu_camera))?.mutate()
-
-        if (base == null) return null
-
-        // Use DrawableCompat for broad tint support
-        val wrapped = DrawableCompat.wrap(base)
+    private fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
+        val ctx = context ?: return null
+        if (iconName.isNullOrBlank()) return null
+        val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
+        if (resId == 0) return null
+        val d = ContextCompat.getDrawable(ctx, resId) ?: return null
+        val size = dpToPx(32f) // uniform size
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        d.setBounds(0, 0, size, size)
         try {
-            DrawableCompat.setTint(wrapped, color)
-            DrawableCompat.setTintMode(wrapped, PorterDuff.Mode.SRC_IN)
-        } catch (_: Exception) {
-            // fallback
-            @Suppress("DEPRECATION")
-            base.setColorFilter(color, PorterDuff.Mode.SRC_IN)
-        }
-        markerIconCache[key] = wrapped
-        return wrapped
+            d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_IN)
+        } catch (_: Exception) {}
+        d.draw(canvas)
+        return BitmapDescriptorFactory.fromBitmap(bmp)
     }
 
+    private fun updateCamera(latLngs: List<LatLng>) {
+        val map = googleMap ?: return
+        if (latLngs.isEmpty()) return
+        try {
+            if (latLngs.size == 1) {
+                map.animateCamera(CameraUpdateFactory.newLatLngZoom(latLngs.first(), 20f))
+            } else if (!cameraInitialized) {
+                val builder = LatLngBounds.builder()
+                latLngs.forEach { builder.include(it) }
+                val bounds = builder.build()
+                mapView?.post {
+                    try { map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100)) } catch (_: Exception) {}
+                }
+            }
+            cameraInitialized = true
+        } catch (e: Exception) {
+            Log.e("RenderMap", "Camera update error", e)
+        }
+    }
+
+    private fun recenterMap() { updateCamera(markerMap.filter { it.value.isVisible }.values.map { it.position }) }
     private fun toggleSatellite() {
-        val map = mapView ?: return
         isSatellite = !isSatellite
-
-        // USGS_SAT is bundled with osmdroid; no API key required.
-        map.setTileSource(if (isSatellite) TileSourceFactory.USGS_SAT else TileSourceFactory.MAPNIK)
-
-        view?.findViewById<FloatingActionButton>(R.id.fab_toggle_sat)?.apply {
-            setImageResource(
-                if (isSatellite) android.R.drawable.ic_menu_mapmode
-                else android.R.drawable.ic_menu_gallery
-            )
-            contentDescription = if (isSatellite) "Switch to standard" else "Switch to satellite"
-        }
-        Toast.makeText(requireContext(),
-            if (isSatellite) "Satellite view" else "Standard view",
-            Toast.LENGTH_SHORT
-        ).show()
-
-        map.invalidate()
+        googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL
+        updateSatelliteButtonIcon()
     }
 
-    private fun recenterMap() {
-        val map = mapView ?: return
-        val points = lastGeoPoints
-        if (points.isEmpty()) {
-            Toast.makeText(requireContext(), "No points to recenter", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (points.size == 1) {
-            map.controller?.setZoom(16.0)
-            map.controller?.setCenter(points.first())
+    private fun updateSatelliteButtonIcon() {
+        toggleSatBtn?.setImageResource(
+            if (isSatellite) {
+                android.R.drawable.ic_menu_mapmode // Map icon when in satellite mode (to switch back to map)
+            } else {
+                android.R.drawable.ic_menu_gallery // Satellite/gallery icon when in map mode (to switch to satellite)
+            }
+        )
+    }
+
+    private fun toggleMeasurement() {
+        isMeasuring = !isMeasuring
+        if (isMeasuring) {
+            // Clear previous measurements
+            measurementPoints.clear()
+            measurementMarkers.forEach { it.remove() }
+            measurementMarkers.clear()
+            measurementPolyline?.remove()
+            measurementPolyline = null
+            // Change button icon to indicate active measurement
+            // measureBtn?.setImageResource(R.drawable.ic_measure_active) // Commented out - drawable doesn't exist yet
         } else {
-            val bb = BoundingBox.fromGeoPointsSafe(points)
-            val padded = BoundingBox(
-                bb.latNorth + 0.01, bb.lonEast + 0.01,
-                bb.latSouth - 0.01, bb.lonWest - 0.01
-            )
-            map.zoomToBoundingBox(padded, true)
+            // Finalize measurement, maybe show total distance/area
+            // measureBtn?.setImageResource(R.drawable.ic_measure) // Commented out - drawable doesn't exist yet
         }
-        map.invalidate()
     }
 
-    private fun enableMyLocationIfPermitted() {
-        val ctx = requireContext()
-        val fineGranted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
-        if (!fineGranted && !coarseGranted) {
-            requestLocationPermissions.launch(arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ))
-            return
-        }
-        enableMyLocationOverlay()
-    }
-
-    private fun enableMyLocationOverlay() {
-        val mv = mapView ?: return
-        if (locationOverlay == null) {
-            locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(requireContext()), mv).apply {
-                enableMyLocation()
-                // leave "follow" off to honor your comment; user can pan freely
-            }
-            mv.overlays.add(locationOverlay)
+    private fun toggleGrid() {
+        showGrid = !showGrid
+        if (showGrid) {
+            drawCoordinateGrid()
         } else {
-            // ensure it’s present (if overlays were rebuilt)
-            if (!mv.overlays.contains(locationOverlay)) mv.overlays.add(locationOverlay)
-            locationOverlay?.enableMyLocation()
+            gridLines.forEach { it.remove() }
+            gridLines.clear()
         }
-        mv.invalidate()
     }
 
-    private fun updateAllMarkers() {
-        val map = mapView ?: return
-        // Remove all markers from overlays
-        for (point in displayPoints) {
-            point.marker?.let { map.overlays.remove(it) }
-            point.marker = null
+    private fun showAllCoordinates() {
+        // Set all coordinates to visible
+        coordinateMap.keys.forEach { id ->
+            visibilityMap[id] = true
+            markerMap[id]?.isVisible = true
         }
-        // Add visible markers with custom icons
-        for (point in displayPoints) {
-            if (point.isVisible) {
-                val marker = Marker(map)
-                marker.position = point.geoPoint
-                marker.title = point.name
-                marker.icon = getTintedMarkerDrawable(requireContext(), point.iconName, point.color)
-                map.overlays.add(marker)
-                point.marker = marker
+        // Update the adapter to reflect changes
+        refreshToggleList()
+    }
+
+    private fun hideAllCoordinates() {
+        // Set all coordinates to hidden
+        coordinateMap.keys.forEach { id ->
+            visibilityMap[id] = false
+            markerMap[id]?.isVisible = false
+        }
+        // Update the adapter to reflect changes
+        refreshToggleList()
+    }
+
+    private fun refreshToggleList() {
+        // Rebuild the toggle list with current visibility states
+        val toggleItems = coordinateMap.values.map { coordinate ->
+            val visible = visibilityMap[coordinate.id] ?: true
+            CoordinateToggleItem(coordinate.id, coordinate.name, visible, coordinate.icon, coordinate.color)
+        }
+        toggleAdapter.submit(toggleItems)
+    }
+
+    private fun drawCoordinateGrid() {
+        val map = googleMap ?: return
+        val bounds = map.projection.visibleRegion.latLngBounds
+
+        // Draw latitude lines
+        val latStep = calculateGridStep(bounds.northeast.latitude - bounds.southwest.latitude)
+        var lat = (bounds.southwest.latitude / latStep).toInt() * latStep
+        while (lat <= bounds.northeast.latitude) {
+            val line = map.addPolyline(
+                PolylineOptions()
+                    .add(LatLng(lat, bounds.southwest.longitude))
+                    .add(LatLng(lat, bounds.northeast.longitude))
+                    .color(0x40000000) // Semi-transparent black
+                    .width(1f)
+            )
+            gridLines.add(line)
+            lat += latStep
+        }
+
+        // Draw longitude lines
+        val lngStep = calculateGridStep(bounds.northeast.longitude - bounds.southwest.longitude)
+        var lng = (bounds.southwest.longitude / lngStep).toInt() * lngStep
+        while (lng <= bounds.northeast.longitude) {
+            val line = map.addPolyline(
+                PolylineOptions()
+                    .add(LatLng(bounds.southwest.latitude, lng))
+                    .add(LatLng(bounds.northeast.latitude, lng))
+                    .color(0x40000000)
+                    .width(1f)
+            )
+            gridLines.add(line)
+            lng += lngStep
+        }
+    }
+
+    private fun calculateGridStep(range: Double): Double {
+        return when {
+            range > 1.0 -> 0.1
+            range > 0.1 -> 0.01
+            range > 0.01 -> 0.001
+            else -> 0.0001
+        }
+    }
+
+    private fun toggleBoundaryLines() {
+        showBoundaries = !showBoundaries
+        if (showBoundaries) {
+            drawBoundaryLines()
+        } else {
+            boundaryLines.forEach { it.remove() }
+            boundaryLines.clear()
+        }
+    }
+
+    private fun drawBoundaryLines() {
+        val visibleCoords = coordinateMap.values.filter {
+            visibilityMap[it.id] == true
+        }.sortedBy { it.timestamp }
+
+        if (visibleCoords.size < 2) return
+
+        // Connect coordinates in sequence to form property boundary
+        for (i in 0 until visibleCoords.size - 1) {
+            val start = LatLng(visibleCoords[i].latitude, visibleCoords[i].longitude)
+            val end = LatLng(visibleCoords[i + 1].latitude, visibleCoords[i + 1].longitude)
+
+            val line = googleMap?.addPolyline(
+                PolylineOptions()
+                    .add(start, end)
+                    .color(0xFF2196F3.toInt()) // Blue boundary lines
+                    .width(3f)
+                    .geodesic(true)
+            )
+            line?.let { boundaryLines.add(it) }
+        }
+
+        // Close the boundary if we have enough points
+        if (visibleCoords.size >= 3) {
+            val start = LatLng(visibleCoords.last().latitude, visibleCoords.last().longitude)
+            val end = LatLng(visibleCoords.first().latitude, visibleCoords.first().longitude)
+
+            val closingLine = googleMap?.addPolyline(
+                PolylineOptions()
+                    .add(start, end)
+                    .color(0xFF2196F3.toInt())
+                    .width(3f)
+                    .geodesic(true)
+                    .pattern(listOf(com.google.android.gms.maps.model.Dash(20f), com.google.android.gms.maps.model.Gap(10f))) // Dashed closing line
+            )
+            closingLine?.let { boundaryLines.add(it) }
+        }
+    }
+
+    private fun setupPanelInteractions() {
+        collapseBtn?.setOnClickListener { collapsePanel() }
+        expandBtn?.setOnClickListener { expandPanel() }
+        panelHandle?.setOnTouchListener { v, event ->
+            if (panelCollapsed) return@setOnTouchListener false
+            val lp = leftPanel?.layoutParams ?: return@setOnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.parent.requestDisallowInterceptTouchEvent(true)
+                    lastDragX = event.rawX
+                    startDragWidth = lp.width
+                    dragStartTime = System.currentTimeMillis()
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - lastDragX).toInt()
+                    var newWidth = startDragWidth + dx
+                    val minPx = dpToPx(minPanelDp)
+                    val maxPx = dpToPx(maxPanelDp)
+                    if (newWidth < minPx) newWidth = minPx
+                    if (newWidth > maxPx) newWidth = maxPx
+                    panelWidthPx = newWidth
+                    lp.width = newWidth
+                    leftPanel?.layoutParams = lp
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val totalDx = event.rawX - lastDragX
+                    val dt = (System.currentTimeMillis() - dragStartTime).coerceAtLeast(1)
+                    val velocity = totalDx / dt.toFloat()
+                    if (totalDx < -dpToPx(80f) || velocity < -0.6f) {
+                        collapsePanel()
+                    } else {
+                        // treat as click if minimal movement
+                        if (kotlin.math.abs(totalDx) < dpToPx(4f)) v.performClick()
+                    }
+                    true
+                }
+                else -> false
             }
         }
-        map.invalidate()
-    }
-
-    // ---- Lifecycle ----
-
-    override fun onResume() {
-        super.onResume()
-        mapView?.onResume()
-        locationOverlay?.enableMyLocation()
-    }
-
-    override fun onPause() {
-        locationOverlay?.disableMyLocation()
-        mapView?.onPause()
-        super.onPause()
-    }
-
-    override fun onDestroyView() {
-        // Clear references
-        locationOverlay = null
-        mapView = null
-        placeholder = null
-        super.onDestroyView()
-    }
-
-    // RecyclerView Adapter for points
-    class PointsAdapter(
-        private val points: List<MapPointDisplay>,
-        private val onToggle: (Int, Boolean) -> Unit
-    ) : androidx.recyclerview.widget.RecyclerView.Adapter<PointsAdapter.PointViewHolder>() {
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PointViewHolder {
-            val view = LayoutInflater.from(parent.context).inflate(R.layout.item_map_point, parent, false)
-            return PointViewHolder(view)
+        leftPanel?.setOnTouchListener { v, ev ->
+            if (panelCollapsed) return@setOnTouchListener false
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    panelSwipeDownX = ev.rawX
+                    panelSwipeDownTime = System.currentTimeMillis()
+                    false
+                }
+                MotionEvent.ACTION_UP -> {
+                    val dx = ev.rawX - panelSwipeDownX
+                    val dt = (System.currentTimeMillis() - panelSwipeDownTime).coerceAtLeast(1)
+                    val vVel = dx / dt.toFloat()
+                    if (dx < -dpToPx(100f) || vVel < -0.7f) {
+                        collapsePanel(); true
+                    } else {
+                        if (kotlin.math.abs(dx) < dpToPx(8f)) v.performClick()
+                        false
+                    }
+                }
+                else -> false
+            }
         }
-        override fun getItemCount() = points.size
-        override fun onBindViewHolder(holder: PointViewHolder, position: Int) {
-            val point = points[position]
-            holder.title.text = point.name
+    }
 
-            // Set the colored icon
-            val context = holder.itemView.context
-            val drawable = getTintedMarkerDrawable(context, point.iconName, point.color)
-            holder.icon.setImageDrawable(drawable)
+    private var lastDragX: Float = 0f
+    private var startDragWidth: Int = 0
+    private var dragStartTime: Long = 0L
+    private var panelSwipeDownX: Float = 0f
+    private var panelSwipeDownTime: Long = 0L
 
-            // Clear any previous listener to avoid issues
-            holder.switch.setOnCheckedChangeListener(null)
-            holder.switch.isChecked = point.isVisible
+    private fun collapsePanel() {
+        if (panelCollapsed) return
+        val lp = leftPanel?.layoutParams ?: return
+        val start = lp.width
+        val anim = ValueAnimator.ofInt(start, 0)
+        anim.duration = 200
+        anim.interpolator = AccelerateDecelerateInterpolator()
+        anim.addUpdateListener {
+            val v = it.animatedValue as Int
+            lp.width = v
+            leftPanel?.layoutParams = lp
+        }
+        anim.doOnEnd {
+            panelCollapsed = true
+            leftPanel?.visibility = View.GONE
+            panelHandle?.visibility = View.GONE
+            expandBtn?.visibility = View.VISIBLE
+        }
+        anim.start()
+    }
 
-            // Set the listener after setting the checked state
-            holder.switch.setOnCheckedChangeListener { _, isChecked ->
-                onToggle(position, isChecked)
+    private fun expandPanel() {
+        if (!panelCollapsed) return
+        val target = if (panelWidthPx <= 0) dpToPx(260f) else panelWidthPx
+        panelWidthPx = target
+        leftPanel?.visibility = View.VISIBLE
+        panelHandle?.visibility = View.VISIBLE
+        expandBtn?.visibility = View.GONE
+        val lp = leftPanel?.layoutParams ?: return
+        lp.width = 0
+        leftPanel?.layoutParams = lp
+        val anim = ValueAnimator.ofInt(0, target)
+        anim.duration = 220
+        anim.interpolator = AccelerateDecelerateInterpolator()
+        anim.addUpdateListener {
+            val v = it.animatedValue as Int
+            lp.width = v
+            leftPanel?.layoutParams = lp
+        }
+        anim.doOnEnd { panelCollapsed = false }
+        anim.start()
+    }
+
+    private fun applyPanelState() {
+        if (panelCollapsed) {
+            leftPanel?.visibility = View.GONE
+            panelHandle?.visibility = View.GONE
+            expandBtn?.visibility = View.VISIBLE
+        } else {
+            val lp = leftPanel?.layoutParams
+            if (lp != null) {
+                if (panelWidthPx <= 0) panelWidthPx = dpToPx(260f)
+                lp.width = panelWidthPx
+                leftPanel?.layoutParams = lp
+            }
+            leftPanel?.visibility = View.VISIBLE
+            panelHandle?.visibility = View.VISIBLE
+            expandBtn?.visibility = View.GONE
+        }
+    }
+
+    private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun createInfoWindowView(marker: Marker): View? {
+        val ctx = context ?: return null
+        val coordinateId = marker.tag as? String
+        val coordinate = coordinateId?.let { coordinateMap[it] }
+
+        val view = layoutInflater.inflate(R.layout.custom_info_window, null)
+        val titleView = view.findViewById<TextView>(R.id.info_window_title)
+        val contentView = view.findViewById<TextView>(R.id.info_window_content)
+
+        titleView.text = coordinate?.name ?: "Unknown"
+        contentView.text = buildString {
+            if (coordinate != null) {
+                when (getCurrentCoordinateFormat()) {
+                    CoordinateFormat.DECIMAL_DEGREES -> {
+                        appendLine("Lat: ${"%.6f".format(coordinate.latitude)}°")
+                        appendLine("Lng: ${"%.6f".format(coordinate.longitude)}°")
+                    }
+                    CoordinateFormat.DEGREES_MINUTES_SECONDS -> {
+                        appendLine("Lat: ${formatDMS(coordinate.latitude, true)}")
+                        appendLine("Lng: ${formatDMS(coordinate.longitude, false)}")
+                    }
+                    CoordinateFormat.UTM -> {
+                        val utm = convertToUTM(coordinate.latitude, coordinate.longitude)
+                        appendLine("UTM: ${utm.zone}${utm.band}")
+                        appendLine("E: ${utm.easting.toInt()} N: ${utm.northing.toInt()}")
+                    }
+                }
+                append("Alt: ${"%.2f".format(coordinate.altitude)} m")
+            } else {
+                append("No data available")
             }
         }
 
-        private fun getTintedMarkerDrawable(context: Context, iconName: String, color: Int): Drawable? {
-            val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
-            val base = (if (resId != 0)
-                ContextCompat.getDrawable(context, resId)
-            else
-                ContextCompat.getDrawable(context, R.drawable.ic_menu_camera))?.mutate()
+        return view
+    }
 
-            if (base == null) return null
+    private fun getCurrentCoordinateFormat(): CoordinateFormat {
+        // This could be stored in SharedPreferences or Settings
+        return CoordinateFormat.DECIMAL_DEGREES
+    }
 
-            // Use DrawableCompat for broad tint support
-            val wrapped = DrawableCompat.wrap(base)
-            try {
-                DrawableCompat.setTint(wrapped, color)
-                DrawableCompat.setTintMode(wrapped, PorterDuff.Mode.SRC_IN)
-            } catch (_: Exception) {
-                // fallback
-                @Suppress("DEPRECATION")
-                base.setColorFilter(color, PorterDuff.Mode.SRC_IN)
-            }
-            return wrapped
+    private fun formatDMS(decimal: Double, isLatitude: Boolean): String {
+        val degrees = decimal.toInt()
+        val minutes = ((decimal - degrees) * 60).toInt()
+        val seconds = ((decimal - degrees) * 60 - minutes) * 60
+        val direction = when {
+            isLatitude -> if (decimal >= 0) "N" else "S"
+            else -> if (decimal >= 0) "E" else "W"
         }
+        return "${kotlin.math.abs(degrees)}°${kotlin.math.abs(minutes)}'${"%.2f".format(kotlin.math.abs(seconds))}\"$direction"
+    }
 
-        class PointViewHolder(view: View) : androidx.recyclerview.widget.RecyclerView.ViewHolder(view) {
-            val title: android.widget.TextView = view.findViewById(R.id.map_point_title)
-            val icon: android.widget.ImageView = view.findViewById(R.id.map_point_icon)
-            val switch: android.widget.Switch = view.findViewById(R.id.map_point_visibility_switch)
+    private fun convertToUTM(lat: Double, lng: Double): UTMResult {
+        // Simplified UTM conversion - in production you'd use a proper geodetic library
+        val zone = ((lng + 180) / 6).toInt() + 1
+        val band = when {
+            lat >= 84 -> 'X'
+            lat >= 72 -> 'W'
+            lat >= 64 -> 'V'
+            lat >= 56 -> 'U'
+            lat >= 48 -> 'T'
+            lat >= 40 -> 'S'
+            lat >= 32 -> 'R'
+            lat >= 24 -> 'Q'
+            lat >= 16 -> 'P'
+            lat >= 8 -> 'N'
+            lat >= 0 -> 'M'
+            lat >= -8 -> 'L'
+            lat >= -16 -> 'K'
+            lat >= -24 -> 'J'
+            lat >= -32 -> 'H'
+            lat >= -40 -> 'G'
+            lat >= -48 -> 'F'
+            lat >= -56 -> 'E'
+            lat >= -64 -> 'D'
+            else -> 'C'
         }
+        // Approximate easting/northing (real conversion is more complex)
+        val easting = 500000 + (lng - (zone - 1) * 6 - 183) * 111319.9
+        val northing = lat * 110540.0 + if (lat < 0) 10000000 else 0
+        return UTMResult(zone, band, easting, northing)
+    }
+
+    data class UTMResult(val zone: Int, val band: Char, val easting: Double, val northing: Double)
+
+    enum class CoordinateFormat {
+        DECIMAL_DEGREES,
+        DEGREES_MINUTES_SECONDS,
+        UTM
     }
 }

@@ -1,82 +1,181 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="horizontal">
 
-    <org.osmdroid.views.MapView
-        android:id="@+id/mapView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <TextView
-        android:id="@+id/text_render_map"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/render_map_placeholder"
-        android:textSize="18sp"
-        android:background="#66000000"
-        android:textColor="@android:color/white"
-        android:padding="12dp"
-        android:layout_gravity="center"
-        android:visibility="gone" />
-
-    <!-- Collapsible Points List Container -->
+    <!-- Left column panel -->
     <LinearLayout
-        android:id="@+id/pointsListContainer"
-        android:layout_width="wrap_content"
+        android:id="@+id/left_panel"
+        android:layout_width="260dp"
         android:layout_height="match_parent"
-        android:layout_gravity="start"
-        android:orientation="horizontal"
-        android:background="#AAFFFFFF">
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:background="#FFFFFF" >
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/left_panel_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Coordinates"
+                android:textStyle="bold"
+                android:textSize="18sp"
+                android:paddingBottom="8dp" />
+            <ImageButton
+                android:id="@+id/btn_collapse_panel"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="@android:color/transparent"
+                android:contentDescription="Collapse"
+                android:src="@android:drawable/ic_menu_close_clear_cancel" />
+        </LinearLayout>
+
+        <!-- Show/Hide All Controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingBottom="8dp">
+
+            <Button
+                android:id="@+id/btn_show_all"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Show All"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="#2196F3" />
+
+            <Button
+                android:id="@+id/btn_hide_all"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Hide All"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="#F44336" />
+        </LinearLayout>
 
         <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/pointsRecyclerView"
-            android:layout_width="220dp"
-            android:layout_height="match_parent"
-            android:padding="4dp"
-            android:scrollbars="vertical" />
+            android:id="@+id/coordinate_toggle_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
 
-        <!-- Toggle Button for collapsing/expanding -->
-        <ImageButton
-            android:id="@+id/btnTogglePointsList"
-            android:layout_width="24dp"
-            android:layout_height="48dp"
-            android:layout_gravity="center_vertical"
-            android:background="#AAFFFFFF"
-            android:src="@android:drawable/ic_menu_close_clear_cancel"
-            android:contentDescription="Toggle points list"
-            android:scaleType="fitCenter"
-            android:padding="4dp" />
+        <TextView
+            android:id="@+id/left_panel_placeholder"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="No coordinates"
+            android:textSize="14sp"
+            android:textColor="#555555"
+            android:visibility="gone" />
     </LinearLayout>
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab_toggle_sat"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_margin="16dp"
-        android:contentDescription="Toggle satellite"
-        android:src="@android:drawable/ic_menu_gallery" />
+    <!-- Slim drag handle (4dp) -->
+    <View
+        android:id="@+id/panel_handle"
+        android:layout_width="4dp"
+        android:layout_height="match_parent"
+        android:background="@drawable/panel_handle_grip"
+        android:contentDescription="Drag handle" />
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab_recenter"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="16dp"
-        android:contentDescription="Recenter map"
-        android:src="@android:drawable/ic_menu_mylocation" />
+    <!-- Right side map container -->
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1">
 
-    <!-- Show button when list is collapsed -->
-    <ImageButton
-        android:id="@+id/btnShowPointsList"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="16dp"
-        android:background="@android:color/white"
-        android:src="@android:drawable/ic_menu_sort_by_size"
-        android:contentDescription="Show points list"
-        android:visibility="gone"
-        android:elevation="4dp" />
-</FrameLayout>
+        <com.google.android.gms.maps.MapView
+            android:id="@+id/mapView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:id="@+id/text_render_map"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/render_map_placeholder"
+            android:textSize="18sp"
+            android:background="#66000000"
+            android:textColor="@android:color/white"
+            android:padding="12dp"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_toggle_sat"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="16dp"
+            android:contentDescription="Toggle satellite"
+            android:src="@android:drawable/ic_menu_gallery" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_recenter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="16dp"
+            android:contentDescription="Recenter map"
+            android:src="@android:drawable/ic_menu_mylocation" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_zoom_in"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="88dp"
+            android:contentDescription="Zoom in"
+            android:src="@drawable/ic_zoom_in" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_zoom_out"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="144dp"
+            android:contentDescription="Zoom out"
+            android:src="@drawable/ic_zoom_out" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_toggle_grid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="200dp"
+            android:contentDescription="Toggle coordinate grid"
+            android:src="@android:drawable/ic_menu_view" />
+
+        <!-- Expand button appears when panel collapsed -->
+        <ImageButton
+            android:id="@+id/btn_expand_panel"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center_vertical|start"
+            android:layout_margin="8dp"
+            android:background="#AAFFFFFF"
+            android:contentDescription="Expand panel"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="@android:color/black"
+            android:elevation="4dp"
+            android:visibility="gone" />
+
+    </FrameLayout>
+
+</LinearLayout>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Refresh bar container - will be populated programmatically -->
+    <LinearLayout
+        android:id="@+id/refreshBarContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal" />
+
+    <!-- Maps info table container - will be populated programmatically -->
+    <LinearLayout
+        android:id="@+id/mapsInfoTableContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical" />
+
+    <!-- API Key Controls -->
+    <LinearLayout
+        android:id="@+id/apiKeyControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/btnRevealKey"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/dev_reveal_key" />
+
+        <Button
+            android:id="@+id/btnCopyKey"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/dev_copy_key"
+            android:enabled="false" />
+
+    </LinearLayout>
+
+    <!-- API Key Full View -->
+    <TextView
+        android:id="@+id/apiKeyFullView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:textSize="12sp"
+        android:textIsSelectable="true"
+        android:padding="12dp" />
+
+    <!-- Runtime MapView Test -->
+    <FrameLayout
+        android:id="@+id/mapViewTestContainer"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_marginTop="8dp"
+        android:paddingTop="16dp" />
+
+</LinearLayout>
