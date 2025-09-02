@@ -44,7 +44,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     private fun showPlaceholder() {
         // Hide all model viewing components and show placeholder message
-        binding.sceneView.visibility = android.view.View.GONE
+        binding.placeholderView.visibility = android.view.View.VISIBLE
         binding.controlsContainer.visibility = android.view.View.GONE
         binding.progressLoading.visibility = android.view.View.GONE
 
