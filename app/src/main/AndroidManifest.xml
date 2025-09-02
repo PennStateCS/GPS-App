@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Storage permissions for file picker -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
     <!-- Location (for capturing point coordinates) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -23,21 +27,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
-    <!-- Camera (for AR and general camera usage) -->
-    <uses-permission android:name="android.permission.CAMERA" />
-
     <!-- Wi-Fi and multicast permissions required for mDNS (JmDNS) discovery -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-
-    <!-- Make AR required for devices that support ARCore geospatial features -->
-    <uses-feature android:name="android.hardware.camera.ar" android:required="true" />
-    <!-- General back camera optional (don’t block install on devices without it) -->
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <!-- ARCore needs GLES 3.0, but keep optional so non-AR paths still work -->
-    <uses-feature android:glEsVersion="0x00030000" android:required="false" />
-    <!-- (Optional) autofocus hint; keep optional -->
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <application
         android:name=".SurveyingApp"
@@ -50,16 +42,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SurveyingApp">
 
-        <!-- Tell Play Services that ARCore is OPTIONAL (critical for graceful fallback) -->
-        <meta-data
-            android:name="com.google.ar.core"
-            android:value="optional" />
-
-        <!-- ARCore API Key for geospatial features -->
-        <meta-data
-            android:name="com.google.android.ar.API_KEY"
-            android:value="YOUR_API_KEY_HERE"/>
-
         <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
@@ -68,6 +50,18 @@
         <activity
             android:name=".ui.viewpoints.CoordinatesActivity"
             android:exported="true"
+            android:theme="@style/Theme.SurveyingApp.NoActionBar"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".ui.filepicker.FilePickerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SurveyingApp.NoActionBar"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".ui.models.ModelViewerActivity"
+            android:exported="false"
             android:theme="@style/Theme.SurveyingApp.NoActionBar"
             android:screenOrientation="landscape" />
 

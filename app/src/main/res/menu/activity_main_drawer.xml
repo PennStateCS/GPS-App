@@ -21,6 +21,10 @@
             android:icon="@drawable/ic_menu_camera"
             android:title="@string/menu_open_in_ar" />
         <item
+            android:id="@+id/nav_models"
+            android:icon="@drawable/ic_menu_gallery"
+            android:title="@string/menu_models" />
+        <item
             android:id="@+id/nav_development"
             android:icon="@drawable/ic_dev_tools"
             android:title="@string/menu_development" />

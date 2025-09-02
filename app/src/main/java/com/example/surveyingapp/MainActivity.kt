@@ -105,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         navController = findNavController(R.id.nav_host_fragment_content_main)
         val initialTopLevel = mutableSetOf(
             R.id.nav_home,
+            R.id.nav_models,
             R.id.nav_view_coordinates,
             R.id.nav_render_map,
             R.id.nav_open_in_ar,
@@ -230,6 +231,7 @@ class MainActivity : AppCompatActivity() {
         // Re-derive top-level destinations so Up button behaves correctly when dev section toggles
         val topLevel = mutableSetOf(
             R.id.nav_home,
+            R.id.nav_models,
             R.id.nav_view_coordinates,
             R.id.nav_render_map,
             R.id.nav_open_in_ar,
