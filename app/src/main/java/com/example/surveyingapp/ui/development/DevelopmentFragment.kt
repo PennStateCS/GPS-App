@@ -667,18 +667,45 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val baseAlt = loc.altitude
         val list = mutableListOf<Coordinate>()
         val now = System.currentTimeMillis()
-        // First coordinate is exact location
+
+        // Available icons from AddCoordinateDialogFragment
+        val availableIcons = listOf(
+            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
+        )
+
+        // Available colors
+        val availableColors = listOf(
+            0xFFE57373.toInt(), // Red
+            0xFF64B5F6.toInt(), // Blue
+            0xFF81C784.toInt(), // Green
+            0xFFFFB74D.toInt(), // Orange
+            0xFFBA68C8.toInt()  // Purple
+        )
+
+        // Realistic yard/property names
+        val propertyNames = listOf(
+            "Home", "Front Door", "Garage", "Driveway", "Mailbox", "Power Lines", "Water Meter",
+            "Property Corner", "Fence Post", "Garden Shed", "Fire Hydrant", "Street Light",
+            "Tree Line", "Sidewalk", "Back Yard", "Side Gate", "Utility Pole", "Survey Marker",
+            "Well Head", "Septic Tank", "Pool Corner", "Deck Corner", "Patio", "Greenhouse",
+            "Tool Shed", "Barn", "Chicken Coop", "Compost Bin", "Rain Gauge", "Weather Station"
+        )
+
+        // First coordinate is exact location with "Home" name
         list += Coordinate(
             id = UUID.randomUUID().toString(),
-            name = "Gen 01",
+            name = "Home",
             latitude = baseLat,
             longitude = baseLon,
             altitude = baseAlt,
             timestamp = now,
-            icon = "ic_menu_camera",
-            color = 0xFFE57373.toInt()
+            icon = "ic_home",
+            color = availableColors.random()
         )
+
         val earthRadius = 6378137.0 // meters
+        val usedNames = mutableSetOf("Home") // Track used names to avoid duplicates
+
         repeat(14) { idx ->
             val feet = (1..20).random()
             val meters = feet * 0.3048
@@ -687,15 +714,28 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             val dLon = (meters * sin(angle)) / (earthRadius * cos(baseLat * Math.PI / 180))
             val newLat = baseLat + dLat * (180 / Math.PI)
             val newLon = baseLon + dLon * (180 / Math.PI)
+
+            // Pick a unique name
+            var name = propertyNames.random()
+            var attempts = 0
+            while (usedNames.contains(name) && attempts < 10) {
+                name = propertyNames.random()
+                attempts++
+            }
+            if (usedNames.contains(name)) {
+                name = "Point ${idx + 2}" // Fallback if all names used
+            }
+            usedNames.add(name)
+
             list += Coordinate(
                 id = UUID.randomUUID().toString(),
-                name = "Gen %02d".format(idx + 2),
+                name = name,
                 latitude = newLat,
                 longitude = newLon,
                 altitude = baseAlt,
                 timestamp = now + idx + 1,
-                icon = "ic_menu_slideshow",
-                color = 0xFF64B5F6.toInt()
+                icon = availableIcons.random(),
+                color = availableColors.random()
             )
         }
         val result = runCatching { coordinateRepository.insertAll(list) }

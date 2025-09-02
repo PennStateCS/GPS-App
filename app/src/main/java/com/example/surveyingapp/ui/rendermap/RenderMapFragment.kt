@@ -24,6 +24,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import androidx.core.animation.doOnEnd
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.widget.TextView
 
 class RenderMapFragment : Fragment() {
     private var mapView: MapView? = null
@@ -50,6 +51,8 @@ class RenderMapFragment : Fragment() {
     private lateinit var toggleAdapter: CoordinateToggleAdapter
     private val markerMap = mutableMapOf<String, Marker>()
     private val visibilityMap = mutableMapOf<String, Boolean>() // id -> visible
+    private val coordinateMap = mutableMapOf<String, Coordinate>() // id -> coordinate data
+    private var toggleSatBtn: FloatingActionButton? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -60,6 +63,7 @@ class RenderMapFragment : Fragment() {
         mapView = root.findViewById(R.id.mapView)
         placeholder = root.findViewById(R.id.text_render_map)
         toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
+        toggleSatBtn = root.findViewById(R.id.fab_toggle_sat)
         toggleAdapter = CoordinateToggleAdapter { id, checked ->
             visibilityMap[id] = checked
             markerMap[id]?.isVisible = checked
@@ -70,6 +74,26 @@ class RenderMapFragment : Fragment() {
         mapView?.getMapAsync { map ->
             googleMap = map
             googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL
+
+            // Allow much closer zooming - set maximum zoom level to 22 (very close)
+            googleMap?.setMaxZoomPreference(22f)
+            googleMap?.setMinZoomPreference(2f)
+
+            // Set up custom info window adapter
+            googleMap?.setInfoWindowAdapter(object : GoogleMap.InfoWindowAdapter {
+                override fun getInfoWindow(marker: Marker): View? = null // Use default frame
+
+                override fun getInfoContents(marker: Marker): View? {
+                    return createInfoWindowView(marker)
+                }
+            })
+
+            // Set up marker click listener to show info window
+            googleMap?.setOnMarkerClickListener { marker ->
+                marker.showInfoWindow()
+                true // Return true to consume the event
+            }
+
             Log.d("RenderMap", "GoogleMap ready")
             googleMap?.setOnMapLoadedCallback {
                 Log.d("RenderMap", "Map loaded callback")
@@ -77,7 +101,7 @@ class RenderMapFragment : Fragment() {
             }
             bindData()
         }
-        root.findViewById<FloatingActionButton>(R.id.fab_toggle_sat)?.setOnClickListener { toggleSatellite() }
+        toggleSatBtn?.setOnClickListener { toggleSatellite() }
         root.findViewById<FloatingActionButton>(R.id.fab_recenter)?.setOnClickListener { recenterMap() }
         root.findViewById<FloatingActionButton>(R.id.fab_zoom_in)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomIn()) }
         root.findViewById<FloatingActionButton>(R.id.fab_zoom_out)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomOut()) }
@@ -95,6 +119,9 @@ class RenderMapFragment : Fragment() {
         panelHandle = view.findViewById(R.id.panel_handle)
         collapseBtn = view.findViewById(R.id.btn_collapse_panel)
         expandBtn = view.findViewById(R.id.btn_expand_panel)
+
+        // Set initial satellite button icon
+        updateSatelliteButtonIcon()
 
         if (panelWidthPx == 0) {
             panelWidthPx = dpToPx(260f)
@@ -146,10 +173,12 @@ class RenderMapFragment : Fragment() {
                 val marker = googleMap!!.addMarker(opts)
                 if (marker != null) {
                     marker.isVisible = visible
+                    marker.tag = p.id // Store coordinate ID in marker tag
                     markerMap[p.id] = marker
                     if (visible) latLngsVisible.add(ll)
                 }
-                toggleItems += CoordinateToggleItem(p.id, p.name, visible)
+                toggleItems += CoordinateToggleItem(p.id, p.name, visible, p.icon, p.color)
+                coordinateMap[p.id] = p // Add to coordinate map
             }
             lastLatLngs = latLngsVisible
             toggleAdapter.submit(toggleItems)
@@ -179,7 +208,7 @@ class RenderMapFragment : Fragment() {
         if (latLngs.isEmpty()) return
         try {
             if (latLngs.size == 1) {
-                map.animateCamera(CameraUpdateFactory.newLatLngZoom(latLngs.first(), 16f))
+                map.animateCamera(CameraUpdateFactory.newLatLngZoom(latLngs.first(), 20f))
             } else if (!cameraInitialized) {
                 val builder = LatLngBounds.builder()
                 latLngs.forEach { builder.include(it) }
@@ -195,7 +224,21 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun recenterMap() { updateCamera(markerMap.filter { it.value.isVisible }.values.map { it.position }) }
-    private fun toggleSatellite() { isSatellite = !isSatellite; googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL }
+    private fun toggleSatellite() {
+        isSatellite = !isSatellite
+        googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL
+        updateSatelliteButtonIcon()
+    }
+
+    private fun updateSatelliteButtonIcon() {
+        toggleSatBtn?.setImageResource(
+            if (isSatellite) {
+                android.R.drawable.ic_menu_mapmode // Map icon when in satellite mode (to switch back to map)
+            } else {
+                android.R.drawable.ic_menu_gallery // Satellite/gallery icon when in map mode (to switch to satellite)
+            }
+        )
+    }
 
     private fun setupPanelInteractions() {
         collapseBtn?.setOnClickListener { collapsePanel() }
@@ -330,4 +373,27 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun createInfoWindowView(marker: Marker): View? {
+        val ctx = context ?: return null
+        val coordinateId = marker.tag as? String
+        val coordinate = coordinateId?.let { coordinateMap[it] }
+
+        val view = layoutInflater.inflate(R.layout.custom_info_window, null)
+        val titleView = view.findViewById<TextView>(R.id.info_window_title)
+        val contentView = view.findViewById<TextView>(R.id.info_window_content)
+
+        titleView.text = coordinate?.name ?: "Unknown"
+        contentView.text = buildString {
+            if (coordinate != null) {
+                appendLine("Lat: ${"%.6f".format(coordinate.latitude)}")
+                appendLine("Lng: ${"%.6f".format(coordinate.longitude)}")
+                append("Alt: ${"%.2f".format(coordinate.altitude)} m")
+            } else {
+                append("No data available")
+            }
+        }
+
+        return view
+    }
 }

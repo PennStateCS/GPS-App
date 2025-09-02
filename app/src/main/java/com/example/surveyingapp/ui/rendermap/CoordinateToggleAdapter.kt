@@ -1,15 +1,17 @@
 package com.example.surveyingapp.ui.rendermap
 
+import android.graphics.PorterDuff
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox
+import android.widget.ImageView
+import android.widget.Switch
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 
-data class CoordinateToggleItem(val id: String, val name: String, val checked: Boolean)
+data class CoordinateToggleItem(val id: String, val name: String, val checked: Boolean, val icon: String, val color: Int)
 
 class CoordinateToggleAdapter(
     private val onToggle: (id: String, checked: Boolean) -> Unit
@@ -41,21 +43,35 @@ class CoordinateToggleAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val item = items[position]
         holder.name.text = item.name
-        holder.box.setOnCheckedChangeListener(null)
-        holder.box.isChecked = item.checked
+
+        // Set the icon dynamically using resource identifier (same approach as map markers)
+        val context = holder.itemView.context
+        val iconRes = context.resources.getIdentifier(item.icon, "drawable", context.packageName)
+        if (iconRes != 0) {
+            holder.icon.setImageResource(iconRes)
+        } else {
+            // Fallback to a default icon if the resource isn't found
+            holder.icon.setImageResource(R.drawable.ic_section_location)
+        }
+
+        // Apply the correct color to the icon
+        holder.icon.setColorFilter(item.color, PorterDuff.Mode.SRC_IN)
+
+        holder.switch.setOnCheckedChangeListener(null)
+        holder.switch.isChecked = item.checked
         val clickListener = View.OnClickListener {
-            val newChecked = !holder.box.isChecked
-            holder.box.isChecked = newChecked
+            val newChecked = !holder.switch.isChecked
+            holder.switch.isChecked = newChecked
             onToggle(item.id, newChecked)
         }
         holder.itemView.setOnClickListener(clickListener)
         holder.name.setOnClickListener(clickListener)
-        holder.box.setOnCheckedChangeListener { _, isChecked -> onToggle(item.id, isChecked) }
+        holder.switch.setOnCheckedChangeListener { _, isChecked -> onToggle(item.id, isChecked) }
     }
 
     class Holder(v: View) : RecyclerView.ViewHolder(v) {
-        val box: CheckBox = v.findViewById(R.id.check_visible)
+        val switch: Switch = v.findViewById(R.id.switch_visible)
+        val icon: ImageView = v.findViewById(R.id.image_icon)
         val name: TextView = v.findViewById(R.id.text_name)
     }
 }
-
