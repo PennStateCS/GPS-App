@@ -1,105 +1,127 @@
 <resources>
+    <string name="selected_device">Selected device: %1$s</string>
+    <string name="no_device_selected">No device selected</string>
     <string name="app_name">SurveyingApp</string>
-    <string name="navigation_drawer_open">Open navigation drawer</string>
-    <string name="navigation_drawer_close">Close navigation drawer</string>
-    <string name="nav_header_title">Surveying App</string>
-    <string name="nav_header_subtitle">Survey Coordinate Collection</string>
-    <string name="nav_header_desc">Navigation header</string>
-    <string name="action_settings">Settings</string>
-
-    <string name="menu_home">Home</string>
-    <string name="menu_view_coordinates">Coordinates</string>
-    <string name="menu_open_in_ar">Open in AR</string>
-    <string name="menu_development">Development Tools</string>
-    <string name="menu_export_data">Export Data</string>
-    <string name="menu_render_map">Render Map</string>
-
-    <string name="location_unavailable">Location: unavailable</string>
-    <string name="location_permission_required">Location: permission required</string>
-    <string name="location_label">Location: %1$.5f, %2$.5f, %3$.2f</string>
-    <string name="add_coordinate_title">Capture Coordinates</string>
+    <string name="icon_content_desc">Icon</string>
     <string name="empty_coordinates_text">No coordinates available.</string>
     <string name="capture_coordinates">Capture Coordinates</string>
-    <string name="icon_content_desc">Icon</string>
+    <string name="dev_category_placeholder">Development Category</string>
+    <string name="render_map_placeholder">Map will render here.</string>
+    <string name="menu_view_coordinates">View Coordinates</string>
     <string name="edit_coordinate">Edit coordinate</string>
-    <string name="delete_coordinate">Delete coordinate</string>
-    <string name="edit">Edit</string>
-    <string name="delete">Delete</string>
+    <string name="delete_coordinate">Delete Coordinate</string>
+    <string name="dev_category_icon_desc">Development Category Icon</string>
+    <string name="twopane_placeholder_select">Please select an item.</string>
+    <string name="nav_header_desc">Navigation Header</string>
+    <string name="nav_header_title">SurveyingApp</string>
+    <string name="nav_header_subtitle">Welcome!</string>
+    <string name="menu_home">Home</string>
+    <string name="menu_render_map">Render Map</string>
+    <string name="menu_open_in_ar">Open in AR</string>
+    <string name="menu_development">Developer Tools</string>
+    <string name="action_settings">Settings</string>
+    <string name="dev_perm_none">No permissions requested.</string>
+    <string name="dev_perm_error">Error loading permissions: %1$s</string>
+    <string name="dev_perm_total">Total permissions: %1$d</string>
+    <string name="dev_perm_status">Status</string>
+    <string name="dev_perm_name">Name</string>
+    <string name="dev_perm_full_path">Full Path</string>
+    <string name="dev_value_unknown">Unknown</string>
+    <string name="dev_section_app_info">App Info</string>
+    <string name="dev_section_device_info">Device Info</string>
+    <string name="dev_label_package_name">Package Name</string>
+    <string name="dev_label_version_name">Version Name</string>
+    <string name="dev_label_version_code">Version Code</string>
+    <string name="dev_label_first_install">First Install</string>
+    <string name="dev_label_last_update">Last Update</string>
+    <string name="dev_label_target_sdk">Target SDK</string>
+    <string name="dev_label_min_sdk">Min SDK</string>
+    <string name="dev_label_debuggable">Debuggable</string>
+    <string name="dev_label_system_app">System App</string>
+    <string name="dev_label_app_size">App Size</string>
+    <string name="dev_label_source_dir">Source Directory</string>
+    <string name="dev_label_data_dir">Data Directory</string>
+    <string name="dev_label_android_version">Android Version</string>
+    <string name="dev_label_sdk_int">SDK Int</string>
+    <string name="dev_label_device_model">Device Model</string>
+    <string name="dev_label_manufacturer">Manufacturer</string>
+    <string name="dev_label_brand">Brand</string>
+    <string name="dev_label_abis">Supported ABIs</string>
+    <string name="dev_label_process_name">Process Name</string>
+    <string name="dev_label_runtime_threads">Runtime Threads</string>
 
-    <string name="render_map_placeholder">Render Map Placeholder</string>
-    <string name="development_intro">This page contains development and testing tools for the surveying app.</string>
-    <string name="location_settings_header">Location Settings</string>
-    <string name="checking_permissions">Checking permissions...</string>
-    <string name="refresh_location_status">Refresh Location Status</string>
-    <string name="request_location_access">Request Location Access</string>
-    <string name="ar_settings_header">AR Settings</string>
-    <string name="checking_ar_status">Checking AR status...</string>
-    <string name="refresh_ar_status">Refresh AR Status</string>
-    <string name="install_arcore">Install ARCore</string>
-    <string name="install_arcore_play_store">Install ARCore (Play Store)</string>
-    <string name="update_arcore_play_store">Update ARCore (Play Store)</string>
-    <string name="recheck_arcore">Re-check ARCore</string>
-    <string name="request_camera_access">Request Camera Access</string>
-    <string name="diagnostics_header">App Diagnostics</string>
-    <string name="gathering_diagnostics">Gathering diagnostics...</string>
-    <string name="copy_diagnostics_report">Copy Diagnostics Report</string>
-    <string name="data_header">Data</string>
-    <string name="add_fake_points">Add Fake Points</string>
-    <string name="clear_all_points">Clear All Points</string>
-    <string name="app_settings_header">App Settings</string>
-    <string name="display_settings_header">Display Settings</string>
-    <string name="high_accuracy_location">High Accuracy Location</string>
-    <string name="auto_save_points">Auto-save Points</string>
-    <string name="show_coordinates_in_list">Show Coordinates in List</string>
-    <string name="show_elevation_with_coordinates">Show Elevation with Coordinates</string>
-    <string name="dark_mode">Dark Mode</string>
-    <string name="data_management_header">Data Management</string>
-    <string name="export_all_points">Export All Points</string>
-    <string name="import_points">Import Points</string>
-    <string name="import_progress_label">Import progress</string>
-    <string name="cancel_import">Cancel Import</string>
-    <string name="about_header">About</string>
-    <string name="about_body">Surveying App v1.0\nA simple app for collecting survey points with location data.</string>
-    <string name="installing_arcore">Installing ARCore…</string>
-    <string name="arcore_install_requested_toast">ARCore install requested…</string>
-    <string name="install_update_arcore">Install / Update ARCore</string>
-    <string name="user_declined_arcore_install">User declined ARCore install</string>
-    <string name="install_failed_retrying">Install failed (%1$s). Retrying…</string>
-    <string name="install_failed">Install failed: %1$s</string>
-    <string name="retrying_ellipsis">Retrying…</string>
-    <string name="camera_already_granted">Camera already granted</string>
-    <string name="dev_report_copied">Dev report copied</string>
-    <string name="clear_all_coordinates_title">Clear All Coordinates</string>
-    <string name="clear_all_coordinates_message">Are you sure you want to delete all coordinates? This action cannot be undone.</string>
-    <string name="yes_clear_all">Yes, Clear All</string>
-    <string name="location_permissions_granted">Location permissions granted!</string>
-    <string name="location_permissions_denied">Location permissions denied.</string>
-    <string name="camera_permission_granted">Camera permission granted</string>
-    <string name="device_not_ar_capable">This device is not AR-capable.</string>
-    <string name="install_check_failed">Install check failed: %s</string>
-    <string name="session_error">Session error: %s</string>
-    <string name="resume_failed">Resume failed: %s</string>
-    <string name="coords_with_elevation_format">%.6f, %.6f, %.2fm</string>
-    <string name="coords_no_elevation_format">%.6f, %.6f</string>
-    <string name="delete_coordinate_message">Are you sure you want to delete \"%s\"? This action cannot be undone.</string>
-    <string name="error_checking_permissions">Error checking permissions: %s</string>
+    <!-- Add Coordinate Dialog strings -->
+    <string name="fetching_location">Fetching location...</string>
+    <string name="add_coordinate_title">Add Coordinate</string>
+    <string name="location_permission_required">Location permission required</string>
+    <string name="location_label_with_mode" formatted="false">Lat: %.6f, Lon: %.6f, Alt: %.2f (%s)</string>
+    <string name="location_unavailable">Location unavailable</string>
+
+    <!-- Status messages -->
+    <string name="status_idle">Status: Idle</string>
+    <string name="status_streaming">Status: Streaming</string>
+    <string name="status_connecting">Status: Connecting</string>
+    <string name="status_error">Status: Error</string>
+    <string name="status_unknown">Status: Unknown</string>
+    <string name="location_internal">Location: Internal</string>
+    <string name="location_rs2_tcp">Location: RS2+ TCP</string>
+    <string name="location_rs2_bluetooth">Location: RS2+ Bluetooth</string>
+    <string name="source_internal">Internal</string>
+    <string name="source_rs2">RS2+</string>
+    <string name="status_placeholder_gps">GPS --</string>
+    <string name="status_initial_no_fix">%1$s • No Fix</string>
+
+    <!-- Development Fragment - Memory and Storage labels -->
+    <string name="dev_label_heap_used">Heap Used</string>
+    <string name="dev_label_heap_free">Heap Free</string>
+    <string name="dev_label_heap_max">Heap Max</string>
+    <string name="dev_label_internal_free">Internal Free</string>
+    <string name="dev_label_internal_total">Internal Total</string>
+    <string name="dev_refresh">Refresh</string>
+
+    <!-- OpenInAR Fragment strings -->
     <string name="camera_permission_denied">Camera permission denied</string>
-    <string name="checking_ar_availability">Checking AR availability…</string>
-    <string name="ar_not_supported">AR not supported on this device</string>
-    <string name="requesting_arcore_install">Requesting ARCore install…</string>
-    <string name="arcore_install_declined">ARCore install declined</string>
-    <string name="ar_session_created">AR session created</string>
-    <string name="arcore_not_installed">ARCore not installed</string>
-    <string name="arcore_update_required">ARCore update required</string>
-    <string name="app_update_required">App update required</string>
-    <string name="device_not_compatible">Device not compatible</string>
-    <string name="camera_permission_needed">Camera permission needed</string>
-    <string name="ar_running">AR running</string>
+    <string name="location_permission_needed">Location permission needed</string>
+    <string name="checking_ar_availability">Checking AR availability...</string>
+    <string name="ar_running">AR Running</string>
     <string name="camera_unavailable">Camera unavailable</string>
-    <string name="error_checking_ar_status">Error checking AR status: %s</string>
-    <string name="error_reading_app_version">Error reading app version: %s</string>
-    <string name="camera_permission_denied_toast">Camera permission denied</string>
-    <string name="location_permission_needed">Location permission needed for AR geospatial features</string>
-    <string name="ar_running_status">AR running • Planes: %1$d • Points: %2$d • GeoPins: %3$d • %4$s</string>
-    <string name="geospatial_stopped">Geospatial stopped. Check Location + Internet, then reopen AR</string>
+    <string name="ar_session_created">AR session created</string>
+    <string name="geospatial_stopped">Geospatial stopped</string>
+
+    <!-- Settings Fragment strings -->
+    <string name="dev_category_selected_desc">Development category selected</string>
+    <string name="dev_toggle_developer_tools_toast">Developer tools toggled</string>
+    <string name="default_port">9001</string>
+    <string name="tcp_testing_connection">Testing connection...</string>
+    <string name="tcp_enter_valid">Please enter valid TCP settings</string>
+    <string name="tcp_no_data_received">No data received</string>
+    <string name="tcp_connection_success">TCP connection successful</string>
+    <string name="enter_valid_host_port">Enter valid host and port</string>
+    <string name="tcp_settings_saved">TCP settings saved</string>
+    <string name="no_nmea_hint">No NMEA data hint</string>
+    <string name="import_in_progress">Import in progress</string>
+    <string name="import_select_file_title">Select file to import</string>
+    <string name="import_select_file_message">Choose a file to import coordinates</string>
+    <string name="import_select_file_positive">Select</string>
+    <string name="import_cancel">Cancel</string>
+    <string name="import_merge_replace_message">Choose import method</string>
+    <string name="import_merge">Merge</string>
+    <string name="import_replace">Replace</string>
+
+    <!-- RS2+ Scan Status messages -->
+    <string name="scan_scanning_rs2">Scanning for RS2+ (TCP) devices…</string>
+    <string name="scan_select_device">Select a device</string>
+    <string name="scan_none_found">No RS2+ TCP devices found</string>
+
+    <!-- Coordinates Development Page strings -->
+    <string name="dev_coord_clear_all">Clear All Coordinates</string>
+    <string name="dev_coord_generate">Generate 15 Coordinates</string>
+    <string name="dev_coord_hint">Generates 15 test coordinates within ~20 ft of current location (first is exact position).</string>
+    <string name="title_coordinate_detail">Coordinate Detail</string>
+
+    <!-- New Development Fragment strings -->
+    <string name="dev_request_core_permissions">Request Core Permissions</string>
+    <string name="dev_reveal_key">Reveal Key</string>
+    <string name="dev_copy_key">Copy Key</string>
+    <string name="dev_status_ready">Ready</string>
 </resources>

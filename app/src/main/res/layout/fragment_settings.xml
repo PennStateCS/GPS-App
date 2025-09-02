@@ -1,127 +1,272 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Added ScrollView root to allow vertical scrolling when content exceeds screen height -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:fillViewport="true"
+    android:fadeScrollbars="false">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Location Settings"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_high_accuracy"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="High Accuracy Location"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_auto_save"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Auto-save Points"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Display Settings"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_show_coordinates"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Show Coordinates in List"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_show_elevation"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Show Elevation with Coordinates"
-        android:layout_marginBottom="8dp" />
-
-    <androidx.appcompat.widget.SwitchCompat
-        android:id="@+id/switch_dark_mode"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Dark Mode"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Data Management"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <Button
-        android:id="@+id/btn_export_data"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Export All Points"
-        android:layout_marginBottom="8dp" />
-
-    <Button
-        android:id="@+id/btn_import_data"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Import Points"
-        android:layout_marginBottom="8dp" />
-
-    <!-- Progress container for import -->
     <LinearLayout
-        android:id="@+id/import_progress_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:visibility="gone"
-        android:padding="8dp"
-        android:background="@android:color/background_light"
-        android:layout_marginBottom="16dp">
-
-        <ProgressBar
-            android:id="@+id/progress_import"
-            style="@android:style/Widget.ProgressBar.Horizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="100"
-            android:progress="0" />
+        android:padding="16dp">
 
         <TextView
-            android:id="@+id/text_import_progress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Import progress"
+            android:text="Location Settings"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:paddingBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_high_accuracy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="High Accuracy Location"
+            android:layout_marginBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_allow_bg_logging"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Allow background logging"
+            android:layout_marginBottom="2dp" />
+
+        <TextView
+            android:id="@+id/text_allow_bg_logging_desc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="When enabled the app keeps recording location (foreground notification) after you leave the app. Turn off to stop logging when in background to save battery."
             android:textAppearance="@style/TextAppearance.AppCompat.Small"
-            android:paddingTop="4dp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginBottom="16dp" />
+
+        <!-- New Location Source selection -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Location Source"
+            android:textStyle="bold"
+            android:paddingBottom="4dp" />
+
+        <RadioGroup
+            android:id="@+id/radio_location_source"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="8dp">
+            <RadioButton
+                android:id="@+id/radio_internal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Internal" />
+            <RadioButton
+                android:id="@+id/radio_es2_tcp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ES2+ TCP"
+                android:layout_marginStart="16dp" />
+        </RadioGroup>
+
+        <LinearLayout
+            android:id="@+id/group_external_config"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:padding="8dp"
+            android:background="#10111111"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Connection Type" />
+
+            <Spinner
+                android:id="@+id/spinner_conn_type"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+
+            <!-- TCP config -->
+            <LinearLayout
+                android:id="@+id/group_tcp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp"
+                android:visibility="gone">
+
+                <EditText
+                    android:id="@+id/edit_tcp_host"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Host" />
+
+                <EditText
+                    android:id="@+id/edit_tcp_port"
+                    android:layout_width="80dp"
+                    android:layout_height="wrap_content"
+                    android:hint="Port"
+                    android:inputType="number" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btn_test_nmea"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Test Connection" />
+
+                <Button
+                    android:id="@+id/btn_save_external"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Save"
+                    android:layout_marginStart="12dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/text_nmea_preview"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:padding="4dp"
+                android:background="#08000000" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Display Settings"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_show_coordinates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Show Coordinates in List"
+            android:layout_marginBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_show_elevation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Show Elevation in List"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Data Management"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <Button
+            android:id="@+id/btn_export_coordinates"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Export Coordinates"
             android:layout_marginBottom="8dp" />
 
         <Button
-            android:id="@+id/btn_cancel_import"
+            android:id="@+id/btn_import_coordinates"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Cancel Import" />
+            android:text="Import Coordinates"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Progress container for import -->
+        <LinearLayout
+            android:id="@+id/import_progress_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:padding="8dp"
+            android:background="@android:color/background_light"
+            android:layout_marginBottom="16dp">
+
+            <ProgressBar
+                android:id="@+id/progress_import"
+                style="@android:style/Widget.ProgressBar.Horizontal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0" />
+
+            <TextView
+                android:id="@+id/text_import_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Import progress"
+                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:paddingTop="4dp"
+                android:layout_marginBottom="8dp" />
+
+            <Button
+                android:id="@+id/btn_cancel_import"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Cancel Import" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Developer"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switch_dev_tools"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable Developer Tools"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="About"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textColor="@android:color/darker_gray" />
+
     </LinearLayout>
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="About"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:paddingBottom="8dp" />
-
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray" />
-
-</LinearLayout>
+</ScrollView>

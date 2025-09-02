@@ -1,278 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<!-- Developer page with two-pane layout matching Settings format exactly -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:orientation="horizontal"
+    android:padding="0dp"
+    tools:context=".ui.development.DevelopmentFragment">
 
+    <!-- Left pane: Categories -->
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:background="@color/dev_panel_bg"
+        android:elevation="2dp"
+        android:padding="0dp">
 
-        <!-- Intro -->
-        <TextView
-            android:id="@+id/text_dev_intro"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/categoriesRecycler"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/development_intro"
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
-            android:textColor="@android:color/darker_gray"
-            android:layout_marginBottom="16dp" />
-
-        <!-- Location Section Header -->
-        <LinearLayout
-            android:id="@+id/header_location"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="8dp"
-            android:paddingHorizontal="4dp"
-            android:background="@android:color/transparent">
-            <ImageView
-                android:id="@+id/icon_location"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_section_location"
-                app:tint="?attr/colorPrimary" />
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="@string/location_settings_header"
-                android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
-            <ImageView
-                android:id="@+id/arrow_location"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_section_arrow"
-                app:tint="?attr/colorPrimary" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/content_location"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:layout_marginBottom="16dp">
-            <TextView
-                android:id="@+id/text_permission_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/checking_permissions"
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
-                android:background="@android:color/background_light"
-                android:padding="8dp"
-                android:layout_marginBottom="8dp" />
-            <Button
-                android:id="@+id/btn_refresh_permissions"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/refresh_location_status"
-                android:layout_marginBottom="8dp" />
-            <Button
-                android:id="@+id/btn_request_permissions"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/request_location_access"
-                android:layout_marginBottom="0dp" />
-        </LinearLayout>
-
-        <!-- AR Section Header -->
-        <LinearLayout
-            android:id="@+id/header_ar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="8dp"
-            android:paddingHorizontal="4dp">
-            <ImageView
-                android:id="@+id/icon_ar"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_section_ar"
-                app:tint="?attr/colorPrimary" />
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="@string/ar_settings_header"
-                android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
-            <ImageView
-                android:id="@+id/arrow_ar"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_section_arrow"
-                app:tint="?attr/colorPrimary" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/content_ar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:layout_marginBottom="16dp">
-            <TextView
-                android:id="@+id/text_ar_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/checking_ar_status"
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
-                android:background="@android:color/background_light"
-                android:padding="8dp"
-                android:layout_marginBottom="8dp" />
-            <Button
-                android:id="@+id/btn_check_ar_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/refresh_ar_status"
-                android:layout_marginBottom="8dp" />
-            <!-- Row containing install button and progress indicator -->
-            <LinearLayout
-                android:id="@+id/row_install_arcore"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="8dp">
-                <Button
-                    android:id="@+id/btn_install_arcore"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/install_arcore"
-                    android:visibility="gone" />
-                <ProgressBar
-                    android:id="@+id/progress_ar_install"
-                    style="@android:style/Widget.ProgressBar.Small"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:visibility="gone" />
-            </LinearLayout>
-            <Button
-                android:id="@+id/btn_request_camera"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/request_camera_access"
-                android:layout_marginBottom="0dp" />
-        </LinearLayout>
-
-        <!-- Diagnostics Section Header -->
-        <LinearLayout
-            android:id="@+id/header_diagnostics"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="8dp"
-            android:paddingHorizontal="4dp">
-            <ImageView
-                android:id="@+id/icon_diagnostics"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_section_diagnostics"
-                app:tint="?attr/colorPrimary" />
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="@string/diagnostics_header"
-                android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
-            <ImageView
-                android:id="@+id/arrow_diagnostics"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_section_arrow"
-                app:tint="?attr/colorPrimary" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/content_diagnostics"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:layout_marginBottom="16dp">
-            <TextView
-                android:id="@+id/text_diagnostics"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/gathering_diagnostics"
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
-                android:background="@android:color/background_light"
-                android:padding="8dp"
-                android:layout_marginBottom="8dp" />
-            <Button
-                android:id="@+id/btn_copy_dev_report"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/copy_diagnostics_report"
-                android:layout_marginBottom="0dp" />
-        </LinearLayout>
-
-        <!-- Data Section Header -->
-        <LinearLayout
-            android:id="@+id/header_data"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="8dp"
-            android:paddingHorizontal="4dp">
-            <ImageView
-                android:id="@+id/icon_data"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/ic_section_data"
-                app:tint="?attr/colorPrimary" />
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="12dp"
-                android:text="@string/data_header"
-                android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
-            <ImageView
-                android:id="@+id/arrow_data"
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:src="@drawable/ic_section_arrow"
-                app:tint="?attr/colorPrimary" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/content_data"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:layout_marginBottom="32dp">
-            <Button
-                android:id="@+id/btn_fake_points"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/add_fake_points"
-                android:layout_marginBottom="8dp" />
-            <Button
-                android:id="@+id/btn_clear_all_points"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/clear_all_points"
-                android:layout_marginBottom="0dp" />
-        </LinearLayout>
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp" />
 
     </LinearLayout>
-</ScrollView>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="@android:color/darker_gray" />
+
+    <!-- Right pane: Content -->
+    <ScrollView
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="2">
+
+        <LinearLayout
+            android:id="@+id/settingsContent"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Dynamic header inserted / updated in code (dev_content_header) -->
+            <TextView
+                android:id="@+id/dev_content_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textStyle="bold"
+                android:textSize="20sp"
+                android:paddingBottom="12dp"
+                android:textColor="@android:color/black"
+                android:visibility="gone" />
+
+            <!-- Placeholder until a category is selected -->
+            <TextView
+                android:id="@+id/dev_placeholder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/dev_category_placeholder"
+                android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                android:gravity="center"
+                android:layout_marginTop="32dp" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</LinearLayout>

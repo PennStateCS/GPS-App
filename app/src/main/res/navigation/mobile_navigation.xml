@@ -41,4 +41,15 @@
         android:name="com.example.surveyingapp.ui.rendermap.RenderMapFragment"
         android:label="@string/menu_render_map"
         tools:layout="@layout/fragment_render_map" />
+
+    <!-- Detail destination for a single coordinate (navigated from CoordinatesFragment) -->
+    <fragment
+        android:id="@+id/nav_coordinate_detail"
+        android:name="com.example.surveyingapp.ui.viewpoints.CoordinateDetailFragment"
+        android:label="@string/title_coordinate_detail"
+        tools:layout="@layout/fragment_coordinate_detail">
+        <argument
+            android:name="arg_id"
+            app:argType="string" />
+    </fragment>
 </navigation>

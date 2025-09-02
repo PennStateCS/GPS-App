@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
-import android.location.LocationManager
 import android.os.Bundle
 import android.widget.ArrayAdapter
 import android.widget.EditText
@@ -13,13 +12,27 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Coordinate
+import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.LocationSourceType
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import java.util.Locale
+import kotlin.coroutines.resume
 
 /**
  * Dialog Fragment for adding new coordinate points using GPS location.
@@ -33,7 +46,10 @@ import android.widget.ImageView
  *
  * The constructor takes a callback function that's called when a coordinate is added.
  */
-class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit) : DialogFragment() {
+class AddCoordinateDialogFragment(
+    private val highAccuracy: Boolean = true,
+    private val onPointAdded: (Coordinate) -> Unit
+) : DialogFragment() {
 
     // Variables to store the GPS coordinates
     private var latitude: Double = 0.0
@@ -54,8 +70,10 @@ class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit
         val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
 
-        // Set up icon choices with custom adapter
-        val icons = listOf("ic_menu_camera", "ic_menu_gallery", "ic_menu_slideshow")
+        // Set up icon choices with custom adapter (updated icons)
+        val icons = listOf(
+            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
+        )
         iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
 
         // Set up color choices with predefined colors
@@ -68,34 +86,16 @@ class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit
         )
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
 
-        // Fetch current GPS location using Android LocationManager
-        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-
-            val locationManager = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            try {
-                // Try to get the most recent location from GPS or network
-                @Suppress("MissingPermission")
-                val location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                    ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-
-                if (location != null) {
-                    // Successfully got location - store the coordinates
-                    latitude = location.latitude
-                    longitude = location.longitude
-                    altitude = location.altitude
-                    locationText.text = getString(R.string.location_label, latitude, longitude, altitude)
-                } else {
-                    // No location available
-                    locationText.text = getString(R.string.location_unavailable)
-                }
-            } catch (e: SecurityException) {
-                // Permission was revoked between check and usage
-                locationText.text = getString(R.string.location_unavailable)
+        // Begin one-shot location acquisition based on settings
+        locationText.text = getString(R.string.fetching_location)
+        lifecycleScope.launch {
+            val sourceSetting = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
+                .getOrDefault(LocationSourceType.INTERNAL)
+            if (sourceSetting == LocationSourceType.INTERNAL) {
+                fetchInternalOneShot(locationText)
+            } else {
+                fetchExternalOneShot(locationText)
             }
-        } else {
-            // No location permissions granted
-            locationText.text = getString(R.string.location_permission_required)
         }
 
         // Build and return the AlertDialog
@@ -125,6 +125,76 @@ class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit
             .setNegativeButton("Cancel", null)
             .create()
     }
+
+    private suspend fun fetchInternalOneShot(locationText: TextView) {
+        val fineGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted && !coarseGranted) {
+            locationText.text = getString(R.string.location_permission_required)
+            return
+        }
+        val fused: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(requireActivity())
+        val cts = CancellationTokenSource()
+        val priority = when {
+            fineGranted && highAccuracy -> Priority.PRIORITY_HIGH_ACCURACY
+            fineGranted -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+            else -> Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        }
+        val result = withTimeoutOrNull(6_000L) { // shorter timeout to move to fallback quickly on emulator
+            @Suppress("MissingPermission")
+            fused.getCurrentLocation(priority, cts.token).awaitSafe()
+        }
+        if (result != null) {
+            latitude = result.latitude
+            longitude = result.longitude
+            altitude = result.altitude
+            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL";
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
+            return
+        }
+        // Try last known location
+        val last = try {
+            @Suppress("MissingPermission")
+            fused.lastLocation.awaitSafe()
+        } catch (_: Exception) { null }
+        if (last != null) {
+            latitude = last.latitude
+            longitude = last.longitude
+            altitude = last.altitude
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, "LAST-KNOWN") + " (fallback)"
+            return
+        }
+        // Final emulator fallback: use a stable default (Googleplex) so user can edit name and save quickly
+        latitude = 37.4219999
+        longitude = -122.0840575
+        altitude = 0.0
+        locationText.text = String.format(Locale.US, "%.6f, %.6f, %.2fm (emulator fallback)", latitude, longitude, altitude)
+    }
+
+    private suspend fun fetchExternalOneShot(locationText: TextView) {
+        val fix = withTimeoutOrNull(12_000L) {
+            withContext(Dispatchers.IO) {
+                try { SurveyingApp.nmeaSource.fixes().first() } catch (_: Exception) { null }
+            }
+        }
+        if (fix != null) {
+            latitude = fix.lat
+            longitude = fix.lon
+            altitude = fix.altEllipsoidalM ?: 0.0
+            val state = fix.rtkStatus?.name ?: "SINGLE"
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, state)
+        } else {
+            locationText.text = getString(R.string.location_unavailable)
+        }
+    }
+
+    // Small helper to await a Task<Location?> safely without adding full dependency
+    private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitSafe(): T? =
+        kotlinx.coroutines.suspendCancellableCoroutine<T?> { cont ->
+            addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+            addOnFailureListener { if (cont.isActive) cont.resume(null) }
+            addOnCanceledListener { if (cont.isActive) cont.resume(null) }
+        }
 
     /**
      * Custom adapter for the icon spinner that displays icons with text.
@@ -165,7 +235,9 @@ class AddCoordinateDialogFragment(private val onPointAdded: (Coordinate) -> Unit
             imageView.setImageResource(resId)
 
             // Create a user-friendly name from the icon name
-            textView.text = iconName.replace("ic_menu_", "").replaceFirstChar { it.uppercase() }
+            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
+                .replace('_', ' ') // allow future multi-word
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
             return view
         }

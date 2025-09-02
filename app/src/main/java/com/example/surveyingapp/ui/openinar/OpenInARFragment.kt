@@ -14,6 +14,8 @@ import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.os.Build
 import android.os.Bundle
+import android.content.SharedPreferences
+import com.example.surveyingapp.ui.settings.SettingsFragment
 import kotlin.math.max
 
 import android.view.LayoutInflater
@@ -25,8 +27,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.Coordinate
-import com.example.surveyingapp.data.CoordinateDao
+import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.data.local.dao.CoordinateDao
+import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.databinding.FragmentOpenInArBinding
 import com.google.ar.core.*
 import com.google.ar.core.Point
@@ -110,9 +113,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val vp = FloatArray(16)      // View-projection matrix
     private val mvp = FloatArray(16)     // Model-view-projection matrix
 
-    // Helper for handling screen rotation and display changes
-    private lateinit var rotationHelper: DisplayRotationHelper
-
     // Thread-safe touch input handling
     @Volatile private var queuedTap: PointF? = null
 
@@ -133,6 +133,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             if (!granted) binding.textArStatus.text = getString(R.string.location_permission_needed)
         }
 
+    // SharedPreferences for high accuracy setting
+    private var prefs: SharedPreferences? = null
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == SettingsFragment.PREF_HIGH_ACCURACY) {
+            applyHighAccuracyPreference()
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Fragment Lifecycle Methods
 
@@ -145,9 +153,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentOpenInArBinding.inflate(inflater, container, false)
-        rotationHelper = DisplayRotationHelper(this)
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
+        // Load preferences
+        prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        applyHighAccuracyPreference()
         return binding.root
     }
 
@@ -186,7 +196,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Resume AR session and related components
         try {
             session?.resume()
-            rotationHelper.onResume()
             binding.glSurfaceViewAr.onResume()
             binding.textArStatus.text = getString(R.string.ar_running)
         } catch (_: CameraNotAvailableException) {
@@ -201,7 +210,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onPause() {
         super.onPause()
         binding.glSurfaceViewAr.onPause()
-        rotationHelper.onPause()
         try { session?.pause() } catch (_: Exception) {}
     }
 
@@ -210,6 +218,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onDestroyView() {
         super.onDestroyView()
+        prefs = null
         // Clean up anchors
         try { demoAnchor?.detach() } catch (_: Exception) {}
         demoAnchor = null
@@ -418,6 +427,27 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
+    /**
+     * Apply the high accuracy preference based on user settings
+     */
+    private fun applyHighAccuracyPreference() {
+        val wantHigh = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+        if (!isAdded || _binding == null) return
+        if (wantHigh) {
+            // If user wants high accuracy but GPS provider is off, prompt them
+            val lm = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            if (!gpsOn) {
+                binding.textArStatus.text = "Enable GPS for high accuracy AR positioning"
+            }
+        } else {
+            // Balanced mode: we can note that network is sufficient (only update if current text is our prior warning)
+            if (binding.textArStatus.text.toString().contains("high accuracy", true)) {
+                binding.textArStatus.text = "Balanced accuracy mode"
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
     // GLSurfaceView.Renderer
 
@@ -437,7 +467,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES30.glViewport(0, 0, width, height)
-        rotationHelper.onSurfaceChanged(width, height)
+        // rotationHelper.onSurfaceChanged(width, height) // removed
+        // Fixed landscape: set display geometry once
+        try { session?.setDisplayGeometry(Surface.ROTATION_90, width, height) } catch (_: Exception) {}
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -445,7 +477,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         val s = session ?: return
         try {
-            rotationHelper.updateSessionIfNeeded(s)
+            // rotationHelper.updateSessionIfNeeded(s) // removed (fixed landscape)
             if (cameraTextureId > 0) s.setCameraTextureName(cameraTextureId)
 
             val frame: Frame = s.update()
@@ -975,39 +1007,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Display rotation helper
-
-    private class DisplayRotationHelper(private val fragment: Fragment) {
-        private var viewportWidth = 0
-        private var viewportHeight = 0
-        private var isActive = false
-
-        fun onResume() { isActive = true }
-        fun onPause() { isActive = false }
-
-        fun onSurfaceChanged(width: Int, height: Int) {
-            viewportWidth = width
-            viewportHeight = height
-        }
-
-        fun updateSessionIfNeeded(session: Session) {
-            if (!isActive || viewportWidth == 0 || viewportHeight == 0) return
-            val rotation = getDisplayRotation(fragment)
-            session.setDisplayGeometry(rotation, viewportWidth, viewportHeight)
-        }
-
-        private fun getDisplayRotation(fragment: Fragment): Int {
-            val activity = fragment.requireActivity()
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                activity.display?.rotation ?: Surface.ROTATION_0
-            } else {
-                @Suppress("DEPRECATION")
-                activity.windowManager.defaultDisplay.rotation
-            }
-        }
-    }
-
-    // ---------------------------------------------------------------------------------------------
     // Coordinate data observation / DB hookup
 
     /** Provide DAO from hosting component so AR view can reflect stored coordinates. */
@@ -1021,8 +1020,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (liveObserverAttached) return
         val dao = coordinateDao ?: return
         if (!isAdded || _binding == null) return
-        dao.getAllCoordinates().observe(viewLifecycleOwner) { rows ->
-            setCoordinates(rows)
+        dao.getAllCoordinates().observe(viewLifecycleOwner) { entities ->
+            val coords = entities.map { it.toDomainForAr() }
+            setCoordinates(coords)
         }
         liveObserverAttached = true
     }
@@ -1051,4 +1051,37 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             } else false
         }
     }
+
+    private fun CoordinateEntity.toDomainForAr(): Coordinate = Coordinate(
+        id = id,
+        name = name,
+        latitude = latitude,
+        longitude = longitude,
+        altitude = altitude,
+        timestamp = timestamp,
+        icon = icon,
+        color = color,
+        provider = provider,
+        rtkStatus = rtkStatus,
+        satsUsed = satsUsed,
+        hdop = hdop,
+        horizontalAccuracyM = horizontalAccuracyM,
+        verticalAccuracyM = verticalAccuracyM,
+        correctionSource = correctionSource,
+        correctionAgeS = correctionAgeS,
+        altitudeMsl = altitudeMsl,
+        geoidSeparationM = geoidSeparationM,
+        crsEpsg = crsEpsg,
+        easting = easting,
+        northing = northing,
+        utmZone = utmZone,
+        note = note,
+        averagedSamples = averagedSamples,
+        averageDurationMs = averageDurationMs,
+        stdLatM = stdLatM,
+        stdLonM = stdLonM,
+        stdAltM = stdAltM,
+        sourceDevice = sourceDevice,
+        appVersion = appVersion
+    )
 }
