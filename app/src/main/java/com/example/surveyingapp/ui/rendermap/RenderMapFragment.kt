@@ -25,6 +25,7 @@ import androidx.core.animation.doOnEnd
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.widget.TextView
+import android.widget.Button
 
 class RenderMapFragment : Fragment() {
     private var mapView: MapView? = null
@@ -53,6 +54,20 @@ class RenderMapFragment : Fragment() {
     private val visibilityMap = mutableMapOf<String, Boolean>() // id -> visible
     private val coordinateMap = mutableMapOf<String, Coordinate>() // id -> coordinate data
     private var toggleSatBtn: FloatingActionButton? = null
+    private var measureBtn: FloatingActionButton? = null
+    private var gridBtn: FloatingActionButton? = null
+    private var showAllBtn: Button? = null
+    private var hideAllBtn: Button? = null
+    private var isMeasuring = false
+    private val measurementPoints = mutableListOf<LatLng>()
+    private val measurementMarkers = mutableListOf<Marker>()
+    private var measurementPolyline: Polyline? = null
+
+    private var showGrid = false
+    private val gridLines = mutableListOf<Polyline>()
+
+    private val boundaryLines = mutableListOf<Polyline>()
+    private var showBoundaries = false
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -64,6 +79,10 @@ class RenderMapFragment : Fragment() {
         placeholder = root.findViewById(R.id.text_render_map)
         toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
         toggleSatBtn = root.findViewById(R.id.fab_toggle_sat)
+        gridBtn = root.findViewById(R.id.fab_toggle_grid)
+        showAllBtn = root.findViewById(R.id.btn_show_all)
+        hideAllBtn = root.findViewById(R.id.btn_hide_all)
+        // measureBtn = root.findViewById(R.id.fab_measure) // Commented out - button doesn't exist in layout yet
         toggleAdapter = CoordinateToggleAdapter { id, checked ->
             visibilityMap[id] = checked
             markerMap[id]?.isVisible = checked
@@ -102,6 +121,9 @@ class RenderMapFragment : Fragment() {
             bindData()
         }
         toggleSatBtn?.setOnClickListener { toggleSatellite() }
+        gridBtn?.setOnClickListener { toggleGrid() }
+        showAllBtn?.setOnClickListener { showAllCoordinates() }
+        hideAllBtn?.setOnClickListener { hideAllCoordinates() }
         root.findViewById<FloatingActionButton>(R.id.fab_recenter)?.setOnClickListener { recenterMap() }
         root.findViewById<FloatingActionButton>(R.id.fab_zoom_in)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomIn()) }
         root.findViewById<FloatingActionButton>(R.id.fab_zoom_out)?.setOnClickListener { googleMap?.animateCamera(CameraUpdateFactory.zoomOut()) }
@@ -238,6 +260,155 @@ class RenderMapFragment : Fragment() {
                 android.R.drawable.ic_menu_gallery // Satellite/gallery icon when in map mode (to switch to satellite)
             }
         )
+    }
+
+    private fun toggleMeasurement() {
+        isMeasuring = !isMeasuring
+        if (isMeasuring) {
+            // Clear previous measurements
+            measurementPoints.clear()
+            measurementMarkers.forEach { it.remove() }
+            measurementMarkers.clear()
+            measurementPolyline?.remove()
+            measurementPolyline = null
+            // Change button icon to indicate active measurement
+            // measureBtn?.setImageResource(R.drawable.ic_measure_active) // Commented out - drawable doesn't exist yet
+        } else {
+            // Finalize measurement, maybe show total distance/area
+            // measureBtn?.setImageResource(R.drawable.ic_measure) // Commented out - drawable doesn't exist yet
+        }
+    }
+
+    private fun toggleGrid() {
+        showGrid = !showGrid
+        if (showGrid) {
+            drawCoordinateGrid()
+        } else {
+            gridLines.forEach { it.remove() }
+            gridLines.clear()
+        }
+    }
+
+    private fun showAllCoordinates() {
+        // Set all coordinates to visible
+        coordinateMap.keys.forEach { id ->
+            visibilityMap[id] = true
+            markerMap[id]?.isVisible = true
+        }
+        // Update the adapter to reflect changes
+        refreshToggleList()
+    }
+
+    private fun hideAllCoordinates() {
+        // Set all coordinates to hidden
+        coordinateMap.keys.forEach { id ->
+            visibilityMap[id] = false
+            markerMap[id]?.isVisible = false
+        }
+        // Update the adapter to reflect changes
+        refreshToggleList()
+    }
+
+    private fun refreshToggleList() {
+        // Rebuild the toggle list with current visibility states
+        val toggleItems = coordinateMap.values.map { coordinate ->
+            val visible = visibilityMap[coordinate.id] ?: true
+            CoordinateToggleItem(coordinate.id, coordinate.name, visible, coordinate.icon, coordinate.color)
+        }
+        toggleAdapter.submit(toggleItems)
+    }
+
+    private fun drawCoordinateGrid() {
+        val map = googleMap ?: return
+        val bounds = map.projection.visibleRegion.latLngBounds
+
+        // Draw latitude lines
+        val latStep = calculateGridStep(bounds.northeast.latitude - bounds.southwest.latitude)
+        var lat = (bounds.southwest.latitude / latStep).toInt() * latStep
+        while (lat <= bounds.northeast.latitude) {
+            val line = map.addPolyline(
+                PolylineOptions()
+                    .add(LatLng(lat, bounds.southwest.longitude))
+                    .add(LatLng(lat, bounds.northeast.longitude))
+                    .color(0x40000000) // Semi-transparent black
+                    .width(1f)
+            )
+            gridLines.add(line)
+            lat += latStep
+        }
+
+        // Draw longitude lines
+        val lngStep = calculateGridStep(bounds.northeast.longitude - bounds.southwest.longitude)
+        var lng = (bounds.southwest.longitude / lngStep).toInt() * lngStep
+        while (lng <= bounds.northeast.longitude) {
+            val line = map.addPolyline(
+                PolylineOptions()
+                    .add(LatLng(bounds.southwest.latitude, lng))
+                    .add(LatLng(bounds.northeast.latitude, lng))
+                    .color(0x40000000)
+                    .width(1f)
+            )
+            gridLines.add(line)
+            lng += lngStep
+        }
+    }
+
+    private fun calculateGridStep(range: Double): Double {
+        return when {
+            range > 1.0 -> 0.1
+            range > 0.1 -> 0.01
+            range > 0.01 -> 0.001
+            else -> 0.0001
+        }
+    }
+
+    private fun toggleBoundaryLines() {
+        showBoundaries = !showBoundaries
+        if (showBoundaries) {
+            drawBoundaryLines()
+        } else {
+            boundaryLines.forEach { it.remove() }
+            boundaryLines.clear()
+        }
+    }
+
+    private fun drawBoundaryLines() {
+        val visibleCoords = coordinateMap.values.filter {
+            visibilityMap[it.id] == true
+        }.sortedBy { it.timestamp }
+
+        if (visibleCoords.size < 2) return
+
+        // Connect coordinates in sequence to form property boundary
+        for (i in 0 until visibleCoords.size - 1) {
+            val start = LatLng(visibleCoords[i].latitude, visibleCoords[i].longitude)
+            val end = LatLng(visibleCoords[i + 1].latitude, visibleCoords[i + 1].longitude)
+
+            val line = googleMap?.addPolyline(
+                PolylineOptions()
+                    .add(start, end)
+                    .color(0xFF2196F3.toInt()) // Blue boundary lines
+                    .width(3f)
+                    .geodesic(true)
+            )
+            line?.let { boundaryLines.add(it) }
+        }
+
+        // Close the boundary if we have enough points
+        if (visibleCoords.size >= 3) {
+            val start = LatLng(visibleCoords.last().latitude, visibleCoords.last().longitude)
+            val end = LatLng(visibleCoords.first().latitude, visibleCoords.first().longitude)
+
+            val closingLine = googleMap?.addPolyline(
+                PolylineOptions()
+                    .add(start, end)
+                    .color(0xFF2196F3.toInt())
+                    .width(3f)
+                    .geodesic(true)
+                    .pattern(listOf(com.google.android.gms.maps.model.Dash(20f), com.google.android.gms.maps.model.Gap(10f))) // Dashed closing line
+            )
+            closingLine?.let { boundaryLines.add(it) }
+        }
     }
 
     private fun setupPanelInteractions() {
@@ -386,8 +557,21 @@ class RenderMapFragment : Fragment() {
         titleView.text = coordinate?.name ?: "Unknown"
         contentView.text = buildString {
             if (coordinate != null) {
-                appendLine("Lat: ${"%.6f".format(coordinate.latitude)}")
-                appendLine("Lng: ${"%.6f".format(coordinate.longitude)}")
+                when (getCurrentCoordinateFormat()) {
+                    CoordinateFormat.DECIMAL_DEGREES -> {
+                        appendLine("Lat: ${"%.6f".format(coordinate.latitude)}°")
+                        appendLine("Lng: ${"%.6f".format(coordinate.longitude)}°")
+                    }
+                    CoordinateFormat.DEGREES_MINUTES_SECONDS -> {
+                        appendLine("Lat: ${formatDMS(coordinate.latitude, true)}")
+                        appendLine("Lng: ${formatDMS(coordinate.longitude, false)}")
+                    }
+                    CoordinateFormat.UTM -> {
+                        val utm = convertToUTM(coordinate.latitude, coordinate.longitude)
+                        appendLine("UTM: ${utm.zone}${utm.band}")
+                        appendLine("E: ${utm.easting.toInt()} N: ${utm.northing.toInt()}")
+                    }
+                }
                 append("Alt: ${"%.2f".format(coordinate.altitude)} m")
             } else {
                 append("No data available")
@@ -395,5 +579,60 @@ class RenderMapFragment : Fragment() {
         }
 
         return view
+    }
+
+    private fun getCurrentCoordinateFormat(): CoordinateFormat {
+        // This could be stored in SharedPreferences or Settings
+        return CoordinateFormat.DECIMAL_DEGREES
+    }
+
+    private fun formatDMS(decimal: Double, isLatitude: Boolean): String {
+        val degrees = decimal.toInt()
+        val minutes = ((decimal - degrees) * 60).toInt()
+        val seconds = ((decimal - degrees) * 60 - minutes) * 60
+        val direction = when {
+            isLatitude -> if (decimal >= 0) "N" else "S"
+            else -> if (decimal >= 0) "E" else "W"
+        }
+        return "${kotlin.math.abs(degrees)}°${kotlin.math.abs(minutes)}'${"%.2f".format(kotlin.math.abs(seconds))}\"$direction"
+    }
+
+    private fun convertToUTM(lat: Double, lng: Double): UTMResult {
+        // Simplified UTM conversion - in production you'd use a proper geodetic library
+        val zone = ((lng + 180) / 6).toInt() + 1
+        val band = when {
+            lat >= 84 -> 'X'
+            lat >= 72 -> 'W'
+            lat >= 64 -> 'V'
+            lat >= 56 -> 'U'
+            lat >= 48 -> 'T'
+            lat >= 40 -> 'S'
+            lat >= 32 -> 'R'
+            lat >= 24 -> 'Q'
+            lat >= 16 -> 'P'
+            lat >= 8 -> 'N'
+            lat >= 0 -> 'M'
+            lat >= -8 -> 'L'
+            lat >= -16 -> 'K'
+            lat >= -24 -> 'J'
+            lat >= -32 -> 'H'
+            lat >= -40 -> 'G'
+            lat >= -48 -> 'F'
+            lat >= -56 -> 'E'
+            lat >= -64 -> 'D'
+            else -> 'C'
+        }
+        // Approximate easting/northing (real conversion is more complex)
+        val easting = 500000 + (lng - (zone - 1) * 6 - 183) * 111319.9
+        val northing = lat * 110540.0 + if (lat < 0) 10000000 else 0
+        return UTMResult(zone, band, easting, northing)
+    }
+
+    data class UTMResult(val zone: Int, val band: Char, val easting: Double, val northing: Double)
+
+    enum class CoordinateFormat {
+        DECIMAL_DEGREES,
+        DEGREES_MINUTES_SECONDS,
+        UTM
     }
 }

@@ -36,6 +36,37 @@
                 android:src="@android:drawable/ic_menu_close_clear_cancel" />
         </LinearLayout>
 
+        <!-- Show/Hide All Controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingBottom="8dp">
+
+            <Button
+                android:id="@+id/btn_show_all"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Show All"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="#2196F3" />
+
+            <Button
+                android:id="@+id/btn_hide_all"
+                android:layout_width="0dp"
+                android:layout_height="32dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Hide All"
+                android:textSize="12sp"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="#F44336" />
+        </LinearLayout>
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/coordinate_toggle_list"
             android:layout_width="match_parent"
@@ -120,6 +151,16 @@
             android:layout_marginBottom="144dp"
             android:contentDescription="Zoom out"
             android:src="@drawable/ic_zoom_out" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_toggle_grid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="200dp"
+            android:contentDescription="Toggle coordinate grid"
+            android:src="@android:drawable/ic_menu_view" />
 
         <!-- Expand button appears when panel collapsed -->
         <ImageButton
