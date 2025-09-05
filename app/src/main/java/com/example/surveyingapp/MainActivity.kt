@@ -9,6 +9,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.drawerlayout.widget.DrawerLayout
@@ -33,6 +34,7 @@ import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.ui.openinar.OpenInARFragment
 import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.example.surveyingapp.ui.common.updateStatusBar
+import com.example.surveyingapp.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -61,24 +63,38 @@ class MainActivity : AppCompatActivity() {
 
     private var statusCollectJob: Job? = null // Cancels aggregated collectors when Activity is destroyed
 
-    // Permission launcher for Android 13+ notification permission (needed for foreground service visibility)
-    private val notifPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) LocationService.start(this) else {
-            // Foreground notification suppressed; service may still start later when permission granted.
+    // Comprehensive permission launchers using the new PermissionManager
+    private val essentialPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val deniedPermissions = permissions.filterValues { !it }.keys
+        if (deniedPermissions.isEmpty()) {
+            // All essential permissions granted - request optional ones
+            requestOptionalPermissions()
+        } else {
+            // Some essential permissions denied - show rationale
+            showPermissionRationale(deniedPermissions.toList(), isEssential = true)
         }
     }
 
-    private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        // If denied we can proceed without AR camera until user grants later.
+    private val optionalPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val deniedPermissions = permissions.filterValues { !it }.keys
+        if (deniedPermissions.isNotEmpty()) {
+            // Optional permissions denied - continue without them but inform user
+            showPermissionRationale(deniedPermissions.toList(), isEssential = false)
+        }
+        // Start location service regardless of optional permissions
+        ensureLocationServiceStarted()
     }
 
-    private val locationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        val fine = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarse = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (fine || coarse) {
-            ensureLocationServiceStarted()
-        } else {
-            // User denied; you could show rationale or fallback behavior here.
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            // Background location denied - app can still function but with limitations
+            showBackgroundLocationRationale()
         }
     }
 
@@ -150,36 +166,145 @@ class MainActivity : AppCompatActivity() {
         // Start live status observers (satellite / RTK info banner)
         startStatusBarObservers()
 
-        // Request camera permission early if not granted (runtime >= 23)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        // Start comprehensive permission request process
+        requestAllPermissions()
+    }
+
+    /**
+     * Start the comprehensive permission request process
+     */
+    private fun requestAllPermissions() {
+        if (!PermissionManager.hasEssentialPermissions(this)) {
+            // Request essential permissions first
+            requestEssentialPermissions()
+        } else {
+            // Essential permissions granted, request optional ones
+            requestOptionalPermissions()
         }
-        if (!hasLocationPermission()) {
-            requestLocationPermissions()
+    }
+
+    /**
+     * Request essential permissions required for core functionality
+     */
+    private fun requestEssentialPermissions() {
+        val missingPermissions = PermissionManager.getMissingEssentialPermissions(this)
+        if (missingPermissions.isNotEmpty()) {
+            essentialPermissionLauncher.launch(missingPermissions.toTypedArray())
+        } else {
+            requestOptionalPermissions()
+        }
+    }
+
+    /**
+     * Request optional permissions that enhance functionality
+     */
+    private fun requestOptionalPermissions() {
+        val missingPermissions = PermissionManager.getMissingOptionalPermissions(this)
+        if (missingPermissions.isNotEmpty()) {
+            optionalPermissionLauncher.launch(missingPermissions.toTypedArray())
         } else {
             ensureLocationServiceStarted()
         }
     }
 
-    private fun hasLocationPermission(): Boolean {
-        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        return fine || coarse
+    /**
+     * Request background location permission (must be done after foreground permissions)
+     */
+    private fun requestBackgroundLocationPermission() {
+        if (PermissionManager.hasLocationPermissions(this) &&
+            !PermissionManager.hasBackgroundLocationPermission(this)) {
+            backgroundLocationLauncher.launch(PermissionManager.BACKGROUND_LOCATION_PERMISSION)
+        }
     }
 
-    private fun requestLocationPermissions() {
-        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    /**
+     * Show rationale dialog for denied permissions
+     */
+    private fun showPermissionRationale(deniedPermissions: List<String>, isEssential: Boolean) {
+        val title = if (isEssential) "Essential Permissions Required" else "Optional Permissions"
+        val message = buildString {
+            if (isEssential) {
+                append("The following permissions are required for the app to function properly:\n\n")
+            } else {
+                append("The following permissions would enhance your experience but are optional:\n\n")
+            }
+
+            deniedPermissions.forEach { permission ->
+                append("• ${PermissionManager.getPermissionDescription(permission)}\n")
+            }
+
+            if (isEssential) {
+                append("\nPlease grant these permissions to use the app.")
+            } else {
+                append("\nYou can grant these permissions later in Settings if needed.")
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(if (isEssential) "Grant Permissions" else "OK") { _, _ ->
+                if (isEssential) {
+                    requestEssentialPermissions()
+                } else {
+                    ensureLocationServiceStarted()
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                if (isEssential) {
+                    // For essential permissions, show warning that app may not work properly
+                    showEssentialPermissionWarning()
+                } else {
+                    ensureLocationServiceStarted()
+                }
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * Show warning when essential permissions are denied
+     */
+    private fun showEssentialPermissionWarning() {
+        AlertDialog.Builder(this)
+            .setTitle("Warning")
+            .setMessage("Some core features may not work without the required permissions. You can grant them later in the app settings.")
+            .setPositiveButton("OK") { _, _ ->
+                ensureLocationServiceStarted()
+            }
+            .show()
+    }
+
+    /**
+     * Show rationale for background location permission
+     */
+    private fun showBackgroundLocationRationale() {
+        AlertDialog.Builder(this)
+            .setTitle("Background Location")
+            .setMessage("Background location access allows continuous tracking when the app is not actively being used. This is useful for extended surveying sessions.\n\nYou can enable this later in Settings > Location if needed.")
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun ensureLocationServiceStarted() {
-        if (Build.VERSION.SDK_INT >= 33) { // POST_NOTIFICATIONS required only on T+ for foreground service notification
-            val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                return
+        // Check if we have location permissions
+        if (!PermissionManager.hasLocationPermissions(this)) {
+            // Can't start location service without location permissions
+            return
+        }
+
+        // Start the location service
+        LocationService.start(this)
+
+        // After a short delay, offer to request background location if not already granted
+        // This follows Google's best practices of requesting background location separately
+        lifecycleScope.launch {
+            kotlinx.coroutines.delay(3000) // Wait 3 seconds after app startup
+            if (PermissionManager.hasLocationPermissions(this@MainActivity) &&
+                !PermissionManager.hasBackgroundLocationPermission(this@MainActivity)) {
+                requestBackgroundLocationPermission()
             }
         }
-        LocationService.start(this)
     }
 
     @OptIn(FlowPreview::class)
@@ -190,7 +315,7 @@ class MainActivity : AppCompatActivity() {
             val settingsRepo = SurveyingApp.settingsRepo
             val initialSource = settingsRepo.locationSource.first()
             val initialLabel = if (initialSource == LocationSourceType.INTERNAL) "Internal" else "RS2+"
-            statusBarTv.text = getString(R.string.status_initial_no_fix, initialLabel)
+            statusBarTv.text = "Status: $initialLabel - No fix"
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 val manager = SurveyingApp.locationManager
                 combine(

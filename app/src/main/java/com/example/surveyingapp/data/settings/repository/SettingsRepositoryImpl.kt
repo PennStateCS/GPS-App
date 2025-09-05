@@ -22,6 +22,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val externalBtAddress = local.externalBtAddress
     override val externalTcpHost = local.externalTcpHost
     override val externalTcpPort = local.externalTcpPort
+    override val externalTcpName = local.externalTcpName
 
     override val locationSettings: Flow<LocationSettings>
         get() = TODO("Implement locationSettings if needed")
@@ -36,6 +37,10 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     override suspend fun setExternalTcp(host: String, port: Int) {
         local.setExternalTcp(host, port)
+    }
+
+    override suspend fun setExternalTcpName(name: String) {
+        local.setExternalTcpName(name)
     }
 
     override suspend fun clearExternalTcp() { local.clearExternalTcp() }

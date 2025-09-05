@@ -11,10 +11,12 @@ interface SettingsRepository {
     val externalBtAddress: Flow<String?>
     val externalTcpHost: Flow<String?>
     val externalTcpPort: Flow<Int?>
+    val externalTcpName: Flow<String?> // added
     val locationSettings: Flow<LocationSettings>
 
     suspend fun setLocationSource(v: LocationSourceType)
     suspend fun setExternalConnType(v: ExternalConnectionType)
     suspend fun setExternalTcp(host: String, port: Int)
+    suspend fun setExternalTcpName(name: String) // added
     suspend fun clearExternalTcp()
 }
