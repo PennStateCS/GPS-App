@@ -87,7 +87,8 @@
                     android:text="Status"
                     android:textSize="13sp"
                     android:textColor="@android:color/holo_green_dark"
-                    android:layout_marginTop="2dp" />
+                    android:layout_marginTop="2dp"
+                    android:visibility="gone" />
                 <TextView
                     android:id="@+id/text_device_address"
                     android:layout_width="wrap_content"
@@ -103,6 +104,45 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Disconnect" />
+        </LinearLayout>
+
+        <!-- NMEA Log Container -->
+        <LinearLayout
+            android:id="@+id/device_nmea_log_container"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical"
+            android:background="@drawable/bg_device_box"
+            android:visibility="gone"
+            android:padding="6dp">
+
+            <TextView
+                android:id="@+id/text_nmea_log_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="NMEA (latest)"
+                android:textStyle="bold"
+                android:textSize="13sp"
+                android:textColor="@android:color/black" />
+
+            <ScrollView
+                android:id="@+id/scroll_nmea_log"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fadeScrollbars="false">
+                <TextView
+                    android:id="@+id/text_nmea_log"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:textColor="@android:color/black"
+                    android:paddingTop="4dp"
+                    android:lineSpacingExtra="2dp"
+                    android:text="" />
+            </ScrollView>
         </LinearLayout>
 
     </LinearLayout>

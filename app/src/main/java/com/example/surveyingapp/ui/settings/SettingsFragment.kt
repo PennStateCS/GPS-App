@@ -4,6 +4,7 @@ import android.content.*
 import android.net.Uri
 import android.net.wifi.WifiManager
 import android.provider.DocumentsContract
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.*
@@ -24,10 +25,12 @@ import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.service.LocationService
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
+import com.example.surveyingapp.util.ReachNameResolver
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -50,25 +53,41 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private var selectedDevice: Pair<String, Int>? = null
     private var selectedDeviceLabel: String? = null
     private var selectedDeviceName: String? = null
+    private var autoReconnectAttempted = false // new flag
+    private var provisionalConnectedUntil: Long = 0L // provisional connected status timeout
+
+    // NMEA log state
+    private var nmeaLogJob: Job? = null
+    private var nmeaLogHasContent = false
+    private val nmeaLines: ArrayDeque<String> = ArrayDeque()
+    private val maxNmeaLines = 50
 
     private fun updateDeviceBox() {
         val root = currentContentView ?: return
         val box = root.findViewById<LinearLayout>(R.id.container_selected_device)
         val nameTv = root.findViewById<TextView>(R.id.text_device_name)
+        val addrTv = root.findViewById<TextView>(R.id.text_device_address)
+        val statusTv = root.findViewById<TextView>(R.id.text_device_status)
         val optionsLayout = root.findViewById<LinearLayout>(R.id.layout_rs2_options)
         val radioGroup = root.findViewById<RadioGroup>(R.id.radio_location_source)
         val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
         val dev = selectedDevice
+        val nmeaContainer = root.findViewById<LinearLayout>(R.id.device_nmea_log_container)
+        val nmeaLogText = root.findViewById<TextView>(R.id.text_nmea_log)
         if (!externalActive) {
             // Internal source: hide both
             box?.visibility = View.GONE
             optionsLayout?.visibility = View.GONE
+            nmeaContainer?.visibility = View.GONE
             return
         }
         if (dev == null) {
             // No device selected yet: show options, hide box
             box?.visibility = View.GONE
             optionsLayout?.visibility = View.VISIBLE
+            addrTv?.text = "IP:PORT" // reset to placeholder when no selection
+            statusTv?.visibility = View.GONE
+            nmeaContainer?.visibility = View.GONE
             return
         }
         // Device present: show box, hide options
@@ -76,8 +95,24 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val label = selectedDeviceLabel
         val parsedName = selectedDeviceName ?: label?.substringBefore("(")?.trim()?.takeIf { it.isNotBlank() }
         val host = dev.first
+        val port = dev.second
         nameTv?.text = parsedName ?: host
+        addrTv?.text = "$host:$port"
         box?.visibility = View.VISIBLE
+        // Ensure status line is visible immediately with placeholder until streaming/connecting updates arrive
+        statusTv?.let {
+            if (it.visibility != View.VISIBLE) {
+                it.visibility = View.VISIBLE
+                it.text = "Disconnected"
+            } else if (it.text.isNullOrBlank()) {
+                it.text = "Disconnected"
+            }
+        }
+        // Always show NMEA container when device selected; placeholder if no data yet
+        nmeaContainer?.visibility = View.VISIBLE
+        if (nmeaLines.isEmpty()) {
+            nmeaLogText?.text = "(Waiting for NMEA sentences…)"
+        }
     }
 
     // Sidebar categories
@@ -185,6 +220,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val deviceBox = view.findViewById<LinearLayout>(R.id.container_selected_device)
         val btnDisconnect = view.findViewById<Button>(R.id.btn_disconnect_device)
         val textDeviceStatus = view.findViewById<TextView>(R.id.text_device_status)
+        val nmeaLogContainer = view.findViewById<LinearLayout>(R.id.device_nmea_log_container)
+        val nmeaLogText = view.findViewById<TextView>(R.id.text_nmea_log)
+        val nmeaScroll = view.findViewById<ScrollView>(R.id.scroll_nmea_log)
 
         btnDisconnect?.setOnClickListener {
             lifecycleScope.launch {
@@ -204,13 +242,41 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     if (prev == null || prev.first != host || prev.second != port) {
                         selectedDevice = host to port
                         selectedDeviceLabel = selectedDeviceLabel ?: "$host:$port"
-                        selectedDeviceName = selectedDeviceName ?: host
+                        // don't overwrite a previously set friendly name
+                        if (selectedDeviceName == null || selectedDeviceName == prev?.first || selectedDeviceName == host) {
+                            // will be updated by name flow if persisted
+                            selectedDeviceName = selectedDeviceName ?: host
+                        }
                         updateDeviceBox()
+                    }
+                    // Attempt auto-reconnect once if external TCP was last selected
+                    if (!autoReconnectAttempted) {
+                        launch {
+                            val locSrc = settingsRepo.locationSource.first()
+                            val connType = settingsRepo.externalConnType.firstOrNull()
+                            if (locSrc == LocationSourceType.EXTERNAL && connType == ExternalConnectionType.TCP) {
+                                autoReconnectAttempted = true
+                                connectViaTcpFlow(host, port)
+                            }
+                        }
                     }
                 } else {
                     // Cleared
                     selectedDevice = null
+                    selectedDeviceName = null
+                    selectedDeviceLabel = null
                     updateDeviceBox()
+                }
+            }
+        }
+        // Observe persisted friendly name
+        viewLifecycleOwner.lifecycleScope.launch {
+            settingsRepo.externalTcpName.collect { storedName ->
+                if (!storedName.isNullOrBlank() && selectedDevice != null) {
+                    if (selectedDeviceName == null || selectedDeviceName == selectedDevice!!.first) {
+                        selectedDeviceName = storedName
+                        updateDeviceBox()
+                    }
                 }
             }
         }
@@ -219,30 +285,69 @@ class SettingsFragment : BaseTwoPaneFragment() {
         deviceStatusJob = viewLifecycleOwner.lifecycleScope.launch {
             var lastFix: Fix? = null
             var lastStatus: LocationStatus = LocationStatus.Idle
-            fun applyColor(tv: TextView?, fix: Fix?, external: Boolean) {
-                val colorRes = if (!external) android.R.color.holo_blue_dark else when (fix?.rtkStatus) {
-                    RtkStatus.FIX -> android.R.color.holo_green_dark
-                    RtkStatus.FLOAT -> android.R.color.holo_orange_dark
-                    RtkStatus.DGPS -> android.R.color.holo_blue_dark
-                    RtkStatus.SINGLE -> android.R.color.darker_gray
-                    RtkStatus.INVALID, null -> android.R.color.holo_red_dark
+            fun statusLine(status: LocationStatus, fix: Fix?): String {
+                val now = System.currentTimeMillis()
+                val effectiveStatus = if (status is LocationStatus.Idle && provisionalConnectedUntil > now && selectedDevice != null) {
+                    // Treat as streaming (provisional) until real streaming event or timeout
+                    LocationStatus.Streaming
+                } else status
+                return when (effectiveStatus) {
+                    is LocationStatus.Connecting -> "Connecting…"
+                    is LocationStatus.Error -> "Error"
+                    is LocationStatus.Streaming -> buildString {
+                        append("Connected")
+                        val fixPart = when (fix?.rtkStatus) {
+                            RtkStatus.FIX -> "Fixed RTK"
+                            RtkStatus.FLOAT -> "Float"
+                            RtkStatus.DGPS -> "DGPS"
+                            RtkStatus.SINGLE -> "Single"
+                            RtkStatus.INVALID -> "No Fix"
+                            null -> "No Fix"
+                        }
+                        append(" • ").append(fixPart)
+                        val satsUsed = fix?.satsUsed
+                        val satsVis = fix?.satsVisible
+                        if (satsUsed != null && satsVis != null) append(" • ").append("${satsUsed}/${satsVis} sats")
+                        fix?.pdop?.let { append(" • PDOP ").append(String.format(java.util.Locale.US, "%.1f", it)) }
+                        fix?.hdop?.let { append(" • HDOP ").append(String.format(java.util.Locale.US, "%.1f", it)) }
+                        fix?.baseStationId?.let { append(" • Base ").append(it) }
+                    }
+                    LocationStatus.Idle -> "Disconnected"
+                }
+            }
+            fun applyColor(tv: TextView?, status: LocationStatus, fix: Fix?, external: Boolean) {
+                val now = System.currentTimeMillis()
+                val effectiveStatus = if (status is LocationStatus.Idle && provisionalConnectedUntil > now && selectedDevice != null) {
+                    LocationStatus.Streaming
+                } else status
+                val colorRes = if (!external) android.R.color.holo_blue_dark else when {
+                    effectiveStatus is LocationStatus.Error -> android.R.color.holo_red_dark
+                    effectiveStatus is LocationStatus.Connecting -> android.R.color.holo_orange_dark
+                    fix?.rtkStatus == RtkStatus.FIX -> android.R.color.holo_green_dark
+                    fix?.rtkStatus == RtkStatus.FLOAT -> android.R.color.holo_orange_dark
+                    fix?.rtkStatus == RtkStatus.DGPS -> android.R.color.holo_blue_dark
+                    fix?.rtkStatus == RtkStatus.SINGLE -> android.R.color.darker_gray
+                    else -> android.R.color.holo_red_dark
                 }
                 tv?.setTextColor(requireContext().getColor(colorRes))
             }
             fun update() {
-                val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
-                val devLabel = if (externalActive) (selectedDeviceLabel ?: selectedDevice?.let { "${it.first}:${it.second}" }) else null
-                textDeviceStatus?.text = buildUnifiedStatusLine(
-                    lastStatus,
-                    lastFix,
-                    externalActive,
-                    devLabel
-                )
-                applyColor(textDeviceStatus, lastFix, externalActive)
+                val externalActive = view?.findViewById<RadioGroup>(R.id.radio_location_source)?.checkedRadioButtonId == R.id.radio_es2_tcp
+                val statusView = view?.findViewById<TextView>(R.id.text_device_status)
+                val show = externalActive && selectedDevice != null
+                if (show) {
+                    statusView?.visibility = View.VISIBLE
+                    statusView?.text = statusLine(lastStatus, lastFix)
+                } else {
+                    statusView?.visibility = View.GONE
+                }
+                applyColor(statusView, lastStatus, lastFix, externalActive)
             }
             val mgr = SurveyingApp.locationManager
-            launch { mgr.fixFlow.collect { f: Fix -> lastFix = f; update(); updateDeviceBox() } }
-            launch { mgr.statusFlow.collectLatest { s: LocationStatus -> lastStatus = s; update() } }
+            launch { mgr.fixFlow.collect { f: Fix -> lastFix = f; if (f != null) provisionalConnectedUntil = 0L; update(); updateDeviceBox() } }
+            launch { mgr.statusFlow.collectLatest { s: LocationStatus -> if (s is LocationStatus.Streaming) provisionalConnectedUntil = 0L; lastStatus = s; update() } }
+            // Initial forced update so UI reflects existing (idle) state immediately
+            update()
         }
         textDeviceStatus?.text = ""
 
@@ -256,12 +361,25 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
         var initializing = true
         lifecycleScope.launch {
+            // Early load stored host/port so UI can show device immediately after reopen
+            val storedHost = settingsRepo.externalTcpHost.first()
+            val storedPort = settingsRepo.externalTcpPort.first()
+            if (storedHost != null && storedPort != null && selectedDevice == null) {
+                selectedDevice = storedHost to storedPort
+                selectedDeviceLabel = selectedDeviceLabel ?: "$storedHost:$storedPort"
+                selectedDeviceName = selectedDeviceName ?: storedHost
+            }
             val source = settingsRepo.locationSource.first()
             val sel = if (source == LocationSourceType.EXTERNAL) R.id.radio_es2_tcp else R.id.radio_internal
             radioGroup?.check(sel)
             updateLocationSourceVisibility(source, internalGpsGroup)
-            rs2OptionsLayout?.visibility = if (sel == R.id.radio_es2_tcp) View.VISIBLE else View.GONE
-            deviceBox?.visibility = if (sel == R.id.radio_es2_tcp && selectedDevice != null) View.VISIBLE else View.GONE
+            // Now that radio is set, update device box with possibly restored device
+            updateDeviceBox()
+            // Attempt single auto reconnect if external source active and we have stored device
+            if (source == LocationSourceType.EXTERNAL && storedHost != null && storedPort != null && !autoReconnectAttempted) {
+                autoReconnectAttempted = true
+                connectViaTcpFlow(storedHost, storedPort)
+            }
             initializing = false
         }
 
@@ -298,10 +416,27 @@ class SettingsFragment : BaseTwoPaneFragment() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 16, 32, 0)
         }
-        val hostEdit = EditText(requireContext()).apply { hint = "IP Address or Hostname" }
+        val hostEdit = EditText(requireContext()).apply {
+            hint = "IP Address or Hostname"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
         val portEdit = EditText(requireContext()).apply {
             hint = "Port"; inputType = android.text.InputType.TYPE_CLASS_NUMBER; setText(R.string.default_port)
         }
+
+        // Pre-populate with last used IP address and port
+        lifecycleScope.launch {
+            val lastHost = settingsRepo.externalTcpHost.first()
+            val lastPort = settingsRepo.externalTcpPort.first()
+
+            if (!lastHost.isNullOrBlank()) {
+                hostEdit.setText(lastHost)
+            }
+            if (lastPort != null && lastPort != 9001) { // Only if different from default
+                portEdit.setText(lastPort.toString())
+            }
+        }
+
         container.addView(hostEdit); container.addView(portEdit)
         AlertDialog.Builder(requireContext())
             .setTitle("Manual Entry")
@@ -325,33 +460,101 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val progressBar = ProgressBar(ctx).apply { isIndeterminate = true }
         val statusText = TextView(ctx).apply { text = ctx.getString(R.string.scan_scanning_rs2); setPadding(0,12,0,12); textSize = 14f }
         val spinner = Spinner(ctx).apply { visibility = View.GONE }
-        dialogView.addView(progressBar); dialogView.addView(statusText); dialogView.addView(spinner)
+
+        // Add troubleshooting text
+        val troubleshootText = TextView(ctx).apply {
+            text = "Scanning network for RS2+ devices...\nMake sure device is on same WiFi network"
+            setPadding(0, 8, 0, 16)
+            textSize = 12f
+            setTextColor(ctx.getColor(android.R.color.darker_gray))
+        }
+
+        dialogView.addView(progressBar)
+        dialogView.addView(statusText)
+        dialogView.addView(troubleshootText)
+        dialogView.addView(spinner)
+
         val foundLabels = mutableListOf<String>()
         val deviceMap = LinkedHashMap<String, Pair<String, Int>>()
         val adapter = ArrayAdapter(ctx, android.R.layout.simple_spinner_dropdown_item, foundLabels)
         spinner.adapter = adapter
         var discoveryJob: Job? = null
+
         fun startDiscovery() {
-            discoveryJob?.cancel(); foundLabels.clear(); deviceMap.clear(); adapter.notifyDataSetChanged()
-            progressBar.visibility = View.VISIBLE; spinner.visibility = View.GONE
-            statusText.text = ctx.getString(R.string.scan_scanning_rs2)
+            discoveryJob?.cancel()
+            foundLabels.clear()
+            deviceMap.clear()
+            adapter.notifyDataSetChanged()
+            progressBar.visibility = View.VISIBLE
+            spinner.visibility = View.GONE
+            statusText.text = "Scanning devices..."
+            troubleshootText.text = "Phase 1: Scanning Bluetooth (10s)\nPhase 2: Network discovery (5s)\nPhase 3: Network sweep (if needed)"
+
             discoveryJob = viewLifecycleOwner.lifecycleScope.launch {
-                withTimeoutOrNull(10000L) {
-                    com.example.surveyingapp.util.ReachDiscoveryHelper.discoverReachDevices(ctx).collect { device ->
-                        if (!device.port9001Open) return@collect
-                        val label = (device.hostname ?: "RS2+") + " (${device.ip})"
-                        if (deviceMap.containsKey(label)) return@collect
-                        deviceMap[label] = device.ip to 9001
-                        foundLabels += label; adapter.notifyDataSetChanged()
-                        if (spinner.visibility != View.VISIBLE) {
-                            spinner.visibility = View.VISIBLE; progressBar.visibility = View.GONE
-                            statusText.text = ctx.getString(R.string.scan_select_device)
+                var deviceCount = 0
+
+                try {
+                    withTimeoutOrNull(25000L) { // Increased timeout for 3-phase discovery
+                        com.example.surveyingapp.util.ReachDiscoveryHelper.discoverReachDevices(ctx).collect { device ->
+                            deviceCount++
+
+                            // Enhanced label with discovery method and additional info
+                            val methodLabel = when (device.discoveryMethod) {
+                                "ble" -> "📱 BLE"
+                                "mdns" -> "🌐 mDNS"
+                                "http_sweep" -> "🔍 Network"
+                                else -> "❓ Unknown"
+                            }
+
+                            val baseLabel = if (device.hostname != null && device.hostname.isNotBlank()) {
+                                "${device.hostname} (${device.ip})"
+                            } else {
+                                // Use just the IP when no hostname instead of 'Device (...)'
+                                device.ip
+                            }
+
+                            val extraInfo = mutableListOf<String>()
+                            if (device.wifiSsid != null) extraInfo.add("WiFi: ${device.wifiSsid}")
+                            if (device.bluetoothAddress != null) extraInfo.add("BT: ${device.bluetoothAddress}")
+
+                            val label = if (extraInfo.isNotEmpty()) {
+                                "$baseLabel [$methodLabel] - ${extraInfo.joinToString(", ")}"
+                            } else {
+                                "$baseLabel [$methodLabel]"
+                            }
+
+                            // Accept devices with either port open
+                            if (device.port9001Open || device.port5000Open) {
+                                if (!deviceMap.containsKey(label)) {
+                                    deviceMap[label] = device.ip to 9001
+                                    foundLabels += label
+                                    adapter.notifyDataSetChanged()
+
+                                    if (spinner.visibility != View.VISIBLE) {
+                                        spinner.visibility = View.VISIBLE
+                                        progressBar.visibility = View.GONE
+                                        statusText.text = "Found devices - select one:"
+                                        troubleshootText.text = "Found ${foundLabels.size} device(s) via ${device.discoveryMethod.uppercase()}"
+                                    } else {
+                                        troubleshootText.text = "Found ${foundLabels.size} device(s)"
+                                    }
+                                }
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Device discovery error", e)
                 }
+
                 if (isActive) {
-                    if (deviceMap.isEmpty()) { progressBar.visibility = View.GONE; statusText.text = ctx.getString(R.string.scan_none_found) }
-                    else if (statusText.text.toString() == ctx.getString(R.string.scan_scanning_rs2)) statusText.text = ctx.getString(R.string.scan_select_device)
+                    if (deviceMap.isEmpty()) {
+                        progressBar.visibility = View.GONE
+                        statusText.text = "No devices found"
+                        troubleshootText.text = "No RS2+ devices found.\n\nTroubleshooting:\n• Ensure device is powered on and Bluetooth enabled\n• Check WiFi connection to same network\n• Try manual IP entry\n• Enable location permissions for BLE scanning"
+                    } else if (statusText.text.toString().contains("Scanning")) {
+                        statusText.text = "Found devices - select one:"
+                        troubleshootText.text = "Found ${foundLabels.size} device(s)"
+                    }
                 }
             }
         }
@@ -427,6 +630,25 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                 settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                 settingsRepo.setExternalTcp(host, port)
+                // Provisional connected state for up to 8s while LocationManager transitions from Idle
+                provisionalConnectedUntil = System.currentTimeMillis() + 8000L
+                updateDeviceBox()
+                view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
+                    tv.visibility = View.VISIBLE
+                    tv.text = "Connected • No Fix"
+                    tv.setTextColor(requireContext().getColor(android.R.color.holo_orange_dark))
+                }
+                // Resolve friendly Reach name
+                if (selectedDeviceName == null || selectedDeviceName == host) {
+                    launch {
+                        val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
+                        if (!resolved.isNullOrBlank() && isAdded) {
+                            selectedDeviceName = resolved
+                            settingsRepo.setExternalTcpName(resolved)
+                            updateDeviceBox()
+                        }
+                    }
+                }
             } else {
                 Toast.makeText(requireContext(), "TCP connection failed", Toast.LENGTH_SHORT).show()
             }
