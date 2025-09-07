@@ -1,186 +1,241 @@
 package com.example.surveyingapp.service
 
+import android.app.Notification
+import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import androidx.core.app.NotificationCompat
+import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.data.location.nmea.NmeaSource
 import com.example.surveyingapp.domain.model.Fix
-import com.example.surveyingapp.domain.model.LocationStatus
-import com.example.surveyingapp.domain.model.Provider
-import com.example.surveyingapp.domain.model.TimestampSource
 import com.example.surveyingapp.domain.model.LocationSourceType
-import com.example.surveyingapp.domain.model.ExternalConnectionType
-import kotlin.time.Duration
-import kotlin.time.DurationUnit
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import java.util.Locale
+import com.example.surveyingapp.domain.model.LocationStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.distinctUntilChanged
 
+/**
+ * Foreground service that:
+ *  - Keeps location alive while app is backgrounded.
+ *  - Shows a robust, flicker-free notification with source and RTK state.
+ */
 class LocationService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var lastFix: Fix? = null
-    @Volatile private var lastConnType: ExternalConnectionType = ExternalConnectionType.BT
-    @Volatile private var lastSource: LocationSourceType = LocationSourceType.INTERNAL
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        isRunning = true
-        LocationNotifications.ensureChannel(this)
-        // Start foreground immediately with provisional title
-        startForeground(NOTIF_ID, LocationNotifications.build(this, initialTitle(), "Starting"))
-        collectSettings()
-        collectStreams()
-    }
-
-    private fun initialTitle(): String = try {
-        val src = runBlocking { SurveyingApp.settingsRepo.locationSource.first() }
-        if (src == LocationSourceType.EXTERNAL) {
-            val ct = runBlocking { SurveyingApp.settingsRepo.externalConnType.first() }
-            "Location: RS2+ (${ct.name})"
-        } else "Location: Internal"
-    } catch (_: Exception) { "Location: Internal" }
-
-    private fun collectSettings() {
-        scope.launch {
-            SurveyingApp.settingsRepo.externalConnType.collectLatest { ct ->
-                lastConnType = ct
-                updateNotification()
-            }
-        }
-        scope.launch {
-            SurveyingApp.settingsRepo.locationSource.collectLatest { src ->
-                lastSource = src
-                updateNotification()
-            }
-        }
-    }
-
-    private fun collectStreams() {
-        val mgr = SurveyingApp.locationManager
-        scope.launch {
-            mgr.fixFlow.collectLatest { fix ->
-                lastFix = fix
-                updateNotification()
-            }
-        }
-        scope.launch { mgr.statusFlow.collectLatest { _ -> updateNotification() } }
-    }
-
-    private fun updateNotification() {
-        val status = SurveyingApp.locationManager.statusFlow.value
-        val fix = lastFix
-        // Build the notification title: reflects high‑level streaming / connection state
-        val baseTitle = when (status) {
-            is LocationStatus.Connecting -> "Location: Connecting (${status.attempt})" // show attempt count
-            is LocationStatus.Error -> "Location: Error" // error state; details in text body
-            LocationStatus.Idle -> "Location: Idle" // no active streams
-            is LocationStatus.Streaming -> {
-                val internal = fix?.provider == Provider.INTERNAL || (fix == null && lastSource == LocationSourceType.INTERNAL)
-                if (internal) "Location: Internal" else "Location: RS2+ (${lastConnType.name})"
-            }
-            else -> "Location: Idle"
-        }
-        // Build the detail text line (compact, comma‑separated telemetry)
-        val text = when (status) {
-            is LocationStatus.Connecting -> "Connecting…" // transitional state
-            is LocationStatus.Error -> status.message // bubble up message
-            LocationStatus.Idle -> "Idle" // nothing active
-            is LocationStatus.Streaming -> fix?.let { f ->
-                // Solution state (prefer explicit RTK status; otherwise derive from provider)
-                val state = f.rtkStatus?.name ?: when (f.provider) {
-                    Provider.INTERNAL -> "INTERNAL" // fused / device GNSS
-                    Provider.RS2_BT, Provider.RS2_TCP -> "NO FIX" // external but no quality yet
-                    else -> "NO FIX"
-                }
-                // Satellite counts: used / (visible) if we know both
-                val satsUsedPart = f.satsUsed?.toString() ?: "--"
-                val satsVisPart = f.satsVisible?.let { "/$it" } ?: ""
-                val satsPart = "$satsUsedPart$satsVisPart sats"
-                // Dilution metrics (optional)
-                val hdopPart = f.hdop?.let { "HDOP ${it.format(1)}" }
-                val pdopPart = f.pdop?.let { "PDOP ${it.format(1)}" }
-                // Accuracy: prefer horizontal/vertical; fall back to legacy single accuracy
-                val hAccPart = f.hAccM?.let { "HACC ${it.format(1)}m" } ?: f.accuracyM?.let { "ACC ${it.format(1)}m" }
-                val vAccPart = f.vAccM?.let { "VACC ${it.format(1)}m" }
-                // Correction age (Duration -> seconds w/ tenths); only if we have external corrections
-                val agePart = f.diffAge?.let { d: Duration ->
-                    val sec = d.toDouble(DurationUnit.MILLISECONDS) / 1000.0
-                    "AGE ${String.format(Locale.US, "%.1fs", sec)}"
-                }
-                // Heights: show both orthometric (MSL) and ellipsoidal when geoid info available
-                val altEllip = f.altEllipsoidalM
-                val altMsl = f.altOrthometricM
-                val altPart = when {
-                    altEllip != null && altMsl != null -> "ALT ${altMsl.format(2)}m MSL / ${altEllip.format(2)}m ellip"
-                    altEllip != null -> "ALT ${altEllip.format(2)}m"
-                    else -> null
-                }
-                // Geoid separation (N) if known
-                val geoidPart = if (f.geoidSeparationM != null) "N ${f.geoidSeparationM.format(1)}m" else null
-                // Timestamp source (helps diagnose stale or fallback time modes)
-                val tsSrcPart = f.timestampSource?.let { src ->
-                    val tag = when (src) {
-                        TimestampSource.NMEA_RMC -> "RMC"
-                        TimestampSource.NMEA_GGA -> "GGA"
-                        TimestampSource.DEVICE -> "DEV"
-                        TimestampSource.SYSTEM -> "SYS"
-                    }
-                    "TS $tag"
-                }
-                // Assemble visible, non‑null parts into a concise status line
-                listOf(state, satsPart, hdopPart, pdopPart, hAccPart, vAccPart, altPart, geoidPart, agePart, tsSrcPart)
-                    .filterNotNull()
-                    .joinToString(", ")
-            } ?: if (lastSource == LocationSourceType.INTERNAL) "Waiting for fused fix…" else "Waiting for RS2+ fix…"
-            else -> "Idle"
-        }
-        // Post / update the foreground notification
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIF_ID, LocationNotifications.build(this, baseTitle, text))
-    }
-
-    override fun onDestroy() {
-        scope.cancel()
-        isRunning = false
-        super.onDestroy()
-    }
 
     companion object {
-        /** Internal notification ID for the persistent foreground service notification. */
+        private const val CHANNEL_ID = "surveying_location"
+        private const val CHANNEL_NAME = "Surveying Location"
         private const val NOTIF_ID = 41
 
-        /** True while the service has been created and not yet destroyed. */
-        @Volatile var isRunning: Boolean = false
+        private const val ACTION_START = "com.example.surveyingapp.action.START_LOCATION"
+        private const val ACTION_STOP  = "com.example.surveyingapp.action.STOP_LOCATION"
 
-        /**
-         * Start (or elevate) the service to foreground mode.
-         * Safe to call repeatedly; Android will route to onCreate only once while running.
-         */
+        @Volatile var isRunning: Boolean = false
+            private set
+
+        /** Starts the foreground service immediately. */
         fun start(context: Context) {
-            LocationNotifications.ensureChannel(context)
-            val intent = Intent(context, LocationService::class.java)
+            val intent = Intent(context, LocationService::class.java).setAction(ACTION_START)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
                 context.startService(intent)
             }
         }
-        /** Stop the foreground service if running. */
+
+        /** Requests the service to stop. */
         fun stop(context: Context) {
-            context.stopService(Intent(context, LocationService::class.java))
+            val intent = Intent(context, LocationService::class.java).setAction(ACTION_STOP)
+            context.startService(intent)
         }
     }
-}
 
-/**
- * Format a Double to the given decimal places (locale US) trimming surrounding whitespace.
- * NOTE: Format string includes a leading space for positive values; we trim() to remove it.
- */
-private fun Double.format(dec: Int) = String.format(Locale.US, "% .${'$'}{dec}f", this).trim()
+    // Use the app-level singletons you already have wired.
+    private val locationManager by lazy { SurveyingApp.locationManager }
+    private val settingsRepo   by lazy { SurveyingApp.settingsRepo }
+
+    private val serviceJob: Job = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.Main.immediate + serviceJob)
+
+    private var lastFix: Fix? = null
+    private var lastStatus: LocationStatus = LocationStatus.Idle
+    private var lastActiveSource: LocationSourceType? = null
+    private var lastExternalConn: NmeaSource.ConnectionType? = null
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        isRunning = true
+        ensureChannel()
+        startForeground(NOTIF_ID, buildNotification("Location: Starting…", "Initializing"))
+        bindFlows()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                // Already started in onCreate; nothing else needed.
+            }
+            ACTION_STOP -> {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        isRunning = false
+        scope.cancel()
+    }
+
+    // --- Flow bindings ---
+
+    private fun bindFlows() {
+        // 1) Service/engine status
+        locationManager.statusFlow
+            .onEach { st ->
+                lastStatus = st
+                updateNotification()
+            }
+            .launchIn(scope)
+
+        // 2) Selected source (from settings repo)
+        settingsRepo.locationSource
+            .distinctUntilChanged()
+            .onEach { src ->
+                lastActiveSource = src
+                updateNotification()
+            }
+            .launchIn(scope)
+
+        // 3) External connection type (BT/TCP)
+        locationManager.externalConnectionType
+            .onEach { conn ->
+                lastExternalConn = conn
+                if (lastActiveSource == LocationSourceType.EXTERNAL) updateNotification()
+            }
+            .launchIn(scope)
+
+        // 4) Fixes
+        locationManager.fixFlow
+            .onEach { fix ->
+                lastFix = fix
+                updateNotification()
+            }
+            .launchIn(scope)
+    }
+
+    // --- Notification ---
+
+    private fun updateNotification() {
+        val status = lastStatus
+        val src = lastActiveSource
+        val fix = lastFix
+
+        val title = when (status) {
+            is LocationStatus.Connecting -> "Location: Connecting (${status.attempt})"
+            is LocationStatus.Error      -> "Location: Error"
+            LocationStatus.Idle          -> "Location: Idle"
+            is LocationStatus.Streaming  -> when (src) {
+                LocationSourceType.INTERNAL -> "Location: Internal"
+                LocationSourceType.EXTERNAL -> {
+                    val tag = when (lastExternalConn) {
+                        NmeaSource.ConnectionType.BT  -> "RS2+ (BT)"
+                        NmeaSource.ConnectionType.TCP -> "RS2+ (TCP)"
+                        null                          -> "RS2+"
+                    }
+                    "Location: $tag"
+                }
+                null -> "Location: Streaming"
+            }
+        }
+
+        val text = when (status) {
+            is LocationStatus.Connecting -> "Connecting to selected source…"
+            is LocationStatus.Error      -> status.message
+            LocationStatus.Idle          -> "Idle"
+            is LocationStatus.Streaming  -> {
+                if (fix != null) {
+                    val state = fix.rtkStatus?.name ?: if (src == LocationSourceType.INTERNAL) "INTERNAL" else "NO FIX"
+                    val satsUsedPart = fix.satsUsed?.toString() ?: "--"
+                    val satsVisPart  = fix.satsVisible?.let { "/$it" } ?: ""
+                    val hAcc = fix.hAccM?.let { "±${fmt(it, 1)} m" } ?: "—"
+                    val alt = when {
+                        fix.altOrthometricM != null && fix.geoidSeparationM != null ->
+                            "${fmt(fix.altOrthometricM!!, 2)} m MSL (ΔN ${fmt(fix.geoidSeparationM!!, 2)})"
+                        fix.altEllipsoidalM != null -> "${fmt(fix.altEllipsoidalM!!, 2)} m ellip."
+                        else -> "—"
+                    }
+                    "State: $state • Sats: $satsUsedPart$satsVisPart • H-Acc: $hAcc • Alt: $alt"
+                } else {
+                    if (src == LocationSourceType.INTERNAL &&
+                        (lastExternalConn != null) &&
+                        isExternalRequested()
+                    ) "Streaming (Fallback: Internal while external connects…)"
+                    else "Streaming…"
+                }
+            }
+        }
+
+        val notif = buildNotification(title, text)
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIF_ID, notif)
+    }
+
+    private fun buildNotification(title: String, text: String): Notification {
+        val openIntent = packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
+            PendingIntent.getActivity(
+                this,
+                0,
+                launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+        }
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_location) // ensure this exists in mipmap/drawable
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .setContentIntent(openIntent)
+            .build()
+    }
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "GNSS/RTK foreground service"
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+        }
+    }
+
+    private fun isExternalRequested(): Boolean {
+        // If an external connection type is known but source reports INTERNAL, we’re in fallback
+        return lastExternalConn != null && lastActiveSource == LocationSourceType.INTERNAL
+    }
+
+    private fun fmt(v: Double, digits: Int): String =
+        String.format(java.util.Locale.US, "%.${digits}f", v)
+}

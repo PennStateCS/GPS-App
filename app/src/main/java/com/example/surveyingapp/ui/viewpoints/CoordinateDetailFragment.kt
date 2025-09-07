@@ -20,7 +20,6 @@ import java.util.Locale
 import android.widget.TextView
 import com.example.surveyingapp.domain.model.Coordinate
 import com.google.android.gms.maps.MapView
-import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.model.LatLng
@@ -28,6 +27,10 @@ import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.example.surveyingapp.ui.viewpoints.EditCoordinateDialogFragment
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import com.example.surveyingapp.SurveyingApp
+import com.google.android.gms.maps.model.Marker
 
 class CoordinateDetailFragment : Fragment() {
 
@@ -54,8 +57,6 @@ class CoordinateDetailFragment : Fragment() {
     private var textSats: TextView? = null
     private var textCorrection: TextView? = null
     private var textProjection: TextView? = null
-    private var textStdDev: TextView? = null
-    private var textAveraging: TextView? = null
     private var badgeRtk: TextView? = null
     private var badgeAccuracy: TextView? = null
     private var rowBadges: View? = null
@@ -83,18 +84,16 @@ class CoordinateDetailFragment : Fragment() {
         textSats = v.findViewById(R.id.text_sats)
         textCorrection = v.findViewById(R.id.text_correction)
         textProjection = v.findViewById(R.id.text_projection)
-        textStdDev = v.findViewById(R.id.text_stddev)
-        textAveraging = v.findViewById(R.id.text_averaging)
         badgeRtk = v.findViewById(R.id.badge_rtk)
         badgeAccuracy = v.findViewById(R.id.badge_accuracy)
         rowBadges = v.findViewById(R.id.row_badges)
         mapView = v.findViewById(R.id.mapView)
         textDate = v.findViewById(R.id.text_date)
         mapView?.onCreate(savedInstanceState)
-        mapView?.getMapAsync(OnMapReadyCallback { map ->
+        mapView?.getMapAsync { map ->
             googleMap = map
             lastCoordinate?.let { updateMapMarker(it) }
-        })
+        }
         return v
     }
 
@@ -195,10 +194,8 @@ class CoordinateDetailFragment : Fragment() {
         textSats?.text = "--"
         textCorrection?.text = "--"
         textProjection?.text = "--"
-        textStdDev?.text = "--"
-        textAveraging?.text = "--"
         textDate?.text = "--"
-        // Keep everything visible (remove hiding logic)
+        // Removed: std dev and averaging placeholders
     }
 
     private fun bindCoordinate(c: Coordinate) {
@@ -242,18 +239,7 @@ class CoordinateDetailFragment : Fragment() {
         c.crsEpsg?.let { projVals += "$it" }
         textProjection?.text = if (projVals.isNotEmpty()) projVals.joinToString(" · ") else "--"
 
-        // Standard deviations (Lat · Lon · Alt) values only with ± symbol
-        val stdVals = mutableListOf<String>()
-        c.stdLatM?.let { stdVals += String.format(Locale.US, "±%.2f m", it) }
-        c.stdLonM?.let { stdVals += String.format(Locale.US, "±%.2f m", it) }
-        c.stdAltM?.let { stdVals += String.format(Locale.US, "±%.2f m", it) }
-        textStdDev?.text = if (stdVals.isNotEmpty()) stdVals.joinToString(" · ") else "--"
-
-        // Averaging (samples · duration)
-        val avgVals = mutableListOf<String>()
-        c.averagedSamples?.let { avgVals += "$it samples" }
-        c.averageDurationMs?.let { avgVals += String.format(Locale.US, "%.1fs", it / 1000.0) }
-        textAveraging?.text = if (avgVals.isNotEmpty()) avgVals.joinToString(" · ") else "--"
+        // Removed: Std Dev and Averaging rows
 
         applyRtkBadge(c)
         applyAccuracyBadge(c)

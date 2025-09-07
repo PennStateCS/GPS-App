@@ -13,6 +13,8 @@ import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.util.GeoProjection
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.osmdroid.config.Configuration
@@ -55,6 +57,37 @@ class SurveyingApp : Application() {
         Log.d("SurveyingApp","Application started; global crash handler & osmdroid config done")
         setupLocationStack() // Initialize GNSS / fused location pipeline
         createNotificationChannel() // Required for foreground service notifications on O+
+
+        // One-time lightweight backfill: populate UTM fields if missing
+        runUtmBackfill()
+    }
+
+    private fun runUtmBackfill() {
+        try {
+            appScope.launch(Dispatchers.IO) {
+                val db = AppDatabase.getDatabase(this@SurveyingApp)
+                val dao = db.coordinateDao()
+                val list = kotlin.runCatching { dao.getAllCoordinatesList() }.getOrNull() ?: return@launch
+                var updated = 0
+                list.forEach { e ->
+                    if (e.easting == null || e.northing == null || e.utmZone == null) {
+                        try {
+                            val utm = GeoProjection.wgs84ToUtm(e.latitude, e.longitude)
+                            val copy = e.copy(
+                                easting = utm.easting,
+                                northing = utm.northing,
+                                utmZone = utm.zoneString
+                            )
+                            dao.update(copy)
+                            updated++
+                        } catch (_: Exception) { /* ignore bad lat/lon */ }
+                    }
+                }
+                if (updated > 0) Log.d("SurveyingApp", "UTM backfill updated $updated coordinate(s)")
+            }
+        } catch (t: Throwable) {
+            Log.w("SurveyingApp", "UTM backfill skipped: ${t.message}")
+        }
     }
 
     private fun setupLocationStack() {

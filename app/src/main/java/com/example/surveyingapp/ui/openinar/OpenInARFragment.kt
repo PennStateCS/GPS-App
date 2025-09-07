@@ -90,6 +90,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     label == other.label &&
                     rgba.contentEquals(other.rgba)
         }
+
         override fun hashCode(): Int {
             var result = lat.hashCode()
             result = 31 * result + lng.hashCode()
@@ -114,7 +115,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val mvp = FloatArray(16)     // Model-view-projection matrix
 
     // Thread-safe touch input handling
-    @Volatile private var queuedTap: PointF? = null
+    @Volatile
+    private var queuedTap: PointF? = null
 
     // State flags for error recovery and user experience
     private var attemptedEarthRestart = false
@@ -156,7 +158,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
         // Load preferences
-        prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs =
+            requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
         applyHighAccuracyPreference()
         return binding.root
     }
@@ -200,7 +203,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             binding.textArStatus.text = getString(R.string.ar_running)
         } catch (_: CameraNotAvailableException) {
             binding.textArStatus.text = getString(R.string.camera_unavailable)
-            try { session?.pause() } catch (_: Exception) {}
+            try {
+                session?.pause()
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -210,7 +216,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onPause() {
         super.onPause()
         binding.glSurfaceViewAr.onPause()
-        try { session?.pause() } catch (_: Exception) {}
+        try {
+            session?.pause()
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -220,12 +229,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         super.onDestroyView()
         prefs = null
         // Clean up anchors
-        try { demoAnchor?.detach() } catch (_: Exception) {}
+        try {
+            demoAnchor?.detach()
+        } catch (_: Exception) {
+        }
         demoAnchor = null
-        for ((anchor, _) in geoAnchors) try { anchor.detach() } catch (_: Exception) {}
+        for ((anchor, _) in geoAnchors) try {
+            anchor.detach()
+        } catch (_: Exception) {
+        }
         geoAnchors.clear()
         // Clean up AR session
-        try { session?.close() } catch (_: Exception) {}
+        try {
+            session?.close()
+        } catch (_: Exception) {
+        }
         session = null
         _binding = null
     }
@@ -249,7 +267,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Check location permission and request if needed
      */
     private fun checkAndRequestLocationPermission(): Boolean {
-        return if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+        return if (ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
             == PackageManager.PERMISSION_GRANTED
         ) true else {
             locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -303,12 +324,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private fun checkInstallation() {
         try {
-            val status = ArCoreApk.getInstance().requestInstall(requireActivity(), !installRequested)
+            val status =
+                ArCoreApk.getInstance().requestInstall(requireActivity(), !installRequested)
             when (status) {
                 ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
                     installRequested = true
                     binding.textArStatus.text = "Requesting ARCore install..."
                 }
+
                 ArCoreApk.InstallStatus.INSTALLED -> tryCreateSession()
             }
         } catch (_: UnavailableUserDeclinedInstallationException) {
@@ -327,6 +350,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             ArCoreApk.Availability.SUPPORTED_INSTALLED -> tryCreateSession()
             ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
             ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> checkInstallation()
+
             ArCoreApk.Availability.UNKNOWN_CHECKING -> {
                 // Poll until availability is determined
                 if (!availabilityPolling) {
@@ -337,6 +361,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     }, 200)
                 }
             }
+
             else -> {
                 binding.textArStatus.text = when (availability) {
                     ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "Device not compatible"
@@ -374,7 +399,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (camGeo.horizontalAccuracy > 20.0) return
 
         // Clean up existing anchors
-        for ((a, _) in geoAnchors) try { a.detach() } catch (_: Exception) {}
+        for ((a, _) in geoAnchors) try {
+            a.detach()
+        } catch (_: Exception) {
+        }
         geoAnchors.clear()
 
         // Create new anchors for each coordinate
@@ -421,7 +449,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Check if device has internet connectivity for geospatial localization
      */
     private fun hasNetwork(): Boolean {
-        val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm =
+            requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val nw = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(nw) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -469,7 +498,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glViewport(0, 0, width, height)
         // rotationHelper.onSurfaceChanged(width, height) // removed
         // Fixed landscape: set display geometry once
-        try { session?.setDisplayGeometry(Surface.ROTATION_90, width, height) } catch (_: Exception) {}
+        try {
+            session?.setDisplayGeometry(Surface.ROTATION_90, width, height)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -497,12 +529,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         // Create anchors once when ready
                         rebuildGeoAnchorsIfNeeded()
                     }
+
                     TrackingState.PAUSED -> {
                         earthStatus = "Earth: PAUSED (localizing…)"
                         binding.textArStatus.post {
-                            binding.textArStatus.text = "Localizing... Please wait or move to an open area with a clear view of the sky."
+                            binding.textArStatus.text =
+                                "Localizing... Please wait or move to an open area with a clear view of the sky."
                         }
                     }
+
                     TrackingState.STOPPED -> {
                         earthStatus = "Earth: STOPPED"
                         tryRestartEarthOnce()
@@ -519,11 +554,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     val hits = frame.hitTest(pt.x, pt.y)
                     for (hit in hits) {
                         val trackable = hit.trackable
-                        val isPlaneHit = trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
+                        val isPlaneHit =
+                            trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
                         val isPointHit = trackable is Point &&
                                 trackable.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL
                         if (isPlaneHit || isPointHit) {
-                            try { demoAnchor?.detach() } catch (_: Exception) {}
+                            try {
+                                demoAnchor?.detach()
+                            } catch (_: Exception) {
+                            }
                             demoAnchor = hit.createAnchor()
                             break
                         }
@@ -588,10 +627,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glGenTextures(1, textures, 0)
         val texId = textures[0]
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texId)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_WRAP_S,
+            GLES30.GL_CLAMP_TO_EDGE
+        )
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_WRAP_T,
+            GLES30.GL_CLAMP_TO_EDGE
+        )
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_MIN_FILTER,
+            GLES30.GL_LINEAR
+        )
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_MAG_FILTER,
+            GLES30.GL_LINEAR
+        )
         return texId
     }
 
@@ -600,14 +655,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private val ndcQuad = floatArrayOf(
             -1f, -1f,
             1f, -1f,
-            -1f,  1f,
-            1f,  1f
+            -1f, 1f,
+            1f, 1f
         )
         private val quadPos = floatArrayOf(
             -1f, -1f, 0f,
             1f, -1f, 0f,
-            -1f,  1f, 0f,
-            1f,  1f, 0f
+            -1f, 1f, 0f,
+            1f, 1f, 0f
         )
         private val posBuffer: FloatBuffer = ByteBuffer.allocateDirect(quadPos.size * 4)
             .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(quadPos); position(0) }
@@ -618,10 +673,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         private val program: Int
         private val attribPos = 0
-        private val attribUv  = 1
+        private val attribUv = 1
         private var haveValidUvs = false
 
-        init { program = createProgram(VS_BG, FS_BG) }
+        init {
+            program = createProgram(VS_BG, FS_BG)
+        }
 
         fun draw(frame: Frame, oesTexId: Int) {
             if (oesTexId <= 0) return
@@ -681,6 +738,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -749,12 +807,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
                 val needed = worldVerts.size * 4
                 if (lineBuffer.capacity() * 4 < needed) {
-                    lineBuffer = ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                    lineBuffer = ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder())
+                        .asFloatBuffer()
                 }
                 lineBuffer.clear(); lineBuffer.put(worldVerts); lineBuffer.rewind()
 
                 lineBuffer.position(0)
-                GLES30.glVertexAttribPointer(attribPos, 3, GLES30.GL_FLOAT, false, 3 * 4, lineBuffer)
+                GLES30.glVertexAttribPointer(
+                    attribPos,
+                    3,
+                    GLES30.GL_FLOAT,
+                    false,
+                    3 * 4,
+                    lineBuffer
+                )
                 GLES30.glEnableVertexAttribArray(attribPos)
                 GLES30.glDrawArrays(GLES30.GL_LINE_LOOP, 0, vertCount)
                 GLES30.glDisableVertexAttribArray(attribPos)
@@ -787,6 +853,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -829,7 +896,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val pts = pointCloud.points
             val totalFloats = pts.limit()
             val count = totalFloats / 4
-            if (count <= 0) { pointCloud.release(); return 0 }
+            if (count <= 0) {
+                pointCloud.release(); return 0
+            }
 
             val xyz = FloatArray(count * 3)
             pts.rewind()
@@ -843,7 +912,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
             val needed = xyz.size * 4
             if (pointBuffer.capacity() * 4 < needed) {
-                pointBuffer = ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                pointBuffer =
+                    ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder()).asFloatBuffer()
             }
             pointBuffer.clear(); pointBuffer.put(xyz); pointBuffer.rewind()
 
@@ -891,6 +961,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -919,27 +990,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private val s = 0.05f // 10 cm half-size
         private val cubeVerts = floatArrayOf(
             // Front
-            -s,-s, s,   s,-s, s,   s, s, s,
-            -s,-s, s,   s, s, s,  -s, s, s,
+            -s, -s, s, s, -s, s, s, s, s,
+            -s, -s, s, s, s, s, -s, s, s,
             // Back
-            -s,-s,-s,  -s, s,-s,   s, s,-s,
-            -s,-s,-s,   s, s,-s,   s,-s,-s,
+            -s, -s, -s, -s, s, -s, s, s, -s,
+            -s, -s, -s, s, s, -s, s, -s, -s,
             // Left
-            -s,-s,-s,  -s,-s, s,  -s, s, s,
-            -s,-s,-s,  -s, s, s,  -s, s,-s,
+            -s, -s, -s, -s, -s, s, -s, s, s,
+            -s, -s, -s, -s, s, s, -s, s, -s,
             // Right
-            s,-s,-s,   s, s,-s,   s, s, s,
-            s,-s,-s,   s, s, s,   s,-s, s,
+            s, -s, -s, s, s, -s, s, s, s,
+            s, -s, -s, s, s, s, s, -s, s,
             // Top
-            -s, s,-s,  -s, s, s,   s, s, s,
-            -s, s,-s,   s, s, s,   s, s,-s,
+            -s, s, -s, -s, s, s, s, s, s,
+            -s, s, -s, s, s, s, s, s, -s,
             // Bottom
-            -s,-s,-s,   s,-s,-s,   s,-s, s,
-            -s,-s,-s,   s,-s, s,  -s,-s, s
+            -s, -s, -s, s, -s, -s, s, -s, s,
+            -s, -s, -s, s, -s, s, -s, -s, s
         )
 
         private val vb: FloatBuffer =
-            ByteBuffer.allocateDirect(cubeVerts.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
+            ByteBuffer.allocateDirect(cubeVerts.size * 4).order(ByteOrder.nativeOrder())
+                .asFloatBuffer().apply {
                 put(cubeVerts); position(0)
             }
 
@@ -988,6 +1060,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -1061,13 +1134,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         timestamp = timestamp,
         icon = icon,
         color = color,
-        provider = provider,
-        rtkStatus = rtkStatus,
+        provider = provider.name,
+        rtkStatus = rtkStatus?.name,
         satsUsed = satsUsed,
         hdop = hdop,
         horizontalAccuracyM = horizontalAccuracyM,
         verticalAccuracyM = verticalAccuracyM,
-        correctionSource = correctionSource,
+        correctionSource = correctionSource?.name,
         correctionAgeS = correctionAgeS,
         altitudeMsl = altitudeMsl,
         geoidSeparationM = geoidSeparationM,
