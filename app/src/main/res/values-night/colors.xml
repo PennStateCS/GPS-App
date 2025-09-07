@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night theme overrides for chart colors -->
+    <color name="chart_axis">#888888</color>
+    <color name="chart_grid">#555555</color>
+    <color name="chart_text">#EEEEEE</color>
+    <color name="chart_title">#FFFFFFFF</color>
+    <color name="chart_bar_strong">@color/status_fix</color>
+    <color name="chart_bar_medium">@color/status_float</color>
+    <color name="chart_bar_weak">@color/status_no_fix</color>
+    <color name="chart_bar_unused">#90A4AE</color>
+</resources>
+

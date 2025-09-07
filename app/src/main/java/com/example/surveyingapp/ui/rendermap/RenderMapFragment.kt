@@ -26,6 +26,11 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.widget.TextView
 import android.widget.Button
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import com.example.surveyingapp.SurveyingApp
+import kotlinx.coroutines.launch
 
 class RenderMapFragment : Fragment() {
     private var mapView: MapView? = null
@@ -68,6 +73,9 @@ class RenderMapFragment : Fragment() {
 
     private val boundaryLines = mutableListOf<Polyline>()
     private var showBoundaries = false
+
+    private var currentMarker: Marker? = null
+    private var lastFixLatLng: LatLng? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -119,6 +127,8 @@ class RenderMapFragment : Fragment() {
                 if (!cameraInitialized && lastLatLngs.isNotEmpty()) updateCamera(lastLatLngs)
             }
             bindData()
+            // Start collecting live fixes once map is ready
+            startFixCollection()
         }
         toggleSatBtn?.setOnClickListener { toggleSatellite() }
         gridBtn?.setOnClickListener { toggleGrid() }
@@ -132,6 +142,29 @@ class RenderMapFragment : Fragment() {
             panelCollapsed = savedInstanceState.getBoolean("panelCollapsed", false)
         }
         return root
+    }
+
+    private fun startFixCollection() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                try {
+                    SurveyingApp.locationManager.fixFlow.collect { fix ->
+                        updateCurrentMarker(fix.lat, fix.lon)
+                    }
+                } catch (_: Exception) { /* ignore */ }
+            }
+        }
+    }
+
+    private fun updateCurrentMarker(lat: Double, lon: Double) {
+        val map = googleMap ?: return
+        val pos = LatLng(lat, lon)
+        lastFixLatLng = pos
+        if (currentMarker == null) {
+            currentMarker = map.addMarker(MarkerOptions().position(pos).title("Current"))
+        } else {
+            try { currentMarker?.position = pos } catch (_: Exception) {}
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -245,7 +278,15 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    private fun recenterMap() { updateCamera(markerMap.filter { it.value.isVisible }.values.map { it.position }) }
+    private fun recenterMap() {
+        val map = googleMap ?: return
+        val live = lastFixLatLng
+        if (live != null) {
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(live, 20f))
+            return
+        }
+        updateCamera(markerMap.filter { it.value.isVisible }.values.map { it.position })
+    }
     private fun toggleSatellite() {
         isSatellite = !isSatellite
         googleMap?.mapType = if (isSatellite) GoogleMap.MAP_TYPE_HYBRID else GoogleMap.MAP_TYPE_NORMAL

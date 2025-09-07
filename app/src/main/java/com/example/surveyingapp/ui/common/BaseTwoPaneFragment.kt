@@ -81,4 +81,19 @@ abstract class BaseTwoPaneFragment : Fragment() {
         placeholderView.visibility = View.GONE
         internalContentContainer.addView(view)
     }
+
+    /** Allow subclasses to refresh the left-hand categories dynamically. */
+    protected fun updateCategoriesDynamic(newCategories: List<SettingsCategory>) {
+        val prevSelectedId = adapter.getSelectedCategoryId()
+        adapter.updateCategories(newCategories)
+        val stillSelectedId = adapter.getSelectedCategoryId()
+        if (stillSelectedId == null && newCategories.isNotEmpty()) {
+            val first = newCategories.first()
+            adapter.setSelectedCategoryId(first.id)
+            showCategory(first)
+        } else if (prevSelectedId != null && newCategories.none { it.id == prevSelectedId }) {
+            // Previously selected category removed; load the first available
+            newCategories.firstOrNull()?.let { showCategory(it); adapter.setSelectedCategoryId(it.id) }
+        }
+    }
 }

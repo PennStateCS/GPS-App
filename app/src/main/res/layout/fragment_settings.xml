@@ -250,6 +250,34 @@
             android:text="Enable Developer Tools"
             android:layout_marginBottom="16dp" />
 
+        <!-- Satellite Signal Strength Section -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Satellite Signal Strength"
+            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textStyle="bold"
+            android:textAllCaps="true"
+            android:textSize="18sp"
+            android:layout_marginTop="12dp"
+            android:paddingBottom="8dp" />
+
+        <!-- Satellite Signal Chart -->
+        <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+            android:id="@+id/satellite_signal_chart"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginBottom="16dp" />
+
+        <!-- SNR Grid for constellation breakdown -->
+        <GridLayout
+            android:id="@+id/snr_grid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="3"
+            android:rowCount="2"
+            android:layout_marginBottom="16dp" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -25,7 +25,21 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val externalTcpName = local.externalTcpName
 
     override val locationSettings: Flow<LocationSettings>
-        get() = TODO("Implement locationSettings if needed")
+        get() = combine(
+            locationSource,
+            externalConnType,
+            externalBtAddress,
+            externalTcpHost,
+            externalTcpPort
+        ) { source, connType, btAddr, tcpHost, tcpPort ->
+            LocationSettings(
+                source = source,
+                connectionType = connType,
+                btDeviceAddress = btAddr,
+                tcpHost = tcpHost,
+                tcpPort = tcpPort
+            )
+        }
 
     override suspend fun setLocationSource(v: LocationSourceType) {
         local.setLocationSourceString(v.toPrefString())

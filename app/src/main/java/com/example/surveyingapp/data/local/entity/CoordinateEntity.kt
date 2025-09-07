@@ -1,8 +1,11 @@
 package com.example.surveyingapp.data.local.entity
 
 import androidx.room.Entity
-import androidx.room.PrimaryKey
 import androidx.room.Index
+import androidx.room.PrimaryKey
+import com.example.surveyingapp.domain.model.CorrectionSource
+import com.example.surveyingapp.domain.model.Provider
+import com.example.surveyingapp.domain.model.RtkStatus
 
 /**
  * Each row represents ONE captured point (when user taps +).
@@ -11,9 +14,9 @@ import androidx.room.Index
 @Entity(
     tableName = "coordinates",
     indices = [
-        Index("timestamp"),                 // common query
-        Index("provider"),                  // quick filter by source
-        Index(value = ["latitude","longitude"]) // lightweight spatial filter
+        Index("timestamp"),                      // common query
+        Index("provider"),                       // quick filter by source
+        Index(value = ["latitude","longitude"])  // lightweight spatial filter
     ]
 )
 data class CoordinateEntity(
@@ -29,15 +32,15 @@ data class CoordinateEntity(
     val icon: String,                      // UI icon name
     val color: Int,                        // ARGB
 
-    // --- Provenance & quality ---
-    val provider: String = "fused",        // "fused" | "rs2-bt" | "rs2-tcp"
-    val rtkStatus: String? = null,         // "FIX" | "FLOAT" | "DGPS" | "SINGLE" | "INVALID"
+    // --- Provenance & quality (now type-safe enums) ---
+    val provider: Provider = Provider.INTERNAL,     // INTERNAL | RS2_BT | RS2_TCP | OTHER
+    val rtkStatus: RtkStatus? = null,               // FIX | FLOAT | DGPS | SINGLE | INVALID
     val satsUsed: Int? = null,
     val hdop: Double? = null,
     val horizontalAccuracyM: Double? = null,
     val verticalAccuracyM: Double? = null,
-    val correctionSource: String? = null,  // NTRIP mountpoint/base name/etc
-    val correctionAgeS: Double? = null,    // seconds
+    val correctionSource: CorrectionSource? = null, // NTRIP | LORA | BASE_TCP | UNKNOWN
+    val correctionAgeS: Double? = null,             // seconds
 
     // --- Heights / CRS ---
     val altitudeMsl: Double? = null,       // orthometric (if computed)

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.ArrayAdapter
 import android.widget.EditText
@@ -17,6 +18,7 @@ import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.util.GeoProjection
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -55,6 +57,27 @@ class AddCoordinateDialogFragment(
     private var latitude: Double = 0.0
     private var longitude: Double = 0.0
     private var altitude: Double = 0.0
+
+    // Extra quality/metadata captured from external RS2+/NMEA fix
+    private var providerStr: String = "fused"
+    private var rtkStatusStr: String? = null
+    private var satsUsedVal: Int? = null
+    private var hdopVal: Double? = null
+    private var hAccVal: Double? = null
+    private var vAccVal: Double? = null
+    private var correctionSourceStr: String? = null
+    private var correctionAgeSeconds: Double? = null
+    private var altitudeMslVal: Double? = null
+    private var geoidSeparationVal: Double? = null
+    private var crsEpsgVal: Int? = 4326
+
+    // Std deviations from GST
+    private var stdLatVal: Double? = null
+    private var stdLonVal: Double? = null
+    private var stdAltVal: Double? = null
+
+    // Timestamp to persist with the point
+    private var capturedTimestampMs: Long = System.currentTimeMillis()
 
     /**
      * Creates and configures the dialog.
@@ -108,15 +131,38 @@ class AddCoordinateDialogFragment(
                 val icon = icons[iconSpinner.selectedItemPosition]
                 val color = colors[colorSpinner.selectedItemPosition].second
 
+                // Compute UTM projection from current lat/lon
+                val utm = try { GeoProjection.wgs84ToUtm(latitude, longitude) } catch (_: Exception) { null }
+                val eastingVal = utm?.easting
+                val northingVal = utm?.northing
+                val utmZoneVal = utm?.zoneString
+
                 val point = Coordinate(
-                    id = UUID.randomUUID().toString(),  // Generate unique ID
+                    id = UUID.randomUUID().toString(),
                     name = name,
                     latitude = latitude,
                     longitude = longitude,
-                    altitude = altitude,
-                    timestamp = System.currentTimeMillis(),  // Current time
+                    altitude = altitude, // ellipsoidal
+                    timestamp = capturedTimestampMs,
                     icon = icon,
-                    color = color
+                    color = color,
+                    provider = providerStr,
+                    rtkStatus = rtkStatusStr,
+                    satsUsed = satsUsedVal,
+                    hdop = hdopVal,
+                    horizontalAccuracyM = hAccVal,
+                    verticalAccuracyM = vAccVal,
+                    correctionSource = correctionSourceStr,
+                    correctionAgeS = correctionAgeSeconds,
+                    altitudeMsl = altitudeMslVal,
+                    geoidSeparationM = geoidSeparationVal,
+                    crsEpsg = crsEpsgVal,
+                    easting = eastingVal,
+                    northing = northingVal,
+                    utmZone = utmZoneVal,
+                    stdLatM = stdLatVal,
+                    stdLonM = stdLonVal,
+                    stdAltM = stdAltVal
                 )
 
                 // Call the callback function to return the new coordinate
@@ -148,8 +194,12 @@ class AddCoordinateDialogFragment(
             latitude = result.latitude
             longitude = result.longitude
             altitude = result.altitude
+            providerStr = "fused"
+            hAccVal = if (result.hasAccuracy()) result.accuracy.toDouble() else null
+            vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && result.hasVerticalAccuracy()) result.verticalAccuracyMeters.toDouble() else null
             val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL";
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
+            capturedTimestampMs = System.currentTimeMillis()
             return
         }
         // Try last known location
@@ -161,14 +211,20 @@ class AddCoordinateDialogFragment(
             latitude = last.latitude
             longitude = last.longitude
             altitude = last.altitude
+            providerStr = "fused"
+            hAccVal = if (last.hasAccuracy()) last.accuracy.toDouble() else null
+            vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && last.hasVerticalAccuracy()) last.verticalAccuracyMeters.toDouble() else null
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, "LAST-KNOWN") + " (fallback)"
+            capturedTimestampMs = System.currentTimeMillis()
             return
         }
         // Final emulator fallback: use a stable default (Googleplex) so user can edit name and save quickly
         latitude = 37.4219999
         longitude = -122.0840575
         altitude = 0.0
+        providerStr = "fused"
         locationText.text = String.format(Locale.US, "%.6f, %.6f, %.2fm (emulator fallback)", latitude, longitude, altitude)
+        capturedTimestampMs = System.currentTimeMillis()
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {
@@ -181,7 +237,29 @@ class AddCoordinateDialogFragment(
             latitude = fix.lat
             longitude = fix.lon
             altitude = fix.altEllipsoidalM ?: 0.0
-            val state = fix.rtkStatus?.name ?: "SINGLE"
+            // Map provider enum to display/storage string
+            providerStr = when (fix.provider) {
+                com.example.surveyingapp.domain.model.Provider.RS2_BT -> "rs2-bt"
+                com.example.surveyingapp.domain.model.Provider.RS2_TCP -> "rs2-tcp"
+                com.example.surveyingapp.domain.model.Provider.INTERNAL -> "fused"
+                else -> "external"
+            }
+            rtkStatusStr = fix.rtkStatus?.name
+            satsUsedVal = fix.satsUsed
+            hdopVal = fix.hdop
+            hAccVal = fix.hAccM
+            vAccVal = fix.vAccM
+            correctionSourceStr = fix.correctionSource?.name
+            correctionAgeSeconds = fix.diffAge?.inWholeMilliseconds?.div(1000.0)
+            altitudeMslVal = fix.altMslM
+            geoidSeparationVal = fix.geoidSeparationM
+            crsEpsgVal = fix.crsEpsg
+            stdLatVal = fix.stdLatM
+            stdLonVal = fix.stdLonM
+            stdAltVal = fix.stdAltM
+            capturedTimestampMs = fix.timestamp.toEpochMilli()
+
+            val state = rtkStatusStr ?: "SINGLE"
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, state)
         } else {
             locationText.text = getString(R.string.location_unavailable)

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="RS2+ Diagnostics"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:paddingBottom="8dp"/>
+
+        <!-- Saved RS2 host:port quick view -->
+        <TextView
+            android:id="@+id/text_saved_host_port"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Saved: --"
+            android:textColor="@android:color/darker_gray"
+            android:textSize="13sp"
+            android:paddingBottom="8dp"/>
+
+        <!-- Optional manual host/port for diagnostics -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:paddingBottom="8dp">
+
+            <EditText
+                android:id="@+id/edit_host_rs2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:inputType="textUri"
+                android:hint="@string/hint_host"
+                android:imeOptions="actionNext"
+                android:singleLine="true"
+                android:layout_marginEnd="8dp" />
+
+            <EditText
+                android:id="@+id/edit_port_rs2"
+                android:layout_width="96dp"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:hint="@string/hint_port"
+                android:imeOptions="actionDone"
+                android:singleLine="true"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btn_diag_test"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/diag_btn_test" />
+        </LinearLayout>
+
+        <!-- Diagnostic Container (moved from Settings) -->
+        <LinearLayout
+            android:id="@+id/device_nmea_log_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_device_box"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/text_diag_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textSize="12sp"
+                android:textColor="@android:color/black"
+                android:layout_marginTop="4dp" />
+
+            <!-- Stream viewing controls -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp">
+
+                <Button
+                    android:id="@+id/btn_start_stream"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="Start Stream"
+                    android:textSize="12sp"
+                    android:padding="8dp"
+                    style="?attr/materialButtonOutlinedStyle" />
+
+                <Button
+                    android:id="@+id/btn_stop_stream"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:text="Stop Stream"
+                    android:textSize="12sp"
+                    android:padding="8dp"
+                    android:enabled="false"
+                    style="?attr/materialButtonOutlinedStyle" />
+
+                <Button
+                    android:id="@+id/btn_clear_stream"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:text="Clear"
+                    android:textSize="12sp"
+                    android:padding="8dp"
+                    style="?attr/materialButtonOutlinedStyle" />
+
+            </LinearLayout>
+
+            <!-- Scrollable live NMEA preview box -->
+            <ScrollView
+                android:id="@+id/scroll_diag_preview"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:layout_marginTop="4dp"
+                android:fillViewport="true">
+
+                <TextView
+                    android:id="@+id/text_diag_preview"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textSize="11sp"
+                    android:textColor="@android:color/darker_gray"
+                    android:typeface="monospace"
+                    android:textIsSelectable="true"
+                    android:padding="4dp" />
+            </ScrollView>
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
+

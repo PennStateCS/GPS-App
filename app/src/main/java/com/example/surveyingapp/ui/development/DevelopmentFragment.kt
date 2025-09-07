@@ -40,6 +40,14 @@ import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.*
+import com.example.surveyingapp.SurveyingApp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.flow.firstOrNull
 
 class DevelopmentFragment : BaseTwoPaneFragment() {
 
@@ -50,7 +58,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         SettingsCategory(2, "Permissions", R.drawable.ic_section_location),
         SettingsCategory(3, "AR Debug", R.drawable.ic_dev_tools),
         SettingsCategory(4, "Maps Debug", R.drawable.ic_map),
-        SettingsCategory(5, "Coordinates", R.drawable.ic_section_location)
+        SettingsCategory(5, "Coordinates", R.drawable.ic_section_location),
+        SettingsCategory(6, "RS2+", R.drawable.ic_section_location)
     )
 
     private lateinit var coordinateRepository: CoordinateRepositoryImpl
@@ -86,6 +95,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         3 -> setupArDebugContent(inflater)       // ARCore capability probe (no camera start)
         4 -> setupMapsDebugContent(inflater)     // Google Maps / Play Services debug
         5 -> setupCoordinatesDevContent(inflater) // Coordinate generation and management
+        6 -> setupRs2DevContent(inflater)        // RS2+ diagnostics and stream viewer
         else -> null
     }
 
@@ -747,71 +757,221 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             setStatus("Insert failed: ${result.exceptionOrNull()?.message}")
         }
     }
-}
 
-// Helpers restored (table builders, formatting, dp conversion)
-private fun DevelopmentFragment.dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
+    private fun setupRs2DevContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.dev_page_rs2, null)
 
-private fun DevelopmentFragment.buildInfoTable(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
-    orientation = LinearLayout.VERTICAL
-    setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
-    elevation = 1f
-}
+        val tvSaved = view.findViewById<TextView>(R.id.text_saved_host_port)
+        val editHost = view.findViewById<android.widget.EditText>(R.id.edit_host_rs2)
+        val editPort = view.findViewById<android.widget.EditText>(R.id.edit_port_rs2)
+        val btnTest = view.findViewById<Button>(R.id.btn_diag_test)
+        val tvStatus = view.findViewById<TextView>(R.id.text_diag_status)
+        val tvPreview = view.findViewById<TextView>(R.id.text_diag_preview)
+        val btnStart = view.findViewById<Button>(R.id.btn_start_stream)
+        val btnStop = view.findViewById<Button>(R.id.btn_stop_stream)
+        val btnClear = view.findViewById<Button>(R.id.btn_clear_stream)
 
-private fun LinearLayout.addRow(label: String, value: String, index: Int) {
-    val ctx = context
-    val row = LinearLayout(ctx).apply {
-        orientation = LinearLayout.HORIZONTAL
-        setPadding(12, 8, 12, 8)
-        if (index % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
+        fun setSavedLabel(host: String?, port: Int?) {
+            val label = if (!host.isNullOrBlank() && port != null) "$host:$port" else "--"
+            tvSaved?.text = "Saved: $label"
+            if (!host.isNullOrBlank() && editHost?.text?.isNullOrBlank() == true) editHost.setText(host)
+            if (port != null && editPort?.text?.isNullOrBlank() == true) editPort.setText(port.toString())
+        }
+
+        // Prefill saved RS2 host:port
+        viewLifecycleOwner.lifecycleScope.launch {
+            val repo = SurveyingApp.settingsRepo
+            val host = repo.externalTcpHost.firstOrNull()
+            val port = repo.externalTcpPort.firstOrNull()
+            setSavedLabel(host, port)
+            if (editPort?.text.isNullOrBlank()) editPort?.setText(getString(R.string.default_port))
+        }
+
+        // Stream preview state
+        fun updateButtons() {
+            btnStart?.isEnabled = !isStreamViewingActive
+            btnStop?.isEnabled = isStreamViewingActive
+        }
+        updateButtons()
+
+        btnStart?.setOnClickListener {
+            if (isStreamViewingActive) return@setOnClickListener
+            isStreamViewingActive = true
+            updateButtons()
+            streamCollectionJob = viewLifecycleOwner.lifecycleScope.launch {
+                SurveyingApp.locationManager.externalRawLines.collect { rawLine ->
+                    if (rawLine.isNotBlank() && isStreamViewingActive) {
+                        nmeaLines.addLast(rawLine)
+                        while (nmeaLines.size > 100) nmeaLines.removeFirst()
+                        tvPreview?.text = nmeaLines.joinToString("\n")
+                        val scroller = view.findViewById<android.widget.ScrollView>(R.id.scroll_diag_preview)
+                        scroller?.post {
+                            scroller.fullScroll(View.FOCUS_DOWN)
+                            scroller.scrollTo(0, scroller.getChildAt(0).height)
+                        }
+                    }
+                }
+            }
+            Toast.makeText(requireContext(), "Stream viewing started", Toast.LENGTH_SHORT).show()
+        }
+        btnStop?.setOnClickListener {
+            if (!isStreamViewingActive) return@setOnClickListener
+            isStreamViewingActive = false
+            streamCollectionJob?.cancel(); streamCollectionJob = null
+            updateButtons()
+            Toast.makeText(requireContext(), "Stream viewing stopped", Toast.LENGTH_SHORT).show()
+        }
+        btnClear?.setOnClickListener {
+            nmeaLines.clear()
+            tvPreview?.text = ""
+            Toast.makeText(requireContext(), "Stream cleared", Toast.LENGTH_SHORT).show()
+        }
+
+        btnTest?.setOnClickListener {
+            val host = editHost?.text?.toString()?.trim().orEmpty()
+            val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
+            if (host.isEmpty()) { Toast.makeText(requireContext(), getString(R.string.host_required), Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            tvStatus?.text = getString(R.string.diag_status, getString(R.string.diag_testing))
+            tvPreview?.text = ""
+            viewLifecycleOwner.lifecycleScope.launch {
+                val (result, sample) = withContext(Dispatchers.IO) { testRs2Tcp(host, port) }
+                val status = when (result) {
+                    TcpTestResult.CONNECT_FAILED -> getString(R.string.diag_connect_failed)
+                    TcpTestResult.CONNECTED_NO_DATA -> getString(R.string.diag_connected_no_data)
+                    TcpTestResult.RECEIVING_NMEA -> getString(R.string.diag_receiving_nmea)
+                    TcpTestResult.RECEIVING_RTCM_OR_BIN -> getString(R.string.diag_receiving_binary)
+                }
+                val preview = when {
+                    sample == null || sample.isEmpty() -> ""
+                    result == TcpTestResult.RECEIVING_NMEA -> runCatching { sample.toString(Charsets.US_ASCII).lineSequence().firstOrNull()?.take(160).orEmpty() }.getOrElse { "" }
+                    else -> bytesToHexPreview(sample)
+                }
+                tvStatus?.text = getString(R.string.diag_status, status)
+                tvPreview?.text = if (preview.isNotBlank()) getString(R.string.diag_preview, preview) else ""
+            }
+        }
+
+        return view
     }
-    val labelView = TextView(ctx).apply {
-        text = label
-        setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-        textSize = 13f
-        setTypeface(null, android.graphics.Typeface.BOLD)
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+
+    // RS2 diagnostics state and helpers
+    private var isStreamViewingActive = false
+    private var streamCollectionJob: Job? = null
+    private val nmeaLines: ArrayDeque<String> = ArrayDeque()
+
+    private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
+
+    private fun bytesToHexPreview(bytes: ByteArray, max: Int = 64): String {
+        val sb = StringBuilder()
+        val limit = min(bytes.size, max)
+        for (i in 0 until limit) {
+            sb.append(String.format("%02X", bytes[i]))
+            if (i < limit - 1) sb.append(' ')
+        }
+        return sb.toString()
     }
-    val valueView = TextView(ctx).apply {
-        text = value
-        setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-        textSize = 13f
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
-        setTextIsSelectable(true)
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        maxLines = 4
+
+    private fun testRs2Tcp(host: String, port: Int): Pair<TcpTestResult, ByteArray?> {
+        var socket: Socket? = null
+        return try {
+            socket = Socket().apply {
+                tcpNoDelay = true
+                keepAlive = true
+            }
+            socket.connect(InetSocketAddress(host, port), 4000)
+            socket.soTimeout = 2000
+            val inp = socket.getInputStream()
+            val buffer = ByteArray(512)
+            val baos = ByteArrayOutputStream()
+            val start = System.currentTimeMillis()
+            while (System.currentTimeMillis() - start < 2500) {
+                val n = inp.read(buffer)
+                if (n > 0) {
+                    baos.write(buffer, 0, n)
+                    if (baos.size() >= 64) break
+                } else if (n == 0) {
+                    Thread.sleep(20)
+                }
+            }
+            val data = baos.toByteArray()
+            if (data.isEmpty()) return TcpTestResult.CONNECTED_NO_DATA to null
+            val ascii = runCatching { data.toString(Charsets.US_ASCII) }.getOrNull()
+            if (ascii != null) {
+                val hasNmea = ascii.lineSequence().any { it.startsWith("$") }
+                if (hasNmea) return TcpTestResult.RECEIVING_NMEA to data
+            }
+            TcpTestResult.RECEIVING_RTCM_OR_BIN to data
+        } catch (_: Exception) {
+            TcpTestResult.CONNECT_FAILED to null
+        } finally {
+            runCatching { socket?.close() }
+        }
     }
-    row.addView(labelView)
-    row.addView(valueView)
-    addView(row)
-    addView(View(ctx).apply {
-        setBackgroundColor(0x14000000)
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-    })
-}
 
-private fun DevelopmentFragment.formatTime(ts: Long): String {
-    if (ts <= 0) return getString(R.string.dev_value_unknown)
-    return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(ts))
-}
+    // Helpers restored (table builders, formatting, dp conversion)
+    private fun DevelopmentFragment.dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
-private fun DevelopmentFragment.formatBytes(bytes: Long): String {
-    if (bytes < 0) return getString(R.string.dev_value_unknown)
-    if (bytes < 1024) return "$bytes B"
-    val units = arrayOf("KB", "MB", "GB", "TB")
-    var v = bytes.toDouble() / 1024.0
-    var idx = 0
-    while (v >= 1024 && idx < units.lastIndex) { v /= 1024; idx++ }
-    return String.format(java.util.Locale.US, "%.2f %s", v, units[idx])
-}
+    private fun DevelopmentFragment.buildInfoTable(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
+        elevation = 1f
+    }
 
-// Opt-in suppression for internal coroutine APIs warning
-@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-    addOnSuccessListener { if (cont.isActive) cont.resume(it) {} }
-    addOnFailureListener { if (cont.isActive) cont.resume(null) {} }
-    addOnCanceledListener { if (cont.isActive) cont.resume(null) {} }
-}
+    private fun LinearLayout.addRow(label: String, value: String, index: Int) {
+        val ctx = context
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(12, 8, 12, 8)
+            if (index % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
+        }
+        val labelView = TextView(ctx).apply {
+            text = label
+            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+            textSize = 13f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+        }
+        val valueView = TextView(ctx).apply {
+            text = value
+            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+            textSize = 13f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
+            setTextIsSelectable(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxLines = 4
+        }
+        row.addView(labelView)
+        row.addView(valueView)
+        addView(row)
+        addView(View(ctx).apply {
+            setBackgroundColor(0x14000000)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+        })
+    }
 
-// Add maps status enum outside the fragment for reuse
-private enum class MapsStatus { OK, WARN, ERROR }
+    private fun DevelopmentFragment.formatTime(ts: Long): String {
+        if (ts <= 0) return getString(R.string.dev_value_unknown)
+        return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(ts))
+    }
+
+    private fun DevelopmentFragment.formatBytes(bytes: Long): String {
+        if (bytes < 0) return getString(R.string.dev_value_unknown)
+        if (bytes < 1024) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var v = bytes.toDouble() / 1024.0
+        var idx = 0
+        while (v >= 1024 && idx < units.lastIndex) { v /= 1024; idx++ }
+        return String.format(java.util.Locale.US, "%.2f %s", v, units[idx])
+    }
+
+    // Opt-in suppression for internal coroutine APIs warning
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        addOnSuccessListener { if (cont.isActive) cont.resume(it) {} }
+        addOnFailureListener { if (cont.isActive) cont.resume(null) {} }
+        addOnCanceledListener { if (cont.isActive) cont.resume(null) {} }
+    }
+
+    // Add maps status enum outside the fragment for reuse
+    private enum class MapsStatus { OK, WARN, ERROR }
+}

@@ -6,7 +6,8 @@
     <android.opengl.GLSurfaceView
         android:id="@+id/glSurfaceViewAr"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/textArStatus"
@@ -17,4 +18,16 @@
         android:textColor="#FFFFFF"
         android:text="Initializing AR..."
         android:layout_gravity="top|center_horizontal" />
+
+    <!-- Non-invasive placeholder overlay -->
+    <TextView
+        android:id="@+id/textArPlaceholder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:textAppearance="@style/TextAppearance.AppCompat.Large"
+        android:textColor="#DDFFFFFF"
+        android:background="#AA000000"
+        android:text="@string/ar_placeholder_dev"
+        android:visibility="visible" />
 </FrameLayout>
