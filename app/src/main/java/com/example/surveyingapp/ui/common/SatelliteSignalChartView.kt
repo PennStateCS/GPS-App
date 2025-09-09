@@ -9,9 +9,12 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.View
 import androidx.annotation.ColorRes
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import com.example.surveyingapp.R
 import com.example.surveyingapp.data.location.nmea.parser.NmeaParser
+import com.example.surveyingapp.gnss.model.SkyGeometry
+import com.example.surveyingapp.gnss.model.Constellation
 import kotlin.math.max
 import kotlin.math.min
 
@@ -84,6 +87,7 @@ class SatelliteSignalChartView @JvmOverloads constructor(
     private val colorWeak = colorRes(R.color.chart_bar_weak)
     private val colorUnused = colorRes(R.color.chart_bar_unused)
 
+    @Deprecated("Use setGeometry() from SkyBus")
     fun setSatelliteData(satellites: List<NmeaParser.Satellite>, usedPrns: Set<Int>) {
         // keep a stable order so bars don't jump
         this.satellites = satellites.sortedBy { it.prn }
@@ -97,6 +101,75 @@ class SatelliteSignalChartView @JvmOverloads constructor(
             }
         }.toSet()
         invalidate()
+    }
+
+    fun setGeometry(geoms: List<SkyGeometry>) {
+        // Filter by current constellation if set
+        val filteredGeoms = constellationFilter?.let { filter ->
+            val targetConstellation = translateConstellation(filter)
+            geoms.filter { it.constellation == targetConstellation }
+        } ?: geoms
+
+        // Map SNR and usedInFix into bars - convert SkyGeometry to NmeaParser.Satellite format
+        this.satellites = filteredGeoms.mapNotNull { geom ->
+            val snr = geom.snrDbHz?.toInt()
+            if (snr != null) {
+                NmeaParser.Satellite(
+                    prn = geom.svid,
+                    constellation = translateConstellationToNmea(geom.constellation),
+                    snrDb = snr,
+                    azimuthDeg = geom.azDeg?.toInt(),
+                    elevationDeg = geom.elDeg?.toInt()
+                )
+            } else null
+        }.sortedBy { it.prn }
+
+        // Extract used satellite PRNs
+        this.usedSatellitePrns = geoms.filter { it.usedInFix }.map { it.svid }.toSet()
+
+        // Normalize: SBAS "120..158" may also appear as "33..64"
+        this.usedSatellitePrnsNormalized = usedSatellitePrns.flatMap { id ->
+            when (id) {
+                in 120..158 -> listOf(id, id - 87)
+                in 33..64   -> listOf(id, id + 87)
+                else        -> listOf(id)
+            }
+        }.toSet()
+
+        // Update dataset and call invalidate()
+        invalidate()
+    }
+
+    /**
+     * Helper to translate NmeaParser.Constellation to gnss.model.Constellation
+     */
+    private fun translateConstellation(nmeaConstellation: NmeaParser.Constellation): Constellation {
+        return when (nmeaConstellation) {
+            NmeaParser.Constellation.GPS -> Constellation.GPS
+            NmeaParser.Constellation.GLONASS -> Constellation.GLONASS
+            NmeaParser.Constellation.GALILEO -> Constellation.GALILEO
+            NmeaParser.Constellation.BEIDOU -> Constellation.BEIDOU
+            NmeaParser.Constellation.QZSS -> Constellation.QZSS
+            NmeaParser.Constellation.SBAS -> Constellation.SBAS
+            NmeaParser.Constellation.IRNSS -> Constellation.IRNSS
+            NmeaParser.Constellation.UNKNOWN -> Constellation.UNKNOWN
+        }
+    }
+
+    /**
+     * Helper to translate gnss.model.Constellation to NmeaParser.Constellation
+     */
+    private fun translateConstellationToNmea(constellation: Constellation): NmeaParser.Constellation {
+        return when (constellation) {
+            Constellation.GPS -> NmeaParser.Constellation.GPS
+            Constellation.GLONASS -> NmeaParser.Constellation.GLONASS
+            Constellation.GALILEO -> NmeaParser.Constellation.GALILEO
+            Constellation.BEIDOU -> NmeaParser.Constellation.BEIDOU
+            Constellation.QZSS -> NmeaParser.Constellation.QZSS
+            Constellation.SBAS -> NmeaParser.Constellation.SBAS
+            Constellation.IRNSS -> NmeaParser.Constellation.SBAS // Map IRNSS to SBAS as fallback
+            Constellation.UNKNOWN -> NmeaParser.Constellation.GPS // Map UNKNOWN to GPS as fallback
+        }
     }
 
     fun setConstellationFilter(filter: NmeaParser.Constellation?) {
@@ -293,4 +366,16 @@ class SatelliteSignalChartView @JvmOverloads constructor(
 
     private fun sp(v: Float): Float =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, resources.displayMetrics)
+
+    /**
+     * Expose the internal dataset for testing
+     */
+    @VisibleForTesting
+    fun getDataset(): List<NmeaParser.Satellite> = satellites
+
+    /**
+     * Expose the used satellite PRNs for testing
+     */
+    @VisibleForTesting
+    fun getUsedSatellitePrns(): Set<Int> = usedSatellitePrnsNormalized
 }
