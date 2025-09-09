@@ -45,8 +45,14 @@ import android.location.GnssStatus
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.ClipDrawable
 import java.util.Locale
+// New imports for GnssGraph implementation
+import com.example.surveyingapp.di.GnssGraph
+import com.example.surveyingapp.di.HasGnssGraph
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
+import com.example.surveyingapp.gnss.repo.CoordinateRepositoryImpl
+import com.example.surveyingapp.gnss.bus.adapters.NmeaSourceBridge
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), HasGnssGraph {
 
     private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityMainBinding
@@ -84,6 +90,59 @@ class MainActivity : AppCompatActivity() {
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null
     private var batteryFillClip: ClipDrawable? = null
+
+    // GnssGraph implementation for HasGnssGraph interface
+    override val gnssGraph: GnssGraph by lazy {
+        // Create the required dependencies for GnssGraph
+        val coordinateRepository = CoordinateRepositoryImpl(database.coordinateDao())
+
+        // Create the NMEA bridge for external adapter
+        val nmeaBridge = NmeaSourceBridge(
+            scope = lifecycleScope,
+            upstream = com.example.surveyingapp.gnss.bus.adapters.ExistingNmeaFromLocationManager(lifecycleScope)
+        )
+
+        // Create the satellite inventory for external adapter
+        val satelliteInventory = com.example.surveyingapp.gnss.satellites.SatelliteInventory()
+
+        // Create the required adapters
+        val internalAdapter = com.example.surveyingapp.gnss.bus.adapters.InternalAdapter(
+            scope = lifecycleScope,
+            fusedSource = object : com.example.surveyingapp.gnss.bus.adapters.FusedSource {
+                override fun fixes(): SharedFlow<com.example.surveyingapp.gnss.model.Fix> {
+                    // Return an empty flow for now - this can be connected to the actual location manager later
+                    return MutableSharedFlow<com.example.surveyingapp.gnss.model.Fix>().asSharedFlow()
+                }
+                override fun stop() {
+                    // No-op for now
+                }
+            }
+        )
+
+        val externalAdapter = com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter(
+            scope = lifecycleScope,
+            nmea = nmeaBridge,
+            inv = satelliteInventory
+        )
+
+        // Create and return the GnssGraph instance with all required parameters
+        GnssGraph(
+            appScope = lifecycleScope,
+            bridgeFactory = { nmeaBridge },
+            switchboard = FixSwitchboard(
+                scope = lifecycleScope,
+                sourceSettings = com.example.surveyingapp.gnss.settings.SourceSettings(
+                    activeProvider = MutableStateFlow(
+                        com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+                    ),
+                    rs2Host = MutableStateFlow("192.168.42.1")
+                ),
+                internalAdapter = internalAdapter,
+                externalAdapter = externalAdapter
+            ),
+            coordinateRepository = coordinateRepository
+        )
+    }
 
     // Permission launchers
     private val essentialPermissionLauncher = registerForActivityResult(

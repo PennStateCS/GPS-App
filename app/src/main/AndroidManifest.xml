@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Storage permissions for file picker -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Storage permissions - Updated for Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- Keep legacy permission for older Android versions -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 
     <!-- Location (for capturing point coordinates) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -12,6 +15,14 @@
 
     <!-- Camera (now essential for AR features) -->
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Camera hardware feature -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
 
     <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -50,31 +61,27 @@
         <!-- Google Maps API Key -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="YOUR_API_KEY_HERE"/>
+            android:value="${GOOGLE_MAPS_API_KEY}"/>
 
         <activity
             android:name=".ui.viewpoints.CoordinatesActivity"
             android:exported="true"
-            android:theme="@style/Theme.SurveyingApp.NoActionBar"
-            android:screenOrientation="landscape" />
+            android:theme="@style/Theme.SurveyingApp.NoActionBar" />
 
         <activity
             android:name=".ui.filepicker.FilePickerActivity"
             android:exported="false"
-            android:theme="@style/Theme.SurveyingApp.NoActionBar"
-            android:screenOrientation="landscape" />
+            android:theme="@style/Theme.SurveyingApp.NoActionBar" />
 
         <activity
             android:name=".ui.models.ModelViewerActivity"
             android:exported="false"
-            android:theme="@style/Theme.SurveyingApp.NoActionBar"
-            android:screenOrientation="landscape" />
+            android:theme="@style/Theme.SurveyingApp.NoActionBar" />
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.SurveyingApp.NoActionBar"
-            android:screenOrientation="landscape">
+            android:theme="@style/Theme.SurveyingApp.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

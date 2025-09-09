@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="20dp" android:layout_width="match_parent" android:layout_height="wrap_content">
+
+    <EditText android:id="@+id/input_name" android:hint="@string/capture_name_hint"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+    <EditText android:id="@+id/input_note" android:hint="@string/capture_note_hint"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textMultiLine"/>
+
+    <TextView android:text="@string/capture_progress" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingTop="12dp"/>
+    <TextView android:id="@+id/value_elapsed" android:text="0s" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/value_samples" android:text="0" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/value_rtk_mode" android:text="—" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/value_hacc" android:text="—" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    <TextView android:id="@+id/value_vacc" android:text="—" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+
+    <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="end" android:paddingTop="16dp">
+        <Button android:id="@+id/btn_start" android:text="@string/capture_start" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <Button android:id="@+id/btn_save" android:text="@string/capture_save" android:enabled="false" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp"/>
+        <Button android:id="@+id/btn_cancel" android:text="@string/cancel" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp"/>
+    </LinearLayout>
+</LinearLayout>

@@ -151,4 +151,14 @@
     <string name="status_token_bl">BL</string>
     <string name="status_token_age">AGE</string>
     <string name="ar_placeholder_dev">Feature under development</string>
+
+    <string name="capture_name_hint">Point name</string>
+    <string name="capture_note_hint">Note</string>
+    <string name="capture_progress">Progress</string>
+    <string name="capture_start">Start</string>
+    <string name="capture_save">Save</string>
+    <string name="capture_done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="capture_default_name">Captured point</string>
+
 </resources>

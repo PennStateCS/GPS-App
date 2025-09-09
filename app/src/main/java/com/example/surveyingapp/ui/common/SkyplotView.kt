@@ -12,6 +12,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import com.example.surveyingapp.data.location.nmea.parser.NmeaParser
+import com.example.surveyingapp.gnss.model.SkyGeometry
+import com.example.surveyingapp.gnss.model.Constellation
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -64,6 +66,7 @@ class SkyplotView @JvmOverloads constructor(
     var trailMaxPointsPerSat: Int = 600
     var trailStrokeWidthDp: Float = 1.25f
 
+    @Deprecated("Use setGeometry() from SkyBus")
     fun setSatelliteData(list: List<NmeaParser.Satellite>, usedIds: Set<Int>) {
         satellites = list
         used = usedIds
@@ -80,10 +83,45 @@ class SkyplotView @JvmOverloads constructor(
         invalidate()
     }
 
+    fun setGeometry(geoms: List<SkyGeometry>) {
+        // Store geometry for touch handling
+        skyGeometry = geoms
+
+        // Convert SkyGeometry to NmeaParser.Satellite format for existing rendering
+        satellites = geoms.mapNotNull { geom ->
+            // Only include satellites with position data (azDeg and elDeg)
+            if (geom.azDeg != null && geom.elDeg != null) {
+                NmeaParser.Satellite(
+                    prn = geom.svid,
+                    constellation = translateConstellationToNmea(geom.constellation),
+                    elevationDeg = geom.elDeg.toInt(),
+                    azimuthDeg = geom.azDeg.toInt(),
+                    snrDb = geom.snrDbHz?.toInt()
+                )
+            } else null
+        }
+
+        // Extract used satellite IDs from usedInFix
+        used = geoms.filter { it.usedInFix }.map { it.svid }.toSet()
+
+        // Normalize SBAS IDs
+        usedNorm = used.flatMap { id ->
+            when (id) {
+                in 120..158 -> listOf(id, id - 87)
+                in 33..64   -> listOf(id, id + 87)
+                else        -> listOf(id)
+            }
+        }.toSet()
+
+        if (trailsEnabled) updateTrails(satellites)
+        invalidate()
+    }
+
     // ==== Data ====
     private var satellites: List<NmeaParser.Satellite> = emptyList()
     private var used: Set<Int> = emptySet()
     private var usedNorm: Set<Int> = emptySet()
+    private var skyGeometry: List<SkyGeometry> = emptyList() // Store for touch handling
 
     // Trails storage: per-satellite ring buffer of recent samples
     private data class TrailSample(
@@ -583,7 +621,26 @@ class SkyplotView @JvmOverloads constructor(
                 if (isMaybeClick) {
                     val hit = hitDots.minByOrNull { hypot(it.x - event.x, it.y - event.y) }
                     if (hit != null && hypot(hit.x - event.x, hit.y - event.y) <= hit.hitR) {
-                        onSatelliteClick?.invoke(hit.sat, hit.isUsed)
+                        // If we have SkyGeometry data, try to find the corresponding geometry
+                        val correspondingGeometry = skyGeometry.find { geom ->
+                            geom.svid == hit.sat.prn &&
+                            translateConstellationToNmea(geom.constellation) == hit.sat.constellation
+                        }
+
+                        if (correspondingGeometry != null) {
+                            // Create a NmeaParser.Satellite from SkyGeometry for backward compatibility
+                            val satelliteFromGeometry = NmeaParser.Satellite(
+                                prn = correspondingGeometry.svid,
+                                constellation = translateConstellationToNmea(correspondingGeometry.constellation),
+                                elevationDeg = correspondingGeometry.elDeg?.toInt(),
+                                azimuthDeg = correspondingGeometry.azDeg?.toInt(),
+                                snrDb = correspondingGeometry.snrDbHz?.toInt()
+                            )
+                            onSatelliteClick?.invoke(satelliteFromGeometry, correspondingGeometry.usedInFix)
+                        } else {
+                            // Fallback to original behavior
+                            onSatelliteClick?.invoke(hit.sat, hit.isUsed)
+                        }
                     }
                 }
                 isMaybeClick = false
@@ -591,6 +648,22 @@ class SkyplotView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> isMaybeClick = false
         }
         return super.onTouchEvent(event) || isMaybeClick
+    }
+
+    /**
+     * Helper to translate gnss.model.Constellation to NmeaParser.Constellation
+     */
+    private fun translateConstellationToNmea(constellation: Constellation): NmeaParser.Constellation {
+        return when (constellation) {
+            Constellation.GPS -> NmeaParser.Constellation.GPS
+            Constellation.GLONASS -> NmeaParser.Constellation.GLONASS
+            Constellation.GALILEO -> NmeaParser.Constellation.GALILEO
+            Constellation.BEIDOU -> NmeaParser.Constellation.BEIDOU
+            Constellation.QZSS -> NmeaParser.Constellation.QZSS
+            Constellation.SBAS -> NmeaParser.Constellation.SBAS
+            Constellation.IRNSS -> NmeaParser.Constellation.IRNSS
+            Constellation.UNKNOWN -> NmeaParser.Constellation.UNKNOWN
+        }
     }
 
     // ==== Utils ====
