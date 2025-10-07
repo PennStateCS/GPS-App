@@ -6,12 +6,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
-import com.example.surveyingapp.di.HasGnssGraph
 import com.example.surveyingapp.gnss.capture.AveragingPolicy
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -19,14 +20,13 @@ import java.util.Locale
  * Minimal averaging UI. Start -> watch progress -> Save.
  * Hook this dialog to your "+" action.
  */
+@AndroidEntryPoint
 class CaptureDialogFragment : DialogFragment() {
 
-    private lateinit var vm: CaptureViewModel
+    private val vm: CaptureViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val host = requireActivity() as HasGnssGraph
-        vm = host.gnssGraph.captureViewModel
         setStyle(STYLE_NORMAL, 0)
     }
 

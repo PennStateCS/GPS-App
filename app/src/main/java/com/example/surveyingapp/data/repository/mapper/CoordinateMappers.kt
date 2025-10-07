@@ -4,25 +4,27 @@ import com.example.surveyingapp.data.local.db.DbConstants
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.domain.model.CorrectionSource
 import com.example.surveyingapp.domain.model.Coordinate
-import com.example.surveyingapp.domain.model.Fix
-import com.example.surveyingapp.domain.model.Provider
-import com.example.surveyingapp.domain.model.RtkStatus
+import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.model.RtkStatus
 import java.util.Locale
 import java.util.UUID
 
 // ---------- Helpers: enum <-> domain string ----------
 
 private fun providerEnumToDomainString(p: Provider): String = when (p) {
-    Provider.INTERNAL -> DbConstants.PROVIDER_FUSED   // "fused"
-    Provider.RS2_BT   -> DbConstants.PROVIDER_RS2_BT  // "rs2-bt"
-    Provider.RS2_TCP  -> DbConstants.PROVIDER_RS2_TCP // "rs2-tcp"
-    Provider.OTHER    -> "other"
+    Provider.INTERNAL     -> DbConstants.PROVIDER_FUSED   // "fused"
+    Provider.RS2_EXTERNAL -> DbConstants.PROVIDER_RS2_TCP // "rs2-tcp" (or could be a new constant)
+    Provider.RS2_BT       -> DbConstants.PROVIDER_RS2_BT  // "rs2-bt"
+    Provider.RS2_TCP      -> DbConstants.PROVIDER_RS2_TCP // "rs2-tcp"
+    Provider.OTHER        -> "other"
 }
 
 private fun providerDomainStringToEnum(s: String?): Provider = when (s?.lowercase(Locale.US)) {
     DbConstants.PROVIDER_FUSED, "internal", "fused" -> Provider.INTERNAL
     DbConstants.PROVIDER_RS2_BT, "rs2-bt"          -> Provider.RS2_BT
     DbConstants.PROVIDER_RS2_TCP, "rs2-tcp"        -> Provider.RS2_TCP
+    "rs2-external"                                  -> Provider.RS2_EXTERNAL
     else                                            -> Provider.OTHER
 }
 
@@ -49,15 +51,15 @@ fun toEntityFromFix(
     fix: Fix
 ): CoordinateEntity {
     val ellipAlt = fix.altEllipsoidalM ?: 0.0
-    val mslAlt = fix.altOrthometricM
+    val mslAlt = fix.altMslM ?: 0.0
 
     return CoordinateEntity(
         id = id,
         name = name,
-        latitude = fix.lat,
-        longitude = fix.lon,
+        latitude = fix.latDeg,
+        longitude = fix.lonDeg,
         altitude = ellipAlt,                       // store ellipsoidal as primary
-        timestamp = fix.timestamp.toEpochMilli(),
+        timestamp = fix.timeUtc.toEpochMilli(),    // Convert Instant to Long
         icon = icon,
         color = color,
 
@@ -65,15 +67,15 @@ fun toEntityFromFix(
         provider = fix.provider,                   // Provider enum
         rtkStatus = fix.rtkStatus,                 // RtkStatus? enum
         satsUsed = fix.satsUsed,
-        hdop = fix.hdop,
+        hdop = fix.hDop,
         horizontalAccuracyM = fix.hAccM,
         verticalAccuracyM = fix.vAccM,
-        correctionSource = fix.correctionSource,   // CorrectionSource? enum
-        correctionAgeS = fix.diffAge?.inWholeMilliseconds?.div(1000.0),
+        correctionSource = null,                   // Not available in Fix class
+        correctionAgeS = fix.diffAgeS,
 
         altitudeMsl = mslAlt,
         geoidSeparationM = fix.geoidSeparationM,
-        crsEpsg = fix.crsEpsg,
+        crsEpsg = 4326,                           // Default to WGS84
 
         easting = null,
         northing = null,
@@ -82,9 +84,9 @@ fun toEntityFromFix(
         note = note,
         averagedSamples = null,
         averageDurationMs = null,
-        stdLatM = fix.stdLatM,
-        stdLonM = fix.stdLonM,
-        stdAltM = fix.stdAltM,
+        stdLatM = null,                           // Not available in Fix class
+        stdLonM = null,                           // Not available in Fix class
+        stdAltM = null,                           // Not available in Fix class
 
         sourceDevice = null,
         appVersion = null

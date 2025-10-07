@@ -1,8 +1,9 @@
 package com.example.surveyingapp.ui.common
 
 import android.location.GnssStatus
-import com.example.surveyingapp.domain.model.Fix
-import com.example.surveyingapp.domain.model.RtkStatus
+import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.RtkStatus
+
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
@@ -12,27 +13,26 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
     val isInternal = srcLabel == "Internal"
 
     // sats: prefer Fix, else GnssStatus
-    val satsUsed = fix.satsUsed ?: gnssStatus?.let { s -> (0 until s.satelliteCount).count { s.usedInFix(it) } }
+    val satsUsed = fix.satsUsed
     val satsVis = fix.satsVisible ?: gnssStatus?.satelliteCount
-    val satsPart = if (satsUsed != null && satsVis != null && satsVis > 0) "$satsUsed/$satsVis sats" else null
+    val satsPart = if (satsUsed > 0 && satsVis != null && satsVis > 0) "$satsUsed/$satsVis sats" else null
 
     // Age (prefer monotonic if you carry it; wall-clock fallback here)
-    val ageSec = safeAgeSeconds(fix.timestamp, Instant.now())
+    val ageSec = safeAgeSeconds(fix.timeUtc, Instant.now())
 
     // Coordinates: adapt precision for RTK FIX
     val coordPrec = if (!isInternal && fix.rtkStatus == RtkStatus.FIX) 7 else 5
-    val latStr = fmtCoord(fix.lat, coordPrec)
-    val lonStr = fmtCoord(fix.lon, coordPrec)
+    val latStr = fmtCoord(fix.latDeg, coordPrec)
+    val lonStr = fmtCoord(fix.lonDeg, coordPrec)
 
     // Accuracies (sanitize NaN/Inf)
-    @Suppress("DEPRECATION")
-    val hAcc = sanitizeDouble(fix.hAccM ?: fix.accuracyM)
+    val hAcc = sanitizeDouble(fix.hAccM)
     val vAcc = sanitizeDouble(fix.vAccM)
 
     // Altitude
     val alt = sanitizeDouble(fix.altEllipsoidalM)
 
-    // Internal fix classification (don’t hide stale, annotate it)
+    // Internal fix classification (don't hide stale, annotate it)
     val fixTypeInternal = if (isInternal) {
         val base = when {
             hAcc == null && alt == null -> "No Fix"
@@ -48,14 +48,16 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
         RtkStatus.FLOAT -> "FLOAT"
         RtkStatus.DGPS -> "DGPS"
         RtkStatus.SINGLE -> "SINGLE"
-        RtkStatus.INVALID, null -> "--"
+        RtkStatus.NONE -> "NONE"
+        RtkStatus.INVALID -> "--"
+        RtkStatus.DEAD_RECKONING -> "DR"
     }.let { s -> if (!isInternal && ageSec > 15) "$s (stale ${ageSec}s)" else s }
 
     // DOPs
     val dopPart = when {
-        fix.pdop != null && fix.hdop != null -> "PDOP ${fmt1(fix.pdop)} / HDOP ${fmt1(fix.hdop)}"
-        fix.pdop != null -> "PDOP ${fmt1(fix.pdop)}"
-        fix.hdop != null -> "HDOP ${fmt1(fix.hdop)}"
+        fix.pDop != null && fix.hDop != null -> "PDOP ${fmt1(fix.pDop)} / HDOP ${fmt1(fix.hDop)}"
+        fix.pDop != null -> "PDOP ${fmt1(fix.pDop)}"
+        fix.hDop != null -> "HDOP ${fmt1(fix.hDop)}"
         else -> null
     }
 
@@ -76,14 +78,11 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
     } else null
     val altExternal = if (!isInternal && alt != null) "Alt ${fmtAlt(alt)} m" else null
 
-    // Baseline length
-    val baseline = fix.baselineLengthM?.let { v ->
-        val vv = sanitizeDouble(v)
-        if (vv != null && vv > 0.1) "BL ${fmt1(vv)} m" else null
-    }
+    // Baseline length - not available in current Fix model, so skip for now
+    val baseline: String? = null
 
     // Differential correction age
-    val corrAge = fix.diffAge?.inWholeSeconds?.let { secs -> if (secs >= 0) "Age ${secs}s" else null }
+    val corrAge = fix.diffAgeS?.let { secs -> if (secs >= 0) "Age ${secs.toInt()}s" else null }
 
     val parts = mutableListOf<String>()
     parts += srcLabel
@@ -121,7 +120,12 @@ private fun fmtCoord(v: Double, prec: Int): String =
     String.format(Locale.US, "%.${prec}f", v)
 
 private fun sanitizeDouble(v: Double?): Double? =
-    if (v == null || v.isNaN() || v.isInfinite()) null else v
+    if (v != null && v.isFinite()) v else null
 
-private fun safeAgeSeconds(ts: Instant, now: Instant): Int =
-    Duration.between(ts, now).seconds.coerceAtLeast(0).toInt()
+private fun safeAgeSeconds(timestamp: Instant, now: Instant): Long {
+    return try {
+        Duration.between(timestamp, now).seconds.coerceAtLeast(0)
+    } catch (e: Exception) {
+        0
+    }
+}

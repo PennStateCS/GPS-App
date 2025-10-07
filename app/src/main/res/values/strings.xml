@@ -34,6 +34,8 @@
     <string name="menu_models">Models</string>
     <string name="menu_development">Development</string>
     <string name="action_settings">Settings</string>
+    <string name="action_replay">Replay NMEA</string>
+    <string name="action_diagnostics">GNSS Diagnostics</string>
     <string name="title_coordinate_detail">Coordinate Detail</string>
     <string name="menu_rs2">RS2+</string>
 
@@ -160,5 +162,15 @@
     <string name="capture_done">Done</string>
     <string name="cancel">Cancel</string>
     <string name="capture_default_name">Captured point</string>
+
+    <!-- FixBadge component strings -->
+    <string name="fix_badge_satellites">🛰️ %1$d/%2$d sats</string>
+    <string name="fix_badge_hdop">HDOP: %1$s</string>
+    <string name="fix_badge_hdop_na">HDOP: N/A</string>
+    <string name="fix_badge_stream_health">📊 %1$d/s • %2$s%% err</string>
+
+    <!-- Location status strings -->
+    <string name="location_acquired">Location acquired</string>
+    <string name="no_location">No location</string>
 
 </resources>

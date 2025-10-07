@@ -67,6 +67,111 @@
                 android:textColor="#F44336" />
         </LinearLayout>
 
+        <!-- Stakeout Panel -->
+        <LinearLayout
+            android:id="@+id/stakeout_panel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#F5F5F5"
+            android:padding="8dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Stakeout"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+                <Button
+                    android:id="@+id/btn_clear_stakeout"
+                    android:layout_width="wrap_content"
+                    android:layout_height="28dp"
+                    android:text="Clear"
+                    android:textSize="10sp"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="#F44336"
+                    android:paddingHorizontal="8dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/txt_stakeout_target"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Target: Tap map to set"
+                android:textSize="12sp"
+                android:textColor="#666666"
+                android:paddingTop="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="8dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Distance"
+                        android:textSize="10sp"
+                        android:textColor="#888888" />
+                    <TextView
+                        android:id="@+id/txt_stakeout_distance"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="--"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Bearing"
+                        android:textSize="10sp"
+                        android:textColor="#888888" />
+                    <TextView
+                        android:id="@+id/txt_stakeout_bearing"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="--"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Stakeout Toggle Button -->
+        <Button
+            android:id="@+id/btn_toggle_stakeout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable Stakeout"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:textColor="#4CAF50" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/coordinate_toggle_list"
             android:layout_width="match_parent"

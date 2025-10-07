@@ -20,15 +20,10 @@ import java.util.concurrent.Semaphore
 
 /**
  * Discover Emlid Reach RS2/RS2+ receivers on local Wi-Fi via:
- * 1) BLE scanning to discover devices and extract TCP settings (10 seconds)
- * 2) mDNS (NsdManager, service type "_http._tcp.") for 3-5 seconds with HTTP validation
- * 3) Subnet scan fallback probing port 80 with 200-300ms timeouts and content validation
+ * 1) mDNS (NsdManager, service type "_http._tcp.") for 3-5 seconds with HTTP validation
+ * 2) Subnet scan fallback probing port 80 with 200-300ms timeouts and content validation
  *
  * Permissions (Manifest):
- * - android.permission.BLUETOOTH
- * - android.permission.BLUETOOTH_ADMIN
- * - android.permission.BLUETOOTH_CONNECT
- * - android.permission.BLUETOOTH_SCAN
  * - android.permission.ACCESS_WIFI_STATE
  * - android.permission.ACCESS_NETWORK_STATE
  * - android.permission.INTERNET
@@ -38,7 +33,6 @@ import java.util.concurrent.Semaphore
 object ReachDiscoveryHelper {
     private const val TAG = "ReachDiscoveryHelper"
     private const val MDNS_SERVICE_TYPE = "_http._tcp."
-    private const val BLE_TIMEOUT_MS = 10000L       // 10 seconds for BLE discovery
     private const val MDNS_TIMEOUT_MS = 5000L       // 5 seconds for mDNS discovery
     private const val HTTP_CONNECT_TIMEOUT_MS = 250  // 250ms for HTTP connections
     private const val HTTP_READ_TIMEOUT_MS = 300     // 300ms for HTTP reads
@@ -48,94 +42,70 @@ object ReachDiscoveryHelper {
     fun discoverReachDevices(context: Context): Flow<ReachDevice> = callbackFlow {
         val discovered = ConcurrentHashMap<String, ReachDevice>()
         val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        var bleIpFound = false
         var mdnsFoundAny = false
 
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
 
-        // --- Phase 1: BLE Discovery ---
-        Log.d(TAG, "Starting Phase 1: BLE discovery...")
-        val bleJob = ioScope.launch {
-            try {
-                ReachBleHelper.discoverReachDevicesBle(context).collect { bleDevice: ReachBleDevice ->
-                    // BLE phase now only identifies candidate devices; IP not available via BLE
-                    Log.d(
-                        TAG,
-                        "BLE candidate: name=${bleDevice.deviceName} hasNus=${bleDevice.hasNus} rssi=${bleDevice.rssi}"
-                    )
-                    // Do NOT attempt to create ReachDevice without IP. Continue to mDNS / HTTP phases.
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "BLE discovery error: ${e.message}")
-            }
+        // --- Phase 1: mDNS discovery ---
+        Log.d(TAG, "Starting Phase 1: mDNS discovery...")
+        val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
+        val multicastLock = try {
+            wifiManager.createMulticastLock("reach-mdns-lock").apply { setReferenceCounted(false); acquire() }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire MulticastLock: ${e.message}"); null
         }
 
-        // Wait for BLE phase to complete with timeout
-        withTimeoutOrNull(BLE_TIMEOUT_MS) { bleJob.join() }
-        bleJob.cancel()
-
-        // --- Phase 2: mDNS discovery (run if no IP obtained via BLE) ---
-        if (!bleIpFound) { // changed condition
-            Log.d(TAG, "Starting Phase 2: mDNS discovery...")
-            val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
-            val multicastLock = try {
-                wifiManager.createMulticastLock("reach-mdns-lock").apply { setReferenceCounted(false); acquire() }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to acquire MulticastLock: ${e.message}"); null
-            }
-
-            val mdnsJob = ioScope.launch {
-                val mdnsCompleted = CompletableDeferred<Boolean>()
-                val discoveryListener = object : NsdManager.DiscoveryListener {
-                    override fun onDiscoveryStarted(serviceType: String) { Log.d(TAG, "mDNS discovery started: $serviceType") }
-                    override fun onDiscoveryStopped(serviceType: String) { Log.d(TAG, "mDNS discovery stopped"); mdnsCompleted.complete(mdnsFoundAny) }
-                    override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                        val type = serviceInfo.serviceType.trimEnd('.')
-                        if (type != MDNS_SERVICE_TYPE.trimEnd('.')) return
-                        val name = serviceInfo.serviceName ?: return
-                        Log.d(TAG, "Found mDNS service: $name")
-                        nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                            override fun onServiceResolved(resolved: NsdServiceInfo) {
-                                val host = resolved.host?.hostAddress ?: return
-                                val hostname = resolved.serviceName
-                                val port = resolved.port.takeIf { it > 0 } ?: 80
-                                Log.d(TAG, "Resolved: $hostname @ $host:$port")
-                                ioScope.launch {
-                                    val isReachDevice = validateHttpService(host, port)
-                                    if (isReachDevice) {
-                                        mdnsFoundAny = true
-                                        val (open5000, open9001) = probeBothPorts(host)
-                                        val reachDevice = ReachDevice(
-                                            ip = host,
-                                            hostname = hostname,
-                                            port5000Open = open5000,
-                                            port9001Open = open9001,
-                                            discoveryMethod = "mdns"
-                                        )
-                                        addOnceAndEmit(reachDevice, discovered) { trySend(it) }
-                                    }
+        val mdnsJob = ioScope.launch {
+            val mdnsCompleted = CompletableDeferred<Boolean>()
+            val discoveryListener = object : NsdManager.DiscoveryListener {
+                override fun onDiscoveryStarted(serviceType: String) { Log.d(TAG, "mDNS discovery started: $serviceType") }
+                override fun onDiscoveryStopped(serviceType: String) { Log.d(TAG, "mDNS discovery stopped"); mdnsCompleted.complete(mdnsFoundAny) }
+                override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                    val type = serviceInfo.serviceType.trimEnd('.')
+                    if (type != MDNS_SERVICE_TYPE.trimEnd('.')) return
+                    val name = serviceInfo.serviceName ?: return
+                    Log.d(TAG, "Found mDNS service: $name")
+                    nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                        override fun onServiceResolved(resolved: NsdServiceInfo) {
+                            val host = resolved.host?.hostAddress ?: return
+                            val hostname = resolved.serviceName
+                            val port = resolved.port.takeIf { it > 0 } ?: 80
+                            Log.d(TAG, "Resolved: $hostname @ $host:$port")
+                            ioScope.launch {
+                                val isReachDevice = validateHttpService(host, port)
+                                if (isReachDevice) {
+                                    mdnsFoundAny = true
+                                    val (open5000, open9001) = probeBothPorts(host)
+                                    val reachDevice = ReachDevice(
+                                        ip = host,
+                                        hostname = hostname,
+                                        port5000Open = open5000,
+                                        port9001Open = open9001,
+                                        discoveryMethod = "mdns"
+                                    )
+                                    addOnceAndEmit(reachDevice, discovered) { trySend(it) }
                                 }
                             }
-                            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) { Log.w(TAG, "Resolve failed for ${serviceInfo.serviceName}: $errorCode") }
-                        })
-                    }
-                    override fun onServiceLost(serviceInfo: NsdServiceInfo) { Log.d(TAG, "Service lost: ${serviceInfo.serviceName}") }
-                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Start discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(false) }
-                    override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Stop discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(mdnsFoundAny) }
+                        }
+                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) { Log.w(TAG, "Resolve failed for ${serviceInfo.serviceName}: $errorCode") }
+                    })
                 }
-                try {
-                    nsdManager.discoverServices(MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-                    withTimeoutOrNull(MDNS_TIMEOUT_MS) { mdnsCompleted.await() }
-                    try { nsdManager.stopServiceDiscovery(discoveryListener) } catch (e: Exception) { Log.w(TAG, "Error stopping mDNS discovery: ${e.message}") }
-                } catch (e: Exception) { Log.w(TAG, "mDNS discovery failed: ${e.message}"); mdnsCompleted.complete(false) }
+                override fun onServiceLost(serviceInfo: NsdServiceInfo) { Log.d(TAG, "Service lost: ${serviceInfo.serviceName}") }
+                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Start discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(false) }
+                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Stop discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(mdnsFoundAny) }
             }
-            mdnsJob.join()
-            try { multicastLock?.release() } catch (_: Exception) {}
+            try {
+                nsdManager.discoverServices(MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                withTimeoutOrNull(MDNS_TIMEOUT_MS) { mdnsCompleted.await() }
+                try { nsdManager.stopServiceDiscovery(discoveryListener) } catch (e: Exception) { Log.w(TAG, "Error stopping mDNS discovery: ${e.message}") }
+            } catch (e: Exception) { Log.w(TAG, "mDNS discovery failed: ${e.message}"); mdnsCompleted.complete(false) }
         }
+        mdnsJob.join()
+        try { multicastLock?.release() } catch (_: Exception) {}
 
-        // --- Phase 3: HTTP sweep fallback (if still no IP) ---
-        if (!bleIpFound && !mdnsFoundAny) { // changed condition
-            Log.d(TAG, "Starting Phase 3: HTTP sweep...")
+        // --- Phase 2: HTTP sweep fallback (if no devices found via mDNS) ---
+        if (!mdnsFoundAny) {
+            Log.d(TAG, "Starting Phase 2: HTTP sweep...")
             ioScope.launch {
                 val dhcp = wifiManager.dhcpInfo
                 val localIp = dhcp?.ipAddress?.let { intToInet4StringLE(it) }
@@ -269,8 +239,7 @@ object ReachDiscoveryHelper {
                 port5000Open = existing.port5000Open || device.port5000Open,
                 port9001Open = existing.port9001Open || device.port9001Open,
                 discoveryMethod = device.discoveryMethod, // keep latest method
-                wifiSsid = existing.wifiSsid ?: device.wifiSsid,
-                bluetoothAddress = existing.bluetoothAddress ?: device.bluetoothAddress
+                wifiSsid = existing.wifiSsid ?: device.wifiSsid
             )
         }
         val first = dedupe.put(device.ip, merged) == null

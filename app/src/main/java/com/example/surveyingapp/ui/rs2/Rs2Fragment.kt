@@ -13,18 +13,19 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.data.location.nmea.parser.NmeaParser
+import com.example.surveyingapp.gnss.model.Constellation
 import com.example.surveyingapp.ui.common.SatelliteSignalChartView
 import com.example.surveyingapp.ui.common.SkyplotView
 import com.example.surveyingapp.util.ReachDiscoveryHelper
-import com.example.surveyingapp.di.HasGnssGraph
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.first
 import java.util.Locale
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class Rs2Fragment : Fragment() {
 
     // Charts
@@ -51,6 +52,8 @@ class Rs2Fragment : Fragment() {
 
     // Device/battery VM (Android provides Application context)
     private val devVm: Rs2DeviceViewModel by viewModels()
+    // RS2 data ViewModel (Hilt provided)
+    private val rs2Vm: Rs2ViewModel by viewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -102,32 +105,32 @@ class Rs2Fragment : Fragment() {
 
         // Apply constellation filters to charts
         mapOf(
-            chartGps to NmeaParser.Constellation.GPS,
-            chartGlonass to NmeaParser.Constellation.GLONASS,
-            chartGalileo to NmeaParser.Constellation.GALILEO,
-            chartBeidou to NmeaParser.Constellation.BEIDOU,
-            chartQzss to NmeaParser.Constellation.QZSS,
-            chartSbas to NmeaParser.Constellation.SBAS,
+            chartGps to Constellation.GPS,
+            chartGlonass to Constellation.GLONASS,
+            chartGalileo to Constellation.GALILEO,
+            chartBeidou to Constellation.BEIDOU,
+            chartQzss to Constellation.QZSS,
+            chartSbas to Constellation.SBAS,
         ).forEach { (v, c) -> v?.setConstellationFilter(c) }
 
         // Satellite tap dialog (no collectors here)
         skyplotView?.onSatelliteClick = { sat, isUsed ->
             val constName = when (sat.constellation) {
-                NmeaParser.Constellation.GPS -> "GPS"
-                NmeaParser.Constellation.GLONASS -> "GLONASS"
-                NmeaParser.Constellation.GALILEO -> "Galileo"
-                NmeaParser.Constellation.BEIDOU -> "BeiDou"
-                NmeaParser.Constellation.QZSS -> "QZSS"
-                NmeaParser.Constellation.SBAS -> "SBAS"
-                NmeaParser.Constellation.IRNSS -> "IRNSS"
+                Constellation.GPS -> "GPS"
+                Constellation.GLONASS -> "GLONASS"
+                Constellation.GALILEO -> "Galileo"
+                Constellation.BEIDOU -> "BeiDou"
+                Constellation.QZSS -> "QZSS"
+                Constellation.SBAS -> "SBAS"
+                Constellation.IRNSS -> "IRNSS"
                 else -> "Unknown"
             }
-            val title = "Satellite ${constPrefix(sat.constellation)}${sat.prn}"
+            val title = "Satellite ${constPrefix(sat.constellation)}${sat.svid}"
             val msg = buildString {
                 appendLine("Constellation: $constName")
-                appendLine("Azimuth: ${sat.azimuthDeg ?: "--"}°")
-                appendLine("Elevation: ${sat.elevationDeg ?: "--"}°")
-                append("SNR: ${sat.snrDb ?: "--"} dB-Hz\nUsed in fix: ${if (isUsed) "Yes" else "No"}")
+                appendLine("Azimuth: ${sat.azDeg ?: "--"}°")
+                appendLine("Elevation: ${sat.elDeg ?: "--"}°")
+                append("SNR: ${sat.snrDbHz ?: "--"} dB-Hz\nUsed in fix: ${if (isUsed) "Yes" else "No"}")
             }
             AlertDialog.Builder(requireContext())
                 .setTitle(title)
@@ -154,17 +157,27 @@ class Rs2Fragment : Fragment() {
         }
         fun updateSatsLabel() { tvSats.text = fmtSats(latestSatsUsed, latestSatsVisible) }
 
-        // Bus-backed ViewModel (from graph)
-        val graphHost = requireActivity() as? HasGnssGraph
-            ?: error("Host activity must implement HasGnssGraph to provide the GNSS bus")
-        val vm: Rs2ViewModel = graphHost.gnssGraph.rs2ViewModel
+        val vm = rs2Vm
 
-        // Sky geometry and totals from the new bus
+        // Sky geometry and totals
         skyCountJob?.cancel()
         skyCountJob = viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.sky.collect { sky ->
-                    val geoms = sky.geometry
+                    // Convert SatInfo to SkyGeometry for the charts
+                    val geoms = sky.satellites.mapNotNull { satInfo ->
+                        // Only include satellites with position data
+                        if (satInfo.azimuthDeg != null && satInfo.elevationDeg != null) {
+                            com.example.surveyingapp.gnss.model.SkyGeometry(
+                                svid = satInfo.svid,
+                                constellation = satInfo.constellation,
+                                azDeg = satInfo.azimuthDeg,
+                                elDeg = satInfo.elevationDeg,
+                                snrDbHz = satInfo.cn0DbHz,
+                                usedInFix = satInfo.usedInFix ?: false
+                            )
+                        } else null
+                    }
 
                     // Update all charts and skyplot with geometry
                     chartGps?.setGeometry(geoms)
@@ -187,7 +200,7 @@ class Rs2Fragment : Fragment() {
             }
         }
 
-        // Fix info from the new bus
+        // Fix info
         rs2InfoJob?.cancel()
         rs2InfoJob = viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -212,7 +225,7 @@ class Rs2Fragment : Fragment() {
             }
         }
 
-        // Battery & device collectors (from Rs2DeviceViewModel)
+        // Battery & device collectors
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 devVm.battery.collect { b ->
@@ -252,15 +265,15 @@ class Rs2Fragment : Fragment() {
         return lastIp
     }
 
-    private fun constPrefix(c: NmeaParser.Constellation): String = when (c) {
-        NmeaParser.Constellation.GPS -> "G"
-        NmeaParser.Constellation.GLONASS -> "R"
-        NmeaParser.Constellation.GALILEO -> "E"
-        NmeaParser.Constellation.BEIDOU -> "B"
-        NmeaParser.Constellation.QZSS -> "Q"
-        NmeaParser.Constellation.SBAS -> "S"
-        NmeaParser.Constellation.IRNSS -> "I"
-        else -> "?"
+    private fun constPrefix(c: Constellation): String = when (c) {
+        Constellation.GPS -> "G"
+        Constellation.GLONASS -> "R"
+        Constellation.GALILEO -> "E"
+        Constellation.BEIDOU -> "B"
+        Constellation.QZSS -> "Q"
+        Constellation.SBAS -> "S"
+        Constellation.IRNSS -> "I"
+        Constellation.UNKNOWN -> "?"
     }
 
     override fun onDestroyView() {

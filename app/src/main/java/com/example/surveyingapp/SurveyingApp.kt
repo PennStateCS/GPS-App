@@ -6,27 +6,21 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import android.util.Log
-import com.example.surveyingapp.domain.location.LocationSourceManager
-import com.example.surveyingapp.data.location.fused.FusedSource
-import com.example.surveyingapp.data.location.nmea.NmeaSource
 import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
-import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.util.GeoProjection
+import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.first
 import org.osmdroid.config.Configuration
 
+@HiltAndroidApp
 class SurveyingApp : Application() {
     companion object {
-        // Global singletons (initialized in Application.onCreate). These are safe here because
-        // they rely only on applicationContext; avoid holding Activity references.
-        lateinit var locationManager: LocationSourceManager
+        // Global settings repository (initialized in Application.onCreate)
         lateinit var settingsRepo: SettingsRepository
         private lateinit var appScope: CoroutineScope // Supervisor scope for long‑lived background jobs
-        lateinit var nmeaSource: NmeaSource // Exposed for diagnostics / developer tools
     }
 
     override fun onCreate() {
@@ -55,7 +49,8 @@ class SurveyingApp : Application() {
             Log.w("SurveyingApp","Failed to set osmdroid user agent: ${e.message}")
         }
         Log.d("SurveyingApp","Application started; global crash handler & osmdroid config done")
-        setupLocationStack() // Initialize GNSS / fused location pipeline
+
+        setupSettings() // Initialize settings repository
         createNotificationChannel() // Required for foreground service notifications on O+
 
         // One-time lightweight backfill: populate UTM fields if missing
@@ -90,31 +85,12 @@ class SurveyingApp : Application() {
         }
     }
 
-    private fun setupLocationStack() {
-        // Dedicated supervisor scope so one child failure (e.g., NMEA stream) doesn't cancel others.
-        // NOTE: Consider adding a structured dispatcher (e.g., Dispatchers.IO) for I/O heavy NMEA parsing.
+    private fun setupSettings() {
+        // Dedicated supervisor scope for background operations
         appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         val localDs = SettingsLocalDataSource(this)
         settingsRepo = SettingsRepositoryImpl(localDs)
-        val fused = FusedSource(this) // Android fused/location provider wrapper
-
-        // NMEA source configured with suspend lambdas pulling latest prefs each (re)connection.
-        // Using .first() each time re-subscribes to DataStore flow; acceptable infrequency, but could be
-        // optimized by caching state with stateIn(appScope) if connection churn becomes high.
-        val nmea = NmeaSource(
-            btAddressProvider = { settingsRepo.externalBtAddress.first() },
-            tcpHostProvider = { settingsRepo.externalTcpHost.first() to settingsRepo.externalTcpPort.first() },
-            connectionTypeProvider = {
-                when (settingsRepo.externalConnType.first()) {
-                    ExternalConnectionType.TCP -> NmeaSource.ConnectionType.TCP
-                    ExternalConnectionType.BT -> NmeaSource.ConnectionType.BT
-                }
-            }
-        )
-        nmeaSource = nmea
-        // LocationSourceManager decides between internal fused vs external RTK sources and exposes unified flows.
-        locationManager = LocationSourceManager(settingsRepo, fused, nmea, appScope)
     }
 
     private fun createNotificationChannel() {

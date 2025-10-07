@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
  */
 object PermissionManager {
 
-    // Essential permissions needed for core app functionality (location, connectivity, camera for AR, multicast for discovery, bluetooth for external GNSS)
+    // Essential permissions needed for core app functionality (location, connectivity, camera for AR, multicast for discovery)
     val ESSENTIAL_PERMISSIONS = buildList {
         add(Manifest.permission.ACCESS_FINE_LOCATION)
         add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -22,24 +22,15 @@ object PermissionManager {
         add(Manifest.permission.ACCESS_WIFI_STATE)
         add(Manifest.permission.CAMERA)
         add(Manifest.permission.CHANGE_WIFI_MULTICAST_STATE)
-        // Bluetooth now essential (SDK conditional)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(Manifest.permission.BLUETOOTH_CONNECT)
-            add(Manifest.permission.BLUETOOTH_SCAN)
-        } else {
-            add(Manifest.permission.BLUETOOTH)
-            add(Manifest.permission.BLUETOOTH_ADMIN)
-        }
-    }.toTypedArray()
-
-    // Additional permissions that enhance functionality
-    val OPTIONAL_PERMISSIONS = buildList {
         add(Manifest.permission.READ_EXTERNAL_STORAGE)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS) // Android 13+
         }
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
             add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }
     }.toTypedArray()
 
@@ -60,15 +51,6 @@ object PermissionManager {
      */
     fun getMissingEssentialPermissions(context: Context): List<String> {
         return ESSENTIAL_PERMISSIONS.filter { permission ->
-            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    /**
-     * Get list of missing optional permissions
-     */
-    fun getMissingOptionalPermissions(context: Context): List<String> {
-        return OPTIONAL_PERMISSIONS.filter { permission ->
             ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
         }
     }
@@ -101,19 +83,6 @@ object PermissionManager {
     }
 
     /**
-     * Check if Bluetooth permissions are granted
-     */
-    fun hasBluetoothPermissions(context: Context): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            hasPermission(context, Manifest.permission.BLUETOOTH_CONNECT) &&
-            hasPermission(context, Manifest.permission.BLUETOOTH_SCAN)
-        } else {
-            hasPermission(context, Manifest.permission.BLUETOOTH) &&
-            hasPermission(context, Manifest.permission.BLUETOOTH_ADMIN)
-        }
-    }
-
-    /**
      * Check if notification permission is granted (Android 13+)
      */
     fun hasNotificationPermission(context: Context): Boolean {
@@ -129,16 +98,6 @@ object PermissionManager {
      */
     fun requestEssentialPermissions(activity: Activity, requestCode: Int) {
         val missingPermissions = getMissingEssentialPermissions(activity)
-        if (missingPermissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(activity, missingPermissions.toTypedArray(), requestCode)
-        }
-    }
-
-    /**
-     * Request optional permissions
-     */
-    fun requestOptionalPermissions(activity: Activity, requestCode: Int) {
-        val missingPermissions = getMissingOptionalPermissions(activity)
         if (missingPermissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(activity, missingPermissions.toTypedArray(), requestCode)
         }
@@ -168,8 +127,6 @@ object PermissionManager {
             Manifest.permission.ACCESS_COARSE_LOCATION -> "Access approximate location for basic positioning"
             Manifest.permission.ACCESS_BACKGROUND_LOCATION -> "Access location in background for continuous tracking"
             Manifest.permission.CAMERA -> "Access camera for AR (Augmented Reality) features"
-            Manifest.permission.BLUETOOTH, Manifest.permission.BLUETOOTH_CONNECT -> "Connect to external GNSS devices via Bluetooth"
-            Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.BLUETOOTH_SCAN -> "Scan and manage Bluetooth connections"
             Manifest.permission.READ_EXTERNAL_STORAGE -> "Read files for importing coordinate data"
             Manifest.permission.WRITE_EXTERNAL_STORAGE -> "Save files for exporting coordinate data"
             Manifest.permission.POST_NOTIFICATIONS -> "Show notifications for location service status"
@@ -183,8 +140,6 @@ object PermissionManager {
 
     // Request codes for different permission types
     const val REQUEST_CODE_ESSENTIAL = 100
-    const val REQUEST_CODE_OPTIONAL = 101
     const val REQUEST_CODE_BACKGROUND_LOCATION = 102
-    const val REQUEST_CODE_BLUETOOTH = 103
     const val REQUEST_CODE_NOTIFICATION = 104
 }

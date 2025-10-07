@@ -3,8 +3,8 @@ package com.example.surveyingapp.data.local.dao
 import androidx.lifecycle.LiveData
 import androidx.room.*
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
-import com.example.surveyingapp.domain.model.Provider
-import com.example.surveyingapp.domain.model.RtkStatus
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.model.RtkStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
