@@ -5,9 +5,8 @@ data class ReachDevice(
     val hostname: String? = null,
     val port5000Open: Boolean = false,
     val port9001Open: Boolean = false,
-    val discoveryMethod: String, // e.g. "ble", "mdns", "http_sweep"
-    val wifiSsid: String? = null,
-    val bluetoothAddress: String? = null
+    val discoveryMethod: String, // e.g. "mdns", "http_sweep"
+    val wifiSsid: String? = null
 ) {
     override fun toString(): String = buildString {
         append("ReachDevice(ip=").append(ip)
@@ -16,8 +15,6 @@ data class ReachDevice(
         append(", 9001=").append(port9001Open)
         append(", via=").append(discoveryMethod)
         wifiSsid?.let { append(", ssid=").append(it) }
-        bluetoothAddress?.let { append(", bt=").append(it) }
         append(')')
     }
 }
-

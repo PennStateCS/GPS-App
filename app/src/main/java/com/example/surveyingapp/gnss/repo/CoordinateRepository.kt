@@ -1,7 +1,7 @@
 package com.example.surveyingapp.gnss.repo
 
 import com.example.surveyingapp.gnss.capture.CaptureResult
-import com.example.surveyingapp.domain.model.Provider
+import com.example.surveyingapp.gnss.model.Provider
 
 /**
  * Persists finished averaged captures as CoordinateEntity rows.

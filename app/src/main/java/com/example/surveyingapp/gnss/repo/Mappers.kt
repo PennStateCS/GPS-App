@@ -2,9 +2,8 @@ package com.example.surveyingapp.gnss.repo
 
 import com.example.surveyingapp.gnss.capture.CaptureResult
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
-import com.example.surveyingapp.domain.model.Provider
-import com.example.surveyingapp.domain.model.RtkStatus as DomainRtk
-import com.example.surveyingapp.gnss.model.RtkStatus as GnssRtk
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.model.RtkStatus
 import java.util.UUID
 
 /**
@@ -35,7 +34,7 @@ object Mappers {
             color = colorArgb,
 
             provider = provider,
-            rtkStatus = result.rtkStatus.toDomain(),
+            rtkStatus = result.rtkStatus,
             satsUsed = result.satsUsed,
             hdop = result.hdop,
             horizontalAccuracyM = result.hAccM,
@@ -63,12 +62,4 @@ object Mappers {
         )
     }
 
-    /** Map GNSS capture RTK status to the domain enum used by the DB entity. */
-    private fun GnssRtk?.toDomain(): DomainRtk? = when (this) {
-        GnssRtk.FIX   -> DomainRtk.FIX
-        GnssRtk.FLOAT -> DomainRtk.FLOAT
-        GnssRtk.DGPS  -> DomainRtk.DGPS
-        GnssRtk.NONE  -> DomainRtk.SINGLE   // adjust if you prefer INVALID here
-        null          -> null
-    }
 }

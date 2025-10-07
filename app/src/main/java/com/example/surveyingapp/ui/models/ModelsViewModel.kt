@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.domain.model.FileType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +27,22 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    private fun getFileTypeFromExtension(fileName: String): FileType {
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+        return when (extension) {
+            "csv", "kml", "gpx" -> FileType.COORDINATE_DATA
+            "nmea", "log" -> FileType.NMEA_LOG
+            "dwg", "dxf" -> FileType.CAD_DRAWING
+            "jpg", "jpeg", "png", "tiff", "tif" -> FileType.IMAGE
+            "las", "laz" -> FileType.POINT_CLOUD
+            "obj", "ply", "stl" -> FileType.MESH_MODEL
+            "pdf" -> FileType.REPORT
+            "db", "sqlite", "sql" -> FileType.DATABASE
+            "json", "xml", "cfg", "ini" -> FileType.CONFIGURATION
+            else -> FileType.OTHER
+        }
+    }
+
     fun addModel(name: String, fileName: String, filePath: String, fileSize: Long, description: String? = null) {
         viewModelScope.launch {
             _isLoading.value = true
@@ -37,7 +54,8 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
                     filePath = filePath,
                     fileSize = fileSize,
                     dateAdded = System.currentTimeMillis(),
-                    description = description
+                    description = description,
+                    fileType = getFileTypeFromExtension(fileName)
                 )
                 repository.insertModel(model)
                 _statusMessage.value = "Model '$name' added successfully"

@@ -76,6 +76,14 @@
 
                         </LinearLayout>
 
+                        <!-- Fix Badge for GNSS quality and stream health indicators -->
+                        <com.example.surveyingapp.ui.components.FixBadgeView
+                            android:id="@+id/fix_badge"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:visibility="visible" />
+
                         <!-- Map View that fills remaining space in location card -->
                         <FrameLayout
                             android:layout_width="match_parent"

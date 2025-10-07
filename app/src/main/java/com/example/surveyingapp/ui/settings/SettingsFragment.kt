@@ -13,29 +13,27 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
-import com.example.surveyingapp.domain.model.Fix
-import com.example.surveyingapp.domain.model.LocationStatus
-import com.example.surveyingapp.domain.model.RtkStatus
+import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.EmlidDeviceInfo
 import com.example.surveyingapp.domain.model.SelfTest
 import com.example.surveyingapp.domain.model.TestStatus
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.domain.repository.ReachDeviceRepository
 import com.example.surveyingapp.service.LocationService
-import com.example.surveyingapp.service.EmlidDeviceService
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
-import com.example.surveyingapp.ui.common.SatelliteSignalChartView
 import com.example.surveyingapp.util.ReachNameResolver
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
@@ -45,17 +43,29 @@ import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import kotlin.math.min
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class SettingsFragment : BaseTwoPaneFragment() {
+
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
+    @Inject
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+    @Inject
+    lateinit var reachDeviceRepository: ReachDeviceRepository
+
+    // Comment out the SettingsViewModel injection for now since it may not exist
+    // @Inject
+    // lateinit var settingsViewModel: SettingsViewModel
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
     private lateinit var preferences: SharedPreferences
     private lateinit var repository: CoordinateRepositoryImpl
     private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
-
-    // Emlid device service for retrieving device information
-    private val emlidDeviceService = EmlidDeviceService()
 
     // Selected device for TCP connection (class scope)
     private var selectedDevice: Pair<String, Int>? = null
@@ -63,19 +73,34 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private var selectedDeviceName: String? = null
     private var autoReconnectAttempted = false // new flag
     private var provisionalConnectedUntil: Long = 0L // provisional connected status timeout
-    private var showDiagForAttempt: Boolean = false // show diagnostic while user is trying to connect
 
     // Emlid device information
     private var currentDeviceInfo: EmlidDeviceInfo? = null
 
-    // NMEA log state
-    private val nmeaLines: ArrayDeque<String> = ArrayDeque()
+    // Missing properties for import/export functionality
+    private var currentOperation: String? = null
+    private var pendingImportUri: Uri? = null
+    private var pendingImportIsCsv: Boolean = false
+    private var coordinatesImportJob: Job? = null
+    private var importProcessed: Int = 0
+    private var importTotal: Int = 0
+    private var deviceStatusJob: Job? = null
 
-    // Stream viewing control state
-    private var isStreamViewingActive = false
-    private var streamCollectionJob: Job? = null
+    // Activity result launcher for file picker
+    private val customFilePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            result.data?.data?.let { uri ->
+                handleCustomFilePickerResult(uri)
+            }
+        }
+    }
 
     private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
+
+    // UI status for external connection
+    private enum class ConnectionUiStatus { CONNECTING, STREAMING, STALE, DISCONNECTED }
 
     private fun updateDeviceBox() {
         val root = currentContentView ?: return
@@ -85,18 +110,13 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val radioGroup = root.findViewById<RadioGroup>(R.id.radio_location_source)
         val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
         val dev = selectedDevice
-        val diagContainer = root.findViewById<LinearLayout>(R.id.device_nmea_log_container)
 
         if (!externalActive) {
             // Internal source: hide diagnostic container
             box?.visibility = View.GONE
             optionsLayout?.visibility = View.GONE
-            diagContainer?.visibility = View.GONE
             return
         }
-        // Show diagnostic panel only if a device is connected/selected or user is attempting to connect
-        val showDiag = (dev != null) || showDiagForAttempt
-        diagContainer?.visibility = if (showDiag) View.VISIBLE else View.GONE
 
         if (dev == null) {
             // No device selected yet: show options, hide box
@@ -110,7 +130,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
         optionsLayout?.visibility = View.GONE
         box?.visibility = View.VISIBLE
 
-
         // Ensure status line is visible immediately with placeholder until streaming/connecting updates arrive
         statusTv?.let {
             if (it.visibility != View.VISIBLE) {
@@ -120,57 +139,21 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 it.text = getString(R.string.disconnected)
             }
         }
-        // Always show NMEA container when device selected; placeholder if no data yet
-        diagContainer?.visibility = View.VISIBLE
     }
-
-    // Sidebar categories
-    private val categories = listOf(
-        SettingsCategory(1, "Location", R.drawable.ic_section_location),
-        SettingsCategory(2, "Data", R.drawable.ic_section_data),
-        SettingsCategory(3, "Developer Tools", R.drawable.ic_dev_tools),
-        SettingsCategory(4, "About", R.drawable.ic_home)
-    )
-
-    // Import/Export jobs
-    private var coordinatesImportJob: Job? = null
-    private var pendingImportUri: Uri? = null
-    private var importTotal = 0
-    private var importProcessed = 0
-
-    // Track format for pending import (true if CSV)
-    private var pendingImportIsCsv: Boolean = false
-
-    // Custom file picker launchers for export and import
-    private val customFilePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            result.data?.data?.let { uri ->
-                handleCustomFilePickerResult(uri)
-            }
-        }
-    }
-
-    // State to track current operation
-    private var currentOperation: String? = null // "export_json", "export_csv", "import_json", "import_csv"
-
-    // ───────────────────────────── Bluetooth state ─────────────────────────────
-    private var deviceStatusJob: Job? = null // added for RS2+ live status collection
-    // New comprehensive satellite signal chart
-    private lateinit var satelliteSignalChart: SatelliteSignalChartView
-    private var rs2ChartJob: Job? = null
-    private var rs2InfoJob: Job? = null
-    private var skyplotView: com.example.surveyingapp.ui.common.SkyplotView? = null
 
     companion object {
+        // Preference keys (public for external access e.g., MainActivity)
         const val PREFS_NAME = "SurveyingAppPrefs"
         const val PREF_HIGH_ACCURACY = "high_accuracy"
         const val PREF_DEV_TOOLS = "dev_tools"
+        // Category IDs (internal)
         private const val CAT_ID_LOCATION = 1
         private const val CAT_ID_DATA = 2
         private const val CAT_ID_DEV = 3
         private const val CAT_ID_ABOUT = 4
+        // Connection status timing thresholds (ms)
+        const val FRESH_FIX_MAX_AGE_MS = 5_000L
+        const val STALE_FIX_MAX_AGE_MS = 15_000L
     }
 
     // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
@@ -205,16 +188,12 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     // ───────────────────────────── Category builders ───────────────────────────
     private fun setupLocationContent(inflater: LayoutInflater): View {
-        rs2ChartJob?.cancel()
-        rs2InfoJob?.cancel()
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
         setupLocationSourceUi(view)
         return view
     }
 
     private fun setupDataContent(inflater: LayoutInflater): View {
-        rs2ChartJob?.cancel()
-        rs2InfoJob?.cancel()
         val view = inflater.inflate(R.layout.content_settings_data, contentContainer, false)
         view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { showExportFormatDialog() }
         view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { showImportFormatDialog() }
@@ -223,8 +202,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     private fun setupDeveloperContent(inflater: LayoutInflater): View {
-        rs2ChartJob?.cancel()
-        rs2InfoJob?.cancel()
         val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
         view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_dev_tools)?.apply {
             isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
@@ -255,28 +232,35 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val btnDisconnect = view.findViewById<Button>(R.id.btn_disconnect_device)
         val textDeviceStatus = view.findViewById<TextView>(R.id.text_device_status)
 
-        // New device information UI elements
-        val deviceInfoPanel = view.findViewById<LinearLayout>(R.id.device_info_panel)
-        val textDeviceIp = view.findViewById<TextView>(R.id.text_device_ip)
-        val layoutDeviceModel = view.findViewById<LinearLayout>(R.id.layout_device_model)
-        val textDeviceModel = view.findViewById<TextView>(R.id.text_device_model)
-        val layoutDeviceFirmware = view.findViewById<LinearLayout>(R.id.layout_device_firmware)
-        val textDeviceFirmware = view.findViewById<TextView>(R.id.text_device_firmware)
-        val layoutSelfTests = view.findViewById<LinearLayout>(R.id.layout_self_tests)
-        val textSelfTestsSummary = view.findViewById<TextView>(R.id.text_self_tests_summary)
-        val layoutSelfTestsGrid = view.findViewById<LinearLayout>(R.id.layout_self_tests_grid)
-
-        // Wire up device info button handlers
+        // Wire up device info button handlers - now observes the repository's StateFlow
         val btnRefreshDeviceInfo = view.findViewById<Button>(R.id.btn_refresh_device_info)
         btnRefreshDeviceInfo?.setOnClickListener {
-            selectedDevice?.let { (host, _) ->
-                lifecycleScope.launch {
-                    val deviceInfo = emlidDeviceService.getDeviceInfo(host, 80)
-                    if (deviceInfo != null) {
-                        currentDeviceInfo = deviceInfo
-                        updateDeviceInfoDisplay()
-                    } else {
-                        Toast.makeText(requireContext(), "Failed to retrieve device info", Toast.LENGTH_SHORT).show()
+            // The repository automatically polls device info when external source is active
+            // Show current info or message if not available
+            val currentInfo = reachDeviceRepository.deviceInfo.value
+            if (currentInfo != null) {
+                // Convert ReachDeviceInfo to EmlidDeviceInfo for display
+                currentDeviceInfo = convertToEmlidDeviceInfo(currentInfo)
+                updateDeviceInfoDisplay()
+            } else {
+                Toast.makeText(requireContext(), "Device info not available. Ensure external connection is active.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Observe device info from repository
+        viewLifecycleOwner.lifecycleScope.launch {
+            reachDeviceRepository.deviceInfo.collect { reachInfo ->
+                if (reachInfo != null) {
+                    currentDeviceInfo = convertToEmlidDeviceInfo(reachInfo)
+                    updateDeviceInfoDisplay()
+
+                    // Update device name if we got a better name from the device info
+                    if (selectedDeviceName == selectedDevice?.first || selectedDeviceName.isNullOrBlank()) {
+                        selectedDeviceName = reachInfo.name ?: selectedDevice?.first
+                        selectedDevice?.let { (host, port) ->
+                            settingsRepo.setExternalTcp(host, port, selectedDeviceName ?: "Unknown Device")
+                        }
+                        updateDeviceBox()
                     }
                 }
             }
@@ -291,34 +275,25 @@ class SettingsFragment : BaseTwoPaneFragment() {
             if (lastDiagnosed == pair) return
             lastDiagnosed = pair
             lifecycleScope.launch {
-                val (result, sample) = withContext(Dispatchers.IO) { testRs2Tcp(host, port) }
+                val (result, _) = withContext(Dispatchers.IO) { testRs2Tcp(host, port) }
 
-                // Retrieve Emlid device information when connection is successful
-                if (result != TcpTestResult.CONNECT_FAILED) {
-                    val deviceInfo = emlidDeviceService.getDeviceInfo(host, 80)
-                    if (deviceInfo != null) {
-                        currentDeviceInfo = deviceInfo
-                        updateDeviceInfoDisplay()
-                        // Update device name if we got a better name from the device info
-                        if (selectedDeviceName == host || selectedDeviceName.isNullOrBlank()) {
-                            selectedDeviceName = deviceInfo.deviceName
-                            settingsRepo.setExternalTcpName(deviceInfo.deviceName)
-                            updateDeviceBox()
+                // The ReachDeviceRepository will automatically start polling device info
+                // when the external source becomes active through the settings change below.
+                // The device info will be available through the StateFlow observer we set up earlier.
+
+                // Resolve friendly Reach name (fallback if device info fails)
+                if (selectedDeviceName == null || selectedDeviceName == host) {
+                    launch {
+                        val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
+                        if (!resolved.isNullOrBlank() && isAdded) {
+                            // Only use resolved name if we didn't get a better name from device info
+                            if (currentDeviceInfo == null) {
+                                selectedDeviceName = resolved
+                                settingsRepo.setExternalTcp(host, port, resolved)
+                                updateDeviceBox()
+                            }
                         }
                     }
-                }
-
-                // If NMEA is flowing on diagnostic, auto-connect the app to start skyFlow and fixes.
-                if (result == TcpTestResult.RECEIVING_NMEA) {
-                    // Persist and reflect the selected device
-                    selectedDevice = host to port
-                    selectedDeviceLabel = getString(R.string.host_port, host, port)
-                    if (selectedDeviceName.isNullOrBlank() || selectedDeviceName == host) {
-                        selectedDeviceName = currentDeviceInfo?.deviceName ?: host
-                    }
-                    showDiagForAttempt = true
-                    updateDeviceBox()
-                    connectViaTcpFlow(host, port)
                 }
             }
         }
@@ -330,7 +305,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 selectedDevice = host to port
                 selectedDeviceLabel = getString(R.string.host_port, host, port)
                 selectedDeviceName = host
-                showDiagForAttempt = true
                 // Enter a provisional Connecting state to avoid transient Error/Idle display
                 provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                 updateDeviceBox()
@@ -354,7 +328,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
                  selectedDevice = null
                  selectedDeviceLabel = null
                  selectedDeviceName = null
-                 showDiagForAttempt = false
                  updateDeviceBox() // will show options layout again
             }
         }
@@ -439,50 +412,66 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
         deviceStatusJob?.cancel()
         deviceStatusJob = viewLifecycleOwner.lifecycleScope.launch {
-            var lastFix: Fix? = null
-            var lastStatus: LocationStatus = LocationStatus.Idle
-            fun statusLine(status: LocationStatus, fix: Fix?): String {
-                val now = System.currentTimeMillis()
-                // During provisional window, show Connecting instead of transient Idle/Error
-                val provisional = provisionalConnectedUntil > now && selectedDevice != null
-                if (provisional) return "Connecting…"
-                return when (status) {
-                    is LocationStatus.Connecting -> "Connecting…"
-                    is LocationStatus.Error -> "Error"
-                    is LocationStatus.Streaming -> "Connected"
-                    is LocationStatus.Idle -> getString(R.string.disconnected)
+            var lastFixTimeMs: Long = 0L
+            var lastUiStatus: ConnectionUiStatus = ConnectionUiStatus.DISCONNECTED
+
+            fun currentExternalActive(): Boolean = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
+
+            fun deriveStatus(now: Long): ConnectionUiStatus {
+                if (!currentExternalActive()) return ConnectionUiStatus.DISCONNECTED
+                if (provisionalConnectedUntil > now && selectedDevice != null) return ConnectionUiStatus.CONNECTING
+                if (lastFixTimeMs == 0L) return ConnectionUiStatus.CONNECTING // still waiting on first data
+                val age = now - lastFixTimeMs
+                return when {
+                    age <= FRESH_FIX_MAX_AGE_MS -> ConnectionUiStatus.STREAMING
+                    age <= STALE_FIX_MAX_AGE_MS -> ConnectionUiStatus.STALE
+                    else -> ConnectionUiStatus.DISCONNECTED
                 }
             }
-            fun applyColor(tv: TextView?, status: LocationStatus, fix: Fix?, external: Boolean) {
-                val now = System.currentTimeMillis()
-                // During provisional window, color as Connecting
-                val provisional = provisionalConnectedUntil > now && selectedDevice != null
-                val colorRes = if (!external) android.R.color.holo_blue_dark else when {
-                    provisional -> android.R.color.holo_orange_dark
-                    status is LocationStatus.Error -> android.R.color.holo_red_dark
-                    status is LocationStatus.Connecting -> android.R.color.holo_orange_dark
-                    status is LocationStatus.Streaming -> android.R.color.holo_green_dark
-                    else -> android.R.color.darker_gray
+
+            fun statusLine(status: ConnectionUiStatus): String = when (status) {
+                ConnectionUiStatus.CONNECTING -> "Connecting…"
+                ConnectionUiStatus.STREAMING -> "Connected"
+                ConnectionUiStatus.STALE -> "Stale"
+                ConnectionUiStatus.DISCONNECTED -> getString(R.string.disconnected)
+            }
+
+            fun applyColor(tv: TextView?, status: ConnectionUiStatus, external: Boolean) {
+                val colorRes = if (!external) android.R.color.darker_gray else when (status) {
+                    ConnectionUiStatus.CONNECTING -> android.R.color.holo_orange_dark
+                    ConnectionUiStatus.STREAMING -> android.R.color.holo_green_dark
+                    ConnectionUiStatus.STALE -> android.R.color.holo_orange_light
+                    ConnectionUiStatus.DISCONNECTED -> android.R.color.darker_gray
                 }
                 tv?.setTextColor(ContextCompat.getColor(requireContext(), colorRes))
             }
-            fun update() {
-                val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
-                val statusView = textDeviceStatus
-                val show = externalActive && selectedDevice != null
-                if (show) {
-                    statusView?.visibility = View.VISIBLE
-                    statusView?.text = statusLine(lastStatus, lastFix)
-                } else {
-                    statusView?.visibility = View.GONE
+
+            fun refresh(now: Long) {
+                val newStatus = deriveStatus(now)
+                if (newStatus != lastUiStatus) lastUiStatus = newStatus
+                textDeviceStatus?.let { tv ->
+                    tv.visibility = View.VISIBLE
+                    tv.text = statusLine(lastUiStatus)
+                    applyColor(tv, lastUiStatus, currentExternalActive())
                 }
-                applyColor(statusView, lastStatus, lastFix, externalActive)
+                updateDeviceBox()
             }
-            val mgr = SurveyingApp.locationManager
-            launch { mgr.fixFlow.collect { f: Fix -> lastFix = f; provisionalConnectedUntil = 0L; update(); updateDeviceBox() } }
-            launch { mgr.statusFlow.collectLatest { s: LocationStatus -> if (s is LocationStatus.Streaming) provisionalConnectedUntil = 0L; lastStatus = s; update() } }
-            // Initial forced update so UI reflects existing (idle) state immediately
-            update()
+
+            // Collect fixes to update recency
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    fixSwitchboard.fixes.collect { _ ->
+                        lastFixTimeMs = System.currentTimeMillis()
+                        provisionalConnectedUntil = 0L
+                        refresh(lastFixTimeMs)
+                    }
+                }
+            }
+            // Periodic refresh to age out status
+            while (isActive) {
+                refresh(System.currentTimeMillis())
+                delay(1_000L)
+            }
         }
         textDeviceStatus?.text = ""
 
@@ -532,6 +521,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
             if (initializing) return@setOnCheckedChangeListener
             when (checkedId) {
                 R.id.radio_internal -> {
+                    // Update switchboard provider to internal
+                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
                     // Update categories immediately when switching to internal (hide RS2+)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
@@ -541,12 +532,13 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     selectedDeviceLabel = null
                     selectedDeviceName = null
                     provisionalConnectedUntil = 0L
-                    showDiagForAttempt = false
                     updateDeviceBox()
                     lifecycleScope.launch { settingsRepo.setLocationSource(LocationSourceType.INTERNAL) }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
                 R.id.radio_es2_tcp -> {
+                    // Update switchboard provider to external
+                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
                     // Update categories immediately when switching to external (show RS2+)
                     refreshCategoriesForSource(LocationSourceType.EXTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)
@@ -563,7 +555,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
                             selectedDevice = host to port
                             selectedDeviceLabel = getString(R.string.host_port, host, port)
                             selectedDeviceName = selectedDeviceName ?: host
-                            showDiagForAttempt = true
                             updateDeviceBox()
                             connectViaTcpFlow(host, port)
                         }
@@ -585,7 +576,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         var reader: BufferedReader? = null
         var gotData = false
         try {
-            android.util.Log.d("TCP", "Attempting to connect to $host:$port")
+            Log.d("TCP", "Attempting to connect to $host:$port")
             socket = Socket().apply {
                 tcpNoDelay = true
                 keepAlive = true
@@ -593,41 +584,41 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
             // More detailed connection error handling
             try {
-                socket!!.connect(InetSocketAddress(host, port), 4000)
-                android.util.Log.d("TCP", "Successfully connected to $host:$port")
+                socket.connect(InetSocketAddress(host, port), 4000)
+                Log.d("TCP", "Successfully connected to $host:$port")
             } catch (e: java.net.ConnectException) {
-                android.util.Log.e("TCP", "Connection refused to $host:$port - device may be offline or port closed", e)
+                Log.e("TCP", "Connection refused to $host:$port - device may be offline or port closed", e)
                 return@withContext false
             } catch (e: java.net.SocketTimeoutException) {
-                android.util.Log.e("TCP", "Connection timeout to $host:$port - device may be unreachable", e)
+                Log.e("TCP", "Connection timeout to $host:$port - device may be unreachable", e)
                 return@withContext false
             } catch (e: java.net.UnknownHostException) {
-                android.util.Log.e("TCP", "Unknown host $host - check IP address", e)
+                Log.e("TCP", "Unknown host $host - check IP address", e)
                 return@withContext false
             } catch (e: java.net.NoRouteToHostException) {
-                android.util.Log.e("TCP", "No route to host $host - check network connectivity", e)
+                Log.e("TCP", "No route to host $host - check network connectivity", e)
                 return@withContext false
             } catch (e: Exception) {
-                android.util.Log.e("TCP", "Unexpected connection error to $host:$port", e)
+                Log.e("TCP", "Unexpected connection error to $host:$port", e)
                 return@withContext false
             }
 
-            runCatching { socket!!.soTimeout = 3000 }
-            reader = BufferedReader(InputStreamReader(socket!!.getInputStream(), StandardCharsets.US_ASCII))
+            runCatching { socket.soTimeout = 3000 }
+            reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
             val start = System.currentTimeMillis()
-            android.util.Log.d("TCP", "Reading data from $host:$port for up to 5 seconds")
+            Log.d("TCP", "Reading data from $host:$port for up to 5 seconds")
             while (System.currentTimeMillis() - start < 5000L) {
-                val line = withTimeoutOrNull(1000L) { runCatching { reader!!.readLine() }.getOrNull() }
+                val line = withTimeoutOrNull(1000L) { runCatching { reader.readLine() }.getOrNull() }
                 if (line == null) continue
-                android.util.Log.d("TCP", "Received line: $line")
+                Log.d("TCP", "Received line: $line")
                 if (line.startsWith("$")) {
                     gotData = true
-                    android.util.Log.d("TCP", "NMEA sentence detected")
+                    Log.d("TCP", "NMEA sentence detected")
                     break
                 }
             }
             if (!gotData) {
-                android.util.Log.w("TCP", "No NMEA data received from $host:$port within timeout")
+                Log.w("TCP", "No NMEA data received from $host:$port within timeout")
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         requireContext(),
@@ -637,15 +628,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 }
             }
             // Consider connection successful even if no NMEA yet (device may stream RTCM or be slow to start)
-            android.util.Log.d("TCP", "Connection test completed successfully for $host:$port")
+            Log.d("TCP", "Connection test completed successfully for $host:$port")
             true
         } catch (e: Exception) {
-            android.util.Log.e("TCP", "Unexpected error during TCP connection test to $host:$port", e)
+            Log.e("TCP", "Unexpected error during TCP connection test to $host:$port", e)
             false
         } finally {
             runCatching { reader?.close() }
             runCatching { socket?.close() }
-            android.util.Log.d("TCP", "Cleaned up connection resources for $host:$port")
+            Log.d("TCP", "Cleaned up connection resources for $host:$port")
         }
     }
 
@@ -657,7 +648,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
             provisionalConnectedUntil = System.currentTimeMillis() + 8000L
             view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                 tv.visibility = View.VISIBLE
-                tv.text = getString(R.string.diag_testing).replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() }
+                tv.text = getString(R.string.diag_testing).replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
                 tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
             }
 
@@ -665,7 +656,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
             Log.d("SettingsFragment", "connectViaTcpFlow: connection result=$success")
 
             if (success) {
-                // User may have switched to Internal while connection was in-flight; respect current selection
+                // Ensure provider is switched to external in routing
+                sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
+                 // User may have switched to Internal while connection was in-flight; respect current selection
                 val currentSource = settingsRepo.locationSource.first()
                 Log.d("SettingsFragment", "connectViaTcpFlow: current source after connection=$currentSource")
                 if (currentSource != LocationSourceType.EXTERNAL) {
@@ -688,28 +681,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
                 }
 
-                // Retrieve device information from Emlid device (on port 80)
-                launch {
-                    try {
-                        val deviceInfo = emlidDeviceService.getDeviceInfo(host, 80)
-                        if (deviceInfo != null) {
-                            currentDeviceInfo = deviceInfo
-                            updateDeviceInfoDisplay()
-                            android.util.Log.d("DeviceInfo", "Successfully retrieved device info for $host")
-
-                            // Update device name with the actual device name from device info
-                            if (selectedDeviceName == host || selectedDeviceName.isNullOrBlank()) {
-                                selectedDeviceName = deviceInfo.deviceName
-                                settingsRepo.setExternalTcpName(deviceInfo.deviceName)
-                                updateDeviceBox()
-                            }
-                        } else {
-                            android.util.Log.w("DeviceInfo", "Failed to retrieve device info from $host:80")
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("DeviceInfo", "Error retrieving device info from $host:80", e)
-                    }
-                }
+                // The ReachDeviceRepository will automatically start polling device info
+                // when the external source becomes active through the settings change below.
+                // The device info will be available through the StateFlow observer we set up earlier.
 
                 // Resolve friendly Reach name (fallback if device info fails)
                 if (selectedDeviceName == null || selectedDeviceName == host) {
@@ -719,13 +693,14 @@ class SettingsFragment : BaseTwoPaneFragment() {
                             // Only use resolved name if we didn't get a better name from device info
                             if (currentDeviceInfo == null) {
                                 selectedDeviceName = resolved
-                                settingsRepo.setExternalTcpName(resolved)
+                                settingsRepo.setExternalTcp(host, port, resolved)
                                 updateDeviceBox()
                             }
                         }
                     }
                 }
             } else {
+                // On failure, keep provider internal if no recent fix
                 Log.w("SettingsFragment", "connectViaTcpFlow: connection to $host:$port failed")
                 view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                     tv.visibility = View.VISIBLE
@@ -990,7 +965,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         runCatching {
             val raw = withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openInputStream(uri)?.use { inp ->
-                    java.io.BufferedReader(java.io.InputStreamReader(inp, java.nio.charset.StandardCharsets.UTF_8)).readText()
+                    BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
                 } ?: error("Unable to open input stream")
             }
             val list = if (isCsv) parseCsvCoordinates(raw) else parseJsonCoordinates(raw)
@@ -1096,8 +1071,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     private fun buildUnifiedStatusLine(
-        lmStatus: com.example.surveyingapp.domain.model.LocationStatus,
-        fix: com.example.surveyingapp.domain.model.Fix?,
+        uiStatus: ConnectionUiStatus,
+        fix: Fix?,
         isExternal: Boolean,
         deviceLabel: String?
     ): String {
@@ -1105,22 +1080,23 @@ class SettingsFragment : BaseTwoPaneFragment() {
             val dev = deviceLabel ?: "(no device)"
             "RS2+ TCP $dev"
         } else "Internal GPS"
-        val connPart = when (lmStatus) {
-            is com.example.surveyingapp.domain.model.LocationStatus.Connecting -> "Connecting"
-            is com.example.surveyingapp.domain.model.LocationStatus.Error -> "Error"
-            com.example.surveyingapp.domain.model.LocationStatus.Idle -> if (isExternal) "Disconnected" else "Idle"
-            is com.example.surveyingapp.domain.model.LocationStatus.Streaming -> "Connected"
+        val connPart = when (uiStatus) {
+            ConnectionUiStatus.CONNECTING -> "Connecting"
+            ConnectionUiStatus.STREAMING -> "Connected"
+            ConnectionUiStatus.STALE -> "Stale"
+            ConnectionUiStatus.DISCONNECTED -> if (isExternal) "Disconnected" else "Idle"
         }
         val fixPart = if (!isExternal) {
             if (fix != null) "Fused" else "Fused (pending)"
         } else {
             when (fix?.rtkStatus) {
-                com.example.surveyingapp.domain.model.RtkStatus.FIX -> "Fixed RTK"
-                com.example.surveyingapp.domain.model.RtkStatus.FLOAT -> "Float"
-                com.example.surveyingapp.domain.model.RtkStatus.DGPS -> "DGPS"
-                com.example.surveyingapp.domain.model.RtkStatus.SINGLE -> "Single"
-                com.example.surveyingapp.domain.model.RtkStatus.INVALID -> "No Fix"
-                null -> if (lmStatus is com.example.surveyingapp.domain.model.LocationStatus.Streaming) "No Fix" else "--"
+                RtkStatus.FIX -> "Fixed RTK"
+                RtkStatus.FLOAT -> "Float"
+                RtkStatus.DGPS -> "DGPS"
+                RtkStatus.SINGLE -> "Single"
+                RtkStatus.DEAD_RECKONING -> "DR"
+                RtkStatus.INVALID, RtkStatus.NONE -> "No Fix"
+                null -> if (uiStatus == ConnectionUiStatus.STREAMING) "No Fix" else "--"
             }
         }
         val satsUsed = fix?.satsUsed
@@ -1130,15 +1106,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
             satsUsed != null -> "${satsUsed} sats"
             else -> "-- sats"
         }
-        val pdop = fix?.pdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
-        val hdop = fix?.hdop?.let { String.format(java.util.Locale.US, "%.1f", it) }
-        val dopPart = when {
-            pdop != null && hdop != null -> "PDOP $pdop / HDOP $hdop"
-            pdop != null -> "PDOP $pdop"
-            hdop != null -> "HDOP $hdop"
-            else -> "PDOP -- / HDOP --"
-        }
-        val basePart = if (isExternal) fix?.baseStationId?.let { "Base ID $it" } else null
+        val dopPart = "DOP --"
+        val basePart = if (isExternal) "Base --" else null
         return listOfNotNull(sourcePart, connPart, fixPart, satsPart, dopPart, basePart).joinToString(" • ")
     }
 
@@ -1191,15 +1160,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
         }
     }
 
-    // ───────────────────────────── Satellite Signal Chart Update ─────────────────────────────
-    private fun updateSatelliteSignalChart(sky: com.example.surveyingapp.data.location.nmea.NmeaSource.SkySnapshot) {
-        // Use real satellites and used PRNs from sky snapshot
-        val allSatellites = sky.satellites
-        val usedSatellitePrns = sky.usedPrns
-        satelliteSignalChart.setSatelliteData(allSatellites, usedSatellitePrns)
-        // Also update skyplot if present
-        skyplotView?.setSatelliteData(allSatellites, usedSatellitePrns)
-    }
 
     // ───────────────────────────── Emlid Device Information Display ─────────────────────────────
     private fun showEmlidDeviceInfo(deviceInfo: EmlidDeviceInfo) {
@@ -1426,5 +1386,20 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun dpToPx(dp: Int): Int {
         val density = requireContext().resources.displayMetrics.density
         return (dp * density).toInt()
+    }
+
+    // ───────────────────────────── Model Conversion Helper ─────────────────────────────
+    private fun convertToEmlidDeviceInfo(reachInfo: com.example.surveyingapp.domain.repository.ReachDeviceInfo): EmlidDeviceInfo {
+        return EmlidDeviceInfo(
+            deviceName = reachInfo.name ?: reachInfo.ip ?: "Unknown Device",
+            ipAddress = reachInfo.ip ?: "Unknown IP",
+            selfTests = emptyList(), // ReachDeviceInfo doesn't include self tests
+            firmwareVersion = reachInfo.firmware,
+            serialNumber = reachInfo.serial,
+            model = reachInfo.model,
+            uptime = reachInfo.uptimeSec?.let { "${it}s" }, // Convert seconds to string
+            temperature = null, // Not available in ReachDeviceInfo
+            batteryLevel = null // Battery info is handled separately in ReachBatteryInfo
+        )
     }
 }

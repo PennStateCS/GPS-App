@@ -1,11 +1,14 @@
 package com.example.surveyingapp.gnss.bus.adapters
 
 import com.example.surveyingapp.gnss.bus.SourceAdapter
+import com.example.surveyingapp.gnss.bus.Startable
 import com.example.surveyingapp.gnss.model.Fix
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 
 /**
@@ -15,20 +18,20 @@ import kotlinx.coroutines.launch
 class InternalAdapter(
     private val scope: CoroutineScope,
     private val fusedSource: FusedSource   // Your existing Fused provider wrapper
-) : SourceAdapter {
+) : SourceAdapter, Startable {
 
     private val _fixes = MutableSharedFlow<Fix>(
         replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
-    override val fixes: SharedFlow<Fix> = _fixes
+    override val fixes: SharedFlow<Fix> = _fixes.asSharedFlow()
 
-    fun start() {
+    override fun start() {
         scope.launch {
-            fusedSource.fixes().collect { fix -> _fixes.emit(fix) }
+            fusedSource.fixes().conflate().collect { fix -> _fixes.emit(fix) }
         }
     }
 
-    fun stop() {
+    override fun stop() {
         fusedSource.stop()
     }
 }

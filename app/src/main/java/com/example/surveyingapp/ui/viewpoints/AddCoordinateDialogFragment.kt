@@ -16,6 +16,8 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.di.HasGnssGraph
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.util.GeoProjection
@@ -52,6 +54,9 @@ class AddCoordinateDialogFragment(
     private val highAccuracy: Boolean = true,
     private val onPointAdded: (Coordinate) -> Unit
 ) : DialogFragment() {
+
+    // Reference to EditText for proper cleanup
+    private var editTextRef: EditText? = null
 
     // Variables to store the GPS coordinates
     private var latitude: Double = 0.0
@@ -92,6 +97,9 @@ class AddCoordinateDialogFragment(
         val locationText = view.findViewById<TextView>(R.id.text_location)
         val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
+
+        // Store reference to EditText for proper cleanup
+        editTextRef = nameEdit
 
         // Set up icon choices with custom adapter (updated icons)
         val icons = listOf(
@@ -197,7 +205,7 @@ class AddCoordinateDialogFragment(
             providerStr = "fused"
             hAccVal = if (result.hasAccuracy()) result.accuracy.toDouble() else null
             vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && result.hasVerticalAccuracy()) result.verticalAccuracyMeters.toDouble() else null
-            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL";
+            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL"
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
             capturedTimestampMs = System.currentTimeMillis()
             return
@@ -228,39 +236,36 @@ class AddCoordinateDialogFragment(
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {
+        // Obtain a single external fix via the shared GNSS graph (switchboard)
         val fix = withTimeoutOrNull(12_000L) {
-            withContext(Dispatchers.IO) {
-                try { SurveyingApp.nmeaSource.fixes().first() } catch (_: Exception) { null }
+            val host = activity as? HasGnssGraph
+            val flow = host?.gnssGraph?.bus?.fixes
+            if (flow == null) null else withContext(Dispatchers.IO) {
+                runCatching { flow.first() }.getOrNull()
             }
         }
         if (fix != null) {
-            latitude = fix.lat
-            longitude = fix.lon
+            latitude = fix.latDeg
+            longitude = fix.lonDeg
             altitude = fix.altEllipsoidalM ?: 0.0
-            // Map provider enum to display/storage string
+            // Map provider enum to display/storage string (collapse external variants)
             providerStr = when (fix.provider) {
-                com.example.surveyingapp.domain.model.Provider.RS2_BT -> "rs2-bt"
-                com.example.surveyingapp.domain.model.Provider.RS2_TCP -> "rs2-tcp"
-                com.example.surveyingapp.domain.model.Provider.INTERNAL -> "fused"
-                else -> "external"
+                Provider.INTERNAL -> "fused"
+                Provider.RS2_EXTERNAL, Provider.RS2_BT, Provider.RS2_TCP, Provider.OTHER -> "external"
             }
-            rtkStatusStr = fix.rtkStatus?.name
+            rtkStatusStr = fix.rtkStatus.name
             satsUsedVal = fix.satsUsed
-            hdopVal = fix.hdop
+            hdopVal = fix.hDop
             hAccVal = fix.hAccM
             vAccVal = fix.vAccM
-            correctionSourceStr = fix.correctionSource?.name
-            correctionAgeSeconds = fix.diffAge?.inWholeMilliseconds?.div(1000.0)
+            correctionAgeSeconds = fix.diffAgeS
             altitudeMslVal = fix.altMslM
             geoidSeparationVal = fix.geoidSeparationM
-            crsEpsgVal = fix.crsEpsg
-            stdLatVal = fix.stdLatM
-            stdLonVal = fix.stdLonM
-            stdAltVal = fix.stdAltM
-            capturedTimestampMs = fix.timestamp.toEpochMilli()
+            crsEpsgVal = 4326 // WGS84
+            capturedTimestampMs = fix.timeUtc.toEpochMilli()
 
-            val state = rtkStatusStr ?: "SINGLE"
-            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, state)
+            val mode = rtkStatusStr ?: "SINGLE"
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
         } else {
             locationText.text = getString(R.string.location_unavailable)
         }
@@ -319,5 +324,18 @@ class AddCoordinateDialogFragment(
 
             return view
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Clear EditText focus and references to prevent IME callback errors
+        editTextRef?.clearFocus()
+        editTextRef = null
+    }
+
+    override fun onDetach() {
+        super.onDetach()
+        // Additional cleanup for IME callbacks
+        editTextRef = null
     }
 }

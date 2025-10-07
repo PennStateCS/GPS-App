@@ -19,6 +19,7 @@ import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import com.example.surveyingapp.ui.settings.SettingsCategory
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
 import com.google.ar.core.Session
@@ -48,8 +49,14 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.flow.firstOrNull
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class DevelopmentFragment : BaseTwoPaneFragment() {
+
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
 
     // Developer categories: lightweight side list for specialized debug panes.
     // Add/remove here to extend; IDs must remain stable for state restoration.
@@ -799,8 +806,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             isStreamViewingActive = true
             updateButtons()
             streamCollectionJob = viewLifecycleOwner.lifecycleScope.launch {
-                SurveyingApp.locationManager.externalRawLines.collect { rawLine ->
-                    if (rawLine.isNotBlank() && isStreamViewingActive) {
+                // Access NMEA lines through the external adapter's NMEA source
+                // For now, simulate raw lines by collecting fixes and showing them
+                fixSwitchboard.fixes.collect { fix ->
+                    if (isStreamViewingActive) {
+                        val rawLine = "Fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, rtk=${fix.rtkStatus}"
                         nmeaLines.addLast(rawLine)
                         while (nmeaLines.size > 100) nmeaLines.removeFirst()
                         tvPreview?.text = nmeaLines.joinToString("\n")
@@ -812,7 +822,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                     }
                 }
             }
-            Toast.makeText(requireContext(), "Stream viewing started", Toast.LENGTH_SHORT).show()
         }
         btnStop?.setOnClickListener {
             if (!isStreamViewingActive) return@setOnClickListener

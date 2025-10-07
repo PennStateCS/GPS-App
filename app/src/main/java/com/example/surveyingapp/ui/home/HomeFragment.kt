@@ -17,11 +17,13 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.fragment.findNavController
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
@@ -29,9 +31,10 @@ import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.FragmentHomeBinding
-import com.example.surveyingapp.domain.model.Fix
+import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.LocationSourceType
-import com.example.surveyingapp.domain.model.LocationStatus
+import com.example.surveyingapp.ui.components.FixBadgeView
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
@@ -39,15 +42,25 @@ import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.LocationSource
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class HomeFragment : Fragment(), OnMapReadyCallback {
+
+    // Inject FixSwitchboard using Hilt
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
+
+    // ViewModel injection using Hilt
+    private val viewModel: HomeViewModel by viewModels()
 
     // View binding - safer than findViewById, automatically set to null when view is destroyed
     private var _binding: FragmentHomeBinding? = null
-    private val binding get() = _binding!!
+    private val binding get() = _binding ?: throw IllegalStateException("Fragment binding is null - view may have been destroyed")
 
     // Map and location
     private lateinit var mapView: MapView
@@ -59,12 +72,14 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private var hasCenteredCamera = false
     private val desiredFollowZoom = 18f
 
+    // Fix Badge component
+    private lateinit var fixBadge: FixBadgeView
+
     // Repositories
     private lateinit var coordinateRepository: CoordinateRepositoryImpl
     private lateinit var modelRepository: ModelRepositoryImpl
 
-    // Location manager reference
-    private val locationManager by lazy { SurveyingApp.locationManager }
+    // Settings repository reference (still needed for settings)
     private val settingsRepo by lazy { SurveyingApp.settingsRepo }
 
     /**
@@ -86,6 +101,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         coordinateRepository = CoordinateRepositoryImpl(database.coordinateDao())
         modelRepository = ModelRepositoryImpl(database.modelDao())
 
+        // Initialize UI components
+        fixBadge = binding.fixBadge
+
         // Initialize map
         mapView = binding.mapViewMini
         mapView.onCreate(savedInstanceState)
@@ -94,6 +112,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Set up UI
         setupQuickActionButtons()
         setupLocationStatusObservers()
+        setupFixBadgeObservers()
         setupRs2SummaryObservers()
         setupMapUiControls()
         loadStatistics()
@@ -127,50 +146,73 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     private fun setupLocationStatusObservers() {
         // Observe current location fix
-        lifecycleScope.launch {
-            locationManager.fixFlow.collectLatest { fix ->
-                updateLocationDisplay(fix)
-                updateMapLocation(fix)
-                updateStatusDisplay(fix)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fixSwitchboard.fixes.collect { fix: Fix ->
+                    updateLocationDisplay(fix)
+                    updateMapLocation(fix)
+                    updateStatusDisplay(fix)
+                }
             }
         }
 
-        // Observe location status
-        lifecycleScope.launch {
-            locationManager.statusFlow.collectLatest { status ->
-                updateLocationStatusText(status)
+        // Observe location source (still needed for RS2 summary / visibility logic)
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepo.locationSource.collectLatest { source ->
+                    updateLocationSourceDisplay(source)
+                }
+            }
+        }
+    }
+
+    private fun setupFixBadgeObservers() {
+        // Observe fix snapshot for GNSS quality indicators
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.fixSnapshot.collect { fixSnapshot ->
+                    fixBadge.updateFixData(fixSnapshot)
+                }
             }
         }
 
-        // Observe location source
-        lifecycleScope.launch {
-            settingsRepo.locationSource.collectLatest { source ->
-                updateLocationSourceDisplay(source)
+        // Observe NMEA statistics for stream health indicators
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.nmeaStats.collect { nmeaStats ->
+                    fixBadge.updateStreamHealth(nmeaStats)
+                }
             }
         }
     }
 
     private fun setupRs2SummaryObservers() {
-        lifecycleScope.launch {
-            combine(
-                settingsRepo.locationSource,
-                settingsRepo.externalTcpName,
-                settingsRepo.externalTcpHost,
-                settingsRepo.externalTcpPort
-            ) { source, name, host, port ->
-                val address = if (!host.isNullOrBlank() && port != null) "$host:$port" else "--"
-                Triple(source, name ?: "--", address)
-            }.collectLatest { triple ->
-                val source = triple.first
-                val name = triple.second
-                val address = triple.third
-                val show = source == LocationSourceType.EXTERNAL
-                val visibility = if (show) View.VISIBLE else View.GONE
-                binding.textRs2SummaryHeader.visibility = visibility
-                binding.containerRs2Summary.visibility = visibility
-                if (show) {
-                    binding.textRs2Name.text = name
-                    binding.textRs2Address.text = address
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(
+                    settingsRepo.locationSource,
+                    settingsRepo.externalTcpName,
+                    settingsRepo.externalTcpHost,
+                    settingsRepo.externalTcpPort
+                ) { source, name, host, port ->
+                    val address = if (!host.isNullOrBlank() && port != null) "$host:$port" else "--"
+                    Triple(source, name ?: "--", address)
+                }.collectLatest { triple ->
+                    // Check if binding is still available before accessing UI
+                    val currentBinding = _binding ?: return@collectLatest
+
+                    val source = triple.first
+                    val name = triple.second
+                    val address = triple.third
+                    val show = source == LocationSourceType.EXTERNAL
+                    val visibility = if (show) View.VISIBLE else View.GONE
+
+                    currentBinding.textRs2SummaryHeader.visibility = visibility
+                    currentBinding.containerRs2Summary.visibility = visibility
+                    if (show) {
+                        currentBinding.textRs2Name.text = name
+                        currentBinding.textRs2Address.text = address
+                    }
                 }
             }
         }
@@ -200,27 +242,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         )
         val i = order.indexOf(current)
         return if (i == -1 || i == order.lastIndex) order.first() else order[i + 1]
-    }
-
-    private fun showMapTypePicker() {
-        val map = googleMap ?: return
-        val items = arrayOf("Normal", "Satellite", "Terrain", "Hybrid", "None")
-        val types = intArrayOf(
-            GoogleMap.MAP_TYPE_NORMAL,
-            GoogleMap.MAP_TYPE_SATELLITE,
-            GoogleMap.MAP_TYPE_TERRAIN,
-            GoogleMap.MAP_TYPE_HYBRID,
-            GoogleMap.MAP_TYPE_NONE
-        )
-        val currentIdx = types.indexOf(map.mapType).coerceAtLeast(0)
-        AlertDialog.Builder(requireContext())
-            .setTitle("Map type")
-            .setSingleChoiceItems(items, currentIdx) { dialog, which ->
-                map.mapType = types[which]
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     private fun apply3D(enable: Boolean, animate: Boolean) {
@@ -260,14 +281,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     private fun updateLocationDisplay(fix: Fix?) {
         if (fix != null) {
-            // Removed coordinates text box updates
-            binding.textLocationStatus.text = "Location acquired"
+            binding.textLocationStatus.text = getString(R.string.location_acquired)
             binding.textLocationStatus.setTextColor(
                 ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
             )
         } else {
-            // Removed coordinates text box updates
-            binding.textLocationStatus.text = "No location"
+            binding.textLocationStatus.text = getString(R.string.no_location)
             binding.textLocationStatus.setTextColor(
                 ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
             )
@@ -276,12 +295,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     private fun updateMapLocation(fix: Fix?) {
         if (fix != null && googleMap != null) {
-            // Push this Fix into the map's My Location layer
             onLocationChangedListener?.onLocationChanged(fixToLocation(fix))
 
-            val location = LatLng(fix.lat, fix.lon)
+            val location = LatLng(fix.latDeg, fix.lonDeg)
             googleMap?.apply {
-                // Follow user with tighter zoom
                 if (!hasCenteredCamera) {
                     animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                     hasCenteredCamera = true
@@ -295,53 +312,26 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 }
             }
 
-            // Hide placeholder and show map
             binding.layoutMapPlaceholder.visibility = View.GONE
             binding.mapViewMini.visibility = View.VISIBLE
         } else {
-            // Show placeholder when no location
             binding.layoutMapPlaceholder.visibility = View.VISIBLE
         }
     }
 
-    private fun updateLocationStatusText(status: LocationStatus) {
-        val statusText = when (status) {
-            is LocationStatus.Connecting -> "Connecting to GPS..."
-            is LocationStatus.Error -> "GPS Error"
-            is LocationStatus.Streaming -> "GPS Active"
-            is LocationStatus.Idle -> "GPS Idle"
-        }
+    private fun updateStatusDisplay(_fix: Fix?) { /* no-op */ }
 
-        val statusColor = when (status) {
-            is LocationStatus.Streaming -> android.R.color.holo_green_dark
-            is LocationStatus.Connecting -> android.R.color.holo_orange_dark
-            is LocationStatus.Error -> android.R.color.holo_red_dark
-            is LocationStatus.Idle -> android.R.color.darker_gray
-        }
-
-        binding.textLocationStatus.text = statusText
-        binding.textLocationStatus.setTextColor(
-            ContextCompat.getColor(requireContext(), statusColor)
-        )
-    }
-
-    private fun updateStatusDisplay(fix: Fix?) {
-        // No-op; status card removed. Keep for compatibility.
-    }
-
-    private fun updateLocationSourceDisplay(source: LocationSourceType) {
-        // No-op; display removed. Keep for compatibility.
-    }
+    private fun updateLocationSourceDisplay(_source: LocationSourceType) { /* no-op */ }
 
     private fun fixToLocation(fix: Fix): Location {
         val loc = Location("LocationManagerFix")
-        loc.latitude = fix.lat
-        loc.longitude = fix.lon
+        loc.latitude = fix.latDeg
+        loc.longitude = fix.lonDeg
         fix.altEllipsoidalM?.let { loc.altitude = it }
-        (fix.hAccM ?: fix.accuracyM)?.let { loc.accuracy = it.toFloat() }
-        fix.bearingDeg?.let { loc.bearing = it.toFloat() }
+        fix.hAccM?.let { loc.accuracy = it.toFloat() }
+        fix.courseDeg?.let { loc.bearing = it.toFloat() }
         fix.speedMps?.let { loc.speed = it.toFloat() }
-        loc.time = fix.timestamp.toEpochMilli()
+        loc.time = fix.timeUtc.toEpochMilli()
         return loc
     }
 
@@ -349,7 +339,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     override fun onMapReady(map: GoogleMap) {
         googleMap = map
 
-        // Provide a custom LocationSource so the blue dot follows our LocationSourceManager Fix
+        // Provide a custom LocationSource so the blue dot follows our GNSS location data
         mapLocationSource = object : LocationSource {
             override fun activate(listener: LocationSource.OnLocationChangedListener) {
                 onLocationChangedListener = listener

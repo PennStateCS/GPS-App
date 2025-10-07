@@ -1,19 +1,12 @@
-
 package com.example.surveyingapp.ui.common
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.surveyingapp.data.location.nmea.parser.NmeaParser
 import com.example.surveyingapp.gnss.model.Constellation
 import com.example.surveyingapp.gnss.model.SkyGeometry
-import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.annotation.Config
 import org.junit.Assert.*
+import org.junit.Test
 
-@RunWith(AndroidJUnit4::class)
-@Config(sdk = [28])
 class SatelliteSignalChartViewTest {
 
     @Test
@@ -23,7 +16,7 @@ class SatelliteSignalChartViewTest {
         val chartView = SatelliteSignalChartView(context)
 
         // Set constellation filter to GPS
-        chartView.setConstellationFilter(NmeaParser.Constellation.GPS)
+        chartView.setConstellationFilter(Constellation.GPS)
 
         // Create 3 satellites: two GPS (snr 40, 30; used true/false) and one GLONASS (snr 35)
         val satellites = listOf(
@@ -65,7 +58,7 @@ class SatelliteSignalChartViewTest {
 
         // Verify the dataset contains only GPS satellites
         assertTrue("All satellites in dataset should be GPS",
-                  dataset.all { it.constellation == NmeaParser.Constellation.GPS })
+                  dataset.all { it.constellation == Constellation.GPS })
 
         // Assert the first bar is marked 'used' when usedInFix=true
         val firstSatellite = dataset.find { it.prn == 1 }

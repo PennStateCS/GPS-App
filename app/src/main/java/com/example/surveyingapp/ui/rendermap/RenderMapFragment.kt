@@ -13,11 +13,12 @@ import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.ViewModelProvider
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
-import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.google.android.gms.maps.*
 import com.google.android.gms.maps.model.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -29,15 +30,33 @@ import android.widget.Button
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
-import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.gnss.model.Fix
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.*
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class RenderMapFragment : Fragment() {
+    // Single companion object consolidating TAG and constants
+    companion object {
+        private const val TAG = "RenderMapFragment"
+        private const val MIN_DISTANCE_METERS = 0.5 // Only add trail point if distance > 0.5m
+        private const val MIN_HEADING_CHANGE_DEGREES = 5.0 // Or heading change > 5°
+        private const val MAX_TRAIL_POINTS = 1000 // Limit trail length for performance
+        private const val STAKEOUT_GREEN_THRESHOLD = 0.10 // < 0.10m = green
+        private const val STAKEOUT_AMBER_THRESHOLD = 0.25 // < 0.25m = amber
+    }
+
+    // Inject FixSwitchboard using Hilt
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
+
     private var mapView: MapView? = null
     private var googleMap: GoogleMap? = null
     private var placeholder: View? = null
     private var lastLatLngs: List<LatLng> = emptyList()
-    private val markers = mutableListOf<Marker>()
     private var isSatellite = false
     private var dataObserved = false
     private var cameraInitialized = false
@@ -59,14 +78,9 @@ class RenderMapFragment : Fragment() {
     private val visibilityMap = mutableMapOf<String, Boolean>() // id -> visible
     private val coordinateMap = mutableMapOf<String, Coordinate>() // id -> coordinate data
     private var toggleSatBtn: FloatingActionButton? = null
-    private var measureBtn: FloatingActionButton? = null
     private var gridBtn: FloatingActionButton? = null
     private var showAllBtn: Button? = null
     private var hideAllBtn: Button? = null
-    private var isMeasuring = false
-    private val measurementPoints = mutableListOf<LatLng>()
-    private val measurementMarkers = mutableListOf<Marker>()
-    private var measurementPolyline: Polyline? = null
 
     private var showGrid = false
     private val gridLines = mutableListOf<Polyline>()
@@ -76,6 +90,24 @@ class RenderMapFragment : Fragment() {
 
     private var currentMarker: Marker? = null
     private var lastFixLatLng: LatLng? = null
+
+    // Live tracking features
+    private var accuracyCircle: Circle? = null
+    private var liveTrail: Polyline? = null
+    private val trailPoints = mutableListOf<LatLng>()
+    private var lastTrailFix: Fix? = null
+
+    // Stakeout features
+    private var isStakeoutMode = false
+    private var stakeoutTarget: LatLng? = null
+    private var stakeoutMarker: Marker? = null
+    private var stakeoutPanel: View? = null
+    private var btnToggleStakeout: Button? = null
+    private var btnClearStakeout: Button? = null
+    private var txtStakeoutTarget: TextView? = null
+    private var txtStakeoutDistance: TextView? = null
+    private var txtStakeoutBearing: TextView? = null
+    private var currentFix: Fix? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -148,23 +180,222 @@ class RenderMapFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    SurveyingApp.locationManager.fixFlow.collect { fix ->
-                        updateCurrentMarker(fix.lat, fix.lon)
+                    fixSwitchboard.fixes.collect { fix: Fix ->
+                        updateLiveTracking(fix)
                     }
-                } catch (_: Exception) { /* ignore */ }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error collecting fixes: ${e.message}", e)
+                }
             }
         }
     }
 
+    private fun updateLiveTracking(fix: Fix) {
+        val currentPos = LatLng(fix.latDeg, fix.lonDeg)
+
+        // Store current fix for stakeout calculations
+        currentFix = fix
+
+        // Update current position marker
+        updateCurrentMarker(fix.latDeg, fix.lonDeg)
+
+        // Update accuracy circle if horizontal accuracy is available
+        updateAccuracyCircle(currentPos, fix.hAccM)
+
+        // Update live trail with intelligent thinning
+        updateLiveTrail(currentPos, fix)
+
+        // Update stakeout if active
+        updateStakeoutCalculations(currentPos)
+    }
+
+    private fun updateStakeoutCalculations(currentPos: LatLng) {
+        val target = stakeoutTarget ?: return
+        if (!isStakeoutMode) return
+
+        // Calculate distance and bearing to target
+        val distance = calculateDistance(currentPos, target)
+        val bearing = calculateBearing(currentPos, target)
+
+        // Format distance with appropriate precision
+        val distanceText = when {
+            distance < 1.0 -> String.format(Locale.getDefault(), "%.2f m", distance)
+            distance < 10.0 -> String.format(Locale.getDefault(), "%.1f m", distance)
+            else -> String.format(Locale.getDefault(), "%.0f m", distance)
+        }
+
+        // Update UI with traffic light colors
+        txtStakeoutDistance?.text = distanceText
+        txtStakeoutBearing?.text = String.format(Locale.getDefault(), "%.1f°", bearing)
+
+        // Update text colors based on distance thresholds
+        val color = when {
+            distance < STAKEOUT_GREEN_THRESHOLD -> 0xFF4CAF50.toInt() // Green
+            distance < STAKEOUT_AMBER_THRESHOLD -> 0xFFFF9800.toInt() // Amber/Orange
+            else -> 0xFFF44336.toInt() // Red
+        }
+
+        txtStakeoutDistance?.setTextColor(color)
+        txtStakeoutBearing?.setTextColor(color)
+
+        // Update marker color using correct BitmapDescriptor approach
+        updateStakeoutMarkerColor(distance)
+    }
+
+    private fun updateStakeoutMarkerColor(distance: Double) {
+        val hue = when {
+            distance < STAKEOUT_GREEN_THRESHOLD -> BitmapDescriptorFactory.HUE_GREEN
+            distance < STAKEOUT_AMBER_THRESHOLD -> BitmapDescriptorFactory.HUE_ORANGE
+            else -> BitmapDescriptorFactory.HUE_RED
+        }
+
+        stakeoutMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
+    }
+
     private fun updateCurrentMarker(lat: Double, lon: Double) {
-        val map = googleMap ?: return
         val pos = LatLng(lat, lon)
         lastFixLatLng = pos
+
         if (currentMarker == null) {
-            currentMarker = map.addMarker(MarkerOptions().position(pos).title("Current"))
+            currentMarker = googleMap?.addMarker(
+                MarkerOptions()
+                    .position(pos)
+                    .title("Current Position")
+                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE))
+            )
         } else {
-            try { currentMarker?.position = pos } catch (_: Exception) {}
+            try {
+                currentMarker?.position = pos
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to update marker position", e)
+            }
         }
+    }
+
+    private fun updateAccuracyCircle(position: LatLng, hAccM: Double?) {
+        val map = googleMap ?: return
+
+        // Remove existing accuracy circle
+        accuracyCircle?.remove()
+        accuracyCircle = null
+
+        // Only draw accuracy circle if horizontal accuracy is present and reasonable
+        hAccM?.let { accuracy ->
+            if (accuracy > 0 && accuracy < 1000) { // Skip if accuracy is unreasonable
+                accuracyCircle = map.addCircle(
+                    CircleOptions()
+                        .center(position)
+                        .radius(accuracy) // radius in meters
+                        .strokeColor(0x880000FF.toInt()) // Semi-transparent blue stroke
+                        .fillColor(0x220000FF.toInt())   // Very light blue fill
+                        .strokeWidth(2f)
+                )
+            }
+        }
+    }
+
+    private fun updateLiveTrail(currentPos: LatLng, currentFix: Fix) {
+        val map = googleMap ?: return
+
+        // Check if we should add this point to the trail
+        val shouldAddPoint = shouldAddTrailPoint(currentPos, currentFix)
+
+        if (shouldAddPoint) {
+            // Add point to trail
+            trailPoints.add(currentPos)
+            lastTrailFix = currentFix
+
+            // Limit trail length for performance
+            if (trailPoints.size > MAX_TRAIL_POINTS) {
+                trailPoints.removeAt(0) // Remove oldest point
+            }
+
+            // Update trail polyline
+            updateTrailPolyline(map)
+
+            Log.d(TAG, "Added trail point. Total points: ${trailPoints.size}")
+        }
+    }
+
+    private fun shouldAddTrailPoint(currentPos: LatLng, currentFix: Fix): Boolean {
+        val lastFix = lastTrailFix
+
+        // Always add the first point
+        if (lastFix == null || trailPoints.isEmpty()) {
+            return true
+        }
+
+        val lastPos = trailPoints.lastOrNull() ?: return true
+
+        // Calculate distance from last trail point
+        val distance = calculateDistance(lastPos, currentPos)
+
+        // Check if distance threshold is met
+        if (distance >= MIN_DISTANCE_METERS) {
+            return true
+        }
+
+        // Check heading change if both fixes have course information
+        val currentCourse = currentFix.courseDeg
+        val lastCourse = lastFix.courseDeg
+
+        if (currentCourse != null && lastCourse != null) {
+            val headingChange = calculateHeadingChange(lastCourse, currentCourse)
+            if (headingChange >= MIN_HEADING_CHANGE_DEGREES) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double {
+        // Haversine formula for distance calculation
+        val R = 6371000.0 // Earth's radius in meters
+
+        val lat1Rad = Math.toRadians(pos1.latitude)
+        val lat2Rad = Math.toRadians(pos2.latitude)
+        val deltaLatRad = Math.toRadians(pos2.latitude - pos1.latitude)
+        val deltaLonRad = Math.toRadians(pos2.longitude - pos1.longitude)
+
+        val a = sin(deltaLatRad / 2).pow(2) +
+                cos(lat1Rad) * cos(lat2Rad) * sin(deltaLonRad / 2).pow(2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        return R * c
+    }
+
+    private fun calculateHeadingChange(heading1: Double, heading2: Double): Double {
+        val diff = abs(heading2 - heading1)
+        return min(diff, 360.0 - diff) // Handle wraparound (e.g., 359° to 1°)
+    }
+
+    private fun updateTrailPolyline(map: GoogleMap) {
+        // Remove existing trail
+        liveTrail?.remove()
+
+        // Create new trail polyline if we have enough points
+        if (trailPoints.size >= 2) {
+            liveTrail = map.addPolyline(
+                PolylineOptions()
+                    .addAll(trailPoints)
+                    .color(0xFFFF6B35.toInt()) // Orange trail
+                    .width(4f)
+                    .geodesic(true) // Account for Earth's curvature
+            )
+        }
+    }
+
+    private fun clearLiveTrail() {
+        liveTrail?.remove()
+        liveTrail = null
+        trailPoints.clear()
+        lastTrailFix = null
+    }
+
+    private fun clearAccuracyCircle() {
+        accuracyCircle?.remove()
+        accuracyCircle = null
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -175,6 +406,18 @@ class RenderMapFragment : Fragment() {
         collapseBtn = view.findViewById(R.id.btn_collapse_panel)
         expandBtn = view.findViewById(R.id.btn_expand_panel)
 
+        // Initialize stakeout UI components
+        stakeoutPanel = view.findViewById(R.id.stakeout_panel)
+        btnToggleStakeout = view.findViewById(R.id.btn_toggle_stakeout)
+        btnClearStakeout = view.findViewById(R.id.btn_clear_stakeout)
+        txtStakeoutTarget = view.findViewById(R.id.txt_stakeout_target)
+        txtStakeoutDistance = view.findViewById(R.id.txt_stakeout_distance)
+        txtStakeoutBearing = view.findViewById(R.id.txt_stakeout_bearing)
+
+        // Set up stakeout button listeners
+        btnToggleStakeout?.setOnClickListener { toggleStakeoutMode() }
+        btnClearStakeout?.setOnClickListener { clearStakeout() }
+
         // Set initial satellite button icon
         updateSatelliteButtonIcon()
 
@@ -183,22 +426,32 @@ class RenderMapFragment : Fragment() {
         }
         applyPanelState()
         setupPanelInteractions()
+        setupMapClickListener()
     }
 
     // Lifecycle pass-throughs
     override fun onStart() { super.onStart(); mapView?.onStart() }
     override fun onResume() { super.onResume(); mapView?.onResume() }
     override fun onPause() { mapView?.onPause(); super.onPause() }
-    override fun onStop() { mapView?.onStop(); super.onStop() }
-    override fun onDestroy() { super.onDestroy(); mapView?.onDestroy() }
-    override fun onLowMemory() { super.onLowMemory(); mapView?.onLowMemory() }
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putInt("panelWidthPx", panelWidthPx)
-        outState.putBoolean("panelCollapsed", panelCollapsed)
-        mapView?.onSaveInstanceState(outState)
+    override fun onStop() {
+        // Clear live tracking elements when stopping
+        clearLiveTrail()
+        clearAccuracyCircle()
+        mapView?.onStop()
+        super.onStop()
     }
-    override fun onDestroyView() { mapView = null; placeholder = null; super.onDestroyView() }
+
+    override fun onDestroyView() {
+        // Clean up all tracking elements
+        clearLiveTrail()
+        clearAccuracyCircle()
+        currentMarker?.remove()
+        currentMarker = null
+
+        mapView = null
+        placeholder = null
+        super.onDestroyView()
+    }
 
     private fun bindData() {
         if (dataObserved) return
@@ -244,15 +497,18 @@ class RenderMapFragment : Fragment() {
     private fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
         val ctx = context ?: return null
         if (iconName.isNullOrBlank()) return null
+        @Suppress("DiscouragedApi")
         val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
         if (resId == 0) return null
         val d = ContextCompat.getDrawable(ctx, resId) ?: return null
         val size = dpToPx(32f) // uniform size
+        @Suppress("UseCompatLoadingForDrawables")
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         d.setBounds(0, 0, size, size)
         try {
-            d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_IN)
+            @Suppress("DEPRECATION")
+            d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_ATOP)
         } catch (_: Exception) {}
         d.draw(canvas)
         return BitmapDescriptorFactory.fromBitmap(bmp)
@@ -301,23 +557,6 @@ class RenderMapFragment : Fragment() {
                 android.R.drawable.ic_menu_gallery // Satellite/gallery icon when in map mode (to switch to satellite)
             }
         )
-    }
-
-    private fun toggleMeasurement() {
-        isMeasuring = !isMeasuring
-        if (isMeasuring) {
-            // Clear previous measurements
-            measurementPoints.clear()
-            measurementMarkers.forEach { it.remove() }
-            measurementMarkers.clear()
-            measurementPolyline?.remove()
-            measurementPolyline = null
-            // Change button icon to indicate active measurement
-            // measureBtn?.setImageResource(R.drawable.ic_measure_active) // Commented out - drawable doesn't exist yet
-        } else {
-            // Finalize measurement, maybe show total distance/area
-            // measureBtn?.setImageResource(R.drawable.ic_measure) // Commented out - drawable doesn't exist yet
-        }
     }
 
     private fun toggleGrid() {
@@ -446,7 +685,7 @@ class RenderMapFragment : Fragment() {
                     .color(0xFF2196F3.toInt())
                     .width(3f)
                     .geodesic(true)
-                    .pattern(listOf(com.google.android.gms.maps.model.Dash(20f), com.google.android.gms.maps.model.Gap(10f))) // Dashed closing line
+                    .pattern(listOf(Dash(20f), Gap(10f))) // Dashed closing line
             )
             closingLine?.let { boundaryLines.add(it) }
         }
@@ -587,93 +826,122 @@ class RenderMapFragment : Fragment() {
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun createInfoWindowView(marker: Marker): View? {
-        val ctx = context ?: return null
         val coordinateId = marker.tag as? String
         val coordinate = coordinateId?.let { coordinateMap[it] }
 
+        @Suppress("InflateParams")
         val view = layoutInflater.inflate(R.layout.custom_info_window, null)
         val titleView = view.findViewById<TextView>(R.id.info_window_title)
         val contentView = view.findViewById<TextView>(R.id.info_window_content)
 
-        titleView.text = coordinate?.name ?: "Unknown"
+        titleView.text = coordinate?.name ?: marker.title ?: "Unknown"
         contentView.text = buildString {
             if (coordinate != null) {
-                when (getCurrentCoordinateFormat()) {
-                    CoordinateFormat.DECIMAL_DEGREES -> {
-                        appendLine("Lat: ${"%.6f".format(coordinate.latitude)}°")
-                        appendLine("Lng: ${"%.6f".format(coordinate.longitude)}°")
-                    }
-                    CoordinateFormat.DEGREES_MINUTES_SECONDS -> {
-                        appendLine("Lat: ${formatDMS(coordinate.latitude, true)}")
-                        appendLine("Lng: ${formatDMS(coordinate.longitude, false)}")
-                    }
-                    CoordinateFormat.UTM -> {
-                        val utm = convertToUTM(coordinate.latitude, coordinate.longitude)
-                        appendLine("UTM: ${utm.zone}${utm.band}")
-                        appendLine("E: ${utm.easting.toInt()} N: ${utm.northing.toInt()}")
-                    }
+                append("Lat: ${String.format(Locale.getDefault(), "%.6f", coordinate.latitude)}\n")
+                append("Lon: ${String.format(Locale.getDefault(), "%.6f", coordinate.longitude)}")
+                append("\nElevation: ${String.format(Locale.getDefault(), "%.2f", coordinate.altitude)}m")
+                if (!coordinate.note.isNullOrBlank()) {
+                    append("\n${coordinate.note}")
                 }
-                append("Alt: ${"%.2f".format(coordinate.altitude)} m")
             } else {
-                append("No data available")
+                append("Position: ${marker.position.latitude}, ${marker.position.longitude}")
             }
         }
 
         return view
     }
 
-    private fun getCurrentCoordinateFormat(): CoordinateFormat {
-        // This could be stored in SharedPreferences or Settings
-        return CoordinateFormat.DECIMAL_DEGREES
+    private fun getCurrentCoordinateFormat(): String {
+        // Default coordinate format - this could be made configurable
+        return "decimal"
     }
 
-    private fun formatDMS(decimal: Double, isLatitude: Boolean): String {
-        val degrees = decimal.toInt()
-        val minutes = ((decimal - degrees) * 60).toInt()
-        val seconds = ((decimal - degrees) * 60 - minutes) * 60
-        val direction = when {
-            isLatitude -> if (decimal >= 0) "N" else "S"
-            else -> if (decimal >= 0) "E" else "W"
+    private fun toggleStakeoutMode() {
+        isStakeoutMode = !isStakeoutMode
+        if (isStakeoutMode) {
+            // Activate stakeout mode
+            stakeoutPanel?.visibility = View.VISIBLE
+            btnToggleStakeout?.text = "Stop Stakeout"
+            // Clear any existing stakeout marker
+            stakeoutMarker?.remove()
+            stakeoutMarker = null
+        } else {
+            // Deactivate stakeout mode
+            stakeoutPanel?.visibility = View.GONE
+            btnToggleStakeout?.text = "Start Stakeout"
+            // Clear stakeout target
+            stakeoutTarget = null
+            txtStakeoutTarget?.text = "Target: None"
+            // Remove stakeout marker if it exists
+            stakeoutMarker?.remove()
+            stakeoutMarker = null
         }
-        return "${kotlin.math.abs(degrees)}°${kotlin.math.abs(minutes)}'${"%.2f".format(kotlin.math.abs(seconds))}\"$direction"
     }
 
-    private fun convertToUTM(lat: Double, lng: Double): UTMResult {
-        // Simplified UTM conversion - in production you'd use a proper geodetic library
-        val zone = ((lng + 180) / 6).toInt() + 1
-        val band = when {
-            lat >= 84 -> 'X'
-            lat >= 72 -> 'W'
-            lat >= 64 -> 'V'
-            lat >= 56 -> 'U'
-            lat >= 48 -> 'T'
-            lat >= 40 -> 'S'
-            lat >= 32 -> 'R'
-            lat >= 24 -> 'Q'
-            lat >= 16 -> 'P'
-            lat >= 8 -> 'N'
-            lat >= 0 -> 'M'
-            lat >= -8 -> 'L'
-            lat >= -16 -> 'K'
-            lat >= -24 -> 'J'
-            lat >= -32 -> 'H'
-            lat >= -40 -> 'G'
-            lat >= -48 -> 'F'
-            lat >= -56 -> 'E'
-            lat >= -64 -> 'D'
-            else -> 'C'
+    private fun clearStakeout() {
+        // Clear stakeout target and marker
+        stakeoutTarget = null
+        txtStakeoutTarget?.text = "Target: None"
+        stakeoutMarker?.remove()
+        stakeoutMarker = null
+    }
+
+    private fun setupMapClickListener() {
+        googleMap?.setOnMapClickListener { latLng ->
+            if (!isStakeoutMode) return@setOnMapClickListener
+
+            // Update stakeout target
+            stakeoutTarget = latLng
+            txtStakeoutTarget?.text = "Target: ${latLng.latitude}, ${latLng.longitude}"
+
+            // Move or add stakeout marker
+            if (stakeoutMarker == null) {
+                // Add new marker for stakeout target
+                stakeoutMarker = googleMap?.addMarker(
+                    MarkerOptions()
+                        .position(latLng)
+                        .title("Stakeout Target")
+                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                )
+            } else {
+                // Move existing marker to new target
+                stakeoutMarker?.position = latLng
+            }
+
+            // Calculate and update distance and bearing to target
+            updateStakeoutDistanceAndBearing(latLng)
         }
-        // Approximate easting/northing (real conversion is more complex)
-        val easting = 500000 + (lng - (zone - 1) * 6 - 183) * 111319.9
-        val northing = lat * 110540.0 + if (lat < 0) 10000000 else 0
-        return UTMResult(zone, band, easting, northing)
     }
 
-    data class UTMResult(val zone: Int, val band: Char, val easting: Double, val northing: Double)
+    private fun updateStakeoutDistanceAndBearing(target: LatLng) {
+        val currentPos = lastFixLatLng ?: return
 
-    enum class CoordinateFormat {
-        DECIMAL_DEGREES,
-        DEGREES_MINUTES_SECONDS,
-        UTM
+        // Calculate distance in meters
+        val distance = calculateDistance(currentPos, target)
+
+        // Calculate bearing in degrees
+        val bearing = calculateBearing(currentPos, target)
+
+        // Update UI elements
+        txtStakeoutDistance?.text = String.format("Distance: %.1f m", distance)
+        txtStakeoutBearing?.text = String.format("Bearing: %.1f°", bearing)
+
+        // Update stakeout marker color based on distance
+        updateStakeoutMarkerColor(distance)
+    }
+
+    private fun calculateBearing(from: LatLng, to: LatLng): Double {
+        val lat1 = Math.toRadians(from.latitude)
+        val lon1 = Math.toRadians(from.longitude)
+        val lat2 = Math.toRadians(to.latitude)
+        val lon2 = Math.toRadians(to.longitude)
+
+        val dLon = lon2 - lon1
+        val y = sin(dLon) * cos(lat2)
+        val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        val bearing = Math.toDegrees(atan2(y, x))
+
+        // Normalize bearing to 0-360°
+        return (bearing + 360) % 360
     }
 }

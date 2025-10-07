@@ -3,10 +3,27 @@ package com.example.surveyingapp.data.repository.impl
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.ModelEntity
 import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.domain.model.FileType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class ModelRepositoryImpl(private val modelDao: ModelDao) {
+
+    private fun getFileTypeFromExtension(fileName: String): FileType {
+        val extension = fileName.substringAfterLast('.', "").lowercase()
+        return when (extension) {
+            "csv", "kml", "gpx" -> FileType.COORDINATE_DATA
+            "nmea", "log" -> FileType.NMEA_LOG
+            "dwg", "dxf" -> FileType.CAD_DRAWING
+            "jpg", "jpeg", "png", "tiff", "tif" -> FileType.IMAGE
+            "las", "laz" -> FileType.POINT_CLOUD
+            "obj", "ply", "stl" -> FileType.MESH_MODEL
+            "pdf" -> FileType.REPORT
+            "db", "sqlite", "sql" -> FileType.DATABASE
+            "json", "xml", "cfg", "ini" -> FileType.CONFIGURATION
+            else -> FileType.OTHER
+        }
+    }
 
     fun getAllModels(): Flow<List<Model>> = modelDao.getAllModels().map { entities ->
         entities.map { entity ->
@@ -17,7 +34,8 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 filePath = entity.filePath,
                 fileSize = entity.fileSize,
                 dateAdded = entity.dateAdded,
-                description = entity.description
+                description = entity.description,
+                fileType = getFileTypeFromExtension(entity.fileName)
             )
         }
     }
@@ -31,7 +49,8 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 filePath = entity.filePath,
                 fileSize = entity.fileSize,
                 dateAdded = entity.dateAdded,
-                description = entity.description
+                description = entity.description,
+                fileType = getFileTypeFromExtension(entity.fileName)
             )
         }
     }

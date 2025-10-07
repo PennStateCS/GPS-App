@@ -4,8 +4,8 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.example.surveyingapp.domain.model.CorrectionSource
-import com.example.surveyingapp.domain.model.Provider
-import com.example.surveyingapp.domain.model.RtkStatus
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.model.RtkStatus
 
 /**
  * Each row represents ONE captured point (when user taps +).
@@ -36,11 +36,19 @@ data class CoordinateEntity(
     val provider: Provider = Provider.INTERNAL,     // INTERNAL | RS2_BT | RS2_TCP | OTHER
     val rtkStatus: RtkStatus? = null,               // FIX | FLOAT | DGPS | SINGLE | INVALID
     val satsUsed: Int? = null,
+    val satsVisible: Int? = null,                   // Total satellites in view
     val hdop: Double? = null,
+    val vDop: Double? = null,                       // Vertical dilution of precision
+    val pDop: Double? = null,                       // Position dilution of precision
     val horizontalAccuracyM: Double? = null,
     val verticalAccuracyM: Double? = null,
     val correctionSource: CorrectionSource? = null, // NTRIP | LORA | BASE_TCP | UNKNOWN
     val correctionAgeS: Double? = null,             // seconds
+    val correctionStationId: String? = null,        // Correction station ID
+    val speedMps: Double? = null,                   // Speed over ground (m/s)
+    val courseDeg: Double? = null,                  // Course over ground (degrees)
+    val timestampSource: String? = null,            // Source of timestamp
+    val multipathIndex: Double? = null,             // Multipath index
 
     // --- Heights / CRS ---
     val altitudeMsl: Double? = null,       // orthometric (if computed)

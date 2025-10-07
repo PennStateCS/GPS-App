@@ -11,7 +11,7 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import com.example.surveyingapp.data.location.nmea.parser.NmeaParser
+import androidx.core.graphics.toColorInt
 import com.example.surveyingapp.gnss.model.SkyGeometry
 import com.example.surveyingapp.gnss.model.Constellation
 import kotlin.math.hypot
@@ -43,7 +43,7 @@ class SkyplotView @JvmOverloads constructor(
     }
 
     // ==== Public API ====
-    var onSatelliteClick: ((satellite: NmeaParser.Satellite, usedInFix: Boolean) -> Unit)? = null
+    var onSatelliteClick: ((satellite: SkyGeometry, usedInFix: Boolean) -> Unit)? = null
 
     /** Show legend at the top-left gutter. */
     var showLegend: Boolean = true
@@ -66,39 +66,13 @@ class SkyplotView @JvmOverloads constructor(
     var trailMaxPointsPerSat: Int = 600
     var trailStrokeWidthDp: Float = 1.25f
 
-    @Deprecated("Use setGeometry() from SkyBus")
-    fun setSatelliteData(list: List<NmeaParser.Satellite>, usedIds: Set<Int>) {
-        satellites = list
-        used = usedIds
-        // --- Normalize SBAS both directions: 120..158 <-> 33..64 (NMEA mapping) ---
-        usedNorm = usedIds.flatMap { id ->
-            when (id) {
-                in 120..158 -> listOf(id, id - 87)
-                in 33..64   -> listOf(id, id + 87)
-                else        -> listOf(id)
-            }
-        }.toSet()
-
-        if (trailsEnabled) updateTrails(list)
-        invalidate()
-    }
-
     fun setGeometry(geoms: List<SkyGeometry>) {
-        // Store geometry for touch handling
+        // Store geometry for rendering and touch handling
         skyGeometry = geoms
 
-        // Convert SkyGeometry to NmeaParser.Satellite format for existing rendering
-        satellites = geoms.mapNotNull { geom ->
-            // Only include satellites with position data (azDeg and elDeg)
-            if (geom.azDeg != null && geom.elDeg != null) {
-                NmeaParser.Satellite(
-                    prn = geom.svid,
-                    constellation = translateConstellationToNmea(geom.constellation),
-                    elevationDeg = geom.elDeg.toInt(),
-                    azimuthDeg = geom.azDeg.toInt(),
-                    snrDb = geom.snrDbHz?.toInt()
-                )
-            } else null
+        // Filter satellites that have position data (azDeg and elDeg) AND SNR data
+        satellites = geoms.filter { geom ->
+            geom.azDeg != null && geom.elDeg != null && geom.snrDbHz != null
         }
 
         // Extract used satellite IDs from usedInFix
@@ -118,10 +92,10 @@ class SkyplotView @JvmOverloads constructor(
     }
 
     // ==== Data ====
-    private var satellites: List<NmeaParser.Satellite> = emptyList()
+    private var satellites: List<SkyGeometry> = emptyList()
     private var used: Set<Int> = emptySet()
     private var usedNorm: Set<Int> = emptySet()
-    private var skyGeometry: List<SkyGeometry> = emptyList() // Store for touch handling
+    private var skyGeometry: List<SkyGeometry> = emptyList()
 
     // Trails storage: per-satellite ring buffer of recent samples
     private data class TrailSample(
@@ -130,23 +104,23 @@ class SkyplotView @JvmOverloads constructor(
         val t: Long,
         val snr: Int,
         val used: Boolean,
-        val constellation: NmeaParser.Constellation
+        val constellation: Constellation
     )
     private val trails: MutableMap<Int, ArrayDeque<TrailSample>> = mutableMapOf()
 
     // ==== Paints ====
     private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#80FFFFFF") // 50% white
+        color = "#80FFFFFF".toColorInt() // 50% white
         strokeWidth = dp(1f)
         style = Paint.Style.STROKE
     }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#33FFFFFF") // 20% white
+        color = "#33FFFFFF".toColorInt() // 20% white
         strokeWidth = dp(1f)
         style = Paint.Style.STROKE
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#DDFFFFFF")
+        color = "#DDFFFFFF".toColorInt()
         textSize = sp(11f)
         textAlign = Paint.Align.CENTER
     }
@@ -171,17 +145,17 @@ class SkyplotView @JvmOverloads constructor(
     }
 
     // ==== Colors (SNR) ====
-    private val colorGreen = Color.parseColor("#4CAF50")
-    private val colorYellow = Color.parseColor("#FFC107")
-    private val colorRed = Color.parseColor("#F44336")
-    private val colorGray = Color.parseColor("#9E9E9E")
+    private val colorGreen = "#4CAF50".toColorInt()
+    private val colorYellow = "#FFC107".toColorInt()
+    private val colorRed = "#F44336".toColorInt()
+    private val colorGray = "#9E9E9E".toColorInt()
 
     // ==== Touch state ====
     private data class HitDot(
         val x: Float,
         val y: Float,
         val hitR: Float,
-        val sat: NmeaParser.Satellite,
+        val sat: SkyGeometry,
         val isUsed: Boolean
     )
     private val hitDots = mutableListOf<HitDot>()
@@ -206,13 +180,13 @@ class SkyplotView @JvmOverloads constructor(
         val isNight = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
                 android.content.res.Configuration.UI_MODE_NIGHT_YES
         if (isNight) {
-            axisPaint.color = Color.parseColor("#80FFFFFF")
-            gridPaint.color = Color.parseColor("#33FFFFFF")
-            textPaint.color = Color.parseColor("#DDFFFFFF")
+            axisPaint.color = "#80FFFFFF".toColorInt()
+            gridPaint.color = "#33FFFFFF".toColorInt()
+            textPaint.color = "#DDFFFFFF".toColorInt()
         } else {
-            axisPaint.color = Color.parseColor("#80000000")
-            gridPaint.color = Color.parseColor("#33000000")
-            textPaint.color = Color.parseColor("#DD000000")
+            axisPaint.color = "#80000000".toColorInt()
+            gridPaint.color = "#33000000".toColorInt()
+            textPaint.color = "#DD000000".toColorInt()
         }
 
         val padding = dp(18f)
@@ -318,11 +292,11 @@ class SkyplotView @JvmOverloads constructor(
         val placedLabels = mutableListOf<RectF>()
 
         // Separate satellites into those with and without position data
-        val satsWithPosition = mutableListOf<NmeaParser.Satellite>()
-        val satsWithoutPosition = mutableListOf<NmeaParser.Satellite>()
+        val satsWithPosition = mutableListOf<SkyGeometry>()
+        val satsWithoutPosition = mutableListOf<SkyGeometry>()
 
         satellites.forEach { sat ->
-            if (sat.azimuthDeg != null && sat.elevationDeg != null) {
+            if (sat.azDeg != null && sat.elDeg != null) {
                 satsWithPosition.add(sat)
             } else {
                 satsWithoutPosition.add(sat)
@@ -331,13 +305,13 @@ class SkyplotView @JvmOverloads constructor(
 
         // Draw satellites with known positions on skyplot
         satsWithPosition.forEach { sat ->
-            val az = sat.azimuthDeg!!
-            val el = sat.elevationDeg!!
-            val snrRaw = sat.snrDb
-            val snr = (snrRaw ?: 0).coerceIn(0, 50)
+            val az = sat.azDeg!!
+            val el = sat.elDeg!!
+            val snrRaw = sat.snrDbHz
+            val snr = (snrRaw ?: 0.0).toInt().coerceIn(0, 50)
 
-            val azRad = Math.toRadians(az.toDouble())
-            val r = radius * (90.0 - el.toDouble()) / 90.0
+            val azRad = Math.toRadians(az)
+            val r = radius * (90.0 - el) / 90.0
             val sx = cx + r.toFloat() * sin(azRad).toFloat()
             val sy = cy - r.toFloat() * cos(azRad).toFloat()
 
@@ -390,7 +364,7 @@ class SkyplotView @JvmOverloads constructor(
         cx: Float,
         cy: Float,
         radius: Float,
-        satellites: List<NmeaParser.Satellite>
+        satellites: List<SkyGeometry>
     ) {
         // Position the list to the right of the skyplot
         val listX = cx + radius + dp(20f)
@@ -404,8 +378,8 @@ class SkyplotView @JvmOverloads constructor(
 
         satellites.forEachIndexed { index, sat ->
             val y = listY + (index + 1) * itemHeight
-            val snrRaw = sat.snrDb
-            val snr = (snrRaw ?: 0).coerceIn(0, 50)
+            val snrRaw = sat.snrDbHz
+            val snr = (snrRaw ?: 0.0).toInt().coerceIn(0, 50)
             val usedNow = isUsedSat(sat)
 
             // Small dot for satellite
@@ -427,7 +401,7 @@ class SkyplotView @JvmOverloads constructor(
             canvas.drawCircle(listX + dotR, y - dotR, dotR, satStroke)
 
             // Label
-            val label = "${prnLabel(sat)} ${if (snrRaw != null) "${snrRaw}dB" else "?"}"
+            val label = "${prnLabel(sat)} ${if (snrRaw != null) "${snrRaw.toInt()}dB" else "?"}"
             canvas.drawText(label, listX + dotR * 3, y, textPaint)
 
             // Touch target
@@ -446,17 +420,17 @@ class SkyplotView @JvmOverloads constructor(
     }
 
     // --- Trails implementation ---
-    private fun updateTrails(list: List<NmeaParser.Satellite>) {
+    private fun updateTrails(list: List<SkyGeometry>) {
         val now = SystemClock.elapsedRealtime()
         list.forEach { s ->
-            val az = s.azimuthDeg ?: return@forEach
-            val el = s.elevationDeg ?: return@forEach
+            val az = s.azDeg ?: return@forEach
+            val el = s.elDeg ?: return@forEach
             val key = uniqueKey(s)
             val dq = trails.getOrPut(key) { ArrayDeque() }
             val lastT = dq.lastOrNull()?.t ?: Long.MIN_VALUE
             if (now - lastT < trailMinGapMs) return@forEach
 
-            val snr = (s.snrDb ?: -1).coerceAtLeast(-1)
+            val snr = (s.snrDbHz ?: -1.0).toInt().coerceAtLeast(-1)
             val sample = TrailSample(
                 az = az.toFloat(),
                 el = el.toFloat(),
@@ -470,14 +444,14 @@ class SkyplotView @JvmOverloads constructor(
             trimDequeByTime(dq, now)
         }
         val cutoff = now - trailWindowMs
-        trails.entries.removeAll { it.value.lastOrNull()?.t ?: Long.MIN_VALUE < cutoff }
+        trails.entries.removeAll { (it.value.lastOrNull()?.t ?: Long.MIN_VALUE) < cutoff }
     }
 
     private fun pruneAllTrails() {
         val now = SystemClock.elapsedRealtime()
         trails.values.forEach { trimDequeByTime(it, now) }
         val cutoff = now - trailWindowMs
-        trails.entries.removeAll { it.value.lastOrNull()?.t ?: Long.MIN_VALUE < cutoff }
+        trails.entries.removeAll { (it.value.lastOrNull()?.t ?: Long.MIN_VALUE) < cutoff }
     }
 
     private fun trimDequeByTime(dq: ArrayDeque<TrailSample>, now: Long) {
@@ -568,37 +542,38 @@ class SkyplotView @JvmOverloads constructor(
         placed += bounds
     }
 
-    private fun prnLabel(s: NmeaParser.Satellite): String {
+    private fun prnLabel(s: SkyGeometry): String {
         val prefix = when (s.constellation) {
-            NmeaParser.Constellation.GPS -> "G"
-            NmeaParser.Constellation.GLONASS -> "R"
-            NmeaParser.Constellation.GALILEO -> "E"
-            NmeaParser.Constellation.BEIDOU -> "B"
-            NmeaParser.Constellation.QZSS -> "Q"
-            NmeaParser.Constellation.SBAS -> "S"
-            NmeaParser.Constellation.IRNSS -> "I"
+            Constellation.GPS -> "G"
+            Constellation.GLONASS -> "R"
+            Constellation.GALILEO -> "E"
+            Constellation.BEIDOU -> "B"
+            Constellation.QZSS -> "Q"
+            Constellation.SBAS -> "S"
+            Constellation.IRNSS -> "I"
             else -> "?"
         }
-        return "$prefix${s.prn}"
+        return "$prefix${s.svid}"
     }
 
-    private fun isUsedSat(s: NmeaParser.Satellite): Boolean {
-        val prn = s.prn
+    private fun isUsedSat(s: SkyGeometry): Boolean {
+        val prn = s.svid
         return prn in usedNorm ||
                 (prn in 33..64   && (prn + 87) in usedNorm) ||
                 (prn in 120..158 && (prn - 87) in usedNorm)
     }
 
-    private fun uniqueKey(s: NmeaParser.Satellite): Int =
-        s.constellation.ordinal * 1000 + s.prn
+    private fun uniqueKey(s: SkyGeometry): Int =
+        s.constellation.ordinal * 1000 + s.svid
 
-    private fun constellationStrokeColor(c: NmeaParser.Constellation): Int = when (c) {
-        NmeaParser.Constellation.GPS     -> Color.parseColor("#90CAF9") // light blue
-        NmeaParser.Constellation.GLONASS -> Color.parseColor("#CE93D8") // violet
-        NmeaParser.Constellation.GALILEO -> Color.parseColor("#A5D6A7") // green
-        NmeaParser.Constellation.BEIDOU  -> Color.parseColor("#FFE082") // amber
-        NmeaParser.Constellation.QZSS    -> Color.parseColor("#B39DDB")
-        NmeaParser.Constellation.SBAS    -> Color.parseColor("#B0BEC5")
+    private fun constellationStrokeColor(c: Constellation): Int = when (c) {
+        Constellation.GPS     -> Color.parseColor("#90CAF9") // light blue
+        Constellation.GLONASS -> Color.parseColor("#CE93D8") // violet
+        Constellation.GALILEO -> Color.parseColor("#A5D6A7") // green
+        Constellation.BEIDOU  -> Color.parseColor("#FFE082") // amber
+        Constellation.QZSS    -> Color.parseColor("#B39DDB")
+        Constellation.SBAS    -> Color.parseColor("#B0BEC5")
+        Constellation.IRNSS   -> Color.parseColor("#FFAB91") // orange
         else -> Color.LTGRAY
     }
 
@@ -609,7 +584,6 @@ class SkyplotView @JvmOverloads constructor(
                 downX = event.x
                 downY = event.y
                 isMaybeClick = true
-                // we handle it to receive MOVE/UP
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -621,26 +595,7 @@ class SkyplotView @JvmOverloads constructor(
                 if (isMaybeClick) {
                     val hit = hitDots.minByOrNull { hypot(it.x - event.x, it.y - event.y) }
                     if (hit != null && hypot(hit.x - event.x, hit.y - event.y) <= hit.hitR) {
-                        // If we have SkyGeometry data, try to find the corresponding geometry
-                        val correspondingGeometry = skyGeometry.find { geom ->
-                            geom.svid == hit.sat.prn &&
-                            translateConstellationToNmea(geom.constellation) == hit.sat.constellation
-                        }
-
-                        if (correspondingGeometry != null) {
-                            // Create a NmeaParser.Satellite from SkyGeometry for backward compatibility
-                            val satelliteFromGeometry = NmeaParser.Satellite(
-                                prn = correspondingGeometry.svid,
-                                constellation = translateConstellationToNmea(correspondingGeometry.constellation),
-                                elevationDeg = correspondingGeometry.elDeg?.toInt(),
-                                azimuthDeg = correspondingGeometry.azDeg?.toInt(),
-                                snrDb = correspondingGeometry.snrDbHz?.toInt()
-                            )
-                            onSatelliteClick?.invoke(satelliteFromGeometry, correspondingGeometry.usedInFix)
-                        } else {
-                            // Fallback to original behavior
-                            onSatelliteClick?.invoke(hit.sat, hit.isUsed)
-                        }
+                        onSatelliteClick?.invoke(hit.sat, hit.isUsed)
                     }
                 }
                 isMaybeClick = false
@@ -648,22 +603,6 @@ class SkyplotView @JvmOverloads constructor(
             MotionEvent.ACTION_CANCEL -> isMaybeClick = false
         }
         return super.onTouchEvent(event) || isMaybeClick
-    }
-
-    /**
-     * Helper to translate gnss.model.Constellation to NmeaParser.Constellation
-     */
-    private fun translateConstellationToNmea(constellation: Constellation): NmeaParser.Constellation {
-        return when (constellation) {
-            Constellation.GPS -> NmeaParser.Constellation.GPS
-            Constellation.GLONASS -> NmeaParser.Constellation.GLONASS
-            Constellation.GALILEO -> NmeaParser.Constellation.GALILEO
-            Constellation.BEIDOU -> NmeaParser.Constellation.BEIDOU
-            Constellation.QZSS -> NmeaParser.Constellation.QZSS
-            Constellation.SBAS -> NmeaParser.Constellation.SBAS
-            Constellation.IRNSS -> NmeaParser.Constellation.IRNSS
-            Constellation.UNKNOWN -> NmeaParser.Constellation.UNKNOWN
-        }
     }
 
     // ==== Utils ====
