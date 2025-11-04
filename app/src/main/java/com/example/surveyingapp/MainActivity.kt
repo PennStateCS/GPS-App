@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var nmeaRegistry: NmeaRegistry
     @Inject lateinit var fixAccumulator: FixAccumulator
     @Inject lateinit var diagnosticsService: DiagnosticsService
+    @Inject lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
 
     // Replay controller for NMEA playback
     private var replayController: GnssController? = null
@@ -235,11 +236,11 @@ class MainActivity : AppCompatActivity() {
 
         // Pre-populate minimal status based on initial source
         lifecycleScope.launch {
-            val initialSource = SurveyingApp.settingsRepo.locationSource.first()
-            val srcLabel = if (initialSource == LocationSourceType.INTERNAL) "Internal" else "RS2+"
+            val initialProvider = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL }
+            val srcLabel = if (initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
             tokenSource.value.text = srcLabel
-            tokenSource.separator?.isVisible = initialSource != LocationSourceType.INTERNAL
-            if (initialSource == LocationSourceType.INTERNAL) {
+            tokenSource.separator?.isVisible = initialProvider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+            if (initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) {
                 tokenFix.root.isVisible = false
                 tokenSats.root.isVisible = false
                 updateBatteryVisibility(false)
@@ -414,14 +415,28 @@ class MainActivity : AppCompatActivity() {
 
     /** Status bar observers */
     private fun startStatusBarObservers() {
+        // Separate observer for instant source label updates
         lifecycleScope.launch {
-            val settingsRepo = SurveyingApp.settingsRepo
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                sourceSettings.activeProvider.collect { provider ->
+                    val srcLabel = if (provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
+                    android.util.Log.d("MainActivity", "Provider changed to: $provider, label: $srcLabel")
+                    tokenSource.value.text = srcLabel
+                    tokenSource.separator?.isVisible = provider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+                }
+            }
+        }
+
+        lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 combine(
-                    switchboard.fixes, // updated to use injected switchboard
-                    settingsRepo.locationSource
+                    switchboard.fixes,
+                    // Use provider choice for immediate UI updates on toggle
+                    sourceSettings.activeProvider.map { prov ->
+                        if (prov == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) LocationSourceType.INTERNAL else LocationSourceType.EXTERNAL
+                    }
                 ) { fix: Fix, source: LocationSourceType -> fix to source }
-                    .sample(750)
+                    // Remove sampling to reflect changes instantly
                     .distinctUntilChanged { (oFix, oSrc), (nFix, nSrc) ->
                         oSrc == nSrc &&
                                 oFix.rtkStatus == nFix.rtkStatus &&
@@ -434,7 +449,6 @@ class MainActivity : AppCompatActivity() {
                     }
                     .catch { e ->
                         android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
-                        // Optionally update UI to show error state
                         runOnUiThread {
                             tokenSource.value.text = "--"
                             tokenFix.value.text = "--"
@@ -445,6 +459,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     .collectLatest { (fix, source) ->
+                        android.util.Log.d("MainActivity", "Updating status tokens for source: $source")
                         updateStatusTokens(source, fix)
                         updateBatteryVisibility(source == LocationSourceType.EXTERNAL)
                     }
@@ -874,8 +889,8 @@ class MainActivity : AppCompatActivity() {
 
             // Reset status display
             lifecycleScope.launch {
-                val currentSource = SurveyingApp.settingsRepo.locationSource.first()
-                val srcLabel = if (currentSource == LocationSourceType.INTERNAL) "Internal" else "RS2+"
+                val prov = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL }
+                val srcLabel = if (prov == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
                 tokenSource.value.text = srcLabel
             }
 

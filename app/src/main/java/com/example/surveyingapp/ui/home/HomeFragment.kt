@@ -69,7 +69,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // Custom LocationSource to feed app Fixes into the map's My Location dot
     private var mapLocationSource: LocationSource? = null
     @Volatile private var onLocationChangedListener: LocationSource.OnLocationChangedListener? = null
-    private var hasCenteredCamera = false
+    private var hasCenteredCamera = false // Always starts false
     private val desiredFollowZoom = 18f
 
     // Fix Badge component
@@ -91,10 +91,15 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        android.util.Log.d("HomeFragment", "onCreateView called, hasCenteredCamera=$hasCenteredCamera")
 
         // Inflate the layout using view binding
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         val root: View = binding.root
+
+        // Force reset of camera flag on view creation
+        hasCenteredCamera = false
+        android.util.Log.d("HomeFragment", "onCreateView: hasCenteredCamera reset to false")
 
         // Initialize repositories
         val database = AppDatabase.getDatabase(requireContext())
@@ -148,7 +153,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Observe current location fix
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                android.util.Log.d("HomeFragment", "Started collecting fixes from switchboard")
                 fixSwitchboard.fixes.collect { fix: Fix ->
+                    android.util.Log.d("HomeFragment", "Received fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, provider=${fix.provider}")
                     updateLocationDisplay(fix)
                     updateMapLocation(fix)
                     updateStatusDisplay(fix)
@@ -294,28 +301,40 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun updateMapLocation(fix: Fix?) {
+        android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}, googleMap=${googleMap != null}, hasCenteredCamera=$hasCenteredCamera")
+
         if (fix != null && googleMap != null) {
-            onLocationChangedListener?.onLocationChanged(fixToLocation(fix))
+            // Update the My Location dot
+            val locationForDot = fixToLocation(fix)
+            onLocationChangedListener?.onLocationChanged(locationForDot)
+            android.util.Log.d("HomeFragment", "Updated My Location dot")
 
             val location = LatLng(fix.latDeg, fix.lonDeg)
-            googleMap?.apply {
+            val map = googleMap
+            if (map != null) {
                 if (!hasCenteredCamera) {
-                    animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
+                    android.util.Log.d("HomeFragment", "First fix - centering camera at lat/lng: ($location) with zoom $desiredFollowZoom")
+                    map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                     hasCenteredCamera = true
+                    android.util.Log.d("HomeFragment", "Camera centered, hasCenteredCamera now set to true")
                 } else {
-                    val currentZoom = cameraPosition.zoom
+                    val currentZoom = map.cameraPosition.zoom
+                    android.util.Log.d("HomeFragment", "Subsequent fix - updating camera, current zoom: $currentZoom, desired: $desiredFollowZoom")
                     val update = if (currentZoom < desiredFollowZoom)
                         CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom)
                     else
                         CameraUpdateFactory.newLatLng(location)
-                    animateCamera(update)
+                    map.animateCamera(update)
                 }
             }
 
+            // Hide placeholder, show map
             binding.layoutMapPlaceholder.visibility = View.GONE
             binding.mapViewMini.visibility = View.VISIBLE
+            android.util.Log.d("HomeFragment", "Map visibility updated: placeholder=GONE, map=VISIBLE")
         } else {
             binding.layoutMapPlaceholder.visibility = View.VISIBLE
+            android.util.Log.d("HomeFragment", "Showing placeholder (no fix or map not ready)")
         }
     }
 
@@ -337,14 +356,25 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     @SuppressLint("MissingPermission")
     override fun onMapReady(map: GoogleMap) {
+        android.util.Log.d("HomeFragment", "onMapReady called, hasCenteredCamera was: $hasCenteredCamera")
         googleMap = map
+
+        // Set map type to Normal (shows streets/terrain instead of blank)
+        map.mapType = GoogleMap.MAP_TYPE_NORMAL
+
+        // Set default camera position (will be overridden when fix arrives)
+        // Start at a reasonable default location (e.g., San Francisco)
+        val defaultLocation = LatLng(37.7749, -122.4194)
+        map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 10f))
 
         // Provide a custom LocationSource so the blue dot follows our GNSS location data
         mapLocationSource = object : LocationSource {
             override fun activate(listener: LocationSource.OnLocationChangedListener) {
+                android.util.Log.d("HomeFragment", "LocationSource activated")
                 onLocationChangedListener = listener
             }
             override fun deactivate() {
+                android.util.Log.d("HomeFragment", "LocationSource deactivated")
                 onLocationChangedListener = null
             }
         }
@@ -368,15 +398,29 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             // Apply 3D state based on chip
             apply3D(enable = binding.chipToggle3d.isChecked, animate = false)
 
-            // Initial camera will be centered on first Fix in updateMapLocation()
+            // Reset camera centering flag - will center on first GPS fix
             hasCenteredCamera = false
+            android.util.Log.d("HomeFragment", "Map configured: hasCenteredCamera reset to false")
+        } else {
+            android.util.Log.w("HomeFragment", "Location permission not granted, map features limited")
         }
     }
 
     // Map lifecycle methods
+    override fun onStart() {
+        super.onStart()
+        mapView.onStart()
+    }
+
     override fun onResume() {
         super.onResume()
         mapView.onResume()
+
+        // Reset camera centering flag when fragment resumes
+        // This ensures the map will center on GPS location when user returns to home
+        hasCenteredCamera = false
+        android.util.Log.d("HomeFragment", "onResume: hasCenteredCamera reset to false")
+
         // Refresh statistics when returning to home
         loadStatistics()
     }
@@ -384,6 +428,16 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     override fun onPause() {
         super.onPause()
         mapView.onPause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        mapView.onStop()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        mapView.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {

@@ -14,11 +14,9 @@ import com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter
 import com.example.surveyingapp.gnss.bus.adapters.FusedSource
 import com.example.surveyingapp.gnss.bus.adapters.InternalAdapter
 import com.example.surveyingapp.gnss.bus.adapters.NmeaSource
-
-import com.example.surveyingapp.gnss.model.Fix
-import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
 import com.example.surveyingapp.gnss.settings.SourceSettings
 import com.example.surveyingapp.gnss.satellites.SatelliteInventory
+import com.example.surveyingapp.gnss.model.Fix
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,10 +25,10 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import javax.inject.Singleton
 
 @Module
@@ -40,6 +38,7 @@ object AppModule {
     // --- Database + DAO ---
     @Provides
     @Singleton
+    @Suppress("DEPRECATION")
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "surveying_app.db")
             .fallbackToDestructiveMigration() // <- correct API
@@ -59,16 +58,18 @@ object AppModule {
     @Singleton
     fun provideSettingsRepository(): SettingsRepository = SurveyingApp.settingsRepo
 
-    // Minimal NMEA source stub so ExternalAdapter can construct; replace with real bridge later
+    // NMEA source for external RS2+ adapter (TCP NMEA stream)
     @Provides
     @Singleton
-    fun provideNmeaSource(): NmeaSource = object : NmeaSource {
-        private val fixesFlow = MutableSharedFlow<Fix>()
-        private val gsvFlow = MutableSharedFlow<GsvMessage>()
-        override fun start() { /* no-op */ }
-        override fun stop() { /* no-op */ }
-        override fun parsedFixes() = fixesFlow.asSharedFlow()
-        override fun gsvStream() = gsvFlow.asSharedFlow()
+    fun provideExternalNmeaSource(
+        appScope: CoroutineScope,
+        settingsRepository: SettingsRepository
+    ): NmeaSource {
+        // Real TCP NMEA source that connects to RS2+ receiver
+        return com.example.surveyingapp.gnss.bus.adapters.TcpNmeaSource(
+            scope = appScope,
+            settingsRepository = settingsRepository
+        )
     }
 
     // --- App-wide CoroutineScope (long-lived for GNSS streams/parsing) ---
@@ -80,12 +81,29 @@ object AppModule {
     // --- GNSS settings & satellite store ---
     @Provides
     @Singleton
-    fun provideSourceSettings(): SourceSettings = SourceSettings(
-        _activeProvider    = MutableStateFlow(SourceSettings.ProviderChoice.INTERNAL),
-        rs2Host            = MutableStateFlow<String?>("192.168.42.1"),
-        connectionProfiles = MutableStateFlow(emptyList()),
-        activeProfileId    = MutableStateFlow<String?>(null)
-    )
+    @Suppress("UNUSED_PARAMETER")
+    fun provideSourceSettings(
+        settingsRepository: SettingsRepository,
+        appScope: CoroutineScope
+    ): SourceSettings {
+        // Initialize provider synchronously from persisted settings so UI/components
+        // reading SourceSettings immediately (at app startup) see the correct choice.
+        val providerChoice = runBlocking {
+            val loc = try { settingsRepository.locationSource.first() } catch (_: Exception) { com.example.surveyingapp.domain.model.LocationSourceType.INTERNAL }
+            when (loc) {
+                com.example.surveyingapp.domain.model.LocationSourceType.EXTERNAL -> SourceSettings.ProviderChoice.RS2_EXTERNAL
+                else -> SourceSettings.ProviderChoice.INTERNAL
+            }
+        }
+        val initialProvider = MutableStateFlow(providerChoice)
+
+        return SourceSettings(
+            _activeProvider    = initialProvider,
+            rs2Host            = MutableStateFlow<String?>("192.168.42.1"),
+            connectionProfiles = MutableStateFlow(emptyList()),
+            activeProfileId    = MutableStateFlow<String?>(null)
+        )
+    }
 
     @Provides
     @Singleton
@@ -96,16 +114,27 @@ object AppModule {
     @Singleton
     fun provideReachDeviceRepository(): ReachDeviceRepository = ReachDeviceRepository()
 
-    // --- Internal GNSS source (stub; wire to fused provider later) ---
+    // --- Internal GNSS source (uses device's internal GPS via NMEA) ---
     @Provides
     @Singleton
-    fun provideFusedSource(): FusedSource = object : FusedSource {
-        private val _fixes = MutableSharedFlow<Fix>(
-            replay = 0,
-            extraBufferCapacity = 16
-        )
-        override fun fixes(): SharedFlow<Fix> = _fixes.asSharedFlow()
-        override fun stop() { /* no-op for now */ }
+    fun provideFusedSource(
+        @ApplicationContext context: Context,
+        appScope: CoroutineScope
+    ): FusedSource {
+        // Use InternalNmeaSource to get NMEA data from Android's internal GPS
+        val internalNmea = com.example.surveyingapp.gnss.bus.adapters.InternalNmeaSource(context, appScope)
+
+        return object : FusedSource, com.example.surveyingapp.gnss.bus.Startable {
+            override fun fixes(): SharedFlow<Fix> = internalNmea.parsedFixes()
+            override fun start() {
+                android.util.Log.d("FusedSource", "Starting InternalNmeaSource")
+                internalNmea.start()
+            }
+            override fun stop() {
+                android.util.Log.d("FusedSource", "Stopping InternalNmeaSource")
+                internalNmea.stop()
+            }
+        }
     }
 
     @Provides

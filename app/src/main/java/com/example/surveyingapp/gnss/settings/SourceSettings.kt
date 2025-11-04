@@ -37,7 +37,9 @@ class SourceSettings(
     /** Read-only view for consumers. */
     val activeProvider: StateFlow<ProviderChoice> get() = _activeProvider
     fun setActiveProvider(choice: ProviderChoice) {
-        if (_activeProvider.value != choice) _activeProvider.value = choice
+        android.util.Log.d("SourceSettings", "setActiveProvider called: old=${_activeProvider.value}, new=$choice")
+        _activeProvider.value = choice
+        android.util.Log.d("SourceSettings", "setActiveProvider updated to: ${_activeProvider.value}")
     }
 
     /** GNSS provider selection (internal device vs external receiver). */

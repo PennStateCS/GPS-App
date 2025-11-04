@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/app/src/main/res/layout/fragment_open_in_ar.xml">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/app/src/main/res/layout/fragment_open_in_ar.xml" />
+              <option name="originalContent" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;&#10;&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;&#10;    android:layout_width=&quot;match_parent&quot;&#10;    android:layout_height=&quot;match_parent&quot;&gt;&#10;&#10;    &lt;android.opengl.GLSurfaceView&#10;        android:id=&quot;@+id/glSurfaceViewAr&quot;&#10;        android:layout_width=&quot;match_parent&quot;&#10;        android:layout_height=&quot;match_parent&quot;&#10;        android:visibility=&quot;visible&quot;&#10;        android:focusable=&quot;true&quot;&#10;        android:focusableInTouchMode=&quot;true&quot;&#10;        android:clickable=&quot;true&quot; /&gt;&#10;&#10;    &lt;TextView&#10;        android:id=&quot;@+id/textArStatus&quot;&#10;        android:layout_width=&quot;wrap_content&quot;&#10;        android:layout_height=&quot;wrap_content&quot;&#10;        android:padding=&quot;8dp&quot;&#10;        android:background=&quot;#66000000&quot;&#10;        android:textColor=&quot;#FFFFFF&quot;&#10;        android:text=&quot;Initializing AR...&quot;&#10;        android:layout_gravity=&quot;top|center_horizontal&quot; /&gt;&#10;&#10;&lt;/FrameLayout&gt;&#10;" />
+              <option name="updatedContent" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot;?&gt;&#10;&lt;FrameLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;&#10;    android:layout_width=&quot;match_parent&quot;&#10;    android:layout_height=&quot;match_parent&quot;&gt;&#10;&#10;    &lt;android.opengl.GLSurfaceView&#10;        android:id=&quot;@+id/glSurfaceViewAr&quot;&#10;        android:layout_width=&quot;match_parent&quot;&#10;        android:layout_height=&quot;match_parent&quot;&#10;        android:visibility=&quot;visible&quot;&#10;        android:focusable=&quot;true&quot;&#10;        android:focusableInTouchMode=&quot;true&quot;&#10;        android:clickable=&quot;true&quot; /&gt;&#10;&#10;    &lt;TextView&#10;        android:id=&quot;@+id/textArStatus&quot;&#10;        android:layout_width=&quot;wrap_content&quot;&#10;        android:layout_height=&quot;wrap_content&quot;&#10;        android:padding=&quot;8dp&quot;&#10;        android:background=&quot;#66000000&quot;&#10;        android:textColor=&quot;#FFFFFF&quot;&#10;        android:text=&quot;Initializing AR...&quot;&#10;        android:layout_gravity=&quot;top|center_horizontal&quot;&#10;        android:clickable=&quot;false&quot;&#10;        android:focusable=&quot;false&quot;&#10;        android:focusableInTouchMode=&quot;false&quot; /&gt;&#10;&#10;&lt;/FrameLayout&gt;&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
