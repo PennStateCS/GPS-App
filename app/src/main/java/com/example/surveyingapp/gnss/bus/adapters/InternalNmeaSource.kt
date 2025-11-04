@@ -14,13 +14,15 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import android.os.Handler
+import android.os.Looper
 import java.time.Instant
 
 /**
- * Wires Android's NMEA listener into the ExternalAdapter.NmeaSource contract.
- * Accumulates NMEA sentences and calculates ellipsoidal altitude from MSL + geoid.
+ * Wires Android's internal GPS NMEA listener into the InternalAdapter.
+ * Similar to ExternalNmeaSource but uses INTERNAL_GPS as provider.
  */
-class ExternalNmeaSource(
+class InternalNmeaSource(
     context: Context,
     private val scope: CoroutineScope
 ) : NmeaSource {
@@ -31,10 +33,14 @@ class ExternalNmeaSource(
     private val parser = NmeaParser()
 
     private val _fixes = MutableSharedFlow<Fix>(
-        replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 1, // Replay last fix for new subscribers
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     private val _gsv = MutableSharedFlow<GsvMessage>(
-        replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
     // Implement the NmeaSource interface methods
@@ -50,7 +56,7 @@ class ExternalNmeaSource(
     private var lastGsa: GSA? = null
     private var lastZda: ZDA? = null
 
-    // GSV aggregation (one "epoch" can span multiple messages)
+    // GSV aggregation
     private var pendingGsvTotal: Int? = null
     private var pendingGsvCollected: MutableList<NmeaParser.Satellite> = mutableListOf()
 
@@ -58,6 +64,7 @@ class ExternalNmeaSource(
     override fun start() {
         if (started) return
         started = true
+        android.util.Log.d("InternalNmeaSource", "Starting internal GPS NMEA listener")
 
         val listener = OnNmeaMessageListener { message, _ ->
             when (val result = parser.parse(message)) {
@@ -66,15 +73,28 @@ class ExternalNmeaSource(
             }
         }
         nmeaListener = listener
+
+        // Register the NMEA listener using a Handler bound to the main Looper so the
+        // LocationManager will create any required internal Handlers against the main
+        // thread even if this method is invoked from a background thread.
         try {
-            lm.addNmeaListener(listener)
-        } catch (_: SecurityException) {
-            // Permissions missing; silently ignore for now
+            lm.addNmeaListener(listener, Handler(Looper.getMainLooper()))
+            android.util.Log.d("InternalNmeaSource", "NMEA listener added successfully")
+        } catch (e: SecurityException) {
+            android.util.Log.e("InternalNmeaSource", "Missing location permission", e)
         }
     }
 
     override fun stop() {
-        nmeaListener?.let { runCatching { lm.removeNmeaListener(it) } }
+        nmeaListener?.let {
+            // Use the main looper handler to ensure removal occurs on the main thread
+            try {
+                lm.removeNmeaListener(it)
+            } catch (_: Exception) {
+                // ignore
+            }
+            android.util.Log.d("InternalNmeaSource", "NMEA listener removed")
+        }
         nmeaListener = null
         started = false
     }
@@ -99,12 +119,11 @@ class ExternalNmeaSource(
             pendingGsvCollected = mutableListOf()
         }
 
-        // Convert GSVSatellite to NmeaParser.Satellite format
         val satellites = gsv.satellites.mapNotNull { gsvSat ->
             gsvSat.svid?.let { svid ->
                 NmeaParser.Satellite(
                     prn = svid,
-                    constellation = com.example.surveyingapp.gnss.model.Constellation.GPS, // Default to GPS
+                    constellation = com.example.surveyingapp.gnss.model.Constellation.GPS,
                     elevationDeg = gsvSat.elevationDeg?.toDouble(),
                     azimuthDeg = gsvSat.azimuthDeg?.toDouble(),
                     cn0DbHz = gsvSat.snrDb?.toDouble()
@@ -141,31 +160,20 @@ class ExternalNmeaSource(
         val lat = gga.lat ?: return
         val lon = gga.lon ?: return
 
-        // Determine timestamp and source with proper priority:
-        // 1. ZDA epochMillis (most precise)
-        // 2. RMC epochMillis (has date + time)
-        // 3. GGA time (time only, use current date)
-        // 4. Device time (fallback)
+        // Determine timestamp and source
         val (epochMs, tsSource) = when {
             lastZda?.epochMillis != null -> {
-                val zda = lastZda!! // Safe cast after null check
-                Pair(zda.epochMillis!!, TimestampSource.NMEA_ZDA)
+                Pair(lastZda!!.epochMillis!!, TimestampSource.NMEA_ZDA)
             }
             lastRmc?.epochMillis != null -> {
-                val rmc = lastRmc!! // Safe cast after null check
-                Pair(rmc.epochMillis!!, TimestampSource.GNSS_PROVIDER)
-            }
-            gga.timeRaw != null -> {
-                // GGA has time but no date, use current system time but mark as GNSS_PROVIDER
-                Pair(System.currentTimeMillis(), TimestampSource.GNSS_PROVIDER)
+                Pair(lastRmc!!.epochMillis!!, TimestampSource.GNSS_PROVIDER)
             }
             else -> {
                 Pair(System.currentTimeMillis(), TimestampSource.DEVICE)
             }
         }
 
-        // ACCUMULATOR CALCULATION: ellipsoidal = MSL + geoid separation
-        // This is the only place where ellipsoidal altitude should be calculated
+        // Calculate ellipsoidal altitude
         val altEllipsoidal = if (gga.altMsl != null && gga.geoidSeparation != null) {
             gga.altMsl + gga.geoidSeparation
         } else {
@@ -176,37 +184,36 @@ class ExternalNmeaSource(
         val rtk = when (gga.fixQuality) {
             1 -> RtkStatus.SINGLE
             2 -> RtkStatus.DGPS
-            4 -> RtkStatus.FIX
-            5 -> RtkStatus.FLOAT
             else -> RtkStatus.NONE
         }
 
-        // Get satellite count from GSA or GGA
         val satsUsed = lastGsa?.usedSvids?.size ?: gga.satsUsed ?: 0
 
-        // Build fix with accumulator-calculated ellipsoidal altitude
+        // Build fix with INTERNAL provider
         val fix = Fix(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.INTERNAL,  // Use internal provider
             timeUtc = Instant.ofEpochMilli(epochMs),
             timestampSource = tsSource,
             latDeg = lat,
             lonDeg = lon,
-            altEllipsoidalM = altEllipsoidal,  // Calculated here in accumulator
-            altMslM = gga.altMsl,        // Raw from parser
-            geoidSeparationM = gga.geoidSeparation, // Raw from parser
+            altEllipsoidalM = altEllipsoidal,
+            altMslM = gga.altMsl,
+            geoidSeparationM = gga.geoidSeparation,
             hDop = gga.hdop,
-            vDop = null,  // Not available in current sentence structure
-            pDop = null,  // Not available in current sentence structure
-            hAccM = null, // Would come from GST if available
-            vAccM = null, // Would come from GST if available
-            rtkStatus = rtk,
+            vDop = lastGsa?.vdop,
+            pDop = lastGsa?.pdop,
+            hAccM = null,
+            vAccM = null,
+            speedMps = lastRmc?.speedKnots?.let { it * 0.514444 },
+            courseDeg = lastRmc?.courseDeg,
             satsUsed = satsUsed,
-            satsVisible = pendingGsvCollected.size.takeIf { it > 0 },
+            satsVisible = null,
+            rtkStatus = rtk,
             diffAgeS = gga.diffAge,
-            speedMps = lastRmc?.speedKnots?.let { knots -> knots * 0.514444 }, // Convert knots to m/s
-            courseDeg = lastRmc?.courseDeg
+            correctionStationId = gga.stationId
         )
 
+        android.util.Log.d("InternalNmeaSource", "Emitting fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, sats=$satsUsed")
         scope.launch { _fixes.emit(fix) }
     }
 }

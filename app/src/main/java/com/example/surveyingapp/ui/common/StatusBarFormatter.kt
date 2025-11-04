@@ -9,37 +9,38 @@ import java.time.Instant
 import java.util.Locale
 
 fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
-    val srcLabel = if (source.equals("internal", true)) "Internal" else "RS2+"
-    val isInternal = srcLabel == "Internal"
+    // Accept variants like "internal", "internal gps", etc.
+    val isInternal = source.contains("internal", ignoreCase = true)
+    val srcLabel = if (isInternal) "Internal" else "RS2+"
 
     // sats: prefer Fix, else GnssStatus
-    val satsUsed = fix.satsUsed
-    val satsVis = fix.satsVisible ?: gnssStatus?.satelliteCount
+    val satsUsed = fix.satsUsed // satellites used in the current solution
+    val satsVis = fix.satsVisible ?: gnssStatus?.satelliteCount // visible satellites (fallback to GNSS status)
     val satsPart = if (satsUsed > 0 && satsVis != null && satsVis > 0) "$satsUsed/$satsVis sats" else null
 
     // Age (prefer monotonic if you carry it; wall-clock fallback here)
-    val ageSec = safeAgeSeconds(fix.timeUtc, Instant.now())
+    val ageSec = safeAgeSeconds(fix.timeUtc, Instant.now()) // seconds since fix
 
-    // Coordinates: adapt precision for RTK FIX
-    val coordPrec = if (!isInternal && fix.rtkStatus == RtkStatus.FIX) 7 else 5
-    val latStr = fmtCoord(fix.latDeg, coordPrec)
-    val lonStr = fmtCoord(fix.lonDeg, coordPrec)
+    // Coordinates: adapt precision for RTK FIX (more decimals for RTK-fixed external solutions)
+    val coordPrec = if (!isInternal && fix.rtkStatus == RtkStatus.FIX) 7 else 5 // 7 decimals for cm-level RTK FIX, else 5
+    val latStr = fmtCoord(fix.latDeg, coordPrec) // formatted latitude
+    val lonStr = fmtCoord(fix.lonDeg, coordPrec) // formatted longitude
 
     // Accuracies (sanitize NaN/Inf)
-    val hAcc = sanitizeDouble(fix.hAccM)
-    val vAcc = sanitizeDouble(fix.vAccM)
+    val hAcc = sanitizeDouble(fix.hAccM) // horizontal accuracy in meters
+    val vAcc = sanitizeDouble(fix.vAccM) // vertical accuracy in meters
 
     // Altitude
-    val alt = sanitizeDouble(fix.altEllipsoidalM)
+    val alt = sanitizeDouble(fix.altEllipsoidalM) // ellipsoidal altitude in meters
 
     // Internal fix classification (don't hide stale, annotate it)
     val fixTypeInternal = if (isInternal) {
         val base = when {
-            hAcc == null && alt == null -> "No Fix"
-            alt != null -> "3D"
-            else -> "2D"
+            hAcc == null && alt == null -> "No Fix" // no location data
+            alt != null -> "3D" // has altitude -> 3D fix
+            else -> "2D" // only lat/lon -> 2D fix
         }
-        if (ageSec > 15) "$base (stale ${ageSec}s)" else base
+        if (ageSec > 15) "$base (stale ${ageSec}s)" else base // mark stale if older than 15s
     } else null
 
     // RTK status
@@ -51,11 +52,11 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
         RtkStatus.NONE -> "NONE"
         RtkStatus.INVALID -> "--"
         RtkStatus.DEAD_RECKONING -> "DR"
-    }.let { s -> if (!isInternal && ageSec > 15) "$s (stale ${ageSec}s)" else s }
+    }.let { s -> if (!isInternal && ageSec > 15) "$s (stale ${ageSec}s)" else s } // annotate stale external RTK
 
     // DOPs
     val dopPart = when {
-        fix.pDop != null && fix.hDop != null -> "PDOP ${fmt1(fix.pDop)} / HDOP ${fmt1(fix.hDop)}"
+        fix.pDop != null && fix.hDop != null -> "PDOP ${fmt1(fix.pDop)} / HDOP ${fmt1(fix.hDop)}" // dilution of precision
         fix.pDop != null -> "PDOP ${fmt1(fix.pDop)}"
         fix.hDop != null -> "HDOP ${fmt1(fix.hDop)}"
         else -> null
@@ -63,26 +64,26 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
 
     // Accuracy strings (use same formatter for both paths)
     val accStr = when {
-        hAcc != null && vAcc != null -> "±${fmtMeters(hAcc)}/${fmtMeters(vAcc)} m"
-        hAcc != null -> "±${fmtMeters(hAcc)} m"
+        hAcc != null && vAcc != null -> "±${fmtMeters(hAcc)}/${fmtMeters(vAcc)} m" // horiz/vert accuracy
+        hAcc != null -> "±${fmtMeters(hAcc)} m" // horizontal only
         else -> null
     }
 
     // Altitude strings
     val altInternal = if (isInternal) {
         when {
-            alt != null && vAcc != null -> "Alt ${fmtAlt(alt)} ±${fmtMeters(vAcc)} m"
-            alt != null -> "Alt ${fmtAlt(alt)} m"
+            alt != null && vAcc != null -> "Alt ${fmtAlt(alt)} ±${fmtMeters(vAcc)} m" // altitude with vertical accuracy
+            alt != null -> "Alt ${fmtAlt(alt)} m" // altitude only
             else -> null
         }
     } else null
-    val altExternal = if (!isInternal && alt != null) "Alt ${fmtAlt(alt)} m" else null
+    val altExternal = if (!isInternal && alt != null) "Alt ${fmtAlt(alt)} m" else null // external alt shown without v-acc
 
     // Baseline length - not available in current Fix model, so skip for now
     val baseline: String? = null
 
     // Differential correction age
-    val corrAge = fix.diffAgeS?.let { secs -> if (secs >= 0) "Age ${secs.toInt()}s" else null }
+    val corrAge = fix.diffAgeS?.let { secs -> if (secs >= 0) "Age ${secs.toInt()}s" else null } // age of corrections
 
     val parts = mutableListOf<String>()
     parts += srcLabel

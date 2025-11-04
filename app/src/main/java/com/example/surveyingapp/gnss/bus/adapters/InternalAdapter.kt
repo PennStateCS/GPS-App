@@ -4,6 +4,7 @@ import com.example.surveyingapp.gnss.bus.SourceAdapter
 import com.example.surveyingapp.gnss.bus.Startable
 import com.example.surveyingapp.gnss.model.Fix
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -12,12 +13,12 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 
 /**
- * Adapts Fused/GnssStatus into normalized Fix objects.
+ * Adapts internal GPS NMEA source into normalized Fix objects.
  * This class contains no UI code and no settings persistence.
  */
 class InternalAdapter(
     private val scope: CoroutineScope,
-    private val fusedSource: FusedSource   // Your existing Fused provider wrapper
+    private val fusedSource: FusedSource   // Internal GPS NMEA source wrapper
 ) : SourceAdapter, Startable {
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -25,13 +26,28 @@ class InternalAdapter(
     )
     override val fixes: SharedFlow<Fix> = _fixes.asSharedFlow()
 
+    private var collectJob: Job? = null
+
     override fun start() {
-        scope.launch {
-            fusedSource.fixes().conflate().collect { fix -> _fixes.emit(fix) }
+        if (collectJob != null) return // Already started
+        android.util.Log.d("InternalAdapter", "Starting internal GPS adapter")
+
+        // Start the underlying NMEA source
+        (fusedSource as? Startable)?.start()
+
+        // Start collecting fixes
+        collectJob = scope.launch {
+            fusedSource.fixes().conflate().collect { fix ->
+                android.util.Log.d("InternalAdapter", "Collected fix from source, emitting: lat=${fix.latDeg}, lon=${fix.lonDeg}")
+                _fixes.emit(fix)
+            }
         }
     }
 
     override fun stop() {
+        android.util.Log.d("InternalAdapter", "Stopping internal GPS adapter")
+        collectJob?.cancel()
+        collectJob = null
         fusedSource.stop()
     }
 }

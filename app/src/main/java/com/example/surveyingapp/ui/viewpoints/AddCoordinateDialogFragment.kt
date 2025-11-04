@@ -17,7 +17,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.gnss.model.Provider
-import com.example.surveyingapp.di.HasGnssGraph
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.util.GeoProjection
@@ -37,6 +37,8 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import java.util.Locale
 import kotlin.coroutines.resume
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * Dialog Fragment for adding new coordinate points using GPS location.
@@ -50,10 +52,14 @@ import kotlin.coroutines.resume
  *
  * The constructor takes a callback function that's called when a coordinate is added.
  */
+@AndroidEntryPoint
 class AddCoordinateDialogFragment(
     private val highAccuracy: Boolean = true,
     private val onPointAdded: (Coordinate) -> Unit
 ) : DialogFragment() {
+
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
 
     // Reference to EditText for proper cleanup
     private var editTextRef: EditText? = null
@@ -236,12 +242,10 @@ class AddCoordinateDialogFragment(
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {
-        // Obtain a single external fix via the shared GNSS graph (switchboard)
+        // Obtain a single external fix via the injected switchboard
         val fix = withTimeoutOrNull(12_000L) {
-            val host = activity as? HasGnssGraph
-            val flow = host?.gnssGraph?.bus?.fixes
-            if (flow == null) null else withContext(Dispatchers.IO) {
-                runCatching { flow.first() }.getOrNull()
+            withContext(Dispatchers.IO) {
+                runCatching { fixSwitchboard.fixes.first() }.getOrNull()
             }
         }
         if (fix != null) {

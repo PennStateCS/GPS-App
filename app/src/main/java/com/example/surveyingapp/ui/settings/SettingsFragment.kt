@@ -521,8 +521,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
             if (initializing) return@setOnCheckedChangeListener
             when (checkedId) {
                 R.id.radio_internal -> {
+                    Log.d("SettingsFragment", "Radio switched to INTERNAL")
                     // Update switchboard provider to internal
                     sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+                    Log.d("SettingsFragment", "Called setActiveProvider(INTERNAL)")
                     // Update categories immediately when switching to internal (hide RS2+)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
@@ -537,8 +539,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
                 R.id.radio_es2_tcp -> {
+                    Log.d("SettingsFragment", "Radio switched to RS2_EXTERNAL")
                     // Update switchboard provider to external
                     sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
+                    Log.d("SettingsFragment", "Called setActiveProvider(RS2_EXTERNAL)")
                     // Update categories immediately when switching to external (show RS2+)
                     refreshCategoriesForSource(LocationSourceType.EXTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)

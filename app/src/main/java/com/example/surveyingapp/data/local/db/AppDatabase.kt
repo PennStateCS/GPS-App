@@ -12,7 +12,7 @@ import com.example.surveyingapp.data.local.entity.ModelEntity
 
 @Database(
     entities = [CoordinateEntity::class, ModelEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
