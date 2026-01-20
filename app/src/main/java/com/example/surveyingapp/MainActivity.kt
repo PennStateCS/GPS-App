@@ -1,5 +1,7 @@
 package com.example.surveyingapp
 
+import android.Manifest
+import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.Menu
@@ -44,7 +46,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.ClipDrawable
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.os.SystemClock
+import android.provider.Settings
 import java.util.Locale
 import com.example.surveyingapp.gnss.reach.ReachBatteryService
 import com.example.surveyingapp.gnss.reach.ReachHttpClient
@@ -55,6 +61,7 @@ import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import androidx.core.net.toUri
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -123,6 +130,19 @@ class MainActivity : AppCompatActivity() {
     ) { granted ->
         if (!granted) {
             showBackgroundLocationRationale()
+        }
+    }
+
+    private val storagePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val denied = permissions.filterValues { !it }.keys
+        if (denied.isEmpty()) {
+            // TODO: do positive action if needed
+        }
+        else {
+            // TODO: handle denied storage permissions if needed
+
         }
     }
 
@@ -336,6 +356,7 @@ class MainActivity : AppCompatActivity() {
     private fun requestAllPermissions() {
         if (!PermissionManager.hasEssentialPermissions(this)) {
             requestEssentialPermissions()
+            requestStoragePermissions()
         } else {
             ensureLocationServiceStarted()
         }
@@ -355,6 +376,51 @@ class MainActivity : AppCompatActivity() {
             !PermissionManager.hasBackgroundLocationPermission(this)
         ) {
             backgroundLocationLauncher.launch(PermissionManager.BACKGROUND_LOCATION_PERMISSION)
+        }
+    }
+
+    fun requestStoragePermissions() {
+
+        // If API 30+, check for MANAGE_EXTERNAL_STORAGE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+
+            // MANAGE_EXTERNAL_STORAGE code
+            if (!Environment.isExternalStorageManager()) {
+
+                try {
+
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.addCategory("android.intent.category.DEFAULT")
+                    intent.data = "package:$packageName".toUri()
+                    startActivity(intent)
+
+                } catch (e: Exception) {
+
+                    // Fallback for some devices
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    startActivity(intent)
+
+                }
+
+            }
+
+            else {
+                // Permission already granted - nothing is done
+            }
+
+        }
+
+        // For API 24 - 29
+        else {
+
+            // Request READ_EXTERNAL_STORAGE/WRITE_EXTERNAL_STORAGE perms
+            val permissions = arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
+
+            // Use your ActivityResultLauncher to request these
+            storagePermissionsLauncher.launch(permissions)
         }
     }
 

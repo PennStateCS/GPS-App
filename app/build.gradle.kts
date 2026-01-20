@@ -88,6 +88,10 @@ dependencies {
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
 
+    // 3D rendering (Filament)
+    implementation("com.google.android.filament:filament-android:1.68.3")
+    implementation("com.google.android.filament:filament-utils-android:1.68.3")
+
     // Room (KSP)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

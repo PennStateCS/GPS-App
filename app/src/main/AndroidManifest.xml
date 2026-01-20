@@ -1,12 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:tools="http://schemas.android.com/tools"
+    xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Storage permissions - Updated for Android 13+ -->
+    <!--
+        [Storage Permissions Bible]
+
+        READ_EXTERNAL_STORAGE:
+        - Usable till API 32
+        - From API 33+, replaced by READ_MEDIA_* permissions
+
+        WRITE_EXTERNAL_STORAGE:
+        - Usable till API 28
+        - In API 29, deprecated due to Scoped Storage enforcement, but
+        can still be used if requestLegacyExternalStorage="true" is set in the
+        application tag (not recommended)
+        - From API 30+, deprecated due to Scoped Storage, instead use MANAGE_EXTERNAL_STORAGE
+
+        MANAGE_EXTERNAL_STORAGE:
+        - Introduced in API 30
+        - Grants broad access to external storage
+        - Requires special user permission via system settings
+        - NOT ALLOWED on the Google Play Store
+    -->
+
+    <!-- Image permissions for API 33+-->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <!-- Keep legacy permission for older Android versions -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+
+    <!-- Storage permissions for API 30+ -->
+    <!-- This will not fly with Google Play -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+
+    <!-- Legacy: READ used up to API 32 (Android 12L) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Legacy: WRITE used up to API 29 (Android 10) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" android:requestLegacyExternalStorage="true" />
+
+
+
 
     <!-- Location (for capturing point coordinates) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
