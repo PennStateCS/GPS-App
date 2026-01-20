@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -148,6 +149,32 @@ class ModelsFragment : Fragment() {
         filePickerLauncher.launch(intent)
     }
 
+    private fun getFileNameFromUri(uri: Uri): String? {
+        var result: String? = null
+
+        // Check if URI comes from Google Drive or OneDrive
+//        if (uri.scheme == "content") {
+//            val cursor = requireContext().contentResolver.query(uri, null, null, null, null)
+//            cursor?.use {
+//                if (it.moveToFirst()) {
+//                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+//                    if (nameIndex >= 0) {
+//                        result = it.getString(nameIndex)
+//                    }
+//                }
+//            }
+//        }
+
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/')
+            if (cut != -1 && cut != null) {
+                result = result.substring(cut + 1)
+            }
+        }
+        return result
+    }
+
     private fun handleSelectedFile(uri: Uri) {
         try {
             val contentResolver = requireContext().contentResolver
@@ -156,7 +183,8 @@ class ModelsFragment : Fragment() {
             if (inputStream != null) {
                 // Get file info
                 val cursor = contentResolver.query(uri, null, null, null, null)
-                var fileName = "model.glb"
+                Log.d("ModelsFragment", uri.toString())
+                var fileName = getFileNameFromUri(uri) ?: "model.glb"
                 var fileSize = 0L
 
                 cursor?.use {
@@ -181,6 +209,7 @@ class ModelsFragment : Fragment() {
                     modelsDir.mkdirs()
                 }
 
+                // Ensure unique file name by adding suffix if needed
                 var targetFile = File(modelsDir, fileName)
                 var counter = 1
                 while (targetFile.exists()) {

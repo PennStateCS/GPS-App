@@ -22,13 +22,31 @@ object PermissionManager {
         add(Manifest.permission.ACCESS_WIFI_STATE)
         add(Manifest.permission.CAMERA)
         add(Manifest.permission.CHANGE_WIFI_MULTICAST_STATE)
-        add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.POST_NOTIFICATIONS) // Android 13+
+
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2)
+        {
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
+
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
             add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            add(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        {
+            add(Manifest.permission.READ_MEDIA_IMAGES)
+            add(Manifest.permission.READ_MEDIA_VIDEO)
+            add(Manifest.permission.READ_MEDIA_AUDIO)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.POST_NOTIFICATIONS) // Android 13+
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
         }

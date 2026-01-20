@@ -41,6 +41,11 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
+        <SurfaceView
+            android:id="@+id/modelSurface"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
         <!-- Loading Progress (hidden by default) -->
         <ProgressBar
             android:id="@+id/progress_loading"

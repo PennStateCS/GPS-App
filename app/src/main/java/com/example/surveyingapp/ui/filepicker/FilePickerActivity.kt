@@ -1,5 +1,6 @@
 package com.example.surveyingapp.ui.filepicker
 
+import android.util.Log
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -12,6 +13,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.surveyingapp.databinding.ActivityFilePickerBinding
 import java.io.File
+
+
 
 class FilePickerActivity : AppCompatActivity() {
 
@@ -147,6 +150,8 @@ class FilePickerActivity : AppCompatActivity() {
             items.add(FileItem.GoogleDriveItem)
         }
 
+        // Is the OneDrive app really required? We can just ask the OneDrive API for files
+        // and fetch from there. We will need a registered app through Entra though.
         if (isAppInstalled("com.microsoft.skydrive")) {
             items.add(FileItem.OneDriveItem)
         }
@@ -204,6 +209,11 @@ class FilePickerActivity : AppCompatActivity() {
             // Add back button if not in root
             if (directory.parent != null) {
                 items.add(FileItem.BackItem)
+            }
+
+            // debug: print directory contents to log on for loop
+            for (thing in directory.listFiles() ?: arrayOf()) {
+                Log.d("FilePicker", "Found item: ${thing.name} (dir: ${thing.isDirectory})")
             }
 
             // Add directories first (excluding hidden folders that start with .)
