@@ -14,9 +14,15 @@ import com.google.android.filament.utils.Utils
 import com.google.android.filament.utils.ModelViewer
 import java.nio.ByteBuffer
 import android.view.Choreographer
+import androidx.lifecycle.lifecycleScope
 import com.google.android.filament.IndirectLight
 import com.google.android.filament.utils.KTX1Loader
 import java.nio.Buffer
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 
 class ModelViewerActivity : AppCompatActivity() {
 
@@ -24,6 +30,8 @@ class ModelViewerActivity : AppCompatActivity() {
     private lateinit var surfaceView: SurfaceView
     private lateinit var newModelViewer: ModelViewer
     private lateinit var choreographer: Choreographer
+
+    private var autoRotate = false
 
     companion object {
         private const val EXTRA_MODEL_PATH = "model_path"
@@ -44,6 +52,14 @@ class ModelViewerActivity : AppCompatActivity() {
 
         binding = ActivityModelViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        binding.btnResetRotation.setOnClickListener {
+            clickedResetView()
+        }
+
+        binding.btnAutoRotate.setOnClickListener {
+            clickedAutoRotate()
+        }
 
         setupToolbar()
 
@@ -69,21 +85,30 @@ class ModelViewerActivity : AppCompatActivity() {
 
 
         val indirectLightFile = loadIndirectLightKtx("ktx/test.ktx") as Buffer
-        Log.d("ModelViewerActivity", "Indirect light file size: ${indirectLightFile.remaining()} bytes")
         val indirectLighting = KTX1Loader.createIndirectLight(newModelViewer.engine, indirectLightFile)
         indirectLighting.indirectLight?.intensity = 50_000f
         newModelViewer.scene.indirectLight = indirectLighting.indirectLight
 
-        // load the glb file
-        val model = loadGlb()
+        lifecycleScope.launch {
 
-        if (model == null) {
-            showPlaceholder()
-            return
+            binding.progressLoading.visibility = android.view.View.VISIBLE
+
+            // load the glb file
+            val modelBuffer = withContext(Dispatchers.IO) {
+                loadGlb()   // reads file into ByteBuffer
+            }
+
+            if (modelBuffer == null) {
+                //showPlaceholder()
+                return@launch
+            }
+
+
+            newModelViewer.loadModelGlb(modelBuffer)
+            newModelViewer.transformToUnitCube()
+            binding.progressLoading.visibility = android.view.View.GONE
+
         }
-
-        newModelViewer.loadModelGlb(model)
-        newModelViewer.transformToUnitCube()
     }
 
     private fun loadGlb(): ByteBuffer? {
@@ -146,8 +171,25 @@ class ModelViewerActivity : AppCompatActivity() {
         }
     }
 
+    private fun clickedResetView() {
+        Log.d("ModelViewerActivity", "Resetting model view")
+
+        // find a way to reset the model using newModelEngine.scene.transformManager
+        // and quaternions
+    }
+
+    private fun clickedAutoRotate() {
+        autoRotate = !autoRotate
+
+        Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
+
+        // implement auto-rotate functionality, maybe through frameCallback?
+    }
+
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
+            // autoRotate code should run here
+
             newModelViewer.render(frameTimeNanos)
             choreographer.postFrameCallback(this)
         }

@@ -2,6 +2,7 @@ package com.example.surveyingapp.ui.models
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.AssetFileDescriptor
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -14,6 +15,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.test.core.app.ApplicationProvider.getApplicationContext
 import com.example.surveyingapp.databinding.FragmentModelsBinding
 import com.example.surveyingapp.domain.model.Model
 import kotlinx.coroutines.launch
@@ -185,7 +187,9 @@ class ModelsFragment : Fragment() {
                 val cursor = contentResolver.query(uri, null, null, null, null)
                 Log.d("ModelsFragment", uri.toString())
                 var fileName = getFileNameFromUri(uri) ?: "model.glb"
-                var fileSize = 0L
+
+                var assetDescriptor: AssetFileDescriptor? = contentResolver.openAssetFileDescriptor(uri, "r")
+                var fileSize = assetDescriptor?.length ?: 0L
 
                 cursor?.use {
                     if (it.moveToFirst()) {
@@ -193,7 +197,7 @@ class ModelsFragment : Fragment() {
                         val sizeIndex = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
 
                         if (nameIndex >= 0) fileName = it.getString(nameIndex) ?: "model.glb"
-                        if (sizeIndex >= 0) fileSize = it.getLong(sizeIndex)
+                        if (sizeIndex >= 0) fileSize = it.getLong(sizeIndex) ?: 0L
                     }
                 }
 
