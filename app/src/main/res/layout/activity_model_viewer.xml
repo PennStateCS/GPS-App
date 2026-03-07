@@ -25,6 +25,7 @@
 
     <!-- Main Content -->
     <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/constraintLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
@@ -36,26 +37,30 @@
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:background="@android:color/darker_gray"
-            app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toTopOf="@id/controls_container"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent" />
+            app:layout_constraintTop_toTopOf="parent" />
 
         <SurfaceView
             android:id="@+id/modelSurface"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            app:layout_constraintBottom_toTopOf="@id/controls_container"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
         <!-- Loading Progress (hidden by default) -->
         <ProgressBar
             android:id="@+id/progress_loading"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:visibility="gone"
-            app:layout_constraintTop_toTopOf="@id/placeholder_view"
-            app:layout_constraintBottom_toBottomOf="@id/placeholder_view"
-            app:layout_constraintStart_toStartOf="@id/placeholder_view"
-            app:layout_constraintEnd_toEndOf="@id/placeholder_view" />
+            android:visibility="visible"
+            app:layout_constraintBottom_toBottomOf="@id/modelSurface"
+            app:layout_constraintEnd_toEndOf="@id/modelSurface"
+            app:layout_constraintStart_toStartOf="@id/modelSurface"
+            app:layout_constraintTop_toTopOf="@id/modelSurface" />
 
         <!-- Error Message -->
         <TextView
@@ -68,23 +73,23 @@
             android:textColor="@android:color/holo_red_dark"
             android:textSize="16sp"
             android:visibility="gone"
-            app:layout_constraintTop_toTopOf="@id/placeholder_view"
             app:layout_constraintBottom_toBottomOf="@id/placeholder_view"
+            app:layout_constraintEnd_toEndOf="@id/placeholder_view"
             app:layout_constraintStart_toStartOf="@id/placeholder_view"
-            app:layout_constraintEnd_toEndOf="@id/placeholder_view" />
+            app:layout_constraintTop_toTopOf="@id/placeholder_view" />
 
         <!-- Controls Container -->
         <LinearLayout
             android:id="@+id/controls_container"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp"
             android:background="@color/white"
             android:elevation="4dp"
+            android:orientation="vertical"
+            android:padding="16dp"
             app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent">
 
             <!-- Model Info -->
             <TextView
@@ -111,8 +116,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
                     android:layout_width="30dp"
@@ -143,8 +148,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
                     android:layout_width="30dp"
@@ -175,8 +180,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="16dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
                     android:layout_width="30dp"
@@ -206,26 +211,26 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center">
+                android:gravity="center"
+                android:orientation="horizontal">
 
                 <Button
                     android:id="@+id/btn_reset_rotation"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:layout_marginEnd="8dp"
-                    android:text="@string/reset"
-                    style="@style/Widget.Material3.Button.OutlinedButton" />
+                    android:layout_weight="1"
+                    android:text="@string/reset" />
 
                 <Button
                     android:id="@+id/btn_auto_rotate"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:layout_marginStart="8dp"
-                    android:text="@string/auto_rotate"
-                    style="@style/Widget.Material3.Button.OutlinedButton" />
+                    android:layout_weight="1"
+                    android:text="@string/auto_rotate" />
 
             </LinearLayout>
 

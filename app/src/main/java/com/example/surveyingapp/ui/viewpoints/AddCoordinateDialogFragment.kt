@@ -4,8 +4,10 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
@@ -108,9 +110,14 @@ class AddCoordinateDialogFragment(
         editTextRef = nameEdit
 
         // Set up icon choices with custom adapter (updated icons)
+//        val icons = listOf(
+//            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
+//        )
+
         val icons = listOf(
-            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
+            "transformer", "hydrant", "sign", "lightpole", "shrub", "building"
         )
+
         iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
 
         // Set up color choices with predefined colors
@@ -121,6 +128,7 @@ class AddCoordinateDialogFragment(
             "Orange" to 0xFFFFB74D.toInt(),
             "Purple" to 0xFFBA68C8.toInt()
         )
+
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
 
         // Begin one-shot location acquisition based on settings
@@ -296,19 +304,19 @@ class AddCoordinateDialogFragment(
 
         // View shown when spinner is closed (selected item)
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconView(position, convertView, parent)
+            return createIconViewImage(position, convertView, parent)
         }
 
         // View shown in the dropdown list
         override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconView(position, convertView, parent)
+            return createIconViewImage(position, convertView, parent)
         }
 
         /**
          * Creates a view for a single icon item.
          * Uses view recycling for performance (convertView).
          */
-        private fun createIconView(position: Int, convertView: View?, parent: ViewGroup): View {
+        private fun createIconViewDrawable(position: Int, convertView: View?, parent: ViewGroup): View {
             val inflater = LayoutInflater.from(context)
             val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
 
@@ -319,7 +327,31 @@ class AddCoordinateDialogFragment(
 
             // Load the icon by name using resource reflection
             val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
+            Log.d("IconSpinnerAdapter", "Loading icon '$iconName' with resId $resId")
             imageView.setImageResource(resId)
+
+            // Create a user-friendly name from the icon name
+            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
+                .replace('_', ' ') // allow future multi-word
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+
+            return view
+        }
+
+        private fun createIconViewImage(position: Int, convertView: View?, parent: ViewGroup): View {
+            val inflater = LayoutInflater.from(context)
+            val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
+
+            val imageView = view.findViewById<ImageView>(R.id.image_icon)
+            val textView = view.findViewById<TextView>(R.id.text_icon_name)
+
+            val iconName = icons[position]
+
+            // Load the images by name in assets/models_images
+            val resId = context.assets.open("model_images/$iconName.png")
+            Log.d("IconSpinnerAdapter", "Loading icon '$iconName' from assets with resId $resId")
+            imageView.setImageBitmap(BitmapFactory.decodeStream(resId))
+
 
             // Create a user-friendly name from the icon name
             textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
