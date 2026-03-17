@@ -12,6 +12,9 @@ interface ModelDao {
     @Query("SELECT * FROM models WHERE id = :id")
     suspend fun getModelById(id: String): ModelEntity?
 
+    @Query("SELECT * FROM models WHERE fileName = :fileName LIMIT 1")
+    suspend fun getModelByFileName(fileName: String): ModelEntity?
+
     @Insert
     suspend fun insertModel(model: ModelEntity)
 

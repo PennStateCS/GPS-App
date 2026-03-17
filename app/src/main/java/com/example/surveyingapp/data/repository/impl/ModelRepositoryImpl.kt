@@ -35,7 +35,9 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 fileSize = entity.fileSize,
                 dateAdded = entity.dateAdded,
                 description = entity.description,
-                fileType = getFileTypeFromExtension(entity.fileName)
+                fileType = getFileTypeFromExtension(entity.fileName),
+                thumbnailFileName = entity.thumbnailFileName,
+                thumbnailFilePath = entity.thumbnailFilePath
             )
         }
     }
@@ -50,7 +52,26 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 fileSize = entity.fileSize,
                 dateAdded = entity.dateAdded,
                 description = entity.description,
-                fileType = getFileTypeFromExtension(entity.fileName)
+                fileType = getFileTypeFromExtension(entity.fileName),
+                thumbnailFileName = entity.thumbnailFileName,
+                thumbnailFilePath = entity.thumbnailFilePath
+            )
+        }
+    }
+
+    suspend fun getModelByFileName(fileName: String): Model? {
+        return modelDao.getModelByFileName(fileName)?.let { entity ->
+            Model(
+                id = entity.id,
+                name = entity.name,
+                fileName = entity.fileName,
+                filePath = entity.filePath,
+                fileSize = entity.fileSize,
+                dateAdded = entity.dateAdded,
+                description = entity.description,
+                fileType = getFileTypeFromExtension(entity.fileName),
+                thumbnailFileName = entity.thumbnailFileName,
+                thumbnailFilePath = entity.thumbnailFilePath
             )
         }
     }
@@ -63,7 +84,9 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
             filePath = model.filePath,
             fileSize = model.fileSize,
             dateAdded = model.dateAdded,
-            description = model.description
+            description = model.description,
+            thumbnailFileName = model.thumbnailFileName,
+            thumbnailFilePath = model.thumbnailFilePath
         )
         modelDao.insertModel(entity)
     }
@@ -76,12 +99,17 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
             filePath = model.filePath,
             fileSize = model.fileSize,
             dateAdded = model.dateAdded,
-            description = model.description
+            description = model.description,
+            thumbnailFileName = model.thumbnailFileName,
+            thumbnailFilePath = model.thumbnailFilePath
         )
         modelDao.updateModel(entity)
     }
 
     suspend fun deleteModel(model: Model) {
+        // Delete thumbnail file from disk first (if it exists)
+        deleteThumbnailFile(model.thumbnailFilePath)
+
         val entity = ModelEntity(
             id = model.id,
             name = model.name,
@@ -89,13 +117,41 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
             filePath = model.filePath,
             fileSize = model.fileSize,
             dateAdded = model.dateAdded,
-            description = model.description
+            description = model.description,
+            thumbnailFileName = model.thumbnailFileName,
+            thumbnailFilePath = model.thumbnailFilePath
         )
         modelDao.deleteModel(entity)
     }
 
     suspend fun deleteModelById(id: String) {
+        // Fetch the model first so we can clean up its thumbnail file
+        val entity = modelDao.getModelById(id)
+        if (entity != null) {
+            deleteThumbnailFile(entity.thumbnailFilePath)
+        }
         modelDao.deleteModelById(id)
+    }
+
+    /**
+     * Deletes the thumbnail file at [filePath] from disk.
+     * Silently ignores null/blank paths or files that don't exist.
+     */
+    private fun deleteThumbnailFile(filePath: String?) {
+        if (filePath.isNullOrBlank()) return
+        try {
+            val file = java.io.File(filePath)
+            if (file.exists() && file.isFile) {
+                val deleted = file.delete()
+                if (!deleted) {
+                    android.util.Log.w("ModelRepository", "Failed to delete thumbnail: $filePath")
+                } else {
+                    android.util.Log.d("ModelRepository", "Deleted thumbnail: $filePath")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ModelRepository", "Error deleting thumbnail file: $filePath", e)
+        }
     }
 
     suspend fun getModelCount(): Int = modelDao.getModelCount()

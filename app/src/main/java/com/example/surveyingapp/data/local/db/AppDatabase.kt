@@ -12,7 +12,7 @@ import com.example.surveyingapp.data.local.entity.ModelEntity
 
 @Database(
     entities = [CoordinateEntity::class, ModelEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -22,6 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
+
         fun getDatabase(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -29,7 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(Migration4To5())
+                    .fallbackToDestructiveMigration() // still present as a safe fallback
                     .build().also { INSTANCE = it }
             }
         private const val DATABASE_NAME = "surveying_app.db"

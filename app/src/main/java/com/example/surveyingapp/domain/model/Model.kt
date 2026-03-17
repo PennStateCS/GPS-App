@@ -20,6 +20,10 @@ data class Model(
     val checksum: String? = null,
     val lastModified: Long? = null,
 
+    // Thumbnail for model preview
+    val thumbnailFileName: String? = null,
+    val thumbnailFilePath: String? = null,
+
     // Survey-specific metadata
     val projectId: String? = null,
     val surveyDate: Long? = null,
@@ -63,6 +67,12 @@ data class Model(
         return fileName.substringAfterLast('.', "")
     }
 
+    /** Thumbnail helpers **/
+    fun hasThumbnail(): Boolean = !thumbnailFilePath.isNullOrBlank() || !thumbnailFileName.isNullOrBlank()
+
+    fun getThumbnailExtension(): String? =
+        thumbnailFileName?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
+
     fun isRecentlyAdded(hoursThreshold: Long = 24): Boolean {
         val now = System.currentTimeMillis()
         return (now - dateAdded) < (hoursThreshold * 60 * 60 * 1000)
@@ -81,7 +91,7 @@ enum class FileType {
     SURVEY_PROJECT,    // Survey project files
     CAD_DRAWING,       // DWG, DXF files
     IMAGE,             // Photos, orthoimages
-    POINT_CLOUD,       // LAS, LAZ files
+    POINT_CLOUD,        // LAS, LAZ files
     MESH_MODEL,        // 3D mesh models
     MAP_TILE,          // Map tiles, rasters
     REPORT,            // PDF reports, documents
