@@ -5,20 +5,19 @@ import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.util.Log
 import android.view.SurfaceView
-import com.example.surveyingapp.R
 import com.example.surveyingapp.databinding.ActivityModelViewerBinding
 import com.google.android.filament.Skybox
 import com.google.android.filament.utils.Utils
 import com.google.android.filament.utils.ModelViewer
 import java.nio.ByteBuffer
 import android.view.Choreographer
+import android.view.PixelCopy
 import androidx.lifecycle.lifecycleScope
-import com.google.android.filament.IndirectLight
 import com.google.android.filament.utils.KTX1Loader
 import java.nio.Buffer
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +29,10 @@ class ModelViewerActivity : AppCompatActivity() {
     private lateinit var surfaceView: SurfaceView
     private lateinit var newModelViewer: ModelViewer
     private lateinit var choreographer: Choreographer
+
+    private var thumbnailExists = false
+    private var thumbnailCallbackRunning = false
+    private var modelReadyForThumbnail = false
 
     private var autoRotate = false
 
@@ -60,6 +63,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.setOnClickListener {
             clickedAutoRotate()
         }
+
+        thumbnailExists = modelHasThumbnail()
 
         setupToolbar()
 
@@ -106,6 +111,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
             newModelViewer.loadModelGlb(modelBuffer)
             newModelViewer.transformToUnitCube()
+            modelReadyForThumbnail = true
             binding.progressLoading.visibility = android.view.View.GONE
 
         }
@@ -186,30 +192,79 @@ class ModelViewerActivity : AppCompatActivity() {
         // implement auto-rotate functionality, maybe through frameCallback?
     }
 
+    private fun getModelFileNameWithoutExtension(): String? {
+        return intent.getStringExtra(EXTRA_MODEL_PATH)
+            ?.substringAfterLast('/')
+            ?.substringBeforeLast('.')
+    }
+
+    private fun modelHasThumbnail(): Boolean {
+        // check if the model has a thumbnail under the model_images folder in assets
+        // currently stored as the same name as the model file, but as .png
+
+        val fileName = getModelFileNameWithoutExtension()
+
+        if (assets.list("model_images")?.contains("${fileName}.png") == true) {
+            return true
+        }
+
+        return false
+    }
+
+    private fun createModelThumbnail() {
+        val bitmap = Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888)
+        PixelCopy.request(surfaceView, bitmap, { copyResult ->
+            if (copyResult == PixelCopy.SUCCESS) {
+                // Save the bitmap to internal storage or cache
+
+            } else {
+                Log.e("ModelViewerActivity", "Failed to capture thumbnail: $copyResult")
+            }
+        }, surfaceView.handler)
+
+    }
+
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             // autoRotate code should run here
 
             newModelViewer.render(frameTimeNanos)
+
+            // Run for one frame after model is loaded
+            if (modelReadyForThumbnail && !thumbnailExists && !thumbnailCallbackRunning) {
+                thumbnailCallbackRunning = true
+                choreographer.postFrameCallback(thumbnailCallback)
+            }
+
             choreographer.postFrameCallback(this)
+
         }
+    }
+
+    private val thumbnailCallback = Choreographer.FrameCallback {
+        createModelThumbnail()
+        thumbnailExists = true
+        thumbnailCallbackRunning = false
     }
 
     override fun onResume() {
         super.onResume()
         choreographer = Choreographer.getInstance()
         choreographer.postFrameCallback(frameCallback)
+        choreographer.postFrameCallback(thumbnailCallback)
     }
 
     override fun onPause() {
         super.onPause()
         choreographer.removeFrameCallback(frameCallback)
+        choreographer.removeFrameCallback(thumbnailCallback)
     }
 
     // TODO: clean up after ourselves
     override fun onDestroy() {
         super.onDestroy()
         choreographer.removeFrameCallback(frameCallback)
+        choreographer.removeFrameCallback(thumbnailCallback)
 
     }
 
