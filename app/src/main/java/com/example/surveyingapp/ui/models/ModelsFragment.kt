@@ -240,6 +240,12 @@ class ModelsFragment : Fragment() {
     private fun showAddModelDialog(defaultName: String, fileName: String, filePath: String, fileSize: Long) {
         val dialog = AddModelDialogFragment.newInstance(defaultName, fileName, filePath, fileSize) { name, description ->
             viewModel.addModel(name, fileName, filePath, fileSize, description)
+            val intent = ModelViewerActivity.newIntent(
+                requireContext(),
+                filePath,
+                name
+            )
+            startActivity(intent)
         }
         dialog.show(parentFragmentManager, "AddModelDialog")
     }

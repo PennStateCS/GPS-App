@@ -101,6 +101,8 @@ class ModelsAdapter(
         }
 
         private suspend fun generateGlbPreview(filePath: String): Bitmap? = withContext(Dispatchers.IO) {
+
+
             try {
                 // For now, generate a simple colored preview based on file properties
                 // In a full implementation, you would use a 3D rendering library like SceneView
