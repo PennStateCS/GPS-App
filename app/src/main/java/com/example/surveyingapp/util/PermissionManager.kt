@@ -32,24 +32,20 @@ object PermissionManager {
             add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            add(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
-        }
+        // NOTE: Do NOT include MANAGE_EXTERNAL_STORAGE here. It cannot be requested via the normal
+        // runtime permission APIs and must be handled via the system settings intent (ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).
+        // MainActivity.requestStoragePermissions() already handles that flow for API >= R.
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-        {
-            add(Manifest.permission.READ_MEDIA_IMAGES)
-            add(Manifest.permission.READ_MEDIA_VIDEO)
-            add(Manifest.permission.READ_MEDIA_AUDIO)
-        }
+        // NOTE: READ_MEDIA_IMAGES / READ_MEDIA_VIDEO / READ_MEDIA_AUDIO are NOT included.
+        // This is a surveying app; it does not need access to the user's media library.
+        // Models/files are accessed via the app's own scoped storage or MANAGE_EXTERNAL_STORAGE (handled separately).
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS) // Android 13+
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-        }
+        // Background location is intentionally NOT part of ESSENTIAL_PERMISSIONS; it requires a separate
+        // request flow and potentially additional explanation to the user. Use PermissionManager.requestBackgroundLocationPermission().
     }.toTypedArray()
 
     // Background location (requires special handling)

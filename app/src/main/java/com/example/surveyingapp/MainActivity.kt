@@ -113,15 +113,36 @@ class MainActivity : AppCompatActivity() {
     private var batteryLayer: LayerDrawable? = null
     private var batteryFillClip: ClipDrawable? = null
 
+    // Track whether we've launched the MANAGE_EXTERNAL_STORAGE settings flow this session to avoid loops
+    private var storageSettingsLaunched: Boolean = false
+
+    // Prevent repeated essential permission requests while one is in-flight
+    private var essentialPermissionRequestInProgress: Boolean = false
+    private var showingEssentialRationale: Boolean = false
+
     // Permission launchers
     private val essentialPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val denied = permissions.filterValues { !it }.keys
-        if (denied.isEmpty()) {
+        android.util.Log.d("MainActivity", "Essential permission result: granted=${permissions.filterValues { it }.keys}, denied=$denied")
+        // Always reset both flags so subsequent requests are never blocked
+        essentialPermissionRequestInProgress = false
+        showingEssentialRationale = false
+
+        // Re-check the actual missing list (most up-to-date truth)
+        val stillMissing = PermissionManager.getMissingEssentialPermissions(this)
+        if (stillMissing.isEmpty()) {
+            // All essential permissions granted
+            android.util.Log.d("MainActivity", "All essential permissions granted")
             ensureLocationServiceStarted()
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(350)
+                requestStoragePermissions()
+            }
         } else {
-            showPermissionRationale(denied.toList(), isEssential = true)
+            android.util.Log.d("MainActivity", "Still missing permissions: ${stillMissing.joinToString()}")
+            showPermissionRationale(stillMissing, isEssential = true)
         }
     }
 
@@ -356,15 +377,19 @@ class MainActivity : AppCompatActivity() {
     private fun requestAllPermissions() {
         if (!PermissionManager.hasEssentialPermissions(this)) {
             requestEssentialPermissions()
-            requestStoragePermissions()
+            // Do NOT call requestStoragePermissions() here — storage settings flow will be started after essential permissions are handled
         } else {
             ensureLocationServiceStarted()
+            // Essential granted, now ensure storage flow
+            requestStoragePermissions()
         }
     }
 
     private fun requestEssentialPermissions() {
         val missing = PermissionManager.getMissingEssentialPermissions(this)
         if (missing.isNotEmpty()) {
+            android.util.Log.d("MainActivity", "Requesting essential permissions: ${missing.joinToString()}")
+            essentialPermissionRequestInProgress = true
             essentialPermissionLauncher.launch(missing.toTypedArray())
         } else {
             ensureLocationServiceStarted()
@@ -392,12 +417,14 @@ class MainActivity : AppCompatActivity() {
                     val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
                     intent.addCategory("android.intent.category.DEFAULT")
                     intent.data = "package:$packageName".toUri()
+                    storageSettingsLaunched = true
                     startActivity(intent)
 
                 } catch (e: Exception) {
 
                     // Fallback for some devices
                     val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    storageSettingsLaunched = true
                     startActivity(intent)
 
                 }
@@ -424,27 +451,75 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        // If we just returned from the storage settings flow, check if the MANAGE_EXTERNAL_STORAGE permission was granted.
+        if (storageSettingsLaunched) {
+            storageSettingsLaunched = false // reset the flag for this session
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (!Environment.isExternalStorageManager()) {
+                    // User did not grant all-files access. Show a friendly rationale and don't auto-relaunch.
+                    AlertDialog.Builder(this)
+                        .setTitle("Storage access required")
+                        .setMessage("This app needs permission to manage files to import/export survey data. You can grant this in the system settings.\n\nIf you do not want to grant this now you can continue without file manager access.")
+                        .setPositiveButton("Open Settings") { _, _ -> requestStoragePermissions() }
+                        .setNegativeButton("Not now", null)
+                        .show()
+                } else {
+                    // Permission granted — proceed normally (start services if needed)
+                    ensureLocationServiceStarted()
+                }
+            }
+        }
+
+        // Note: choreographer/frame callbacks belong in ModelViewerActivity; do not call them from MainActivity
+    }
+
     private fun showPermissionRationale(deniedPermissions: List<String>, isEssential: Boolean) {
-        val title = "Essential Permissions Required"
+        if (showingEssentialRationale) return
+        showingEssentialRationale = true
+
+        // Log missing permissions for debugging
+        android.util.Log.d("MainActivity", "Showing permission rationale for: ${deniedPermissions.joinToString()}")
+
+        // Build a friendly message listing each permission and its description
         val message = buildString {
             append("The following permissions are required for the app to function properly:\n\n")
             deniedPermissions.forEach { permission ->
-                append("• ${PermissionManager.getPermissionDescription(permission)}\n")
+                val desc = PermissionManager.getPermissionDescription(permission)
+                append("• ${permission.substringAfterLast('.')} — $desc\n")
             }
             append("\nPlease grant these permissions to use the app.")
         }
 
-        AlertDialog.Builder(this)
-            .setTitle(title)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Essential Permissions Required")
             .setMessage(message)
             .setPositiveButton("Grant Permissions") { _, _ ->
-                requestEssentialPermissions()
+                // Always reset flag first so a second tap works if the first request came back denied
+                showingEssentialRationale = false
+                if (essentialPermissionRequestInProgress) {
+                    android.util.Log.d("MainActivity", "Essential permission request already in progress, skipping duplicate")
+                } else {
+                    essentialPermissionRequestInProgress = true
+                    android.util.Log.d("MainActivity", "Launching permission request for: ${deniedPermissions.joinToString()}")
+                    try {
+                        essentialPermissionLauncher.launch(deniedPermissions.toTypedArray())
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "Failed to launch permission request", e)
+                        essentialPermissionRequestInProgress = false
+                    }
+                }
             }
             .setNegativeButton("Cancel") { _, _ ->
+                showingEssentialRationale = false
                 showEssentialPermissionWarning()
             }
-            .setCancelable(false)
-            .show()
+            .setCancelable(true)
+            .create()
+
+        dialog.show()
     }
 
     private fun showEssentialPermissionWarning() {

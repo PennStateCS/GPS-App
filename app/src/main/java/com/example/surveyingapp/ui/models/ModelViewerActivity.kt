@@ -21,6 +21,10 @@ import java.nio.Buffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 
 
 class ModelViewerActivity : AppCompatActivity() {
@@ -211,16 +215,81 @@ class ModelViewerActivity : AppCompatActivity() {
         return false
     }
 
+    //Returns bitmap image as thumbnail 200x200
     private fun createModelThumbnail() {
+        // Guard: surface must be valid before PixelCopy can capture it
+        val surface = surfaceView.holder?.surface
+        if (surface == null || !surface.isValid) {
+            Log.w("ModelViewerActivity", "createModelThumbnail: surface not valid yet, skipping")
+            thumbnailCallbackRunning = false
+            return
+        }
+
         val bitmap = Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888)
+        val handler = surfaceView.handler
+
         PixelCopy.request(surfaceView, bitmap, { copyResult ->
             if (copyResult == PixelCopy.SUCCESS) {
                 // Save the bitmap to internal storage or cache
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val modelBaseName = getModelFileNameWithoutExtension() ?: return@launch
+
+                        // Ensure thumbnails directory exists
+                        val thumbsDir = File(filesDir, "thumbnails")
+                        if (!thumbsDir.exists()) thumbsDir.mkdirs()
+
+                        // Compose thumbnail filename from model filename
+                        val safeBase = modelBaseName.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+                        val thumbFileName = "${safeBase}_thumb.png"
+                        val thumbFile = File(thumbsDir, thumbFileName)
+
+                        FileOutputStream(thumbFile).use { out ->
+                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                            out.flush()
+                        }
+
+                        // Update the model in the DB with thumbnail info
+                        try {
+                            val db = AppDatabase.getDatabase(applicationContext)
+                            val repo = ModelRepositoryImpl(db.modelDao())
+
+                            // Find existing model by fileName matching
+                            val modelFileName = intent.getStringExtra(EXTRA_MODEL_PATH)?.substringAfterLast('/')
+                            if (modelFileName != null) {
+                                val matched = repo.getModelByFileName(modelFileName)
+
+                                if (matched != null) {
+                                    val updated = matched.copy(
+                                        thumbnailFileName = thumbFileName,
+                                        thumbnailFilePath = thumbFile.absolutePath
+                                    )
+                                    repo.updateModel(updated)
+                                } else {
+                                    // No match found; nothing to update
+                                    Log.w("ModelViewerActivity", "No matching model found to update thumbnail for $modelFileName")
+                                }
+                            }
+
+                        } catch (e: Exception) {
+                            Log.e("ModelViewerActivity", "Failed to update model thumbnail in DB", e)
+                        }
+
+                        // mark thumbnailExists on main thread
+                        withContext(Dispatchers.Main) {
+                            thumbnailExists = true
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e("ModelViewerActivity", "Failed to save thumbnail", e)
+                    }
+                }
 
             } else {
                 Log.e("ModelViewerActivity", "Failed to capture thumbnail: $copyResult")
+                thumbnailCallbackRunning = false  // allow retry on next frame
             }
-        }, surfaceView.handler)
+        }, handler)
 
     }
 
@@ -251,7 +320,8 @@ class ModelViewerActivity : AppCompatActivity() {
         super.onResume()
         choreographer = Choreographer.getInstance()
         choreographer.postFrameCallback(frameCallback)
-        choreographer.postFrameCallback(thumbnailCallback)
+        // Do NOT post thumbnailCallback here directly - the frameCallback will
+        // schedule it once the model is loaded and the surface is valid.
     }
 
     override fun onPause() {

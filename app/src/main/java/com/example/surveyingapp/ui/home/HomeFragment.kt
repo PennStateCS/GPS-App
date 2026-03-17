@@ -61,8 +61,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // View binding - safer than findViewById, automatically set to null when view is destroyed
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding ?: throw IllegalStateException("Fragment binding is null - view may have been destroyed")
-
-    // Map and location
     private lateinit var mapView: MapView
     private var googleMap: GoogleMap? = null
 
@@ -120,7 +118,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         setupFixBadgeObservers()
         setupRs2SummaryObservers()
         setupMapUiControls()
-        loadStatistics()
+        collectStatisticsFlows()
 
         return root
     }
@@ -268,20 +266,25 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun loadStatistics() {
-        lifecycleScope.launch {
-            // Load coordinates count using the correct Flow method
-            coordinateRepository.allCoordinatesFlow.collectLatest { coordinates ->
-                binding.textCoordinatesCount.text = coordinates.size.toString()
+        // Statistics flows are collected inline in onCreateView alongside the other
+        // viewLifecycleOwner-scoped observers (see setupLocationStatusObservers etc.)
+        // This function is intentionally empty – see collectStatisticsFlows() called from onCreateView.
+    }
 
-                // Welcome subtitle was removed with the header section
-                // No need to update subtitle anymore since it doesn't exist in layout
+    private fun collectStatisticsFlows() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                coordinateRepository.allCoordinatesFlow.collectLatest { coordinates ->
+                    _binding?.textCoordinatesCount?.text = coordinates.size.toString()
+                }
             }
         }
 
-        lifecycleScope.launch {
-            // Load models count using the correct method
-            modelRepository.getAllModels().collectLatest { models ->
-                binding.textModelsCount.text = models.size.toString()
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                modelRepository.getAllModels().collectLatest { models ->
+                    _binding?.textModelsCount?.text = models.size.toString()
+                }
             }
         }
     }
@@ -421,8 +424,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         hasCenteredCamera = false
         android.util.Log.d("HomeFragment", "onResume: hasCenteredCamera reset to false")
 
-        // Refresh statistics when returning to home
-        loadStatistics()
+        // Note: loadStatistics() is set up once in onCreateView via viewLifecycleOwner.lifecycleScope
+        // with repeatOnLifecycle(STARTED) - no need to call it again here.
     }
 
     override fun onPause() {
