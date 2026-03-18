@@ -117,6 +117,7 @@ class ModelsFragment : Fragment() {
             }
         }
 
+
         // Observe loading state
         lifecycleScope.launch {
             viewModel.isLoading.collect { isLoading ->
@@ -239,13 +240,10 @@ class ModelsFragment : Fragment() {
 
     private fun showAddModelDialog(defaultName: String, fileName: String, filePath: String, fileSize: Long) {
         val dialog = AddModelDialogFragment.newInstance(defaultName, fileName, filePath, fileSize) { name, description ->
-            viewModel.addModel(name, fileName, filePath, fileSize, description)
-            val intent = ModelViewerActivity.newIntent(
-                requireContext(),
-                filePath,
-                name
-            )
-            startActivity(intent)
+            viewModel.addModel(name, fileName, filePath, fileSize, description) { modelId ->
+                // Generate thumbnail in an invisible background activity — the user stays here.
+                ThumbnailCaptureActivity.start(requireContext(), filePath, name, fileName)
+            }
         }
         dialog.show(parentFragmentManager, "AddModelDialog")
     }

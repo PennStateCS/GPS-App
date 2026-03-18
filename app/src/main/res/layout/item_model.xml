@@ -20,18 +20,19 @@
             android:layout_height="64dp"
             android:layout_marginEnd="16dp">
 
+            <!-- Thumbnail shown as a plain square when available -->
             <ImageView
                 android:id="@+id/image_model_preview"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:scaleType="centerCrop"
-                android:background="@drawable/circle_background"
                 android:visibility="gone" />
 
+            <!-- Fallback placeholder circle shown when no thumbnail exists -->
             <ImageView
                 android:id="@+id/image_model_placeholder"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:layout_gravity="center"
                 android:src="@android:drawable/ic_media_play"
                 android:background="@drawable/circle_background"

@@ -4,7 +4,11 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -18,6 +22,7 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.Coordinate
@@ -37,26 +42,42 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import java.io.File
 import java.util.Locale
 import kotlin.coroutines.resume
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * Dialog Fragment for adding new coordinate points using GPS location.
- *
- * DialogFragment is used for modal dialogs that survive configuration changes.
- * This dialog demonstrates:
- * - GPS location access using LocationManager
- * - Permission handling for location services
- * - Custom spinners with icons
- * - Callback pattern for returning data to parent
- *
- * The constructor takes a callback function that's called when a coordinate is added.
+ * Represents a single entry in the icon spinner.
+ * Either a built-in asset icon or a model from the database.
  */
+sealed class IconItem {
+    /** A built-in icon stored as a PNG in assets/model_images/ */
+    data class BuiltIn(val assetName: String) : IconItem()
+
+    /** A model from the Room database. Uses its thumbnail if available. */
+    data class DbModel(val model: Model) : IconItem()
+
+    /** The string key stored on the Coordinate (what [Coordinate.icon] is set to) */
+    fun iconKey(): String = when (this) {
+        is BuiltIn -> assetName
+        is DbModel -> "model:${model.id}"   // prefix so it's unambiguous
+    }
+
+    /** Human-readable label shown in the spinner */
+    fun label(): String = when (this) {
+        is BuiltIn -> assetName
+            .replace('_', ' ')
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+        is DbModel -> model.name
+    }
+}
+
 @AndroidEntryPoint
 class AddCoordinateDialogFragment(
     private val highAccuracy: Boolean = true,
+    private val dbModels: List<Model> = emptyList(),
     private val onPointAdded: (Coordinate) -> Unit
 ) : DialogFragment() {
 
@@ -109,16 +130,12 @@ class AddCoordinateDialogFragment(
         // Store reference to EditText for proper cleanup
         editTextRef = nameEdit
 
-        // Set up icon choices with custom adapter (updated icons)
-//        val icons = listOf(
-//            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
-//        )
+        // Build combined icon list: built-ins first, then DB models
+        val builtInNames = listOf("transformer", "hydrant", "sign", "lightpole", "shrub", "building")
+        val iconItems: List<IconItem> = builtInNames.map { IconItem.BuiltIn(it) } +
+                dbModels.map { IconItem.DbModel(it) }
 
-        val icons = listOf(
-            "transformer", "hydrant", "sign", "lightpole", "shrub", "building"
-        )
-
-        iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
+        iconSpinner.adapter = IconSpinnerAdapter(requireContext(), iconItems)
 
         // Set up color choices with predefined colors
         val colors = listOf(
@@ -150,7 +167,8 @@ class AddCoordinateDialogFragment(
             .setPositiveButton("Add") { _, _ ->
                 // Create a new Coordinate object with user input
                 val name = nameEdit.text.toString().ifBlank { "Unnamed Coordinate" }
-                val icon = icons[iconSpinner.selectedItemPosition]
+                val selectedIcon = iconItems[iconSpinner.selectedItemPosition]
+                val icon = selectedIcon.iconKey()
                 val color = colors[colorSpinner.selectedItemPosition].second
 
                 // Compute UTM projection from current lat/lon
@@ -292,73 +310,71 @@ class AddCoordinateDialogFragment(
         }
 
     /**
-     * Custom adapter for the icon spinner that displays icons with text.
-     *
-     * This demonstrates how to create custom adapters for Spinners.
-     * It shows both an icon image and the icon name in each dropdown item.
+     * Spinner adapter that handles both built-in asset icons and DB model thumbnails.
      */
     class IconSpinnerAdapter(
         context: Context,
-        private val icons: List<String>
-    ) : ArrayAdapter<String>(context, 0, icons) {
+        private val items: List<IconItem>
+    ) : ArrayAdapter<String>(context, 0, items.map { it.label() }) {
 
-        // View shown when spinner is closed (selected item)
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconViewImage(position, convertView, parent)
-        }
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+            createItemView(position, convertView, parent)
 
-        // View shown in the dropdown list
-        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconViewImage(position, convertView, parent)
-        }
+        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
+            createItemView(position, convertView, parent)
 
-        /**
-         * Creates a view for a single icon item.
-         * Uses view recycling for performance (convertView).
-         */
-        private fun createIconViewDrawable(position: Int, convertView: View?, parent: ViewGroup): View {
+        private fun createItemView(position: Int, convertView: View?, parent: ViewGroup): View {
             val inflater = LayoutInflater.from(context)
             val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
-
             val imageView = view.findViewById<ImageView>(R.id.image_icon)
             val textView = view.findViewById<TextView>(R.id.text_icon_name)
 
-            val iconName = icons[position]
+            val item = items[position]
+            textView.text = item.label()
 
-            // Load the icon by name using resource reflection
-            val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
-            Log.d("IconSpinnerAdapter", "Loading icon '$iconName' with resId $resId")
-            imageView.setImageResource(resId)
-
-            // Create a user-friendly name from the icon name
-            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
-                .replace('_', ' ') // allow future multi-word
-                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-
+            when (item) {
+                is IconItem.BuiltIn -> {
+                    try {
+                        val stream = context.assets.open("model_images/${item.assetName}.png")
+                        imageView.setImageBitmap(BitmapFactory.decodeStream(stream))
+                    } catch (e: Exception) {
+                        Log.w("IconSpinnerAdapter", "Asset not found: ${item.assetName}", e)
+                        imageView.setImageBitmap(makePlaceholderBitmap(item.label()))
+                    }
+                }
+                is IconItem.DbModel -> {
+                    val thumbPath = item.model.thumbnailFilePath
+                    if (!thumbPath.isNullOrBlank()) {
+                        val thumbFile = File(thumbPath)
+                        if (thumbFile.exists()) {
+                            imageView.setImageBitmap(BitmapFactory.decodeFile(thumbPath))
+                        } else {
+                            imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
+                        }
+                    } else {
+                        // No thumbnail yet — show initials placeholder
+                        imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
+                    }
+                }
+            }
             return view
         }
 
-        private fun createIconViewImage(position: Int, convertView: View?, parent: ViewGroup): View {
-            val inflater = LayoutInflater.from(context)
-            val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
-
-            val imageView = view.findViewById<ImageView>(R.id.image_icon)
-            val textView = view.findViewById<TextView>(R.id.text_icon_name)
-
-            val iconName = icons[position]
-
-            // Load the images by name in assets/models_images
-            val resId = context.assets.open("model_images/$iconName.png")
-            Log.d("IconSpinnerAdapter", "Loading icon '$iconName' from assets with resId $resId")
-            imageView.setImageBitmap(BitmapFactory.decodeStream(resId))
-
-
-            // Create a user-friendly name from the icon name
-            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
-                .replace('_', ' ') // allow future multi-word
-                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-
-            return view
+        /** Generates a simple grey square with the first letter of [label] as a fallback image. */
+        private fun makePlaceholderBitmap(label: String): Bitmap {
+            val size = 64
+            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.color = Color.parseColor("#BDBDBD")
+            canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+            paint.color = Color.WHITE
+            paint.textSize = size * 0.5f
+            paint.textAlign = Paint.Align.CENTER
+            val initial = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+            val yPos = (canvas.height / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+            canvas.drawText(initial, size / 2f, yPos, paint)
+            return bmp
         }
     }
 

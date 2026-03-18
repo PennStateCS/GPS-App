@@ -23,8 +23,7 @@ object PermissionManager {
         add(Manifest.permission.CAMERA)
         add(Manifest.permission.CHANGE_WIFI_MULTICAST_STATE)
 
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2)
-        {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
             add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
 
@@ -36,9 +35,10 @@ object PermissionManager {
         // runtime permission APIs and must be handled via the system settings intent (ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).
         // MainActivity.requestStoragePermissions() already handles that flow for API >= R.
 
-        // NOTE: READ_MEDIA_IMAGES / READ_MEDIA_VIDEO / READ_MEDIA_AUDIO are NOT included.
-        // This is a surveying app; it does not need access to the user's media library.
-        // Models/files are accessed via the app's own scoped storage or MANAGE_EXTERNAL_STORAGE (handled separately).
+        // IMPORTANT:
+        // Do NOT request READ_MEDIA_* as “essential”. Those are for accessing the *user’s* media library.
+        // This app works with its own app-scoped storage / picked files, so it should not gate startup on
+        // media permissions (some devices/emulators will deny them, causing a rationale loop).
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             add(Manifest.permission.POST_NOTIFICATIONS) // Android 13+

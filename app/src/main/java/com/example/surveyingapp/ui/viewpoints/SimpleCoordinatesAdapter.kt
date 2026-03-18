@@ -1,16 +1,24 @@
 package com.example.surveyingapp.ui.viewpoints
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.util.Log
+import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.scale
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
+import java.io.File
 import java.util.Locale
 
 /**
@@ -24,11 +32,45 @@ class SimpleCoordinatesAdapter(
     private val onDelete: (Coordinate) -> Unit // delete callback
 ) : RecyclerView.Adapter<SimpleCoordinatesAdapter.Holder>() {
 
+    companion object {
+        /** Target icon size in the list (px). Bitmaps are scaled to this before caching. */
+        private const val ICON_SIZE_PX = 96
+
+        /**
+         * Process-wide LRU bitmap cache shared across all list instances.
+         * Key: either "asset:<name>" or "thumb:<absolutePath>".
+         * Size: 4 MB — enough for ~170 × 96×96 ARGB_8888 bitmaps.
+         */
+        private val bitmapCache = object : LruCache<String, Bitmap>(4 * 1024 * 1024) {
+            override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+        }
+
+        /** Evict all cached thumbnails for a model (call when a thumbnail is updated/deleted). */
+        fun evictThumbnail(thumbPath: String) = bitmapCache.remove("thumb:$thumbPath")
+
+        /** Clear the whole cache (e.g. on low-memory). */
+        fun clearCache() = bitmapCache.evictAll()
+
+        /** Read a cached bitmap without side effects — returns null on miss. */
+        fun peekCache(key: String): Bitmap? = bitmapCache.get(key)
+
+        /** Insert a bitmap into the shared cache. */
+        fun putCache(key: String, bmp: Bitmap) { bitmapCache.put(key, bmp) }
+    }
+
     init { setHasStableIds(true) }
 
     // The list of coordinate points to display
     private var items: List<Coordinate> = emptyList()
     private var selectedId: String? = null
+
+    /** Maps model DB id → absolute thumbnail file path (null if no thumbnail). Updated externally. */
+    private var thumbnailMap: Map<String, String?> = emptyMap()
+
+    fun setThumbnailMap(map: Map<String, String?>) {
+        thumbnailMap = map
+        notifyItemRangeChanged(0, items.size)
+    }
 
     /**
      * Updates the list with new data and refreshes the display.
@@ -103,19 +145,41 @@ class SimpleCoordinatesAdapter(
         holder.coords.visibility = View.VISIBLE
         holder.coords.text = String.format(Locale.US, "%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
 
-        // Icon mapping without reflection
-        val resId = when (p.icon) {
-            "ic_pin" -> R.drawable.ic_pin
-            "ic_home", "ic_menu_slideshow" -> R.drawable.ic_home
-            "ic_star", "ic_menu_gallery" -> R.drawable.ic_star
-            "ic_circle" -> R.drawable.ic_circle
-            "ic_square" -> R.drawable.ic_square
-            "ic_triangle" -> R.drawable.ic_triangle
-            "ic_diamond" -> R.drawable.ic_diamond
-            else -> R.drawable.ic_pin
+        // Icon: handle both built-in drawables and model thumbnails
+        val iconKey = p.icon ?: ""
+        when {
+            iconKey.startsWith("model:") -> {
+                // DB model icon — load thumbnail from disk if available
+                val modelId = iconKey.removePrefix("model:")
+                val thumbPath = thumbnailMap[modelId]
+                val bmp = loadThumbnailCached(thumbPath) ?: makePlaceholderBitmap(p.name)
+                holder.icon.clearColorFilter()
+                holder.icon.setImageBitmap(bmp)
+            }
+            else -> {
+                // Try loading as a built-in asset image first (e.g. "transformer", "hydrant")
+                val assetBmp = tryLoadAssetCached(holder.itemView, iconKey)
+                if (assetBmp != null) {
+                    holder.icon.clearColorFilter()
+                    holder.icon.setImageBitmap(assetBmp)
+                    holder.icon.setColorFilter(p.color)
+                } else {
+                    // Fall back to drawable resource
+                    val resId = when (iconKey) {
+                        "ic_pin" -> R.drawable.ic_pin
+                        "ic_home", "ic_menu_slideshow" -> R.drawable.ic_home
+                        "ic_star", "ic_menu_gallery" -> R.drawable.ic_star
+                        "ic_circle" -> R.drawable.ic_circle
+                        "ic_square" -> R.drawable.ic_square
+                        "ic_triangle" -> R.drawable.ic_triangle
+                        "ic_diamond" -> R.drawable.ic_diamond
+                        else -> R.drawable.ic_pin
+                    }
+                    holder.icon.setImageResource(resId)
+                    holder.icon.setColorFilter(p.color)
+                }
+            }
         }
-        holder.icon.setImageResource(resId)
-        holder.icon.setColorFilter(p.color)  // Apply the coordinate's color to the icon
 
         // Set up click listeners for the action buttons
         holder.itemView.setOnClickListener {
@@ -147,17 +211,89 @@ class SimpleCoordinatesAdapter(
         }
     }
 
+    // ── Cached helpers ────────────────────────────────────────────────────────
+
+    /**
+     * Loads a model thumbnail from disk, scaling it to [ICON_SIZE_PX] and caching the
+     * result.  Returns null when the path is blank or the file does not exist.
+     */
+    private fun loadThumbnailCached(thumbPath: String?): Bitmap? {
+        if (thumbPath.isNullOrBlank()) return null
+        val cacheKey = "thumb:$thumbPath"
+        bitmapCache.get(cacheKey)?.let { return it }
+
+        val file = File(thumbPath)
+        if (!file.exists()) return null
+
+        return try {
+            val raw = BitmapFactory.decodeFile(thumbPath) ?: return null
+            val scaled = raw.toIconSize()
+            if (scaled !== raw) raw.recycle()
+            bitmapCache.put(cacheKey, scaled)
+            scaled
+        } catch (e: Exception) {
+            Log.w("SimpleCoordinatesAdapter", "Failed to decode thumbnail: $thumbPath", e)
+            null
+        }
+    }
+
+    /**
+     * Loads a PNG from `assets/model_images/<name>.png`, scaling it to [ICON_SIZE_PX] and
+     * caching the result.  Returns null when the asset does not exist.
+     */
+    private fun tryLoadAssetCached(view: View, name: String): Bitmap? {
+        if (name.isBlank()) return null
+        val cacheKey = "asset:$name"
+        bitmapCache.get(cacheKey)?.let { return it }
+
+        return try {
+            val raw = view.context.assets.open("model_images/$name.png")
+                .use { BitmapFactory.decodeStream(it) } ?: return null
+            val scaled = raw.toIconSize()
+            if (scaled !== raw) raw.recycle()
+            bitmapCache.put(cacheKey, scaled)
+            scaled
+        } catch (_: Exception) { null }
+    }
+
+    /** Scale this bitmap to [ICON_SIZE_PX]×[ICON_SIZE_PX] only if it is larger than that. */
+    private fun Bitmap.toIconSize(): Bitmap =
+        if (width <= ICON_SIZE_PX && height <= ICON_SIZE_PX) this
+        else scale(ICON_SIZE_PX, ICON_SIZE_PX, filter = true)
+
+    /**
+     * Generates a grey square with the first letter of [label].
+     * The result is *not* inserted into the LRU cache because placeholder bitmaps are
+     * cheap and coordinate names are not shared across rows.
+     */
+    private fun makePlaceholderBitmap(label: String): Bitmap {
+        val size = ICON_SIZE_PX
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = Color.parseColor("#BDBDBD")
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+        paint.color = Color.WHITE
+        paint.textSize = size * 0.5f
+        paint.textAlign = Paint.Align.CENTER
+        val initial = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+        val yPos = (size / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+        canvas.drawText(initial, size / 2f, yPos, paint)
+        return bmp
+    }
+
+    // ── ViewHolder ────────────────────────────────────────────────────────────
+
     /**
      * ViewHolder class that holds references to the views in each list item.
-     *
-     * This prevents the need to call findViewById repeatedly, which is expensive.
-     * The ViewHolder pattern is a key optimization in RecyclerView.
      */
     class Holder(v: View) : RecyclerView.ViewHolder(v) {
         val icon: ImageView = v.findViewById(R.id.image_icon)        // The coordinate point icon
         val name: TextView = v.findViewById(R.id.text_name)          // The coordinate point name
         val coords: TextView = v.findViewById(R.id.text_coords)      // The coordinate values (lat/lon)
     }
+
+    // ── Selection ─────────────────────────────────────────────────────────────
 
     fun setSelectedId(newId: String?) {
         if (selectedId == newId) return

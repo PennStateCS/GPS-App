@@ -1,6 +1,7 @@
 package com.example.surveyingapp.ui.models
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.view.LayoutInflater
@@ -15,8 +16,10 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -30,6 +33,7 @@ class ModelsAdapter(
 ) : ListAdapter<Model, ModelsAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
+
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ModelViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_model, parent, false)
@@ -50,6 +54,9 @@ class ModelsAdapter(
         private val textModelDate: TextView = itemView.findViewById(R.id.text_model_date)
         private val btnEditModel: ImageButton = itemView.findViewById(R.id.btn_edit_model)
         private val btnDeleteModel: ImageButton = itemView.findViewById(R.id.btn_delete_model)
+
+        /** Tracks the currently running preview load so it can be cancelled on rebind. */
+        private var previewJob: Job? = null
 
         fun bind(model: Model) {
             textModelName.text = model.name
@@ -75,24 +82,25 @@ class ModelsAdapter(
         }
 
         private fun loadGlbPreview(model: Model) {
+            // Cancel any in-flight load from a previous bind
+            previewJob?.cancel()
+
             // Reset preview state
             imageModelPreview.visibility = View.GONE
             imageModelPlaceholder.visibility = View.VISIBLE
-            progressPreview.visibility = View.VISIBLE
+            progressPreview.visibility = View.GONE
 
-            coroutineScope.launch {
+            previewJob = coroutineScope.launch {
                 try {
-                    val preview = generateGlbPreview(model.filePath)
+                    val preview = withContext(Dispatchers.IO) { resolvePreview(model) }
                     if (preview != null) {
                         imageModelPreview.setImageBitmap(preview)
                         imageModelPreview.visibility = View.VISIBLE
                         imageModelPlaceholder.visibility = View.GONE
                     } else {
-                        // Keep placeholder visible if preview generation fails
                         imageModelPlaceholder.visibility = View.VISIBLE
                     }
                 } catch (e: Exception) {
-                    // Keep placeholder visible on error
                     imageModelPlaceholder.visibility = View.VISIBLE
                 } finally {
                     progressPreview.visibility = View.GONE
@@ -100,26 +108,50 @@ class ModelsAdapter(
             }
         }
 
-        private suspend fun generateGlbPreview(filePath: String): Bitmap? = withContext(Dispatchers.IO) {
+        /**
+         * Returns a 128×128 preview bitmap for [model].
+         * Priority:
+         *  1. Saved thumbnail from [Model.thumbnailFilePath] (uses the shared LRU cache)
+         *  2. Generated gradient circle as a fallback
+         */
+        private fun resolvePreview(model: Model): Bitmap? {
+            // 1 — Real thumbnail from disk
+            val thumbPath = model.thumbnailFilePath
+            if (!thumbPath.isNullOrBlank()) {
+                val cacheKey = "thumb:$thumbPath"
 
+                // Always check the file exists first; if it does, load fresh and update cache
+                val file = File(thumbPath)
+                if (file.exists()) {
+                    return try {
+                        // Evict any stale entry so we always read the latest version
+                        SimpleCoordinatesAdapter.evictThumbnail(thumbPath)
+                        val bmp = BitmapFactory.decodeFile(thumbPath)
+                        if (bmp != null) {
+                            SimpleCoordinatesAdapter.putCache(cacheKey, bmp)
+                        }
+                        bmp
+                    } catch (e: Exception) { null }
+                }
+            }
 
-            try {
-                // For now, generate a simple colored preview based on file properties
-                // In a full implementation, you would use a 3D rendering library like SceneView
+            // 2 — Generated gradient circle (no thumbnail yet)
+            return generateFallbackPreview(model.filePath)
+        }
+
+        private fun generateFallbackPreview(filePath: String): Bitmap? {
+            return try {
                 val file = File(filePath)
-                if (!file.exists()) return@withContext null
+                if (!file.exists()) return null
 
-                // Generate a simple geometric preview as placeholder
                 val size = 128
                 val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bitmap)
 
-                // Create a simple gradient based on file name hash for uniqueness
                 val hash = file.name.hashCode()
                 val color1 = Color.HSVToColor(floatArrayOf((hash % 360).toFloat(), 0.7f, 0.9f))
                 val color2 = Color.HSVToColor(floatArrayOf(((hash + 180) % 360).toFloat(), 0.7f, 0.6f))
 
-                // Draw a simple gradient circle as preview
                 val paint = android.graphics.Paint().apply {
                     shader = android.graphics.RadialGradient(
                         size / 2f, size / 2f, size / 2f,
@@ -129,7 +161,6 @@ class ModelsAdapter(
                 }
                 canvas.drawCircle(size / 2f, size / 2f, size / 2f * 0.8f, paint)
 
-                // Add a small 3D cube icon in the center
                 val cubeSize = size / 4f
                 val cubePaint = android.graphics.Paint().apply {
                     color = Color.WHITE
@@ -142,11 +173,8 @@ class ModelsAdapter(
                     size / 2f + cubeSize / 2f,
                     cubePaint
                 )
-
                 bitmap
-            } catch (e: Exception) {
-                null
-            }
+            } catch (e: Exception) { null }
         }
 
         private fun formatDate(timestamp: Long): String {
