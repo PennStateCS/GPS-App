@@ -42,6 +42,8 @@ import com.example.surveyingapp.SurveyingApp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.graphics.Rect
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.LocationSourceType
 
 class CoordinatesFragment : Fragment() {
@@ -242,6 +244,15 @@ class CoordinatesFragment : Fragment() {
         // Preferences for UI display toggles
         prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
 
+        // Observe models so the list can show model thumbnails for coordinates that use a model icon
+        viewLifecycleOwner.lifecycleScope.launch {
+            val db = AppDatabase.getDatabase(requireContext())
+            ModelRepositoryImpl(db.modelDao()).getAllModels().collect { models ->
+                val map = models.associate { it.id to it.thumbnailFilePath }
+                adapter.setThumbnailMap(map)
+            }
+        }
+
         return root
     }
 
@@ -249,25 +260,38 @@ class CoordinatesFragment : Fragment() {
 
     /** Show dialog to add a coordinate (captures one fix and saves on Save) */
     private fun showAddCoordinateDialog(viewModel: CoordinatesViewModel) {
-        try {
-            val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
-            val dialog = AddCoordinateDialogFragment(highAcc) { coordinate ->
-                viewModel.addCoordinate(coordinate)
-                // haptic confirm
-                _binding?.root?.post {
-                    val view = _binding?.root
-                    if (view != null) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                        } else {
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        viewLifecycleOwner.lifecycleScope.launch {
+            // Fetch the current model list so the icon spinner includes DB models
+            val models = try {
+                val db = AppDatabase.getDatabase(requireContext())
+                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+            } catch (_: Exception) {
+                emptyList()
+            }
+
+            try {
+                val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+                val dialog = AddCoordinateDialogFragment(
+                    highAccuracy = highAcc,
+                    dbModels = models
+                ) { coordinate ->
+                    viewModel.addCoordinate(coordinate)
+                    // haptic confirm
+                    _binding?.root?.post {
+                        val view = _binding?.root
+                        if (view != null) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            } else {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            }
                         }
                     }
                 }
+                dialog.show(parentFragmentManager, "AddCoordinateDialog")
+            } catch (_: Exception) {
+                // no-op
             }
-            dialog.show(parentFragmentManager, "AddCoordinateDialog")
-        } catch (_: Exception) {
-            // no-op
         }
     }
 

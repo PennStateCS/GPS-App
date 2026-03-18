@@ -131,6 +131,17 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Invisible activity used purely to render a GLB model and capture a thumbnail.
+            Uses a transparent theme and no-animation flags so the user sees nothing.
+        -->
+        <activity
+            android:name=".ui.models.ThumbnailCaptureActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.SurveyingApp.ThumbnailCapture" />
+
         <service
             android:name=".service.LocationService"
             android:exported="false"

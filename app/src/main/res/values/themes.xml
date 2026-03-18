@@ -19,6 +19,23 @@
         <item name="windowNoTitle">true</item>
     </style>
 
+    <!--
+        Used by ThumbnailCaptureActivity so it is completely invisible to the user.
+        windowIsTranslucent keeps the previous activity visible behind it.
+        The activity itself sets a tiny window size and positions it behind the status bar
+        so the GPU still renders the Filament surface (alpha=0 prevents GPU rendering).
+        No animations so there is no visual glitch.
+    -->
+    <style name="Theme.SurveyingApp.ThumbnailCapture" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
     <style name="Theme.SurveyingApp.AppBarOverlay" parent="ThemeOverlay.AppCompat.Dark.ActionBar" />
 
     <style name="Theme.SurveyingApp.PopupOverlay" parent="ThemeOverlay.AppCompat.Light" />
