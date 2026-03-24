@@ -1,8 +1,11 @@
 package com.example.surveyingapp.ui.viewpoints
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.PorterDuff
+import android.graphics.RectF
 import androidx.core.content.ContextCompat
 import android.os.Bundle
 import android.util.Log
@@ -13,11 +16,15 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.widget.TextView
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
 import com.google.android.gms.maps.MapView
 import com.google.android.gms.maps.GoogleMap
@@ -115,19 +122,56 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     private fun updateMapMarker(c: Coordinate) {
-        googleMap?.let { map ->
-            val latLng = LatLng(c.latitude, c.longitude)
-            map.clear()
-            val opts = MarkerOptions().position(latLng).title(c.name)
-            buildMarkerDescriptor(c.icon, c.color)?.let { opts.icon(it) }
-            map.addMarker(opts)
-            map.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 17f))
+        val map = googleMap ?: return
+        val latLng = LatLng(c.latitude, c.longitude)
+        map.clear()
+
+        // Build a base MarkerOptions immediately with default icon so the pin shows
+        // straight away, then replace it asynchronously if a model thumbnail is available.
+        val opts = MarkerOptions().position(latLng).title(c.name)
+        val marker = map.addMarker(opts)
+        map.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 17f))
+
+        // Load the icon (possibly from disk) on a background thread.
+        viewLifecycleOwner.lifecycleScope.launch {
+            val descriptor = buildMarkerDescriptor(c.icon, c.color)
+            if (descriptor != null) {
+                marker?.setIcon(descriptor)
+            }
         }
     }
 
-    private fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
+    /** Returns a [BitmapDescriptor] for the given icon key, or null for the default red pin.
+     *
+     * - `"model:<id>"` → renders the model's thumbnail PNG into a rounded square marker
+     * - any other non-blank string → treated as a drawable resource name, tinted with [colorInt]
+     */
+    private suspend fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
         val ctx = context ?: return null
         if (iconName.isNullOrBlank()) return null
+
+        // ── Model thumbnail marker ─────────────────────────────────────────
+        if (iconName.startsWith("model:")) {
+            val modelId = iconName.removePrefix("model:")
+            return withContext(Dispatchers.IO) {
+                try {
+                    val db = AppDatabase.getDatabase(ctx)
+                    val repo = ModelRepositoryImpl(db.modelDao())
+                    val model = repo.getModelById(modelId) ?: return@withContext null
+                    val thumbPath = model.thumbnailFilePath
+                    if (thumbPath.isNullOrBlank()) return@withContext null
+                    val thumbBmp = BitmapFactory.decodeFile(thumbPath) ?: return@withContext null
+                    withContext(Dispatchers.Main) {
+                        buildModelMarkerBitmap(thumbBmp, ctx)
+                    }
+                } catch (e: Exception) {
+                    Log.w("CoordinateDetailFragment", "Failed to load model thumbnail for marker", e)
+                    null
+                }
+            }
+        }
+
+        // ── Built-in drawable marker ───────────────────────────────────────
         val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
         if (resId == 0) return null
         val d = ContextCompat.getDrawable(ctx, resId) ?: return null
@@ -138,6 +182,40 @@ class CoordinateDetailFragment : Fragment() {
         try { d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_IN) } catch (_: Exception) {}
         d.draw(canvas)
         return BitmapDescriptorFactory.fromBitmap(bmp)
+    }
+
+    /**
+     * Composites the model thumbnail into a white rounded-square marker of a fixed size,
+     * with a small drop-shadow border so it stands out on the map.
+     */
+    private fun buildModelMarkerBitmap(thumb: Bitmap, ctx: android.content.Context): BitmapDescriptor {
+        val density = ctx.resources.displayMetrics.density
+        val markerPx  = (56 * density).toInt()   // total marker size in px
+        val borderPx  = (2  * density)            // white border width
+        val radiusPx  = (6  * density)            // corner radius
+
+        val out = Bitmap.createBitmap(markerPx, markerPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+
+        // White rounded-square background
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
+        canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, bgPaint)
+
+        // Draw thumbnail inset by the border
+        val inset = borderPx
+        val dst = RectF(inset, inset, markerPx - inset, markerPx - inset)
+        canvas.drawBitmap(thumb, null, dst, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+
+        // Thin dark border
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = 0x55000000
+            strokeWidth = borderPx
+        }
+        canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, strokePaint)
+
+        thumb.recycle()
+        return BitmapDescriptorFactory.fromBitmap(out)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

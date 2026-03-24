@@ -2,8 +2,11 @@ package com.example.surveyingapp.ui.rendermap
 
 import android.animation.ValueAnimator
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.PorterDuff
+import android.graphics.RectF
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -16,6 +19,8 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import com.example.surveyingapp.R
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -32,7 +37,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import com.example.surveyingapp.gnss.model.Fix
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.*
 import javax.inject.Inject
@@ -475,18 +482,25 @@ class RenderMapFragment : Fragment() {
                 val ll = LatLng(p.latitude, p.longitude)
                 val visible = visibilityMap[p.id] ?: true
                 visibilityMap.putIfAbsent(p.id, visible)
-                val descriptor = buildMarkerDescriptor(p.icon, p.color)
+
+                // Add marker immediately with default icon so the map responds instantly.
                 val opts = MarkerOptions().position(ll).title(p.name)
-                if (descriptor != null) opts.icon(descriptor)
                 val marker = googleMap!!.addMarker(opts)
                 if (marker != null) {
                     marker.isVisible = visible
-                    marker.tag = p.id // Store coordinate ID in marker tag
+                    marker.tag = p.id
                     markerMap[p.id] = marker
                     if (visible) latLngsVisible.add(ll)
+
+                    // Load the icon asynchronously — handles both built-in drawables and
+                    // "model:<id>" thumbnail keys without blocking the observer.
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                        if (descriptor != null) marker.setIcon(descriptor)
+                    }
                 }
                 toggleItems += CoordinateToggleItem(p.id, p.name, visible, p.icon, p.color)
-                coordinateMap[p.id] = p // Add to coordinate map
+                coordinateMap[p.id] = p
             }
             lastLatLngs = latLngsVisible
             toggleAdapter.submit(toggleItems)
@@ -494,15 +508,44 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    private fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
+    /**
+     * Returns a [BitmapDescriptor] for the given icon key, or null for the default red pin.
+     *
+     * - `"model:<id>"` → loads the model's thumbnail PNG and composites it into a
+     *   white rounded-square marker (matches CoordinateDetailFragment behaviour)
+     * - any other non-blank string → treated as a drawable resource name, tinted [colorInt]
+     */
+    private suspend fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
         val ctx = context ?: return null
         if (iconName.isNullOrBlank()) return null
+
+        // ── Model thumbnail marker ─────────────────────────────────────────
+        if (iconName.startsWith("model:")) {
+            val modelId = iconName.removePrefix("model:")
+            return withContext(Dispatchers.IO) {
+                try {
+                    val db = AppDatabase.getDatabase(ctx)
+                    val repo = ModelRepositoryImpl(db.modelDao())
+                    val model = repo.getModelById(modelId) ?: return@withContext null
+                    val thumbPath = model.thumbnailFilePath
+                    if (thumbPath.isNullOrBlank()) return@withContext null
+                    val thumbBmp = BitmapFactory.decodeFile(thumbPath) ?: return@withContext null
+                    withContext(Dispatchers.Main) {
+                        buildModelMarkerBitmap(thumbBmp)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to load model thumbnail for marker", e)
+                    null
+                }
+            }
+        }
+
+        // ── Built-in drawable marker ───────────────────────────────────────
         @Suppress("DiscouragedApi")
         val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
         if (resId == 0) return null
         val d = ContextCompat.getDrawable(ctx, resId) ?: return null
-        val size = dpToPx(32f) // uniform size
-        @Suppress("UseCompatLoadingForDrawables")
+        val size = dpToPx(32f)
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         d.setBounds(0, 0, size, size)
@@ -512,6 +555,40 @@ class RenderMapFragment : Fragment() {
         } catch (_: Exception) {}
         d.draw(canvas)
         return BitmapDescriptorFactory.fromBitmap(bmp)
+    }
+
+    /**
+     * Composites [thumb] into a white rounded-square marker bitmap.
+     * Matches the appearance used in CoordinateDetailFragment.
+     */
+    private fun buildModelMarkerBitmap(thumb: Bitmap): BitmapDescriptor {
+        val ctx = requireContext()
+        val density = ctx.resources.displayMetrics.density
+        val markerPx = (56 * density).toInt()
+        val borderPx = (2 * density)
+        val radiusPx = (6 * density)
+
+        val out = Bitmap.createBitmap(markerPx, markerPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+
+        // White rounded-square background
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
+        canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, bgPaint)
+
+        // Thumbnail inset by border
+        val dst = RectF(borderPx, borderPx, markerPx - borderPx, markerPx - borderPx)
+        canvas.drawBitmap(thumb, null, dst, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+
+        // Thin dark border
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = 0x55000000
+            strokeWidth = borderPx
+        }
+        canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, strokePaint)
+
+        thumb.recycle()
+        return BitmapDescriptorFactory.fromBitmap(out)
     }
 
     private fun updateCamera(latLngs: List<LatLng>) {

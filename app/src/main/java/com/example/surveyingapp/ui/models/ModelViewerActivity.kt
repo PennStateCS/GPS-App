@@ -120,9 +120,17 @@ class ModelViewerActivity : AppCompatActivity() {
             handled
         }
 
-        // Use a white background for thumbnails.
-        newModelViewer.scene.skybox = Skybox.Builder().build(newModelViewer.engine)
-        newModelViewer.scene.skybox?.setColor(1f, 1f, 1f, 1f)
+        // No skybox — transparent background so the model renders with alpha channel.
+        newModelViewer.scene.skybox = null
+
+        // Set renderer clear color to fully transparent black.
+        val opts = newModelViewer.renderer.clearOptions
+        opts.clearColor[0] = 0f
+        opts.clearColor[1] = 0f
+        opts.clearColor[2] = 0f
+        opts.clearColor[3] = 0f
+        opts.clear = true
+        newModelViewer.renderer.clearOptions = opts
 
         val indirectLightFile = loadAsset("ktx/test.ktx")
         if (indirectLightFile != null) {
@@ -282,12 +290,11 @@ class ModelViewerActivity : AppCompatActivity() {
                                     return@launch
                                 }
 
-                                val thumb = createSquareThumbnail(bmp, THUMBNAIL_SIZE)
+                                val rawThumb = createSquareThumbnail(bmp, THUMBNAIL_SIZE)
                                 bmp.recycle()
 
-
                                 withContext(Dispatchers.Main) {
-                                    saveThumbnail(thumb)
+                                    saveThumbnail(rawThumb)
                                 }
                             }
                         },
@@ -318,7 +325,8 @@ class ModelViewerActivity : AppCompatActivity() {
         return scaled
     }
 
-    private fun saveThumbnail(bitmap: Bitmap) {
+
+    private fun saveThumbnail(bitmap: android.graphics.Bitmap) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val modelBaseName = getModelFileNameWithoutExtension() ?: return@launch
