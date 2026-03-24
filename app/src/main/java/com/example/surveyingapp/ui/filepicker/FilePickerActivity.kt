@@ -39,13 +39,26 @@ class FilePickerActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            result.data?.data?.let { uri ->
+            // Most pickers put the URI in data; some API 24 devices put it in clipData
+            val uri: Uri? = result.data?.data
+                ?: result.data?.clipData?.getItemAt(0)?.uri
+
+            if (uri != null) {
                 try {
                     contentResolver.takePersistableUriPermission(
                         uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
-                } catch (_: SecurityException) { /* URI may not support persistable perms */ }
+                } catch (e: SecurityException) {
+                    // URI from ACTION_GET_CONTENT fallback doesn't support persistable perms — ignore
+                    Log.d("FilePicker", "URI does not support persistable permission: $e")
+                }
                 returnSelectedFile(uri)
+            } else {
+                // No URI returned despite OK result — treat as cancel
+                if (filterMode != FILTER_MODE_FOLDER_SELECT) {
+                    setResult(Activity.RESULT_CANCELED)
+                    finish()
+                }
             }
         } else {
             // User cancelled the SAF picker — nothing to show, so close this activity too.
@@ -144,23 +157,41 @@ class FilePickerActivity : AppCompatActivity() {
     }
 
     /**
-     * Opens ACTION_OPEN_DOCUMENT with the correct MIME types.
-     * The system file manager handles all storage providers natively.
+     * Opens the system file picker using ACTION_OPEN_DOCUMENT (preferred — grants
+     * persistent URI access) with a fallback to ACTION_GET_CONTENT for devices that
+     * don't have a SAF-compatible file manager (can happen on API 24/25).
      */
     private fun openSafFilePicker() {
         val mimeTypes = getMimeTypesForMode(filterMode)
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+
+        // Build the intent — always use */* as the primary type when multiple MIME types
+        // are needed; EXTRA_MIME_TYPES does the actual filtering. Using a specific type
+        // as primary AND EXTRA_MIME_TYPES causes some API 24 file managers to show nothing.
+        fun buildIntent(action: String) = Intent(action).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = if (mimeTypes.size == 1) mimeTypes[0] else "*/*"
-            if (mimeTypes.size > 1) putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
+
+        // Try ACTION_OPEN_DOCUMENT first (API 19+, but not all devices have a provider)
+        val openDoc = buildIntent(Intent.ACTION_OPEN_DOCUMENT)
+        val getContent = buildIntent(Intent.ACTION_GET_CONTENT)
+
         try {
-            safPickerLauncher.launch(intent)
-        } catch (e: Exception) {
-            Log.e("FilePicker", "No file manager available", e)
-            Toast.makeText(this, "No file manager available", Toast.LENGTH_SHORT).show()
+            safPickerLauncher.launch(openDoc)
+        } catch (e: android.content.ActivityNotFoundException) {
+            // No document provider installed — fall back to GET_CONTENT which is handled
+            // by the browser/gallery on older devices
+            Log.w("FilePicker", "No ACTION_OPEN_DOCUMENT handler, falling back to GET_CONTENT", e)
+            try {
+                safPickerLauncher.launch(getContent)
+            } catch (e2: android.content.ActivityNotFoundException) {
+                Log.e("FilePicker", "No file picker available at all", e2)
+                Toast.makeText(this, "No file manager found on this device", Toast.LENGTH_LONG).show()
+                setResult(Activity.RESULT_CANCELED)
+                finish()
+            }
         }
     }
 
