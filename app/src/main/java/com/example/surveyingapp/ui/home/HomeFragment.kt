@@ -335,9 +335,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             binding.layoutMapPlaceholder.visibility = View.GONE
             binding.mapViewMini.visibility = View.VISIBLE
             android.util.Log.d("HomeFragment", "Map visibility updated: placeholder=GONE, map=VISIBLE")
-        } else {
+        } else if (googleMap != null) {
+            // Map is ready but no fix yet — show "Acquiring location…" placeholder.
+            // (If googleMap is null the map hasn't loaded yet; onMapReady already
+            //  hid the placeholder when permission is granted so leave it alone.)
             binding.layoutMapPlaceholder.visibility = View.VISIBLE
-            android.util.Log.d("HomeFragment", "Showing placeholder (no fix or map not ready)")
+            android.util.Log.d("HomeFragment", "Showing placeholder (map ready but no fix)")
         }
     }
 
@@ -401,10 +404,21 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             // Apply 3D state based on chip
             apply3D(enable = binding.chipToggle3d.isChecked, animate = false)
 
+            // Permission is granted — hide the placeholder so the map tiles show
+            // immediately while we wait for the first GPS fix.
+            binding.layoutMapPlaceholder.visibility = View.GONE
+            binding.mapViewMini.visibility = View.VISIBLE
+
             // Reset camera centering flag - will center on first GPS fix
             hasCenteredCamera = false
             android.util.Log.d("HomeFragment", "Map configured: hasCenteredCamera reset to false")
         } else {
+            // No permission — show placeholder with the accurate message
+            _binding?.let {
+                it.layoutMapPlaceholder.visibility = View.VISIBLE
+                it.root.findViewById<android.widget.TextView>(R.id.text_map_placeholder)
+                    ?.text = "Location services required"
+            }
             android.util.Log.w("HomeFragment", "Location permission not granted, map features limited")
         }
     }
