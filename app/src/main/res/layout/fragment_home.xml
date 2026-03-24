@@ -66,13 +66,6 @@
                                 android:textStyle="bold"
                                 android:textColor="?android:attr/textColorPrimary" />
 
-                            <TextView
-                                android:id="@+id/text_location_status"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Getting location..."
-                                android:textSize="10sp"
-                                android:textColor="?android:attr/textColorSecondary" />
 
                         </LinearLayout>
 
@@ -82,7 +75,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="8dp"
-                            android:visibility="visible" />
+                            android:visibility="gone" />
 
                         <!-- Map View that fills remaining space in location card -->
                         <FrameLayout
