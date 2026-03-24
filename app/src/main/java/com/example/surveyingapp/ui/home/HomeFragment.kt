@@ -18,7 +18,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -120,6 +119,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         setupMapUiControls()
         collectStatisticsFlows()
 
+
         return root
     }
 
@@ -154,7 +154,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 android.util.Log.d("HomeFragment", "Started collecting fixes from switchboard")
                 fixSwitchboard.fixes.collect { fix: Fix ->
                     android.util.Log.d("HomeFragment", "Received fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, provider=${fix.provider}")
-                    updateLocationDisplay(fix)
                     updateMapLocation(fix)
                     updateStatusDisplay(fix)
                 }
@@ -289,19 +288,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    private fun updateLocationDisplay(fix: Fix?) {
-        if (fix != null) {
-            binding.textLocationStatus.text = getString(R.string.location_acquired)
-            binding.textLocationStatus.setTextColor(
-                ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark)
-            )
-        } else {
-            binding.textLocationStatus.text = getString(R.string.no_location)
-            binding.textLocationStatus.setTextColor(
-                ContextCompat.getColor(requireContext(), android.R.color.darker_gray)
-            )
-        }
-    }
 
     private fun updateMapLocation(fix: Fix?) {
         android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}, googleMap=${googleMap != null}, hasCenteredCamera=$hasCenteredCamera")
@@ -336,9 +322,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             binding.mapViewMini.visibility = View.VISIBLE
             android.util.Log.d("HomeFragment", "Map visibility updated: placeholder=GONE, map=VISIBLE")
         } else if (googleMap != null) {
-            // Map is ready but no fix yet — show "Acquiring location…" placeholder.
-            // (If googleMap is null the map hasn't loaded yet; onMapReady already
-            //  hid the placeholder when permission is granted so leave it alone.)
+
             binding.layoutMapPlaceholder.visibility = View.VISIBLE
             android.util.Log.d("HomeFragment", "Showing placeholder (map ready but no fix)")
         }
