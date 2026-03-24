@@ -3,6 +3,7 @@ package com.example.surveyingapp.ui.models
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.PixelFormat
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -18,7 +19,6 @@ import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.google.android.filament.Camera
-import com.google.android.filament.Skybox
 import com.google.android.filament.utils.KTX1Loader
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
@@ -114,6 +114,10 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         // Force exact pixel dimensions so Filament's viewport is always square.
         surfaceView = SurfaceView(this).apply {
             layoutParams = ViewGroup.LayoutParams(THUMB_SIZE, THUMB_SIZE)
+            // Required for transparent rendering: tell the compositor this surface
+            // has an alpha channel and render it on top of other surfaces.
+            setZOrderOnTop(true)
+            holder.setFormat(PixelFormat.RGBA_8888)
         }
         setContentView(surfaceView, ViewGroup.LayoutParams(THUMB_SIZE, THUMB_SIZE))
 
@@ -133,14 +137,26 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             val viewer = ModelViewer(surfaceView)
             modelViewer = viewer
 
-            // White background.
-            viewer.scene.skybox = Skybox.Builder().build(viewer.engine)
-            viewer.scene.skybox?.setColor(1f, 1f, 1f, 1f)
+            // No skybox — background will be transparent (alpha=0).
+            // Filament renders only the model pixels; the background stays clear.
+            viewer.scene.skybox = null
 
+            // Set renderer clear color to fully transparent black.
+            val opts = viewer.renderer.clearOptions
+            opts.clearColor[0] = 0f  // R
+            opts.clearColor[1] = 0f  // G
+            opts.clearColor[2] = 0f  // B
+            opts.clearColor[3] = 0f  // A — fully transparent
+            opts.clear = true
+            viewer.renderer.clearOptions = opts
+
+            // Load IBL so the model is lit correctly — the background tint it introduces
+            // is removed in post-processing, not by suppressing the lighting.
             try {
                 val bytes = assets.open("ktx/test.ktx").use { it.readBytes() }
-                val buf = ByteBuffer.allocateDirect(bytes.size)
-                buf.put(bytes); buf.rewind()
+                val buf = ByteBuffer.allocateDirect(bytes.size).also { b ->
+                    b.put(bytes); b.rewind()
+                }
                 val il = KTX1Loader.createIndirectLight(viewer.engine, buf)
                 il.indirectLight?.intensity = 50_000f
                 viewer.scene.indirectLight = il.indirectLight
@@ -282,37 +298,27 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
     private fun analyzeAndSave(bmp: Bitmap, attempt: Int) {
         lifecycleScope.launch(Dispatchers.Default) {
-            // Check if the frame contains any content other than pure black.
-            // We accept pure white (the Filament skybox background) as a valid frame.
-            // We only reject frames where every sampled pixel is pitch-black (R=0,G=0,B=0)
-            // which means the GPU surface hasn't rendered yet.
-            val hasAnyNonBlackPixel = run {
-                var found = false
-                outer@ for (y in 0 until bmp.height step 16) {
-                    for (x in 0 until bmp.width step 16) {
-                        val px = bmp.getPixel(x, y)
-                        val r = (px shr 16) and 0xFF
-                        val g = (px shr 8) and 0xFF
-                        val b = px and 0xFF
-                        if (r > 5 || g > 5 || b > 5) {
-                            found = true
-                            break@outer
-                        }
+            // Reject frames where every sampled pixel is fully transparent —
+            // this means the GPU hasn't rendered the model yet.
+            var hasVisiblePixel = false
+            outer@ for (y in 0 until bmp.height step 8) {
+                for (x in 0 until bmp.width step 8) {
+                    val alpha = (bmp.getPixel(x, y) ushr 24) and 0xFF
+                    if (alpha > 10) {
+                        hasVisiblePixel = true
+                        break@outer
                     }
                 }
-                found
             }
 
-            if (!hasAnyNonBlackPixel) {
+            if (!hasVisiblePixel) {
                 bmp.recycle()
-                Log.w(TAG, "Frame is all black; retrying (attempt=$attempt)")
+                Log.w(TAG, "Frame is fully transparent; retrying attempt=$attempt")
                 withContext(Dispatchers.Main) { tryCapture(attempt + 1) }
                 return@launch
             }
 
-            Log.d(TAG, "Frame has content, saving thumbnail")
-            // The bitmap is already square (captureSize x captureSize).
-            // Scale up to THUMB_SIZE only if we captured at a smaller size.
+            Log.d(TAG, "Frame has model content, saving thumbnail")
             val thumb = if (bmp.width == THUMB_SIZE && bmp.height == THUMB_SIZE) {
                 bmp
             } else {
@@ -391,4 +397,3 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
-
