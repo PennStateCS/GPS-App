@@ -8,122 +8,159 @@ import android.os.Build
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
-/**
- * Manages all app permissions in one place
- */
+
 object PermissionManager {
 
-    // Essential permissions needed for core app functionality (location, connectivity, camera for AR, multicast for discovery)
-    val ESSENTIAL_PERMISSIONS = buildList {
-        add(Manifest.permission.ACCESS_FINE_LOCATION)
-        add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        add(Manifest.permission.INTERNET)
-        add(Manifest.permission.ACCESS_NETWORK_STATE)
-        add(Manifest.permission.ACCESS_WIFI_STATE)
-        add(Manifest.permission.CAMERA)
-        add(Manifest.permission.CHANGE_WIFI_MULTICAST_STATE)
+    // -------------------------------------------------------------------------
+    // Permission groups
+    // -------------------------------------------------------------------------
 
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
-            add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+    /**
+     * Core location permissions — required for all GPS functionality.
+     * Fine location implies coarse on modern Android, but we request both for compatibility.
+     */
+    val LOCATION_PERMISSIONS = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
 
-        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
-            add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
+    /**
+     * Camera — required for the AR (Augmented Reality) feature.
+     */
+    val CAMERA_PERMISSIONS = arrayOf(
+        Manifest.permission.CAMERA
+    )
 
-        // NOTE: Do NOT include MANAGE_EXTERNAL_STORAGE here. It cannot be requested via the normal
-        // runtime permission APIs and must be handled via the system settings intent (ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).
-        // MainActivity.requestStoragePermissions() already handles that flow for API >= R.
-
-        // IMPORTANT:
-        // Do NOT request READ_MEDIA_* as “essential”. Those are for accessing the *user’s* media library.
-        // This app works with its own app-scoped storage / picked files, so it should not gate startup on
-        // media permissions (some devices/emulators will deny them, causing a rationale loop).
-
+    /**
+     * Notification permission — Android 13+ (API 33) only.
+     * On older versions this is auto-granted.
+     */
+    val NOTIFICATION_PERMISSIONS: Array<String> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            add(Manifest.permission.POST_NOTIFICATIONS) // Android 13+
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            emptyArray()
         }
 
-        // Background location is intentionally NOT part of ESSENTIAL_PERMISSIONS; it requires a separate
-        // request flow and potentially additional explanation to the user. Use PermissionManager.requestBackgroundLocationPermission().
+
+    val ESSENTIAL_PERMISSIONS: Array<String> = buildList<String> {
+        addAll(LOCATION_PERMISSIONS)
+        addAll(CAMERA_PERMISSIONS)
+        addAll(NOTIFICATION_PERMISSIONS)
     }.toTypedArray()
 
-    // Background location (requires special handling)
+    // Background location is a separate flow (post-foreground-location grant)
+    // ACCESS_BACKGROUND_LOCATION was added in API 29; the string constant itself is safe on all APIs
+    // because it is just a string, but Android Lint flags it — suppress for clarity.
+    @Suppress("InlinedApi")
     val BACKGROUND_LOCATION_PERMISSION = Manifest.permission.ACCESS_BACKGROUND_LOCATION
 
     /**
-     * Check if all essential permissions are granted
+     * BLUETOOTH_CONNECT is required on Android 12+ (API 31) to read paired device
+     * names/addresses. Used only by LogZip diagnostic reporting — NOT an essential
+     * permission (app works fully without it). The call site already catches
+     * SecurityException gracefully. Request this only from the diagnostics screen if desired.
      */
-    fun hasEssentialPermissions(context: Context): Boolean {
-        return ESSENTIAL_PERMISSIONS.all { permission ->
-            ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-        }
-    }
+    @Suppress("InlinedApi", "unused")
+    val BLUETOOTH_CONNECT_PERMISSION: String? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            Manifest.permission.BLUETOOTH_CONNECT
+        else
+            null // Auto-granted / not needed below API 31
 
-    /**
-     * Get list of missing essential permissions
-     */
-    fun getMissingEssentialPermissions(context: Context): List<String> {
-        return ESSENTIAL_PERMISSIONS.filter { permission ->
-            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
-        }
-    }
+    // -------------------------------------------------------------------------
+    // Check helpers
+    // -------------------------------------------------------------------------
 
-    /**
-     * Check if a specific permission is granted
-     */
-    fun hasPermission(context: Context, permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-    }
+    /** Returns true if ALL essential permissions are granted. */
+    @Suppress("unused")
+    fun hasEssentialPermissions(context: Context): Boolean =
+        ESSENTIAL_PERMISSIONS.all { isGranted(context, it) }
 
-    /**
-     * Check if location permissions are granted
-     */
-    fun hasLocationPermissions(context: Context): Boolean {
-        val fineLocation = hasPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-        val coarseLocation = hasPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
-        return fineLocation || coarseLocation
-    }
+    /** Returns the subset of essential permissions that have NOT been granted. */
+    fun getMissingEssentialPermissions(context: Context): List<String> =
+        ESSENTIAL_PERMISSIONS.filter { !isGranted(context, it) }
 
-    /**
-     * Check if background location permission is granted
-     */
-    fun hasBackgroundLocationPermission(context: Context): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            hasPermission(context, BACKGROUND_LOCATION_PERMISSION)
+    /** Returns true if the given single permission is granted. */
+    @Suppress("unused")
+    fun hasPermission(context: Context, permission: String): Boolean =
+        isGranted(context, permission)
+
+    /** Returns true if at least one of the location permissions is granted. */
+    fun hasLocationPermissions(context: Context): Boolean =
+        LOCATION_PERMISSIONS.any { isGranted(context, it) }
+
+    /** Returns true if ACCESS_FINE_LOCATION specifically is granted. */
+    @Suppress("unused")
+    fun hasFineLocation(context: Context): Boolean =
+        isGranted(context, Manifest.permission.ACCESS_FINE_LOCATION)
+
+    /** Returns true if the camera permission is granted. */
+    @Suppress("unused")
+    fun hasCameraPermission(context: Context): Boolean =
+        isGranted(context, Manifest.permission.CAMERA)
+
+    /** Returns true if background location is granted (or not required on this API level). */
+    fun hasBackgroundLocationPermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            isGranted(context, BACKGROUND_LOCATION_PERMISSION)
         } else {
-            true // Not needed on older versions
+            true // Not required below Android 10
         }
-    }
 
-    /**
-     * Check if notification permission is granted (Android 13+)
-     */
-    fun hasNotificationPermission(context: Context): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            hasPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+    /** Returns true if notification permission is granted (or not required on this API level). */
+    @Suppress("unused")
+    fun hasNotificationPermission(context: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            isGranted(context, Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            true // Not needed on older versions
+            true // Auto-granted below Android 13
         }
-    }
+
+    // -------------------------------------------------------------------------
+    // Rationale helpers
+    // -------------------------------------------------------------------------
 
     /**
-     * Request essential permissions
+     * Returns true if ANY of the given permissions have been permanently denied
+     * (i.e., the user selected "Don't ask again") — in this case we should direct
+     * them to Settings rather than showing another request dialog.
      */
+    fun isPermanentlyDenied(activity: Activity, permissions: List<String>): Boolean =
+        permissions.any { permission ->
+            !isGranted(activity, permission) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+        }
+
+    /**
+     * Returns true if at least one of the given permissions should show a rationale
+     * (user denied once but did not select "Don't ask again").
+     */
+    @Suppress("unused")
+    fun shouldShowRationale(activity: Activity, permissions: List<String>): Boolean =
+        permissions.any { permission ->
+            !isGranted(activity, permission) &&
+            ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)
+        }
+
+    // -------------------------------------------------------------------------
+    // Request helpers (legacy ActivityCompat path — prefer Activity Result API)
+    // -------------------------------------------------------------------------
+
+    @Suppress("unused")
     fun requestEssentialPermissions(activity: Activity, requestCode: Int) {
-        val missingPermissions = getMissingEssentialPermissions(activity)
-        if (missingPermissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(activity, missingPermissions.toTypedArray(), requestCode)
+        val missing = getMissingEssentialPermissions(activity)
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(activity, missing.toTypedArray(), requestCode)
         }
     }
 
-    /**
-     * Request background location permission (must be requested separately after foreground permissions)
-     */
+    @Suppress("unused")
     fun requestBackgroundLocationPermission(activity: Activity, requestCode: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             hasLocationPermissions(activity) &&
-            !hasBackgroundLocationPermission(activity)) {
+            !hasBackgroundLocationPermission(activity)
+        ) {
             ActivityCompat.requestPermissions(
                 activity,
                 arrayOf(BACKGROUND_LOCATION_PERMISSION),
@@ -132,28 +169,50 @@ object PermissionManager {
         }
     }
 
-    /**
-     * Get user-friendly permission descriptions for rationale dialogs
-     */
-    fun getPermissionDescription(permission: String): String {
-        return when (permission) {
-            Manifest.permission.ACCESS_FINE_LOCATION -> "Access precise location for accurate surveying measurements"
-            Manifest.permission.ACCESS_COARSE_LOCATION -> "Access approximate location for basic positioning"
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION -> "Access location in background for continuous tracking"
-            Manifest.permission.CAMERA -> "Access camera for AR (Augmented Reality) features"
-            Manifest.permission.READ_EXTERNAL_STORAGE -> "Read files for importing coordinate data"
-            Manifest.permission.WRITE_EXTERNAL_STORAGE -> "Save files for exporting coordinate data"
-            Manifest.permission.POST_NOTIFICATIONS -> "Show notifications for location service status"
-            Manifest.permission.INTERNET -> "Access internet for map tiles and network features"
-            Manifest.permission.ACCESS_NETWORK_STATE -> "Check network status for connectivity features"
-            Manifest.permission.ACCESS_WIFI_STATE -> "Access WiFi information for device discovery"
-            Manifest.permission.CHANGE_WIFI_MULTICAST_STATE -> "Enable device discovery on local network"
-            else -> "Required for app functionality"
-        }
+    // -------------------------------------------------------------------------
+    // Human-readable descriptions (for rationale dialogs)
+    // -------------------------------------------------------------------------
+
+    fun getPermissionDescription(permission: String): String = when (permission) {
+        Manifest.permission.ACCESS_FINE_LOCATION ->
+            "Required for accurate GPS positioning and surveying measurements"
+        Manifest.permission.ACCESS_COARSE_LOCATION ->
+            "Required for approximate positioning used as a fallback"
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION ->
+            "Allows continuous location tracking when the app is in the background"
+        Manifest.permission.CAMERA ->
+            "Required for Augmented Reality (AR) features"
+        Manifest.permission.POST_NOTIFICATIONS ->
+            "Allows the app to show status notifications for the location service"
+        "android.permission.BLUETOOTH_CONNECT" ->
+            "Allows reading paired Bluetooth device info in diagnostic reports"
+        else -> "Required for app functionality"
     }
 
-    // Request codes for different permission types
-    const val REQUEST_CODE_ESSENTIAL = 100
-    const val REQUEST_CODE_BACKGROUND_LOCATION = 102
-    const val REQUEST_CODE_NOTIFICATION = 104
+    fun getPermissionDisplayName(permission: String): String = when (permission) {
+        Manifest.permission.ACCESS_FINE_LOCATION -> "Precise Location"
+        Manifest.permission.ACCESS_COARSE_LOCATION -> "Approximate Location"
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION -> "Background Location"
+        Manifest.permission.CAMERA -> "Camera"
+        Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
+        "android.permission.BLUETOOTH_CONNECT" -> "Nearby Devices (Bluetooth)"
+        else -> permission.substringAfterLast('.')
+            .replace('_', ' ')
+            .lowercase()
+            .replaceFirstChar { it.uppercase() }
+    }
+
+    // -------------------------------------------------------------------------
+    // Request codes (kept for backward compat; prefer Activity Result API)
+    // -------------------------------------------------------------------------
+    @Suppress("unused") const val REQUEST_CODE_ESSENTIAL = 100
+    @Suppress("unused") const val REQUEST_CODE_BACKGROUND_LOCATION = 102
+    @Suppress("unused") const val REQUEST_CODE_NOTIFICATION = 104
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private fun isGranted(context: Context, permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }
