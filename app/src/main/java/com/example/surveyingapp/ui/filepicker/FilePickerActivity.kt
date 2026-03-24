@@ -47,6 +47,12 @@ class FilePickerActivity : AppCompatActivity() {
                 } catch (_: SecurityException) { /* URI may not support persistable perms */ }
                 returnSelectedFile(uri)
             }
+        } else {
+            // User cancelled the SAF picker — nothing to show, so close this activity too.
+            if (filterMode != FILTER_MODE_FOLDER_SELECT) {
+                setResult(Activity.RESULT_CANCELED)
+                finish()
+            }
         }
     }
 
@@ -62,7 +68,15 @@ class FilePickerActivity : AppCompatActivity() {
         setupToolbar(title)
         setupRecyclerView()
         setupSelectFolderButton()
-        loadStorageOptions()
+
+        // Go straight to the system file picker — no intermediate screen needed.
+        // If the mode is folder-select we still need the RecyclerView UI, so keep
+        // the old flow for that mode only.
+        if (filterMode == FILTER_MODE_FOLDER_SELECT) {
+            loadStorageOptions()
+        } else {
+            openSafFilePicker()
+        }
     }
 
     private fun getExtensionsForMode(filterMode: String): Array<String> = when (filterMode) {
