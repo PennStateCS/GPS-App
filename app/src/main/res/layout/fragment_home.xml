@@ -17,6 +17,7 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:orientation="horizontal"
+            android:padding="12dp"
             android:baselineAligned="false">
 
             <!-- Left Column: Location and Map -->
@@ -24,7 +25,7 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="2"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="6dp"
                 android:orientation="vertical">
 
                 <!-- Current Location Info Card (with map) -->
@@ -173,16 +174,13 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:orientation="vertical"
-                android:background="@color/home_right_column_bg">
+                android:layout_marginStart="6dp"
+                android:orientation="vertical">
 
                 <!-- Insights Card (combining Statistics and Quick Actions) -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginEnd="16dp"
                     app:cardCornerRadius="12dp"
                     app:cardElevation="6dp"
                     app:cardUseCompatPadding="true"
@@ -201,12 +199,12 @@
                             android:layout_height="wrap_content"
                             android:orientation="horizontal"
                             android:gravity="center_vertical"
-                            android:layout_marginBottom="12dp">
+                            android:layout_marginBottom="8dp">
 
                             <ImageView
                                 android:layout_width="20dp"
                                 android:layout_height="20dp"
-                                android:src="@android:drawable/ic_dialog_info"
+                                android:src="@drawable/ic_section_info"
                                 android:layout_marginEnd="6dp"
                                 app:tint="?android:attr/colorPrimary" />
 
