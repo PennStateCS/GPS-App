@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.surveyingapp.databinding.ActivityFilePickerBinding
 import java.io.File
@@ -273,14 +274,42 @@ class FilePickerActivity : AppCompatActivity() {
     }
 
     private fun selectFile(file: File) {
-        setResult(Activity.RESULT_OK, Intent().apply { data = Uri.fromFile(file) })
+        val uri = fileToUri(file)
+        val resultIntent = Intent().apply {
+            data = uri
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        setResult(Activity.RESULT_OK, resultIntent)
         finish()
     }
 
     private fun selectCurrentFolder() {
-        currentDirectory?.let {
-            setResult(Activity.RESULT_OK, Intent().apply { data = Uri.fromFile(it) })
+        currentDirectory?.let { dir ->
+            val uri = fileToUri(dir)
+            val resultIntent = Intent().apply {
+                data = uri
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            setResult(Activity.RESULT_OK, resultIntent)
             finish()
+        }
+    }
+
+    /**
+     * Convert a File to a URI safe to pass across process boundaries on all API levels.
+     * Uses FileProvider (content:// URI) on API 24+ to avoid FileUriExposedException.
+     */
+    private fun fileToUri(file: File): Uri {
+        return try {
+            FileProvider.getUriForFile(
+                this,
+                "${applicationContext.packageName}.fileprovider",
+                file
+            )
+        } catch (e: Exception) {
+            // Fall back to file:// if FileProvider is not configured for this path
+            Log.w("FilePicker", "FileProvider failed, using file URI: ${e.message}")
+            Uri.fromFile(file)
         }
     }
 

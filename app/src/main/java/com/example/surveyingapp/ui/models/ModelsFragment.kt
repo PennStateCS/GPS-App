@@ -15,7 +15,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.test.core.app.ApplicationProvider.getApplicationContext
 import com.example.surveyingapp.databinding.FragmentModelsBinding
 import com.example.surveyingapp.domain.model.Model
 import kotlinx.coroutines.launch
@@ -152,88 +151,90 @@ class ModelsFragment : Fragment() {
         filePickerLauncher.launch(intent)
     }
 
-    private fun getFileNameFromUri(uri: Uri): String? {
-        var result: String? = null
-
-        // Check if URI comes from Google Drive or OneDrive
-//        if (uri.scheme == "content") {
-//            val cursor = requireContext().contentResolver.query(uri, null, null, null, null)
-//            cursor?.use {
-//                if (it.moveToFirst()) {
-//                    val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-//                    if (nameIndex >= 0) {
-//                        result = it.getString(nameIndex)
-//                    }
-//                }
-//            }
-//        }
-
-        if (result == null) {
-            result = uri.path
-            val cut = result?.lastIndexOf('/')
-            if (cut != -1 && cut != null) {
-                result = result.substring(cut + 1)
-            }
-        }
-        return result
-    }
 
     private fun handleSelectedFile(uri: Uri) {
         try {
             val contentResolver = requireContext().contentResolver
-            val inputStream = contentResolver.openInputStream(uri)
 
-            if (inputStream != null) {
-                // Get file info
-                val cursor = contentResolver.query(uri, null, null, null, null)
-                Log.d("ModelsFragment", uri.toString())
-                var fileName = getFileNameFromUri(uri) ?: "model.glb"
+            // Resolve display name and file size from content resolver (works for SAF,
+            // Google Drive, OneDrive, and local content:// URIs on all API levels)
+            var fileName = "model.glb"
+            var fileSize = 0L
 
-                var assetDescriptor: AssetFileDescriptor? = contentResolver.openAssetFileDescriptor(uri, "r")
-                var fileSize = assetDescriptor?.length ?: 0L
-
-                cursor?.use {
-                    if (it.moveToFirst()) {
-                        val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        val sizeIndex = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
-
-                        if (nameIndex >= 0) fileName = it.getString(nameIndex) ?: "model.glb"
-                        if (sizeIndex >= 0) fileSize = it.getLong(sizeIndex) ?: 0L
-                    }
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (nameIndex >= 0) fileName = cursor.getString(nameIndex) ?: fileName
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) fileSize = cursor.getLong(sizeIndex)
                 }
+            }
 
-                // Validate file extension
-                if (!fileName.lowercase().endsWith(".glb")) {
-                    Toast.makeText(requireContext(), "Please select a .glb file", Toast.LENGTH_LONG).show()
+            // Fall back to extracting name from the URI path if the cursor gave nothing useful
+            if (fileName == "model.glb" && uri.path != null) {
+                val fromPath = uri.path!!.substringAfterLast('/')
+                if (fromPath.isNotBlank()) fileName = fromPath
+            }
+
+            Log.d("ModelsFragment", "Selected URI: $uri  fileName: $fileName  size: $fileSize")
+
+            // Validate file extension — accept .glb and .gltf
+            val lowerName = fileName.lowercase()
+            if (!lowerName.endsWith(".glb") && !lowerName.endsWith(".gltf")) {
+                Toast.makeText(requireContext(), "Please select a .glb or .gltf file", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            // Open the stream — this works for all URI schemes including content:// from SAF
+            val inputStream = contentResolver.openInputStream(uri)
+                ?: run {
+                    Toast.makeText(requireContext(), "Cannot open file", Toast.LENGTH_LONG).show()
                     return
                 }
 
-                // Copy file to app's internal storage
-                val modelsDir = File(requireContext().filesDir, "models")
-                if (!modelsDir.exists()) {
-                    modelsDir.mkdirs()
+            // If fileSize is still 0, try openAssetFileDescriptor as a fallback
+            if (fileSize == 0L) {
+                try {
+                    contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                        if (afd.length != AssetFileDescriptor.UNKNOWN_LENGTH) fileSize = afd.length
+                    }
+                } catch (e: Exception) {
+                    Log.w("ModelsFragment", "Could not determine file size: ${e.message}")
                 }
-
-                // Ensure unique file name by adding suffix if needed
-                var targetFile = File(modelsDir, fileName)
-                var counter = 1
-                while (targetFile.exists()) {
-                    val nameWithoutExt = fileName.substringBeforeLast(".")
-                    val ext = fileName.substringAfterLast(".")
-                    targetFile = File(modelsDir, "${nameWithoutExt}_${counter}.$ext")
-                    counter++
-                }
-
-                FileOutputStream(targetFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-
-                // Get model name from user
-                showAddModelDialog(fileName.substringBeforeLast("."), targetFile.name, targetFile.absolutePath, fileSize)
-
-                inputStream.close()
             }
+
+            // Copy file to app's internal storage
+            val modelsDir = File(requireContext().filesDir, "models").also { it.mkdirs() }
+
+            // Ensure unique file name
+            var targetFile = File(modelsDir, fileName)
+            var counter = 1
+            while (targetFile.exists()) {
+                val nameWithoutExt = fileName.substringBeforeLast(".")
+                val ext = fileName.substringAfterLast(".")
+                targetFile = File(modelsDir, "${nameWithoutExt}_${counter}.$ext")
+                counter++
+            }
+
+            inputStream.use { input ->
+                FileOutputStream(targetFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+
+            // If fileSize still unknown, use the copied file's size
+            if (fileSize == 0L) fileSize = targetFile.length()
+
+            // Prompt user for name/description
+            showAddModelDialog(
+                fileName.substringBeforeLast("."),
+                targetFile.name,
+                targetFile.absolutePath,
+                fileSize
+            )
+
         } catch (e: Exception) {
+            Log.e("ModelsFragment", "Failed to import model", e)
             Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
