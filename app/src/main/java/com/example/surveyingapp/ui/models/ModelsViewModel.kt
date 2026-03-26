@@ -11,14 +11,13 @@ import com.example.surveyingapp.domain.model.FileType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 class ModelsViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ModelRepositoryImpl(AppDatabase.getDatabase(application).modelDao())
+    private val coordinateDao = AppDatabase.getDatabase(application).coordinateDao()
 
     val allModels = repository.getAllModels().asLiveData()
 
@@ -35,17 +34,22 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
     init {
         // Auto-clear generating state once Room emits a model with a thumbnail path.
         viewModelScope.launch {
-            repository.getAllModels().collect { models ->
-                val currentGenerating = _thumbnailGenerating.value
-                if (currentGenerating.isNotEmpty()) {
-                    val doneIds = models
-                        .filter { it.id in currentGenerating && !it.thumbnailFilePath.isNullOrBlank() }
-                        .map { it.id }
-                        .toSet()
-                    if (doneIds.isNotEmpty()) {
-                        _thumbnailGenerating.value = currentGenerating - doneIds
+            try {
+                repository.getAllModels().collect { models ->
+                    val currentGenerating = _thumbnailGenerating.value
+                    if (currentGenerating.isNotEmpty()) {
+                        val doneIds = models
+                            .filter { it.id in currentGenerating && !it.thumbnailFilePath.isNullOrBlank() }
+                            .map { it.id }
+                            .toSet()
+                        if (doneIds.isNotEmpty()) {
+                            _thumbnailGenerating.value = currentGenerating - doneIds
+                        }
                     }
                 }
+            } catch (_: Exception) {
+                // Non-fatal: thumbnail spinner state may not clear automatically,
+                // but it won't affect core functionality.
             }
         }
     }
@@ -56,22 +60,6 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun markThumbnailDone(modelId: String) {
         _thumbnailGenerating.value = _thumbnailGenerating.value - modelId
-    }
-
-    private fun getFileTypeFromExtension(fileName: String): FileType {
-        val extension = fileName.substringAfterLast('.', "").lowercase()
-        return when (extension) {
-            "csv", "kml", "gpx" -> FileType.COORDINATE_DATA
-            "nmea", "log" -> FileType.NMEA_LOG
-            "dwg", "dxf" -> FileType.CAD_DRAWING
-            "jpg", "jpeg", "png", "tiff", "tif" -> FileType.IMAGE
-            "las", "laz" -> FileType.POINT_CLOUD
-            "obj", "ply", "stl" -> FileType.MESH_MODEL
-            "pdf" -> FileType.REPORT
-            "db", "sqlite", "sql" -> FileType.DATABASE
-            "json", "xml", "cfg", "ini" -> FileType.CONFIGURATION
-            else -> FileType.OTHER
-        }
     }
 
     fun addModel(
@@ -94,7 +82,7 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
                     fileSize = fileSize,
                     dateAdded = System.currentTimeMillis(),
                     description = description,
-                    fileType = getFileTypeFromExtension(fileName)
+                    fileType = FileType.OTHER   // repository re-derives this on read
                 )
                 repository.insertModel(model)
                 // Mark thumbnail as generating BEFORE notifying caller so the UI
@@ -103,7 +91,7 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
                 onModelId?.invoke(modelId)
                 _statusMessage.value = "Model '$name' added successfully"
             } catch (e: Exception) {
-                _statusMessage.value = "Failed to add model: ${e.message}"
+                _statusMessage.value = "Failed to add model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
             }
@@ -117,7 +105,7 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
                 repository.deleteModel(model)
                 _statusMessage.value = "Model '${model.name}' deleted"
             } catch (e: Exception) {
-                _statusMessage.value = "Failed to delete model: ${e.message}"
+                _statusMessage.value = "Failed to delete model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
             }
@@ -128,20 +116,16 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                // Get the current model
-                val currentModel = repository.getAllModels().first().find { it.id == modelId }
+                // Direct by-ID lookup — faster and safer than scanning the full list.
+                val currentModel = repository.getModelById(modelId)
                 if (currentModel != null) {
-                    val updatedModel = currentModel.copy(
-                        name = newName,
-                        description = newDescription
-                    )
-                    repository.updateModel(updatedModel)
+                    repository.updateModel(currentModel.copy(name = newName, description = newDescription))
                     _statusMessage.value = "Model '$newName' updated successfully"
                 } else {
-                    _statusMessage.value = "Model not found"
+                    _statusMessage.value = "Model not found — it may have been deleted"
                 }
             } catch (e: Exception) {
-                _statusMessage.value = "Failed to update model: ${e.message}"
+                _statusMessage.value = "Failed to update model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
             }
@@ -150,5 +134,18 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearStatusMessage() {
         _statusMessage.value = null
+    }
+
+    /**
+     * Returns how many coordinates currently use [modelId] as their icon
+     * (stored as "model:<modelId>" in the icon field).
+     * Returns -1 if the query fails so callers can handle the error case.
+     */
+    suspend fun linkedCoordinateCount(modelId: String): Int {
+        return try {
+            coordinateDao.countByModelId(modelId)
+        } catch (_: Exception) {
+            -1
+        }
     }
 }

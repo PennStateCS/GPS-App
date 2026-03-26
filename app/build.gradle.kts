@@ -100,6 +100,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.osmdroid)
     implementation(libs.arcore)
+    implementation(libs.androidx.swiperefreshlayout)
 
     // Hilt (KSP)
     implementation(libs.hilt.android)
