@@ -20,6 +20,8 @@ import com.example.surveyingapp.domain.model.Model
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 class ModelsFragment : Fragment() {
 
@@ -104,7 +106,14 @@ class ModelsFragment : Fragment() {
     private fun observeViewModel() {
         // Observe models list
         viewModel.allModels.observe(viewLifecycleOwner) { models ->
-            adapter.submitList(models)
+            val previousCount = adapter.currentList.size
+            adapter.submitList(models) {
+                // Scroll to top only when a new model was added (not on edits/thumbnail updates).
+                // New models are inserted at index 0 because the DB orders by dateAdded DESC.
+                if (models.size > previousCount) {
+                    binding.recyclerModels.scrollToPosition(0)
+                }
+            }
 
             // Show/hide empty state
             if (models.isEmpty()) {
@@ -203,24 +212,11 @@ class ModelsFragment : Fragment() {
                 }
             }
 
-            // Copy file to app's internal storage
-            val modelsDir = File(requireContext().filesDir, "models").also { it.mkdirs() }
-
-            // Ensure unique file name
-            var targetFile = File(modelsDir, fileName)
-            var counter = 1
-            while (targetFile.exists()) {
-                val nameWithoutExt = fileName.substringBeforeLast(".")
-                val ext = fileName.substringAfterLast(".")
-                targetFile = File(modelsDir, "${nameWithoutExt}_${counter}.$ext")
-                counter++
-            }
-
-            inputStream.use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
+            val targetFile = copyModelToInternalStorage(uri, fileName, inputStream)
+                ?: run {
+                    Toast.makeText(requireContext(), "Failed to import model file", Toast.LENGTH_LONG).show()
+                    return
                 }
-            }
 
             // If fileSize still unknown, use the copied file's size
             if (fileSize == 0L) fileSize = targetFile.length()
@@ -239,11 +235,114 @@ class ModelsFragment : Fragment() {
         }
     }
 
+    private fun copyModelToInternalStorage(sourceUri: Uri, fileName: String, inputStream: java.io.InputStream): File? {
+        val modelsDir = File(requireContext().filesDir, "models").also { it.mkdirs() }
+        val lowerName = fileName.lowercase()
+
+        return if (lowerName.endsWith(".gltf")) {
+            val bundleDir = uniqueModelBundleDir(modelsDir, fileName.substringBeforeLast("."))
+            val targetGltf = File(bundleDir, fileName)
+
+            inputStream.use { input ->
+                FileOutputStream(targetGltf).use { output -> input.copyTo(output) }
+            }
+
+            val resourceUris = parseGltfResourceUris(targetGltf)
+            val sourceFile = resolveRealFileFromUri(sourceUri)
+            if (resourceUris.isNotEmpty() && sourceFile != null) {
+                copyGltfResources(sourceFile.parentFile, bundleDir, resourceUris)
+            }
+
+            targetGltf
+        } else {
+            var targetFile = File(modelsDir, fileName)
+            var counter = 1
+            while (targetFile.exists()) {
+                val nameWithoutExt = fileName.substringBeforeLast(".")
+                val ext = fileName.substringAfterLast(".")
+                targetFile = File(modelsDir, "${nameWithoutExt}_${counter}.$ext")
+                counter++
+            }
+
+            inputStream.use { input ->
+                FileOutputStream(targetFile).use { output -> input.copyTo(output) }
+            }
+            targetFile
+        }
+    }
+
+    private fun uniqueModelBundleDir(modelsDir: File, baseName: String): File {
+        val safe = baseName.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+        var dir = File(modelsDir, safe)
+        var counter = 1
+        while (dir.exists()) {
+            dir = File(modelsDir, "${safe}_$counter")
+            counter++
+        }
+        dir.mkdirs()
+        return dir
+    }
+
+    private fun parseGltfResourceUris(gltfFile: File): Set<String> {
+        return try {
+            val text = gltfFile.readText()
+            Regex("\"uri\"\\s*:\\s*\"([^\"]+)\"")
+                .findAll(text)
+                .map { it.groupValues[1] }
+                .filterNot { it.startsWith("data:") || it.startsWith("http://") || it.startsWith("https://") }
+                .map { URLDecoder.decode(it.substringBefore('#').substringBefore('?'), StandardCharsets.UTF_8.name()) }
+                .toSet()
+        } catch (e: Exception) {
+            Log.w("ModelsFragment", "Failed to parse glTF resource list", e)
+            emptySet()
+        }
+    }
+
+    private fun resolveRealFileFromUri(uri: Uri): File? {
+        return try {
+            requireContext().contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                val fdPath = File("/proc/self/fd/${pfd.fd}")
+                val canonical = fdPath.canonicalPath
+                val resolved = File(canonical)
+                if (resolved.exists()) resolved else null
+            }
+        } catch (e: Exception) {
+            Log.w("ModelsFragment", "Could not resolve source file for URI: $uri", e)
+            null
+        }
+    }
+
+    private fun copyGltfResources(sourceRoot: File?, targetRoot: File, resources: Set<String>) {
+        if (sourceRoot == null || !sourceRoot.exists()) return
+
+        resources.forEach { relative ->
+            try {
+                val source = File(sourceRoot, relative).canonicalFile
+                if (!source.path.startsWith(sourceRoot.canonicalPath) || !source.exists()) {
+                    Log.w("ModelsFragment", "Missing glTF sidecar resource: $relative")
+                    return@forEach
+                }
+                val target = File(targetRoot, relative).canonicalFile
+                if (!target.path.startsWith(targetRoot.canonicalPath)) {
+                    Log.w("ModelsFragment", "Skipping unsafe glTF resource path: $relative")
+                    return@forEach
+                }
+                target.parentFile?.mkdirs()
+                source.inputStream().use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                Log.w("ModelsFragment", "Failed to copy glTF resource: $relative", e)
+            }
+        }
+    }
+
     private fun showAddModelDialog(defaultName: String, fileName: String, filePath: String, fileSize: Long) {
         val dialog = AddModelDialogFragment.newInstance(defaultName, fileName, filePath, fileSize) { name, description ->
-            viewModel.addModel(name, fileName, filePath, fileSize, description) { modelId ->
-                // Generate thumbnail in an invisible background activity — the user stays here.
-                ThumbnailCaptureActivity.start(requireContext(), filePath, name, fileName)
+            viewModel.addModel(name, fileName, filePath, fileSize, description) { _ ->
+                // Open the viewer so the user can rotate the model and tap "Capture Thumbnail"
+                val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
+                startActivity(intent)
             }
         }
         dialog.show(parentFragmentManager, "AddModelDialog")

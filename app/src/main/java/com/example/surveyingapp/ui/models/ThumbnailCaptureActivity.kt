@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.net.Uri
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -176,7 +177,11 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 buf.rewind()
 
                 withContext(Dispatchers.Main) {
-                    viewer.loadModelGlb(buf)
+                    val loaded = loadModelIntoViewer(viewer, glbFile, buf)
+                    if (!loaded) {
+                        finish()
+                        return@withContext
+                    }
                     viewer.transformToUnitCube()
                     applyCamera(viewer)
                     modelReady = true
@@ -186,6 +191,51 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Filament init failed", e)
             finish()
+        }
+    }
+
+    private fun loadModelIntoViewer(viewer: ModelViewer, modelFile: File, modelBuffer: ByteBuffer): Boolean {
+        return try {
+            val lower = modelFile.name.lowercase()
+            if (lower.endsWith(".gltf")) {
+                val baseDir = modelFile.parentFile?.canonicalFile
+                viewer.loadModelGltf(modelBuffer) { uriString ->
+                    resolveGltfResource(baseDir, uriString)
+                }
+            } else {
+                viewer.loadModelGlb(modelBuffer)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load model: ${modelFile.absolutePath}", e)
+            false
+        }
+    }
+
+    private fun resolveGltfResource(baseDir: File?, uriString: String): ByteBuffer {
+        if (baseDir == null || uriString.startsWith("data:")) {
+            return ByteBuffer.allocateDirect(0)
+        }
+        return try {
+            val decoded = Uri.decode(uriString).substringBefore('#').substringBefore('?')
+            val candidate = File(baseDir, decoded).canonicalFile
+            if (!candidate.path.startsWith(baseDir.path) || !candidate.exists()) {
+                Log.w(TAG, "Missing glTF resource: $uriString")
+                return ByteBuffer.allocateDirect(0)
+            }
+            loadFileToBuffer(candidate) ?: ByteBuffer.allocateDirect(0)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to resolve glTF resource: $uriString", e)
+            ByteBuffer.allocateDirect(0)
+        }
+    }
+
+    private fun loadFileToBuffer(file: File): ByteBuffer? {
+        if (!file.exists()) return null
+        val bytes = file.readBytes()
+        return ByteBuffer.allocateDirect(bytes.size).also {
+            it.put(bytes)
+            it.rewind()
         }
     }
 
