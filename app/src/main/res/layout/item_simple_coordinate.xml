@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
@@ -66,6 +67,18 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Edit button -->
+    <ImageButton
+        android:id="@+id/button_edit"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="8dp"
+        android:layout_marginEnd="2dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/edit_coordinate"
+        android:src="@drawable/ic_edit_blue"
+        app:tint="#0D47A1" />
+
     <!-- Delete (trash) button -->
     <ImageButton
         android:id="@+id/button_delete"
@@ -75,6 +88,6 @@
         android:layout_marginEnd="4dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/delete_coordinate"
-        android:src="@drawable/ic_delete"
-        android:tint="@android:color/black" />
+        android:src="@drawable/ic_delete_red"
+        app:tint="#B71C1C" />
 </LinearLayout>

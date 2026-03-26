@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.ActivityModelViewerBinding
+import com.example.surveyingapp.R
 import com.google.android.filament.*
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import android.opengl.Matrix as GlMatrix
 
 class ModelViewerActivity : AppCompatActivity() {
 
@@ -47,6 +49,17 @@ class ModelViewerActivity : AppCompatActivity() {
     private var captureMode = false
 
     private var autoRotate = false
+
+    // Euler rotation angles (degrees) driven by SeekBars and auto-rotate.
+    private var rotX = 0f
+    private var rotY = 0f
+    private var rotZ = 0f
+    // The unit-cube base transform stored after transformToUnitCube(); rotation is composed on top.
+    private var baseTransform: FloatArray? = null
+
+    // Dynamic lighting: a directional sun light toggled by the user.
+    private var dynamicLightingEnabled = true
+    private var sunLightEntity: Int = 0
 
     companion object {
         private const val EXTRA_MODEL_PATH = "model_path"
@@ -109,6 +122,8 @@ class ModelViewerActivity : AppCompatActivity() {
         } else {
             binding.btnResetRotation.setOnClickListener { clickedResetView() }
             binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
+            binding.btnToggleLighting.setOnClickListener { clickedToggleLighting() }
+            setupRotationControls()
 
             if (captureMode) {
                 // Show capture controls row
@@ -204,12 +219,33 @@ class ModelViewerActivity : AppCompatActivity() {
             }
             viewer.transformToUnitCube()
 
+            // Snapshot the unit-cube transform so rotation is always composed on top of it.
+            viewer.asset?.let { asset ->
+                val tm = viewer.engine.transformManager
+                val base = FloatArray(16)
+                tm.getTransform(tm.getInstance(asset.root), base)
+                baseTransform = base
+            }
+
             applyThumbnailCameraFraming(viewer.view.camera)
             hasAppliedThumbnailFraming = true
 
             modelReadyForThumbnail = true
             framesAfterLoad = 0
             binding.progressLoading.visibility = View.GONE
+
+            // Create a directional sun light so the user can toggle it on/off.
+            // Done here (after the engine is live) to avoid a use-before-init crash.
+            val sun = EntityManager.get().create()
+            LightManager.Builder(LightManager.Type.DIRECTIONAL)
+                .color(1.0f, 0.98f, 0.95f)   // slightly warm white
+                .intensity(100_000f)
+                .direction(0.5f, -1.0f, -0.5f)
+                .castShadows(false)
+                .build(viewer.engine, sun)
+            viewer.scene.addEntity(sun)
+            sunLightEntity = sun
+            dynamicLightingEnabled = true
         }
     }
 
@@ -283,6 +319,15 @@ class ModelViewerActivity : AppCompatActivity() {
             }
              val viewer = newModelViewer
              if (viewer != null) {
+                 // Auto-rotate: advance Y angle and update SeekBar UI (fromUser=false → no recursion)
+                 if (autoRotate) {
+                     rotY = (rotY + 0.5f) % 360f
+                     val yDeg = rotY.toInt()
+                     binding.seekRotationY.progress = yDeg
+                     binding.textRotationY.text = "${yDeg}°"
+                     applyRotation()
+                 }
+
                  viewer.render(frameTimeNanos)
                  lastRenderTimeNs = frameTimeNanos
 
@@ -519,13 +564,102 @@ class ModelViewerActivity : AppCompatActivity() {
 
     private fun clickedResetView() {
         val viewer = newModelViewer ?: return
+
+        // Stop auto-rotate
+        autoRotate = false
+        binding.btnAutoRotate.text = getString(R.string.auto_rotate)
+
+        // Reset rotation angles and SeekBars
+        rotX = 0f; rotY = 0f; rotZ = 0f
+        binding.seekRotationX.progress = 0; binding.textRotationX.text = "0°"
+        binding.seekRotationY.progress = 0; binding.textRotationY.text = "0°"
+        binding.seekRotationZ.progress = 0; binding.textRotationZ.text = "0°"
+
+        // Re-centre model and re-snapshot base transform
         viewer.transformToUnitCube()
+        viewer.asset?.let { asset ->
+            val tm = viewer.engine.transformManager
+            val base = FloatArray(16)
+            tm.getTransform(tm.getInstance(asset.root), base)
+            baseTransform = base
+        }
         applyThumbnailCameraFraming(viewer.view.camera)
     }
 
     private fun clickedAutoRotate() {
         autoRotate = !autoRotate
+        binding.btnAutoRotate.text = if (autoRotate) "Stop" else getString(R.string.auto_rotate)
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
+    }
+
+    private fun clickedToggleLighting() {
+        val viewer = newModelViewer ?: return
+        val light = sunLightEntity
+        if (light == 0) return  // light not yet created (model still loading)
+
+        dynamicLightingEnabled = !dynamicLightingEnabled
+        if (dynamicLightingEnabled) {
+            viewer.scene.addEntity(light)
+            binding.btnToggleLighting.text = getString(R.string.lighting_on)
+        } else {
+            viewer.scene.removeEntity(light)
+            binding.btnToggleLighting.text = getString(R.string.lighting_off)
+        }
+        Log.d("ModelViewerActivity", "dynamicLighting set to $dynamicLightingEnabled")
+    }
+
+    private fun setupRotationControls() {
+        fun makeListener(
+            setAngle: (Float) -> Unit,
+            updateLabel: (Int) -> Unit
+        ) = object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
+                if (!fromUser) return   // ignore programmatic updates (e.g. from auto-rotate)
+                setAngle(p.toFloat())
+                updateLabel(p)
+                applyRotation()
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        }
+
+        binding.seekRotationX.setOnSeekBarChangeListener(
+            makeListener({ v -> rotX = v }, { p -> binding.textRotationX.text = "${p}°" })
+        )
+        binding.seekRotationY.setOnSeekBarChangeListener(
+            makeListener({ v -> rotY = v }, { p -> binding.textRotationY.text = "${p}°" })
+        )
+        binding.seekRotationZ.setOnSeekBarChangeListener(
+            makeListener({ v -> rotZ = v }, { p -> binding.textRotationZ.text = "${p}°" })
+        )
+    }
+
+    /**
+     * Composes Euler X→Y→Z rotations with the stored unit-cube base transform and
+     * applies the result to the model's root entity.  Must be called on the main thread.
+     */
+    private fun applyRotation() {
+        val viewer = newModelViewer ?: return
+        val asset  = viewer.asset   ?: return
+        val base   = baseTransform  ?: return
+
+        // Build individual rotation matrices
+        val rx = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotX, 1f, 0f, 0f) }
+        val ry = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotY, 0f, 1f, 0f) }
+        val rz = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotZ, 0f, 0f, 1f) }
+
+        // Combine rotations: rx * ry * rz
+        val temp = FloatArray(16)
+        val rot  = FloatArray(16)
+        GlMatrix.multiplyMM(temp, 0, rx, 0, ry, 0)
+        GlMatrix.multiplyMM(rot,  0, temp, 0, rz, 0)
+
+        // Apply on top of the base (unit-cube) transform: rot * base
+        val combined = FloatArray(16)
+        GlMatrix.multiplyMM(combined, 0, rot, 0, base, 0)
+
+        val tm = viewer.engine.transformManager
+        tm.setTransform(tm.getInstance(asset.root), combined)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -580,6 +714,14 @@ class ModelViewerActivity : AppCompatActivity() {
 
         // Destroy model assets immediately — safe while engine is still alive.
         try {
+            // Remove and destroy the dynamic sun light before the model, so the
+            // scene has no dangling references when destroyModel() runs.
+            if (sunLightEntity != 0) {
+                viewer.scene.removeEntity(sunLightEntity)
+                viewer.engine.lightManager.destroy(sunLightEntity)
+                EntityManager.get().destroy(sunLightEntity)
+                sunLightEntity = 0
+            }
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
         } catch (t: Throwable) {

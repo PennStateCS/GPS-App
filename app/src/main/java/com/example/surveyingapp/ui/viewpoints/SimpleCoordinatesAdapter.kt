@@ -1,15 +1,18 @@
 package com.example.surveyingapp.ui.viewpoints
 
+import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PorterDuff
 import android.util.Log
 import android.util.LruCache
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -29,7 +32,8 @@ import java.util.Locale
  */
 class SimpleCoordinatesAdapter(
     private val onClick: (Coordinate) -> Unit, // item click callback
-    private val onDelete: (Coordinate) -> Unit // delete callback
+    private val onDelete: (Coordinate) -> Unit, // delete callback
+    private val onEdit: (Coordinate) -> Unit = {} // edit callback
 ) : RecyclerView.Adapter<SimpleCoordinatesAdapter.Holder>() {
 
     companion object {
@@ -191,9 +195,22 @@ class SimpleCoordinatesAdapter(
             Log.d("SimpleCoordinatesAdapter", "Row body clicked for coordinate: ${p.id}")
             onClick(p)
         }
+        // Edit button
+        val editBtn = holder.itemView.findViewById<ImageButton>(R.id.button_edit)
+        if (editBtn != null) {
+            editBtn.imageTintList = ColorStateList.valueOf(Color.parseColor("#0D47A1"))
+            editBtn.imageTintMode = PorterDuff.Mode.SRC_IN
+            editBtn.setOnClickListener {
+                Log.d("SimpleCoordinatesAdapter", "Edit clicked for coordinate: ${p.id}")
+                onEdit(p)
+            }
+        }
+
         // Delete button
-        val deleteBtn = holder.itemView.findViewById<View>(R.id.button_delete)
+        val deleteBtn = holder.itemView.findViewById<ImageButton>(R.id.button_delete)
         if (deleteBtn != null) {
+            deleteBtn.imageTintList = ColorStateList.valueOf(Color.parseColor("#B71C1C"))
+            deleteBtn.imageTintMode = PorterDuff.Mode.SRC_IN
             deleteBtn.setOnClickListener {
                 Log.d("SimpleCoordinatesAdapter", "Delete clicked for coordinate: ${p.id}")
                 onDelete(p)
