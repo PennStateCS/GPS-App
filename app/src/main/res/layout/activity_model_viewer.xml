@@ -207,7 +207,7 @@
 
             </LinearLayout>
 
-            <!-- Control Buttons -->
+            <!-- Control Buttons Row 1: Reset / Auto-rotate -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -231,6 +231,36 @@
                     android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:text="@string/auto_rotate" />
+
+            </LinearLayout>
+
+            <!-- Control Buttons Row 2: Capture Thumbnail / Done (only shown in capture mode) -->
+            <LinearLayout
+                android:id="@+id/capture_controls_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <Button
+                    android:id="@+id/btn_capture_thumbnail"
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
+                    android:text="Capture Thumbnail" />
+
+                <Button
+                    android:id="@+id/btn_done_capture"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="Done" />
 
             </LinearLayout>
 

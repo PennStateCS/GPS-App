@@ -183,9 +183,9 @@ class ModelsAdapter(
             val diff = now.time - timestamp
 
             return when {
-                diff < 24 * 60 * 60 * 1000 -> "Added today"
-                diff < 7 * 24 * 60 * 60 * 1000 -> {
-                    val days = (diff / (24 * 60 * 60 * 1000)).toInt()
+                diff < 24L * 60 * 60 * 1000 -> "Added today"
+                diff < 7L * 24 * 60 * 60 * 1000 -> {
+                    val days = (diff / (24L * 60 * 60 * 1000)).toInt()
                     "Added ${days}d ago"
                 }
                 else -> {
