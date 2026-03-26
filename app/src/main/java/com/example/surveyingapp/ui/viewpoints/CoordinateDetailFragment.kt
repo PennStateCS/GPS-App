@@ -17,6 +17,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -366,12 +367,20 @@ class CoordinateDetailFragment : Fragment() {
 
     fun launchEditDialog() {
         val current = lastCoordinate ?: return
-        EditCoordinateDialogFragment(current) { updated ->
-            viewLifecycleOwner.lifecycleScope.launch {
-                viewModel.updateCoordinate(updated)
-                lastCoordinate = updated
-                bindCoordinate(updated)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val models = try {
+                val db = AppDatabase.getDatabase(requireContext())
+                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+            } catch (_: Exception) {
+                emptyList()
             }
-        }.show(parentFragmentManager, "edit_coordinate_dialog")
+            EditCoordinateDialogFragment(current, models) { updated ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    viewModel.updateCoordinate(updated)
+                    lastCoordinate = updated
+                    bindCoordinate(updated)
+                }
+            }.show(parentFragmentManager, "edit_coordinate_dialog")
+        }
     }
 }
