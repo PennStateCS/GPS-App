@@ -198,55 +198,42 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun updateLiveTracking(fix: Fix) {
-        val currentPos = LatLng(fix.latDeg, fix.lonDeg)
-
-        // Store current fix for stakeout calculations
-        currentFix = fix
-
-        // Update current position marker
-        updateCurrentMarker(fix.latDeg, fix.lonDeg)
-
-        // Update accuracy circle if horizontal accuracy is available
-        updateAccuracyCircle(currentPos, fix.hAccM)
-
-        // Update live trail with intelligent thinning
-        updateLiveTrail(currentPos, fix)
-
-        // Update stakeout if active
-        updateStakeoutCalculations(currentPos)
+        try {
+            val currentPos = LatLng(fix.latDeg, fix.lonDeg)
+            currentFix = fix
+            try { updateCurrentMarker(fix.latDeg, fix.lonDeg) } catch (e: Exception) { Log.w(TAG, "updateCurrentMarker failed", e) }
+            try { updateAccuracyCircle(currentPos, fix.hAccM) } catch (e: Exception) { Log.w(TAG, "updateAccuracyCircle failed", e) }
+            try { updateLiveTrail(currentPos, fix) } catch (e: Exception) { Log.w(TAG, "updateLiveTrail failed", e) }
+            try { updateStakeoutCalculations(currentPos) } catch (e: Exception) { Log.w(TAG, "updateStakeoutCalculations failed", e) }
+        } catch (e: Exception) {
+            Log.e(TAG, "updateLiveTracking error", e)
+        }
     }
 
     private fun updateStakeoutCalculations(currentPos: LatLng) {
         val target = stakeoutTarget ?: return
         if (!isStakeoutMode) return
-
-        // Calculate distance and bearing to target
-        val distance = calculateDistance(currentPos, target)
-        val bearing = calculateBearing(currentPos, target)
-
-        // Format distance with appropriate precision
-        val distanceText = when {
-            distance < 1.0 -> String.format(Locale.getDefault(), "%.2f m", distance)
-            distance < 10.0 -> String.format(Locale.getDefault(), "%.1f m", distance)
-            else -> String.format(Locale.getDefault(), "%.0f m", distance)
+        try {
+            val distance = calculateDistance(currentPos, target)
+            val bearing = calculateBearing(currentPos, target)
+            val distanceText = when {
+                distance < 1.0 -> String.format(Locale.getDefault(), "%.2f m", distance)
+                distance < 10.0 -> String.format(Locale.getDefault(), "%.1f m", distance)
+                else -> String.format(Locale.getDefault(), "%.0f m", distance)
+            }
+            txtStakeoutDistance?.text = distanceText
+            txtStakeoutBearing?.text = String.format(Locale.getDefault(), "%.1f°", bearing)
+            val color = when {
+                distance < STAKEOUT_GREEN_THRESHOLD -> 0xFF4CAF50.toInt()
+                distance < STAKEOUT_AMBER_THRESHOLD -> 0xFFFF9800.toInt()
+                else -> 0xFFF44336.toInt()
+            }
+            txtStakeoutDistance?.setTextColor(color)
+            txtStakeoutBearing?.setTextColor(color)
+            updateStakeoutMarkerColor(distance)
+        } catch (e: Exception) {
+            Log.w(TAG, "updateStakeoutCalculations error", e)
         }
-
-        // Update UI with traffic light colors
-        txtStakeoutDistance?.text = distanceText
-        txtStakeoutBearing?.text = String.format(Locale.getDefault(), "%.1f°", bearing)
-
-        // Update text colors based on distance thresholds
-        val color = when {
-            distance < STAKEOUT_GREEN_THRESHOLD -> 0xFF4CAF50.toInt() // Green
-            distance < STAKEOUT_AMBER_THRESHOLD -> 0xFFFF9800.toInt() // Amber/Orange
-            else -> 0xFFF44336.toInt() // Red
-        }
-
-        txtStakeoutDistance?.setTextColor(color)
-        txtStakeoutBearing?.setTextColor(color)
-
-        // Update marker color using correct BitmapDescriptor approach
-        updateStakeoutMarkerColor(distance)
     }
 
     private fun updateStakeoutMarkerColor(distance: Double) {
@@ -281,46 +268,37 @@ class RenderMapFragment : Fragment() {
 
     private fun updateAccuracyCircle(position: LatLng, hAccM: Double?) {
         val map = googleMap ?: return
-
-        // Remove existing accuracy circle
-        accuracyCircle?.remove()
+        try { accuracyCircle?.remove() } catch (_: Exception) {}
         accuracyCircle = null
-
-        // Only draw accuracy circle if horizontal accuracy is present and reasonable
         hAccM?.let { accuracy ->
-            if (accuracy > 0 && accuracy < 1000) { // Skip if accuracy is unreasonable
-                accuracyCircle = map.addCircle(
-                    CircleOptions()
-                        .center(position)
-                        .radius(accuracy) // radius in meters
-                        .strokeColor(0x880000FF.toInt()) // Semi-transparent blue stroke
-                        .fillColor(0x220000FF.toInt())   // Very light blue fill
-                        .strokeWidth(2f)
-                )
+            if (accuracy > 0 && accuracy < 1000) {
+                try {
+                    accuracyCircle = map.addCircle(
+                        CircleOptions()
+                            .center(position)
+                            .radius(accuracy)
+                            .strokeColor(0x880000FF.toInt())
+                            .fillColor(0x220000FF.toInt())
+                            .strokeWidth(2f)
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to add accuracy circle", e)
+                }
             }
         }
     }
 
     private fun updateLiveTrail(currentPos: LatLng, currentFix: Fix) {
         val map = googleMap ?: return
-
-        // Check if we should add this point to the trail
-        val shouldAddPoint = shouldAddTrailPoint(currentPos, currentFix)
-
-        if (shouldAddPoint) {
-            // Add point to trail
+        if (!shouldAddTrailPoint(currentPos, currentFix)) return
+        try {
             trailPoints.add(currentPos)
             lastTrailFix = currentFix
-
-            // Limit trail length for performance
-            if (trailPoints.size > MAX_TRAIL_POINTS) {
-                trailPoints.removeAt(0) // Remove oldest point
-            }
-
-            // Update trail polyline
+            if (trailPoints.size > MAX_TRAIL_POINTS) trailPoints.removeAt(0)
             updateTrailPolyline(map)
-
             Log.d(TAG, "Added trail point. Total points: ${trailPoints.size}")
+        } catch (e: Exception) {
+            Log.w(TAG, "updateLiveTrail error", e)
         }
     }
 
@@ -378,18 +356,20 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun updateTrailPolyline(map: GoogleMap) {
-        // Remove existing trail
-        liveTrail?.remove()
-
-        // Create new trail polyline if we have enough points
+        try { liveTrail?.remove() } catch (_: Exception) {}
+        liveTrail = null
         if (trailPoints.size >= 2) {
-            liveTrail = map.addPolyline(
-                PolylineOptions()
-                    .addAll(trailPoints)
-                    .color(0xFFFF6B35.toInt()) // Orange trail
-                    .width(4f)
-                    .geodesic(true) // Account for Earth's curvature
-            )
+            try {
+                liveTrail = map.addPolyline(
+                    PolylineOptions()
+                        .addAll(trailPoints)
+                        .color(0xFFFF6B35.toInt())
+                        .width(4f)
+                        .geodesic(true)
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to update trail polyline", e)
+            }
         }
     }
 
@@ -437,24 +417,41 @@ class RenderMapFragment : Fragment() {
     }
 
     // Lifecycle pass-throughs
-    override fun onStart() { super.onStart(); mapView?.onStart() }
-    override fun onResume() { super.onResume(); mapView?.onResume() }
-    override fun onPause() { mapView?.onPause(); super.onPause() }
+    override fun onStart() {
+        super.onStart()
+        try { mapView?.onStart() } catch (e: Exception) { Log.e(TAG, "onStart error", e) }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try { mapView?.onResume() } catch (e: Exception) { Log.e(TAG, "onResume error", e) }
+    }
+
+    override fun onPause() {
+        try { mapView?.onPause() } catch (e: Exception) { Log.e(TAG, "onPause error", e) }
+        super.onPause()
+    }
+
     override fun onStop() {
-        // Clear live tracking elements when stopping
-        clearLiveTrail()
-        clearAccuracyCircle()
-        mapView?.onStop()
+        try {
+            clearLiveTrail()
+            clearAccuracyCircle()
+            mapView?.onStop()
+        } catch (e: Exception) {
+            Log.e(TAG, "onStop error", e)
+        }
         super.onStop()
     }
 
     override fun onDestroyView() {
-        // Clean up all tracking elements
-        clearLiveTrail()
-        clearAccuracyCircle()
-        currentMarker?.remove()
-        currentMarker = null
-
+        try {
+            clearLiveTrail()
+            clearAccuracyCircle()
+            currentMarker?.remove()
+            currentMarker = null
+        } catch (e: Exception) {
+            Log.e(TAG, "onDestroyView cleanup error", e)
+        }
         mapView = null
         placeholder = null
         super.onDestroyView()
@@ -467,44 +464,48 @@ class RenderMapFragment : Fragment() {
             .get(CoordinatesViewModel::class.java)
         vm.allCoordinates.observe(viewLifecycleOwner) { points ->
             if (googleMap == null) return@observe
-            markerMap.values.forEach { it.remove() }
-            markerMap.clear()
-            if (points.isEmpty()) {
-                placeholder?.visibility = View.VISIBLE
-                lastLatLngs = emptyList()
-                toggleAdapter.submit(emptyList())
-                return@observe
-            }
-            placeholder?.visibility = View.GONE
-            val latLngsVisible = ArrayList<LatLng>()
-            val toggleItems = mutableListOf<CoordinateToggleItem>()
-            points.forEach { p ->
-                val ll = LatLng(p.latitude, p.longitude)
-                val visible = visibilityMap[p.id] ?: true
-                visibilityMap.putIfAbsent(p.id, visible)
-
-                // Add marker immediately with default icon so the map responds instantly.
-                val opts = MarkerOptions().position(ll).title(p.name)
-                val marker = googleMap!!.addMarker(opts)
-                if (marker != null) {
-                    marker.isVisible = visible
-                    marker.tag = p.id
-                    markerMap[p.id] = marker
-                    if (visible) latLngsVisible.add(ll)
-
-                    // Load the icon asynchronously — handles both built-in drawables and
-                    // "model:<id>" thumbnail keys without blocking the observer.
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        val descriptor = buildMarkerDescriptor(p.icon, p.color)
-                        if (descriptor != null) marker.setIcon(descriptor)
-                    }
+            try {
+                markerMap.values.forEach { it.remove() }
+                markerMap.clear()
+                if (points.isEmpty()) {
+                    placeholder?.visibility = View.VISIBLE
+                    lastLatLngs = emptyList()
+                    toggleAdapter.submit(emptyList())
+                    return@observe
                 }
-                toggleItems += CoordinateToggleItem(p.id, p.name, visible, p.icon, p.color)
-                coordinateMap[p.id] = p
+                placeholder?.visibility = View.GONE
+                val latLngsVisible = ArrayList<LatLng>()
+                val toggleItems = mutableListOf<CoordinateToggleItem>()
+                points.forEach { p ->
+                    val ll = LatLng(p.latitude, p.longitude)
+                    val visible = visibilityMap[p.id] ?: true
+                    visibilityMap.putIfAbsent(p.id, visible)
+
+                    // Add marker immediately with default icon so the map responds instantly.
+                    val opts = MarkerOptions().position(ll).title(p.name)
+                    val marker = googleMap!!.addMarker(opts)
+                    if (marker != null) {
+                        marker.isVisible = visible
+                        marker.tag = p.id
+                        markerMap[p.id] = marker
+                        if (visible) latLngsVisible.add(ll)
+
+                        // Load the icon asynchronously — handles both built-in drawables and
+                        // "model:<id>" thumbnail keys without blocking the observer.
+                        viewLifecycleOwner.lifecycleScope.launch {
+                            val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                            if (descriptor != null) marker.setIcon(descriptor)
+                        }
+                    }
+                    toggleItems += CoordinateToggleItem(p.id, p.name, visible, p.icon, p.color)
+                    coordinateMap[p.id] = p
+                }
+                lastLatLngs = latLngsVisible
+                toggleAdapter.submit(toggleItems)
+                updateCamera(latLngsVisible)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in data binding observer", e)
             }
-            lastLatLngs = latLngsVisible
-            toggleAdapter.submit(toggleItems)
-            updateCamera(latLngsVisible)
         }
     }
 
@@ -647,66 +648,73 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun showAllCoordinates() {
-        // Set all coordinates to visible
-        coordinateMap.keys.forEach { id ->
-            visibilityMap[id] = true
-            markerMap[id]?.isVisible = true
+        try {
+            coordinateMap.keys.forEach { id ->
+                visibilityMap[id] = true
+                try { markerMap[id]?.isVisible = true } catch (_: Exception) {}
+            }
+            refreshToggleList()
+        } catch (e: Exception) {
+            Log.w(TAG, "showAllCoordinates error", e)
         }
-        // Update the adapter to reflect changes
-        refreshToggleList()
     }
 
     private fun hideAllCoordinates() {
-        // Set all coordinates to hidden
-        coordinateMap.keys.forEach { id ->
-            visibilityMap[id] = false
-            markerMap[id]?.isVisible = false
+        try {
+            coordinateMap.keys.forEach { id ->
+                visibilityMap[id] = false
+                try { markerMap[id]?.isVisible = false } catch (_: Exception) {}
+            }
+            refreshToggleList()
+        } catch (e: Exception) {
+            Log.w(TAG, "hideAllCoordinates error", e)
         }
-        // Update the adapter to reflect changes
-        refreshToggleList()
     }
 
     private fun refreshToggleList() {
-        // Rebuild the toggle list with current visibility states
-        val toggleItems = coordinateMap.values.map { coordinate ->
-            val visible = visibilityMap[coordinate.id] ?: true
-            CoordinateToggleItem(coordinate.id, coordinate.name, visible, coordinate.icon, coordinate.color)
+        try {
+            val toggleItems = coordinateMap.values.map { coordinate ->
+                val visible = visibilityMap[coordinate.id] ?: true
+                CoordinateToggleItem(coordinate.id, coordinate.name, visible, coordinate.icon, coordinate.color)
+            }
+            toggleAdapter.submit(toggleItems)
+        } catch (e: Exception) {
+            Log.w(TAG, "refreshToggleList error", e)
         }
-        toggleAdapter.submit(toggleItems)
     }
 
     private fun drawCoordinateGrid() {
         val map = googleMap ?: return
-        val bounds = map.projection.visibleRegion.latLngBounds
-
-        // Draw latitude lines
-        val latStep = calculateGridStep(bounds.northeast.latitude - bounds.southwest.latitude)
-        var lat = (bounds.southwest.latitude / latStep).toInt() * latStep
-        while (lat <= bounds.northeast.latitude) {
-            val line = map.addPolyline(
-                PolylineOptions()
-                    .add(LatLng(lat, bounds.southwest.longitude))
-                    .add(LatLng(lat, bounds.northeast.longitude))
-                    .color(0x40000000) // Semi-transparent black
-                    .width(1f)
-            )
-            gridLines.add(line)
-            lat += latStep
-        }
-
-        // Draw longitude lines
-        val lngStep = calculateGridStep(bounds.northeast.longitude - bounds.southwest.longitude)
-        var lng = (bounds.southwest.longitude / lngStep).toInt() * lngStep
-        while (lng <= bounds.northeast.longitude) {
-            val line = map.addPolyline(
-                PolylineOptions()
-                    .add(LatLng(bounds.southwest.latitude, lng))
-                    .add(LatLng(bounds.northeast.latitude, lng))
-                    .color(0x40000000)
-                    .width(1f)
-            )
-            gridLines.add(line)
-            lng += lngStep
+        try {
+            val bounds = map.projection.visibleRegion.latLngBounds
+            val latStep = calculateGridStep(bounds.northeast.latitude - bounds.southwest.latitude)
+            var lat = (bounds.southwest.latitude / latStep).toInt() * latStep
+            while (lat <= bounds.northeast.latitude) {
+                try {
+                    gridLines.add(map.addPolyline(
+                        PolylineOptions()
+                            .add(LatLng(lat, bounds.southwest.longitude))
+                            .add(LatLng(lat, bounds.northeast.longitude))
+                            .color(0x40000000).width(1f)
+                    ))
+                } catch (_: Exception) {}
+                lat += latStep
+            }
+            val lngStep = calculateGridStep(bounds.northeast.longitude - bounds.southwest.longitude)
+            var lng = (bounds.southwest.longitude / lngStep).toInt() * lngStep
+            while (lng <= bounds.northeast.longitude) {
+                try {
+                    gridLines.add(map.addPolyline(
+                        PolylineOptions()
+                            .add(LatLng(bounds.southwest.latitude, lng))
+                            .add(LatLng(bounds.northeast.latitude, lng))
+                            .color(0x40000000).width(1f)
+                    ))
+                } catch (_: Exception) {}
+                lng += lngStep
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "drawCoordinateGrid error", e)
         }
     }
 
@@ -730,41 +738,34 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun drawBoundaryLines() {
-        val visibleCoords = coordinateMap.values.filter {
-            visibilityMap[it.id] == true
-        }.sortedBy { it.timestamp }
-
-        if (visibleCoords.size < 2) return
-
-        // Connect coordinates in sequence to form property boundary
-        for (i in 0 until visibleCoords.size - 1) {
-            val start = LatLng(visibleCoords[i].latitude, visibleCoords[i].longitude)
-            val end = LatLng(visibleCoords[i + 1].latitude, visibleCoords[i + 1].longitude)
-
-            val line = googleMap?.addPolyline(
-                PolylineOptions()
-                    .add(start, end)
-                    .color(0xFF2196F3.toInt()) // Blue boundary lines
-                    .width(3f)
-                    .geodesic(true)
-            )
-            line?.let { boundaryLines.add(it) }
-        }
-
-        // Close the boundary if we have enough points
-        if (visibleCoords.size >= 3) {
-            val start = LatLng(visibleCoords.last().latitude, visibleCoords.last().longitude)
-            val end = LatLng(visibleCoords.first().latitude, visibleCoords.first().longitude)
-
-            val closingLine = googleMap?.addPolyline(
-                PolylineOptions()
-                    .add(start, end)
-                    .color(0xFF2196F3.toInt())
-                    .width(3f)
-                    .geodesic(true)
-                    .pattern(listOf(Dash(20f), Gap(10f))) // Dashed closing line
-            )
-            closingLine?.let { boundaryLines.add(it) }
+        try {
+            val visibleCoords = coordinateMap.values.filter {
+                visibilityMap[it.id] == true
+            }.sortedBy { it.timestamp }
+            if (visibleCoords.size < 2) return
+            for (i in 0 until visibleCoords.size - 1) {
+                val start = LatLng(visibleCoords[i].latitude, visibleCoords[i].longitude)
+                val end = LatLng(visibleCoords[i + 1].latitude, visibleCoords[i + 1].longitude)
+                try {
+                    googleMap?.addPolyline(
+                        PolylineOptions().add(start, end)
+                            .color(0xFF2196F3.toInt()).width(3f).geodesic(true)
+                    )?.let { boundaryLines.add(it) }
+                } catch (_: Exception) {}
+            }
+            if (visibleCoords.size >= 3) {
+                val start = LatLng(visibleCoords.last().latitude, visibleCoords.last().longitude)
+                val end = LatLng(visibleCoords.first().latitude, visibleCoords.first().longitude)
+                try {
+                    googleMap?.addPolyline(
+                        PolylineOptions().add(start, end)
+                            .color(0xFF2196F3.toInt()).width(3f).geodesic(true)
+                            .pattern(listOf(Dash(20f), Gap(10f)))
+                    )?.let { boundaryLines.add(it) }
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "drawBoundaryLines error", e)
         }
     }
 
@@ -903,29 +904,29 @@ class RenderMapFragment : Fragment() {
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun createInfoWindowView(marker: Marker): View? {
-        val coordinateId = marker.tag as? String
-        val coordinate = coordinateId?.let { coordinateMap[it] }
-
-        @Suppress("InflateParams")
-        val view = layoutInflater.inflate(R.layout.custom_info_window, null)
-        val titleView = view.findViewById<TextView>(R.id.info_window_title)
-        val contentView = view.findViewById<TextView>(R.id.info_window_content)
-
-        titleView.text = coordinate?.name ?: marker.title ?: "Unknown"
-        contentView.text = buildString {
-            if (coordinate != null) {
-                append("Lat: ${String.format(Locale.getDefault(), "%.6f", coordinate.latitude)}\n")
-                append("Lon: ${String.format(Locale.getDefault(), "%.6f", coordinate.longitude)}")
-                append("\nElevation: ${String.format(Locale.getDefault(), "%.2f", coordinate.altitude)}m")
-                if (!coordinate.note.isNullOrBlank()) {
-                    append("\n${coordinate.note}")
+        return try {
+            val coordinateId = marker.tag as? String
+            val coordinate = coordinateId?.let { coordinateMap[it] }
+            @Suppress("InflateParams")
+            val view = layoutInflater.inflate(R.layout.custom_info_window, null)
+            val titleView = view.findViewById<TextView>(R.id.info_window_title)
+            val contentView = view.findViewById<TextView>(R.id.info_window_content)
+            titleView.text = coordinate?.name ?: marker.title ?: "Unknown"
+            contentView.text = buildString {
+                if (coordinate != null) {
+                    append("Lat: ${String.format(Locale.getDefault(), "%.6f", coordinate.latitude)}\n")
+                    append("Lon: ${String.format(Locale.getDefault(), "%.6f", coordinate.longitude)}")
+                    append("\nElevation: ${String.format(Locale.getDefault(), "%.2f", coordinate.altitude)}m")
+                    if (!coordinate.note.isNullOrBlank()) append("\n${coordinate.note}")
+                } else {
+                    append("Position: ${marker.position.latitude}, ${marker.position.longitude}")
                 }
-            } else {
-                append("Position: ${marker.position.latitude}, ${marker.position.longitude}")
             }
+            view
+        } catch (e: Exception) {
+            Log.w(TAG, "createInfoWindowView error", e)
+            null
         }
-
-        return view
     }
 
     private fun getCurrentCoordinateFormat(): String {
@@ -966,45 +967,37 @@ class RenderMapFragment : Fragment() {
     private fun setupMapClickListener() {
         googleMap?.setOnMapClickListener { latLng ->
             if (!isStakeoutMode) return@setOnMapClickListener
-
-            // Update stakeout target
-            stakeoutTarget = latLng
-            txtStakeoutTarget?.text = "Target: ${latLng.latitude}, ${latLng.longitude}"
-
-            // Move or add stakeout marker
-            if (stakeoutMarker == null) {
-                // Add new marker for stakeout target
-                stakeoutMarker = googleMap?.addMarker(
-                    MarkerOptions()
-                        .position(latLng)
-                        .title("Stakeout Target")
-                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                )
-            } else {
-                // Move existing marker to new target
-                stakeoutMarker?.position = latLng
+            try {
+                stakeoutTarget = latLng
+                txtStakeoutTarget?.text = "Target: ${latLng.latitude}, ${latLng.longitude}"
+                if (stakeoutMarker == null) {
+                    stakeoutMarker = googleMap?.addMarker(
+                        MarkerOptions()
+                            .position(latLng)
+                            .title("Stakeout Target")
+                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                    )
+                } else {
+                    try { stakeoutMarker?.position = latLng } catch (e: Exception) { Log.w(TAG, "stakeout marker move failed", e) }
+                }
+                updateStakeoutDistanceAndBearing(latLng)
+            } catch (e: Exception) {
+                Log.w(TAG, "Map click stakeout error", e)
             }
-
-            // Calculate and update distance and bearing to target
-            updateStakeoutDistanceAndBearing(latLng)
         }
     }
 
     private fun updateStakeoutDistanceAndBearing(target: LatLng) {
         val currentPos = lastFixLatLng ?: return
-
-        // Calculate distance in meters
-        val distance = calculateDistance(currentPos, target)
-
-        // Calculate bearing in degrees
-        val bearing = calculateBearing(currentPos, target)
-
-        // Update UI elements
-        txtStakeoutDistance?.text = String.format("Distance: %.1f m", distance)
-        txtStakeoutBearing?.text = String.format("Bearing: %.1f°", bearing)
-
-        // Update stakeout marker color based on distance
-        updateStakeoutMarkerColor(distance)
+        try {
+            val distance = calculateDistance(currentPos, target)
+            val bearing = calculateBearing(currentPos, target)
+            txtStakeoutDistance?.text = String.format(Locale.getDefault(), "Distance: %.1f m", distance)
+            txtStakeoutBearing?.text = String.format(Locale.getDefault(), "Bearing: %.1f°", bearing)
+            updateStakeoutMarkerColor(distance)
+        } catch (e: Exception) {
+            Log.w(TAG, "updateStakeoutDistanceAndBearing error", e)
+        }
     }
 
     private fun calculateBearing(from: LatLng, to: LatLng): Double {
