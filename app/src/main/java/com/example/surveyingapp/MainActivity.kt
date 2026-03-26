@@ -299,6 +299,7 @@ class MainActivity : AppCompatActivity() {
                             // TODO: push into VM / UI as needed
                         }
                     } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         android.util.Log.e("MainActivity", "Error collecting GNSS fixes: ", e)
                     }
                 }
@@ -309,6 +310,7 @@ class MainActivity : AppCompatActivity() {
                             // TODO: update sky UI
                         }
                     } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         android.util.Log.e("MainActivity", "Error collecting GNSS sky data: ", e)
                     }
                 }

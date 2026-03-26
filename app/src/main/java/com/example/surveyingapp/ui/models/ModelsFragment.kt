@@ -56,31 +56,86 @@ class ModelsFragment : Fragment() {
 
         viewModel = ViewModelProvider(this)[ModelsViewModel::class.java]
         setupRecyclerView()
+        setupSwipeRefresh()
         setupFab()
         observeViewModel()
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefreshModels.setColorSchemeResources(
+            android.R.color.holo_purple,
+            android.R.color.holo_blue_dark
+        )
+        binding.swipeRefreshModels.setOnRefreshListener {
+            // Force every visible card to rebind so thumbnails are reloaded from disk
+            if (adapter.itemCount > 0) {
+                adapter.notifyItemRangeChanged(0, adapter.itemCount)
+            }
+            // Stop the spinner once the rebind is dispatched
+            binding.swipeRefreshModels.isRefreshing = false
+        }
     }
 
     private fun setupRecyclerView() {
         adapter = ModelsAdapter(
             onDeleteClick = { model ->
-                // Show confirmation dialog before deleting
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setTitle("Delete Model")
-                    .setMessage("Are you sure you want to delete '${model.name}'?")
-                    .setPositiveButton("Delete") { _, _ ->
-                        viewModel.deleteModel(model)
-                        // Delete the physical file
-                        try {
-                            File(model.filePath).delete()
-                        } catch (e: Exception) {
-                            // File deletion failed, but continue with database deletion
+                lifecycleScope.launch {
+                    val linkedCount = try {
+                        viewModel.linkedCoordinateCount(model.id)
+                    } catch (e: Exception) {
+                        -1
+                    }
+                    when {
+                        linkedCount < 0 -> {
+                            // DB error — fail safe, do not allow delete
+                            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Error")
+                                .setMessage("Could not verify coordinate associations. Please try again.")
+                                .setPositiveButton("OK", null)
+                                .show()
+                        }
+                        linkedCount > 0 -> {
+                            val noun = if (linkedCount == 1) "coordinate" else "coordinates"
+                            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Cannot Delete")
+                                .setMessage(
+                                    "'${model.name}' is used as an icon on $linkedCount $noun. " +
+                                    "Remove those associations on the View Coordinates page before deleting."
+                                )
+                                .setPositiveButton("OK", null)
+                                .show()
+                        }
+                        else -> {
+                            // No coordinates reference this model — safe to delete
+                            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Delete Model")
+                                .setMessage("Are you sure you want to delete '${model.name}'?")
+                                .setPositiveButton("Delete") { _, _ ->
+                                    viewModel.deleteModel(model)
+                                    // Delete the physical file
+                                    try {
+                                        File(model.filePath).delete()
+                                    } catch (e: Exception) {
+                                        Log.w("ModelsFragment", "File deletion failed for ${model.filePath}: ${e.message}")
+                                    }
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
                         }
                     }
-                    .setNegativeButton("Cancel", null)
-                    .show()
+                }
             },
             onEditClick = { model ->
                 showEditModelDialog(model)
+            },
+            onRecaptureClick = { model ->
+                // Open the model viewer in capture mode so the user can choose a new angle
+                val intent = ModelViewerActivity.newCaptureModeIntent(
+                    requireContext(),
+                    model.filePath,
+                    model.name
+                )
+                startActivity(intent)
             },
             onModelClick = { model ->
                 // Launch 3D model viewer
@@ -117,10 +172,10 @@ class ModelsFragment : Fragment() {
 
             // Show/hide empty state
             if (models.isEmpty()) {
-                binding.recyclerModels.visibility = View.GONE
+                binding.swipeRefreshModels.visibility = View.GONE
                 binding.layoutEmptyState.visibility = View.VISIBLE
             } else {
-                binding.recyclerModels.visibility = View.VISIBLE
+                binding.swipeRefreshModels.visibility = View.VISIBLE
                 binding.layoutEmptyState.visibility = View.GONE
             }
         }
@@ -139,12 +194,14 @@ class ModelsFragment : Fragment() {
                 if (message != null) {
                     binding.textStatusMessage.text = message
                     binding.textStatusMessage.visibility = View.VISIBLE
-                    Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
 
-                    // Hide status message after 3 seconds
+                    // Hide status message after 3 seconds.
+                    // Guard against running after onDestroyView (binding would be null).
                     binding.textStatusMessage.postDelayed({
-                        binding.textStatusMessage.visibility = View.GONE
-                        viewModel.clearStatusMessage()
+                        if (_binding != null) {
+                            binding.textStatusMessage.visibility = View.GONE
+                            viewModel.clearStatusMessage()
+                        }
                     }, 3000)
                 }
             }
@@ -353,6 +410,17 @@ class ModelsFragment : Fragment() {
             viewModel.editModel(modelId, name, description)
         }
         dialog.show(parentFragmentManager, "EditModelDialog")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // DiffUtil only detects field-value changes in Model — it cannot see that
+        // a thumbnail file was overwritten at the same path (thumbnailFilePath unchanged).
+        // Force every visible item to rebind so resolvePreview() evicts the LRU cache
+        // entry and decodes the updated file from disk.
+        if (::adapter.isInitialized && adapter.itemCount > 0) {
+            adapter.notifyItemRangeChanged(0, adapter.itemCount)
+        }
     }
 
     override fun onDestroyView() {

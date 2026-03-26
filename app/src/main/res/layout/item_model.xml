@@ -25,19 +25,21 @@
                 android:id="@+id/image_model_preview"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:scaleType="centerInside"
-                android:background="#FFFFFF"
+                android:scaleType="centerCrop"
+                android:background="@drawable/thumbnail_border"
+                android:padding="1dp"
                 android:visibility="gone" />
 
-            <!-- Fallback placeholder circle shown when no thumbnail exists -->
+            <!-- Fallback placeholder shown while loading or when no thumbnail exists -->
             <ImageView
                 android:id="@+id/image_model_placeholder"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:layout_gravity="center"
-                android:src="@android:drawable/ic_media_play"
-                android:background="@drawable/circle_background"
-                android:scaleType="centerInside" />
+                android:src="@drawable/ic_no_thumbnail"
+                android:background="@drawable/thumbnail_placeholder_bg"
+                android:scaleType="center"
+                android:contentDescription="No thumbnail available" />
 
             <ProgressBar
                 android:id="@+id/progress_preview"
@@ -116,17 +118,27 @@
                 android:id="@+id/btn_edit_model"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_edit"
+                android:src="@drawable/ic_edit_blue"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Edit Model"
-                android:layout_marginEnd="8dp" />
+                android:layout_marginEnd="4dp" />
+
+            <!-- Re-capture thumbnail button -->
+            <ImageButton
+                android:id="@+id/btn_recapture_thumbnail"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_camera_orange"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Recapture Thumbnail"
+                android:layout_marginEnd="4dp" />
 
             <!-- Delete Button -->
             <ImageButton
                 android:id="@+id/btn_delete_model"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_delete"
+                android:src="@drawable/ic_delete_red"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Delete Model" />
 
