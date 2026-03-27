@@ -165,6 +165,16 @@
     <string name="cancel">Cancel</string>
     <string name="capture_default_name">Captured point</string>
 
+    <!-- GNSS Live dev pane strings -->
+    <string name="dev_gnss_live_pause">⏸ Pause</string>
+    <string name="dev_gnss_live_resume">▶ Resume</string>
+    <string name="dev_gnss_live_reset_stats">Reset Stats</string>
+    <string name="dev_gnss_live_reset_toast">Diagnostics counters reset</string>
+    <string name="dev_gnss_section_fix">GNSS Fix</string>
+    <string name="dev_gnss_section_stats">Stream Stats</string>
+    <string name="dev_gnss_section_history">NMEA History (newest first)</string>
+    <string name="dev_gnss_no_data">(no NMEA data yet)</string>
+
     <!-- FixBadge component strings -->
     <string name="fix_badge_satellites">🛰️ %1$d/%2$d sats</string>
     <string name="fix_badge_hdop">HDOP: %1$s</string>

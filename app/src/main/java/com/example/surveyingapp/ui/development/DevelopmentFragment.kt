@@ -49,6 +49,10 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.flow.firstOrNull
+import androidx.fragment.app.viewModels
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticData
+import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.RtkStatus
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -58,6 +62,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
 
+    private val viewModel: DevelopmentViewModel by viewModels()
+
     // Developer categories: lightweight side list for specialized debug panes.
     // Add/remove here to extend; IDs must remain stable for state restoration.
     private val devCategories = listOf(
@@ -66,7 +72,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         SettingsCategory(3, "AR Debug", R.drawable.ic_dev_tools),
         SettingsCategory(4, "Maps Debug", R.drawable.ic_map),
         SettingsCategory(5, "Coordinates", R.drawable.ic_section_location),
-        SettingsCategory(6, "RS2+", R.drawable.ic_section_location)
+        SettingsCategory(6, "RS2+", R.drawable.ic_section_location),
+        SettingsCategory(7, "GNSS Live", R.drawable.ic_satellite_24)
     )
 
     private lateinit var coordinateRepository: CoordinateRepositoryImpl
@@ -96,15 +103,22 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
     override fun provideCategories(): List<SettingsCategory> = devCategories
 
-    override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? = when (category.id) {
-        1 -> setupSystemInfoContent(inflater)    // App & device/runtime diagnostics
-        2 -> setupPermissionsContent(inflater)   // Manifest + grant snapshot (static read; no live observer)
-        3 -> setupArDebugContent(inflater)       // ARCore capability probe (no camera start)
-        4 -> setupMapsDebugContent(inflater)     // Google Maps / Play Services debug
-        5 -> setupCoordinatesDevContent(inflater) // Coordinate generation and management
-        6 -> setupRs2DevContent(inflater)        // RS2+ diagnostics and stream viewer
-        else -> null
-    }
+    override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
+        try {
+            when (category.id) {
+                1 -> setupSystemInfoContent(inflater)     // App & device/runtime diagnostics
+                2 -> setupPermissionsContent(inflater)    // Manifest + grant snapshot
+                3 -> setupArDebugContent(inflater)        // ARCore capability probe (no camera start)
+                4 -> setupMapsDebugContent(inflater)      // Google Maps / Play Services debug
+                5 -> setupCoordinatesDevContent(inflater) // Coordinate generation and management
+                6 -> setupRs2DevContent(inflater)         // RS2+ diagnostics and stream viewer
+                7 -> setupGnssLiveContent()               // Live GNSS fix + NMEA sentence history
+                else -> null
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DevelopmentFragment", "buildCategoryContent failed for id=${category.id}", e)
+            null
+        }
 
     // Helper to create a right‑aligned refresh icon bar reused across dev panes.
     private fun createRefreshBar(onClick: () -> Unit): View {
@@ -192,7 +206,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             }
         } catch (e: Exception) {
             TextView(ctx).apply {
-                text = getString(R.string.dev_perm_error, e.message ?: "")
+                text = "${getString(R.string.dev_perm_error)}: ${e.message ?: ""}"
                 textSize = 14f
                 setPadding(8, 0, 0, 16)
             }
@@ -204,7 +218,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val table = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         // Summary row
         table.addView(TextView(ctx).apply {
-            text = getString(R.string.dev_perm_total, permissions.size)
+            text = "${getString(R.string.dev_perm_total)}: ${permissions.size}"
             textSize = 14f
             setTypeface(null, android.graphics.Typeface.BOLD)
             setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
@@ -806,20 +820,14 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             isStreamViewingActive = true
             updateButtons()
             streamCollectionJob = viewLifecycleOwner.lifecycleScope.launch {
-                // Access NMEA lines through the external adapter's NMEA source
-                // For now, simulate raw lines by collecting fixes and showing them
-                fixSwitchboard.fixes.collect { fix ->
-                    if (isStreamViewingActive) {
-                        val rawLine = "Fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, rtk=${fix.rtkStatus}"
-                        nmeaLines.addLast(rawLine)
-                        while (nmeaLines.size > 100) nmeaLines.removeFirst()
-                        tvPreview?.text = nmeaLines.joinToString("\n")
-                        val scroller = view.findViewById<android.widget.ScrollView>(R.id.scroll_diag_preview)
-                        scroller?.post {
-                            scroller.fullScroll(View.FOCUS_DOWN)
-                            scroller.scrollTo(0, scroller.getChildAt(0).height)
-                        }
-                    }
+                // Show real NMEA sentence history from DiagnosticsService
+                viewModel.diagnosticData.collect { data ->
+                    if (!isStreamViewingActive) return@collect
+                    val sentences = data.lastTwentySentences
+                    tvPreview?.text = if (sentences.isEmpty()) "(no NMEA data yet)"
+                    else sentences.reversed().joinToString("\n")
+                    val scroller = view.findViewById<android.widget.ScrollView>(R.id.scroll_diag_preview)
+                    scroller?.post { scroller.scrollTo(0, 0) }
                 }
             }
         }
@@ -831,7 +839,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             Toast.makeText(requireContext(), "Stream viewing stopped", Toast.LENGTH_SHORT).show()
         }
         btnClear?.setOnClickListener {
-            nmeaLines.clear()
+            // Clear the displayed preview; next DiagnosticsService update will repopulate
             tvPreview?.text = ""
             Toast.makeText(requireContext(), "Stream cleared", Toast.LENGTH_SHORT).show()
         }
@@ -863,10 +871,228 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         return view
     }
 
-    // RS2 diagnostics state and helpers
+    // ─────────────────────────── GNSS Live pane ──────────────────────────────
+
+    /**
+     * Live GNSS Fix viewer: shows real-time position/quality fields from the active provider
+     * and the last 20 NMEA sentences captured by DiagnosticsService.
+     * Starts collecting automatically; a Pause/Resume toggle lets the user freeze the view.
+     */
+    private fun setupGnssLiveContent(): View {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        fun dp(v: Float) = (v * density + 0.5f).toInt()
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16f), dp(12f), dp(16f), dp(24f))
+        }
+
+        // ── Control row ──────────────────────────────────────────────────────
+        val btnToggle = androidx.appcompat.widget.AppCompatButton(ctx).apply {
+            text = "⏸ Pause"
+        }
+        val btnReset = androidx.appcompat.widget.AppCompatButton(ctx).apply {
+            text = "Reset Stats"
+        }
+        root.addView(LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12f))
+            addView(btnToggle, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also { it.marginEnd = dp(8f) })
+            addView(btnReset, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        })
+
+        // ── Fix table ────────────────────────────────────────────────────────
+        root.addView(gnssLiveSectionHeader(ctx, "GNSS Fix"))
+        val fixTable = buildInfoTable(ctx)
+        val fixValues = mutableMapOf<String, TextView>()
+        val fixFields = listOf(
+            "Provider", "Latitude", "Longitude",
+            "Alt MSL", "Alt Ellip.", "Geoid Sep.",
+            "Sats Used/Vis", "HDOP", "VDOP", "PDOP",
+            "RTK Status", "H.Acc", "V.Acc",
+            "Speed", "Course", "Diff Age", "Station ID"
+        )
+        fixFields.forEachIndexed { idx, label ->
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(12, 8, 12, 8)
+                if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
+            }
+            val lv = TextView(ctx).apply {
+                text = label
+                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+                textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+            }
+            val vv = TextView(ctx).apply {
+                text = "--"
+                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+                textSize = 13f; setTextIsSelectable(true)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
+                maxLines = 2
+            }
+            fixValues[label] = vv
+            row.addView(lv); row.addView(vv)
+            fixTable.addView(row)
+            if (idx < fixFields.lastIndex) fixTable.addView(View(ctx).apply {
+                setBackgroundColor(0x14000000)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+            })
+        }
+        root.addView(fixTable)
+
+        // ── Stream stats ─────────────────────────────────────────────────────
+        root.addView(gnssLiveSectionHeader(ctx, "Stream Stats"))
+        val statsTable = buildInfoTable(ctx)
+        val statsValues = mutableMapOf<String, TextView>()
+        val statsFields = listOf("Lines/sec", "Error Rate", "Total Lines", "Total Errors")
+        statsFields.forEachIndexed { idx, label ->
+            val row = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(12, 8, 12, 8)
+                if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
+            }
+            val lv = TextView(ctx).apply {
+                text = label
+                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+                textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+            }
+            val vv = TextView(ctx).apply {
+                text = "--"
+                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+                textSize = 13f; setTextIsSelectable(true)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
+            }
+            statsValues[label] = vv
+            row.addView(lv); row.addView(vv)
+            statsTable.addView(row)
+            if (idx < statsFields.lastIndex) statsTable.addView(View(ctx).apply {
+                setBackgroundColor(0x14000000)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+            })
+        }
+        root.addView(statsTable)
+
+        // ── NMEA sentence history ─────────────────────────────────────────────
+        root.addView(gnssLiveSectionHeader(ctx, "NMEA History (newest first)"))
+        val historyText = TextView(ctx).apply {
+            text = "(no NMEA data yet)"
+            textSize = 11f
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+            setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
+            setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
+        }
+        val historyScroll = android.widget.ScrollView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(210f))
+            setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
+        }
+        historyScroll.addView(historyText)
+        root.addView(historyScroll)
+
+        // ── Live update helpers ───────────────────────────────────────────────
+        fun fmt1(d: Double?) = d?.let { "%.2f".format(it) } ?: "--"
+        fun fmtM(d: Double?) = d?.let { "%.3f m".format(it) } ?: "--"
+        fun fmtDeg(d: Double?) = d?.let { "%.8f°".format(it) } ?: "--"
+
+        fun applyFix(fix: Fix?) {
+            if (fix == null) {
+                fixFields.forEach { fixValues[it]?.apply { text = "--"; setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value)) } }
+                return
+            }
+            fixValues["Provider"]?.text = fix.provider.name
+            fixValues["Latitude"]?.text = fmtDeg(fix.latDeg)
+            fixValues["Longitude"]?.text = fmtDeg(fix.lonDeg)
+            fixValues["Alt MSL"]?.text = fmtM(fix.altMslM)
+            fixValues["Alt Ellip."]?.text = fmtM(fix.altEllipsoidalM)
+            fixValues["Geoid Sep."]?.text = fmtM(fix.geoidSeparationM)
+            val satsVis = fix.satsVisible ?: "?"
+            fixValues["Sats Used/Vis"]?.text = "${fix.satsUsed}/$satsVis"
+            fixValues["HDOP"]?.text = fmt1(fix.hDop)
+            fixValues["VDOP"]?.text = fmt1(fix.vDop)
+            fixValues["PDOP"]?.text = fmt1(fix.pDop)
+            fixValues["RTK Status"]?.apply {
+                text = fix.rtkStatus.name
+                setTextColor(when (fix.rtkStatus) {
+                    RtkStatus.FIX             -> 0xFF2E7D32.toInt()
+                    RtkStatus.FLOAT           -> 0xFFF9A825.toInt()
+                    RtkStatus.DGPS            -> 0xFF1565C0.toInt()
+                    RtkStatus.SINGLE          -> 0xFFFF5722.toInt()
+                    RtkStatus.DEAD_RECKONING  -> 0xFF9E9E9E.toInt()
+                    else                      -> 0xFFC62828.toInt()
+                })
+            }
+            fixValues["H.Acc"]?.text = fmtM(fix.hAccM)
+            fixValues["V.Acc"]?.text = fmtM(fix.vAccM)
+            fixValues["Speed"]?.text = fix.speedMps?.let { "%.2f m/s".format(it) } ?: "--"
+            fixValues["Course"]?.text = fix.courseDeg?.let { "%.1f°".format(it) } ?: "--"
+            fixValues["Diff Age"]?.text = fix.diffAgeS?.let { "%.1f s".format(it) } ?: "--"
+            fixValues["Station ID"]?.text = fix.correctionStationId ?: "--"
+        }
+
+        fun applyDiagnostics(data: DiagnosticData) {
+            statsValues["Lines/sec"]?.text = "%.2f".format(data.linesPerSecond)
+            statsValues["Error Rate"]?.text = "%.2f%%".format(data.parseErrorRate)
+            statsValues["Total Lines"]?.text = data.totalLinesProcessed.toString()
+            statsValues["Total Errors"]?.text = data.totalParseErrors.toString()
+            val sentences = data.lastTwentySentences
+            historyText.text = if (sentences.isEmpty()) "(no NMEA data yet)"
+            else sentences.reversed().joinToString("\n")
+            historyScroll.scrollTo(0, 0)
+        }
+
+        // ── Live toggle logic ─────────────────────────────────────────────────
+        var isLive = false
+        var liveJob: Job? = null
+
+        fun startLive() {
+            if (isLive) return
+            isLive = true
+            btnToggle.text = "⏸ Pause"
+            liveJob = viewLifecycleOwner.lifecycleScope.launch {
+                launch { viewModel.latestFix.collect { fix -> applyFix(fix) } }
+                launch { viewModel.diagnosticData.collect { data -> applyDiagnostics(data) } }
+            }
+        }
+
+        fun stopLive() {
+            if (!isLive) return
+            isLive = false
+            liveJob?.cancel(); liveJob = null
+            btnToggle.text = "▶ Resume"
+        }
+
+        btnToggle.setOnClickListener { if (isLive) stopLive() else startLive() }
+        btnReset.setOnClickListener {
+            viewModel.resetDiagnostics()
+            Toast.makeText(ctx, "Diagnostics counters reset", Toast.LENGTH_SHORT).show()
+        }
+
+        startLive()
+        return root
+    }
+
+    /** Small bold section header used by the GNSS Live pane. */
+    private fun gnssLiveSectionHeader(ctx: android.content.Context, title: String): TextView {
+        val density = resources.displayMetrics.density
+        fun dp(v: Float) = (v * density + 0.5f).toInt()
+        return TextView(ctx).apply {
+            text = title
+            textSize = 14f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+            setPadding(0, dp(16f), 0, dp(6f))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+    }
+
+    // ─────────────────────────── RS2 diagnostics state ───────────────────────
     private var isStreamViewingActive = false
     private var streamCollectionJob: Job? = null
-    private val nmeaLines: ArrayDeque<String> = ArrayDeque()
 
     private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
 

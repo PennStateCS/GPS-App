@@ -30,13 +30,15 @@ class SettingsViewModel @Inject constructor(
 
     fun setNmeaLoggingEnabled(enabled: Boolean) {
         viewModelScope.launch {
-            settingsRepository.setNmeaLoggingEnabled(enabled)
+            try { settingsRepository.setNmeaLoggingEnabled(enabled) }
+            catch (e: Exception) { android.util.Log.e("SettingsViewModel", "setNmeaLoggingEnabled failed", e) }
         }
     }
 
     fun setNmeaLogMaxFileSizeMB(sizeMB: Int) {
         viewModelScope.launch {
-            settingsRepository.setNmeaLogMaxFileSizeMB(sizeMB)
+            try { settingsRepository.setNmeaLogMaxFileSizeMB(sizeMB) }
+            catch (e: Exception) { android.util.Log.e("SettingsViewModel", "setNmeaLogMaxFileSizeMB failed", e) }
         }
     }
 }

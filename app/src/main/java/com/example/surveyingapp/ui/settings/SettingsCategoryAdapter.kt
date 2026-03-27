@@ -47,60 +47,63 @@ class SettingsCategoryAdapter(
     }
 
     override fun onBindViewHolder(holder: CategoryViewHolder, position: Int) {
-        val ctx = holder.itemView.context
-        val category = items[position]
-        val isSelected = category.id.toLong() == selectedCategoryId
+        try {
+            val ctx = holder.itemView.context
+            val category = items[position]
+            val isSelected = category.id.toLong() == selectedCategoryId
 
-        // Content
-        holder.title.text = category.title
-        holder.icon.setImageResource(category.iconRes)
+            holder.title.text = category.title
+            try { holder.icon.setImageResource(category.iconRes) } catch (_: Exception) {}
 
-        // Visual state
-        holder.itemView.isSelected = isSelected
-        holder.itemView.isActivated = isSelected
+            holder.itemView.isSelected = isSelected
+            holder.itemView.isActivated = isSelected
+            holder.accent?.visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
 
-        holder.accent?.visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
+            holder.body?.let { body ->
+                try {
+                    body.setBackgroundResource(R.drawable.dev_category_bg)
+                    val tintColor = if (isSelected)
+                        ContextCompat.getColor(ctx, R.color.dev_category_selected_bg)
+                    else
+                        ContextCompat.getColor(ctx, android.R.color.transparent)
+                    body.backgroundTintList = ColorStateList.valueOf(tintColor)
+                } catch (_: Exception) {}
+            }
 
-        holder.body?.let { body ->
-            // Ensure the background is set (shape should be tintable)
-            body.setBackgroundResource(R.drawable.dev_category_bg)
-            val tintColor = if (isSelected)
-                ContextCompat.getColor(ctx, R.color.dev_category_selected_bg)
-            else
-                ContextCompat.getColor(ctx, android.R.color.transparent)
-            body.backgroundTintList = ColorStateList.valueOf(tintColor)
-        }
+            holder.icon.alpha = if (isSelected) 1.0f else 0.7f
+            holder.title.alpha = if (isSelected) 1.0f else 0.85f
 
-        holder.icon.alpha = if (isSelected) 1.0f else 0.7f
-        holder.title.alpha = if (isSelected) 1.0f else 0.85f
+            holder.itemView.contentDescription =
+                if (isSelected) ctx.getString(R.string.dev_category_selected_desc) + ": " + category.title
+                else category.title
 
-        holder.itemView.contentDescription =
-            if (isSelected) ctx.getString(R.string.dev_category_selected_desc) + ": " + category.title
-            else category.title
-
-        // Single click listener (prefer body if present else root)
-        (holder.body ?: holder.itemView).setOnClickListener {
-            handleClick(category)
+            (holder.body ?: holder.itemView).setOnClickListener { handleClick(category) }
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsCategoryAdapter", "onBindViewHolder error at $position", e)
         }
     }
 
     private fun handleClick(category: SettingsCategory) {
-        val newId = category.id.toLong()
-        if (newId == selectedCategoryId) return
+        try {
+            val newId = category.id.toLong()
+            if (newId == selectedCategoryId) return
 
-        val oldId = selectedCategoryId
-        selectedCategoryId = newId
+            val oldId = selectedCategoryId
+            selectedCategoryId = newId
 
-        // Minimize rebinds: only refresh the two affected rows
-        oldId?.let { old ->
-            val oldIdx = items.indexOfFirst { it.id.toLong() == old }
-            if (oldIdx >= 0) notifyItemChanged(oldIdx)
+            oldId?.let { old ->
+                val oldIdx = items.indexOfFirst { it.id.toLong() == old }
+                if (oldIdx >= 0) notifyItemChanged(oldIdx)
+            }
+            val newIdx = items.indexOfFirst { it.id.toLong() == newId }
+            if (newIdx >= 0) notifyItemChanged(newIdx)
+
+            onCategorySelected(category)
+        } catch (e: Exception) {
+            android.util.Log.e("SettingsCategoryAdapter", "handleClick error", e)
         }
-        val newIdx = items.indexOfFirst { it.id.toLong() == newId }
-        if (newIdx >= 0) notifyItemChanged(newIdx)
-
-        onCategorySelected(category)
     }
+
 
     override fun getItemCount(): Int = items.size
 
