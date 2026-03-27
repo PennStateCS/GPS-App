@@ -14,7 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import com.example.surveyingapp.databinding.FragmentModelsBinding
 import com.example.surveyingapp.domain.model.Model
 import kotlinx.coroutines.launch
@@ -148,8 +148,16 @@ class ModelsFragment : Fragment() {
             }
         )
 
-        binding.recyclerModels.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerModels.layoutManager = GridLayoutManager(requireContext(), calculateSpanCount())
         binding.recyclerModels.adapter = adapter
+    }
+
+
+    private fun calculateSpanCount(): Int {
+        val cardCellWidthDp = 197 // 185dp card + 6dp left padding + 6dp right padding
+        val dm = resources.displayMetrics
+        val availableWidthDp = (dm.widthPixels / dm.density).toInt() - 32 // subtract 16dp padding each side
+        return maxOf(2, availableWidthDp / cardCellWidthDp)
     }
 
     private fun setupFab() {
