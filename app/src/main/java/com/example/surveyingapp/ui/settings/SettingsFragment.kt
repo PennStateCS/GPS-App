@@ -103,41 +103,38 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private enum class ConnectionUiStatus { CONNECTING, STREAMING, STALE, DISCONNECTED }
 
     private fun updateDeviceBox() {
-        val root = currentContentView ?: return
-        val box = root.findViewById<LinearLayout>(R.id.container_selected_device)
-        val statusTv = root.findViewById<TextView>(R.id.text_device_status)
-        val optionsLayout = root.findViewById<LinearLayout>(R.id.layout_rs2_options)
-        val radioGroup = root.findViewById<RadioGroup>(R.id.radio_location_source)
-        val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
-        val dev = selectedDevice
+        try {
+            val root = currentContentView ?: return
+            val box = root.findViewById<LinearLayout>(R.id.container_selected_device)
+            val statusTv = root.findViewById<TextView>(R.id.text_device_status)
+            val optionsLayout = root.findViewById<LinearLayout>(R.id.layout_rs2_options)
+            val radioGroup = root.findViewById<RadioGroup>(R.id.radio_location_source)
+            val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
+            val dev = selectedDevice
 
-        if (!externalActive) {
-            // Internal source: hide diagnostic container
-            box?.visibility = View.GONE
-            optionsLayout?.visibility = View.GONE
-            return
-        }
-
-        if (dev == null) {
-            // No device selected yet: show options, hide box
-            box?.visibility = View.GONE
-            optionsLayout?.visibility = View.VISIBLE
-            statusTv?.visibility = View.GONE
-            return
-        }
-
-        // Device present: show box, hide options
-        optionsLayout?.visibility = View.GONE
-        box?.visibility = View.VISIBLE
-
-        // Ensure status line is visible immediately with placeholder until streaming/connecting updates arrive
-        statusTv?.let {
-            if (it.visibility != View.VISIBLE) {
-                it.visibility = View.VISIBLE
-                it.text = getString(R.string.disconnected)
-            } else if (it.text.isNullOrBlank()) {
-                it.text = getString(R.string.disconnected)
+            if (!externalActive) {
+                box?.visibility = View.GONE
+                optionsLayout?.visibility = View.GONE
+                return
             }
+            if (dev == null) {
+                box?.visibility = View.GONE
+                optionsLayout?.visibility = View.VISIBLE
+                statusTv?.visibility = View.GONE
+                return
+            }
+            optionsLayout?.visibility = View.GONE
+            box?.visibility = View.VISIBLE
+            statusTv?.let {
+                if (it.visibility != View.VISIBLE) {
+                    it.visibility = View.VISIBLE
+                    it.text = getString(R.string.disconnected)
+                } else if (it.text.isNullOrBlank()) {
+                    it.text = getString(R.string.disconnected)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "updateDeviceBox failed", e)
         }
     }
 
@@ -158,8 +155,12 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
     override fun onRootCreated(root: View) {
-        preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        repository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
+        try {
+            preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            repository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "onRootCreated failed", e)
+        }
     }
 
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
@@ -177,42 +178,55 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
-        when (category.id) {
-            CAT_ID_LOCATION -> setupLocationContent(inflater)
-            CAT_ID_DATA -> setupDataContent(inflater)
-            CAT_ID_DEV -> setupDeveloperContent(inflater)
-            CAT_ID_ABOUT -> setupAboutContent(inflater)
-            else -> null
+        try {
+            when (category.id) {
+                CAT_ID_LOCATION -> setupLocationContent(inflater)
+                CAT_ID_DATA -> setupDataContent(inflater)
+                CAT_ID_DEV -> setupDeveloperContent(inflater)
+                CAT_ID_ABOUT -> setupAboutContent(inflater)
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "buildCategoryContent failed for category ${category.id}", e)
+            null
         }
 
 
     // ───────────────────────────── Category builders ───────────────────────────
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
-        setupLocationSourceUi(view)
+        try { setupLocationSourceUi(view) } catch (e: Exception) { Log.e("SettingsFragment", "setupLocationSourceUi failed", e) }
         return view
     }
 
     private fun setupDataContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_data, contentContainer, false)
-        view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { showExportFormatDialog() }
-        view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { showImportFormatDialog() }
-        view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { cancelActiveImport() }
+        try {
+            view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { try { showExportFormatDialog() } catch (e: Exception) { Log.e("SettingsFragment", "showExportFormatDialog failed", e) } }
+            view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { try { showImportFormatDialog() } catch (e: Exception) { Log.e("SettingsFragment", "showImportFormatDialog failed", e) } }
+            view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { Log.e("SettingsFragment", "cancelActiveImport failed", e) } }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupDataContent wiring failed", e)
+        }
         return view
     }
 
     private fun setupDeveloperContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
-        view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_dev_tools)?.apply {
-            isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
-            setOnCheckedChangeListener { _, v ->
-                preferences.edit { putBoolean(PREF_DEV_TOOLS, v) }
-                Toast.makeText(
-                    requireContext(),
-                    getString(R.string.dev_toggle_developer_tools_toast),
-                    Toast.LENGTH_SHORT
-                ).show()
+        try {
+            view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_dev_tools)?.apply {
+                isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
+                setOnCheckedChangeListener { _, v ->
+                    try {
+                        preferences.edit { putBoolean(PREF_DEV_TOOLS, v) }
+                        Toast.makeText(requireContext(), getString(R.string.dev_toggle_developer_tools_toast), Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "dev tools switch error", e)
+                    }
+                }
             }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupDeveloperContent wiring failed", e)
         }
         return view
     }
@@ -250,18 +264,20 @@ class SettingsFragment : BaseTwoPaneFragment() {
         // Observe device info from repository
         viewLifecycleOwner.lifecycleScope.launch {
             reachDeviceRepository.deviceInfo.collect { reachInfo ->
-                if (reachInfo != null) {
-                    currentDeviceInfo = convertToEmlidDeviceInfo(reachInfo)
-                    updateDeviceInfoDisplay()
-
-                    // Update device name if we got a better name from the device info
-                    if (selectedDeviceName == selectedDevice?.first || selectedDeviceName.isNullOrBlank()) {
-                        selectedDeviceName = reachInfo.name ?: selectedDevice?.first
-                        selectedDevice?.let { (host, port) ->
-                            settingsRepo.setExternalTcp(host, port, selectedDeviceName ?: "Unknown Device")
+                try {
+                    if (reachInfo != null) {
+                        currentDeviceInfo = convertToEmlidDeviceInfo(reachInfo)
+                        updateDeviceInfoDisplay()
+                        if (selectedDeviceName == selectedDevice?.first || selectedDeviceName.isNullOrBlank()) {
+                            selectedDeviceName = reachInfo.name ?: selectedDevice?.first
+                            selectedDevice?.let { (host, port) ->
+                                settingsRepo.setExternalTcp(host, port, selectedDeviceName ?: "Unknown Device")
+                            }
+                            updateDeviceBox()
                         }
-                        updateDeviceBox()
                     }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "deviceInfo collect error", e)
                 }
             }
         }
@@ -271,48 +287,50 @@ class SettingsFragment : BaseTwoPaneFragment() {
         fun runDiagnostic(host: String, port: Int) {
             val pair = host to port
             if (host.isBlank()) return
-            // Skip if same as last diagnosis to avoid spam
             if (lastDiagnosed == pair) return
             lastDiagnosed = pair
             lifecycleScope.launch {
-                val (result, _) = withContext(Dispatchers.IO) { testRs2Tcp(host, port) }
-
-                // The ReachDeviceRepository will automatically start polling device info
-                // when the external source becomes active through the settings change below.
-                // The device info will be available through the StateFlow observer we set up earlier.
-
-                // Resolve friendly Reach name (fallback if device info fails)
-                if (selectedDeviceName == null || selectedDeviceName == host) {
-                    launch {
-                        val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
-                        if (!resolved.isNullOrBlank() && isAdded) {
-                            // Only use resolved name if we didn't get a better name from device info
-                            if (currentDeviceInfo == null) {
-                                selectedDeviceName = resolved
-                                settingsRepo.setExternalTcp(host, port, resolved)
-                                updateDeviceBox()
+                try {
+                    val (result, _) = withContext(Dispatchers.IO) { testRs2Tcp(host, port) }
+                    if (selectedDeviceName == null || selectedDeviceName == host) {
+                        launch {
+                            try {
+                                val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
+                                if (!resolved.isNullOrBlank() && isAdded && currentDeviceInfo == null) {
+                                    selectedDeviceName = resolved
+                                    settingsRepo.setExternalTcp(host, port, resolved)
+                                    updateDeviceBox()
+                                }
+                            } catch (e: Exception) {
+                                Log.w("SettingsFragment", "resolveReachName failed", e)
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.w("SettingsFragment", "runDiagnostic failed for $host:$port", e)
                 }
             }
         }
 
         fun attemptConnectFromInline() {
-            val host = editHost?.text?.toString()?.trim().orEmpty()
-            val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
-            if (host.isNotEmpty()) {
-                selectedDevice = host to port
-                selectedDeviceLabel = getString(R.string.host_port, host, port)
-                selectedDeviceName = host
-                // Enter a provisional Connecting state to avoid transient Error/Idle display
-                provisionalConnectedUntil = System.currentTimeMillis() + 8000L
-                updateDeviceBox()
-                // Auto-run diagnostic for newly entered device
-                runDiagnostic(host, port)
-                lifecycleScope.launch { connectViaTcpFlow(host, port) }
-            } else {
-                Toast.makeText(requireContext(), getString(R.string.host_required), Toast.LENGTH_SHORT).show()
+            try {
+                val host = editHost?.text?.toString()?.trim().orEmpty()
+                val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
+                if (host.isNotEmpty()) {
+                    selectedDevice = host to port
+                    selectedDeviceLabel = getString(R.string.host_port, host, port)
+                    selectedDeviceName = host
+                    provisionalConnectedUntil = System.currentTimeMillis() + 8000L
+                    updateDeviceBox()
+                    runDiagnostic(host, port)
+                    lifecycleScope.launch {
+                        try { connectViaTcpFlow(host, port) } catch (e: Exception) { Log.e("SettingsFragment", "connectViaTcpFlow failed", e) }
+                    }
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.host_required), Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "attemptConnectFromInline failed", e)
             }
         }
 
@@ -321,14 +339,17 @@ class SettingsFragment : BaseTwoPaneFragment() {
             if (actionId == EditorInfo.IME_ACTION_DONE) { attemptConnectFromInline(); true } else false
         }
 
-
         btnDisconnect?.setOnClickListener {
             lifecycleScope.launch {
-                 settingsRepo.clearExternalTcp()
-                 selectedDevice = null
-                 selectedDeviceLabel = null
-                 selectedDeviceName = null
-                 updateDeviceBox() // will show options layout again
+                try {
+                    settingsRepo.clearExternalTcp()
+                    selectedDevice = null
+                    selectedDeviceLabel = null
+                    selectedDeviceName = null
+                    updateDeviceBox()
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "disconnect failed", e)
+                }
             }
         }
 
@@ -460,16 +481,20 @@ class SettingsFragment : BaseTwoPaneFragment() {
             // Collect fixes to update recency
             viewLifecycleOwner.lifecycleScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    fixSwitchboard.fixes.collect { _ ->
-                        lastFixTimeMs = System.currentTimeMillis()
-                        provisionalConnectedUntil = 0L
-                        refresh(lastFixTimeMs)
+                    try {
+                        fixSwitchboard.fixes.collect { _ ->
+                            lastFixTimeMs = System.currentTimeMillis()
+                            provisionalConnectedUntil = 0L
+                            try { refresh(lastFixTimeMs) } catch (e: Exception) { Log.w("SettingsFragment", "status refresh error", e) }
+                        }
+                    } catch (e: Exception) {
+                        Log.w("SettingsFragment", "fix collect error in status job", e)
                     }
                 }
             }
             // Periodic refresh to age out status
             while (isActive) {
-                refresh(System.currentTimeMillis())
+                try { refresh(System.currentTimeMillis()) } catch (e: Exception) { Log.w("SettingsFragment", "periodic refresh error", e) }
                 delay(1_000L)
             }
         }
@@ -646,71 +671,58 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     private fun connectViaTcpFlow(host: String, port: Int) {
         lifecycleScope.launch {
-            Log.d("SettingsFragment", "connectViaTcpFlow: attempting connection to $host:$port")
-
-            // Set provisional Connecting state immediately when attempting to connect
-            provisionalConnectedUntil = System.currentTimeMillis() + 8000L
-            view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
-                tv.visibility = View.VISIBLE
-                tv.text = getString(R.string.diag_testing).replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-                tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
-            }
-
-            val success = connectAndReadTcpNmea(host, port)
-            Log.d("SettingsFragment", "connectViaTcpFlow: connection result=$success")
-
-            if (success) {
-                // Ensure provider is switched to external in routing
-                sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
-                 // User may have switched to Internal while connection was in-flight; respect current selection
-                val currentSource = settingsRepo.locationSource.first()
-                Log.d("SettingsFragment", "connectViaTcpFlow: current source after connection=$currentSource")
-                if (currentSource != LocationSourceType.EXTERNAL) {
-                    Log.w("SettingsFragment", "connectViaTcpFlow: source switched to INTERNAL during connection, aborting")
-                    return@launch
-                }
-                Toast.makeText(requireContext(), "TCP connection successful", Toast.LENGTH_SHORT).show()
-
-                Log.d("SettingsFragment", "connectViaTcpFlow: setting external TCP connection")
-                settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
-                settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
-                settingsRepo.setExternalTcp(host, port)
-
-                // Provisional connected state for up to 8s while LocationManager transitions from Idle
+            try {
+                Log.d("SettingsFragment", "connectViaTcpFlow: attempting connection to $host:$port")
                 provisionalConnectedUntil = System.currentTimeMillis() + 8000L
-                updateDeviceBox()
                 view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                     tv.visibility = View.VISIBLE
-                    tv.text = "Connected"
-                    tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+                    tv.text = getString(R.string.diag_testing).replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                    tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
                 }
-
-                // The ReachDeviceRepository will automatically start polling device info
-                // when the external source becomes active through the settings change below.
-                // The device info will be available through the StateFlow observer we set up earlier.
-
-                // Resolve friendly Reach name (fallback if device info fails)
-                if (selectedDeviceName == null || selectedDeviceName == host) {
-                    launch {
-                        val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
-                        if (!resolved.isNullOrBlank() && isAdded) {
-                            // Only use resolved name if we didn't get a better name from device info
-                            if (currentDeviceInfo == null) {
-                                selectedDeviceName = resolved
-                                settingsRepo.setExternalTcp(host, port, resolved)
-                                updateDeviceBox()
+                val success = connectAndReadTcpNmea(host, port)
+                Log.d("SettingsFragment", "connectViaTcpFlow: connection result=$success")
+                if (success) {
+                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
+                    val currentSource = settingsRepo.locationSource.first()
+                    if (currentSource != LocationSourceType.EXTERNAL) {
+                        Log.w("SettingsFragment", "connectViaTcpFlow: source switched to INTERNAL during connection, aborting")
+                        return@launch
+                    }
+                    Toast.makeText(requireContext(), "TCP connection successful", Toast.LENGTH_SHORT).show()
+                    settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
+                    settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
+                    settingsRepo.setExternalTcp(host, port)
+                    provisionalConnectedUntil = System.currentTimeMillis() + 8000L
+                    updateDeviceBox()
+                    view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
+                        tv.visibility = View.VISIBLE
+                        tv.text = "Connected"
+                        tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+                    }
+                    if (selectedDeviceName == null || selectedDeviceName == host) {
+                        launch {
+                            try {
+                                val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
+                                if (!resolved.isNullOrBlank() && isAdded && currentDeviceInfo == null) {
+                                    selectedDeviceName = resolved
+                                    settingsRepo.setExternalTcp(host, port, resolved)
+                                    updateDeviceBox()
+                                }
+                            } catch (e: Exception) {
+                                Log.w("SettingsFragment", "resolveReachName in connectViaTcpFlow failed", e)
                             }
                         }
                     }
+                } else {
+                    Log.w("SettingsFragment", "connectViaTcpFlow: connection to $host:$port failed")
+                    view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
+                        tv.visibility = View.VISIBLE
+                        tv.text = "Connection failed"
+                        tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
+                    }
                 }
-            } else {
-                // On failure, keep provider internal if no recent fix
-                Log.w("SettingsFragment", "connectViaTcpFlow: connection to $host:$port failed")
-                view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
-                    tv.visibility = View.VISIBLE
-                    tv.text = "Connection failed"
-                    tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
-                }
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "connectViaTcpFlow error", e)
             }
         }
     }
@@ -806,32 +818,36 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     private fun handleCustomFilePickerResult(uri: Uri) {
-        when {
-            currentOperation?.startsWith("export_json_") == true -> {
-                val timestamp = currentOperation?.substringAfter("export_json_")?.toLongOrNull() ?: System.currentTimeMillis()
-                performJsonExport(uri, timestamp)
+        try {
+            when {
+                currentOperation?.startsWith("export_json_") == true -> {
+                    val timestamp = currentOperation?.substringAfter("export_json_")?.toLongOrNull() ?: System.currentTimeMillis()
+                    performJsonExport(uri, timestamp)
+                }
+                currentOperation?.startsWith("export_csv_") == true -> {
+                    val timestamp = currentOperation?.substringAfter("export_csv_")?.toLongOrNull() ?: System.currentTimeMillis()
+                    performCsvExport(uri, timestamp)
+                }
+                currentOperation == "import_json" -> {
+                    pendingImportIsCsv = false
+                    lifecycleScope.launch { try { prepareImportCoordinatesWithConfirmation(uri, isCsv = false) } catch (e: Exception) { Log.e("SettingsFragment", "import_json failed", e) } }
+                }
+                currentOperation == "import_csv" -> {
+                    pendingImportIsCsv = true
+                    lifecycleScope.launch { try { prepareImportCoordinatesWithConfirmation(uri, isCsv = true) } catch (e: Exception) { Log.e("SettingsFragment", "import_csv failed", e) } }
+                }
+                currentOperation == "import_data" -> {
+                    val fileName = try { getFileNameFromUri(uri) } catch (_: Exception) { null } ?: ""
+                    val isCsvFile = fileName.lowercase().endsWith(".csv")
+                    pendingImportIsCsv = isCsvFile
+                    lifecycleScope.launch { try { prepareImportCoordinatesWithConfirmation(uri, isCsv = isCsvFile) } catch (e: Exception) { Log.e("SettingsFragment", "import_data failed", e) } }
+                }
             }
-            currentOperation?.startsWith("export_csv_") == true -> {
-                val timestamp = currentOperation?.substringAfter("export_csv_")?.toLongOrNull() ?: System.currentTimeMillis()
-                performCsvExport(uri, timestamp)
-            }
-            currentOperation == "import_json" -> {
-                pendingImportIsCsv = false
-                lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = false) }
-            }
-            currentOperation == "import_csv" -> {
-                pendingImportIsCsv = true
-                lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = true) }
-            }
-            currentOperation == "import_data" -> {
-                // Auto-detect file type based on extension
-                val fileName = getFileNameFromUri(uri) ?: ""
-                val isCsvFile = fileName.lowercase().endsWith(".csv")
-                pendingImportIsCsv = isCsvFile
-                lifecycleScope.launch { prepareImportCoordinatesWithConfirmation(uri, isCsv = isCsvFile) }
-            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "handleCustomFilePickerResult failed", e)
+        } finally {
+            currentOperation = null
         }
-        currentOperation = null
     }
 
     private fun performJsonExport(folderUri: Uri, timestamp: Long) {
@@ -996,17 +1012,21 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val list = mutableListOf<Coordinate>()
         val now = System.currentTimeMillis()
         for (i in 0 until arr.length()) {
-            val obj = arr.getJSONObject(i)
-            val id = obj.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
-            val name = obj.optString("name", id)
-            val lat = obj.optDouble("latitude")
-            val lon = obj.optDouble("longitude")
-            val alt = obj.optDouble("altitude", 0.0)
-            val ts = obj.optLong("timestamp", now)
-            val rawIcon = obj.optString("icon", "ic_pin")
-            val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
-            val color = obj.optInt("color", 0xFF64B5F6.toInt())
-            list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
+            try {
+                val obj = arr.getJSONObject(i)
+                val id = obj.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
+                val name = obj.optString("name", id)
+                val lat = obj.optDouble("latitude")
+                val lon = obj.optDouble("longitude")
+                val alt = obj.optDouble("altitude", 0.0)
+                val ts = obj.optLong("timestamp", now)
+                val rawIcon = obj.optString("icon", "ic_pin")
+                val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
+                val color = obj.optInt("color", 0xFF64B5F6.toInt())
+                list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
+            } catch (e: Exception) {
+                Log.w("SettingsFragment", "Skipping malformed JSON object at index $i", e)
+            }
         }
         return list
     }
@@ -1020,20 +1040,24 @@ class SettingsFragment : BaseTwoPaneFragment() {
         val list = mutableListOf<Coordinate>()
         val now = System.currentTimeMillis()
         dataLines.forEach { line ->
-            val cols = parseCsvLine(line)
-            if (cols.size < 4) return@forEach
-            fun col(i: Int): String = cols.getOrNull(i)?.trim().orEmpty()
-            val idRaw = col(0)
-            val name = col(1).ifBlank { idRaw }
-            val lat = col(2).toDoubleOrNull() ?: return@forEach
-            val lon = col(3).toDoubleOrNull() ?: return@forEach
-            val alt = col(4).toDoubleOrNull() ?: 0.0
-            val ts = col(5).toLongOrNull() ?: now
-            val rawIcon = col(6).ifBlank { "ic_pin" }
-            val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
-            val color = col(7).toLongOrNull()?.toInt() ?: 0xFF64B5F6.toInt()
-            val id = if (idRaw.isBlank()) java.util.UUID.randomUUID().toString() else idRaw
-            list.add(Coordinate(id, if (name.isBlank()) id else name, lat, lon, alt, ts, icon, color))
+            try {
+                val cols = parseCsvLine(line)
+                if (cols.size < 4) return@forEach
+                fun col(i: Int): String = cols.getOrNull(i)?.trim().orEmpty()
+                val idRaw = col(0)
+                val name = col(1).ifBlank { idRaw }
+                val lat = col(2).toDoubleOrNull() ?: return@forEach
+                val lon = col(3).toDoubleOrNull() ?: return@forEach
+                val alt = col(4).toDoubleOrNull() ?: 0.0
+                val ts = col(5).toLongOrNull() ?: now
+                val rawIcon = col(6).ifBlank { "ic_pin" }
+                val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
+                val color = col(7).toLongOrNull()?.toInt() ?: 0xFF64B5F6.toInt()
+                val id = if (idRaw.isBlank()) java.util.UUID.randomUUID().toString() else idRaw
+                list.add(Coordinate(id, if (name.isBlank()) id else name, lat, lon, alt, ts, icon, color))
+            } catch (e: Exception) {
+                Log.w("SettingsFragment", "Skipping malformed CSV line: $line", e)
+            }
         }
         return list
     }
@@ -1059,18 +1083,26 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
-        currentContentView?.findViewById<LinearLayout>(R.id.import_progress_container)?.let { c ->
-            c.visibility = if (visible) View.VISIBLE else View.GONE
-            if (visible) {
-                c.findViewById<ProgressBar>(R.id.progress_import)?.progress = percent.coerceIn(0, 100)
-                c.findViewById<TextView>(R.id.text_import_progress)?.text = status
+        try {
+            currentContentView?.findViewById<LinearLayout>(R.id.import_progress_container)?.let { c ->
+                c.visibility = if (visible) View.VISIBLE else View.GONE
+                if (visible) {
+                    c.findViewById<ProgressBar>(R.id.progress_import)?.progress = percent.coerceIn(0, 100)
+                    c.findViewById<TextView>(R.id.text_import_progress)?.text = status
+                }
             }
+        } catch (e: Exception) {
+            Log.w("SettingsFragment", "showImportProgress failed", e)
         }
     }
 
     private fun cancelActiveImport() {
-        coordinatesImportJob?.takeIf { it.isActive }?.cancel()?.also {
-            Toast.makeText(requireContext(), R.string.import_cancel, Toast.LENGTH_SHORT).show()
+        try {
+            coordinatesImportJob?.takeIf { it.isActive }?.cancel()?.also {
+                Toast.makeText(requireContext(), R.string.import_cancel, Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            Log.w("SettingsFragment", "cancelActiveImport failed", e)
         }
     }
 
@@ -1209,120 +1241,99 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     // ───────────────────────────── Device Information Update Functions ─────────────────────────────
     private fun updateDeviceInfoDisplay() {
-        val root = currentContentView ?: return
-        val deviceInfo = currentDeviceInfo ?: return
+        try {
+            val root = currentContentView ?: return
+            val deviceInfo = currentDeviceInfo ?: return
 
-        val deviceInfoPanel = root.findViewById<LinearLayout>(R.id.device_info_panel)
-        val textDeviceName = root.findViewById<TextView>(R.id.text_device_name)
-        val textDeviceIp = root.findViewById<TextView>(R.id.text_device_ip)
-        val layoutDeviceModel = root.findViewById<LinearLayout>(R.id.layout_device_model)
-        val textDeviceModel = root.findViewById<TextView>(R.id.text_device_model)
-        val layoutDeviceFirmware = root.findViewById<LinearLayout>(R.id.layout_device_firmware)
-        val textDeviceFirmware = root.findViewById<TextView>(R.id.text_device_firmware)
-        val layoutSelfTests = root.findViewById<LinearLayout>(R.id.layout_self_tests)
-        val textSelfTestsSummary = root.findViewById<TextView>(R.id.text_self_tests_summary)
-        val layoutSelfTestsGrid = root.findViewById<LinearLayout>(R.id.layout_self_tests_grid)
+            val deviceInfoPanel = root.findViewById<LinearLayout>(R.id.device_info_panel)
+            val textDeviceName = root.findViewById<TextView>(R.id.text_device_name)
+            val textDeviceIp = root.findViewById<TextView>(R.id.text_device_ip)
+            val layoutDeviceModel = root.findViewById<LinearLayout>(R.id.layout_device_model)
+            val textDeviceModel = root.findViewById<TextView>(R.id.text_device_model)
+            val layoutDeviceFirmware = root.findViewById<LinearLayout>(R.id.layout_device_firmware)
+            val textDeviceFirmware = root.findViewById<TextView>(R.id.text_device_firmware)
+            val layoutSelfTests = root.findViewById<LinearLayout>(R.id.layout_self_tests)
+            val textSelfTestsSummary = root.findViewById<TextView>(R.id.text_self_tests_summary)
+            val layoutSelfTestsGrid = root.findViewById<LinearLayout>(R.id.layout_self_tests_grid)
 
-        // Show device info panel
-        deviceInfoPanel?.visibility = View.VISIBLE
+            deviceInfoPanel?.visibility = View.VISIBLE
+            textDeviceName?.text = deviceInfo.deviceName
+            textDeviceIp?.text = deviceInfo.ipAddress
 
-        // Populate basic device information - device name first, then IP
-        textDeviceName?.text = deviceInfo.deviceName
-        textDeviceIp?.text = deviceInfo.ipAddress
-
-        // Show/hide and populate model if available
-        if (deviceInfo.model != null) {
-            layoutDeviceModel?.visibility = View.VISIBLE
-            textDeviceModel?.text = deviceInfo.model
-        } else {
-            layoutDeviceModel?.visibility = View.GONE
-        }
-
-        // Show/hide and populate firmware if available
-        if (deviceInfo.firmwareVersion != null) {
-            layoutDeviceFirmware?.visibility = View.VISIBLE
-            textDeviceFirmware?.text = deviceInfo.firmwareVersion
-        } else {
-            layoutDeviceFirmware?.visibility = View.GONE
-        }
-
-        // Show/hide and populate self tests if available
-        if (deviceInfo.selfTests.isNotEmpty()) {
-            layoutSelfTests?.visibility = View.VISIBLE
-
-            // Update summary with counts
-            val passedCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.PASSED }
-            val failedCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.FAILED }
-            val warningCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.WARNING }
-            val totalCount = deviceInfo.selfTests.size
-
-            val summaryText = "$passedCount/$totalCount passed"
-            val summaryColor = when {
-                failedCount > 0 -> android.R.color.holo_red_dark
-                warningCount > 0 -> android.R.color.holo_orange_dark
-                else -> android.R.color.holo_green_dark
+            if (deviceInfo.model != null) {
+                layoutDeviceModel?.visibility = View.VISIBLE
+                textDeviceModel?.text = deviceInfo.model
+            } else {
+                layoutDeviceModel?.visibility = View.GONE
             }
 
-            textSelfTestsSummary?.text = summaryText
-            textSelfTestsSummary?.setTextColor(ContextCompat.getColor(requireContext(), summaryColor))
+            if (deviceInfo.firmwareVersion != null) {
+                layoutDeviceFirmware?.visibility = View.VISIBLE
+                textDeviceFirmware?.text = deviceInfo.firmwareVersion
+            } else {
+                layoutDeviceFirmware?.visibility = View.GONE
+            }
 
-            // Clear existing test views and populate grid
-            layoutSelfTestsGrid?.removeAllViews()
-            populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests)
-        } else {
-            layoutSelfTests?.visibility = View.GONE
+            if (deviceInfo.selfTests.isNotEmpty()) {
+                layoutSelfTests?.visibility = View.VISIBLE
+                val passedCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.PASSED }
+                val failedCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.FAILED }
+                val warningCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.WARNING }
+                val totalCount = deviceInfo.selfTests.size
+                val summaryColor = when {
+                    failedCount > 0 -> android.R.color.holo_red_dark
+                    warningCount > 0 -> android.R.color.holo_orange_dark
+                    else -> android.R.color.holo_green_dark
+                }
+                textSelfTestsSummary?.text = "$passedCount/$totalCount passed"
+                try { textSelfTestsSummary?.setTextColor(ContextCompat.getColor(requireContext(), summaryColor)) } catch (_: Exception) {}
+                layoutSelfTestsGrid?.removeAllViews()
+                try { populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests) } catch (e: Exception) { Log.w("SettingsFragment", "populateSelfTestsGrid failed", e) }
+            } else {
+                layoutSelfTests?.visibility = View.GONE
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "updateDeviceInfoDisplay failed", e)
         }
 
     }
 
     private fun populateSelfTestsGrid(container: LinearLayout?, tests: List<SelfTest>) {
         if (container == null || tests.isEmpty()) return
-
-        val context = requireContext()
-        val testsPerRow = 4 // Four columns layout
-
-        // Group tests into rows
-        val rows = tests.chunked(testsPerRow)
-
-        rows.forEach { rowTests ->
-            val rowLayout = LinearLayout(context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = dpToPx(4)
-                }
-                orientation = LinearLayout.HORIZONTAL
-                weightSum = testsPerRow.toFloat()
-            }
-
-            rowTests.forEachIndexed { index, test ->
-                val testItemLayout = createSelfTestItem(context, test)
-                testItemLayout.layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply {
-                    if (index < rowTests.size - 1) {
-                        rightMargin = dpToPx(4) // Reduced margin for tighter spacing with 4 columns
+        try {
+            val context = requireContext()
+            val testsPerRow = 4
+            val rows = tests.chunked(testsPerRow)
+            rows.forEach { rowTests ->
+                try {
+                    val rowLayout = LinearLayout(context).apply {
+                        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dpToPx(4) }
+                        orientation = LinearLayout.HORIZONTAL
+                        weightSum = testsPerRow.toFloat()
                     }
+                    rowTests.forEachIndexed { index, test ->
+                        try {
+                            val testItemLayout = createSelfTestItem(context, test)
+                            testItemLayout.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                                if (index < rowTests.size - 1) rightMargin = dpToPx(4)
+                            }
+                            rowLayout.addView(testItemLayout)
+                        } catch (e: Exception) {
+                            Log.w("SettingsFragment", "createSelfTestItem failed for ${test.name}", e)
+                        }
+                    }
+                    if (rowTests.size < testsPerRow) {
+                        rowLayout.addView(View(context).apply {
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, (testsPerRow - rowTests.size).toFloat())
+                        })
+                    }
+                    container.addView(rowLayout)
+                } catch (e: Exception) {
+                    Log.w("SettingsFragment", "populateSelfTestsGrid row failed", e)
                 }
-                rowLayout.addView(testItemLayout)
             }
-
-            // If row is not full, add empty space
-            if (rowTests.size < testsPerRow) {
-                val emptyView = View(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(
-                        0,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        (testsPerRow - rowTests.size).toFloat()
-                    )
-                }
-                rowLayout.addView(emptyView)
-            }
-
-            container.addView(rowLayout)
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "populateSelfTestsGrid failed", e)
         }
     }
 
@@ -1330,59 +1341,44 @@ class SettingsFragment : BaseTwoPaneFragment() {
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dpToPx(8), dpToPx(6), dpToPx(8), dpToPx(6))
-            background = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background)
-
-            // Status icon
+            try { background = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background) } catch (_: Exception) {}
             val statusIcon = TextView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    rightMargin = dpToPx(6)
-                }
-
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dpToPx(6) }
                 val (icon, color) = when (test.status) {
                     TestStatus.PASSED -> "✓" to android.R.color.holo_green_dark
                     TestStatus.FAILED -> "✗" to android.R.color.holo_red_dark
                     TestStatus.WARNING -> "⚠" to android.R.color.holo_orange_dark
                     TestStatus.UNKNOWN -> "?" to android.R.color.darker_gray
                 }
-
                 text = icon
                 textSize = 14f
-                setTextColor(ContextCompat.getColor(context, color))
+                try { setTextColor(ContextCompat.getColor(context, color)) } catch (_: Exception) {}
                 gravity = android.view.Gravity.CENTER
                 minWidth = dpToPx(20)
             }
-
-            // Test name
             val testName = TextView(context).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    1f
-                )
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 text = test.name
                 textSize = 11f
-                setTextColor(ContextCompat.getColor(context, android.R.color.black))
+                try { setTextColor(ContextCompat.getColor(context, android.R.color.black)) } catch (_: Exception) {}
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
-
             addView(statusIcon)
             addView(testName)
-
-            // Add click listener to show test details if available
             if (!test.description.isNullOrBlank()) {
                 setOnClickListener {
-                    AlertDialog.Builder(context)
-                        .setTitle(test.name)
-                        .setMessage("Status: ${test.status.name}\n\n${test.description}")
-                        .setPositiveButton("OK", null)
-                        .show()
+                    try {
+                        AlertDialog.Builder(context)
+                            .setTitle(test.name)
+                            .setMessage("Status: ${test.status.name}\n\n${test.description}")
+                            .setPositiveButton("OK", null)
+                            .show()
+                    } catch (e: Exception) {
+                        Log.w("SettingsFragment", "self test detail dialog failed", e)
+                    }
                 }
-                // Add visual feedback for clickable items
-                foreground = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background)
+                try { foreground = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background) } catch (_: Exception) {}
             }
         }
     }
