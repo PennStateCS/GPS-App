@@ -1,24 +1,68 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/location_status_bar"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:paddingStart="8dp"
-    android:paddingEnd="8dp"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp"
     android:background="@color/purple_700"
-    android:gravity="center_vertical">
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
-    <TextView
-        android:id="@+id/text_status_bar_compact"
+    <!-- LEFT GROUP: Source + Fix + Sats (left-aligned) -->
+    <include
+        android:id="@+id/token_source"
+        layout="@layout/item_token" />
+    <include
+        android:id="@+id/token_fix"
+        layout="@layout/item_token" />
+    <include
+        android:id="@+id/token_sats"
+        layout="@layout/item_token" />
+
+    <androidx.constraintlayout.helper.widget.Flow
+        android:id="@+id/flow_left"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:textColor="@android:color/white"
-        android:textSize="12sp"
-        android:ellipsize="end"
-        android:maxLines="2"
-        android:text="GPS --" />
-</LinearLayout>
+        app:constraint_referenced_ids="token_source,token_fix,token_sats"
+        app:flow_wrapMode="chain"
+        app:flow_horizontalGap="0dp"
+        app:flow_horizontalStyle="packed"
+        app:flow_horizontalAlign="start"
+        app:flow_horizontalBias="0"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/flow_right"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+    <!-- RIGHT GROUP: LL + ALT + BATT (right-aligned) -->
+    <include
+        android:id="@+id/token_coord"
+        layout="@layout/item_token" />
+    <include
+        android:id="@+id/token_alt"
+        layout="@layout/item_token" />
+    <include
+        android:id="@+id/token_batt"
+        layout="@layout/item_token" />
+
+    <androidx.constraintlayout.helper.widget.Flow
+        android:id="@+id/flow_right"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        app:constraint_referenced_ids="token_coord,token_alt,token_batt"
+        app:flow_wrapMode="chain"
+        app:flow_horizontalGap="0dp"
+        app:flow_horizontalStyle="packed"
+        app:flow_horizontalAlign="end"
+        app:flow_horizontalBias="1"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintStart_toEndOf="@id/flow_left"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

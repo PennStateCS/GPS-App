@@ -16,8 +16,7 @@ import java.util.*
 class FilePickerAdapter(
     private val onFileClick: (File) -> Unit,
     private val onBackClick: () -> Unit,
-    private val onCloudStorageClick: (String) -> Unit,
-    private val onLocalStorageClick: () -> Unit
+    private val onBrowseClick: () -> Unit
 ) : ListAdapter<FileItem, FilePickerAdapter.FileViewHolder>(FileDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
@@ -42,23 +41,11 @@ class FilePickerAdapter(
                     textFileInfo.text = "Go back"
                     itemView.setOnClickListener { onBackClick() }
                 }
-                is FileItem.GoogleDriveItem -> {
-                    iconFile.setImageResource(android.R.drawable.ic_menu_gallery)
-                    textFileName.text = "Google Drive"
-                    textFileInfo.text = "Browse files from Google Drive"
-                    itemView.setOnClickListener { onCloudStorageClick("google_drive") }
-                }
-                is FileItem.OneDriveItem -> {
-                    iconFile.setImageResource(android.R.drawable.ic_menu_gallery)
-                    textFileName.text = "OneDrive"
-                    textFileInfo.text = "Browse files from OneDrive"
-                    itemView.setOnClickListener { onCloudStorageClick("onedrive") }
-                }
-                is FileItem.LocalStorageItem -> {
+                is FileItem.BrowseItem -> {
                     iconFile.setImageResource(R.drawable.ic_folder)
-                    textFileName.text = "Local Storage"
-                    textFileInfo.text = "Browse files on this device"
-                    itemView.setOnClickListener { onLocalStorageClick() }
+                    textFileName.text = "Browse files…"
+                    textFileInfo.text = "Pick from device, Google Drive, OneDrive, SD card, and more"
+                    itemView.setOnClickListener { onBrowseClick() }
                 }
                 is FileItem.DirectoryItem -> {
                     iconFile.setImageResource(R.drawable.ic_folder)

@@ -31,79 +31,308 @@
                 android:layout_marginBottom="8dp" />
         </RadioGroup>
 
-        <!-- Options for Emlid Reach RS2+ (TCP) now only buttons (manual/scanning) -->
+        <!-- Options for Emlid Reach RS2+ (TCP): inline manual entry -->
         <LinearLayout
             android:id="@+id/layout_rs2_options"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
+            android:orientation="vertical"
             android:visibility="gone"
             android:layout_marginTop="8dp">
-            <Button
-                android:id="@+id/btn_manual_entry"
-                android:layout_width="0dp"
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Manual Entry"
-                android:layout_marginEnd="8dp" />
-            <Button
-                android:id="@+id/btn_scan_device"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Scan for device"
-                android:layout_marginStart="8dp" />
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/edit_host"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:inputType="textUri"
+                    android:hint="@string/hint_host"
+                    android:imeOptions="actionNext"
+                    android:singleLine="true"
+                    android:layout_marginEnd="8dp" />
+
+                <EditText
+                    android:id="@+id/edit_port"
+                    android:layout_width="96dp"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:hint="@string/hint_port"
+                    android:imeOptions="actionDone"
+                    android:singleLine="true"
+                    android:layout_marginEnd="8dp" />
+
+                <Button
+                    android:id="@+id/btn_connect"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/connect" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- Selected Device Container -->
+        <!-- Selected Device Container (enhanced with device information) -->
         <LinearLayout
             android:id="@+id/container_selected_device"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
+            android:orientation="vertical"
             android:visibility="gone"
             android:layout_marginTop="8dp"
-            android:padding="8dp"
+            android:padding="12dp"
             android:background="@drawable/bg_device_box">
 
+            <!-- Device Header with Status and Disconnect Button -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_weight="1">
-                <TextView
-                    android:id="@+id/text_device_name"
-                    android:layout_width="wrap_content"
+                android:layout_marginBottom="8dp">
+
+                <!-- Status and Disconnect Button Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Device Name"
-                    android:textStyle="bold"
-                    android:textColor="@android:color/black"
-                    android:textSize="15sp" />
-                <TextView
-                    android:id="@+id/text_device_status"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Status"
-                    android:textSize="13sp"
-                    android:textColor="@android:color/holo_green_dark"
-                    android:layout_marginTop="2dp" />
-                <TextView
-                    android:id="@+id/text_device_address"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="IP:Port"
-                    android:textColor="@android:color/darker_gray"
-                    android:textSize="13sp"
-                    android:layout_marginTop="2dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/text_device_status"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/disconnected"
+                        android:textSize="15sp"
+                        android:textStyle="bold"
+                        android:textColor="@android:color/darker_gray"
+                        android:gravity="start" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:orientation="horizontal">
+
+                        <ImageView
+                            android:id="@+id/icon_device_status"
+                            android:layout_width="200dp"
+                            android:layout_height="73dp"
+                            android:src="@drawable/ic_device_status"
+                            android:scaleType="centerInside"
+                            android:contentDescription="Device status icon" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:gravity="end"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_disconnect_device"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Disconnect"
+                            android:backgroundTint="@android:color/holo_red_dark"
+                            android:textColor="@android:color/white" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
             </LinearLayout>
 
-            <Button
-                android:id="@+id/btn_disconnect_device"
-                android:layout_width="wrap_content"
+            <!-- Device Information Panel -->
+            <LinearLayout
+                android:id="@+id/device_info_panel"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Disconnect" />
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:background="@drawable/bg_rounded_light"
+                android:padding="12dp"
+                android:layout_marginTop="8dp">
+
+                <!-- Basic Device Info Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="12dp">
+
+                    <!-- Left Column: Device Name and IP Address -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:layout_marginEnd="12dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginBottom="4dp">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Name: "
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@android:color/black" />
+                            <TextView
+                                android:id="@+id/text_device_name"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="--"
+                                android:textSize="12sp"
+                                android:textColor="@android:color/black" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="IP: "
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@android:color/black" />
+                            <TextView
+                                android:id="@+id/text_device_ip"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="--"
+                                android:textSize="12sp"
+                                android:textColor="@android:color/black" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Right Column: Model & Firmware -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <LinearLayout
+                            android:id="@+id/layout_device_model"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginBottom="4dp"
+                            android:visibility="gone">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Model: "
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@android:color/black" />
+                            <TextView
+                                android:id="@+id/text_device_model"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:textSize="12sp"
+                                android:textColor="@android:color/black" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layout_device_firmware"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:visibility="gone">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Firmware: "
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@android:color/black" />
+                            <TextView
+                                android:id="@+id/text_device_firmware"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:textSize="12sp"
+                                android:textColor="@android:color/black" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Self Tests Section -->
+                <LinearLayout
+                    android:id="@+id/layout_self_tests"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone"
+                    android:background="@drawable/bg_rounded_card"
+                    android:padding="8dp">
+
+                    <!-- Self Tests Header -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="System Self Tests"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/black" />
+
+                        <TextView
+                            android:id="@+id/text_self_tests_summary"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:textColor="@android:color/holo_green_dark" />
+                    </LinearLayout>
+
+                    <!-- Self Tests Grid Container -->
+                    <LinearLayout
+                        android:id="@+id/layout_self_tests_grid"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <!-- Tests will be added dynamically in columns -->
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <!-- Single Action Button (Refresh Only) -->
+                <Button
+                    android:id="@+id/btn_refresh_device_info"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Refresh Device Information"
+                    android:textSize="12sp"
+                    android:layout_marginTop="8dp" />
+
+            </LinearLayout>
+
         </LinearLayout>
+
+        <!-- RS2+ diagnostic tools have been moved to Development > RS2+ -->
 
     </LinearLayout>
 

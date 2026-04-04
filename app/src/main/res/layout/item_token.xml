@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="30dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="0dp"
+    android:paddingEnd="0dp">
+
+    <!-- Optional icon, can hide if not needed -->
+    <ImageView
+        android:id="@+id/icon"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_marginEnd="4dp"
+        app:tint="@android:color/white"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_satellite_24"
+        android:visibility="gone"/>
+
+    <TextView
+        android:id="@+id/label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Acc"
+        android:textSize="12sp"
+        android:textColor="#B3FFFFFF"
+        android:maxLines="1" />
+
+    <TextView
+        android:id="@+id/value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="—"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginStart="4dp"
+        android:textColor="@android:color/white"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:fontFeatureSettings="tnum" />
+
+    <!-- Vertical bar separator with equal margins on both sides -->
+    <TextView
+        android:id="@+id/separator"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:text="|"
+        android:textColor="#66FFFFFF"
+        android:textSize="14sp" />
+</LinearLayout>

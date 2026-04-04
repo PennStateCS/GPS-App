@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Constants (for reference):
+         BODY_INSET = 2dp, CAP_W = 2dp, CAP_GAP = 1dp, OUTLINE_RIGHT_INSET = CAP_W + CAP_GAP = 3dp,
+         BODY_RIGHT_INSET = OUTLINE_RIGHT_INSET + BODY_INSET = 5dp -->
+
+    <!-- 1) Inner background so "empty" looks intentional on all backgrounds -->
+    <item
+        android:id="@+id/battery_bg"
+        android:left="2dp" android:top="2dp"
+        android:right="5dp" android:bottom="2dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="2dp" />
+            <solid android:color="#1FFFFFFF" />
+        </shape>
+    </item>
+
+    <!-- 2) Fill (clip left->right inside body, not under the cap) -->
+    <item
+        android:id="@+id/battery_fill"
+        android:left="2dp" android:top="2dp"
+        android:right="5dp" android:bottom="2dp">
+        <clip android:clipOrientation="horizontal" android:gravity="left">
+            <shape android:shape="rectangle">
+                <corners android:radius="2dp" />
+                <solid android:color="#4CAF50" />
+            </shape>
+        </clip>
+    </item>
+
+    <!-- Charging bolt overlay (centered) -->
+    <item
+        android:id="@+id/battery_bolt"
+        android:width="10dp"
+        android:height="10dp"
+        android:gravity="center"
+        android:drawable="@drawable/ic_bolt" />
+
+    <!-- 3) Cap on the RIGHT (reduced width) -->
+    <item
+        android:id="@+id/battery_cap"
+        android:width="2dp"
+        android:height="7dp"
+        android:gravity="right|center_vertical">
+        <shape android:shape="rectangle">
+            <corners android:radius="1dp" />
+            <solid android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+
+    <!-- 4) Body outline LAST (top-most), inset so it doesn't cover the cap -->
+    <item
+        android:id="@+id/battery_outline"
+        android:left="0dp" android:top="0dp"
+        android:right="3dp" android:bottom="0dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="2dp" />
+            <solid android:color="@android:color/transparent" />
+            <stroke android:width="1dp" android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+
+</layer-list>

@@ -2,6 +2,7 @@ package com.example.surveyingapp.ui.viewpoints
 
 import android.app.Dialog
 import android.os.Bundle
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
@@ -10,15 +11,18 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
-import android.view.LayoutInflater
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageView
+import com.example.surveyingapp.domain.model.Model
 
 class EditCoordinateDialogFragment(
     private val coordinate: Coordinate,
+    private val dbModels: List<Model> = emptyList(),
     private val onCoordinateEdited: (Coordinate) -> Unit
 ) : DialogFragment() {
+
+    private var iconSpinnerRef: Spinner? = null
+    private var selectedIconIndex: Int = 0
+    private var editTextRef: EditText? = null
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val inflater = requireActivity().layoutInflater
         val view = inflater.inflate(R.layout.dialog_add_point, null)
@@ -28,13 +32,18 @@ class EditCoordinateDialogFragment(
         val locationText = view.findViewById<TextView>(R.id.text_location)
         locationText.visibility = View.GONE // Hide location for edit
 
-        // Pre-fill values
+        editTextRef = nameEdit
         nameEdit.setText(coordinate.name)
 
-        // Icon choices updated
-        val icons = listOf("ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond")
-        iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
-        iconSpinner.setSelection(icons.indexOf(coordinate.icon).takeIf { it >= 0 } ?: 0)
+        // Build icon list matching AddCoordinateDialogFragment exactly
+        val builtInNames = listOf("transformer", "hydrant", "sign", "lightpole", "shrub", "building")
+        val iconItems: List<IconItem> = builtInNames.map { IconItem.BuiltIn(it) } +
+                dbModels.map { IconItem.DbModel(it) }
+
+        iconSpinner.adapter = AddCoordinateDialogFragment.IconSpinnerAdapter(requireContext(), iconItems)
+        selectedIconIndex = iconItems.indexOfFirst { it.iconKey() == coordinate.icon }.takeIf { it >= 0 } ?: 0
+        iconSpinner.setSelection(selectedIconIndex)
+        iconSpinnerRef = iconSpinner
 
         // Color choices
         val colors = listOf(
@@ -52,7 +61,7 @@ class EditCoordinateDialogFragment(
             .setView(view)
             .setPositiveButton("Save") { _, _ ->
                 val name = nameEdit.text.toString().ifBlank { coordinate.name }
-                val icon = icons[iconSpinner.selectedItemPosition]
+                val icon = iconItems[iconSpinner.selectedItemPosition].iconKey()
                 val color = colors[colorSpinner.selectedItemPosition].second
                 if (name != coordinate.name || icon != coordinate.icon || color != coordinate.color) {
                     val updated = coordinate.copy(name = name, icon = icon, color = color)
@@ -63,28 +72,21 @@ class EditCoordinateDialogFragment(
             .create()
     }
 
-    class IconSpinnerAdapter(
-        context: android.content.Context,
-        private val icons: List<String>
-    ) : ArrayAdapter<String>(context, 0, icons) {
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconView(position, convertView, parent)
-        }
-        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconView(position, convertView, parent)
-        }
-        private fun createIconView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val inflater = LayoutInflater.from(context)
-            val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
-            val imageView = view.findViewById<ImageView>(R.id.image_icon)
-            val textView = view.findViewById<TextView>(R.id.text_icon_name)
-            val iconName = icons[position]
-            val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
-            imageView.setImageResource(if (resId != 0) resId else R.drawable.ic_pin)
-            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
-                .replace('_',' ')
-                .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-            return view
-        }
+    override fun onStart() {
+        super.onStart()
+        // Re-apply selection after the dialog window is attached and laid out,
+        // so the collapsed spinner view correctly reflects the coordinate's current icon.
+        iconSpinnerRef?.setSelection(selectedIconIndex)
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        editTextRef?.clearFocus()
+        editTextRef = null
+    }
+
+    override fun onDetach() {
+        super.onDetach()
+        editTextRef = null
     }
 }

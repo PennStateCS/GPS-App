@@ -1,16 +1,18 @@
 package com.example.surveyingapp
 
-import android.Manifest
-import android.content.pm.PackageManager
+import android.content.Intent
 import android.content.SharedPreferences
-import android.os.Build
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -18,31 +20,44 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
-import androidx.navigation.findNavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.domain.model.Fix
-import com.example.surveyingapp.domain.model.LocationSourceType
-import com.example.surveyingapp.domain.model.RtkStatus
-import com.example.surveyingapp.service.LocationService
 import com.example.surveyingapp.databinding.ActivityMainBinding
+import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
+import com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter
+import com.example.surveyingapp.service.LocationService
 import com.example.surveyingapp.ui.openinar.OpenInARFragment
 import com.example.surveyingapp.ui.settings.SettingsFragment
-import com.example.surveyingapp.ui.common.updateStatusBar
+import com.example.surveyingapp.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
-import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.ClipDrawable
+import android.os.SystemClock
+import java.util.Locale
+import com.example.surveyingapp.gnss.reach.ReachBatteryService
+import com.example.surveyingapp.gnss.reach.ReachHttpClient
+import com.example.surveyingapp.gnss.service.GnssController
+import com.example.surveyingapp.gnss.source.ReplaySource
+import com.example.surveyingapp.gnss.accumulator.FixAccumulator
+import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     private lateinit var appBarConfiguration: AppBarConfiguration
@@ -55,45 +70,125 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == SettingsFragment.PREF_DEV_TOOLS) {
-            updateDevToolsVisibility() // React immediately to developer tools toggle
+            updateDevToolsVisibility()
         }
     }
 
-    private var statusCollectJob: Job? = null // Cancels aggregated collectors when Activity is destroyed
+    private var batteryJob: Job? = null
 
-    // Permission launcher for Android 13+ notification permission (needed for foreground service visibility)
-    private val notifPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) LocationService.start(this) else {
-            // Foreground notification suppressed; service may still start later when permission granted.
-        }
-    }
+    // Hilt injected GNSS components
+    @Inject lateinit var switchboard: FixSwitchboard
+    @Inject lateinit var externalAdapter: ExternalAdapter
+    @Inject lateinit var nmeaRegistry: NmeaRegistry
+    @Inject lateinit var fixAccumulator: FixAccumulator
+    @Inject lateinit var diagnosticsService: DiagnosticsService
+    @Inject lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
 
-    private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        // If denied we can proceed without AR camera until user grants later.
-    }
+    // Replay controller for NMEA playback
+    private var replayController: GnssController? = null
 
-    private val locationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        val fine = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarse = result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (fine || coarse) {
+    // Token view holder for status bar
+    private data class TokenViews(
+        val root: View,
+        val label: TextView,
+        val value: TextView,
+        val icon: ImageView,
+        val separator: TextView? = null
+    )
+
+    private lateinit var tokenSource: TokenViews
+    private lateinit var tokenFix: TokenViews
+    private lateinit var tokenSats: TokenViews
+    private lateinit var tokenCoord: TokenViews
+    private lateinit var tokenAlt: TokenViews
+    private lateinit var tokenBatt: TokenViews
+
+    // Cache the battery drawable once and mutate in place
+    private var batteryLayer: LayerDrawable? = null
+    private var batteryFillClip: ClipDrawable? = null
+
+    // Prevent repeated essential permission dialogs while one is already showing
+    private var showingEssentialRationale: Boolean = false
+
+    // Permission launchers
+    private val essentialPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions.filterValues { it }.keys
+        val denied  = permissions.filterValues { !it }.keys
+        android.util.Log.d("MainActivity", "Essential permission result: granted=$granted, denied=$denied")
+
+        // Reset guard so future requests are never blocked
+        showingEssentialRationale = false
+
+        // Use ground-truth check (covers permissions not in this batch)
+        val stillMissing = PermissionManager.getMissingEssentialPermissions(this)
+        if (stillMissing.isEmpty()) {
+            android.util.Log.d("MainActivity", "All essential permissions granted")
             ensureLocationServiceStarted()
         } else {
-            // User denied; you could show rationale or fallback behavior here.
+            android.util.Log.d("MainActivity", "Still missing: ${stillMissing.joinToString()}")
+            // Distinguish: can we still ask, or did the user permanently deny?
+            if (PermissionManager.isPermanentlyDenied(this, stillMissing)) {
+                showPermanentlyDeniedDialog(stillMissing)
+            } else {
+                showPermissionRationale(stillMissing)
+            }
         }
     }
 
-    private lateinit var statusBarTv: TextView
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            showBackgroundLocationRationale()
+        }
+    }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Preferences early to reduce potential UI flicker (e.g. theming decisions before inflate)
+
+        // Preferences first
         prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(prefListener)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        // Cache status bar TextView (inside included layouts)
-        statusBarTv = findViewById(R.id.text_status_bar_compact)
+
+        // Bind token views from included layout
+        tokenSource = findToken(R.id.token_source)
+        tokenFix    = findToken(R.id.token_fix)
+        tokenSats   = findToken(R.id.token_sats)
+        tokenCoord  = findToken(R.id.token_coord)
+        tokenAlt    = findToken(R.id.token_alt)
+        tokenBatt   = findToken(R.id.token_batt)
+
+        // Static labels
+        tokenSource.label.setText(R.string.status_token_src)
+        tokenFix.label.setText(R.string.status_token_fix)
+        tokenSats.label.setText(R.string.status_token_sats)
+        tokenCoord.label.setText(R.string.status_token_ll)
+        tokenAlt.label.setText(R.string.status_token_alt)
+
+        // Battery icon setup
+        tokenBatt.label.text = ""
+        tokenBatt.icon.setImageResource(R.drawable.battery_level)
+        androidx.core.widget.ImageViewCompat.setImageTintList(tokenBatt.icon, null)
+        tokenBatt.icon.scaleType = ImageView.ScaleType.FIT_XY
+        tokenBatt.icon.adjustViewBounds = false
+        tokenBatt.icon.minimumWidth = (32 * resources.displayMetrics.density).toInt()
+        tokenBatt.icon.setPadding(0, 0, 0, 0)
+        (tokenBatt.root as? View)?.minimumWidth = (48 * resources.displayMetrics.density).toInt()
+        tokenBatt.icon.isVisible = true
+        moveBatteryIconToRight()
+        tokenBatt.root.isVisible = false
+
+        // Trailing separators
+        tokenSats.separator?.isVisible = false
+        tokenAlt.separator?.isVisible = false
+        tokenBatt.separator?.isVisible = false
+
         setSupportActionBar(binding.appBarMain.toolbar)
 
         val drawerLayout: DrawerLayout = binding.drawerLayout
@@ -101,8 +196,11 @@ class MainActivity : AppCompatActivity() {
 
         val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
 
-        // Initial Nav setup (top-level destinations influence drawer + Up button behavior)
-        navController = findNavController(R.id.nav_host_fragment_content_main)
+        // Fixed NavController initialization
+        val navHostFragment = supportFragmentManager
+            .findFragmentById(R.id.nav_host_fragment_content_main) as NavHostFragment
+        navController = navHostFragment.navController
+
         val initialTopLevel = mutableSetOf(
             R.id.nav_home,
             R.id.nav_models,
@@ -115,18 +213,28 @@ class MainActivity : AppCompatActivity() {
         appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
         navView.setupWithNavController(navController)
-        updateDevToolsVisibility() // re-check after menu inflation
+        updateDevToolsVisibility()
 
-        val navHostFragment = supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment_content_main) as NavHostFragment
+        // RS2 visibility initial + updates
+        lifecycleScope.launch {
+            val src = SurveyingApp.settingsRepo.locationSource.first()
+            updateRs2Visibility(src == LocationSourceType.EXTERNAL)
+        }
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                SurveyingApp.settingsRepo.locationSource
+                    .distinctUntilChanged()
+                    .collectLatest { src -> updateRs2Visibility(src == LocationSourceType.EXTERNAL) }
+            }
+        }
 
-        // Attach DAO to OpenInAR fragment the moment its view is created (ensures dependency injection without full DI framework)
+        // Attach DAO for OpenInAR
         navHostFragment.childFragmentManager.registerFragmentLifecycleCallbacks(
             object : FragmentManager.FragmentLifecycleCallbacks() {
                 override fun onFragmentViewCreated(
                     fm: FragmentManager,
                     f: Fragment,
-                    v: android.view.View,
+                    v: View,
                     savedInstanceState: Bundle?
                 ) {
                     if (f is OpenInARFragment) {
@@ -137,7 +245,6 @@ class MainActivity : AppCompatActivity() {
             true
         )
 
-        // Fallback: on destination change ensure fragment (if AR) has DAO (covers rapid navigation edge cases)
         navController.addOnDestinationChangedListener { _, destination, _ ->
             if (destination.id == R.id.nav_open_in_ar) {
                 navHostFragment.childFragmentManager.executePendingTransactions()
@@ -147,88 +254,461 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Start live status observers (satellite / RTK info banner)
+        // Pre-populate minimal status based on initial source
+        lifecycleScope.launch {
+            val initialProvider = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL }
+            val srcLabel = if (initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
+            tokenSource.value.text = srcLabel
+            tokenSource.separator?.isVisible = initialProvider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+            if (initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) {
+                tokenFix.root.isVisible = false
+                tokenSats.root.isVisible = false
+                updateBatteryVisibility(false)
+            } else {
+                tokenFix.root.isVisible = true
+                tokenFix.value.text = "--"
+                tokenSats.root.isVisible = false
+            }
+            listOf(tokenCoord, tokenAlt, tokenBatt).forEach { it.root.isVisible = false }
+        }
+
+        // Permissions flow
+        requestAllPermissions()
+
+        // Initialize GNSS graph routing & observers BEFORE status observers
+        initGnss()
+
+        // Start observers AFTER GNSS init
         startStatusBarObservers()
+    }
 
-        // Request camera permission early if not granted (runtime >= 23)
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+    private fun initGnss() {
+        // Idempotent
+        try {
+            switchboard.start()
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error starting GNSS switchboard: ", e)
         }
-        if (!hasLocationPermission()) {
-            requestLocationPermissions()
-        } else {
+
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // Routed fixes (follows provider choice)
+                launch {
+                    try {
+                        switchboard.fixes.collect { fix ->
+                            // TODO: push into VM / UI as needed
+                        }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        android.util.Log.e("MainActivity", "Error collecting GNSS fixes: ", e)
+                    }
+                }
+                // Routed sky (follows provider choice)
+                launch {
+                    try {
+                        switchboard.sky.collect { sky ->
+                            // TODO: update sky UI
+                        }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        android.util.Log.e("MainActivity", "Error collecting GNSS sky data: ", e)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onSupportNavigateUp(): Boolean {
+        return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
+        batteryJob?.cancel()
+        replayController?.stop()
+    }
+
+    private fun moveBatteryIconToRight() {
+        val batteryContainer = tokenBatt.root as? android.widget.LinearLayout ?: return
+        batteryContainer.removeView(tokenBatt.icon)
+        val labelIndex = batteryContainer.indexOfChild(tokenBatt.label)
+        batteryContainer.addView(tokenBatt.icon, labelIndex + 1)
+        (tokenBatt.icon.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let { lp ->
+            val marginPx = (10 * resources.displayMetrics.density).toInt()
+            lp.width = (32 * resources.displayMetrics.density).toInt()
+            lp.height = (12 * resources.displayMetrics.density).toInt()
+            lp.setMargins(marginPx, 0, 0, 0)
+            tokenBatt.icon.layoutParams = lp
+            tokenBatt.icon.requestLayout()
+            batteryContainer.requestLayout()
+        }
+    }
+
+    private fun findToken(id: Int): TokenViews {
+        val root = findViewById<ViewGroup>(id)
+        val label = root.findViewById<TextView>(R.id.label)
+        val value = root.findViewById<TextView>(R.id.value)
+        val icon = root.findViewById<ImageView>(R.id.icon)
+        val sep = root.findViewById<TextView?>(R.id.separator)
+        return TokenViews(root, label, value, icon, sep)
+    }
+
+    /** Permission flow */
+    private fun requestAllPermissions() {
+        val missing = PermissionManager.getMissingEssentialPermissions(this)
+        if (missing.isEmpty()) {
             ensureLocationServiceStarted()
+        } else {
+            android.util.Log.d("MainActivity", "Requesting essential permissions: ${missing.joinToString()}")
+            essentialPermissionLauncher.launch(missing.toTypedArray())
         }
     }
 
-    private fun hasLocationPermission(): Boolean {
-        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        return fine || coarse
+    private fun requestBackgroundLocationPermission() {
+        if (PermissionManager.hasLocationPermissions(this) &&
+            !PermissionManager.hasBackgroundLocationPermission(this)
+        ) {
+            backgroundLocationLauncher.launch(PermissionManager.BACKGROUND_LOCATION_PERMISSION)
+        }
     }
 
-    private fun requestLocationPermissions() {
-        locationPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    // Storage: this app uses app-scoped storage and SAF for user-picked files.
+    // No broad storage permission is needed. This method is kept as a no-op entry point
+    // so that call sites don't need updating, but it no longer forces the user through
+    // the MANAGE_EXTERNAL_STORAGE settings screen on every launch.
+    @Suppress("unused")
+    fun requestStoragePermissions() {
+        // Nothing to do — app-scoped storage (getFilesDir / getExternalFilesDir) requires
+        // no runtime permission, and user file-picking uses SAF (ACTION_OPEN_DOCUMENT).
+        android.util.Log.d("MainActivity", "requestStoragePermissions: using scoped storage — no runtime permission needed")
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // Note: choreographer/frame callbacks belong in ModelViewerActivity; do not call them from MainActivity
+    }
+
+    /**
+     * Shows a rationale dialog explaining WHY the permissions are needed,
+     * then re-launches the system permission dialog on confirmation.
+     * Only called when shouldShowRequestPermissionRationale() returned true
+     * (i.e., the user denied once but did NOT select "Don't ask again").
+     */
+    private fun showPermissionRationale(missingPermissions: List<String>) {
+        if (showingEssentialRationale) return
+        showingEssentialRationale = true
+
+        android.util.Log.d("MainActivity", "Showing permission rationale for: ${missingPermissions.joinToString()}")
+
+        val message = buildString {
+            append("This app needs the following permissions to work properly:\n\n")
+            missingPermissions.forEach { perm ->
+                append("• ${PermissionManager.getPermissionDisplayName(perm)} — ")
+                append(PermissionManager.getPermissionDescription(perm))
+                append("\n")
+            }
+            append("\nPlease tap \"Grant\" to continue.")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Permissions Required")
+            .setMessage(message)
+            .setPositiveButton("Grant") { _, _ ->
+                showingEssentialRationale = false
+                essentialPermissionLauncher.launch(missingPermissions.toTypedArray())
+            }
+            .setNegativeButton("Not now") { _, _ ->
+                showingEssentialRationale = false
+                // Allow the app to continue in a degraded state
+                ensureLocationServiceStarted()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * Shows a dialog directing the user to app Settings because the permissions
+     * were permanently denied ("Don't ask again" was selected).
+     * We cannot show the system dialog again; only Settings can fix this.
+     */
+    private fun showPermanentlyDeniedDialog(missingPermissions: List<String>) {
+        android.util.Log.d("MainActivity", "Permissions permanently denied: ${missingPermissions.joinToString()}")
+
+        val names = missingPermissions.joinToString(", ") { PermissionManager.getPermissionDisplayName(it) }
+        AlertDialog.Builder(this)
+            .setTitle("Permissions Required")
+            .setMessage(
+                "The following permissions were permanently denied:\n\n$names\n\n" +
+                "Please open App Settings and grant them manually under Permissions."
+            )
+            .setPositiveButton("Open Settings") { _, _ ->
+                try {
+                    val intent = android.content.Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", packageName, null)
+                    )
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Cannot open app settings", e)
+                }
+            }
+            .setNegativeButton("Continue without") { _, _ ->
+                ensureLocationServiceStarted()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun showBackgroundLocationRationale() {
+        AlertDialog.Builder(this)
+            .setTitle("Background Location")
+            .setMessage(
+                "Background location access allows continuous tracking when the app is not actively being used. " +
+                        "This is useful for extended surveying sessions.\n\nYou can enable this later in Settings > Location if needed."
+            )
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun ensureLocationServiceStarted() {
-        if (Build.VERSION.SDK_INT >= 33) { // POST_NOTIFICATIONS required only on T+ for foreground service notification
-            val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                return
+        if (!PermissionManager.hasLocationPermissions(this)) return
+        LocationService.start(this)
+        lifecycleScope.launch {
+            delay(3000)
+            if (PermissionManager.hasLocationPermissions(this@MainActivity) &&
+                !PermissionManager.hasBackgroundLocationPermission(this@MainActivity)
+            ) {
+                requestBackgroundLocationPermission()
             }
         }
-        LocationService.start(this)
     }
 
-    @OptIn(FlowPreview::class)
-    // Option B: lifecycle + combine + debounce with GNSS status flow
+    /** Status bar observers */
     private fun startStatusBarObservers() {
-        statusCollectJob?.cancel()
-        statusCollectJob = lifecycleScope.launch {
-            val settingsRepo = SurveyingApp.settingsRepo
-            val initialSource = settingsRepo.locationSource.first()
-            val initialLabel = if (initialSource == LocationSourceType.INTERNAL) "Internal" else "RS2+"
-            statusBarTv.text = getString(R.string.status_initial_no_fix, initialLabel)
+        // Separate observer for instant source label updates
+        lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                val manager = SurveyingApp.locationManager
+                sourceSettings.activeProvider.collect { provider ->
+                    val srcLabel = if (provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
+                    android.util.Log.d("MainActivity", "Provider changed to: $provider, label: $srcLabel")
+                    tokenSource.value.text = srcLabel
+                    tokenSource.separator?.isVisible = provider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+                }
+            }
+        }
+
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 combine(
-                    manager.fixFlow,
-                    settingsRepo.locationSource,
-                    manager.gnssStatusFlow
-                ) { fix: Fix, source: LocationSourceType, gnss -> Triple(fix, source, gnss) }
-                    .debounce(200)
-                    .distinctUntilChanged { old, new ->
-                        // Distinct based on text produced; quick compare without recomputing full string by key parts
-                        val oldKey = "${old.second}|${old.first.rtkStatus}|${old.first.lat}|${old.first.lon}|${old.first.hAccM}|${old.first.vAccM}"
-                        val newKey = "${new.second}|${new.first.rtkStatus}|${new.first.lat}|${new.first.lon}|${new.first.hAccM}|${new.first.vAccM}"
-                        oldKey == newKey
+                    switchboard.fixes,
+                    // Use provider choice for immediate UI updates on toggle
+                    sourceSettings.activeProvider.map { prov ->
+                        if (prov == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) LocationSourceType.INTERNAL else LocationSourceType.EXTERNAL
                     }
-                    .collectLatest { (fix, source, gnss) ->
-                        val sourceLabel = if (source == LocationSourceType.INTERNAL) "Internal" else "RS2+"
-                        val text = updateStatusBar(sourceLabel, fix, gnss)
-                        statusBarTv.text = text
-                        val colorRes = when {
-                            source == LocationSourceType.INTERNAL -> android.R.color.white
-                            fix.rtkStatus == RtkStatus.FIX -> R.color.status_fix
-                            fix.rtkStatus == RtkStatus.FLOAT -> R.color.status_float
-                            fix.rtkStatus == RtkStatus.DGPS -> R.color.status_dgps
-                            fix.rtkStatus == RtkStatus.SINGLE -> R.color.status_single
-                            else -> R.color.status_no_fix
+                ) { fix: Fix, source: LocationSourceType -> fix to source }
+                    // Remove sampling to reflect changes instantly
+                    .distinctUntilChanged { (oFix, oSrc), (nFix, nSrc) ->
+                        oSrc == nSrc &&
+                                oFix.rtkStatus == nFix.rtkStatus &&
+                                oFix.satsUsed == nFix.satsUsed &&
+                                oFix.satsVisible == nFix.satsVisible &&
+                                (oFix.latDeg * 1e6).toLong() == (nFix.latDeg * 1e6).toLong() &&
+                                (oFix.lonDeg * 1e6).toLong() == (nFix.lonDeg * 1e6).toLong() &&
+                                (((oFix.altMslM ?: oFix.altEllipsoidalM) ?: -999.0) * 100).toLong() ==
+                                (((nFix.altMslM ?: nFix.altEllipsoidalM) ?: -999.0) * 100).toLong()
+                    }
+                    .catch { e ->
+                        android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
+                        runOnUiThread {
+                            tokenSource.value.text = "--"
+                            tokenFix.value.text = "--"
+                            tokenSats.value.text = "--"
+                            tokenCoord.value.text = "--"
+                            tokenAlt.value.text = "--"
+                            tokenBatt.value.text = "--"
                         }
-                        statusBarTv.setTextColor(ContextCompat.getColor(this@MainActivity, colorRes))
+                    }
+                    .collectLatest { (fix, source) ->
+                        android.util.Log.d("MainActivity", "Updating status tokens for source: $source")
+                        updateStatusTokens(source, fix)
+                        updateBatteryVisibility(source == LocationSourceType.EXTERNAL)
                     }
             }
         }
     }
+
+    private fun updateBatteryVisibility(shouldShow: Boolean) {
+        if (shouldShow) {
+            tokenAlt.separator?.isVisible = true
+            if (batteryJob == null) startBatteryPolling()
+        } else {
+            tokenAlt.separator?.isVisible = false
+            tokenBatt.root.isVisible = false
+            batteryJob?.cancel(); batteryJob = null
+        }
+    }
+
+    private fun updateBatteryIcon(percentage: Int?, charging: Boolean? = null) {
+        // Hide if no data
+        if (percentage == null) {
+            tokenBatt.root.isVisible = false
+            tokenBatt.value.text = "" // Clear stale text to prevent flash when becoming visible again
+            return
+        }
+        tokenBatt.root.isVisible = true
+        tokenBatt.value.text = "${percentage.coerceIn(0, 100)}%"
+
+        if (batteryLayer == null) {
+            val base = tokenBatt.icon.drawable ?: return
+            batteryLayer = (base.mutate() as? LayerDrawable)
+            tokenBatt.icon.setImageDrawable(batteryLayer)
+            batteryFillClip = (batteryLayer?.findDrawableByLayerId(R.id.battery_fill) as? ClipDrawable)
+                ?: run {
+                    var found: ClipDrawable? = null
+                    try {
+                        val count = batteryLayer?.numberOfLayers ?: 0
+                        for (i in 0 until count) {
+                            val d = batteryLayer?.getDrawable(i)
+                            if (d is ClipDrawable) { found = d; break }
+                        }
+                    } catch (_: Exception) {}
+                    found
+                }
+        }
+
+        batteryFillClip?.level = (percentage.coerceIn(0, 100) * 100)
+
+        val fillColor = when {
+            charging == true -> 0xFF4CAF50.toInt()
+            percentage <= 15 -> 0xFFF44336.toInt()
+            percentage <= 30 -> 0xFFFFC107.toInt()
+            else -> 0xFF4CAF50.toInt()
+        }
+
+        try {
+            batteryLayer?.findDrawableByLayerId(R.id.battery_bolt)?.alpha = if (charging == true) 0xFF else 0x00
+        } catch (_: Exception) {}
+
+        val clip = batteryFillClip
+        val inner = try { clip?.drawable } catch (_: Exception) { null }
+        var tinted = false
+        try {
+            if (inner is android.graphics.drawable.GradientDrawable) {
+                inner.setColor(fillColor); tinted = true
+            }
+        } catch (_: Exception) {}
+        try {
+            if (inner != null) {
+                androidx.core.graphics.drawable.DrawableCompat.setTint(inner, fillColor); tinted = true
+            }
+        } catch (_: Exception) {}
+        if (!tinted) {
+            try { clip?.let { androidx.core.graphics.drawable.DrawableCompat.setTint(it, fillColor) } } catch (_: Exception) {}
+        }
+
+        try {
+            batteryLayer?.findDrawableByLayerId(R.id.battery_bg)?.alpha = if (percentage <= 15) 0x66 else 0x22
+        } catch (_: Exception) {}
+
+        batteryLayer?.invalidateSelf()
+        tokenBatt.icon.invalidate()
+    }
+
+    private fun startBatteryPolling() {
+        batteryJob?.cancel()
+        batteryJob = lifecycleScope.launch {
+            var consecutiveFailures = 0
+            var lastLoggedFailure = 0L
+            var batteryHidden = false
+            var hideStartTime = 0L
+
+            var lastIp: String? = null
+            var client: ReachHttpClient? = null
+            var service: ReachBatteryService? = null
+
+            while (true) {
+                try {
+                    val ip = runCatching { SurveyingApp.settingsRepo.externalTcpHost.first() }.getOrNull()
+
+                    if (ip.isNullOrBlank()) {
+                        if (!batteryHidden) {
+                            updateBatteryIcon(null)
+                            batteryHidden = true
+                            hideStartTime = SystemClock.elapsedRealtime()
+                            consecutiveFailures = 0
+                        }
+                        delay(60_000)
+                        continue
+                    }
+
+                    if (ip != lastIp) {
+                        try {
+                            client = ReachHttpClient(ip)
+                            service = ReachBatteryService(client!!)
+                        } catch (e: Exception) {
+                            android.util.Log.e("MainActivity", "Error initializing battery service: ", e)
+                            updateBatteryIcon(null)
+                            delay(30_000)
+                            continue
+                        }
+                        lastIp = ip
+                    }
+
+                    if (batteryHidden && SystemClock.elapsedRealtime() - hideStartTime >= 60_000) {
+                        batteryHidden = false
+                        consecutiveFailures = 0
+                    }
+                    if (batteryHidden) { delay(15_000); continue }
+
+                    val batt = try {
+                        withContext(Dispatchers.IO) { runCatching { service?.read() }.getOrNull() }
+                    } catch (e: Exception) {
+                        android.util.Log.e("MainActivity", "Error reading battery data: ", e)
+                        null
+                    }
+
+                    if (batt?.percent != null) {
+                        consecutiveFailures = 0
+                        val isCharging = batt.chargerStatus?.contains("charg", ignoreCase = true)
+                        updateBatteryIcon(batt.percent, isCharging)
+                        delay(15_000)
+                    } else {
+                        consecutiveFailures++
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastLoggedFailure >= 60_000) {
+                            android.util.Log.w("MainActivity", "Battery fetch failed for $ip (#$consecutiveFailures)")
+                            lastLoggedFailure = now
+                        }
+                        if (consecutiveFailures >= 3 && !batteryHidden) {
+                            updateBatteryIcon(null)
+                            batteryHidden = true
+                            hideStartTime = SystemClock.elapsedRealtime()
+                        }
+                        delay( when (consecutiveFailures) { 1 -> 15_000L; 2 -> 30_000L; else -> 45_000L } )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Battery polling error: ", e)
+                    if (!batteryHidden) {
+                        updateBatteryIcon(null)
+                        batteryHidden = true
+                        hideStartTime = SystemClock.elapsedRealtime()
+                    }
+                    delay(60_000)
+                }
+            }
+        }
+    }
+
 
     private fun updateDevToolsVisibility() {
-        val enabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
-        val menu = binding.navView.menu
-        val devItem = menu.findItem(R.id.nav_development)
-        devItem?.isVisible = enabled
-        // Re-derive top-level destinations so Up button behaves correctly when dev section toggles
+        val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
+        val navView: NavigationView = binding.navView
+        val menu = navView.menu
+        val devMenuItem = menu.findItem(R.id.nav_development)
+        devMenuItem?.isVisible = devEnabled
+
         val topLevel = mutableSetOf(
             R.id.nav_home,
             R.id.nav_models,
@@ -237,12 +717,122 @@ class MainActivity : AppCompatActivity() {
             R.id.nav_open_in_ar,
             R.id.nav_settings
         )
-        if (enabled) topLevel.add(R.id.nav_development)
+        if (devEnabled) topLevel.add(R.id.nav_development)
+
+        lifecycleScope.launch {
+            val src = try { SurveyingApp.settingsRepo.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
+            if (src == LocationSourceType.EXTERNAL) {
+                topLevel.add(R.id.nav_rs2)
+            }
+            appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
+            setupActionBarWithNavController(navController, appBarConfiguration)
+        }
+    }
+
+    private fun updateRs2Visibility(shouldShow: Boolean) {
+        val navView: NavigationView = binding.navView
+        val menu = navView.menu
+        val rs2MenuItem = menu.findItem(R.id.nav_rs2)
+        rs2MenuItem?.isVisible = shouldShow
+
+        val topLevel = mutableSetOf(
+            R.id.nav_home,
+            R.id.nav_models,
+            R.id.nav_view_coordinates,
+            R.id.nav_render_map,
+            R.id.nav_open_in_ar,
+            R.id.nav_settings
+        )
+        if (shouldShow) topLevel.add(R.id.nav_rs2)
+        val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
+        if (devEnabled) topLevel.add(R.id.nav_development)
+
         appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
-        // If dev item hidden while currently on it, navigate home to avoid orphan destination
-        if (!enabled && navController.currentDestination?.id == R.id.nav_development) {
-            navController.navigate(R.id.nav_home)
+    }
+
+    private fun updateStatusTokens(
+        source: LocationSourceType,
+        fix: Fix
+    ) {
+        val srcLabel = if (source == LocationSourceType.INTERNAL) "Internal" else "RS2+"
+        tokenSource.value.text = srcLabel
+
+        val isInternal = source == LocationSourceType.INTERNAL
+        tokenSource.separator?.isVisible = !isInternal
+        if (isInternal) {
+            // Hide FIX/SATS entirely
+            tokenFix.root.isVisible = false
+            tokenSats.root.isVisible = false
+            // Hide battery immediately when internal
+            updateBatteryVisibility(false)
+
+            // Coordinates
+            val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
+            val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
+            tokenCoord.value.text = "$latStr, $lonStr"
+            tokenCoord.root.isVisible = true
+
+            // Altitude: prefer MSL if available
+            val altMsl = fix.altMslM
+            val altEllip = fix.altEllipsoidalM
+            when {
+                altMsl != null -> {
+                    tokenAlt.value.text = String.format(Locale.US, "%.2f", altMsl) + "m"
+                    tokenAlt.root.isVisible = true
+                }
+                altEllip != null -> {
+                    tokenAlt.value.text = String.format(Locale.US, "%.2f", altEllip) + "m"
+                    tokenAlt.root.isVisible = true
+                }
+                else -> tokenAlt.root.isVisible = false
+            }
+            return
+        }
+
+        // External (RS2+)
+        tokenFix.root.isVisible = true
+        val (fixLabel, fixColor) = when (fix.rtkStatus) {
+            RtkStatus.NONE    -> "--"      to 0xFF9E9E9E.toInt()
+            RtkStatus.SINGLE  -> "Single"  to 0xFFFF5722.toInt()
+            RtkStatus.DGPS    -> "DGPS"    to 0xFFFF9800.toInt()
+            RtkStatus.FLOAT   -> "Float"   to 0xFF2196F3.toInt()
+            RtkStatus.FIX     -> "Fixed"   to 0xFF4CAF50.toInt()
+            RtkStatus.DEAD_RECKONING -> "DR" to 0xFFFF9800.toInt()
+            RtkStatus.INVALID -> "Invalid" to 0xFFF44336.toInt()
+        }
+        tokenFix.value.text = fixLabel
+        tokenFix.value.setTextColor(fixColor)
+
+        // Satellites (sanitize impossible combos)
+        val used = fix.satsUsed.coerceAtLeast(0)
+        val vis  = (fix.satsVisible ?: used).coerceAtLeast(used)
+        if (used > 0 || vis > 0) {
+            tokenSats.value.text = "$used/$vis"
+            tokenSats.root.isVisible = true
+        } else {
+            tokenSats.root.isVisible = false
+        }
+
+        // Coordinates
+        val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
+        val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
+        tokenCoord.value.text = "$latStr, $lonStr"
+        tokenCoord.root.isVisible = true
+
+        // Altitude: prefer MSL, else ellipsoidal
+        val altMsl = fix.altMslM
+        val altEllip = fix.altEllipsoidalM
+        when {
+            altMsl != null -> {
+                tokenAlt.value.text = String.format(Locale.US, "%.2f", altMsl) + "m"
+                tokenAlt.root.isVisible = true
+            }
+            altEllip != null -> {
+                tokenAlt.value.text = String.format(Locale.US, "%.2f", altEllip) + "m"
+                tokenAlt.root.isVisible = true
+            }
+            else -> tokenAlt.root.isVisible = false
         }
     }
 
@@ -251,26 +841,135 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
-        R.id.action_settings -> {
-            findNavController(R.id.nav_host_fragment_content_main).navigate(R.id.nav_settings)
-            true
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_replay -> {
+                showNmeaFileSelectionDialog()
+                true
+            }
+            R.id.action_diagnostics -> {
+                navController.navigate(R.id.nav_diagnostics)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
-        else -> super.onOptionsItemSelected(item)
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    /**
+     * Shows a dialog to select available NMEA files from assets and start replay
+     */
+    private fun showNmeaFileSelectionDialog() {
+        lifecycleScope.launch {
+            try {
+                // Get list of .nmea files from assets
+                val nmeaFiles = assets.list("")?.filter { it.endsWith(".nmea") } ?: emptyList()
+
+                if (nmeaFiles.isEmpty()) {
+                    runOnUiThread {
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle("No NMEA Files")
+                            .setMessage("No .nmea files found in assets folder.")
+                            .setPositiveButton("OK", null)
+                            .show()
+                    }
+                    return@launch
+                }
+
+                runOnUiThread {
+                    val fileNames = nmeaFiles.toTypedArray()
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Select NMEA File for Replay")
+                        .setItems(fileNames) { _, which ->
+                            val selectedFile = fileNames[which]
+                            startNmeaReplay(selectedFile)
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Error listing NMEA files", e)
+                runOnUiThread {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Error")
+                        .setMessage("Failed to list NMEA files: ${e.message}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            }
+        }
     }
 
-    override fun onDestroy() {
-        statusCollectJob?.cancel() // Prevent leak of coroutines referencing Views
-        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
-        super.onDestroy()
+    /**
+     * Starts NMEA replay from the selected asset file
+     */
+    private fun startNmeaReplay(fileName: String) {
+        try {
+            // Stop any existing replay
+            replayController?.stop()
+
+            // Create new replay source
+            val replaySource = ReplaySource(
+                context = this,
+                assetFileName = fileName,
+                delayBetweenLines = 1000L, // 1 second between NMEA sentences
+                name = "Replay ($fileName)"
+            )
+
+            // Create new controller with replay source
+            replayController = GnssController(
+                scope = lifecycleScope,
+                source = replaySource,
+                registry = nmeaRegistry,
+                accumulator = fixAccumulator
+            )
+
+            // Start the replay
+            replayController?.start()
+
+            // Update status to show replay is active
+            tokenSource.value.text = "Replay"
+
+            // Show confirmation dialog with option to stop
+            AlertDialog.Builder(this)
+                .setTitle("NMEA Replay Started")
+                .setMessage("Replaying NMEA data from $fileName\n\nThis will simulate GNSS data for demo and testing purposes.")
+                .setPositiveButton("Stop Replay") { _, _ ->
+                    stopNmeaReplay()
+                }
+                .setNegativeButton("Keep Running", null)
+                .show()
+
+            android.util.Log.i("MainActivity", "Started NMEA replay from $fileName")
+
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error starting NMEA replay", e)
+            AlertDialog.Builder(this)
+                .setTitle("Replay Error")
+                .setMessage("Failed to start NMEA replay: ${e.message}")
+                .setPositiveButton("OK", null)
+                .show()
+        }
     }
 
-    // onStart/onStop overrides currently no-op
-    override fun onStart() { super.onStart() }
-    override fun onStop() { super.onStop() }
+    /**
+     * Stops the current NMEA replay
+     */
+    private fun stopNmeaReplay() {
+        try {
+            replayController?.stop()
+            replayController = null
+
+            // Reset status display
+            lifecycleScope.launch {
+                val prov = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL }
+                val srcLabel = if (prov == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
+                tokenSource.value.text = srcLabel
+            }
+
+            android.util.Log.i("MainActivity", "Stopped NMEA replay")
+
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Error stopping NMEA replay", e)
+        }
+    }
 }

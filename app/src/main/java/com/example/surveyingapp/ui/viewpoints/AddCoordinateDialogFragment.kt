@@ -4,7 +4,14 @@ import android.Manifest
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
@@ -15,8 +22,12 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.util.GeoProjection
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -31,30 +42,76 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import java.io.File
 import java.util.Locale
 import kotlin.coroutines.resume
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
- * Dialog Fragment for adding new coordinate points using GPS location.
- *
- * DialogFragment is used for modal dialogs that survive configuration changes.
- * This dialog demonstrates:
- * - GPS location access using LocationManager
- * - Permission handling for location services
- * - Custom spinners with icons
- * - Callback pattern for returning data to parent
- *
- * The constructor takes a callback function that's called when a coordinate is added.
+ * Represents a single entry in the icon spinner.
+ * Either a built-in asset icon or a model from the database.
  */
+sealed class IconItem {
+    /** A built-in icon stored as a PNG in assets/model_images/ */
+    data class BuiltIn(val assetName: String) : IconItem()
+
+    /** A model from the Room database. Uses its thumbnail if available. */
+    data class DbModel(val model: Model) : IconItem()
+
+    /** The string key stored on the Coordinate (what [Coordinate.icon] is set to) */
+    fun iconKey(): String = when (this) {
+        is BuiltIn -> assetName
+        is DbModel -> "model:${model.id}"   // prefix so it's unambiguous
+    }
+
+    /** Human-readable label shown in the spinner */
+    fun label(): String = when (this) {
+        is BuiltIn -> assetName
+            .replace('_', ' ')
+            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+        is DbModel -> model.name
+    }
+}
+
+@AndroidEntryPoint
 class AddCoordinateDialogFragment(
     private val highAccuracy: Boolean = true,
+    private val dbModels: List<Model> = emptyList(),
     private val onPointAdded: (Coordinate) -> Unit
 ) : DialogFragment() {
+
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
+
+    // Reference to EditText for proper cleanup
+    private var editTextRef: EditText? = null
 
     // Variables to store the GPS coordinates
     private var latitude: Double = 0.0
     private var longitude: Double = 0.0
     private var altitude: Double = 0.0
+
+    // Extra quality/metadata captured from external RS2+/NMEA fix
+    private var providerStr: String = "fused"
+    private var rtkStatusStr: String? = null
+    private var satsUsedVal: Int? = null
+    private var hdopVal: Double? = null
+    private var hAccVal: Double? = null
+    private var vAccVal: Double? = null
+    private var correctionSourceStr: String? = null
+    private var correctionAgeSeconds: Double? = null
+    private var altitudeMslVal: Double? = null
+    private var geoidSeparationVal: Double? = null
+    private var crsEpsgVal: Int? = 4326
+
+    // Std deviations from GST
+    private var stdLatVal: Double? = null
+    private var stdLonVal: Double? = null
+    private var stdAltVal: Double? = null
+
+    // Timestamp to persist with the point
+    private var capturedTimestampMs: Long = System.currentTimeMillis()
 
     /**
      * Creates and configures the dialog.
@@ -70,11 +127,15 @@ class AddCoordinateDialogFragment(
         val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
 
-        // Set up icon choices with custom adapter (updated icons)
-        val icons = listOf(
-            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
-        )
-        iconSpinner.adapter = IconSpinnerAdapter(requireContext(), icons)
+        // Store reference to EditText for proper cleanup
+        editTextRef = nameEdit
+
+        // Build combined icon list: built-ins first, then DB models
+        val builtInNames = listOf("transformer", "hydrant", "sign", "lightpole", "shrub", "building")
+        val iconItems: List<IconItem> = builtInNames.map { IconItem.BuiltIn(it) } +
+                dbModels.map { IconItem.DbModel(it) }
+
+        iconSpinner.adapter = IconSpinnerAdapter(requireContext(), iconItems)
 
         // Set up color choices with predefined colors
         val colors = listOf(
@@ -84,6 +145,7 @@ class AddCoordinateDialogFragment(
             "Orange" to 0xFFFFB74D.toInt(),
             "Purple" to 0xFFBA68C8.toInt()
         )
+
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
 
         // Begin one-shot location acquisition based on settings
@@ -105,18 +167,42 @@ class AddCoordinateDialogFragment(
             .setPositiveButton("Add") { _, _ ->
                 // Create a new Coordinate object with user input
                 val name = nameEdit.text.toString().ifBlank { "Unnamed Coordinate" }
-                val icon = icons[iconSpinner.selectedItemPosition]
+                val selectedIcon = iconItems[iconSpinner.selectedItemPosition]
+                val icon = selectedIcon.iconKey()
                 val color = colors[colorSpinner.selectedItemPosition].second
 
+                // Compute UTM projection from current lat/lon
+                val utm = try { GeoProjection.wgs84ToUtm(latitude, longitude) } catch (_: Exception) { null }
+                val eastingVal = utm?.easting
+                val northingVal = utm?.northing
+                val utmZoneVal = utm?.zoneString
+
                 val point = Coordinate(
-                    id = UUID.randomUUID().toString(),  // Generate unique ID
+                    id = UUID.randomUUID().toString(),
                     name = name,
                     latitude = latitude,
                     longitude = longitude,
-                    altitude = altitude,
-                    timestamp = System.currentTimeMillis(),  // Current time
+                    altitude = altitude, // ellipsoidal
+                    timestamp = capturedTimestampMs,
                     icon = icon,
-                    color = color
+                    color = color,
+                    provider = providerStr,
+                    rtkStatus = rtkStatusStr,
+                    satsUsed = satsUsedVal,
+                    hdop = hdopVal,
+                    horizontalAccuracyM = hAccVal,
+                    verticalAccuracyM = vAccVal,
+                    correctionSource = correctionSourceStr,
+                    correctionAgeS = correctionAgeSeconds,
+                    altitudeMsl = altitudeMslVal,
+                    geoidSeparationM = geoidSeparationVal,
+                    crsEpsg = crsEpsgVal,
+                    easting = eastingVal,
+                    northing = northingVal,
+                    utmZone = utmZoneVal,
+                    stdLatM = stdLatVal,
+                    stdLonM = stdLonVal,
+                    stdAltM = stdAltVal
                 )
 
                 // Call the callback function to return the new coordinate
@@ -148,8 +234,12 @@ class AddCoordinateDialogFragment(
             latitude = result.latitude
             longitude = result.longitude
             altitude = result.altitude
-            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL";
+            providerStr = "fused"
+            hAccVal = if (result.hasAccuracy()) result.accuracy.toDouble() else null
+            vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && result.hasVerticalAccuracy()) result.verticalAccuracyMeters.toDouble() else null
+            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL"
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
+            capturedTimestampMs = System.currentTimeMillis()
             return
         }
         // Try last known location
@@ -161,28 +251,51 @@ class AddCoordinateDialogFragment(
             latitude = last.latitude
             longitude = last.longitude
             altitude = last.altitude
+            providerStr = "fused"
+            hAccVal = if (last.hasAccuracy()) last.accuracy.toDouble() else null
+            vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && last.hasVerticalAccuracy()) last.verticalAccuracyMeters.toDouble() else null
             locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, "LAST-KNOWN") + " (fallback)"
+            capturedTimestampMs = System.currentTimeMillis()
             return
         }
         // Final emulator fallback: use a stable default (Googleplex) so user can edit name and save quickly
         latitude = 37.4219999
         longitude = -122.0840575
         altitude = 0.0
+        providerStr = "fused"
         locationText.text = String.format(Locale.US, "%.6f, %.6f, %.2fm (emulator fallback)", latitude, longitude, altitude)
+        capturedTimestampMs = System.currentTimeMillis()
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {
+        // Obtain a single external fix via the injected switchboard
         val fix = withTimeoutOrNull(12_000L) {
             withContext(Dispatchers.IO) {
-                try { SurveyingApp.nmeaSource.fixes().first() } catch (_: Exception) { null }
+                runCatching { fixSwitchboard.fixes.first() }.getOrNull()
             }
         }
         if (fix != null) {
-            latitude = fix.lat
-            longitude = fix.lon
+            latitude = fix.latDeg
+            longitude = fix.lonDeg
             altitude = fix.altEllipsoidalM ?: 0.0
-            val state = fix.rtkStatus?.name ?: "SINGLE"
-            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, state)
+            // Map provider enum to display/storage string (collapse external variants)
+            providerStr = when (fix.provider) {
+                Provider.INTERNAL -> "fused"
+                Provider.RS2_EXTERNAL, Provider.RS2_BT, Provider.RS2_TCP, Provider.OTHER -> "external"
+            }
+            rtkStatusStr = fix.rtkStatus.name
+            satsUsedVal = fix.satsUsed
+            hdopVal = fix.hDop
+            hAccVal = fix.hAccM
+            vAccVal = fix.vAccM
+            correctionAgeSeconds = fix.diffAgeS
+            altitudeMslVal = fix.altMslM
+            geoidSeparationVal = fix.geoidSeparationM
+            crsEpsgVal = 4326 // WGS84
+            capturedTimestampMs = fix.timeUtc.toEpochMilli()
+
+            val mode = rtkStatusStr ?: "SINGLE"
+            locationText.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
         } else {
             locationText.text = getString(R.string.location_unavailable)
         }
@@ -197,49 +310,84 @@ class AddCoordinateDialogFragment(
         }
 
     /**
-     * Custom adapter for the icon spinner that displays icons with text.
-     *
-     * This demonstrates how to create custom adapters for Spinners.
-     * It shows both an icon image and the icon name in each dropdown item.
+     * Spinner adapter that handles both built-in asset icons and DB model thumbnails.
      */
     class IconSpinnerAdapter(
         context: Context,
-        private val icons: List<String>
-    ) : ArrayAdapter<String>(context, 0, icons) {
+        private val items: List<IconItem>
+    ) : ArrayAdapter<String>(context, 0, items.map { it.label() }) {
 
-        // View shown when spinner is closed (selected item)
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconView(position, convertView, parent)
-        }
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+            createItemView(position, convertView, parent)
 
-        // View shown in the dropdown list
-        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-            return createIconView(position, convertView, parent)
-        }
+        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
+            createItemView(position, convertView, parent)
 
-        /**
-         * Creates a view for a single icon item.
-         * Uses view recycling for performance (convertView).
-         */
-        private fun createIconView(position: Int, convertView: View?, parent: ViewGroup): View {
+        private fun createItemView(position: Int, convertView: View?, parent: ViewGroup): View {
             val inflater = LayoutInflater.from(context)
             val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
-
             val imageView = view.findViewById<ImageView>(R.id.image_icon)
             val textView = view.findViewById<TextView>(R.id.text_icon_name)
 
-            val iconName = icons[position]
+            val item = items[position]
+            textView.text = item.label()
 
-            // Load the icon by name using resource reflection
-            val resId = context.resources.getIdentifier(iconName, "drawable", context.packageName)
-            imageView.setImageResource(resId)
-
-            // Create a user-friendly name from the icon name
-            textView.text = iconName.removePrefix("ic_menu_").removePrefix("ic_")
-                .replace('_', ' ') // allow future multi-word
-                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-
+            when (item) {
+                is IconItem.BuiltIn -> {
+                    try {
+                        val stream = context.assets.open("model_images/${item.assetName}.png")
+                        imageView.setImageBitmap(BitmapFactory.decodeStream(stream))
+                    } catch (e: Exception) {
+                        Log.w("IconSpinnerAdapter", "Asset not found: ${item.assetName}", e)
+                        imageView.setImageBitmap(makePlaceholderBitmap(item.label()))
+                    }
+                }
+                is IconItem.DbModel -> {
+                    val thumbPath = item.model.thumbnailFilePath
+                    if (!thumbPath.isNullOrBlank()) {
+                        val thumbFile = File(thumbPath)
+                        if (thumbFile.exists()) {
+                            imageView.setImageBitmap(BitmapFactory.decodeFile(thumbPath))
+                        } else {
+                            imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
+                        }
+                    } else {
+                        // No thumbnail yet — show initials placeholder
+                        imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
+                    }
+                }
+            }
             return view
         }
+
+        /** Generates a simple grey square with the first letter of [label] as a fallback image. */
+        private fun makePlaceholderBitmap(label: String): Bitmap {
+            val size = 64
+            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.color = Color.parseColor("#BDBDBD")
+            canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+            paint.color = Color.WHITE
+            paint.textSize = size * 0.5f
+            paint.textAlign = Paint.Align.CENTER
+            val initial = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+            val yPos = (canvas.height / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+            canvas.drawText(initial, size / 2f, yPos, paint)
+            return bmp
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Clear EditText focus and references to prevent IME callback errors
+        editTextRef?.clearFocus()
+        editTextRef = null
+    }
+
+    override fun onDetach() {
+        super.onDetach()
+        // Additional cleanup for IME callbacks
+        editTextRef = null
     }
 }

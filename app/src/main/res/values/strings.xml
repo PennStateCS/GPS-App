@@ -4,6 +4,8 @@
     <string name="degrees">%1$d°</string>
     <string name="stop_rotate">Stop Rotate</string>
     <string name="auto_rotate">Auto Rotate</string>
+    <string name="lighting_on">💡 Light On</string>
+    <string name="lighting_off">💡 Light Off</string>
 
     <!-- Strings required by layouts -->
     <string name="icon_content_desc">Icon</string>
@@ -34,7 +36,10 @@
     <string name="menu_models">Models</string>
     <string name="menu_development">Development</string>
     <string name="action_settings">Settings</string>
+    <string name="action_replay">Replay NMEA</string>
+    <string name="action_diagnostics">GNSS Diagnostics</string>
     <string name="title_coordinate_detail">Coordinate Detail</string>
+    <string name="menu_rs2">RS2+</string>
 
     <!-- Development / status strings -->
     <string name="status_initial_no_fix">No fix</string>
@@ -94,6 +99,13 @@
     <string name="import_replace">Replace</string>
     <string name="import_cancel">Cancel</string>
 
+    <!-- Settings: device connection/status -->
+    <string name="ip_port_placeholder">IP:PORT</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="waiting_nmea">(Waiting for NMEA sentences…)</string>
+    <string name="connected_no_fix">Connected • No Fix</string>
+    <string name="host_port">%1$s:%2$d</string>
+
     <!-- Add coordinate dialog strings -->
     <string name="fetching_location">Fetching location…</string>
     <string name="add_coordinate_title">Add Coordinate</string>
@@ -114,5 +126,64 @@
     <string name="label_z">Z:</string>
     <string name="zero_degrees">0°</string>
     <string name="reset">Reset</string>
+
+    <!-- Emlid Reach inline manual entry UI strings -->
+    <string name="hint_host">Host or IP</string>
+    <string name="hint_port">Port</string>
+    <string name="connect">Connect</string>
+    <string name="host_required">Host is required</string>
+
+    <!-- Diagnostic strings -->
+    <string name="diag_title">Diagnostic</string>
+    <string name="diag_btn_test">Test</string>
+    <string name="diag_testing">Testing…</string>
+    <string name="diag_status">Status: %1$s</string>
+    <string name="diag_preview">Preview: %1$s</string>
+    <string name="diag_connect_failed">❌ Connect failed</string>
+    <string name="diag_connected_no_data">✅ Connected, no data (check ReachView output)</string>
+    <string name="diag_receiving_nmea">✅ Receiving NMEA</string>
+    <string name="diag_receiving_binary">✅ Receiving binary/RTCM</string>
+
+    <!-- Status bar token labels -->
+    <string name="status_token_src">SRC</string>
+    <string name="status_token_fix">FIX</string>
+    <string name="status_token_sats">SATS</string>
+    <string name="status_token_dop">DOP</string>
+    <string name="status_token_acc">ACC</string>
+    <string name="status_token_ll">LL</string>
+    <string name="status_token_alt">ALT</string>
+    <string name="status_token_bl">BL</string>
+    <string name="status_token_age">AGE</string>
+    <string name="ar_placeholder_dev">Feature under development</string>
+
+    <string name="capture_name_hint">Point name</string>
+    <string name="capture_note_hint">Note</string>
+    <string name="capture_progress">Progress</string>
+    <string name="capture_start">Start</string>
+    <string name="capture_save">Save</string>
+    <string name="capture_done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="capture_default_name">Captured point</string>
+
+    <!-- GNSS Live dev pane strings -->
+    <string name="dev_gnss_live_pause">⏸ Pause</string>
+    <string name="dev_gnss_live_resume">▶ Resume</string>
+    <string name="dev_gnss_live_reset_stats">Reset Stats</string>
+    <string name="dev_gnss_live_reset_toast">Diagnostics counters reset</string>
+    <string name="dev_gnss_section_fix">GNSS Fix</string>
+    <string name="dev_gnss_section_stats">Stream Stats</string>
+    <string name="dev_gnss_section_history">NMEA History (newest first)</string>
+    <string name="dev_gnss_no_data">(no NMEA data yet)</string>
+
+    <!-- FixBadge component strings -->
+    <string name="fix_badge_satellites">🛰️ %1$d/%2$d sats</string>
+    <string name="fix_badge_hdop">HDOP: %1$s</string>
+    <string name="fix_badge_hdop_na">HDOP: N/A</string>
+    <string name="fix_badge_stream_health">📊 %1$d/s • %2$s%% err</string>
+
+    <!-- Location status strings -->
+    <string name="location_acquiring">Acquiring…</string>
+    <string name="location_acquired">Location acquired</string>
+    <string name="no_location">No location</string>
 
 </resources>

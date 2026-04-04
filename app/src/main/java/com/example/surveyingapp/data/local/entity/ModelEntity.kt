@@ -12,5 +12,9 @@ data class ModelEntity(
     val filePath: String,
     val fileSize: Long,
     val dateAdded: Long,
-    val description: String? = null
+    val description: String? = null,
+
+    // Thumbnail fields (nullable for backward compatibility)
+    val thumbnailFileName: String? = null,
+    val thumbnailFilePath: String? = null
 )
