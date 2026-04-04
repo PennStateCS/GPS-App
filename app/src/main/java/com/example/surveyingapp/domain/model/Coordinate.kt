@@ -1,8 +1,13 @@
 package com.example.surveyingapp.domain.model
 
 /**
- * Domain model for a captured coordinate point
- **/
+ * Domain model for a captured coordinate point.
+ *
+ * Semantics:
+ * - latitude/longitude in EPSG:4326 (degrees)
+ * - altitude = ellipsoidal height (meters)
+ * - altitudeMsl (meters) and geoidSeparationM (meters) are optional extras from GGA
+ */
 data class Coordinate(
     val id: String,
     val name: String,
@@ -15,13 +20,21 @@ data class Coordinate(
     val provider: String = "fused",
     val rtkStatus: String? = null,
     val satsUsed: Int? = null,
+    val satsVisible: Int? = null,                   // Total satellites in view
     val hdop: Double? = null,
+    val vDop: Double? = null,                       // Vertical dilution of precision
+    val pDop: Double? = null,                       // Position dilution of precision
     val horizontalAccuracyM: Double? = null,
     val verticalAccuracyM: Double? = null,
     val correctionSource: String? = null,
     val correctionAgeS: Double? = null,
+    val correctionStationId: String? = null,        // Correction station ID
     val altitudeMsl: Double? = null,
     val geoidSeparationM: Double? = null,
+    val speedMps: Double? = null,                   // Speed over ground (m/s)
+    val courseDeg: Double? = null,                  // Course over ground (degrees)
+    val timestampSource: String? = null,            // Source of timestamp
+    val multipathIndex: Double? = null,             // Multipath index
     val crsEpsg: Int? = 4326,
     val easting: Double? = null,
     val northing: Double? = null,

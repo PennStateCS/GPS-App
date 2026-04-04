@@ -2,8 +2,10 @@ package com.example.surveyingapp.ui.models
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.AssetFileDescriptor
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -12,12 +14,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.GridLayoutManager
 import com.example.surveyingapp.databinding.FragmentModelsBinding
 import com.example.surveyingapp.domain.model.Model
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 class ModelsFragment : Fragment() {
 
@@ -52,31 +56,86 @@ class ModelsFragment : Fragment() {
 
         viewModel = ViewModelProvider(this)[ModelsViewModel::class.java]
         setupRecyclerView()
+        setupSwipeRefresh()
         setupFab()
         observeViewModel()
+    }
+
+    private fun setupSwipeRefresh() {
+        binding.swipeRefreshModels.setColorSchemeResources(
+            android.R.color.holo_purple,
+            android.R.color.holo_blue_dark
+        )
+        binding.swipeRefreshModels.setOnRefreshListener {
+            // Force every visible card to rebind so thumbnails are reloaded from disk
+            if (adapter.itemCount > 0) {
+                adapter.notifyItemRangeChanged(0, adapter.itemCount)
+            }
+            // Stop the spinner once the rebind is dispatched
+            binding.swipeRefreshModels.isRefreshing = false
+        }
     }
 
     private fun setupRecyclerView() {
         adapter = ModelsAdapter(
             onDeleteClick = { model ->
-                // Show confirmation dialog before deleting
-                androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                    .setTitle("Delete Model")
-                    .setMessage("Are you sure you want to delete '${model.name}'?")
-                    .setPositiveButton("Delete") { _, _ ->
-                        viewModel.deleteModel(model)
-                        // Delete the physical file
-                        try {
-                            File(model.filePath).delete()
-                        } catch (e: Exception) {
-                            // File deletion failed, but continue with database deletion
+                lifecycleScope.launch {
+                    val linkedCount = try {
+                        viewModel.linkedCoordinateCount(model.id)
+                    } catch (e: Exception) {
+                        -1
+                    }
+                    when {
+                        linkedCount < 0 -> {
+                            // DB error — fail safe, do not allow delete
+                            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Error")
+                                .setMessage("Could not verify coordinate associations. Please try again.")
+                                .setPositiveButton("OK", null)
+                                .show()
+                        }
+                        linkedCount > 0 -> {
+                            val noun = if (linkedCount == 1) "coordinate" else "coordinates"
+                            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Cannot Delete")
+                                .setMessage(
+                                    "'${model.name}' is used as an icon on $linkedCount $noun. " +
+                                    "Remove those associations on the View Coordinates page before deleting."
+                                )
+                                .setPositiveButton("OK", null)
+                                .show()
+                        }
+                        else -> {
+                            // No coordinates reference this model — safe to delete
+                            androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Delete Model")
+                                .setMessage("Are you sure you want to delete '${model.name}'?")
+                                .setPositiveButton("Delete") { _, _ ->
+                                    viewModel.deleteModel(model)
+                                    // Delete the physical file
+                                    try {
+                                        File(model.filePath).delete()
+                                    } catch (e: Exception) {
+                                        Log.w("ModelsFragment", "File deletion failed for ${model.filePath}: ${e.message}")
+                                    }
+                                }
+                                .setNegativeButton("Cancel", null)
+                                .show()
                         }
                     }
-                    .setNegativeButton("Cancel", null)
-                    .show()
+                }
             },
             onEditClick = { model ->
                 showEditModelDialog(model)
+            },
+            onRecaptureClick = { model ->
+                // Open the model viewer in capture mode so the user can choose a new angle
+                val intent = ModelViewerActivity.newCaptureModeIntent(
+                    requireContext(),
+                    model.filePath,
+                    model.name
+                )
+                startActivity(intent)
             },
             onModelClick = { model ->
                 // Launch 3D model viewer
@@ -89,8 +148,16 @@ class ModelsFragment : Fragment() {
             }
         )
 
-        binding.recyclerModels.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerModels.layoutManager = GridLayoutManager(requireContext(), calculateSpanCount())
         binding.recyclerModels.adapter = adapter
+    }
+
+
+    private fun calculateSpanCount(): Int {
+        val cardCellWidthDp = 197 // 185dp card + 6dp left padding + 6dp right padding
+        val dm = resources.displayMetrics
+        val availableWidthDp = (dm.widthPixels / dm.density).toInt() - 32 // subtract 16dp padding each side
+        return maxOf(2, availableWidthDp / cardCellWidthDp)
     }
 
     private fun setupFab() {
@@ -102,17 +169,25 @@ class ModelsFragment : Fragment() {
     private fun observeViewModel() {
         // Observe models list
         viewModel.allModels.observe(viewLifecycleOwner) { models ->
-            adapter.submitList(models)
+            val previousCount = adapter.currentList.size
+            adapter.submitList(models) {
+                // Scroll to top only when a new model was added (not on edits/thumbnail updates).
+                // New models are inserted at index 0 because the DB orders by dateAdded DESC.
+                if (models.size > previousCount) {
+                    binding.recyclerModels.scrollToPosition(0)
+                }
+            }
 
             // Show/hide empty state
             if (models.isEmpty()) {
-                binding.recyclerModels.visibility = View.GONE
+                binding.swipeRefreshModels.visibility = View.GONE
                 binding.layoutEmptyState.visibility = View.VISIBLE
             } else {
-                binding.recyclerModels.visibility = View.VISIBLE
+                binding.swipeRefreshModels.visibility = View.VISIBLE
                 binding.layoutEmptyState.visibility = View.GONE
             }
         }
+
 
         // Observe loading state
         lifecycleScope.launch {
@@ -127,12 +202,14 @@ class ModelsFragment : Fragment() {
                 if (message != null) {
                     binding.textStatusMessage.text = message
                     binding.textStatusMessage.visibility = View.VISIBLE
-                    Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
 
-                    // Hide status message after 3 seconds
+                    // Hide status message after 3 seconds.
+                    // Guard against running after onDestroyView (binding would be null).
                     binding.textStatusMessage.postDelayed({
-                        binding.textStatusMessage.visibility = View.GONE
-                        viewModel.clearStatusMessage()
+                        if (_binding != null) {
+                            binding.textStatusMessage.visibility = View.GONE
+                            viewModel.clearStatusMessage()
+                        }
                     }, 3000)
                 }
             }
@@ -148,65 +225,190 @@ class ModelsFragment : Fragment() {
         filePickerLauncher.launch(intent)
     }
 
+
     private fun handleSelectedFile(uri: Uri) {
         try {
             val contentResolver = requireContext().contentResolver
-            val inputStream = contentResolver.openInputStream(uri)
 
-            if (inputStream != null) {
-                // Get file info
-                val cursor = contentResolver.query(uri, null, null, null, null)
-                var fileName = "model.glb"
-                var fileSize = 0L
+            // Resolve display name and file size from content resolver (works for SAF,
+            // Google Drive, OneDrive, and local content:// URIs on all API levels)
+            var fileName = "model.glb"
+            var fileSize = 0L
 
-                cursor?.use {
-                    if (it.moveToFirst()) {
-                        val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        val sizeIndex = it.getColumnIndex(android.provider.OpenableColumns.SIZE)
-
-                        if (nameIndex >= 0) fileName = it.getString(nameIndex) ?: "model.glb"
-                        if (sizeIndex >= 0) fileSize = it.getLong(sizeIndex)
-                    }
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (nameIndex >= 0) fileName = cursor.getString(nameIndex) ?: fileName
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) fileSize = cursor.getLong(sizeIndex)
                 }
+            }
 
-                // Validate file extension
-                if (!fileName.lowercase().endsWith(".glb")) {
-                    Toast.makeText(requireContext(), "Please select a .glb file", Toast.LENGTH_LONG).show()
+            // Fall back to extracting name from the URI path if the cursor gave nothing useful
+            if (fileName == "model.glb" && uri.path != null) {
+                val fromPath = uri.path!!.substringAfterLast('/')
+                if (fromPath.isNotBlank()) fileName = fromPath
+            }
+
+            Log.d("ModelsFragment", "Selected URI: $uri  fileName: $fileName  size: $fileSize")
+
+            // Validate file extension — accept .glb and .gltf
+            val lowerName = fileName.lowercase()
+            if (!lowerName.endsWith(".glb") && !lowerName.endsWith(".gltf")) {
+                Toast.makeText(requireContext(), "Please select a .glb or .gltf file", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            // Open the stream — this works for all URI schemes including content:// from SAF
+            val inputStream = contentResolver.openInputStream(uri)
+                ?: run {
+                    Toast.makeText(requireContext(), "Cannot open file", Toast.LENGTH_LONG).show()
                     return
                 }
 
-                // Copy file to app's internal storage
-                val modelsDir = File(requireContext().filesDir, "models")
-                if (!modelsDir.exists()) {
-                    modelsDir.mkdirs()
+            // If fileSize is still 0, try openAssetFileDescriptor as a fallback
+            if (fileSize == 0L) {
+                try {
+                    contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                        if (afd.length != AssetFileDescriptor.UNKNOWN_LENGTH) fileSize = afd.length
+                    }
+                } catch (e: Exception) {
+                    Log.w("ModelsFragment", "Could not determine file size: ${e.message}")
+                }
+            }
+
+            val targetFile = copyModelToInternalStorage(uri, fileName, inputStream)
+                ?: run {
+                    Toast.makeText(requireContext(), "Failed to import model file", Toast.LENGTH_LONG).show()
+                    return
                 }
 
-                var targetFile = File(modelsDir, fileName)
-                var counter = 1
-                while (targetFile.exists()) {
-                    val nameWithoutExt = fileName.substringBeforeLast(".")
-                    val ext = fileName.substringAfterLast(".")
-                    targetFile = File(modelsDir, "${nameWithoutExt}_${counter}.$ext")
-                    counter++
-                }
+            // If fileSize still unknown, use the copied file's size
+            if (fileSize == 0L) fileSize = targetFile.length()
 
-                FileOutputStream(targetFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
+            // Prompt user for name/description
+            showAddModelDialog(
+                fileName.substringBeforeLast("."),
+                targetFile.name,
+                targetFile.absolutePath,
+                fileSize
+            )
 
-                // Get model name from user
-                showAddModelDialog(fileName.substringBeforeLast("."), targetFile.name, targetFile.absolutePath, fileSize)
+        } catch (e: Exception) {
+            Log.e("ModelsFragment", "Failed to import model", e)
+            Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
 
-                inputStream.close()
+    private fun copyModelToInternalStorage(sourceUri: Uri, fileName: String, inputStream: java.io.InputStream): File? {
+        val modelsDir = File(requireContext().filesDir, "models").also { it.mkdirs() }
+        val lowerName = fileName.lowercase()
+
+        return if (lowerName.endsWith(".gltf")) {
+            val bundleDir = uniqueModelBundleDir(modelsDir, fileName.substringBeforeLast("."))
+            val targetGltf = File(bundleDir, fileName)
+
+            inputStream.use { input ->
+                FileOutputStream(targetGltf).use { output -> input.copyTo(output) }
+            }
+
+            val resourceUris = parseGltfResourceUris(targetGltf)
+            val sourceFile = resolveRealFileFromUri(sourceUri)
+            if (resourceUris.isNotEmpty() && sourceFile != null) {
+                copyGltfResources(sourceFile.parentFile, bundleDir, resourceUris)
+            }
+
+            targetGltf
+        } else {
+            var targetFile = File(modelsDir, fileName)
+            var counter = 1
+            while (targetFile.exists()) {
+                val nameWithoutExt = fileName.substringBeforeLast(".")
+                val ext = fileName.substringAfterLast(".")
+                targetFile = File(modelsDir, "${nameWithoutExt}_${counter}.$ext")
+                counter++
+            }
+
+            inputStream.use { input ->
+                FileOutputStream(targetFile).use { output -> input.copyTo(output) }
+            }
+            targetFile
+        }
+    }
+
+    private fun uniqueModelBundleDir(modelsDir: File, baseName: String): File {
+        val safe = baseName.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+        var dir = File(modelsDir, safe)
+        var counter = 1
+        while (dir.exists()) {
+            dir = File(modelsDir, "${safe}_$counter")
+            counter++
+        }
+        dir.mkdirs()
+        return dir
+    }
+
+    private fun parseGltfResourceUris(gltfFile: File): Set<String> {
+        return try {
+            val text = gltfFile.readText()
+            Regex("\"uri\"\\s*:\\s*\"([^\"]+)\"")
+                .findAll(text)
+                .map { it.groupValues[1] }
+                .filterNot { it.startsWith("data:") || it.startsWith("http://") || it.startsWith("https://") }
+                .map { URLDecoder.decode(it.substringBefore('#').substringBefore('?'), StandardCharsets.UTF_8.name()) }
+                .toSet()
+        } catch (e: Exception) {
+            Log.w("ModelsFragment", "Failed to parse glTF resource list", e)
+            emptySet()
+        }
+    }
+
+    private fun resolveRealFileFromUri(uri: Uri): File? {
+        return try {
+            requireContext().contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                val fdPath = File("/proc/self/fd/${pfd.fd}")
+                val canonical = fdPath.canonicalPath
+                val resolved = File(canonical)
+                if (resolved.exists()) resolved else null
             }
         } catch (e: Exception) {
-            Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.w("ModelsFragment", "Could not resolve source file for URI: $uri", e)
+            null
+        }
+    }
+
+    private fun copyGltfResources(sourceRoot: File?, targetRoot: File, resources: Set<String>) {
+        if (sourceRoot == null || !sourceRoot.exists()) return
+
+        resources.forEach { relative ->
+            try {
+                val source = File(sourceRoot, relative).canonicalFile
+                if (!source.path.startsWith(sourceRoot.canonicalPath) || !source.exists()) {
+                    Log.w("ModelsFragment", "Missing glTF sidecar resource: $relative")
+                    return@forEach
+                }
+                val target = File(targetRoot, relative).canonicalFile
+                if (!target.path.startsWith(targetRoot.canonicalPath)) {
+                    Log.w("ModelsFragment", "Skipping unsafe glTF resource path: $relative")
+                    return@forEach
+                }
+                target.parentFile?.mkdirs()
+                source.inputStream().use { input ->
+                    FileOutputStream(target).use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                Log.w("ModelsFragment", "Failed to copy glTF resource: $relative", e)
+            }
         }
     }
 
     private fun showAddModelDialog(defaultName: String, fileName: String, filePath: String, fileSize: Long) {
         val dialog = AddModelDialogFragment.newInstance(defaultName, fileName, filePath, fileSize) { name, description ->
-            viewModel.addModel(name, fileName, filePath, fileSize, description)
+            viewModel.addModel(name, fileName, filePath, fileSize, description) { _ ->
+                // Open the viewer so the user can rotate the model and tap "Capture Thumbnail"
+                val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
+                startActivity(intent)
+            }
         }
         dialog.show(parentFragmentManager, "AddModelDialog")
     }
@@ -216,6 +418,17 @@ class ModelsFragment : Fragment() {
             viewModel.editModel(modelId, name, description)
         }
         dialog.show(parentFragmentManager, "EditModelDialog")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // DiffUtil only detects field-value changes in Model — it cannot see that
+        // a thumbnail file was overwritten at the same path (thumbnailFilePath unchanged).
+        // Force every visible item to rebind so resolvePreview() evicts the LRU cache
+        // entry and decodes the updated file from disk.
+        if (::adapter.isInitialized && adapter.itemCount > 0) {
+            adapter.notifyItemRangeChanged(0, adapter.itemCount)
+        }
     }
 
     override fun onDestroyView() {

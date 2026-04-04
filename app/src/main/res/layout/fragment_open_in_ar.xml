@@ -6,7 +6,11 @@
     <android.opengl.GLSurfaceView
         android:id="@+id/glSurfaceViewAr"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:visibility="visible"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:clickable="true" />
 
     <TextView
         android:id="@+id/textArStatus"
@@ -16,5 +20,9 @@
         android:background="#66000000"
         android:textColor="#FFFFFF"
         android:text="Initializing AR..."
-        android:layout_gravity="top|center_horizontal" />
+        android:layout_gravity="top|center_horizontal"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
 </FrameLayout>

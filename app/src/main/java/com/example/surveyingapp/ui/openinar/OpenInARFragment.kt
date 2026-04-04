@@ -26,30 +26,48 @@ import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.databinding.FragmentOpenInArBinding
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
+import com.example.surveyingapp.gnss.model.Fix
 import com.google.ar.core.*
 import com.google.ar.core.Point
 import com.google.ar.core.Plane
 import com.google.ar.core.exceptions.*
 import com.google.ar.core.Coordinates2d
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import javax.inject.Inject
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 /**
  * AR Fragment that displays surveying coordinates as geospatial anchors in AR space.
+ * Uses GNSS fixes from FixSwitchboard for accurate geospatial positioning.
  */
+@AndroidEntryPoint
 @SuppressLint("SetTextI18n")
 class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     private var _binding: FragmentOpenInArBinding? = null
     private val binding get() = _binding!!
+
+    // Inject GNSS switchboard for current GPS location
+    @Inject
+    lateinit var fixSwitchboard: FixSwitchboard
+
+    // Current GNSS fix from switchboard (surveying-grade GPS)
+    @Volatile
+    private var currentGnssFix: Fix? = null
 
     // ARCore session management
     private var session: Session? = null
@@ -67,6 +85,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // Local anchor for tap-to-place functionality
     private var demoAnchor: Anchor? = null
+
+    // Demo floor anchor - placed by tapping on planes
+    private var demoFloorAnchor: Anchor? = null
 
     // Database connection for coordinate data
     private var coordinateDao: CoordinateDao? = null
@@ -90,6 +111,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     label == other.label &&
                     rgba.contentEquals(other.rgba)
         }
+
         override fun hashCode(): Int {
             var result = lat.hashCode()
             result = 31 * result + lng.hashCode()
@@ -114,7 +136,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val mvp = FloatArray(16)     // Model-view-projection matrix
 
     // Thread-safe touch input handling
-    @Volatile private var queuedTap: PointF? = null
+    @Volatile
+    private var queuedTap: PointF? = null
 
     // State flags for error recovery and user experience
     private var attemptedEarthRestart = false
@@ -156,7 +179,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
         // Load preferences
-        prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs =
+            requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
         applyHighAccuracyPreference()
         return binding.root
     }
@@ -166,8 +190,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        attachObserverIfPossible()
+        // TODO: Enable coordinate loading when ready - currently disabled to show camera only
+        // attachObserverIfPossible()
         checkAvailabilityAndInstall()
+
+        // Observe GNSS fixes from switchboard for current GPS location
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fixSwitchboard.fixes.collect { fix ->
+                    currentGnssFix = fix
+                    android.util.Log.d("OpenInARFragment", "GNSS fix updated: lat=${fix.latDeg}, lon=${fix.lonDeg}, alt=${fix.altEllipsoidalM}, provider=${fix.provider}")
+                }
+            }
+        }
     }
 
     /**
@@ -175,32 +210,54 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onResume() {
         super.onResume()
+        android.util.Log.d("OpenInARFragment", "onResume called")
+
         // Ensure we have required permissions before starting AR
-        if (!checkAndRequestCameraPermission()) return
-        if (!checkAndRequestLocationPermission()) return
+        if (!checkAndRequestCameraPermission()) {
+            android.util.Log.w("OpenInARFragment", "Camera permission not granted")
+            return
+        }
+        if (!checkAndRequestLocationPermission()) {
+            android.util.Log.w("OpenInARFragment", "Location permission not granted")
+            return
+        }
 
         // Create AR session if needed
-        if (session == null) checkAvailabilityAndInstall()
+        if (session == null) {
+            android.util.Log.d("OpenInARFragment", "Creating new AR session")
+            checkAvailabilityAndInstall()
+        }
 
         // Provide user feedback for common issues
-        if (!isLocationServicesEnabled() && !hasWarnedLocationOff) {
+        val locationEnabled = isLocationServicesEnabled()
+        val networkAvailable = hasNetwork()
+        android.util.Log.d("OpenInARFragment", "Location enabled: $locationEnabled, Network: $networkAvailable")
+
+        if (!locationEnabled && !hasWarnedLocationOff) {
             hasWarnedLocationOff = true
-            binding.textArStatus.text = "Turn Location services ON (GPS + network)."
-            // Optionally: startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            android.util.Log.w("OpenInARFragment", "Location services disabled - geospatial won't work")
         }
-        if (!hasNetwork() && !hasWarnedNoNetwork) {
+        if (!networkAvailable && !hasWarnedNoNetwork) {
             hasWarnedNoNetwork = true
-            binding.textArStatus.text = "No internet — Geospatial may not localize"
+            android.util.Log.w("OpenInARFragment", "No internet - geospatial won't localize")
         }
 
         // Resume AR session and related components
         try {
             session?.resume()
             binding.glSurfaceViewAr.onResume()
-            binding.textArStatus.text = getString(R.string.ar_running)
-        } catch (_: CameraNotAvailableException) {
+            android.util.Log.d("OpenInARFragment", "AR session resumed successfully")
+            binding.textArStatus.text = "AR camera active"
+        } catch (e: CameraNotAvailableException) {
+            android.util.Log.e("OpenInARFragment", "Camera unavailable", e)
             binding.textArStatus.text = getString(R.string.camera_unavailable)
-            try { session?.pause() } catch (_: Exception) {}
+            try {
+                session?.pause()
+            } catch (_: Exception) {
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OpenInARFragment", "Error resuming session", e)
+            binding.textArStatus.text = "AR error: ${e.message}"
         }
     }
 
@@ -210,7 +267,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onPause() {
         super.onPause()
         binding.glSurfaceViewAr.onPause()
-        try { session?.pause() } catch (_: Exception) {}
+        try {
+            session?.pause()
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -220,12 +280,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         super.onDestroyView()
         prefs = null
         // Clean up anchors
-        try { demoAnchor?.detach() } catch (_: Exception) {}
+        try {
+            demoAnchor?.detach()
+        } catch (_: Exception) {
+        }
         demoAnchor = null
-        for ((anchor, _) in geoAnchors) try { anchor.detach() } catch (_: Exception) {}
+        for ((anchor, _) in geoAnchors) try {
+            anchor.detach()
+        } catch (_: Exception) {
+        }
         geoAnchors.clear()
         // Clean up AR session
-        try { session?.close() } catch (_: Exception) {}
+        try {
+            session?.close()
+        } catch (_: Exception) {
+        }
         session = null
         _binding = null
     }
@@ -249,7 +318,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Check location permission and request if needed
      */
     private fun checkAndRequestLocationPermission(): Boolean {
-        return if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
+        return if (ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
             == PackageManager.PERMISSION_GRANTED
         ) true else {
             locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -278,11 +350,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private fun configureSession() {
         val ses = session ?: return
         val config = Config(ses).apply {
-            // Enable geospatial mode for GPS anchoring
+            // Try to enable geospatial mode for GPS anchoring (optional - AR works without it)
             if (ses.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
-                geospatialMode = Config.GeospatialMode.ENABLED
+                try {
+                    geospatialMode = Config.GeospatialMode.ENABLED
+                    android.util.Log.d("OpenInARFragment", "Geospatial mode enabled")
+                } catch (e: Exception) {
+                    android.util.Log.w("OpenInARFragment", "Failed to enable geospatial mode: ${e.message}")
+                    // Continue without geospatial - basic AR still works
+                }
             } else {
-                binding.textArStatus.text = "Geospatial not supported on this device"
+                android.util.Log.d("OpenInARFragment", "Geospatial mode not supported on this device")
             }
             // Configure other AR features
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
@@ -293,9 +371,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
         }
-        ses.configure(config)
-        if (cameraTextureId > 0) ses.setCameraTextureName(cameraTextureId)
-        binding.textArStatus.text = getString(R.string.ar_session_created)
+        try {
+            ses.configure(config)
+            if (cameraTextureId > 0) ses.setCameraTextureName(cameraTextureId)
+            android.util.Log.d("OpenInARFragment", "AR session configured successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("OpenInARFragment", "Error configuring session: ${e.message}", e)
+            binding.textArStatus.text = "AR config error: ${e.message}"
+        }
     }
 
     /**
@@ -303,12 +386,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private fun checkInstallation() {
         try {
-            val status = ArCoreApk.getInstance().requestInstall(requireActivity(), !installRequested)
+            val status =
+                ArCoreApk.getInstance().requestInstall(requireActivity(), !installRequested)
             when (status) {
                 ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
                     installRequested = true
                     binding.textArStatus.text = "Requesting ARCore install..."
                 }
+
                 ArCoreApk.InstallStatus.INSTALLED -> tryCreateSession()
             }
         } catch (_: UnavailableUserDeclinedInstallationException) {
@@ -327,6 +412,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             ArCoreApk.Availability.SUPPORTED_INSTALLED -> tryCreateSession()
             ArCoreApk.Availability.SUPPORTED_APK_TOO_OLD,
             ArCoreApk.Availability.SUPPORTED_NOT_INSTALLED -> checkInstallation()
+
             ArCoreApk.Availability.UNKNOWN_CHECKING -> {
                 // Poll until availability is determined
                 if (!availabilityPolling) {
@@ -337,6 +423,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     }, 200)
                 }
             }
+
             else -> {
                 binding.textArStatus.text = when (availability) {
                     ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "Device not compatible"
@@ -363,23 +450,40 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /**
      * Create geospatial anchors for all coordinate points when Earth tracking is stable
+     * Uses GNSS fix from switchboard instead of ARCore's camera pose for accuracy
      */
     private fun rebuildGeoAnchorsIfNeeded() {
         if (geoAnchorsCreated || geoItems.isEmpty()) return
         val earth = session?.earth ?: return
         if (earth.trackingState != TrackingState.TRACKING) return
 
-        val camGeo = earth.cameraGeospatialPose
-        // Wait for reasonable accuracy before creating anchors
-        if (camGeo.horizontalAccuracy > 20.0) return
+        // Use GNSS fix from switchboard for positioning instead of ARCore's camera pose
+        val gnssFix = currentGnssFix
+        if (gnssFix == null) {
+            android.util.Log.d("OpenInARFragment", "Waiting for GNSS fix before creating anchors")
+            return
+        }
+
+        // Use GNSS horizontal accuracy to determine when to create anchors
+        val accuracyM = gnssFix.hAccM ?: 999.0
+        if (accuracyM > 20.0) {
+            android.util.Log.d("OpenInARFragment", "GNSS accuracy too low: ${accuracyM}m, waiting for <20m")
+            return
+        }
 
         // Clean up existing anchors
-        for ((a, _) in geoAnchors) try { a.detach() } catch (_: Exception) {}
+        for ((a, _) in geoAnchors) try {
+            a.detach()
+        } catch (_: Exception) {
+        }
         geoAnchors.clear()
+
+        // Use GNSS altitude as fallback for coordinates without altitude
+        val fallbackAlt = gnssFix.altEllipsoidalM ?: gnssFix.altMslM ?: 0.0
 
         // Create new anchors for each coordinate
         for (item in geoItems) {
-            val altToUse = item.alt ?: camGeo.altitude
+            val altToUse = item.alt ?: fallbackAlt
             try {
                 // Create anchor with identity rotation (no specific orientation needed for pins)
                 val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
@@ -388,13 +492,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 // Skip invalid coordinates silently
             }
         }
+
+        android.util.Log.d("OpenInARFragment", "Created ${geoAnchors.size} geospatial anchors using GNSS fix (accuracy: ${accuracyM}m, alt: $fallbackAlt)")
         geoAnchorsCreated = true
     }
 
     /**
-     * Attempt to restart Earth tracking if it stops (one-time recovery)
+     * Attempt to restart Earth tracking if it stops (disabled - can cause instability)
      */
     private fun tryRestartEarthOnce() {
+        // Disabled: automatic restart can cause session instability
+        // Earth will remain in STOPPED state but basic AR tracking continues
+        android.util.Log.d("OpenInARFragment", "Earth tracking stopped - geospatial features unavailable but AR continues")
+
+        /* Original restart logic - disabled to prevent stopping
         val s = session ?: return
         if (attemptedEarthRestart) return
         attemptedEarthRestart = true
@@ -406,6 +517,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (_: Exception) {
             // Ignore restart failures
         }
+        */
     }
 
     /**
@@ -421,7 +533,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Check if device has internet connectivity for geospatial localization
      */
     private fun hasNetwork(): Boolean {
-        val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm =
+            requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val nw = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(nw) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -469,7 +582,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glViewport(0, 0, width, height)
         // rotationHelper.onSurfaceChanged(width, height) // removed
         // Fixed landscape: set display geometry once
-        try { session?.setDisplayGeometry(Surface.ROTATION_90, width, height) } catch (_: Exception) {}
+        try {
+            session?.setDisplayGeometry(Surface.ROTATION_90, width, height)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -486,48 +602,78 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // 1) Background
             backgroundRenderer?.draw(frame, cameraTextureId)
 
-            // 2) Earth state handling
+            // 2) Earth state handling - optional geospatial features
             val earth = s.earth
-            var earthStatus = "Earth: none"
+            var earthStatus = "Geo: N/A"
             if (earth != null) {
                 when (earth.trackingState) {
                     TrackingState.TRACKING -> {
-                        earthStatus = "Earth: TRACKING"
+                        earthStatus = "Geo: TRACKING"
                         attemptedEarthRestart = false
-                        // Create anchors once when ready
-                        rebuildGeoAnchorsIfNeeded()
+                        // Create anchors once when ready (disabled - no coords loaded)
+                        // rebuildGeoAnchorsIfNeeded()
                     }
+
                     TrackingState.PAUSED -> {
-                        earthStatus = "Earth: PAUSED (localizing…)"
-                        binding.textArStatus.post {
-                            binding.textArStatus.text = "Localizing... Please wait or move to an open area with a clear view of the sky."
-                        }
+                        earthStatus = "Geo: Localizing..."
+                        // Don't update status text - let AR continue working
                     }
+
                     TrackingState.STOPPED -> {
-                        earthStatus = "Earth: STOPPED"
-                        tryRestartEarthOnce()
-                        binding.textArStatus.post {
-                            binding.textArStatus.text = getString(R.string.geospatial_stopped)
-                        }
+                        earthStatus = "Geo: Off (AR active)"
+                        // Don't restart - can cause instability
+                        // Basic AR features (planes, points, anchors) still work
                     }
                 }
             }
 
-            // 3) Tap-to-place local cube
+            // 3) Tap-to-place for both local cube and demo floor object
             queuedTap?.let { pt ->
+                android.util.Log.d("OpenInARFragment", "🎯 TAP detected at (${pt.x}, ${pt.y})")
+
                 if (camera.trackingState == TrackingState.TRACKING) {
+                    android.util.Log.d("OpenInARFragment", "Camera is TRACKING, performing hitTest")
                     val hits = frame.hitTest(pt.x, pt.y)
-                    for (hit in hits) {
+                    android.util.Log.d("OpenInARFragment", "HitTest returned ${hits.size} hits")
+
+                    var foundValidHit = false
+                    for ((index, hit) in hits.withIndex()) {
                         val trackable = hit.trackable
+                        android.util.Log.d("OpenInARFragment", "  Hit $index: trackable type = ${trackable.javaClass.simpleName}, trackingState = ${trackable.trackingState}")
+
                         val isPlaneHit = trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
                         val isPointHit = trackable is Point &&
                                 trackable.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL
+
+                        if (trackable is Plane) {
+                            android.util.Log.d("OpenInARFragment", "    Plane type: ${trackable.type}, inPolygon: ${trackable.isPoseInPolygon(hit.hitPose)}")
+                        }
+
                         if (isPlaneHit || isPointHit) {
-                            try { demoAnchor?.detach() } catch (_: Exception) {}
-                            demoAnchor = hit.createAnchor()
+                            foundValidHit = true
+                            try {
+                                // Place/move the demo floor object (green square)
+                                demoFloorAnchor?.detach()
+                                demoFloorAnchor = hit.createAnchor()
+                                android.util.Log.d("OpenInARFragment", "✅ Demo floor object placed/moved via tap at hit $index")
+
+                                // Also update the purple demo cube
+                                demoAnchor?.detach()
+                                demoAnchor = hit.createAnchor()
+                            } catch (e: Exception) {
+                                android.util.Log.e("OpenInARFragment", "❌ Failed to place anchor: ${e.message}", e)
+                            }
                             break
                         }
                     }
+
+                    if (!foundValidHit && hits.isNotEmpty()) {
+                        android.util.Log.w("OpenInARFragment", "⚠️ Got ${hits.size} hits but none were valid planes or points")
+                    } else if (hits.isEmpty()) {
+                        android.util.Log.w("OpenInARFragment", "⚠️ No hits detected - try tapping on a detected plane (yellow outline)")
+                    }
+                } else {
+                    android.util.Log.w("OpenInARFragment", "⚠️ Camera not tracking (state: ${camera.trackingState}), skipping tap")
                 }
                 queuedTap = null
             }
@@ -541,11 +687,30 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 camera.getProjectionMatrix(proj, 0, 0.1f, 2000f)
                 Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
-                // helpers
+                // helpers - calculate first so we can use planeCount
                 pointCount = pointCloudRenderer?.draw(frame, vp) ?: 0
                 planeCount = planeVisualizer?.drawAllPlanes(s, vp) ?: 0
 
-                // local cube
+                // Demo floor object (bright green flat square on floor)
+                demoFloorAnchor?.let { anchor ->
+                    if (anchor.trackingState == TrackingState.TRACKING) {
+                        anchor.pose.toMatrix(model, 0)
+                        // Scale it to be a flat square on the floor
+                        System.arraycopy(model, 0, modelScaled, 0, 16)
+                        Matrix.scaleM(modelScaled, 0, 0.3f, 0.02f, 0.3f) // 60cm x 4cm x 60cm (flat square)
+                        Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
+                        cubeRenderer?.draw(mvp, 0.0f, 1.0f, 0.0f, 1.0f) // Bright green
+                    } else {
+                        android.util.Log.w("OpenInARFragment", "⚠️ Demo floor anchor exists but state: ${anchor.trackingState}")
+                    }
+                } ?: run {
+                    // Log once per second that anchor is null
+                    if (System.currentTimeMillis() % 1000 < 50) {
+                        android.util.Log.d("OpenInARFragment", "No demo floor anchor yet - waiting for tap")
+                    }
+                }
+
+                // local cube (purple)
                 demoAnchor?.let { anchor ->
                     if (anchor.trackingState == TrackingState.TRACKING) {
                         anchor.pose.toMatrix(model, 0)
@@ -567,10 +732,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
 
-            // 5) UI status
+            // 5) UI status - show GNSS info and AR state
             binding.textArStatus.post {
-                binding.textArStatus.text =
-                    "AR running • Planes: $planeCount • Points: $pointCount • GeoPins: ${geoAnchors.size} • $earthStatus"
+                val gnssFix = currentGnssFix
+                val gnssInfo = if (gnssFix != null) {
+                    val acc = gnssFix.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
+                    val src = when (gnssFix.provider) {
+                        com.example.surveyingapp.gnss.model.Provider.INTERNAL -> "Internal GPS"
+                        com.example.surveyingapp.gnss.model.Provider.RS2_EXTERNAL -> "RS2+ (${gnssFix.rtkStatus})"
+                        else -> gnssFix.provider.toString()
+                    }
+                    "GPS: $src • Acc: $acc"
+                } else {
+                    "GPS: Waiting..."
+                }
+
+                // Show AR is working even if geospatial is off
+                val arInfo = "Planes: $planeCount • Points: $pointCount"
+                binding.textArStatus.text = "$gnssInfo • $arInfo • $earthStatus"
             }
 
         } catch (_: CameraNotAvailableException) {
@@ -588,10 +767,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glGenTextures(1, textures, 0)
         val texId = textures[0]
         GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texId)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
-        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_WRAP_S,
+            GLES30.GL_CLAMP_TO_EDGE
+        )
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_WRAP_T,
+            GLES30.GL_CLAMP_TO_EDGE
+        )
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_MIN_FILTER,
+            GLES30.GL_LINEAR
+        )
+        GLES30.glTexParameteri(
+            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
+            GLES30.GL_TEXTURE_MAG_FILTER,
+            GLES30.GL_LINEAR
+        )
         return texId
     }
 
@@ -600,14 +795,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private val ndcQuad = floatArrayOf(
             -1f, -1f,
             1f, -1f,
-            -1f,  1f,
-            1f,  1f
+            -1f, 1f,
+            1f, 1f
         )
         private val quadPos = floatArrayOf(
             -1f, -1f, 0f,
             1f, -1f, 0f,
-            -1f,  1f, 0f,
-            1f,  1f, 0f
+            -1f, 1f, 0f,
+            1f, 1f, 0f
         )
         private val posBuffer: FloatBuffer = ByteBuffer.allocateDirect(quadPos.size * 4)
             .order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(quadPos); position(0) }
@@ -618,10 +813,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         private val program: Int
         private val attribPos = 0
-        private val attribUv  = 1
+        private val attribUv = 1
         private var haveValidUvs = false
 
-        init { program = createProgram(VS_BG, FS_BG) }
+        init {
+            program = createProgram(VS_BG, FS_BG)
+        }
 
         fun draw(frame: Frame, oesTexId: Int) {
             if (oesTexId <= 0) return
@@ -681,6 +878,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -749,12 +947,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
                 val needed = worldVerts.size * 4
                 if (lineBuffer.capacity() * 4 < needed) {
-                    lineBuffer = ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                    lineBuffer = ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder())
+                        .asFloatBuffer()
                 }
                 lineBuffer.clear(); lineBuffer.put(worldVerts); lineBuffer.rewind()
 
                 lineBuffer.position(0)
-                GLES30.glVertexAttribPointer(attribPos, 3, GLES30.GL_FLOAT, false, 3 * 4, lineBuffer)
+                GLES30.glVertexAttribPointer(
+                    attribPos,
+                    3,
+                    GLES30.GL_FLOAT,
+                    false,
+                    3 * 4,
+                    lineBuffer
+                )
                 GLES30.glEnableVertexAttribArray(attribPos)
                 GLES30.glDrawArrays(GLES30.GL_LINE_LOOP, 0, vertCount)
                 GLES30.glDisableVertexAttribArray(attribPos)
@@ -787,6 +993,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -829,7 +1036,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val pts = pointCloud.points
             val totalFloats = pts.limit()
             val count = totalFloats / 4
-            if (count <= 0) { pointCloud.release(); return 0 }
+            if (count <= 0) {
+                pointCloud.release(); return 0
+            }
 
             val xyz = FloatArray(count * 3)
             pts.rewind()
@@ -843,7 +1052,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
             val needed = xyz.size * 4
             if (pointBuffer.capacity() * 4 < needed) {
-                pointBuffer = ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder()).asFloatBuffer()
+                pointBuffer =
+                    ByteBuffer.allocateDirect(needed).order(ByteOrder.nativeOrder()).asFloatBuffer()
             }
             pointBuffer.clear(); pointBuffer.put(xyz); pointBuffer.rewind()
 
@@ -891,6 +1101,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -919,27 +1130,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private val s = 0.05f // 10 cm half-size
         private val cubeVerts = floatArrayOf(
             // Front
-            -s,-s, s,   s,-s, s,   s, s, s,
-            -s,-s, s,   s, s, s,  -s, s, s,
+            -s, -s, s, s, -s, s, s, s, s,
+            -s, -s, s, s, s, s, -s, s, s,
             // Back
-            -s,-s,-s,  -s, s,-s,   s, s,-s,
-            -s,-s,-s,   s, s,-s,   s,-s,-s,
+            -s, -s, -s, -s, s, -s, s, s, -s,
+            -s, -s, -s, s, s, -s, s, -s, -s,
             // Left
-            -s,-s,-s,  -s,-s, s,  -s, s, s,
-            -s,-s,-s,  -s, s, s,  -s, s,-s,
+            -s, -s, -s, -s, -s, s, -s, s, s,
+            -s, -s, -s, -s, s, s, -s, s, -s,
             // Right
-            s,-s,-s,   s, s,-s,   s, s, s,
-            s,-s,-s,   s, s, s,   s,-s, s,
+            s, -s, -s, s, s, -s, s, s, s,
+            s, -s, -s, s, s, s, s, -s, s,
             // Top
-            -s, s,-s,  -s, s, s,   s, s, s,
-            -s, s,-s,   s, s, s,   s, s,-s,
+            -s, s, -s, -s, s, s, s, s, s,
+            -s, s, -s, s, s, s, s, s, -s,
             // Bottom
-            -s,-s,-s,   s,-s,-s,   s,-s, s,
-            -s,-s,-s,   s,-s, s,  -s,-s, s
+            -s, -s, -s, s, -s, -s, s, -s, s,
+            -s, -s, -s, s, -s, s, -s, -s, s
         )
 
         private val vb: FloatBuffer =
-            ByteBuffer.allocateDirect(cubeVerts.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
+            ByteBuffer.allocateDirect(cubeVerts.size * 4).order(ByteOrder.nativeOrder())
+                .asFloatBuffer().apply {
                 put(cubeVerts); position(0)
             }
 
@@ -988,6 +1200,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
                 return sh
             }
+
             private fun createProgram(vsSrc: String, fsSrc: String): Int {
                 val vs = createShader(GLES30.GL_VERTEX_SHADER, vsSrc)
                 val fs = createShader(GLES30.GL_FRAGMENT_SHADER, fsSrc)
@@ -1044,12 +1257,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         gl.setEGLContextClientVersion(3)
         gl.setRenderer(this)
         gl.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+
+        // Ensure the view can receive touch events
+        gl.isFocusable = true
+        gl.isFocusableInTouchMode = true
+        gl.isClickable = true
+        gl.requestFocus()
+
         gl.setOnTouchListener { v, ev ->
+            android.util.Log.d("OpenInARFragment", "👆 Touch event: action=${ev.action}, x=${ev.x}, y=${ev.y}")
             if (ev.action == MotionEvent.ACTION_UP) {
                 queuedTap = PointF(ev.x, ev.y)
-                v.performClick(); true
-            } else false
+                android.util.Log.d("OpenInARFragment", "📌 Queued tap at (${ev.x}, ${ev.y})")
+                v.performClick()
+                true
+            } else {
+                false
+            }
         }
+
+        android.util.Log.d("OpenInARFragment", "✅ GLSurfaceView setup complete with touch listener")
     }
 
     private fun CoordinateEntity.toDomainForAr(): Coordinate = Coordinate(
@@ -1061,13 +1288,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         timestamp = timestamp,
         icon = icon,
         color = color,
-        provider = provider,
-        rtkStatus = rtkStatus,
+        provider = provider.name,
+        rtkStatus = rtkStatus?.name,
         satsUsed = satsUsed,
         hdop = hdop,
         horizontalAccuracyM = horizontalAccuracyM,
         verticalAccuracyM = verticalAccuracyM,
-        correctionSource = correctionSource,
+        correctionSource = correctionSource?.name,
         correctionAgeS = correctionAgeS,
         altitudeMsl = altitudeMsl,
         geoidSeparationM = geoidSeparationM,

@@ -42,6 +42,8 @@ import com.example.surveyingapp.SurveyingApp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.graphics.Rect
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.LocationSourceType
 
 class CoordinatesFragment : Fragment() {
@@ -131,6 +133,9 @@ class CoordinatesFragment : Fragment() {
                     pendingDeleteSelectionReplacement = replacement
                 }
                 confirmDeleteWithSelection(coordinate, viewModel)
+            },
+            onEdit = { coordinate ->
+                showEditCoordinateDialog(coordinate, viewModel)
             }
         )
 
@@ -164,83 +169,105 @@ class CoordinatesFragment : Fragment() {
 
         // Observe DB
         viewModel.allCoordinates.observe(viewLifecycleOwner) { coordinates ->
-            Log.d(
-                "CoordinatesFragment",
-                "Loaded ${coordinates.size} coordinates: ${coordinates.joinToString { it.id }}"
-            )
-            adapter.submit(coordinates)
-            binding.emptyCoordinatesText.visibility =
-                if (coordinates.isEmpty()) View.VISIBLE else View.GONE
+            try {
+                Log.d(
+                    "CoordinatesFragment",
+                    "Loaded ${coordinates.size} coordinates: ${coordinates.joinToString { it.id }}"
+                )
+                adapter.submit(coordinates)
+                binding.emptyCoordinatesText.visibility =
+                    if (coordinates.isEmpty()) View.VISIBLE else View.GONE
 
-            if (coordinates.isEmpty()) {
-                currentSelectionId = null
-                adapter.setSelectedId(null)
-                clearLastOpenedId()
-                pendingDeleteSelectionReplacement = null
-                return@observe
-            }
-
-            // If we have a pending selection from a deletion, prefer it
-            pendingDeleteSelectionReplacement?.let { desired ->
-                if (coordinates.any { it.id == desired }) {
-                    currentSelectionId = desired
-                    saveLastOpenedId(desired)
+                if (coordinates.isEmpty()) {
+                    currentSelectionId = null
+                    adapter.setSelectedId(null)
+                    clearLastOpenedId()
+                    pendingDeleteSelectionReplacement = null
+                    return@observe
                 }
-                pendingDeleteSelectionReplacement = null
-            }
 
-            if (currentSelectionId == null || coordinates.none { it.id == currentSelectionId }) {
-                val stored = loadLastOpenedId()
-                val target = if (stored != null && coordinates.any { it.id == stored }) stored else coordinates.first().id
-                currentSelectionId = target
-                saveLastOpenedId(target)
-            }
-            adapter.setSelectedId(currentSelectionId)
+                // If we have a pending selection from a deletion, prefer it
+                pendingDeleteSelectionReplacement?.let { desired ->
+                    if (coordinates.any { it.id == desired }) {
+                        currentSelectionId = desired
+                        saveLastOpenedId(desired)
+                    }
+                    pendingDeleteSelectionReplacement = null
+                }
 
-            // Ensure selected item visible (initial load)
-            currentSelectionId?.let { idSel ->
-                val pos = adapter.positionOf(idSel)
-                if (pos >= 0) binding.pointsRecyclerView.post { binding.pointsRecyclerView.scrollToPosition(pos) }
-            }
+                if (currentSelectionId == null || coordinates.none { it.id == currentSelectionId }) {
+                    val stored = loadLastOpenedId()
+                    val target = if (stored != null && coordinates.any { it.id == stored }) stored else coordinates.first().id
+                    currentSelectionId = target
+                    saveLastOpenedId(target)
+                }
+                adapter.setSelectedId(currentSelectionId)
 
-            // Always update the detail pane with the current selection
-            currentSelectionId?.let { id ->
-                if (activity is CoordinatesActivity) {
-                    (activity as? CoordinatesActivity)?.showDetail(id)
-                } else if (binding.root.findViewById<View>(R.id.coord_detail_container) != null) {
-                    if (!detailInitialized) {
-                        // Defer first detail load slightly to let drawer animation finish smoothly
-                        binding.root.findViewById<View>(R.id.coord_detail_container)?.postDelayed({
-                            if (isAdded) showEmbeddedDetail(id)
-                        }, 120)
-                        detailInitialized = true
-                    } else {
-                        showEmbeddedDetail(id)
+                // Ensure selected item visible (initial load)
+                currentSelectionId?.let { idSel ->
+                    val pos = adapter.positionOf(idSel)
+                    if (pos >= 0) binding.pointsRecyclerView.post { binding.pointsRecyclerView.scrollToPosition(pos) }
+                }
+
+                // Always update the detail pane with the current selection
+                currentSelectionId?.let { id ->
+                    if (activity is CoordinatesActivity) {
+                        (activity as? CoordinatesActivity)?.showDetail(id)
+                    } else if (binding.root.findViewById<View>(R.id.coord_detail_container) != null) {
+                        if (!detailInitialized) {
+                            binding.root.findViewById<View>(R.id.coord_detail_container)?.postDelayed({
+                                if (isAdded) showEmbeddedDetail(id)
+                            }, 120)
+                            detailInitialized = true
+                        } else {
+                            showEmbeddedDetail(id)
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("CoordinatesFragment", "allCoordinates observer failed", e)
             }
         }
 
         // FAB: add new coordinate (one-shot capture from selected source)
         binding.fabAddCoordinate.setOnClickListener {
             viewLifecycleOwner.lifecycleScope.launch {
-                val source = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
-                    .getOrDefault(LocationSourceType.INTERNAL)
-                val needsFine = source == LocationSourceType.INTERNAL
-                if (needsFine) {
-                    val granted = ContextCompat.checkSelfPermission(
-                        requireContext(),
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    if (granted) showAddCoordinateDialog(viewModel) else requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-                } else {
-                    showAddCoordinateDialog(viewModel)
+                try {
+                    val source = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
+                        .getOrDefault(LocationSourceType.INTERNAL)
+                    val needsFine = source == LocationSourceType.INTERNAL
+                    if (needsFine) {
+                        val granted = ContextCompat.checkSelfPermission(
+                            requireContext(),
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (granted) showAddCoordinateDialog(viewModel)
+                        else requestFineLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    } else {
+                        showAddCoordinateDialog(viewModel)
+                    }
+                } catch (e: Exception) {
+                    Log.e("CoordinatesFragment", "FAB click handler failed", e)
                 }
             }
         }
 
         // Preferences for UI display toggles
         prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+
+        // Observe models so the list can show model thumbnails for coordinates that use a model icon
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val db = AppDatabase.getDatabase(requireContext())
+                ModelRepositoryImpl(db.modelDao()).getAllModels().collect { models ->
+                    val map = models.associate { it.id to it.thumbnailFilePath }
+                    adapter.setThumbnailMap(map)
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e("CoordinatesFragment", "Error collecting model thumbnails", e)
+            }
+        }
 
         return root
     }
@@ -249,57 +276,88 @@ class CoordinatesFragment : Fragment() {
 
     /** Show dialog to add a coordinate (captures one fix and saves on Save) */
     private fun showAddCoordinateDialog(viewModel: CoordinatesViewModel) {
-        try {
-            val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
-            val dialog = AddCoordinateDialogFragment(highAcc) { coordinate ->
-                viewModel.addCoordinate(coordinate)
-                // haptic confirm
-                _binding?.root?.post {
-                    val view = _binding?.root
-                    if (view != null) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                        } else {
-                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        viewLifecycleOwner.lifecycleScope.launch {
+            // Fetch the current model list so the icon spinner includes DB models
+            val models = try {
+                val db = AppDatabase.getDatabase(requireContext())
+                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+            } catch (_: Exception) {
+                emptyList()
+            }
+
+            try {
+                val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+                val dialog = AddCoordinateDialogFragment(
+                    highAccuracy = highAcc,
+                    dbModels = models
+                ) { coordinate ->
+                    viewModel.addCoordinate(coordinate)
+                    // haptic confirm
+                    _binding?.root?.post {
+                        val view = _binding?.root
+                        if (view != null) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                            } else {
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            }
                         }
                     }
                 }
+                dialog.show(parentFragmentManager, "AddCoordinateDialog")
+            } catch (_: Exception) {
+                // no-op
             }
-            dialog.show(parentFragmentManager, "AddCoordinateDialog")
-        } catch (_: Exception) {
-            // no-op
         }
     }
 
     /** Show dialog to edit an existing coordinate */
     private fun showEditCoordinateDialog(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
-        val dialog = EditCoordinateDialogFragment(coordinate) { updated ->
-            viewModel.updateCoordinate(updated)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val models = try {
+                val db = AppDatabase.getDatabase(requireContext())
+                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val dialog = EditCoordinateDialogFragment(coordinate, models) { updated ->
+                viewModel.updateCoordinate(updated)
+            }
+            dialog.show(parentFragmentManager, "EditCoordinateDialog")
         }
-        dialog.show(parentFragmentManager, "EditCoordinateDialog")
     }
 
     /** Confirm deletion with undo via Snackbar */
     private fun confirmDeleteWithSelection(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
-        AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.delete_coordinate))
-            .setMessage("Delete \"${coordinate.name}\"?")
-            .setPositiveButton(getString(R.string.delete_coordinate)) { _, _ ->
-                // Perform deletion
-                viewModel.deleteCoordinate(coordinate.id)
-                // If user UNDOs, restore selection to this coordinate
-                Snackbar.make(binding.root, "Deleted ${coordinate.name}", Snackbar.LENGTH_LONG)
-                    .setAnchorView(binding.fabAddCoordinate)
-                    .setAction("UNDO") {
-                        viewModel.addCoordinate(coordinate)
-                        currentSelectionId = coordinate.id
-                        saveLastOpenedId(coordinate.id)
-                        adapter.setSelectedId(coordinate.id)
+        try {
+            AlertDialog.Builder(requireContext())
+                .setTitle(getString(R.string.delete_coordinate))
+                .setMessage("Delete \"${coordinate.name}\"?")
+                .setPositiveButton(getString(R.string.delete_coordinate)) { _, _ ->
+                    try {
+                        viewModel.deleteCoordinate(coordinate.id)
+                        Snackbar.make(binding.root, "Deleted ${coordinate.name}", Snackbar.LENGTH_LONG)
+                            .setAnchorView(binding.fabAddCoordinate)
+                            .setAction("UNDO") {
+                                try {
+                                    viewModel.addCoordinate(coordinate)
+                                    currentSelectionId = coordinate.id
+                                    saveLastOpenedId(coordinate.id)
+                                    adapter.setSelectedId(coordinate.id)
+                                } catch (e: Exception) {
+                                    Log.e("CoordinatesFragment", "UNDO failed", e)
+                                }
+                            }
+                            .show()
+                    } catch (e: Exception) {
+                        Log.e("CoordinatesFragment", "Delete confirm action failed", e)
                     }
-                    .show()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        } catch (e: Exception) {
+            Log.e("CoordinatesFragment", "confirmDeleteWithSelection failed", e)
+        }
     }
 
     // --- More lifecycle ---
@@ -316,7 +374,11 @@ class CoordinatesFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        if (::adapter.isInitialized) adapter.notifyDataSetChanged()
+        try {
+            if (::adapter.isInitialized) adapter.notifyDataSetChanged()
+        } catch (e: Exception) {
+            Log.e("CoordinatesFragment", "onResume adapter refresh failed", e)
+        }
     }
 
     override fun onDestroyView() {

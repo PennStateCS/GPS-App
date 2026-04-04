@@ -1,15 +1,40 @@
+# Built outputs
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
 /build
 /captures
+app.zip
+
+# Gradle
+.gradle/
+.gradle-tmp/
+/local.properties
+
+# Android generated
 .externalNativeBuild
 .cxx
+
+# IDE
+/.idea/
+.DS_Store
+
+# Kotlin build cache
+.kotlin/
+
+# Secrets & keys — never commit these
 local.properties
+google-services.json
+*.keystore
+*.jks
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+
+# Release artifacts
+*.apk
+*.aab
+*.ap_
+
+# Logs
+*.log

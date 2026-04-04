@@ -259,60 +259,6 @@
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
-        <!-- Row 7: (blank) | Std Dev -->
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1" />
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1" />
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:text="Std Dev (Lat · Lon · Alt)"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-            android:textColor="@android:color/black"
-            android:textSize="@dimen/coord_table_text_size" />
-        <TextView
-            android:id="@+id/text_stddev"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-            android:textColor="@android:color/black"
-            android:textSize="@dimen/coord_table_text_size"
-            android:text="--" />
-
-        <!-- Row 8: (blank) | Averaging -->
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1" />
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1" />
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:text="Averaging"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-            android:textColor="@android:color/black"
-            android:textSize="@dimen/coord_table_text_size" />
-        <TextView
-            android:id="@+id/text_averaging"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-            android:textColor="@android:color/black"
-            android:textSize="@dimen/coord_table_text_size"
-            android:text="--" />
-
         <!-- Badges row spanning all columns -->
         <LinearLayout
             android:id="@+id/row_badges"

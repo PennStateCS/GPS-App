@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:id="@+id/text_rs2_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="RS2+ Live Data"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:layout_marginBottom="12dp" />
+
+        <!-- New Device Details Table (from /info) -->
+        <TextView
+            android:id="@+id/text_rs2_device_details_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Device Details"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <TableLayout
+            android:id="@+id/table_rs2_device_details"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/bg_device_box"
+            android:padding="8dp"
+            android:stretchColumns="1,3"
+            android:shrinkColumns="1,3">
+
+            <TableRow>
+                <TextView android:text="Name" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_dev_name" android:text="--" android:padding="4dp" />
+                <TextView android:text="Model" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_dev_model" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Firmware" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_dev_firmware" android:text="--" android:padding="4dp" />
+                <TextView android:text="Serial" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_dev_serial" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Uptime" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_dev_uptime" android:text="--" android:padding="4dp" />
+                <TextView android:text="IP" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_dev_ip" android:text="--" android:padding="4dp" />
+            </TableRow>
+        </TableLayout>
+
+        <!-- New Device Info Table (contains battery info) -->
+        <TextView
+            android:id="@+id/text_rs2_device_info_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Battery Details"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <TableLayout
+            android:id="@+id/table_rs2_device_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/bg_device_box"
+            android:padding="8dp"
+            android:stretchColumns="1,3"
+            android:shrinkColumns="1,3">
+
+            <TableRow>
+                <TextView android:text="Battery (%)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_batt_soc" android:text="--" android:padding="4dp" />
+                <TextView android:text="Voltage (V)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_batt_voltage" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Status" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_batt_status" android:text="--" android:padding="4dp" />
+                <TextView android:text="Temp (°C)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_batt_temp" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Current (A)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_batt_current" android:text="--" android:padding="4dp" />
+                <TextView android:text="OTG" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_batt_otg" android:text="--" android:padding="4dp" />
+            </TableRow>
+        </TableLayout>
+
+        <!-- Location Details header added before the location table -->
+        <TextView
+            android:id="@+id/text_rs2_location_details_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Location Details"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Real-time Fix Info Table (4 columns: label, value, label, value) -->
+        <TableLayout
+            android:id="@+id/table_rs2_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stretchColumns="1,3"
+            android:shrinkColumns="1,3"
+            android:layout_marginBottom="16dp"
+            android:background="@drawable/bg_device_box"
+            android:padding="8dp">
+
+            <TableRow>
+                <TextView android:text="Latitude" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_latitude" android:text="--" android:padding="4dp" />
+                <TextView android:text="Longitude" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_longitude" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Altitude (ellipsoidal m)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_altitude" android:text="--" android:padding="4dp" />
+                <TextView android:text="Altitude MSL (m)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_alt_msl" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="RTK Status" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_rtk_status" android:text="--" android:padding="4dp" />
+                <TextView android:text="Satellites Used" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_sats_used" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="HDOP" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_hdop" android:text="--" android:padding="4dp" />
+                <TextView android:text="Horiz. Accuracy (m)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_hacc" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <!-- New PDOP row -->
+            <TableRow>
+                <TextView android:text="PDOP" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_pdop" android:text="--" android:padding="4dp" />
+                <TextView android:text="" android:padding="4dp" />
+                <TextView android:text="" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Vert. Accuracy (m)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_vacc" android:text="--" android:padding="4dp" />
+                <TextView android:text="Correction Source" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_corr_source" android:text="--" android:padding="4dp" />
+            </TableRow>
+
+            <TableRow>
+                <TextView android:text="Correction Age (s)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_corr_age" android:text="--" android:padding="4dp" />
+                <TextView android:text="Geoid Separation (m)" android:textStyle="bold" android:padding="4dp" />
+                <TextView android:id="@+id/value_geoid_sep" android:text="--" android:padding="4dp" />
+            </TableRow>
+        </TableLayout>
+
+        <!-- Replace the standalone skyplot with a header + boxed container -->
+        <!-- Skyview section header -->
+        <TextView
+            android:id="@+id/text_rs2_skyview_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Skyview"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Boxed Skyplot container -->
+        <LinearLayout
+            android:id="@+id/container_skyplot_box"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_device_box"
+            android:padding="8dp"
+            android:layout_marginBottom="12dp">
+
+            <com.example.surveyingapp.ui.common.SkyplotView
+                android:id="@+id/skyplot_view"
+                android:layout_width="match_parent"
+                android:layout_height="500dp" />
+        </LinearLayout>
+
+        <!-- PRN Charts section header (match other section headers) -->
+        <TextView
+            android:id="@+id/text_rs2_description"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Satellite Signal Charts"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- Boxed PRN charts container -->
+        <LinearLayout
+            android:id="@+id/container_prn_box"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_device_box"
+            android:padding="8dp"
+            android:layout_marginBottom="12dp">
+
+            <!-- PRN charts grid: 2 rows x 3 columns -->
+            <LinearLayout
+                android:id="@+id/layout_prn_grid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <!-- Row 1 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+                        android:id="@+id/satellite_chart_gps"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp" />
+
+                    <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+                        android:id="@+id/satellite_chart_glonass"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp" />
+
+                    <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+                        android:id="@+id/satellite_chart_galileo"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1" />
+                </LinearLayout>
+
+                <!-- Row 2 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+                        android:id="@+id/satellite_chart_beidou"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp" />
+
+                    <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+                        android:id="@+id/satellite_chart_qzss"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp" />
+
+                    <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+                        android:id="@+id/satellite_chart_sbas"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

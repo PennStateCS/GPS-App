@@ -37,4 +37,26 @@
     <color name="status_dgps">#1976D2</color>
     <color name="status_single">#B0BEC5</color>
     <color name="status_no_fix">#E53935</color>
+
+    <!-- Home-specific colors -->
+    <color name="home_right_column_bg">#E0E0E0</color>
+
+    <!-- Card outline for modern Material look -->
+    <color name="card_stroke_light">#E0E0E0</color>
+
+    <!-- Quick Action chip colors -->
+    <color name="chip_map_bg">#1976D2</color>        <!-- Blue 700 -->
+    <color name="chip_ar_bg">#00796B</color>         <!-- Teal 700 -->
+    <color name="chip_settings_bg">#6200EE</color>   <!-- App primary -->
+    <color name="chip_ripple_overlay">#40FFFFFF</color>
+
+    <!-- Chart colors (RS2+ Satellite charts) -->
+    <color name="chart_axis">#BDBDBD</color>
+    <color name="chart_grid">#E0E0E0</color>
+    <color name="chart_text">#424242</color>
+    <color name="chart_title">#000000</color>
+    <color name="chart_bar_strong">@color/status_fix</color>
+    <color name="chart_bar_medium">@color/status_float</color>
+    <color name="chart_bar_weak">@color/status_no_fix</color>
+    <color name="chart_bar_unused">#9E9E9E</color>
 </resources>
