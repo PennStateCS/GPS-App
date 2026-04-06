@@ -128,15 +128,6 @@ class ModelsFragment : Fragment() {
             onEditClick = { model ->
                 showEditModelDialog(model)
             },
-            onRecaptureClick = { model ->
-                // Open the model viewer in capture mode so the user can choose a new angle
-                val intent = ModelViewerActivity.newCaptureModeIntent(
-                    requireContext(),
-                    model.filePath,
-                    model.name
-                )
-                startActivity(intent)
-            },
             onModelClick = { model ->
                 // Launch 3D model viewer
                 val intent = ModelViewerActivity.newIntent(
@@ -406,8 +397,10 @@ class ModelsFragment : Fragment() {
         val dialog = AddModelDialogFragment.newInstance(defaultName, fileName, filePath, fileSize) { name, description ->
             viewModel.addModel(name, fileName, filePath, fileSize, description) { _ ->
                 // Open the viewer so the user can rotate the model and tap "Capture Thumbnail"
-                val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
-                startActivity(intent)
+                //val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
+                //startActivity(intent)
+
+                ThumbnailCaptureActivity.start(requireContext(), filePath, name, fileName)
             }
         }
         dialog.show(parentFragmentManager, "AddModelDialog")

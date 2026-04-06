@@ -19,7 +19,7 @@
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorPrimary"
             app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
-            app:title="@string/app_name" />
+            app:title="Model Viewer" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -93,184 +93,92 @@
 
             <!-- Model Info -->
             <TextView
-                android:id="@+id/text_model_info"
+                android:id="@+id/text_model_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:gravity="center"
-                android:textSize="16sp"
+                android:gravity="start"
+                android:textSize="24sp"
                 android:textStyle="bold"
+                android:textColor="@android:color/black"
                 tools:text="Model Name" />
 
-            <!-- Rotation Controls -->
             <TextView
+                android:id="@+id/text_model_filename"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:text="@string/rotation_controls"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <!-- X Rotation -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="30dp"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_x"
-                    android:textSize="12sp" />
-
-                <SeekBar
-                    android:id="@+id/seek_rotation_x"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:max="360"
-                    android:progress="0" />
-
-                <TextView
-                    android:id="@+id/text_rotation_x"
-                    android:layout_width="40dp"
-                    android:layout_height="wrap_content"
-                    android:gravity="end"
-                    android:text="@string/zero_degrees"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <!-- Y Rotation -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="30dp"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_y"
-                    android:textSize="12sp" />
-
-                <SeekBar
-                    android:id="@+id/seek_rotation_y"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:max="360"
-                    android:progress="0" />
-
-                <TextView
-                    android:id="@+id/text_rotation_y"
-                    android:layout_width="40dp"
-                    android:layout_height="wrap_content"
-                    android:gravity="end"
-                    android:text="@string/zero_degrees"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
-
-            <!-- Z Rotation -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="16dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <TextView
-                    android:layout_width="30dp"
-                    android:layout_height="wrap_content"
-                    android:text="@string/label_z"
-                    android:textSize="12sp" />
-
-                <SeekBar
-                    android:id="@+id/seek_rotation_z"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:max="360"
-                    android:progress="0" />
-
-                <TextView
-                    android:id="@+id/text_rotation_z"
-                    android:layout_width="40dp"
-                    android:layout_height="wrap_content"
-                    android:gravity="end"
-                    android:text="@string/zero_degrees"
-                    android:textSize="12sp" />
-
-            </LinearLayout>
+                android:gravity="start"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                tools:text="Model Filename" />
 
             <!-- Control Buttons Row 1: Reset / Auto-rotate / Lighting -->
+
             <LinearLayout
+                android:id="@+id/controls_container_inner"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btn_reset_rotation"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:text="@string/reset" />
-
-                <Button
-                    android:id="@+id/btn_auto_rotate"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
-                    android:layout_weight="1"
-                    android:text="@string/auto_rotate" />
-
-                <Button
-                    android:id="@+id/btn_toggle_lighting"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
-                    android:layout_weight="1"
-                    android:text="@string/lighting_on" />
-
-            </LinearLayout>
-
-            <!-- Control Buttons Row 2: Capture Thumbnail / Done (only shown in capture mode) -->
-            <LinearLayout
-                android:id="@+id/capture_controls_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center"
+                android:background="@color/white"
+                android:elevation="4dp"
                 android:orientation="horizontal"
-                android:visibility="gone">
+                android:padding="16dp"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toStartOf="parent">
+
+                <GridLayout
+                    android:id="@+id/primary_controls_grid"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="start"
+                    android:columnCount="2"
+                    android:rowCount="2"
+                    android:useDefaultMargins="true">
+
+                    <Button
+                        android:id="@+id/btn_reset_rotation"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_row="0"
+                        android:layout_column="0"
+                        android:text="@string/reset" />
+
+                    <Button
+                        android:id="@+id/btn_auto_rotate"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_row="0"
+                        android:layout_column="1"
+                        android:text="@string/auto_rotate" />
+
+                    <Button
+                        android:id="@+id/btn_toggle_lighting"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        android:layout_row="1"
+                        android:layout_column="0"
+                        android:text="@string/lighting_on" />
+
+                </GridLayout>
+
+                <Space
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
 
                 <Button
                     android:id="@+id/btn_capture_thumbnail"
                     style="@style/Widget.MaterialComponents.Button"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="8dp"
-                    android:layout_weight="1"
-                    android:text="Capture Thumbnail" />
-
-                <Button
-                    android:id="@+id/btn_done_capture"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="Done" />
+                    android:layout_width="115dp"
+                    android:layout_height="115dp"
+                    android:gravity="center"
+                    android:maxWidth="115dp"
+                    android:maxHeight="115dp"
+                    android:minWidth="115dp"
+                    android:minHeight="115dp"
+                    android:text="Capture" />
 
             </LinearLayout>
 

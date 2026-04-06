@@ -30,7 +30,6 @@ import java.util.*
 class ModelsAdapter(
     private val onDeleteClick: (Model) -> Unit,
     private val onEditClick: (Model) -> Unit,
-    private val onRecaptureClick: (Model) -> Unit,
     private val onModelClick: (Model) -> Unit
 ) : ListAdapter<Model, ModelsAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
@@ -55,7 +54,7 @@ class ModelsAdapter(
         private val textModelSize: TextView = itemView.findViewById(R.id.text_model_size)
         private val textModelDate: TextView = itemView.findViewById(R.id.text_model_date)
         private val btnEditModel: ImageButton = itemView.findViewById(R.id.btn_edit_model)
-        private val btnRecaptureThumbnail: ImageButton = itemView.findViewById(R.id.btn_recapture_thumbnail)
+        //private val btnRecaptureThumbnail: ImageButton = itemView.findViewById(R.id.btn_recapture_thumbnail)
         private val btnDeleteModel: ImageButton = itemView.findViewById(R.id.btn_delete_model)
 
         /** Tracks the currently running preview load so it can be cancelled on rebind. */
@@ -71,16 +70,12 @@ class ModelsAdapter(
             // the drawable's own colour rather than blending on top of it.
             btnEditModel.imageTintList = ColorStateList.valueOf(Color.parseColor("#0D47A1"))
             btnEditModel.imageTintMode = PorterDuff.Mode.SRC_IN
-            btnRecaptureThumbnail.imageTintList = ColorStateList.valueOf(Color.parseColor("#E65100"))
-            btnRecaptureThumbnail.imageTintMode = PorterDuff.Mode.SRC_IN
+            //btnRecaptureThumbnail.imageTintList = ColorStateList.valueOf(Color.parseColor("#E65100"))
+            //btnRecaptureThumbnail.imageTintMode = PorterDuff.Mode.SRC_IN
             btnDeleteModel.imageTintList = ColorStateList.valueOf(Color.parseColor("#B71C1C"))
             btnDeleteModel.imageTintMode = PorterDuff.Mode.SRC_IN
 
             btnEditModel.setOnClickListener { onEditClick(model) }
-
-            btnRecaptureThumbnail.setOnClickListener {
-                onRecaptureClick(model)
-            }
 
             btnDeleteModel.setOnClickListener {
                 onDeleteClick(model)
