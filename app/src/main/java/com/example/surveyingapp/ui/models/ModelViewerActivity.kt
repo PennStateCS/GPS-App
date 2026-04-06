@@ -44,9 +44,6 @@ class ModelViewerActivity : AppCompatActivity() {
     private var thumbnailCaptureScheduled = false
     private var modelReadyForThumbnail = false
     private var framesAfterLoad = 0
-    private var captureOnly = false
-    /** True when the activity is opened specifically to let the user choose a thumbnail angle. */
-    private var captureMode = false
 
     private var autoRotate = false
 
@@ -54,24 +51,23 @@ class ModelViewerActivity : AppCompatActivity() {
     private var rotX = 0f
     private var rotY = 0f
     private var rotZ = 0f
+
     // The unit-cube base transform stored after transformToUnitCube(); rotation is composed on top.
     private var baseTransform: FloatArray? = null
 
-    // Dynamic lighting: a directional sun light toggled by the user.
+    // Dynamic lighting: a directional sunlight toggled by the user.
     private var dynamicLightingEnabled = true
-    private var sunLightEntity: Int = 0
+    //private var sunLightEntity: Int = 0
 
     companion object {
         private const val EXTRA_MODEL_PATH = "model_path"
         private const val EXTRA_MODEL_NAME = "model_name"
-        const val EXTRA_CAPTURE_ONLY = "capture_only"
-        /** When true, shows Capture Thumbnail + Done buttons so the user picks the angle. */
-        const val EXTRA_CAPTURE_MODE = "capture_mode"
 
         private const val FRAMES_TO_SETTLE = 60
         private const val THUMBNAIL_SIZE = 256
         private const val CAPTURE_MAX_ATTEMPTS = 20
         private const val CAPTURE_RETRY_DELAY_MS = 250L
+
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
         private const val MIN_RENDER_INTERVAL_NS = 33_333_333L
@@ -81,25 +77,6 @@ class ModelViewerActivity : AppCompatActivity() {
             return Intent(context, ModelViewerActivity::class.java).apply {
                 putExtra(EXTRA_MODEL_PATH, modelPath)
                 putExtra(EXTRA_MODEL_NAME, modelName)
-            }
-        }
-
-        /** Opens the viewer so the user can rotate the model and manually capture a thumbnail. */
-        fun newCaptureModeIntent(context: Context, modelPath: String, modelName: String): Intent {
-            Utils.init()
-            return Intent(context, ModelViewerActivity::class.java).apply {
-                putExtra(EXTRA_MODEL_PATH, modelPath)
-                putExtra(EXTRA_MODEL_NAME, modelName)
-                putExtra(EXTRA_CAPTURE_MODE, true)
-            }
-        }
-
-        fun newCaptureIntent(context: Context, modelPath: String, modelName: String): Intent {
-            Utils.init()
-            return Intent(context, ModelViewerActivity::class.java).apply {
-                putExtra(EXTRA_MODEL_PATH, modelPath)
-                putExtra(EXTRA_MODEL_NAME, modelName)
-                putExtra(EXTRA_CAPTURE_ONLY, true)
             }
         }
     }
@@ -112,52 +89,70 @@ class ModelViewerActivity : AppCompatActivity() {
         binding = ActivityModelViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        captureOnly = intent.getBooleanExtra(EXTRA_CAPTURE_ONLY, false)
-        captureMode = intent.getBooleanExtra(EXTRA_CAPTURE_MODE, false)
+        // Check if the device supports Filament for 3D rendering; if not, show an error message and skip setup.
+        if (!supportsFilamentViewer()) {
+            binding.textError.visibility = View.VISIBLE
+            binding.progressLoading.visibility = View.GONE
 
-        if (captureOnly) {
-            binding.toolbar.visibility = View.INVISIBLE
-            binding.btnResetRotation.visibility = View.INVISIBLE
-            binding.btnAutoRotate.visibility = View.INVISIBLE
-        } else {
-            binding.btnResetRotation.setOnClickListener { clickedResetView() }
-            binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
-            binding.btnToggleLighting.setOnClickListener { clickedToggleLighting() }
-            setupRotationControls()
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Device Not Supported")
+                .setMessage("This device does not support the required OpenGL ES 3.0 for 3D rendering. Please try again on a different device.")
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    finish()
+                }
+                .setCancelable(false)
+                .show()
 
-            if (captureMode) {
-                // Show capture controls row
-                binding.captureControlsRow.visibility = View.VISIBLE
-                binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
-                binding.btnDoneCapture.setOnClickListener { finish() }
-            }
+            return
         }
 
+        // We assume OpenGL is supported past this point
+
+        // Check if a thumbnail already exists for this model for later use
         thumbnailExists = modelHasThumbnail()
 
-        if (!captureOnly) setupToolbar()
-        setupModelViewer()
+        binding.progressLoading.visibility = View.VISIBLE
+        setupToolbar()
+
+        // Set name/path of 3d model on the UI
+        binding.textModelName.text = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model";
+        binding.textModelFilename.text = intent.getStringExtra(EXTRA_MODEL_PATH)?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Unknown file";
+
+        // Set up button click listeners
+        binding.btnResetRotation.setOnClickListener { clickedResetView() }
+        binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
+        binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
+        binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
+
+        // Load the model viewer surface view
+        if (!setupModelViewer())
+        {
+            Log.e("ModelViewerActivity", "Something went wrong while loading the model viewer.")
+            binding.textError.visibility = View.VISIBLE
+            return
+        }
+    }
+
+    private fun supportsFilamentViewer(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.deviceConfigurationInfo.reqGlEsVersion >= 0x30000
     }
 
     private fun setupToolbar() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        val modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model"
-        supportActionBar?.title = if (captureMode) "Set Thumbnail – $modelName" else modelName
     }
 
     private var hasAppliedThumbnailFraming = false
 
-    private fun setupModelViewer() {
+    private fun setupModelViewer(): Boolean {
         surfaceView = binding.modelSurface
-        binding.progressLoading.visibility = View.VISIBLE
+
         val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH)
         val modelFile = modelPath?.let { File(it) }
 
         if (modelFile == null || !modelFile.exists()) {
-            binding.progressLoading.visibility = View.GONE
-            binding.textError?.visibility = View.VISIBLE
-            return
+            return false
         }
 
         lifecycleScope.launch {
@@ -169,14 +164,14 @@ class ModelViewerActivity : AppCompatActivity() {
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) return@launch
 
             if (modelBuffer == null) {
-                binding.progressLoading.visibility = View.GONE
-                binding.textError?.visibility = View.VISIBLE
                 return@launch
             }
 
             // ModelViewer must be created on the main thread (it attaches to the SurfaceView).
             val viewer = ModelViewer(surfaceView)
-            newModelViewer = viewer
+
+            Log.d("ModelViewerActivity", viewer.scene.indirectLight.toString())
+
 
             // Touch handler — use newModelViewer (nullable) rather than the closed-over
             // `viewer` so that clearing newModelViewer in onDestroy also cuts this path.
@@ -230,23 +225,30 @@ class ModelViewerActivity : AppCompatActivity() {
             applyThumbnailCameraFraming(viewer.view.camera)
             hasAppliedThumbnailFraming = true
 
-            modelReadyForThumbnail = true
-            framesAfterLoad = 0
-            binding.progressLoading.visibility = View.GONE
 
             // Create a directional sun light so the user can toggle it on/off.
             // Done here (after the engine is live) to avoid a use-before-init crash.
-            val sun = EntityManager.get().create()
-            LightManager.Builder(LightManager.Type.DIRECTIONAL)
-                .color(1.0f, 0.98f, 0.95f)   // slightly warm white
-                .intensity(100_000f)
-                .direction(0.5f, -1.0f, -0.5f)
-                .castShadows(false)
-                .build(viewer.engine, sun)
-            viewer.scene.addEntity(sun)
-            sunLightEntity = sun
+
+            // We can't use sun here becuase IndirectLight takes priority in terms of a light source
+//            val sun = EntityManager.get().create()
+//            LightManager.Builder(LightManager.Type.DIRECTIONAL)
+//                .color(1.0f, 0.98f, 0.95f)   // slightly warm white
+//                .intensity(100_000f)
+//                .direction(0.0f,-1.0f,-0.5f)
+//                .castShadows(true)
+//                .build(viewer.engine, sun)
+//            viewer.scene.addEntity(sun)
+//            sunLightEntity = sun
             dynamicLightingEnabled = true
+
+
+
+            newModelViewer = viewer
+            modelReadyForThumbnail = true
+            framesAfterLoad = 0
         }
+
+        return true
     }
 
     private fun loadModelIntoViewer(viewer: ModelViewer, modelFile: File, modelBuffer: ByteBuffer): Boolean {
@@ -323,20 +325,18 @@ class ModelViewerActivity : AppCompatActivity() {
                  if (autoRotate) {
                      rotY = (rotY + 0.5f) % 360f
                      val yDeg = rotY.toInt()
-                     binding.seekRotationY.progress = yDeg
-                     binding.textRotationY.text = "${yDeg}°"
+                     //binding.seekRotationY.progress = yDeg
+                     //binding.textRotationY.text = "${yDeg}°"
                      applyRotation()
                  }
 
                  viewer.render(frameTimeNanos)
                  lastRenderTimeNs = frameTimeNanos
 
-                 // Auto-capture only in captureOnly mode (background headless capture),
-                 // NOT in captureMode (user manually taps the button).
-                 if (captureOnly && modelReadyForThumbnail && !thumbnailExists && !thumbnailCaptureScheduled) {
+                 if (framesAfterLoad < 2) {
                      framesAfterLoad++
-                     if (framesAfterLoad >= FRAMES_TO_SETTLE && hasAppliedThumbnailFraming) {
-                         scheduleThumbnailCapture(finishAfter = true)
+                     if (framesAfterLoad == 2) {
+                         binding.progressLoading.visibility = View.GONE
                      }
                  }
              }
@@ -350,7 +350,7 @@ class ModelViewerActivity : AppCompatActivity() {
         if (thumbnailCaptureScheduled) return
         binding.btnCaptureThumbnail.isEnabled = false
         binding.btnCaptureThumbnail.text = "Capturing…"
-        scheduleThumbnailCapture(finishAfter = false)
+        scheduleThumbnailCapture(finishAfter = true)
     }
 
     // ── Thumbnail capture ─────────────────────────────────────────────────────
@@ -379,13 +379,12 @@ class ModelViewerActivity : AppCompatActivity() {
                 ThumbnailCaptureActivity.start(this, modelPath, modelName, modelFileName)
             } catch (e: Exception) {
                 Log.e("ModelViewerActivity", "Failed to start ThumbnailCaptureActivity", e)
-            }
 
-            if (captureMode) {
                 binding.btnCaptureThumbnail.isEnabled = true
                 binding.btnCaptureThumbnail.text = "Capture Thumbnail"
                 Toast.makeText(this, "Capture failed — fallback invoked", Toast.LENGTH_SHORT).show()
             }
+
             if (finishAfter) finish()
             return
         }
@@ -505,14 +504,12 @@ class ModelViewerActivity : AppCompatActivity() {
                     thumbnailCaptureScheduled = false
                     Log.d("ModelViewerActivity", "Thumbnail saved OK: $thumbFileName  viewerAlive=${newModelViewer != null}  surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}")
 
-                    if (captureMode) {
-                        // Re-enable button and show success feedback before finishing
-                        Toast.makeText(this@ModelViewerActivity, "Thumbnail saved!", Toast.LENGTH_SHORT).show()
-                        binding.btnCaptureThumbnail.text = "Capture Thumbnail"
-                        binding.btnCaptureThumbnail.isEnabled = true
-                        Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (captureMode)")
-                        finish()
-                    } else if (finishAfter) {
+                    Toast.makeText(this@ModelViewerActivity, "Thumbnail saved!", Toast.LENGTH_SHORT).show()
+                    binding.btnCaptureThumbnail.text = "Capture Thumbnail"
+                    binding.btnCaptureThumbnail.isEnabled = true
+                    Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (captureMode)")
+
+                    if (finishAfter) {
                         Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (finishAfter=true)")
                         finish()
                     }
@@ -520,12 +517,6 @@ class ModelViewerActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("ModelViewerActivity", "Failed to save thumbnail", e)
                 thumbnailCaptureScheduled = false
-                withContext(Dispatchers.Main) {
-                    if (captureMode) {
-                        binding.btnCaptureThumbnail.isEnabled = true
-                        binding.btnCaptureThumbnail.text = "Capture Thumbnail"
-                    }
-                }
             }
         }
     }
@@ -571,9 +562,9 @@ class ModelViewerActivity : AppCompatActivity() {
 
         // Reset rotation angles and SeekBars
         rotX = 0f; rotY = 0f; rotZ = 0f
-        binding.seekRotationX.progress = 0; binding.textRotationX.text = "0°"
-        binding.seekRotationY.progress = 0; binding.textRotationY.text = "0°"
-        binding.seekRotationZ.progress = 0; binding.textRotationZ.text = "0°"
+        //binding.seekRotationX.progress = 0; binding.textRotationX.text = "0°"
+        //binding.seekRotationY.progress = 0; binding.textRotationY.text = "0°"
+        //binding.seekRotationZ.progress = 0; binding.textRotationZ.text = "0°"
 
         // Re-centre model and re-snapshot base transform
         viewer.transformToUnitCube()
@@ -592,21 +583,36 @@ class ModelViewerActivity : AppCompatActivity() {
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
     }
 
-    private fun clickedToggleLighting() {
+    private fun clickedToggleIndirectLight() {
         val viewer = newModelViewer ?: return
-        val light = sunLightEntity
-        if (light == 0) return  // light not yet created (model still loading)
+        if (viewer.scene.indirectLight == null) return  // no IBL to toggle
 
         dynamicLightingEnabled = !dynamicLightingEnabled
         if (dynamicLightingEnabled) {
-            viewer.scene.addEntity(light)
+            viewer.scene.indirectLight?.intensity = 50_000f
             binding.btnToggleLighting.text = getString(R.string.lighting_on)
         } else {
-            viewer.scene.removeEntity(light)
+            viewer.scene.indirectLight?.intensity = 0f
             binding.btnToggleLighting.text = getString(R.string.lighting_off)
         }
         Log.d("ModelViewerActivity", "dynamicLighting set to $dynamicLightingEnabled")
     }
+
+//    private fun clickedToggleLighting() {
+//        val viewer = newModelViewer ?: return
+//        val light = sunLightEntity
+//        if (light == 0) return  // light not yet created (model still loading)
+//
+//        dynamicLightingEnabled = !dynamicLightingEnabled
+//        if (dynamicLightingEnabled) {
+//            viewer.scene.addEntity(light)
+//            binding.btnToggleLighting.text = getString(R.string.lighting_on)
+//        } else {
+//            viewer.scene.removeEntity(light)
+//            binding.btnToggleLighting.text = getString(R.string.lighting_off)
+//        }
+//        Log.d("ModelViewerActivity", "dynamicLighting set to $dynamicLightingEnabled")
+//    }
 
     private fun setupRotationControls() {
         fun makeListener(
@@ -623,15 +629,15 @@ class ModelViewerActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
         }
 
-        binding.seekRotationX.setOnSeekBarChangeListener(
-            makeListener({ v -> rotX = v }, { p -> binding.textRotationX.text = "${p}°" })
-        )
-        binding.seekRotationY.setOnSeekBarChangeListener(
-            makeListener({ v -> rotY = v }, { p -> binding.textRotationY.text = "${p}°" })
-        )
-        binding.seekRotationZ.setOnSeekBarChangeListener(
-            makeListener({ v -> rotZ = v }, { p -> binding.textRotationZ.text = "${p}°" })
-        )
+//        binding.seekRotationX.setOnSeekBarChangeListener(
+//            makeListener({ v -> rotX = v }, { p -> binding.textRotationX.text = "${p}°" })
+//        )
+//        binding.seekRotationY.setOnSeekBarChangeListener(
+//            makeListener({ v -> rotY = v }, { p -> binding.textRotationY.text = "${p}°" })
+//        )
+//        binding.seekRotationZ.setOnSeekBarChangeListener(
+//            makeListener({ v -> rotZ = v }, { p -> binding.textRotationZ.text = "${p}°" })
+//        )
     }
 
     /**
@@ -671,7 +677,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing captureMode=$captureMode captureOnly=$captureOnly")
+        Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing")
         choreographer = android.view.Choreographer.getInstance()
         choreographer?.postFrameCallback(frameCallback)
     }
@@ -716,12 +722,12 @@ class ModelViewerActivity : AppCompatActivity() {
         try {
             // Remove and destroy the dynamic sun light before the model, so the
             // scene has no dangling references when destroyModel() runs.
-            if (sunLightEntity != 0) {
-                viewer.scene.removeEntity(sunLightEntity)
-                viewer.engine.lightManager.destroy(sunLightEntity)
-                EntityManager.get().destroy(sunLightEntity)
-                sunLightEntity = 0
-            }
+//            if (sunLightEntity != 0) {
+//                viewer.scene.removeEntity(sunLightEntity)
+//                viewer.engine.lightManager.destroy(sunLightEntity)
+//                EntityManager.get().destroy(sunLightEntity)
+//                sunLightEntity = 0
+//            }
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
         } catch (t: Throwable) {

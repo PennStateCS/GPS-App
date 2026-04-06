@@ -13,6 +13,7 @@ import android.util.Log
 import android.view.Choreographer
 import android.view.PixelCopy
 import android.view.SurfaceView
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
@@ -91,6 +92,19 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "model"
         modelFileName = intent.getStringExtra(EXTRA_MODEL_FILE_NAME) ?: File(modelPath).name
 
+        if (!supportsFilamentViewer()) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Device Not Supported")
+                .setMessage("This device does not support the required OpenGL ES 3.0 for 3D rendering. Thumbnail creation has been cancelled. Please try again on a different device.")
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    finish()
+                }
+                .setCancelable(false)
+                .show()
+
+            return
+        }
+
         // The window must remain composited by the GPU (so PixelCopy works), but we
         // move it entirely off-screen so the user never sees the black SurfaceView.
         // Setting alpha=0 or visibility=GONE breaks PixelCopy (all-black frames).
@@ -131,6 +145,11 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         }
 
         initFilament()
+    }
+
+    private fun supportsFilamentViewer(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.deviceConfigurationInfo.reqGlEsVersion >= 0x30000
     }
 
     private fun initFilament() {

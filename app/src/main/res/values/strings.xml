@@ -4,8 +4,11 @@
     <string name="degrees">%1$d°</string>
     <string name="stop_rotate">Stop Rotate</string>
     <string name="auto_rotate">Auto Rotate</string>
-    <string name="lighting_on">💡 Light On</string>
-    <string name="lighting_off">💡 Light Off</string>
+<!--    <string name="lighting_on">💡 Light On</string>-->
+<!--    <string name="lighting_off">💡 Light Off</string>-->
+    <string name="lighting_on">Disable Light</string>
+    <string name="lighting_off">Enable Light</string>
+
 
     <!-- Strings required by layouts -->
     <string name="icon_content_desc">Icon</string>
