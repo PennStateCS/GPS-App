@@ -37,7 +37,7 @@
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:background="@android:color/darker_gray"
-            app:layout_constraintBottom_toTopOf="@id/controls_container"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -46,7 +46,7 @@
             android:id="@+id/modelSurface"
             android:layout_width="0dp"
             android:layout_height="0dp"
-            app:layout_constraintBottom_toTopOf="@id/controls_container"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -78,12 +78,12 @@
             app:layout_constraintStart_toStartOf="@id/placeholder_view"
             app:layout_constraintTop_toTopOf="@id/placeholder_view" />
 
-        <!-- Controls Container -->
+        <!-- Name Container -->
         <LinearLayout
-            android:id="@+id/controls_container"
-            android:layout_width="0dp"
+            android:id="@+id/name_container"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@color/white"
+            android:background="@drawable/bg_rounded_tab"
             android:elevation="4dp"
             android:orientation="vertical"
             android:padding="16dp"
@@ -96,7 +96,7 @@
                 android:id="@+id/text_model_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="start"
+                android:gravity="center"
                 android:textSize="24sp"
                 android:textStyle="bold"
                 android:textColor="@android:color/black"
@@ -106,84 +106,90 @@
                 android:id="@+id/text_model_filename"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="start"
+                android:gravity="center"
                 android:textSize="16sp"
                 android:textStyle="bold"
                 tools:text="Model Filename" />
-
-            <!-- Control Buttons Row 1: Reset / Auto-rotate / Lighting -->
-
-            <LinearLayout
-                android:id="@+id/controls_container_inner"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@color/white"
-                android:elevation="4dp"
-                android:orientation="horizontal"
-                android:padding="16dp"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toStartOf="parent">
-
-                <GridLayout
-                    android:id="@+id/primary_controls_grid"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="start"
-                    android:columnCount="2"
-                    android:rowCount="2"
-                    android:useDefaultMargins="true">
-
-                    <Button
-                        android:id="@+id/btn_reset_rotation"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="140dp"
-                        android:layout_height="wrap_content"
-                        android:layout_row="0"
-                        android:layout_column="0"
-                        android:text="@string/reset" />
-
-                    <Button
-                        android:id="@+id/btn_auto_rotate"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="140dp"
-                        android:layout_height="wrap_content"
-                        android:layout_row="0"
-                        android:layout_column="1"
-                        android:text="@string/auto_rotate" />
-
-                    <Button
-                        android:id="@+id/btn_toggle_lighting"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="140dp"
-                        android:layout_height="wrap_content"
-                        android:layout_row="1"
-                        android:layout_column="0"
-                        android:text="@string/lighting_on" />
-
-                </GridLayout>
-
-                <Space
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:layout_weight="1" />
-
-                <Button
-                    android:id="@+id/btn_capture_thumbnail"
-                    style="@style/Widget.MaterialComponents.Button"
-                    android:layout_width="115dp"
-                    android:layout_height="115dp"
-                    android:gravity="center"
-                    android:maxWidth="115dp"
-                    android:maxHeight="115dp"
-                    android:minWidth="115dp"
-                    android:minHeight="115dp"
-                    android:text="Capture" />
-
-            </LinearLayout>
-
         </LinearLayout>
 
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btn_capture_thumbnail"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:fabCustomSize="115dp"
+            app:backgroundTint="?attr/colorPrimary"
+            app:borderWidth="0dp"
+            app:srcCompat="@drawable/ic_camera_white"
+            app:tint="@color/white"
+            app:maxImageSize="50dp"
+            android:layout_margin="30dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"/>
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/btn_controls_expand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:fabCustomSize="75dp"
+            app:backgroundTint="?attr/colorPrimary"
+            app:borderWidth="0dp"
+            app:srcCompat="@drawable/ic_zoom_in"
+            app:tint="@color/white"
+            app:maxImageSize="35dp"
+            android:layout_margin="30dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_reset_rotation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/reset"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_controls_expand"
+            app:layout_constraintEnd_toEndOf="@id/btn_controls_expand" />
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_auto_rotate"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/auto_rotate"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_reset_rotation"
+            app:layout_constraintEnd_toEndOf="@id/btn_reset_rotation" />
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_lighting"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/lighting_on"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_auto_rotate"
+            app:layout_constraintEnd_toEndOf="@id/btn_auto_rotate" />
+
+
+
+
     </androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
+
+
+
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

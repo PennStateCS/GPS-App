@@ -128,7 +128,7 @@
     <string name="label_y">Y:</string>
     <string name="label_z">Z:</string>
     <string name="zero_degrees">0°</string>
-    <string name="reset">Reset</string>
+    <string name="reset">Reset Rotation</string>
 
     <!-- Emlid Reach inline manual entry UI strings -->
     <string name="hint_host">Host or IP</string>
