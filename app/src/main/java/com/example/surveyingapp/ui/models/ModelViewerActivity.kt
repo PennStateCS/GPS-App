@@ -349,7 +349,7 @@ class ModelViewerActivity : AppCompatActivity() {
     private fun onCaptureThumbnailClicked() {
         if (thumbnailCaptureScheduled) return
         binding.btnCaptureThumbnail.isEnabled = false
-        binding.btnCaptureThumbnail.text = "Capturing…"
+        binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_refresh_24_white)
         scheduleThumbnailCapture(finishAfter = true)
     }
 
@@ -381,7 +381,7 @@ class ModelViewerActivity : AppCompatActivity() {
                 Log.e("ModelViewerActivity", "Failed to start ThumbnailCaptureActivity", e)
 
                 binding.btnCaptureThumbnail.isEnabled = true
-                binding.btnCaptureThumbnail.text = "Capture Thumbnail"
+                binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
                 Toast.makeText(this, "Capture failed — fallback invoked", Toast.LENGTH_SHORT).show()
             }
 
@@ -505,7 +505,7 @@ class ModelViewerActivity : AppCompatActivity() {
                     Log.d("ModelViewerActivity", "Thumbnail saved OK: $thumbFileName  viewerAlive=${newModelViewer != null}  surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}")
 
                     Toast.makeText(this@ModelViewerActivity, "Thumbnail saved!", Toast.LENGTH_SHORT).show()
-                    binding.btnCaptureThumbnail.text = "Capture Thumbnail"
+                    binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
                     binding.btnCaptureThumbnail.isEnabled = true
                     Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (captureMode)")
 
