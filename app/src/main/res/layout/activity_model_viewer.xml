@@ -152,7 +152,8 @@
             app:backgroundTint="?attr/colorPrimary"
             app:layout_constrainedWidth="true"
             app:layout_constraintBottom_toTopOf="@id/btn_controls_expand"
-            app:layout_constraintEnd_toEndOf="@id/btn_controls_expand" />
+            app:layout_constraintEnd_toEndOf="@id/btn_controls_expand"
+            android:visibility="invisible"/>
 
         <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
             android:id="@+id/btn_auto_rotate"
@@ -165,7 +166,8 @@
             app:backgroundTint="?attr/colorPrimary"
             app:layout_constrainedWidth="true"
             app:layout_constraintBottom_toTopOf="@id/btn_reset_rotation"
-            app:layout_constraintEnd_toEndOf="@id/btn_reset_rotation" />
+            app:layout_constraintEnd_toEndOf="@id/btn_reset_rotation"
+            android:visibility="invisible"/>
 
         <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
             android:id="@+id/btn_toggle_lighting"
@@ -178,7 +180,8 @@
             app:backgroundTint="?attr/colorPrimary"
             app:layout_constrainedWidth="true"
             app:layout_constraintBottom_toTopOf="@id/btn_auto_rotate"
-            app:layout_constraintEnd_toEndOf="@id/btn_auto_rotate" />
+            app:layout_constraintEnd_toEndOf="@id/btn_auto_rotate"
+            android:visibility="invisible"/>
 
 
 
