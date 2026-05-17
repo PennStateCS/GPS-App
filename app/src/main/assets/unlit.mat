@@ -1,0 +1,17 @@
+material {
+    name : "UnlitColor",
+    shadingModel : unlit,
+    requires : [ color ]
+}
+
+vertex {
+    void materialVertex(inout MaterialVertexInputs material) {
+    }
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        material.baseColor = getColor();
+    }
+}

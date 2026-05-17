@@ -22,6 +22,11 @@ import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.ActivityModelViewerBinding
 import com.example.surveyingapp.R
 import com.google.android.filament.*
+import com.google.android.filament.gltfio.AssetLoader
+import com.google.android.filament.gltfio.FilamentAsset
+import com.google.android.filament.gltfio.MaterialProvider
+import com.google.android.filament.gltfio.ResourceLoader
+import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,6 +63,22 @@ class ModelViewerActivity : AppCompatActivity() {
     // Dynamic lighting: a directional sunlight toggled by the user.
     private var dynamicLightingEnabled = true
     //private var sunLightEntity: Int = 0
+
+    // Controls menu toggle
+    private var controlsExpanded = false
+
+    // Gizmo setup
+    private var gizmoEntity: Int = 0
+    private var gizmoVertexBuffer: VertexBuffer? = null
+    private var gizmoIndexBuffer: IndexBuffer? = null
+
+    // New camera setup
+    private val orbitTarget = FloatArray(3)
+    private var orbitDistance = 2.5f
+    private var orbitYawDeg = 0.0
+    private var orbitPitchDeg = 18.0
+
+
 
     companion object {
         private const val EXTRA_MODEL_PATH = "model_path"
@@ -119,6 +140,17 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.textModelFilename.text = intent.getStringExtra(EXTRA_MODEL_PATH)?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Unknown file";
 
         // Set up button click listeners
+        binding.btnControlsExpand.setOnClickListener {
+            if (controlsExpanded)
+            {
+                collapseControls()
+            }
+            else
+            {
+                expandControls()
+            }
+        }
+
         binding.btnResetRotation.setOnClickListener { clickedResetView() }
         binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
         binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
@@ -212,7 +244,17 @@ class ModelViewerActivity : AppCompatActivity() {
                 binding.textError?.visibility = View.VISIBLE
                 return@launch
             }
-            viewer.transformToUnitCube()
+
+            // We no longer use transformToUnitCube because it inaccurately displays the model's origin at start
+            // viewer.transformToUnitCube()
+
+            // Instead, we control our own camera
+            updateOrbitTargetFromAsset(viewer)
+            applyOrbitCamera(viewer.view.camera)
+
+            createAxisGizmo(viewer)
+
+
 
             // Snapshot the unit-cube transform so rotation is always composed on top of it.
             viewer.asset?.let { asset ->
@@ -239,6 +281,9 @@ class ModelViewerActivity : AppCompatActivity() {
 //                .build(viewer.engine, sun)
 //            viewer.scene.addEntity(sun)
 //            sunLightEntity = sun
+
+
+
             dynamicLightingEnabled = true
 
 
@@ -287,21 +332,201 @@ class ModelViewerActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyThumbnailCameraFraming(cam: Camera?) {
-        try {
-            if (cam == null) return
-            val aspect = if (::surfaceView.isInitialized && surfaceView.height > 0) {
+//    private fun applyThumbnailCameraFraming(cam: Camera?) {
+//        try {
+//            if (cam == null) return
+//            val aspect = if (::surfaceView.isInitialized && surfaceView.height > 0) {
+//                surfaceView.width.toDouble() / surfaceView.height.toDouble()
+//            } else {
+//                1.0
+//            }
+//            cam.lookAt(0.9, 0.6, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+//            // Use the actual surface aspect ratio for on-screen preview; forcing 1.0
+//            // stretches models on wide screens. Thumbnail capture still crops to square.
+//            cam.setProjection(35.0, aspect, 0.05, 50.0, Camera.Fov.VERTICAL)
+//        } catch (e: Exception) {
+//            Log.w("ModelViewerActivity", "Thumb: failed to apply camera framing", e)
+//        }
+//    }
+
+    private fun applyThumbnailCameraFraming(cam: Camera?)
+    {
+        applyOrbitCamera(cam)
+    }
+
+
+
+    private fun createGizmoMaterial(engine: Engine): MaterialInstance {
+        val buffer = loadAsset("unlit.filamat")!!
+
+        val mat = Material.Builder()
+            .payload(buffer, buffer.remaining())
+            .build(engine)
+
+        return mat.createInstance()
+    }
+
+    private fun createAxisGizmo(viewer: ModelViewer) {
+        val engine = viewer.engine
+
+        val thickness = 0.03f // Change thickness of the axes here
+
+        val half = thickness / 2f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // Creates the triangles for a single axis-aligned box and appends to the vertex/index lists
+        // Color is passed as parameters
+        fun addBox(
+            minX: Float, maxX: Float,
+            minY: Float, maxY: Float,
+            minZ: Float, maxZ: Float,
+            r: Float, g: Float, b: Float
+        ) {
+
+            // Vertices
+            val verts = arrayOf(
+                floatArrayOf(minX, minY, minZ),
+                floatArrayOf(maxX, minY, minZ),
+                floatArrayOf(maxX, maxY, minZ),
+                floatArrayOf(minX, maxY, minZ),
+                floatArrayOf(minX, minY, maxZ),
+                floatArrayOf(maxX, minY, maxZ),
+                floatArrayOf(maxX, maxY, maxZ),
+                floatArrayOf(minX, maxY, maxZ)
+            )
+
+            for (v in verts) {
+                vertexList.add(v[0])
+                vertexList.add(v[1])
+                vertexList.add(v[2])
+                vertexList.add(r)
+                vertexList.add(g)
+                vertexList.add(b)
+            }
+
+            val inds = shortArrayOf(
+                0, 1, 2,  0, 2, 3,   // front
+                4, 6, 5,  4, 7, 6,   // back
+                0, 4, 5,  0, 5, 1,   // bottom
+                3, 2, 6,  3, 6, 7,   // top
+                0, 3, 7,  0, 7, 4,   // left
+                1, 5, 6,  1, 6, 2    // right
+            )
+
+            for (i in inds) {
+                indexList.add((baseIndex + i).toShort())
+            }
+
+            baseIndex = (baseIndex + 8).toShort()
+        }
+
+        // X axis: red
+        addBox( 0f, 1f, -half, half, -half, half, 1f, 0f, 0f)
+
+        // Y axis: green
+        addBox(-half, half, 0f, 1f, -half, half, 0f, 1f, 0f)
+
+        // Z axis: blue
+        addBox(-half, half, -half, half, 0f, 1f, 0f, 0f, 1f)
+
+        val vertices = vertexList.toFloatArray()
+        val indices = indexList.toShortArray()
+
+        gizmoVertexBuffer = VertexBuffer.Builder()
+            .vertexCount(vertices.size / 6)
+            .bufferCount(1)
+            .attribute(
+                VertexBuffer.VertexAttribute.POSITION,
+                0,
+                VertexBuffer.AttributeType.FLOAT3,
+                0,
+                24
+            )
+            .attribute(
+                VertexBuffer.VertexAttribute.COLOR,
+                0,
+                VertexBuffer.AttributeType.FLOAT3,
+                12,
+                24
+            )
+            .build(engine)
+
+        gizmoVertexBuffer!!.setBufferAt(engine, 0, java.nio.FloatBuffer.wrap(vertices))
+
+        gizmoIndexBuffer = IndexBuffer.Builder()
+            .indexCount(indices.size)
+            .bufferType(IndexBuffer.Builder.IndexType.USHORT)
+            .build(engine)
+
+        gizmoIndexBuffer!!.setBuffer(engine, java.nio.ShortBuffer.wrap(indices))
+
+        val entity = EntityManager.get().create()
+        val material = createGizmoMaterial(engine)
+
+        RenderableManager.Builder(1)
+            .geometry(
+                0,
+                RenderableManager.PrimitiveType.TRIANGLES,
+                gizmoVertexBuffer!!,
+                gizmoIndexBuffer!!
+            )
+            .material(0, material)
+            .culling(false)
+            .castShadows(false)
+            .receiveShadows(false)
+            .build(engine, entity)
+
+        viewer.scene.addEntity(entity)
+        gizmoEntity = entity
+    }
+
+    private fun updateOrbitTargetFromAsset(viewer: ModelViewer) {
+        val asset = viewer.asset ?: return
+        val box = asset.boundingBox
+
+        val c = box.center
+        val h = box.halfExtent
+
+        orbitTarget[0] = c[0]
+        orbitTarget[1] = c[1]
+        orbitTarget[2] = c[2]
+
+        val radius = maxOf(h[0], h[1], h[2]).coerceAtLeast(0.01f)
+        orbitDistance = radius * 3.0f
+    }
+
+    private fun applyOrbitCamera(cam: Camera?) {
+        if (cam == null) return
+
+        val tx = orbitTarget[0].toDouble()
+        val ty = orbitTarget[1].toDouble()
+        val tz = orbitTarget[2].toDouble()
+
+        val yaw = Math.toRadians(orbitYawDeg)
+        val pitch = Math.toRadians(orbitPitchDeg)
+
+        val cp = kotlin.math.cos(pitch)
+        val sp = kotlin.math.sin(pitch)
+        val sy = kotlin.math.sin(yaw)
+        val cy = kotlin.math.cos(yaw)
+
+        val ex = tx + orbitDistance * cp * sy
+        val ey = ty + orbitDistance * sp
+        val ez = tz + orbitDistance * cp * cy
+
+        val aspect =
+            if (::surfaceView.isInitialized && surfaceView.height > 0) {
                 surfaceView.width.toDouble() / surfaceView.height.toDouble()
-            } else {
+            }
+            else {
                 1.0
             }
-            cam.lookAt(0.9, 0.6, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-            // Use the actual surface aspect ratio for on-screen preview; forcing 1.0
-            // stretches models on wide screens. Thumbnail capture still crops to square.
-            cam.setProjection(35.0, aspect, 0.05, 50.0, Camera.Fov.VERTICAL)
-        } catch (e: Exception) {
-            Log.w("ModelViewerActivity", "Thumb: failed to apply camera framing", e)
-        }
+
+        cam.lookAt(ex, ey, ez, tx, ty, tz, 0.0, 1.0, 0.0)
+        cam.setProjection(35.0, aspect, 0.05, 100.0, Camera.Fov.VERTICAL)
     }
 
     // ── Frame loop ────────────────────────────────────────────────────────────
@@ -553,6 +778,20 @@ class ModelViewerActivity : AppCompatActivity() {
         return File(filesDir, "thumbnails/${safeBase}_thumb.png").exists()
     }
 
+    private fun expandControls() {
+        binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_out)
+        binding.btnAutoRotate.visibility = View.VISIBLE
+        binding.btnToggleLighting.visibility = View.VISIBLE
+        binding.btnResetRotation.visibility = View.VISIBLE
+    }
+
+    private fun collapseControls() {
+        binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_in)
+        binding.btnAutoRotate.visibility = View.INVISIBLE
+        binding.btnToggleLighting.visibility = View.INVISIBLE
+        binding.btnResetRotation.visibility = View.INVISIBLE
+    }
+
     private fun clickedResetView() {
         val viewer = newModelViewer ?: return
 
@@ -662,10 +901,15 @@ class ModelViewerActivity : AppCompatActivity() {
 
         // Apply on top of the base (unit-cube) transform: rot * base
         val combined = FloatArray(16)
-        GlMatrix.multiplyMM(combined, 0, rot, 0, base, 0)
+        GlMatrix.multiplyMM(combined, 0, base, 0, rot, 0)
 
         val tm = viewer.engine.transformManager
         tm.setTransform(tm.getInstance(asset.root), combined)
+
+        if (gizmoEntity != 0) {
+            val gizmoInstance = tm.getInstance(gizmoEntity)
+            tm.setTransform(gizmoInstance, combined)
+        }
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -728,6 +972,14 @@ class ModelViewerActivity : AppCompatActivity() {
 //                EntityManager.get().destroy(sunLightEntity)
 //                sunLightEntity = 0
 //            }
+
+            if (gizmoEntity != 0) {
+                viewer.scene.removeEntity(gizmoEntity)
+                viewer.engine.destroyEntity(gizmoEntity)
+                EntityManager.get().destroy(gizmoEntity)
+                gizmoEntity = 0
+            }
+
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
         } catch (t: Throwable) {
