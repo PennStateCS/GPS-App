@@ -22,11 +22,6 @@ import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.ActivityModelViewerBinding
 import com.example.surveyingapp.R
 import com.google.android.filament.*
-import com.google.android.filament.gltfio.AssetLoader
-import com.google.android.filament.gltfio.FilamentAsset
-import com.google.android.filament.gltfio.MaterialProvider
-import com.google.android.filament.gltfio.ResourceLoader
-import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,6 +66,10 @@ class ModelViewerActivity : AppCompatActivity() {
     private var gizmoEntity: Int = 0
     private var gizmoVertexBuffer: VertexBuffer? = null
     private var gizmoIndexBuffer: IndexBuffer? = null
+
+    // fixes a crash when material isn't unloaded properly (onDestroy)
+    private var gizmoMaterial: Material? = null
+    private var gizmoMaterialInstance: MaterialInstance? = null
 
     // New camera setup
     private val orbitTarget = FloatArray(3)
@@ -245,16 +244,12 @@ class ModelViewerActivity : AppCompatActivity() {
                 return@launch
             }
 
-            // We no longer use transformToUnitCube because it inaccurately displays the model's origin at start
-            // viewer.transformToUnitCube()
-
-            // Instead, we control our own camera
+            // Control our own camera
             updateOrbitTargetFromAsset(viewer)
-            applyOrbitCamera(viewer.view.camera)
+            applyOrbitManipulator(viewer)
 
+            // Create axis at origin
             createAxisGizmo(viewer)
-
-
 
             // Snapshot the unit-cube transform so rotation is always composed on top of it.
             viewer.asset?.let { asset ->
@@ -264,7 +259,6 @@ class ModelViewerActivity : AppCompatActivity() {
                 baseTransform = base
             }
 
-            applyThumbnailCameraFraming(viewer.view.camera)
             hasAppliedThumbnailFraming = true
 
 
@@ -285,8 +279,6 @@ class ModelViewerActivity : AppCompatActivity() {
 
 
             dynamicLightingEnabled = true
-
-
 
             newModelViewer = viewer
             modelReadyForThumbnail = true
@@ -332,29 +324,86 @@ class ModelViewerActivity : AppCompatActivity() {
         }
     }
 
-//    private fun applyThumbnailCameraFraming(cam: Camera?) {
-//        try {
-//            if (cam == null) return
-//            val aspect = if (::surfaceView.isInitialized && surfaceView.height > 0) {
-//                surfaceView.width.toDouble() / surfaceView.height.toDouble()
-//            } else {
-//                1.0
-//            }
-//            cam.lookAt(0.9, 0.6, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-//            // Use the actual surface aspect ratio for on-screen preview; forcing 1.0
-//            // stretches models on wide screens. Thumbnail capture still crops to square.
-//            cam.setProjection(35.0, aspect, 0.05, 50.0, Camera.Fov.VERTICAL)
-//        } catch (e: Exception) {
-//            Log.w("ModelViewerActivity", "Thumb: failed to apply camera framing", e)
-//        }
-//    }
+    private fun applyOrbitManipulator(viewer: ModelViewer, isThumbnailFraming: Boolean = false) {
+        // Filament does not have a native way to set up an orbit camera that does not
+        // rely on viewer.transformToUnitCube(). Normally, the camera always assumes
+        // that the model is already transformed, but we want the model to be accurate to
+        // its original position so that we can determine if a model is off-center for AR.
 
-    private fun applyThumbnailCameraFraming(cam: Camera?)
-    {
-        applyOrbitCamera(cam)
+        // Therefore, the only way I found to move the orbit camera was to tap into the fields
+        // itself via reflection, set them to public, then replace the "manipulators" with our own.
+        // Veryyyyy hacky but maybe there is a better solution Google will give us down the line.
+
+        // See: https://github.com/google/filament/issues/4318
+        //      https://github.com/google/filament/discussions/7747
+        //      https://stackoverflow.com/questions/79888650/how-to-show-a-model3d-pose-in-a-sceneview-in-android-studio
+
+        val width = if (::surfaceView.isInitialized && surfaceView.width > 0) surfaceView.width else 1
+        val height = if (::surfaceView.isInitialized && surfaceView.height > 0) surfaceView.height else 1
+
+        val pitchRad = Math.toRadians(orbitPitchDeg)
+        val yawRad = Math.toRadians(orbitYawDeg)
+
+        val cp = kotlin.math.cos(pitchRad).toFloat()
+        val sp = kotlin.math.sin(pitchRad).toFloat()
+        val sy = kotlin.math.sin(yawRad).toFloat()
+        val cy = kotlin.math.cos(yawRad).toFloat()
+
+        val tx = orbitTarget[0]
+        val ty = orbitTarget[1]
+        val tz = orbitTarget[2]
+        val ex = tx + orbitDistance * cp * sy
+        val ey = ty + orbitDistance * sp
+        val ez = tz + orbitDistance * cp * cy
+
+        val manipulator = Manipulator.Builder()
+            .viewport(width, height)
+            .targetPosition(tx, ty, tz)
+            .orbitHomePosition(ex, ey, ez)
+            .upVector(0f, 1f, 0f)
+            .build(Manipulator.Mode.ORBIT)
+
+        try {
+            val mvClass = ModelViewer::class.java
+
+            // cameraManipulator handles the orbit camera
+            // gestureDetector handles touch input for the cameraManipulator
+            val mField = mvClass.getDeclaredField("cameraManipulator").apply { isAccessible = true }
+            val gField = mvClass.getDeclaredField("gestureDetector").apply { isAccessible = true }
+
+            mField.set(viewer, manipulator)
+            gField.set(viewer, GestureDetector(surfaceView, manipulator))
+
+        } catch (t: Throwable) {
+            Log.e("ModelViewerActivity", "Failed to install orbit manipulator", t)
+        }
+
+        if (isThumbnailFraming) {
+
+            viewer.camera.lookAt(
+                ex.toDouble(),
+                ey.toDouble(),
+                ez.toDouble(),
+                tx.toDouble(),
+                ty.toDouble(),
+                tz.toDouble(),
+                0.0,
+                1.0,
+                0.0
+            )
+
+            // If shown when actually viewing the model, causes stretched model bug
+            viewer.camera.setProjection(
+                35.0,
+                (width / height).toDouble(),
+                0.05,
+                100.0,
+                Camera.Fov.VERTICAL
+            )
+
+        }
+
     }
-
-
 
     private fun createGizmoMaterial(engine: Engine): MaterialInstance {
         val buffer = loadAsset("unlit.filamat")!!
@@ -363,7 +412,13 @@ class ModelViewerActivity : AppCompatActivity() {
             .payload(buffer, buffer.remaining())
             .build(engine)
 
-        return mat.createInstance()
+        // Create instance for cleanup later
+        gizmoMaterial = mat
+
+        val instance = mat.createInstance()
+        gizmoMaterialInstance = instance
+
+        return instance
     }
 
     private fun createAxisGizmo(viewer: ModelViewer) {
@@ -498,37 +553,6 @@ class ModelViewerActivity : AppCompatActivity() {
         orbitDistance = radius * 3.0f
     }
 
-    private fun applyOrbitCamera(cam: Camera?) {
-        if (cam == null) return
-
-        val tx = orbitTarget[0].toDouble()
-        val ty = orbitTarget[1].toDouble()
-        val tz = orbitTarget[2].toDouble()
-
-        val yaw = Math.toRadians(orbitYawDeg)
-        val pitch = Math.toRadians(orbitPitchDeg)
-
-        val cp = kotlin.math.cos(pitch)
-        val sp = kotlin.math.sin(pitch)
-        val sy = kotlin.math.sin(yaw)
-        val cy = kotlin.math.cos(yaw)
-
-        val ex = tx + orbitDistance * cp * sy
-        val ey = ty + orbitDistance * sp
-        val ez = tz + orbitDistance * cp * cy
-
-        val aspect =
-            if (::surfaceView.isInitialized && surfaceView.height > 0) {
-                surfaceView.width.toDouble() / surfaceView.height.toDouble()
-            }
-            else {
-                1.0
-            }
-
-        cam.lookAt(ex, ey, ez, tx, ty, tz, 0.0, 1.0, 0.0)
-        cam.setProjection(35.0, aspect, 0.05, 100.0, Camera.Fov.VERTICAL)
-    }
-
     // ── Frame loop ────────────────────────────────────────────────────────────
 
     private val frameCallback = object : android.view.Choreographer.FrameCallback {
@@ -552,7 +576,6 @@ class ModelViewerActivity : AppCompatActivity() {
                      val yDeg = rotY.toInt()
                      //binding.seekRotationY.progress = yDeg
                      //binding.textRotationY.text = "${yDeg}°"
-                     applyRotation()
                  }
 
                  viewer.render(frameTimeNanos)
@@ -793,6 +816,11 @@ class ModelViewerActivity : AppCompatActivity() {
     }
 
     private fun clickedResetView() {
+        // Function needs to be reworked for the camera and not model
+
+        return
+
+
         val viewer = newModelViewer ?: return
 
         // Stop auto-rotate
@@ -805,18 +833,14 @@ class ModelViewerActivity : AppCompatActivity() {
         //binding.seekRotationY.progress = 0; binding.textRotationY.text = "0°"
         //binding.seekRotationZ.progress = 0; binding.textRotationZ.text = "0°"
 
-        // Re-centre model and re-snapshot base transform
-        viewer.transformToUnitCube()
-        viewer.asset?.let { asset ->
-            val tm = viewer.engine.transformManager
-            val base = FloatArray(16)
-            tm.getTransform(tm.getInstance(asset.root), base)
-            baseTransform = base
-        }
-        applyThumbnailCameraFraming(viewer.view.camera)
+        updateOrbitTargetFromAsset(viewer)
+        applyOrbitManipulator(viewer)
     }
 
     private fun clickedAutoRotate() {
+        // Function needs to be reworked for the camera and not model
+        return
+
         autoRotate = !autoRotate
         binding.btnAutoRotate.text = if (autoRotate) "Stop" else getString(R.string.auto_rotate)
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
@@ -862,7 +886,6 @@ class ModelViewerActivity : AppCompatActivity() {
                 if (!fromUser) return   // ignore programmatic updates (e.g. from auto-rotate)
                 setAngle(p.toFloat())
                 updateLabel(p)
-                applyRotation()
             }
             override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
             override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
@@ -877,39 +900,6 @@ class ModelViewerActivity : AppCompatActivity() {
 //        binding.seekRotationZ.setOnSeekBarChangeListener(
 //            makeListener({ v -> rotZ = v }, { p -> binding.textRotationZ.text = "${p}°" })
 //        )
-    }
-
-    /**
-     * Composes Euler X→Y→Z rotations with the stored unit-cube base transform and
-     * applies the result to the model's root entity.  Must be called on the main thread.
-     */
-    private fun applyRotation() {
-        val viewer = newModelViewer ?: return
-        val asset  = viewer.asset   ?: return
-        val base   = baseTransform  ?: return
-
-        // Build individual rotation matrices
-        val rx = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotX, 1f, 0f, 0f) }
-        val ry = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotY, 0f, 1f, 0f) }
-        val rz = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotZ, 0f, 0f, 1f) }
-
-        // Combine rotations: rx * ry * rz
-        val temp = FloatArray(16)
-        val rot  = FloatArray(16)
-        GlMatrix.multiplyMM(temp, 0, rx, 0, ry, 0)
-        GlMatrix.multiplyMM(rot,  0, temp, 0, rz, 0)
-
-        // Apply on top of the base (unit-cube) transform: rot * base
-        val combined = FloatArray(16)
-        GlMatrix.multiplyMM(combined, 0, base, 0, rot, 0)
-
-        val tm = viewer.engine.transformManager
-        tm.setTransform(tm.getInstance(asset.root), combined)
-
-        if (gizmoEntity != 0) {
-            val gizmoInstance = tm.getInstance(gizmoEntity)
-            tm.setTransform(gizmoInstance, combined)
-        }
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -979,6 +969,16 @@ class ModelViewerActivity : AppCompatActivity() {
                 EntityManager.get().destroy(gizmoEntity)
                 gizmoEntity = 0
             }
+
+            // NEW
+            gizmoMaterialInstance?.let { viewer.engine.destroyMaterialInstance(it) }
+            gizmoMaterialInstance = null
+            gizmoMaterial?.let { viewer.engine.destroyMaterial(it) }
+            gizmoMaterial = null
+            gizmoVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            gizmoVertexBuffer = null
+            gizmoIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            gizmoIndexBuffer = null
 
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
