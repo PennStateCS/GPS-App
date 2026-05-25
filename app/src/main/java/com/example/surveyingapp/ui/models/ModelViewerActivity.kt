@@ -76,6 +76,9 @@ class ModelViewerActivity : AppCompatActivity() {
     private var orbitYawDeg = 0.0
     private var orbitPitchDeg = 18.0
 
+    private var orbitManipulator: Manipulator? = null
+    private var grabPixelAccum = 0.0
+
 
 
     companion object {
@@ -90,6 +93,11 @@ class ModelViewerActivity : AppCompatActivity() {
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
         private const val MIN_RENDER_INTERVAL_NS = 33_333_333L
+
+        private const val ROTATION_SPEED_PER_PXL_RADIANS = 0.01f
+        private const val AUTO_ROTATE_DEG_PER_FRAME = 0.5 // Change this to make the rotation go faster or slower
+
+        private val AUTO_ROTATE_PXLS_PER_FRAME = Math.toRadians(AUTO_ROTATE_DEG_PER_FRAME) / ROTATION_SPEED_PER_PXL_RADIANS
 
         fun newIntent(context: Context, modelPath: String, modelName: String): Intent {
             Utils.init()
@@ -147,6 +155,8 @@ class ModelViewerActivity : AppCompatActivity() {
             {
                 expandControls()
             }
+
+            controlsExpanded = !controlsExpanded
         }
 
         binding.btnResetRotation.setOnClickListener { clickedResetView() }
@@ -342,6 +352,7 @@ class ModelViewerActivity : AppCompatActivity() {
             .targetPosition(tx, ty, tz)
             .orbitHomePosition(ex, ey, ez)
             .upVector(0f, 1f, 0f)
+            .orbitSpeed(ROTATION_SPEED_PER_PXL_RADIANS, ROTATION_SPEED_PER_PXL_RADIANS)
             .build(Manipulator.Mode.ORBIT)
 
         try {
@@ -354,6 +365,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
             mField.set(viewer, manipulator)
             gField.set(viewer, GestureDetector(surfaceView, manipulator))
+            orbitManipulator = manipulator
 
         } catch (t: Throwable) {
             Log.e("ModelViewerActivity", "Failed to install orbit manipulator", t)
@@ -553,8 +565,22 @@ class ModelViewerActivity : AppCompatActivity() {
              if (viewer != null) {
 
                  if (autoRotate) {
-                     rotY = (rotY + 0.5f) % 360f
-                     val yDeg = rotY.toInt()
+                     // Since Filament is kinda barebones, we simulate touches to make
+                     // a working auto rotate feature based on the camera instead of rotating
+                     // the entire model itself (which caused issues in earlier builds).
+                     // The manipulator has functions that allows us to do this, although
+                     // this means any input is overriden if interacting with the surface view
+
+                     orbitManipulator?.let { m ->
+                         grabPixelAccum += AUTO_ROTATE_PXLS_PER_FRAME
+                         val pixels = grabPixelAccum.toInt()
+                         if (pixels != 0) {
+                             m.grabBegin(0, 0, false)
+                             m.grabUpdate(pixels, 0)
+                             m.grabEnd()
+                             grabPixelAccum -= pixels.toDouble()
+                         }
+                     }
                  }
 
                  viewer.render(frameTimeNanos)
@@ -781,6 +807,7 @@ class ModelViewerActivity : AppCompatActivity() {
     }
 
     private fun expandControls() {
+        Log.d("ModelViewerActivity", "expandControls: showing controls")
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_out)
         binding.btnAutoRotate.visibility = View.VISIBLE
         binding.btnToggleLighting.visibility = View.VISIBLE
@@ -788,6 +815,7 @@ class ModelViewerActivity : AppCompatActivity() {
     }
 
     private fun collapseControls() {
+        Log.d("ModelViewerActivity", "collapseControls: hiding controls")
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_in)
         binding.btnAutoRotate.visibility = View.INVISIBLE
         binding.btnToggleLighting.visibility = View.INVISIBLE
@@ -795,22 +823,20 @@ class ModelViewerActivity : AppCompatActivity() {
     }
 
     private fun clickedResetView() {
-        val viewer = newModelViewer ?: return
+        if (autoRotate) {
+            autoRotate = false
+            binding.btnAutoRotate.text = getString(R.string.auto_rotate)
+        }
+        grabPixelAccum = 0.0
 
-        // Stop auto-rotate
-        autoRotate = false
-        binding.btnAutoRotate.text = getString(R.string.auto_rotate)
-
-        // Reset rotation angles
-        rotX = 0f; rotY = 0f; rotZ = 0f
-
-        updateOrbitTargetFromAsset(viewer)
-        applyOrbitManipulator(viewer)
+        val manip = orbitManipulator ?: return
+        manip.jumpToBookmark(manip.homeBookmark) // homeBookmark has original position, very useful!
     }
 
     private fun clickedAutoRotate() {
         autoRotate = !autoRotate
-        binding.btnAutoRotate.text = if (autoRotate) "Stop" else getString(R.string.auto_rotate)
+        binding.btnAutoRotate.text = if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate)
+        grabPixelAccum = 0.0
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
     }
 
