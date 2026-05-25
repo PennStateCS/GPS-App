@@ -29,7 +29,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import android.opengl.Matrix as GlMatrix
 
 class ModelViewerActivity : AppCompatActivity() {
 
@@ -56,7 +55,7 @@ class ModelViewerActivity : AppCompatActivity() {
     private var baseTransform: FloatArray? = null
 
     // Dynamic lighting: a directional sunlight toggled by the user.
-    private var dynamicLightingEnabled = true
+    private var indirectLightEnabled = true
     //private var sunLightEntity: Int = 0
 
     // Controls menu toggle
@@ -260,25 +259,7 @@ class ModelViewerActivity : AppCompatActivity() {
             }
 
             hasAppliedThumbnailFraming = true
-
-
-            // Create a directional sun light so the user can toggle it on/off.
-            // Done here (after the engine is live) to avoid a use-before-init crash.
-
-            // We can't use sun here becuase IndirectLight takes priority in terms of a light source
-//            val sun = EntityManager.get().create()
-//            LightManager.Builder(LightManager.Type.DIRECTIONAL)
-//                .color(1.0f, 0.98f, 0.95f)   // slightly warm white
-//                .intensity(100_000f)
-//                .direction(0.0f,-1.0f,-0.5f)
-//                .castShadows(true)
-//                .build(viewer.engine, sun)
-//            viewer.scene.addEntity(sun)
-//            sunLightEntity = sun
-
-
-
-            dynamicLightingEnabled = true
+            indirectLightEnabled = true
 
             newModelViewer = viewer
             modelReadyForThumbnail = true
@@ -570,12 +551,10 @@ class ModelViewerActivity : AppCompatActivity() {
             }
              val viewer = newModelViewer
              if (viewer != null) {
-                 // Auto-rotate: advance Y angle and update SeekBar UI (fromUser=false → no recursion)
+
                  if (autoRotate) {
                      rotY = (rotY + 0.5f) % 360f
                      val yDeg = rotY.toInt()
-                     //binding.seekRotationY.progress = yDeg
-                     //binding.textRotationY.text = "${yDeg}°"
                  }
 
                  viewer.render(frameTimeNanos)
@@ -816,31 +795,20 @@ class ModelViewerActivity : AppCompatActivity() {
     }
 
     private fun clickedResetView() {
-        // Function needs to be reworked for the camera and not model
-
-        return
-
-
         val viewer = newModelViewer ?: return
 
         // Stop auto-rotate
         autoRotate = false
         binding.btnAutoRotate.text = getString(R.string.auto_rotate)
 
-        // Reset rotation angles and SeekBars
+        // Reset rotation angles
         rotX = 0f; rotY = 0f; rotZ = 0f
-        //binding.seekRotationX.progress = 0; binding.textRotationX.text = "0°"
-        //binding.seekRotationY.progress = 0; binding.textRotationY.text = "0°"
-        //binding.seekRotationZ.progress = 0; binding.textRotationZ.text = "0°"
 
         updateOrbitTargetFromAsset(viewer)
         applyOrbitManipulator(viewer)
     }
 
     private fun clickedAutoRotate() {
-        // Function needs to be reworked for the camera and not model
-        return
-
         autoRotate = !autoRotate
         binding.btnAutoRotate.text = if (autoRotate) "Stop" else getString(R.string.auto_rotate)
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
@@ -850,56 +818,15 @@ class ModelViewerActivity : AppCompatActivity() {
         val viewer = newModelViewer ?: return
         if (viewer.scene.indirectLight == null) return  // no IBL to toggle
 
-        dynamicLightingEnabled = !dynamicLightingEnabled
-        if (dynamicLightingEnabled) {
+        indirectLightEnabled = !indirectLightEnabled
+        if (indirectLightEnabled) {
             viewer.scene.indirectLight?.intensity = 50_000f
             binding.btnToggleLighting.text = getString(R.string.lighting_on)
         } else {
             viewer.scene.indirectLight?.intensity = 0f
             binding.btnToggleLighting.text = getString(R.string.lighting_off)
         }
-        Log.d("ModelViewerActivity", "dynamicLighting set to $dynamicLightingEnabled")
-    }
-
-//    private fun clickedToggleLighting() {
-//        val viewer = newModelViewer ?: return
-//        val light = sunLightEntity
-//        if (light == 0) return  // light not yet created (model still loading)
-//
-//        dynamicLightingEnabled = !dynamicLightingEnabled
-//        if (dynamicLightingEnabled) {
-//            viewer.scene.addEntity(light)
-//            binding.btnToggleLighting.text = getString(R.string.lighting_on)
-//        } else {
-//            viewer.scene.removeEntity(light)
-//            binding.btnToggleLighting.text = getString(R.string.lighting_off)
-//        }
-//        Log.d("ModelViewerActivity", "dynamicLighting set to $dynamicLightingEnabled")
-//    }
-
-    private fun setupRotationControls() {
-        fun makeListener(
-            setAngle: (Float) -> Unit,
-            updateLabel: (Int) -> Unit
-        ) = object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                if (!fromUser) return   // ignore programmatic updates (e.g. from auto-rotate)
-                setAngle(p.toFloat())
-                updateLabel(p)
-            }
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
-        }
-
-//        binding.seekRotationX.setOnSeekBarChangeListener(
-//            makeListener({ v -> rotX = v }, { p -> binding.textRotationX.text = "${p}°" })
-//        )
-//        binding.seekRotationY.setOnSeekBarChangeListener(
-//            makeListener({ v -> rotY = v }, { p -> binding.textRotationY.text = "${p}°" })
-//        )
-//        binding.seekRotationZ.setOnSeekBarChangeListener(
-//            makeListener({ v -> rotZ = v }, { p -> binding.textRotationZ.text = "${p}°" })
-//        )
+        Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
