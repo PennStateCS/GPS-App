@@ -159,17 +159,42 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             val viewer = ModelViewer(surfaceView)
             modelViewer = viewer
 
-            // We create a skybox here to be able to render a colored background behind our model
-            viewer.scene.skybox = Skybox.Builder()
-                .color(1f, 1f, 1f, 1f)
-                .build(viewer.engine)
+
+            // To create a transparent background:
+            // skybox should be null
+            // set blendMode to TRANSLUCENT
+            // clearColor to 0f
+
+            viewer.scene.skybox = null
+            viewer.view.blendMode = com.google.android.filament.View.BlendMode.TRANSLUCENT
 
             val opts = viewer.renderer.clearOptions
-            opts.clearColor[0] = 1f // R
-            opts.clearColor[1] = 1f // G
-            opts.clearColor[2] = 1f // B
-            opts.clearColor[3] = 1f // Alpha
-            viewer.renderer.clearOptions = opts
+            opts.clearColor[0] = 0f
+            opts.clearColor[1] = 0f
+            opts.clearColor[2] = 0f
+            opts.clearColor[3] = 0f
+            opts.clear = true
+
+
+            // NOTE: If we want a solid background, uncomment the code below
+
+            // We create a skybox here to be able to render a colored background behind our model
+//            viewer.scene.skybox = Skybox.Builder()
+//                .color(1f, 1f, 1f, 1f)
+//                .build(viewer.engine)
+//
+//            val opts = viewer.renderer.clearOptions
+//            opts.clearColor[0] = 1f // R
+//            opts.clearColor[1] = 1f // G
+//            opts.clearColor[2] = 1f // B
+//            opts.clearColor[3] = 1f // Alpha
+//            viewer.renderer.clearOptions = opts
+
+
+
+
+
+
 
             // Load IBL so the model is lit correctly — the background tint it introduces
             // is removed in post-processing, not by suppressing the lighting.
@@ -437,23 +462,35 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             // Reject all-white frames, the background is solid white, so a frame
             // without any non-white pixel means the GPU hasn't rendered the model yet
 
+
+
             var hasContent = false
             outer@ for (y in 0 until bmp.height step 8) {
                 for (x in 0 until bmp.width step 8) {
-                    val px = bmp.getPixel(x, y)
-                    val r = (px shr 16) and 0xFF
-                    val g = (px shr 8) and 0xFF
-                    val b = px and 0xFF
-                    if (!(r > 245 && g > 245 && b > 245)) {
+                    val alpha = (bmp.getPixel(x, y) ushr 24) and 0xFF
+                    if (alpha > 10) {
                         hasContent = true
                         break@outer
                     }
+
+                    // NOTE: Uncomment code below if implementing solid background
+//                    val px = bmp.getPixel(x, y)
+//                    val r = (px shr 16) and 0xFF
+//                    val g = (px shr 8) and 0xFF
+//                    val b = px and 0xFF
+//                    if (!(r > 245 && g > 245 && b > 245)) {
+//                        hasContent = true
+//                        break@outer
+//                    }
+
+
                 }
             }
 
             if (!hasContent) {
                 bmp.recycle()
-                Log.w(TAG, "Frame is all-white; retrying attempt=$attempt")
+                //Log.w(TAG, "Frame is all-white; retrying attempt=$attempt")
+                Log.w(TAG, "Frame is transparent; retrying attempt=$attempt")
                 withContext(Dispatchers.Main) { tryCapture(attempt + 1) }
                 return@launch
             }
