@@ -73,7 +73,7 @@ class ModelViewerActivity : AppCompatActivity() {
     // New camera setup
     private val orbitTarget = FloatArray(3)
     private var orbitDistance = 2.5f
-    private var orbitYawDeg = 0.0
+    private var orbitYawDeg = 45.0
     private var orbitPitchDeg = 18.0
 
     private var orbitManipulator: Manipulator? = null
