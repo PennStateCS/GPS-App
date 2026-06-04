@@ -29,7 +29,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
-import android.opengl.Matrix as GlMatrix
 
 class ModelViewerActivity : AppCompatActivity() {
 
@@ -44,9 +43,6 @@ class ModelViewerActivity : AppCompatActivity() {
     private var thumbnailCaptureScheduled = false
     private var modelReadyForThumbnail = false
     private var framesAfterLoad = 0
-    private var captureOnly = false
-    /** True when the activity is opened specifically to let the user choose a thumbnail angle. */
-    private var captureMode = false
 
     private var autoRotate = false
 
@@ -54,52 +50,60 @@ class ModelViewerActivity : AppCompatActivity() {
     private var rotX = 0f
     private var rotY = 0f
     private var rotZ = 0f
+
     // The unit-cube base transform stored after transformToUnitCube(); rotation is composed on top.
     private var baseTransform: FloatArray? = null
 
-    // Dynamic lighting: a directional sun light toggled by the user.
-    private var dynamicLightingEnabled = true
-    private var sunLightEntity: Int = 0
+    // Dynamic lighting: a directional sunlight toggled by the user.
+    private var indirectLightEnabled = true
+    //private var sunLightEntity: Int = 0
+
+    // Controls menu toggle
+    private var controlsExpanded = false
+
+    // Gizmo setup
+    private var gizmoEntity: Int = 0
+    private var gizmoVertexBuffer: VertexBuffer? = null
+    private var gizmoIndexBuffer: IndexBuffer? = null
+
+    // fixes a crash when material isn't unloaded properly (onDestroy)
+    private var gizmoMaterial: Material? = null
+    private var gizmoMaterialInstance: MaterialInstance? = null
+
+    // New camera setup
+    private val orbitTarget = FloatArray(3)
+    private var orbitDistance = 2.5f
+    private var orbitYawDeg = 45.0
+    private var orbitPitchDeg = 18.0
+
+    private var orbitManipulator: Manipulator? = null
+    private var grabPixelAccum = 0.0
+
+
 
     companion object {
         private const val EXTRA_MODEL_PATH = "model_path"
         private const val EXTRA_MODEL_NAME = "model_name"
-        const val EXTRA_CAPTURE_ONLY = "capture_only"
-        /** When true, shows Capture Thumbnail + Done buttons so the user picks the angle. */
-        const val EXTRA_CAPTURE_MODE = "capture_mode"
 
         private const val FRAMES_TO_SETTLE = 60
         private const val THUMBNAIL_SIZE = 256
         private const val CAPTURE_MAX_ATTEMPTS = 20
         private const val CAPTURE_RETRY_DELAY_MS = 250L
+
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
         private const val MIN_RENDER_INTERVAL_NS = 33_333_333L
+
+        private const val ROTATION_SPEED_PER_PXL_RADIANS = 0.01f
+        private const val AUTO_ROTATE_DEG_PER_FRAME = 0.5 // Change this to make the rotation go faster or slower
+
+        private val AUTO_ROTATE_PXLS_PER_FRAME = Math.toRadians(AUTO_ROTATE_DEG_PER_FRAME) / ROTATION_SPEED_PER_PXL_RADIANS
 
         fun newIntent(context: Context, modelPath: String, modelName: String): Intent {
             Utils.init()
             return Intent(context, ModelViewerActivity::class.java).apply {
                 putExtra(EXTRA_MODEL_PATH, modelPath)
                 putExtra(EXTRA_MODEL_NAME, modelName)
-            }
-        }
-
-        /** Opens the viewer so the user can rotate the model and manually capture a thumbnail. */
-        fun newCaptureModeIntent(context: Context, modelPath: String, modelName: String): Intent {
-            Utils.init()
-            return Intent(context, ModelViewerActivity::class.java).apply {
-                putExtra(EXTRA_MODEL_PATH, modelPath)
-                putExtra(EXTRA_MODEL_NAME, modelName)
-                putExtra(EXTRA_CAPTURE_MODE, true)
-            }
-        }
-
-        fun newCaptureIntent(context: Context, modelPath: String, modelName: String): Intent {
-            Utils.init()
-            return Intent(context, ModelViewerActivity::class.java).apply {
-                putExtra(EXTRA_MODEL_PATH, modelPath)
-                putExtra(EXTRA_MODEL_NAME, modelName)
-                putExtra(EXTRA_CAPTURE_ONLY, true)
             }
         }
     }
@@ -112,52 +116,83 @@ class ModelViewerActivity : AppCompatActivity() {
         binding = ActivityModelViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        captureOnly = intent.getBooleanExtra(EXTRA_CAPTURE_ONLY, false)
-        captureMode = intent.getBooleanExtra(EXTRA_CAPTURE_MODE, false)
+        // Check if the device supports Filament for 3D rendering; if not, show an error message and skip setup.
+        if (!supportsFilamentViewer()) {
+            binding.textError.visibility = View.VISIBLE
+            binding.progressLoading.visibility = View.GONE
 
-        if (captureOnly) {
-            binding.toolbar.visibility = View.INVISIBLE
-            binding.btnResetRotation.visibility = View.INVISIBLE
-            binding.btnAutoRotate.visibility = View.INVISIBLE
-        } else {
-            binding.btnResetRotation.setOnClickListener { clickedResetView() }
-            binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
-            binding.btnToggleLighting.setOnClickListener { clickedToggleLighting() }
-            setupRotationControls()
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Device Not Supported")
+                .setMessage("This device does not support the required OpenGL ES 3.0 for 3D rendering. Please try again on a different device.")
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    finish()
+                }
+                .setCancelable(false)
+                .show()
 
-            if (captureMode) {
-                // Show capture controls row
-                binding.captureControlsRow.visibility = View.VISIBLE
-                binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
-                binding.btnDoneCapture.setOnClickListener { finish() }
-            }
+            return
         }
 
+        // We assume OpenGL is supported past this point
+
+        // Check if a thumbnail already exists for this model for later use
         thumbnailExists = modelHasThumbnail()
 
-        if (!captureOnly) setupToolbar()
-        setupModelViewer()
+        binding.progressLoading.visibility = View.VISIBLE
+        setupToolbar()
+
+        // Set name/path of 3d model on the UI
+        binding.textModelName.text = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model";
+        binding.textModelFilename.text = intent.getStringExtra(EXTRA_MODEL_PATH)?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Unknown file";
+
+        // Set up button click listeners
+        binding.btnControlsExpand.setOnClickListener {
+            if (controlsExpanded)
+            {
+                collapseControls()
+            }
+            else
+            {
+                expandControls()
+            }
+
+            controlsExpanded = !controlsExpanded
+        }
+
+        binding.btnResetRotation.setOnClickListener { clickedResetView() }
+        binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
+        binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
+        binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
+
+        // Load the model viewer surface view
+        if (!setupModelViewer())
+        {
+            Log.e("ModelViewerActivity", "Something went wrong while loading the model viewer.")
+            binding.textError.visibility = View.VISIBLE
+            return
+        }
+    }
+
+    private fun supportsFilamentViewer(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.deviceConfigurationInfo.reqGlEsVersion >= 0x30000
     }
 
     private fun setupToolbar() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        val modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model"
-        supportActionBar?.title = if (captureMode) "Set Thumbnail – $modelName" else modelName
     }
 
     private var hasAppliedThumbnailFraming = false
 
-    private fun setupModelViewer() {
+    private fun setupModelViewer(): Boolean {
         surfaceView = binding.modelSurface
-        binding.progressLoading.visibility = View.VISIBLE
+
         val modelPath = intent.getStringExtra(EXTRA_MODEL_PATH)
         val modelFile = modelPath?.let { File(it) }
 
         if (modelFile == null || !modelFile.exists()) {
-            binding.progressLoading.visibility = View.GONE
-            binding.textError?.visibility = View.VISIBLE
-            return
+            return false
         }
 
         lifecycleScope.launch {
@@ -169,14 +204,14 @@ class ModelViewerActivity : AppCompatActivity() {
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) return@launch
 
             if (modelBuffer == null) {
-                binding.progressLoading.visibility = View.GONE
-                binding.textError?.visibility = View.VISIBLE
                 return@launch
             }
 
             // ModelViewer must be created on the main thread (it attaches to the SurfaceView).
             val viewer = ModelViewer(surfaceView)
-            newModelViewer = viewer
+
+            Log.d("ModelViewerActivity", viewer.scene.indirectLight.toString())
+
 
             // Touch handler — use newModelViewer (nullable) rather than the closed-over
             // `viewer` so that clearing newModelViewer in onDestroy also cuts this path.
@@ -217,7 +252,13 @@ class ModelViewerActivity : AppCompatActivity() {
                 binding.textError?.visibility = View.VISIBLE
                 return@launch
             }
-            viewer.transformToUnitCube()
+
+            // Control our own camera
+            updateOrbitTargetFromAsset(viewer)
+            applyOrbitManipulator(viewer)
+
+            // Create axis at origin
+            createAxisGizmo(viewer)
 
             // Snapshot the unit-cube transform so rotation is always composed on top of it.
             viewer.asset?.let { asset ->
@@ -227,26 +268,15 @@ class ModelViewerActivity : AppCompatActivity() {
                 baseTransform = base
             }
 
-            applyThumbnailCameraFraming(viewer.view.camera)
             hasAppliedThumbnailFraming = true
+            indirectLightEnabled = true
 
+            newModelViewer = viewer
             modelReadyForThumbnail = true
             framesAfterLoad = 0
-            binding.progressLoading.visibility = View.GONE
-
-            // Create a directional sun light so the user can toggle it on/off.
-            // Done here (after the engine is live) to avoid a use-before-init crash.
-            val sun = EntityManager.get().create()
-            LightManager.Builder(LightManager.Type.DIRECTIONAL)
-                .color(1.0f, 0.98f, 0.95f)   // slightly warm white
-                .intensity(100_000f)
-                .direction(0.5f, -1.0f, -0.5f)
-                .castShadows(false)
-                .build(viewer.engine, sun)
-            viewer.scene.addEntity(sun)
-            sunLightEntity = sun
-            dynamicLightingEnabled = true
         }
+
+        return true
     }
 
     private fun loadModelIntoViewer(viewer: ModelViewer, modelFile: File, modelBuffer: ByteBuffer): Boolean {
@@ -285,21 +315,235 @@ class ModelViewerActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyThumbnailCameraFraming(cam: Camera?) {
+    private fun applyOrbitManipulator(viewer: ModelViewer, isThumbnailFraming: Boolean = false) {
+        // Filament does not have a native way to set up an orbit camera that does not
+        // rely on viewer.transformToUnitCube(). Normally, the camera always assumes
+        // that the model is already transformed, but we want the model to be accurate to
+        // its original position so that we can determine if a model is off-center for AR.
+
+        // Therefore, the only way I found to move the orbit camera was to tap into the fields
+        // itself via reflection, set them to public, then replace the "manipulators" with our own.
+        // Veryyyyy hacky but maybe there is a better solution Google will give us down the line.
+
+        // See: https://github.com/google/filament/issues/4318
+        //      https://github.com/google/filament/discussions/7747
+        //      https://stackoverflow.com/questions/79888650/how-to-show-a-model3d-pose-in-a-sceneview-in-android-studio
+
+        val width = if (::surfaceView.isInitialized && surfaceView.width > 0) surfaceView.width else 1
+        val height = if (::surfaceView.isInitialized && surfaceView.height > 0) surfaceView.height else 1
+
+        val pitchRad = Math.toRadians(orbitPitchDeg)
+        val yawRad = Math.toRadians(orbitYawDeg)
+
+        val cp = kotlin.math.cos(pitchRad).toFloat()
+        val sp = kotlin.math.sin(pitchRad).toFloat()
+        val sy = kotlin.math.sin(yawRad).toFloat()
+        val cy = kotlin.math.cos(yawRad).toFloat()
+
+        val tx = orbitTarget[0]
+        val ty = orbitTarget[1]
+        val tz = orbitTarget[2]
+        val ex = tx + orbitDistance * cp * sy
+        val ey = ty + orbitDistance * sp
+        val ez = tz + orbitDistance * cp * cy
+
+        val manipulator = Manipulator.Builder()
+            .viewport(width, height)
+            .targetPosition(tx, ty, tz)
+            .orbitHomePosition(ex, ey, ez)
+            .upVector(0f, 1f, 0f)
+            .orbitSpeed(ROTATION_SPEED_PER_PXL_RADIANS, ROTATION_SPEED_PER_PXL_RADIANS)
+            .build(Manipulator.Mode.ORBIT)
+
         try {
-            if (cam == null) return
-            val aspect = if (::surfaceView.isInitialized && surfaceView.height > 0) {
-                surfaceView.width.toDouble() / surfaceView.height.toDouble()
-            } else {
-                1.0
-            }
-            cam.lookAt(0.9, 0.6, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
-            // Use the actual surface aspect ratio for on-screen preview; forcing 1.0
-            // stretches models on wide screens. Thumbnail capture still crops to square.
-            cam.setProjection(35.0, aspect, 0.05, 50.0, Camera.Fov.VERTICAL)
-        } catch (e: Exception) {
-            Log.w("ModelViewerActivity", "Thumb: failed to apply camera framing", e)
+            val mvClass = ModelViewer::class.java
+
+            // cameraManipulator handles the orbit camera
+            // gestureDetector handles touch input for the cameraManipulator
+            val mField = mvClass.getDeclaredField("cameraManipulator").apply { isAccessible = true }
+            val gField = mvClass.getDeclaredField("gestureDetector").apply { isAccessible = true }
+
+            mField.set(viewer, manipulator)
+            gField.set(viewer, GestureDetector(surfaceView, manipulator))
+            orbitManipulator = manipulator
+
+        } catch (t: Throwable) {
+            Log.e("ModelViewerActivity", "Failed to install orbit manipulator", t)
         }
+
+        if (isThumbnailFraming) {
+
+            viewer.camera.lookAt(
+                ex.toDouble(),
+                ey.toDouble(),
+                ez.toDouble(),
+                tx.toDouble(),
+                ty.toDouble(),
+                tz.toDouble(),
+                0.0,
+                1.0,
+                0.0
+            )
+
+            // If shown when actually viewing the model, causes stretched model bug
+            viewer.camera.setProjection(
+                35.0,
+                (width / height).toDouble(),
+                0.05,
+                100.0,
+                Camera.Fov.VERTICAL
+            )
+
+        }
+
+    }
+
+    private fun createGizmoMaterial(engine: Engine): MaterialInstance {
+        val buffer = loadAsset("unlit.filamat")!!
+
+        val mat = Material.Builder()
+            .payload(buffer, buffer.remaining())
+            .build(engine)
+
+        // Create instance for cleanup later
+        gizmoMaterial = mat
+
+        val instance = mat.createInstance()
+        gizmoMaterialInstance = instance
+
+        return instance
+    }
+
+    private fun createAxisGizmo(viewer: ModelViewer) {
+        val engine = viewer.engine
+
+        val thickness = 0.03f // Change thickness of the axes here
+
+        val half = thickness / 2f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // Creates the triangles for a single axis-aligned box and appends to the vertex/index lists
+        // Color is passed as parameters
+        fun addBox(
+            minX: Float, maxX: Float,
+            minY: Float, maxY: Float,
+            minZ: Float, maxZ: Float,
+            r: Float, g: Float, b: Float
+        ) {
+
+            // Vertices
+            val verts = arrayOf(
+                floatArrayOf(minX, minY, minZ),
+                floatArrayOf(maxX, minY, minZ),
+                floatArrayOf(maxX, maxY, minZ),
+                floatArrayOf(minX, maxY, minZ),
+                floatArrayOf(minX, minY, maxZ),
+                floatArrayOf(maxX, minY, maxZ),
+                floatArrayOf(maxX, maxY, maxZ),
+                floatArrayOf(minX, maxY, maxZ)
+            )
+
+            for (v in verts) {
+                vertexList.add(v[0])
+                vertexList.add(v[1])
+                vertexList.add(v[2])
+                vertexList.add(r)
+                vertexList.add(g)
+                vertexList.add(b)
+            }
+
+            val inds = shortArrayOf(
+                0, 1, 2,  0, 2, 3,   // front
+                4, 6, 5,  4, 7, 6,   // back
+                0, 4, 5,  0, 5, 1,   // bottom
+                3, 2, 6,  3, 6, 7,   // top
+                0, 3, 7,  0, 7, 4,   // left
+                1, 5, 6,  1, 6, 2    // right
+            )
+
+            for (i in inds) {
+                indexList.add((baseIndex + i).toShort())
+            }
+
+            baseIndex = (baseIndex + 8).toShort()
+        }
+
+        // X axis: red
+        addBox( 0f, 1f, -half, half, -half, half, 1f, 0f, 0f)
+
+        // Y axis: green
+        addBox(-half, half, 0f, 1f, -half, half, 0f, 1f, 0f)
+
+        // Z axis: blue
+        addBox(-half, half, -half, half, 0f, 1f, 0f, 0f, 1f)
+
+        val vertices = vertexList.toFloatArray()
+        val indices = indexList.toShortArray()
+
+        gizmoVertexBuffer = VertexBuffer.Builder()
+            .vertexCount(vertices.size / 6)
+            .bufferCount(1)
+            .attribute(
+                VertexBuffer.VertexAttribute.POSITION,
+                0,
+                VertexBuffer.AttributeType.FLOAT3,
+                0,
+                24
+            )
+            .attribute(
+                VertexBuffer.VertexAttribute.COLOR,
+                0,
+                VertexBuffer.AttributeType.FLOAT3,
+                12,
+                24
+            )
+            .build(engine)
+
+        gizmoVertexBuffer!!.setBufferAt(engine, 0, java.nio.FloatBuffer.wrap(vertices))
+
+        gizmoIndexBuffer = IndexBuffer.Builder()
+            .indexCount(indices.size)
+            .bufferType(IndexBuffer.Builder.IndexType.USHORT)
+            .build(engine)
+
+        gizmoIndexBuffer!!.setBuffer(engine, java.nio.ShortBuffer.wrap(indices))
+
+        val entity = EntityManager.get().create()
+        val material = createGizmoMaterial(engine)
+
+        RenderableManager.Builder(1)
+            .geometry(
+                0,
+                RenderableManager.PrimitiveType.TRIANGLES,
+                gizmoVertexBuffer!!,
+                gizmoIndexBuffer!!
+            )
+            .material(0, material)
+            .culling(false)
+            .castShadows(false)
+            .receiveShadows(false)
+            .build(engine, entity)
+
+        viewer.scene.addEntity(entity)
+        gizmoEntity = entity
+    }
+
+    private fun updateOrbitTargetFromAsset(viewer: ModelViewer) {
+        val asset = viewer.asset ?: return
+        val box = asset.boundingBox
+
+        val c = box.center
+        val h = box.halfExtent
+
+        orbitTarget[0] = c[0]
+        orbitTarget[1] = c[1]
+        orbitTarget[2] = c[2]
+
+        val radius = maxOf(h[0], h[1], h[2]).coerceAtLeast(0.01f)
+        orbitDistance = radius * 3.0f
     }
 
     // ── Frame loop ────────────────────────────────────────────────────────────
@@ -319,24 +563,33 @@ class ModelViewerActivity : AppCompatActivity() {
             }
              val viewer = newModelViewer
              if (viewer != null) {
-                 // Auto-rotate: advance Y angle and update SeekBar UI (fromUser=false → no recursion)
+
                  if (autoRotate) {
-                     rotY = (rotY + 0.5f) % 360f
-                     val yDeg = rotY.toInt()
-                     binding.seekRotationY.progress = yDeg
-                     binding.textRotationY.text = "${yDeg}°"
-                     applyRotation()
+                     // Since Filament is kinda barebones, we simulate touches to make
+                     // a working auto rotate feature based on the camera instead of rotating
+                     // the entire model itself (which caused issues in earlier builds).
+                     // The manipulator has functions that allows us to do this, although
+                     // this means any input is overriden if interacting with the surface view
+
+                     orbitManipulator?.let { m ->
+                         grabPixelAccum += AUTO_ROTATE_PXLS_PER_FRAME
+                         val pixels = grabPixelAccum.toInt()
+                         if (pixels != 0) {
+                             m.grabBegin(0, 0, false)
+                             m.grabUpdate(pixels, 0)
+                             m.grabEnd()
+                             grabPixelAccum -= pixels.toDouble()
+                         }
+                     }
                  }
 
                  viewer.render(frameTimeNanos)
                  lastRenderTimeNs = frameTimeNanos
 
-                 // Auto-capture only in captureOnly mode (background headless capture),
-                 // NOT in captureMode (user manually taps the button).
-                 if (captureOnly && modelReadyForThumbnail && !thumbnailExists && !thumbnailCaptureScheduled) {
+                 if (framesAfterLoad < 2) {
                      framesAfterLoad++
-                     if (framesAfterLoad >= FRAMES_TO_SETTLE && hasAppliedThumbnailFraming) {
-                         scheduleThumbnailCapture(finishAfter = true)
+                     if (framesAfterLoad == 2) {
+                         binding.progressLoading.visibility = View.GONE
                      }
                  }
              }
@@ -349,8 +602,8 @@ class ModelViewerActivity : AppCompatActivity() {
     private fun onCaptureThumbnailClicked() {
         if (thumbnailCaptureScheduled) return
         binding.btnCaptureThumbnail.isEnabled = false
-        binding.btnCaptureThumbnail.text = "Capturing…"
-        scheduleThumbnailCapture(finishAfter = false)
+        binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_refresh_24_white)
+        scheduleThumbnailCapture(finishAfter = true)
     }
 
     // ── Thumbnail capture ─────────────────────────────────────────────────────
@@ -379,13 +632,12 @@ class ModelViewerActivity : AppCompatActivity() {
                 ThumbnailCaptureActivity.start(this, modelPath, modelName, modelFileName)
             } catch (e: Exception) {
                 Log.e("ModelViewerActivity", "Failed to start ThumbnailCaptureActivity", e)
-            }
 
-            if (captureMode) {
                 binding.btnCaptureThumbnail.isEnabled = true
-                binding.btnCaptureThumbnail.text = "Capture Thumbnail"
+                binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
                 Toast.makeText(this, "Capture failed — fallback invoked", Toast.LENGTH_SHORT).show()
             }
+
             if (finishAfter) finish()
             return
         }
@@ -505,14 +757,12 @@ class ModelViewerActivity : AppCompatActivity() {
                     thumbnailCaptureScheduled = false
                     Log.d("ModelViewerActivity", "Thumbnail saved OK: $thumbFileName  viewerAlive=${newModelViewer != null}  surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}")
 
-                    if (captureMode) {
-                        // Re-enable button and show success feedback before finishing
-                        Toast.makeText(this@ModelViewerActivity, "Thumbnail saved!", Toast.LENGTH_SHORT).show()
-                        binding.btnCaptureThumbnail.text = "Capture Thumbnail"
-                        binding.btnCaptureThumbnail.isEnabled = true
-                        Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (captureMode)")
-                        finish()
-                    } else if (finishAfter) {
+                    Toast.makeText(this@ModelViewerActivity, "Thumbnail saved!", Toast.LENGTH_SHORT).show()
+                    binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
+                    binding.btnCaptureThumbnail.isEnabled = true
+                    Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (captureMode)")
+
+                    if (finishAfter) {
                         Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (finishAfter=true)")
                         finish()
                     }
@@ -520,12 +770,6 @@ class ModelViewerActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("ModelViewerActivity", "Failed to save thumbnail", e)
                 thumbnailCaptureScheduled = false
-                withContext(Dispatchers.Main) {
-                    if (captureMode) {
-                        binding.btnCaptureThumbnail.isEnabled = true
-                        binding.btnCaptureThumbnail.text = "Capture Thumbnail"
-                    }
-                }
             }
         }
     }
@@ -562,104 +806,53 @@ class ModelViewerActivity : AppCompatActivity() {
         return File(filesDir, "thumbnails/${safeBase}_thumb.png").exists()
     }
 
+    private fun expandControls() {
+        Log.d("ModelViewerActivity", "expandControls: showing controls")
+        binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_out)
+        binding.btnAutoRotate.visibility = View.VISIBLE
+        binding.btnToggleLighting.visibility = View.VISIBLE
+        binding.btnResetRotation.visibility = View.VISIBLE
+    }
+
+    private fun collapseControls() {
+        Log.d("ModelViewerActivity", "collapseControls: hiding controls")
+        binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_in)
+        binding.btnAutoRotate.visibility = View.INVISIBLE
+        binding.btnToggleLighting.visibility = View.INVISIBLE
+        binding.btnResetRotation.visibility = View.INVISIBLE
+    }
+
     private fun clickedResetView() {
-        val viewer = newModelViewer ?: return
-
-        // Stop auto-rotate
-        autoRotate = false
-        binding.btnAutoRotate.text = getString(R.string.auto_rotate)
-
-        // Reset rotation angles and SeekBars
-        rotX = 0f; rotY = 0f; rotZ = 0f
-        binding.seekRotationX.progress = 0; binding.textRotationX.text = "0°"
-        binding.seekRotationY.progress = 0; binding.textRotationY.text = "0°"
-        binding.seekRotationZ.progress = 0; binding.textRotationZ.text = "0°"
-
-        // Re-centre model and re-snapshot base transform
-        viewer.transformToUnitCube()
-        viewer.asset?.let { asset ->
-            val tm = viewer.engine.transformManager
-            val base = FloatArray(16)
-            tm.getTransform(tm.getInstance(asset.root), base)
-            baseTransform = base
+        if (autoRotate) {
+            autoRotate = false
+            binding.btnAutoRotate.text = getString(R.string.auto_rotate)
         }
-        applyThumbnailCameraFraming(viewer.view.camera)
+        grabPixelAccum = 0.0
+
+        val manip = orbitManipulator ?: return
+        manip.jumpToBookmark(manip.homeBookmark) // homeBookmark has original position, very useful!
     }
 
     private fun clickedAutoRotate() {
         autoRotate = !autoRotate
-        binding.btnAutoRotate.text = if (autoRotate) "Stop" else getString(R.string.auto_rotate)
+        binding.btnAutoRotate.text = if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate)
+        grabPixelAccum = 0.0
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
     }
 
-    private fun clickedToggleLighting() {
+    private fun clickedToggleIndirectLight() {
         val viewer = newModelViewer ?: return
-        val light = sunLightEntity
-        if (light == 0) return  // light not yet created (model still loading)
+        if (viewer.scene.indirectLight == null) return  // no IBL to toggle
 
-        dynamicLightingEnabled = !dynamicLightingEnabled
-        if (dynamicLightingEnabled) {
-            viewer.scene.addEntity(light)
+        indirectLightEnabled = !indirectLightEnabled
+        if (indirectLightEnabled) {
+            viewer.scene.indirectLight?.intensity = 50_000f
             binding.btnToggleLighting.text = getString(R.string.lighting_on)
         } else {
-            viewer.scene.removeEntity(light)
+            viewer.scene.indirectLight?.intensity = 0f
             binding.btnToggleLighting.text = getString(R.string.lighting_off)
         }
-        Log.d("ModelViewerActivity", "dynamicLighting set to $dynamicLightingEnabled")
-    }
-
-    private fun setupRotationControls() {
-        fun makeListener(
-            setAngle: (Float) -> Unit,
-            updateLabel: (Int) -> Unit
-        ) = object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-                if (!fromUser) return   // ignore programmatic updates (e.g. from auto-rotate)
-                setAngle(p.toFloat())
-                updateLabel(p)
-                applyRotation()
-            }
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
-        }
-
-        binding.seekRotationX.setOnSeekBarChangeListener(
-            makeListener({ v -> rotX = v }, { p -> binding.textRotationX.text = "${p}°" })
-        )
-        binding.seekRotationY.setOnSeekBarChangeListener(
-            makeListener({ v -> rotY = v }, { p -> binding.textRotationY.text = "${p}°" })
-        )
-        binding.seekRotationZ.setOnSeekBarChangeListener(
-            makeListener({ v -> rotZ = v }, { p -> binding.textRotationZ.text = "${p}°" })
-        )
-    }
-
-    /**
-     * Composes Euler X→Y→Z rotations with the stored unit-cube base transform and
-     * applies the result to the model's root entity.  Must be called on the main thread.
-     */
-    private fun applyRotation() {
-        val viewer = newModelViewer ?: return
-        val asset  = viewer.asset   ?: return
-        val base   = baseTransform  ?: return
-
-        // Build individual rotation matrices
-        val rx = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotX, 1f, 0f, 0f) }
-        val ry = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotY, 0f, 1f, 0f) }
-        val rz = FloatArray(16).also { GlMatrix.setIdentityM(it, 0); GlMatrix.rotateM(it, 0, rotZ, 0f, 0f, 1f) }
-
-        // Combine rotations: rx * ry * rz
-        val temp = FloatArray(16)
-        val rot  = FloatArray(16)
-        GlMatrix.multiplyMM(temp, 0, rx, 0, ry, 0)
-        GlMatrix.multiplyMM(rot,  0, temp, 0, rz, 0)
-
-        // Apply on top of the base (unit-cube) transform: rot * base
-        val combined = FloatArray(16)
-        GlMatrix.multiplyMM(combined, 0, rot, 0, base, 0)
-
-        val tm = viewer.engine.transformManager
-        tm.setTransform(tm.getInstance(asset.root), combined)
+        Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -671,7 +864,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing captureMode=$captureMode captureOnly=$captureOnly")
+        Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing")
         choreographer = android.view.Choreographer.getInstance()
         choreographer?.postFrameCallback(frameCallback)
     }
@@ -716,12 +909,30 @@ class ModelViewerActivity : AppCompatActivity() {
         try {
             // Remove and destroy the dynamic sun light before the model, so the
             // scene has no dangling references when destroyModel() runs.
-            if (sunLightEntity != 0) {
-                viewer.scene.removeEntity(sunLightEntity)
-                viewer.engine.lightManager.destroy(sunLightEntity)
-                EntityManager.get().destroy(sunLightEntity)
-                sunLightEntity = 0
+//            if (sunLightEntity != 0) {
+//                viewer.scene.removeEntity(sunLightEntity)
+//                viewer.engine.lightManager.destroy(sunLightEntity)
+//                EntityManager.get().destroy(sunLightEntity)
+//                sunLightEntity = 0
+//            }
+
+            if (gizmoEntity != 0) {
+                viewer.scene.removeEntity(gizmoEntity)
+                viewer.engine.destroyEntity(gizmoEntity)
+                EntityManager.get().destroy(gizmoEntity)
+                gizmoEntity = 0
             }
+
+            // NEW
+            gizmoMaterialInstance?.let { viewer.engine.destroyMaterialInstance(it) }
+            gizmoMaterialInstance = null
+            gizmoMaterial?.let { viewer.engine.destroyMaterial(it) }
+            gizmoMaterial = null
+            gizmoVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            gizmoVertexBuffer = null
+            gizmoIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            gizmoIndexBuffer = null
+
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
         } catch (t: Throwable) {
