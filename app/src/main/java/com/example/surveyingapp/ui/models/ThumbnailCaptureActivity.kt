@@ -13,6 +13,7 @@ import android.util.Log
 import android.view.Choreographer
 import android.view.PixelCopy
 import android.view.SurfaceView
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
@@ -20,7 +21,9 @@ import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.google.android.filament.Camera
+import com.google.android.filament.Skybox
 import com.google.android.filament.utils.KTX1Loader
+import com.google.android.filament.utils.Manipulator
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
 import kotlinx.coroutines.Dispatchers
@@ -60,8 +63,8 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 // Keep activity stack intact — don't show in recents, start without animation.
                 addFlags(
                     Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
-                    Intent.FLAG_ACTIVITY_NO_HISTORY
+                            Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                            Intent.FLAG_ACTIVITY_NO_HISTORY
                 )
             }
             context.startActivity(intent)
@@ -91,17 +94,30 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "model"
         modelFileName = intent.getStringExtra(EXTRA_MODEL_FILE_NAME) ?: File(modelPath).name
 
+        if (!supportsFilamentViewer()) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Device Not Supported")
+                .setMessage("This device does not support the required OpenGL ES 3.0 for 3D rendering. Thumbnail creation has been cancelled. Please try again on a different device.")
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    finish()
+                }
+                .setCancelable(false)
+                .show()
+
+            return
+        }
+
         // The window must remain composited by the GPU (so PixelCopy works), but we
         // move it entirely off-screen so the user never sees the black SurfaceView.
         // Setting alpha=0 or visibility=GONE breaks PixelCopy (all-black frames).
         // FLAG_LAYOUT_NO_LIMITS allows the window position to exceed screen boundaries.
         window.setFlags(
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
         )
         window.setLayout(THUMB_SIZE, THUMB_SIZE)
         // Move the window far off-screen (negative coords) so it is invisible to the user
@@ -133,23 +149,52 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         initFilament()
     }
 
+    private fun supportsFilamentViewer(): Boolean {
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        return am.deviceConfigurationInfo.reqGlEsVersion >= 0x30000
+    }
+
     private fun initFilament() {
         try {
             val viewer = ModelViewer(surfaceView)
             modelViewer = viewer
 
-            // No skybox — background will be transparent (alpha=0).
-            // Filament renders only the model pixels; the background stays clear.
-            viewer.scene.skybox = null
 
-            // Set renderer clear color to fully transparent black.
+            // To create a transparent background:
+            // skybox should be null
+            // set blendMode to TRANSLUCENT
+            // clearColor to 0f
+
+            viewer.scene.skybox = null
+            viewer.view.blendMode = com.google.android.filament.View.BlendMode.TRANSLUCENT
+
             val opts = viewer.renderer.clearOptions
-            opts.clearColor[0] = 0f  // R
-            opts.clearColor[1] = 0f  // G
-            opts.clearColor[2] = 0f  // B
-            opts.clearColor[3] = 0f  // A — fully transparent
+            opts.clearColor[0] = 0f
+            opts.clearColor[1] = 0f
+            opts.clearColor[2] = 0f
+            opts.clearColor[3] = 0f
             opts.clear = true
-            viewer.renderer.clearOptions = opts
+
+
+            // NOTE: If we want a solid background, uncomment the code below
+
+            // We create a skybox here to be able to render a colored background behind our model
+//            viewer.scene.skybox = Skybox.Builder()
+//                .color(1f, 1f, 1f, 1f)
+//                .build(viewer.engine)
+//
+//            val opts = viewer.renderer.clearOptions
+//            opts.clearColor[0] = 1f // R
+//            opts.clearColor[1] = 1f // G
+//            opts.clearColor[2] = 1f // B
+//            opts.clearColor[3] = 1f // Alpha
+//            viewer.renderer.clearOptions = opts
+
+
+
+
+
+
 
             // Load IBL so the model is lit correctly — the background tint it introduces
             // is removed in post-processing, not by suppressing the lighting.
@@ -182,7 +227,6 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                         finish()
                         return@withContext
                     }
-                    viewer.transformToUnitCube()
                     applyCamera(viewer)
                     modelReady = true
                     framesRendered = 0
@@ -252,9 +296,75 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 Log.w(TAG, "Camera is null - skipping framing")
                 return
             }
-            // aspect = width / height = 1.0 for a square thumbnail
-            cam.setProjection(35.0, 1.0, 0.05, 50.0, Camera.Fov.VERTICAL)
-            cam.lookAt(0.9, 0.6, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+
+            // We use similar logic in ModelViewerActivity to frame the camera in the proper place (without transformToUnitCube)
+
+            // Get the bounding box of the model
+            val box = viewer.asset?.boundingBox
+
+            // If bounding box is null, default to previous fixed camera position
+            if (box == null) {
+                cam.setProjection(35.0, 1.0, 0.05, 50.0, Camera.Fov.VERTICAL)
+                cam.lookAt(0.9, 0.6, 2.2, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+                return
+            }
+
+            // Find the center and half extent of the bbox
+            val center = box.center
+            val halfExtent = box.halfExtent
+            val tx = center[0]; val ty = center[1]; val tz = center[2]
+
+            // vvv COMMENT FROM ModelViewerActivity.kt vvv
+            // Filament does not have a native way to set up an orbit camera that does not
+            // rely on viewer.transformToUnitCube(). Normally, the camera always assumes
+            // that the model is already transformed, but we want the model to be accurate to
+            // its original position so that we can determine if a model is off-center for AR.
+
+            // Therefore, the only way I found to move the orbit camera was to tap into the fields
+            // itself via reflection, set them to public, then replace the "manipulators" with our own.
+            // Veryyyyy hacky but maybe there is a better solution Google will give us down the line.
+
+
+            val radius = maxOf(halfExtent[0], halfExtent[1], halfExtent[2]).coerceAtLeast(0.01f)
+            val orbitDistance = radius * 6.0f
+
+            val pitchRad = Math.toRadians(18.0)
+            val yawRad = Math.toRadians(45.0)
+            val cp = kotlin.math.cos(pitchRad).toFloat()
+            val sp = kotlin.math.sin(pitchRad).toFloat()
+            val sy = kotlin.math.sin(yawRad).toFloat()
+            val cy = kotlin.math.cos(yawRad).toFloat()
+
+            val ex = tx + orbitDistance * cp * sy
+            val ey = ty + orbitDistance * sp
+            val ez = tz + orbitDistance * cp * cy
+
+            val near = (orbitDistance * 0.01).coerceAtLeast(0.05)
+            val far = (orbitDistance * 100.0).coerceAtLeast(100.0)
+
+            cam.setProjection(35.0, 1.0, near, far, Camera.Fov.VERTICAL)
+
+            val manipulator = Manipulator.Builder()
+                .viewport(THUMB_SIZE, THUMB_SIZE)
+                .targetPosition(tx, ty, tz)
+                .orbitHomePosition(ex, ey, ez)
+                .upVector(0f, 1f, 0f)
+                .build(Manipulator.Mode.ORBIT)
+
+            try {
+                ModelViewer::class.java
+                    .getDeclaredField("cameraManipulator")
+                    .apply { isAccessible = true }
+                    .set(viewer, manipulator)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to install orbit manipulator", t)
+            }
+
+            cam.lookAt(
+                ex.toDouble(), ey.toDouble(), ez.toDouble(),
+                tx.toDouble(), ty.toDouble(), tz.toDouble(),
+                0.0, 1.0, 0.0
+            )
         } catch (e: Exception) {
             Log.w(TAG, "Camera setup failed: ${e.message}")
         }
@@ -348,22 +458,39 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
     private fun analyzeAndSave(bmp: Bitmap, attempt: Int) {
         lifecycleScope.launch(Dispatchers.Default) {
-            // Reject frames where every sampled pixel is fully transparent —
-            // this means the GPU hasn't rendered the model yet.
-            var hasVisiblePixel = false
+
+            // Reject all-white frames, the background is solid white, so a frame
+            // without any non-white pixel means the GPU hasn't rendered the model yet
+
+
+
+            var hasContent = false
             outer@ for (y in 0 until bmp.height step 8) {
                 for (x in 0 until bmp.width step 8) {
                     val alpha = (bmp.getPixel(x, y) ushr 24) and 0xFF
                     if (alpha > 10) {
-                        hasVisiblePixel = true
+                        hasContent = true
                         break@outer
                     }
+
+                    // NOTE: Uncomment code below if implementing solid background
+//                    val px = bmp.getPixel(x, y)
+//                    val r = (px shr 16) and 0xFF
+//                    val g = (px shr 8) and 0xFF
+//                    val b = px and 0xFF
+//                    if (!(r > 245 && g > 245 && b > 245)) {
+//                        hasContent = true
+//                        break@outer
+//                    }
+
+
                 }
             }
 
-            if (!hasVisiblePixel) {
+            if (!hasContent) {
                 bmp.recycle()
-                Log.w(TAG, "Frame is fully transparent; retrying attempt=$attempt")
+                //Log.w(TAG, "Frame is all-white; retrying attempt=$attempt")
+                Log.w(TAG, "Frame is transparent; retrying attempt=$attempt")
                 withContext(Dispatchers.Main) { tryCapture(attempt + 1) }
                 return@launch
             }

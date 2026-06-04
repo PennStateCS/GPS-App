@@ -4,8 +4,11 @@
     <string name="degrees">%1$d°</string>
     <string name="stop_rotate">Stop Rotate</string>
     <string name="auto_rotate">Auto Rotate</string>
-    <string name="lighting_on">💡 Light On</string>
-    <string name="lighting_off">💡 Light Off</string>
+<!--    <string name="lighting_on">💡 Light On</string>-->
+<!--    <string name="lighting_off">💡 Light Off</string>-->
+    <string name="lighting_on">Disable Light</string>
+    <string name="lighting_off">Enable Light</string>
+
 
     <!-- Strings required by layouts -->
     <string name="icon_content_desc">Icon</string>
@@ -125,7 +128,7 @@
     <string name="label_y">Y:</string>
     <string name="label_z">Z:</string>
     <string name="zero_degrees">0°</string>
-    <string name="reset">Reset</string>
+    <string name="reset">Reset Rotation</string>
 
     <!-- Emlid Reach inline manual entry UI strings -->
     <string name="hint_host">Host or IP</string>

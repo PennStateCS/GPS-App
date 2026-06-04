@@ -144,14 +144,14 @@
                     android:contentDescription="Edit Model"
                     android:padding="6dp" />
 
-                <ImageButton
-                    android:id="@+id/btn_recapture_thumbnail"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:src="@drawable/ic_camera_orange"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Recapture Thumbnail"
-                    android:padding="6dp" />
+<!--                <ImageButton-->
+<!--                    android:id="@+id/btn_recapture_thumbnail"-->
+<!--                    android:layout_width="36dp"-->
+<!--                    android:layout_height="36dp"-->
+<!--                    android:src="@drawable/ic_camera_orange"-->
+<!--                    android:background="?android:attr/selectableItemBackgroundBorderless"-->
+<!--                    android:contentDescription="Recapture Thumbnail"-->
+<!--                    android:padding="6dp" />-->
 
                 <ImageButton
                     android:id="@+id/btn_delete_model"
