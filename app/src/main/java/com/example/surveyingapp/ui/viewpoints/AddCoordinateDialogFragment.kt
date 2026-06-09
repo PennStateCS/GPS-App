@@ -130,10 +130,7 @@ class AddCoordinateDialogFragment(
         // Store reference to EditText for proper cleanup
         editTextRef = nameEdit
 
-        // Build combined icon list: built-ins first, then DB models
-        val builtInNames = listOf("transformer", "hydrant", "sign", "lightpole", "shrub", "building")
-        val iconItems: List<IconItem> = builtInNames.map { IconItem.BuiltIn(it) } +
-                dbModels.map { IconItem.DbModel(it) }
+        val iconItems: List<IconItem> = dbModels.map { IconItem.DbModel(it) }
 
         iconSpinner.adapter = IconSpinnerAdapter(requireContext(), iconItems)
 
