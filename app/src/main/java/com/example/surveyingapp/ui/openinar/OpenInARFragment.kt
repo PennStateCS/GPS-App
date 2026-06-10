@@ -74,6 +74,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var session: Session? = null
     private var installRequested = false
     private var availabilityPolling = false
+    /**
+     * True only after [session.resume()] has been called successfully.
+     * Guards [onDrawFrame] against calling [Session.update] on a paused session —
+     * the GL thread starts as soon as the surface is created, which can be before
+     * [onResume] fires (causing AR_ERROR_SESSION_PAUSED spam otherwise).
+     */
+    @Volatile private var sessionReady = false
 
     // OpenGL texture for camera feed
     private var cameraTextureId: Int = -1
@@ -174,8 +181,25 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Last label set posted to the overlay — used to skip redundant post() calls (60fps).
     @Volatile private var lastPostedLabels: List<CoordinateLabelOverlay.LabelEntry> = emptyList()
 
-    // GLB file loader / validator — created in onViewCreated, cleared in onDestroyView.
-    private var arModelRenderer: ArModelRenderer? = null
+    // GLB model renderer (Filament) — created in onViewCreated, destroyed in onDestroyView.
+    private var filamentRenderer: ArFilamentRenderer? = null
+
+    // Drives Filament rendering at display refresh rate on the main thread.
+    private var choreographerInstance: android.view.Choreographer? = null
+    private val filamentFrameCallback = object : android.view.Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNs: Long) {
+            choreographerInstance?.postFrameCallback(this)
+            val vm = arViewMatrix ?: return
+            val pm = arProjMatrix ?: return
+            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, modelPoses)
+        }
+    }
+
+    // ARCore matrices + model poses — written by the GL thread each frame,
+    // read by the Choreographer callback on the main thread (@Volatile for visibility).
+    @Volatile private var arViewMatrix: FloatArray? = null
+    @Volatile private var arProjMatrix: FloatArray? = null
+    @Volatile private var modelPoses: List<ArFilamentRenderer.ModelPose> = emptyList()
 
     // State flags for error recovery and user experience
     private var hasWarnedLocationOff = false
@@ -228,7 +252,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        arModelRenderer = ArModelRenderer(viewLifecycleOwner.lifecycleScope)
+        filamentRenderer = ArFilamentRenderer().also { it.init(binding.filamentSurface) }
         checkAvailabilityAndInstall()
 
         // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
@@ -309,7 +333,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Resume AR session and related components
         try {
             session?.resume()
+            sessionReady = true
             binding.glSurfaceViewAr.onResume()
+            // Start Filament render loop (driven by display vsync)
+            choreographerInstance = android.view.Choreographer.getInstance()
+            choreographerInstance?.postFrameCallback(filamentFrameCallback)
             android.util.Log.d("OpenInARFragment", "AR session resumed successfully")
             binding.textArStatus.text = "AR camera active"
         } catch (e: CameraNotAvailableException) {
@@ -341,6 +369,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onPause() {
         super.onPause()
+        // Stop Filament render loop before pausing GL surface
+        choreographerInstance?.removeFrameCallback(filamentFrameCallback)
+        choreographerInstance = null
+        sessionReady = false   // prevent onDrawFrame calling session.update() while paused
         binding.glSurfaceViewAr.onPause()
         try {
             session?.pause()
@@ -355,8 +387,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         super.onDestroyView()
         prefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         prefs = null
-        arModelRenderer?.clear()
-        arModelRenderer = null
+        // Stop Filament loop and destroy renderer (engine destroyed asynchronously)
+        choreographerInstance?.removeFrameCallback(filamentFrameCallback)
+        choreographerInstance = null
+        filamentRenderer?.destroy()
+        filamentRenderer = null
+        arViewMatrix  = null
+        arProjMatrix  = null
+        modelPoses    = emptyList()
         pinScreenCache = emptyList()
         // Clean up anchors
         for (entry in geoAnchors) try {
@@ -565,8 +603,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 geoAnchors.add(
                     AnchorEntry(anchor, item.rgba, item.modelFilePath, item.modelId, item.coordWithModel)
                 )
-                // Kick off GLB validation as soon as the anchor is created
-                item.modelFilePath?.let { arModelRenderer?.preload(it) }
             } catch (_: Exception) {
                 // Skip invalid coordinates silently
             }
@@ -649,6 +685,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
         val s = session ?: return
+        // Guard against session.update() being called before session.resume() —
+        // the GL thread starts when the surface is created, which may be before onResume fires.
+        if (!sessionReady) return
         try {
             if (cameraTextureId > 0) s.setCameraTextureName(cameraTextureId)
             // Re-apply display geometry every frame so device rotation changes are handled.
@@ -725,6 +764,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 camera.getProjectionMatrix(proj, 0, 0.1f, 2000f)
                 Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
+                // Share matrices with Filament (Choreographer, main thread).
+                arViewMatrix = view.copyOf()
+                arProjMatrix = proj.copyOf()
+
                 // helpers - calculate first so we can use planeCount
                 pointCount = pointCloudRenderer?.draw(frame, vp) ?: 0
                 planeCount = planeVisualizer?.drawAllPlanes(s, vp) ?: 0
@@ -740,10 +783,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     }
                 }
 
-                // geospatial pins + labels + screen-position cache for tap detection
-                val pinPositions   = mutableListOf<PinScreenEntry>()
-                val labelEntries   = mutableListOf<CoordinateLabelOverlay.LabelEntry>()
-                val earthTracking  = earth?.trackingState == TrackingState.TRACKING
+                // Geospatial pins + Filament model poses + labels + tap cache
+                val pinPositions  = mutableListOf<PinScreenEntry>()
+                val labelEntries  = mutableListOf<CoordinateLabelOverlay.LabelEntry>()
+                val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
+                val earthTracking = earth?.trackingState == TrackingState.TRACKING
 
                 if (earthTracking) {
                     for (entry in geoAnchors) {
@@ -752,35 +796,35 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         System.arraycopy(model, 0, modelScaled, 0, 16)
 
                         if (entry.modelFilePath != null) {
-                            Matrix.scaleM(modelScaled, 0, 0.15f, 0.5f, 0.15f)
-                            Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                            arModelRenderer?.draw(mvp, entry.modelFilePath) { m, r, g, b, a ->
-                                cubeRenderer?.draw(m, r, g, b, a)
-                            } ?: cubeRenderer?.draw(mvp, 0.0f, 0.9f, 1.0f, 1.0f)
+                            // Filament renders this model — collect its world pose, skip GLES.
+                            newModelPoses += ArFilamentRenderer.ModelPose(
+                                key         = entry.coordWithModel.coordinate.id,
+                                worldMatrix = model.copyOf(),
+                                filePath    = entry.modelFilePath
+                            )
                         } else {
+                            // Plain coordinate — GLES coloured pin.
                             Matrix.scaleM(modelScaled, 0, 0.1f, 0.3f, 0.1f)
                             Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
                             cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
                         }
 
-                        // Project the top of the pin to screen for label + tap hit-test
-                        // model[12/13/14] = anchor world translation; offset +0.6 m upward
+                        // Project for label + tap hit-test
                         worldToScreen(
                             floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f),
                             vp, surfaceWidth, surfaceHeight
                         )?.let { screenPos ->
-                            pinPositions  += PinScreenEntry(screenPos.x, screenPos.y, entry.coordWithModel)
-                            val name = entry.coordWithModel.coordinate.name
-                            val labelText  = if (entry.modelFilePath != null)
+                            pinPositions += PinScreenEntry(screenPos.x, screenPos.y, entry.coordWithModel)
+                            val name      = entry.coordWithModel.coordinate.name
+                            val labelText = if (entry.modelFilePath != null)
                                 CoordinateLabelOverlay.MODEL_TAG + name else name
-                            labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, screenPos.x, screenPos.y)
+                            labelEntries += CoordinateLabelOverlay.LabelEntry(labelText, screenPos.x, screenPos.y)
                         }
                     }
                 }
 
                 pinScreenCache = pinPositions
-                // Only post a UI update when the visible label set actually changes,
-                // avoiding 60 Runnable allocations per second when nothing moves.
+                modelPoses     = newModelPoses   // volatile write — Choreographer reads this
                 val labelsSnapshot = labelEntries
                 if (labelsSnapshot != lastPostedLabels) {
                     lastPostedLabels = labelsSnapshot
@@ -1307,7 +1351,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Map DB rows (with resolved model paths) to internal GeoItem list and mark anchors for rebuild. */
     private fun setCoordinates(items: List<CoordWithModel>) {
         // Build a completely new immutable list, then assign atomically (@Volatile).
-        // The GL thread always reads a consistent snapshot via the volatile reference.
         geoItems = items.map { item ->
             val c = item.coordinate
             val altitude = if (c.altitude == 0.0 || c.altitude.isNaN()) null else c.altitude
@@ -1323,6 +1366,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             )
         }
         geoAnchorsCreated = false
+
+        // Kick off Filament GLB loading for every model-linked coordinate.
+        // This runs on the main thread (StateFlow collector), which is where
+        // Filament API calls are required.
+        val scope = viewLifecycleOwner.lifecycleScope
+        items.forEach { item ->
+            if (item.modelFilePath != null) {
+                filamentRenderer?.preload(item.coordinate.id, item.modelFilePath, scope)
+            }
+        }
+
         android.util.Log.d(
             "OpenInARFragment",
             "setCoordinates: ${geoItems.size} items " +
