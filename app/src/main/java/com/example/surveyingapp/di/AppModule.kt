@@ -3,6 +3,7 @@ package com.example.surveyingapp.di
 import android.content.Context
 import androidx.room.Room
 import com.example.surveyingapp.data.local.dao.CoordinateDao
+import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.repository.CoordinateRepository
@@ -46,6 +47,9 @@ object AppModule {
 
     @Provides
     fun provideCoordinateDao(db: AppDatabase): CoordinateDao = db.coordinateDao()
+
+    @Provides
+    fun provideModelDao(db: AppDatabase): ModelDao = db.modelDao()
 
     // --- Repository ---
     @Provides

@@ -14,8 +14,6 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.drawerlayout.widget.DrawerLayout
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -25,15 +23,13 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter
+import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.service.LocationService
-import com.example.surveyingapp.ui.openinar.OpenInARFragment
 import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.example.surveyingapp.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
@@ -64,8 +60,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var navController: NavController
 
-    // Single DB instance (Room handles threading); lazy avoids early init cost
-    private val database by lazy { AppDatabase.getDatabase(applicationContext) }
 
     private lateinit var prefs: SharedPreferences
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -228,29 +222,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Attach DAO for OpenInAR
-        navHostFragment.childFragmentManager.registerFragmentLifecycleCallbacks(
-            object : FragmentManager.FragmentLifecycleCallbacks() {
-                override fun onFragmentViewCreated(
-                    fm: FragmentManager,
-                    f: Fragment,
-                    v: View,
-                    savedInstanceState: Bundle?
-                ) {
-                    if (f is OpenInARFragment) {
-                        f.attachCoordinateDao(database.coordinateDao())
-                    }
-                }
-            },
-            true
-        )
-
         navController.addOnDestinationChangedListener { _, destination, _ ->
             if (destination.id == R.id.nav_open_in_ar) {
                 navHostFragment.childFragmentManager.executePendingTransactions()
-                val current = navHostFragment.childFragmentManager.primaryNavigationFragment
-                    ?: navHostFragment.childFragmentManager.fragments.firstOrNull()
-                if (current is OpenInARFragment) current.attachCoordinateDao(database.coordinateDao())
             }
         }
 
