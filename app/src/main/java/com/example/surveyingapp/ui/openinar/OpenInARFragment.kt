@@ -126,8 +126,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
-    // Collections for managing geospatial anchors
-    private val geoItems: MutableList<GeoItem> = mutableListOf()
+    // Collections for managing geospatial anchors.
+    // @Volatile + immutable List: main thread assigns a new snapshot; GL thread reads it safely.
+    @Volatile private var geoItems: List<GeoItem> = emptyList()
 
     /**
      * Tracks each live ARCore geospatial anchor alongside its rendering metadata.
@@ -164,16 +165,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var surfaceWidth: Int = 0
     @Volatile private var surfaceHeight: Int = 0
 
-    // Cached 2-D screen positions of visible geospatial pins (index → screen XY).
-    // Written by GL thread each frame; read by main-thread touch listener for tap detection.
-    private data class PinScreenEntry(val index: Int, val x: Float, val y: Float)
+    // Cached 2-D screen positions of visible geospatial pins.
+    // CoordWithModel is embedded so the touch listener never needs to access geoAnchors.
+    // Written by GL thread each frame; read by main-thread touch listener (volatile).
+    private data class PinScreenEntry(val x: Float, val y: Float, val coordWithModel: CoordWithModel)
     @Volatile private var pinScreenCache: List<PinScreenEntry> = emptyList()
+
+    // Last label set posted to the overlay — used to skip redundant post() calls (60fps).
+    @Volatile private var lastPostedLabels: List<CoordinateLabelOverlay.LabelEntry> = emptyList()
 
     // GLB file loader / validator — created in onViewCreated, cleared in onDestroyView.
     private var arModelRenderer: ArModelRenderer? = null
 
     // State flags for error recovery and user experience
-    private var attemptedEarthRestart = false
     private var hasWarnedLocationOff = false
     private var hasWarnedNoNetwork = false
 
@@ -542,8 +546,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         // Clean up existing anchors
-        for ((a, _) in geoAnchors) try {
-            a.detach()
+        for (entry in geoAnchors) try {
+            entry.anchor.detach()
         } catch (_: Exception) {
         }
         geoAnchors.clear()
@@ -551,8 +555,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Use GNSS altitude as fallback for coordinates without altitude
         val fallbackAlt = gnssFix.altEllipsoidalM ?: gnssFix.altMslM ?: 0.0
 
-        // Create new anchors for each coordinate
-        for (item in geoItems) {
+        // Create new anchors for each coordinate — snapshot geoItems (volatile read) so the
+        // main thread can safely call setCoordinates() concurrently without a CME.
+        val items = geoItems
+        for (item in items) {
             val altToUse = item.alt ?: fallbackAlt
             try {
                 val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
@@ -570,28 +576,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         geoAnchorsCreated = true
     }
 
-    /**
-     * Attempt to restart Earth tracking if it stops (disabled - can cause instability)
-     */
-    private fun tryRestartEarthOnce() {
-        // Disabled: automatic restart can cause session instability
-        // Earth will remain in STOPPED state but basic AR tracking continues
-        android.util.Log.d("OpenInARFragment", "Earth tracking stopped - geospatial features unavailable but AR continues")
-
-        /* Original restart logic - disabled to prevent stopping
-        val s = session ?: return
-        if (attemptedEarthRestart) return
-        attemptedEarthRestart = true
-        try {
-            s.pause()
-            configureSession()  // Ensure geospatial stays enabled
-            s.resume()
-            geoAnchorsCreated = false
-        } catch (_: Exception) {
-            // Ignore restart failures
-        }
-        */
-    }
 
     /**
      * Check if device location services are enabled
@@ -685,7 +669,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 when (earth.trackingState) {
                     TrackingState.TRACKING -> {
                         earthStatus = "Geo: TRACKING"
-                        attemptedEarthRestart = false
                         rebuildGeoAnchorsIfNeeded()
                     }
 
@@ -763,7 +746,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val earthTracking  = earth?.trackingState == TrackingState.TRACKING
 
                 if (earthTracking) {
-                    for ((index, entry) in geoAnchors.withIndex()) {
+                    for (entry in geoAnchors) {
                         if (entry.anchor.trackingState != TrackingState.TRACKING) continue
                         entry.anchor.pose.toMatrix(model, 0)
                         System.arraycopy(model, 0, modelScaled, 0, 16)
@@ -786,7 +769,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f),
                             vp, surfaceWidth, surfaceHeight
                         )?.let { screenPos ->
-                            pinPositions  += PinScreenEntry(index, screenPos.x, screenPos.y)
+                            pinPositions  += PinScreenEntry(screenPos.x, screenPos.y, entry.coordWithModel)
                             val name = entry.coordWithModel.coordinate.name
                             val labelText  = if (entry.modelFilePath != null)
                                 CoordinateLabelOverlay.MODEL_TAG + name else name
@@ -796,9 +779,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
 
                 pinScreenCache = pinPositions
+                // Only post a UI update when the visible label set actually changes,
+                // avoiding 60 Runnable allocations per second when nothing moves.
                 val labelsSnapshot = labelEntries
-                _binding?.labelOverlay?.post {
-                    _binding?.labelOverlay?.updateLabels(labelsSnapshot)
+                if (labelsSnapshot != lastPostedLabels) {
+                    lastPostedLabels = labelsSnapshot
+                    _binding?.labelOverlay?.post {
+                        _binding?.labelOverlay?.updateLabels(labelsSnapshot)
+                    }
                 }
             }
 
@@ -1318,11 +1306,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /** Map DB rows (with resolved model paths) to internal GeoItem list and mark anchors for rebuild. */
     private fun setCoordinates(items: List<CoordWithModel>) {
-        geoItems.clear()
-        items.forEach { item ->
+        // Build a completely new immutable list, then assign atomically (@Volatile).
+        // The GL thread always reads a consistent snapshot via the volatile reference.
+        geoItems = items.map { item ->
             val c = item.coordinate
             val altitude = if (c.altitude == 0.0 || c.altitude.isNaN()) null else c.altitude
-            geoItems += GeoItem(
+            GeoItem(
                 lat = c.latitude,
                 lng = c.longitude,
                 alt = altitude,
@@ -1371,26 +1360,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 if (hit != null) {
                     val dx = hit.x - tapX; val dy = hit.y - tapY
                     if (dx * dx + dy * dy <= threshSq) {
-                        val entry = geoAnchors.getOrNull(hit.index)
-                        if (entry != null) {
-                            val coord = entry.coordWithModel.coordinate
-                            activity?.runOnUiThread {
-                                PinInspectBottomSheet.show(
-                                    childFragmentManager,
-                                    name      = coord.name,
-                                    lat       = coord.latitude,
-                                    lon       = coord.longitude,
-                                    alt       = coord.altitude,
-                                    hAccM     = coord.horizontalAccuracyM,
-                                    rtkStatus = coord.rtkStatus?.name,
-                                    provider  = coord.provider.name,
-                                    modelId   = entry.coordWithModel.modelId,
-                                    timestamp = coord.timestamp
-                                )
-                            }
-                            v.performClick()
-                            return@setOnTouchListener true
+                        // CoordWithModel is embedded in PinScreenEntry — no geoAnchors access needed
+                        val coord = hit.coordWithModel.coordinate
+                        activity?.runOnUiThread {
+                            PinInspectBottomSheet.show(
+                                childFragmentManager,
+                                name      = coord.name,
+                                lat       = coord.latitude,
+                                lon       = coord.longitude,
+                                alt       = coord.altitude,
+                                hAccM     = coord.horizontalAccuracyM,
+                                rtkStatus = coord.rtkStatus?.name,
+                                provider  = coord.provider.name,
+                                modelId   = hit.coordWithModel.modelId,
+                                timestamp = coord.timestamp
+                            )
                         }
+                        v.performClick()
+                        return@setOnTouchListener true
                     }
                 }
 

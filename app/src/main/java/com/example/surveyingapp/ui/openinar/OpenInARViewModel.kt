@@ -45,15 +45,17 @@ class OpenInARViewModel @Inject constructor(
      */
     val coordsWithModels: StateFlow<List<CoordWithModel>> = coordinateDao.observeAll()
         .map { entities ->
-            val result = mutableListOf<CoordWithModel>()
-            for (entity in entities) {
+            // Fetch every model in one query, then join in memory.
+            // This replaces N individual getModelById() calls with a single SELECT *.
+            val modelIndex: Map<String, String> = modelDao.getAllModelsList()
+                .associate { it.id to it.filePath }
+
+            entities.map { entity ->
                 val modelId = entity.icon
                     .takeIf { it.startsWith("model:") }
                     ?.removePrefix("model:")
-                val modelFilePath = modelId?.let { modelDao.getModelById(it)?.filePath }
-                result += CoordWithModel(entity, modelId, modelFilePath)
+                CoordWithModel(entity, modelId, modelId?.let { modelIndex[it] })
             }
-            result
         }
         .stateIn(
             scope = viewModelScope,

@@ -9,6 +9,10 @@ interface ModelDao {
     @Query("SELECT * FROM models ORDER BY dateAdded DESC")
     fun getAllModels(): Flow<List<ModelEntity>>
 
+    /** Returns all model rows as a one-shot list — used for batch joins in the AR ViewModel. */
+    @Query("SELECT * FROM models")
+    suspend fun getAllModelsList(): List<ModelEntity>
+
     @Query("SELECT * FROM models WHERE id = :id")
     suspend fun getModelById(id: String): ModelEntity?
 
