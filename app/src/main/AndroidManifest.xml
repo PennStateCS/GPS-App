@@ -69,7 +69,7 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="${GOOGLE_MAPS_API_KEY}"/>
 
-git        <!-- ARCore Geospatial API Key (same Google Cloud project key as Maps) -->
+        <!-- ARCore Geospatial API Key (same Google Cloud project key as Maps) -->
         <meta-data
             android:name="com.google.android.ar.API_KEY"
             android:value="${GOOGLE_MAPS_API_KEY}"/>

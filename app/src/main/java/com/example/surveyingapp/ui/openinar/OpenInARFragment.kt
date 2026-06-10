@@ -155,6 +155,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val geoAnchors: MutableList<AnchorEntry> = mutableListOf()
     private var geoAnchorsCreated = false
 
+    /**
+     * Uniform scale applied to every GLB model world matrix before handing it to Filament.
+     * GLB units are metres; most survey-marker models are authored at a few centimetres,
+     * so multiply by a large factor to make them visible at field distances.
+     * Adjust this constant to match the native size of your models.
+     */
+    private val MODEL_SCALE = 2f   // renders the model as a ~2 m tall object
+
     // OpenGL transformation matrices
     private val proj = FloatArray(16)    // Projection matrix
     private val view = FloatArray(16)    // View matrix
@@ -790,16 +798,38 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val earthTracking = earth?.trackingState == TrackingState.TRACKING
 
                 if (earthTracking) {
+                    val camGeoPose = earth?.cameraGeospatialPose
                     for (entry in geoAnchors) {
                         if (entry.anchor.trackingState != TrackingState.TRACKING) continue
                         entry.anchor.pose.toMatrix(model, 0)
                         System.arraycopy(model, 0, modelScaled, 0, 16)
 
                         if (entry.modelFilePath != null) {
-                            // Filament renders this model — collect its world pose, skip GLES.
+                            // Scale the world matrix so the GLB is visible at field distances.
+                            val scaledWorld = model.copyOf()
+                            Matrix.scaleM(scaledWorld, 0, MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
+
+                            // Debug: log distance from camera to anchor (once per anchor creation)
+                            val anchorCoord = entry.coordWithModel.coordinate
+                            if (camGeoPose != null) {
+                                val distM = haversineM(
+                                    camGeoPose.latitude, camGeoPose.longitude,
+                                    anchorCoord.latitude, anchorCoord.longitude
+                                )
+                                val bearingDeg = bearingDeg(
+                                    camGeoPose.latitude, camGeoPose.longitude,
+                                    anchorCoord.latitude, anchorCoord.longitude
+                                )
+                                android.util.Log.d("OpenInARFragment",
+                                    "Model '${anchorCoord.name}': " +
+                                    "%.1fm away, bearing %.0f°, worldPos=(%.2f,%.2f,%.2f)".format(
+                                        distM, bearingDeg,
+                                        model[12], model[13], model[14]))
+                            }
+
                             newModelPoses += ArFilamentRenderer.ModelPose(
-                                key         = entry.coordWithModel.coordinate.id,
-                                worldMatrix = model.copyOf(),
+                                key         = anchorCoord.id,
+                                worldMatrix = scaledWorld,
                                 filePath    = entry.modelFilePath
                             )
                         } else {
@@ -850,9 +880,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     "GPS: Waiting..."
                 }
 
+                // Show distance + bearing to each anchor in the status bar
+                val camGeoPoseStatus = earth?.cameraGeospatialPose
+                val pinSummary = if (camGeoPoseStatus != null && geoAnchors.isNotEmpty()) {
+                    geoAnchors.joinToString("  ") { entry ->
+                        val coord = entry.coordWithModel.coordinate
+                        val distM = haversineM(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
+                            coord.latitude, coord.longitude)
+                        val bear  = bearingDeg(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
+                            coord.latitude, coord.longitude)
+                        "📍${coord.name}: ${"%.0f".format(distM)}m ${"%.0f".format(bear)}°"
+                    }
+                } else ""
+
                 // Show AR is working even if geospatial is off
                 val arInfo = "Planes: $planeCount • Points: $pointCount"
-                binding.textArStatus.text = "$gnssInfo • $arInfo • $earthStatus"
+                val pinLine = if (pinSummary.isNotEmpty()) "\n$pinSummary" else ""
+                binding.textArStatus.text = "$gnssInfo • $arInfo • $earthStatus$pinLine"
             }
 
         } catch (_: CameraNotAvailableException) {
@@ -1445,5 +1489,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         android.util.Log.d("OpenInARFragment", "✅ GLSurfaceView setup complete with touch listener")
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Geo-math helpers
+
+    /** Haversine distance in metres between two WGS84 lat/lon points. */
+    private fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val R = 6_371_000.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2).let { it * it } +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2).let { it * it }
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    }
+
+    /** True bearing in degrees (0 = North, clockwise) from point 1 to point 2. */
+    private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLon = Math.toRadians(lon2 - lon1)
+        val y = Math.sin(dLon) * Math.cos(Math.toRadians(lat2))
+        val x = Math.cos(Math.toRadians(lat1)) * Math.sin(Math.toRadians(lat2)) -
+                Math.sin(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.cos(dLon)
+        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360
     }
 }
