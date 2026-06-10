@@ -49,4 +49,21 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
+    <!-- Debug panel: shows Earth state, anchor count, pin distances, model load state.
+         Positioned at the bottom so it doesn't overlap the camera view area. -->
+    <TextView
+        android:id="@+id/textArDebug"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:padding="10dp"
+        android:background="#BB000000"
+        android:textColor="#FFFF00"
+        android:textSize="12sp"
+        android:fontFamily="monospace"
+        android:text="Debug: initializing..."
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
 </FrameLayout>

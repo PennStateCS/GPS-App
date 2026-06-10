@@ -584,9 +584,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             return
         }
 
-        // Use GNSS horizontal accuracy to determine when to create anchors
-        val accuracyM = gnssFix.hAccM ?: 999.0
-        if (accuracyM > 20.0) {
+        // Use GNSS horizontal accuracy to determine when to create anchors.
+        // If hAccM is null (e.g. GST sentences not parsed), skip the gate and proceed —
+        // blocking forever on a missing field is worse than creating anchors without a
+        // verified accuracy figure.
+        val accuracyM = gnssFix.hAccM
+        if (accuracyM != null && accuracyM > 20.0) {
             android.util.Log.d("OpenInARFragment", "GNSS accuracy too low: ${accuracyM}m, waiting for <20m")
             return
         }
@@ -901,6 +904,45 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val arInfo = "Planes: $planeCount • Points: $pointCount"
                 val pinLine = if (pinSummary.isNotEmpty()) "\n$pinSummary" else ""
                 binding.textArStatus.text = "$gnssInfo • $arInfo • $earthStatus$pinLine"
+
+                // ── Debug panel ──────────────────────────────────────────────
+                val debugLines = buildString {
+                    appendLine("🌍 Earth: $earthStatus  [${earth?.earthState?.name}]")
+                    appendLine("⚓ Anchors: ${geoAnchors.size} created  geoAnchorsCreated=$geoAnchorsCreated")
+                    appendLine("📋 Items loaded: ${geoItems.size}")
+
+                    // Show exactly why rebuildGeoAnchorsIfNeeded() might be blocking
+                    val fix = currentGnssFix
+                    val accM = fix?.hAccM
+                    appendLine("📡 GNSS fix: ${if (fix != null) "YES  hAccM=${accM?.let { "%.2f".format(it) } ?: "null (gate skipped)"}" else "NO FIX YET"}")
+                    if (geoItems.isEmpty())                   appendLine("⚠️  BLOCKER: geoItems is empty — no coordinates loaded")
+                    if (fix == null)                          appendLine("⚠️  BLOCKER: currentGnssFix is null")
+                    if (accM != null && accM > 20.0)          appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > 20m threshold")
+                    if (geoAnchorsCreated && geoAnchors.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors — exception during create?")
+
+                    val camGeoPoseStatus = earth?.cameraGeospatialPose
+                    if (camGeoPoseStatus != null) {
+                        appendLine("📍 Cam: %.6f, %.6f  alt=%.1fm  hdg=%.0f°".format(
+                            camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
+                            camGeoPoseStatus.altitude, camGeoPoseStatus.heading))
+                    }
+                    geoAnchors.forEachIndexed { i, entry ->
+                        val coord = entry.coordWithModel.coordinate
+                        val distM = if (camGeoPoseStatus != null)
+                            haversineM(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
+                                coord.latitude, coord.longitude) else -1.0
+                        val bear = if (camGeoPoseStatus != null)
+                            bearingDeg(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
+                                coord.latitude, coord.longitude) else 0.0
+                        val modelState = if (entry.modelFilePath != null)
+                            filamentRenderer?.modelLoadState(coord.id)?.name ?: "NO_RENDERER"
+                        else "GLES_PIN"
+                        appendLine("[$i] ${coord.name}  tracking=${entry.anchor.trackingState == TrackingState.TRACKING}" +
+                            "  %.1fm @ %.0f°  model=$modelState".format(distM, bear))
+                    }
+                    if (geoAnchors.isEmpty()) appendLine("  → no anchors yet")
+                }
+                _binding?.textArDebug?.post { _binding?.textArDebug?.text = debugLines.trimEnd() }
             }
 
         } catch (_: CameraNotAvailableException) {
