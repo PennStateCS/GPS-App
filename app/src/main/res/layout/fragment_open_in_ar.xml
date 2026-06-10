@@ -22,6 +22,20 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
+    <!-- Filament renders GLB models here with a transparent background,
+         composited on top of the camera GLSurfaceView below.
+         layerType=HARDWARE ensures the view is composited via hardware with alpha blending.
+         opaque="false" is set programmatically in ArFilamentRenderer.init(); here we
+         pre-set the layer type so the TextureView never flashes opaque before init. -->
+    <TextureView
+        android:id="@+id/filamentSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layerType="hardware"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
     <TextView
         android:id="@+id/textArStatus"
         android:layout_width="wrap_content"
