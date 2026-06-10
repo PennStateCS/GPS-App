@@ -12,6 +12,16 @@
         android:focusableInTouchMode="true"
         android:clickable="true" />
 
+    <!-- 2-D text labels projected above each geospatial pin.
+         Non-clickable so touches pass through to the GLSurfaceView. -->
+    <com.example.surveyingapp.ui.openinar.CoordinateLabelOverlay
+        android:id="@+id/labelOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
     <TextView
         android:id="@+id/textArStatus"
         android:layout_width="wrap_content"

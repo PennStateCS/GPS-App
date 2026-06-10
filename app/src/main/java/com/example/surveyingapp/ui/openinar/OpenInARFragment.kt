@@ -84,23 +84,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var planeVisualizer: PlaneVisualizer? = null        // Detected planes
     private var pointCloudRenderer: PointCloudRenderer? = null  // Point cloud visualization
 
-    // Local anchor for tap-to-place functionality
-    private var demoAnchor: Anchor? = null
-
-    // Demo floor anchor - placed by tapping on planes
+    // Local anchor for tap-to-place (single green floor square — tap on a detected plane)
     private var demoFloorAnchor: Anchor? = null
 
     // Data class representing a geospatial item to display in AR
     private data class GeoItem(
         val lat: Double,
         val lng: Double,
-        val alt: Double?,            // null => use camera altitude
+        val alt: Double?,
         val label: String?,
-        val rgba: FloatArray,        // 4 floats 0..1 from ARGB Int
-        /** Absolute path to the GLB/GLTF file assigned to this point, or null. */
+        val rgba: FloatArray,
         val modelFilePath: String?,
-        /** Model ID (from icon="model:<id>"), or null when no model is assigned. */
-        val modelId: String?
+        val modelId: String?,
+        /** Full coordinate + model data — used for tap-to-inspect and label text. */
+        val coordWithModel: CoordWithModel
     ) {
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -112,7 +109,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     label == other.label &&
                     rgba.contentEquals(other.rgba) &&
                     modelFilePath == other.modelFilePath &&
-                    modelId == other.modelId
+                    modelId == other.modelId &&
+                    coordWithModel.coordinate.id == other.coordWithModel.coordinate.id
         }
 
         override fun hashCode(): Int {
@@ -123,6 +121,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             result = 31 * result + rgba.contentHashCode()
             result = 31 * result + (modelFilePath?.hashCode() ?: 0)
             result = 31 * result + (modelId?.hashCode() ?: 0)
+            result = 31 * result + coordWithModel.coordinate.id.hashCode()
             return result
         }
     }
@@ -140,7 +139,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val anchor: Anchor,
         val rgba: FloatArray,
         val modelFilePath: String?,
-        val modelId: String?
+        val modelId: String?,
+        /** Full coordinate + model data for tap-to-inspect. */
+        val coordWithModel: CoordWithModel
     )
 
     private val geoAnchors: MutableList<AnchorEntry> = mutableListOf()
@@ -159,10 +160,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var queuedTap: PointF? = null
 
     // Display rotation and surface dimensions — written on main thread, read on GL thread.
-    // Keeping these @Volatile ensures GL thread always sees the latest values without locking.
     @Volatile private var displayRotation: Int = Surface.ROTATION_0
     @Volatile private var surfaceWidth: Int = 0
     @Volatile private var surfaceHeight: Int = 0
+
+    // Cached 2-D screen positions of visible geospatial pins (index → screen XY).
+    // Written by GL thread each frame; read by main-thread touch listener for tap detection.
+    private data class PinScreenEntry(val index: Int, val x: Float, val y: Float)
+    @Volatile private var pinScreenCache: List<PinScreenEntry> = emptyList()
+
+    // GLB file loader / validator — created in onViewCreated, cleared in onDestroyView.
+    private var arModelRenderer: ArModelRenderer? = null
 
     // State flags for error recovery and user experience
     private var attemptedEarthRestart = false
@@ -216,6 +224,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        arModelRenderer = ArModelRenderer(viewLifecycleOwner.lifecycleScope)
         checkAvailabilityAndInstall()
 
         // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
@@ -313,6 +322,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     /**
+     * Called when the device rotates (because MainActivity declares configChanges).
+     * The Fragment is NOT recreated — update displayRotation so the GL thread
+     * picks up the new orientation on the next onDrawFrame call.
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        displayRotation = readDisplayRotation()
+        android.util.Log.d("OpenInARFragment", "Config changed — display rotation: $displayRotation")
+    }
+
+    /**
      * Pause AR session and components
      */
     override fun onPause() {
@@ -331,12 +351,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         super.onDestroyView()
         prefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         prefs = null
+        arModelRenderer?.clear()
+        arModelRenderer = null
+        pinScreenCache = emptyList()
         // Clean up anchors
-        try {
-            demoAnchor?.detach()
-        } catch (_: Exception) {
-        }
-        demoAnchor = null
         for (entry in geoAnchors) try {
             entry.anchor.detach()
         } catch (_: Exception) {
@@ -537,9 +555,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         for (item in geoItems) {
             val altToUse = item.alt ?: fallbackAlt
             try {
-                // Create anchor with identity rotation (no specific orientation needed for pins)
                 val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
-                geoAnchors.add(AnchorEntry(anchor, item.rgba, item.modelFilePath, item.modelId))
+                geoAnchors.add(
+                    AnchorEntry(anchor, item.rgba, item.modelFilePath, item.modelId, item.coordWithModel)
+                )
+                // Kick off GLB validation as soon as the anchor is created
+                item.modelFilePath?.let { arModelRenderer?.preload(it) }
             } catch (_: Exception) {
                 // Skip invalid coordinates silently
             }
@@ -681,53 +702,33 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
 
-            // 3) Tap-to-place for both local cube and demo floor object
+            // 3) Tap-to-place (demo floor marker — green square on detected plane)
             queuedTap?.let { pt ->
-                android.util.Log.d("OpenInARFragment", "🎯 TAP detected at (${pt.x}, ${pt.y})")
-
                 if (camera.trackingState == TrackingState.TRACKING) {
-                    android.util.Log.d("OpenInARFragment", "Camera is TRACKING, performing hitTest")
                     val hits = frame.hitTest(pt.x, pt.y)
-                    android.util.Log.d("OpenInARFragment", "HitTest returned ${hits.size} hits")
-
                     var foundValidHit = false
                     for ((index, hit) in hits.withIndex()) {
                         val trackable = hit.trackable
-                        android.util.Log.d("OpenInARFragment", "  Hit $index: trackable type = ${trackable.javaClass.simpleName}, trackingState = ${trackable.trackingState}")
-
                         val isPlaneHit = trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
                         val isPointHit = trackable is Point &&
                                 trackable.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL
-
-                        if (trackable is Plane) {
-                            android.util.Log.d("OpenInARFragment", "    Plane type: ${trackable.type}, inPolygon: ${trackable.isPoseInPolygon(hit.hitPose)}")
-                        }
-
                         if (isPlaneHit || isPointHit) {
                             foundValidHit = true
                             try {
-                                // Place/move the demo floor object (green square)
                                 demoFloorAnchor?.detach()
                                 demoFloorAnchor = hit.createAnchor()
-                                android.util.Log.d("OpenInARFragment", "✅ Demo floor object placed/moved via tap at hit $index")
-
-                                // Also update the purple demo cube
-                                demoAnchor?.detach()
-                                demoAnchor = hit.createAnchor()
+                                android.util.Log.d("OpenInARFragment", "✅ Floor marker placed at hit $index")
                             } catch (e: Exception) {
                                 android.util.Log.e("OpenInARFragment", "❌ Failed to place anchor: ${e.message}", e)
                             }
                             break
                         }
                     }
-
-                    if (!foundValidHit && hits.isNotEmpty()) {
-                        android.util.Log.w("OpenInARFragment", "⚠️ Got ${hits.size} hits but none were valid planes or points")
-                    } else if (hits.isEmpty()) {
-                        android.util.Log.w("OpenInARFragment", "⚠️ No hits detected - try tapping on a detected plane (yellow outline)")
-                    }
+                    if (!foundValidHit) android.util.Log.w("OpenInARFragment",
+                        if (hits.isEmpty()) "⚠️ No hits — tap on a detected plane (yellow outline)"
+                        else "⚠️ ${hits.size} hits but none were valid planes/points")
                 } else {
-                    android.util.Log.w("OpenInARFragment", "⚠️ Camera not tracking (state: ${camera.trackingState}), skipping tap")
+                    android.util.Log.w("OpenInARFragment", "⚠️ Camera not tracking, skipping tap")
                 }
                 queuedTap = null
             }
@@ -749,59 +750,61 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 demoFloorAnchor?.let { anchor ->
                     if (anchor.trackingState == TrackingState.TRACKING) {
                         anchor.pose.toMatrix(model, 0)
-                        // Scale it to be a flat square on the floor
                         System.arraycopy(model, 0, modelScaled, 0, 16)
-                        Matrix.scaleM(modelScaled, 0, 0.3f, 0.02f, 0.3f) // 60cm x 4cm x 60cm (flat square)
+                        Matrix.scaleM(modelScaled, 0, 0.3f, 0.02f, 0.3f)
                         Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                        cubeRenderer?.draw(mvp, 0.0f, 1.0f, 0.0f, 1.0f) // Bright green
-                    } else {
-                        android.util.Log.w("OpenInARFragment", "⚠️ Demo floor anchor exists but state: ${anchor.trackingState}")
-                    }
-                } ?: run {
-                    // Log once per second that anchor is null
-                    if (System.currentTimeMillis() % 1000 < 50) {
-                        android.util.Log.d("OpenInARFragment", "No demo floor anchor yet - waiting for tap")
+                        cubeRenderer?.draw(mvp, 0.0f, 1.0f, 0.0f, 1.0f) // bright green
                     }
                 }
 
-                // local cube (purple)
-                demoAnchor?.let { anchor ->
-                    if (anchor.trackingState == TrackingState.TRACKING) {
-                        anchor.pose.toMatrix(model, 0)
-                        Matrix.multiplyMM(mvp, 0, vp, 0, model, 0)
-                        cubeRenderer?.draw(mvp, 0.6f, 0.4f, 0.9f, 1f)
-                    }
-                }
+                // geospatial pins + labels + screen-position cache for tap detection
+                val pinPositions   = mutableListOf<PinScreenEntry>()
+                val labelEntries   = mutableListOf<CoordinateLabelOverlay.LabelEntry>()
+                val earthTracking  = earth?.trackingState == TrackingState.TRACKING
 
-                // geospatial pins
-                if (earth?.trackingState == TrackingState.TRACKING) {
-                    for (entry in geoAnchors) {
+                if (earthTracking) {
+                    for ((index, entry) in geoAnchors.withIndex()) {
                         if (entry.anchor.trackingState != TrackingState.TRACKING) continue
                         entry.anchor.pose.toMatrix(model, 0)
                         System.arraycopy(model, 0, modelScaled, 0, 16)
+
                         if (entry.modelFilePath != null) {
-                            // Coordinate has an assigned 3D model.
-                            // Render as a taller cyan pin for now.
-                            // TODO Phase 3: replace with actual GLB rendering via Filament.
-                            //   modelFilePath = entry.modelFilePath
                             Matrix.scaleM(modelScaled, 0, 0.15f, 0.5f, 0.15f)
                             Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                            cubeRenderer?.draw(mvp, 0.0f, 0.9f, 1.0f, 1.0f) // cyan
+                            arModelRenderer?.draw(mvp, entry.modelFilePath) { m, r, g, b, a ->
+                                cubeRenderer?.draw(m, r, g, b, a)
+                            } ?: cubeRenderer?.draw(mvp, 0.0f, 0.9f, 1.0f, 1.0f)
                         } else {
-                            // Plain coordinate — use the saved colour.
                             Matrix.scaleM(modelScaled, 0, 0.1f, 0.3f, 0.1f)
                             Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                            cubeRenderer?.draw(
-                                mvp,
-                                entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3]
-                            )
+                            cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
+                        }
+
+                        // Project the top of the pin to screen for label + tap hit-test
+                        // model[12/13/14] = anchor world translation; offset +0.6 m upward
+                        worldToScreen(
+                            floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f),
+                            vp, surfaceWidth, surfaceHeight
+                        )?.let { screenPos ->
+                            pinPositions  += PinScreenEntry(index, screenPos.x, screenPos.y)
+                            val name = entry.coordWithModel.coordinate.name
+                            val labelText  = if (entry.modelFilePath != null)
+                                CoordinateLabelOverlay.MODEL_TAG + name else name
+                            labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, screenPos.x, screenPos.y)
                         }
                     }
+                }
+
+                pinScreenCache = pinPositions
+                val labelsSnapshot = labelEntries
+                _binding?.labelOverlay?.post {
+                    _binding?.labelOverlay?.updateLabels(labelsSnapshot)
                 }
             }
 
             // 5) UI status - show GNSS info and AR state
-            binding.textArStatus.post {
+            // Use _binding (nullable) — the GL thread can fire after onDestroyView sets it null.
+            _binding?.textArStatus?.post {
                 val gnssFix = currentGnssFix
                 val gnssInfo = if (gnssFix != null) {
                     val acc = gnssFix.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
@@ -856,6 +859,29 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             GLES30.GL_LINEAR
         )
         return texId
+    }
+
+    /**
+     * Projects a world-space position into 2-D screen pixel coordinates.
+     *
+     * @param worldPos 4-element homogeneous vector [x, y, z, 1]
+     * @param vp       View-projection matrix (column-major, as returned by ARCore)
+     * @param w        Surface width in pixels
+     * @param h        Surface height in pixels
+     * @return Screen position, or null when the point is behind the camera or outside the frustum.
+     */
+    private fun worldToScreen(worldPos: FloatArray, vp: FloatArray, w: Int, h: Int): PointF? {
+        if (w <= 0 || h <= 0) return null
+        val clip = FloatArray(4)
+        Matrix.multiplyMV(clip, 0, vp, 0, worldPos, 0)
+        if (clip[3] <= 0f) return null                       // behind camera
+        val ndcX = clip[0] / clip[3]
+        val ndcY = clip[1] / clip[3]
+        if (ndcX !in -1f..1f || ndcY !in -1f..1f) return null  // outside frustum
+        return PointF(
+            (ndcX + 1f) * 0.5f * w,
+            (1f - ndcY) * 0.5f * h   // NDC Y is up; screen Y is down
+        )
     }
 
     // Background renderer using ARCore's UV transform (correct orientation)
@@ -1303,10 +1329,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 label = c.name,
                 rgba = argbIntToRgba(c.color),
                 modelFilePath = item.modelFilePath,
-                modelId = item.modelId
+                modelId = item.modelId,
+                coordWithModel = item
             )
         }
-        geoAnchorsCreated = false // Force rebuild next frame when Earth is TRACKING
+        geoAnchorsCreated = false
         android.util.Log.d(
             "OpenInARFragment",
             "setCoordinates: ${geoItems.size} items " +
@@ -1329,10 +1356,46 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         gl.requestFocus()
 
         gl.setOnTouchListener { v, ev ->
-            android.util.Log.d("OpenInARFragment", "👆 Touch event: action=${ev.action}, x=${ev.x}, y=${ev.y}")
             if (ev.action == MotionEvent.ACTION_UP) {
-                queuedTap = PointF(ev.x, ev.y)
-                android.util.Log.d("OpenInARFragment", "📌 Queued tap at (${ev.x}, ${ev.y})")
+                val tapX = ev.x
+                val tapY = ev.y
+
+                // Check whether the tap lands on (or near) a geospatial pin.
+                // Hit radius = 60 dp — generous enough for finger-sized targets.
+                val threshPx = 60f * resources.displayMetrics.density
+                val threshSq = threshPx * threshPx
+                val cache    = pinScreenCache         // snapshot (volatile read)
+                val hit      = cache.minByOrNull {
+                    val dx = it.x - tapX; val dy = it.y - tapY; dx * dx + dy * dy
+                }
+                if (hit != null) {
+                    val dx = hit.x - tapX; val dy = hit.y - tapY
+                    if (dx * dx + dy * dy <= threshSq) {
+                        val entry = geoAnchors.getOrNull(hit.index)
+                        if (entry != null) {
+                            val coord = entry.coordWithModel.coordinate
+                            activity?.runOnUiThread {
+                                PinInspectBottomSheet.show(
+                                    childFragmentManager,
+                                    name      = coord.name,
+                                    lat       = coord.latitude,
+                                    lon       = coord.longitude,
+                                    alt       = coord.altitude,
+                                    hAccM     = coord.horizontalAccuracyM,
+                                    rtkStatus = coord.rtkStatus?.name,
+                                    provider  = coord.provider.name,
+                                    modelId   = entry.coordWithModel.modelId,
+                                    timestamp = coord.timestamp
+                                )
+                            }
+                            v.performClick()
+                            return@setOnTouchListener true
+                        }
+                    }
+                }
+
+                // No pin tapped — queue tap for demo floor-marker placement
+                queuedTap = PointF(tapX, tapY)
                 v.performClick()
                 true
             } else {
