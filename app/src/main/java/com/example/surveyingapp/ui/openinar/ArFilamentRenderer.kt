@@ -98,6 +98,17 @@ class ArFilamentRenderer {
     private var initialized = false
 
     // -------------------------------------------------------------------------
+    // Debug / diagnostics
+
+    enum class ModelLoadState { NOT_REQUESTED, LOADING, IN_SCENE }
+
+    /** Returns the current load state for [key], safe to call from any thread. */
+    fun modelLoadState(key: String): ModelLoadState {
+        val cached = anchorAssets[key] ?: return ModelLoadState.NOT_REQUESTED
+        return if (cached.framesUpdated >= 2) ModelLoadState.IN_SCENE else ModelLoadState.LOADING
+    }
+
+    // -------------------------------------------------------------------------
     // Lifecycle
 
     /**
