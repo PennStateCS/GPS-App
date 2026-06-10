@@ -605,7 +605,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // main thread can safely call setCoordinates() concurrently without a CME.
         val items = geoItems
         for (item in items) {
-            val altToUse = item.alt ?: fallbackAlt
+            // TESTING: force ground-level altitude (current GNSS altitude) so the model
+            // appears at the user's feet regardless of the stored coordinate altitude.
+            // Restore to:  val altToUse = item.alt ?: fallbackAlt
+            // once altitude accuracy is confirmed.
+            val altToUse = fallbackAlt
             try {
                 val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
                 geoAnchors.add(
