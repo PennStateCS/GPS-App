@@ -31,6 +31,13 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
     private var labels: List<LabelEntry> = emptyList()
     private val dp = context.resources.displayMetrics.density
 
+    // Pre-computed constants — dp never changes at runtime
+    private val pad     = 5f * dp
+    private val cornerR = 4f * dp
+
+    // Pre-allocated rect — reused in onDraw to avoid object allocation per frame
+    private val rect = RectF()
+
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xCC111111.toInt()
         style = Paint.Style.FILL
@@ -65,8 +72,6 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val pad = 5f * dp
-        val cornerR = 4f * dp
 
         for (label in labels) {
             val isModel = label.text.startsWith(MODEL_TAG)
@@ -76,12 +81,12 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
             val textW = textPaint.measureText(displayText)
             val textH = textPaint.textSize
 
-            val left   = label.x - textW / 2f - pad
-            val top    = label.y - textH - pad * 2f
-            val right  = label.x + textW / 2f + pad
-            val bottom = label.y
-
-            val rect = RectF(left, top, right, bottom)
+            rect.set(
+                label.x - textW / 2f - pad,
+                label.y - textH - pad * 2f,
+                label.x + textW / 2f + pad,
+                label.y
+            )
             canvas.drawRoundRect(rect, cornerR, cornerR, bgPaint)
             if (isModel) canvas.drawRoundRect(rect, cornerR, cornerR, borderPaint)
             canvas.drawText(displayText, label.x - textW / 2f, label.y - pad, textPaint)
@@ -93,4 +98,3 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
         const val MODEL_TAG = "\u25C6 "  // ◆ (diamond bullet)
     }
 }
-
