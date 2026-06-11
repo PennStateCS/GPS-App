@@ -224,8 +224,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Last off-screen arrow set posted — used to skip redundant invalidations.
     @Volatile private var lastPostedArrows: List<OffScreenPinIndicatorOverlay.ArrowEntry> = emptyList()
 
+    // Last model progress (inScene, total) — skip chip update when unchanged.
+    @Volatile private var lastModelProgress: Pair<Int, Int>? = null
+    // Coroutine job that hides the chip after all models finish loading.
+    private var hideModelProgressJob: kotlinx.coroutines.Job? = null
+
     // Set true on main thread (button click); consumed on GL thread to detach & rebuild anchors.
     @Volatile private var shouldRebuildAnchors = false
+
+    /**
+     * Maximum distance (metres) at which geospatial pins are rendered.
+     * Null means "show all". Written on main thread, read on GL thread (@Volatile).
+     */
+    @Volatile private var distanceFilterM: Double? = null
+
+    companion object {
+        /** Ordered distance-filter steps; null = show all pins regardless of distance. */
+        private val DISTANCE_FILTER_STEPS: List<Double?> = listOf(null, 50.0, 100.0, 500.0)
+    }
 
     // GLB model renderer (Filament) — created in onViewCreated, destroyed in onDestroyView.
     private var filamentRenderer: ArFilamentRenderer? = null
@@ -330,6 +346,25 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             binding.btnReanchor.isEnabled = false
             // Re-enable after 2 s to prevent accidental rapid taps while ARCore re-localizes.
             binding.btnReanchor.postDelayed({ binding.btnReanchor.isEnabled = true }, 2000)
+        }
+
+        binding.btnDistanceFilter.setOnClickListener {
+            val currentIndex = DISTANCE_FILTER_STEPS.indexOf(distanceFilterM)
+            val nextIndex = (currentIndex + 1) % DISTANCE_FILTER_STEPS.size
+            distanceFilterM = DISTANCE_FILTER_STEPS[nextIndex]
+            binding.btnDistanceFilter.text = when (distanceFilterM) {
+                null   -> "📏 All"
+                50.0   -> "📏 <50m"
+                100.0  -> "📏 <100m"
+                500.0  -> "📏 <500m"
+                else   -> "📏 <${distanceFilterM!!.toInt()}m"
+            }
+        }
+
+        // Round the model-progress badge corners programmatically (avoids a separate drawable).
+        binding.chipModelProgress.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(0xCC000000.toInt())
+            cornerRadius = 24f * resources.displayMetrics.density
         }
 
         // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
@@ -499,6 +534,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         pinScreenCache = emptyList()
         lastPostedLabels = emptyList()
         lastPostedArrows = emptyList()
+        lastModelProgress = null
+        hideModelProgressJob?.cancel()
+        hideModelProgressJob = null
         // Clean up test anchors
         for (entry in testAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
         testAnchors.clear()
@@ -929,36 +967,41 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
                 if (earthTracking) {
                     val camGeoPose = earth?.cameraGeospatialPose
+                    val filterM    = distanceFilterM    // volatile snapshot for this frame
+
                     for (entry in geoAnchors) {
                         if (entry.anchor.trackingState != TrackingState.TRACKING) continue
                         entry.anchor.pose.toMatrix(model, 0)
                         System.arraycopy(model, 0, modelScaled, 0, 16)
+
+                        // ── Distance calculation (single pass) ───────────────────────────
+                        val coord = entry.coordWithModel.coordinate
+                        val distM: Double? = camGeoPose?.let {
+                            haversineM(it.latitude, it.longitude, coord.latitude, coord.longitude)
+                        }
+
+                        // ── Distance filter — skip anchor entirely if beyond threshold ───
+                        if (filterM != null && distM != null && distM > filterM) continue
 
                         if (entry.modelFilePath != null) {
                             // Scale the world matrix so the GLB is visible at field distances.
                             val scaledWorld = model.copyOf()
                             Matrix.scaleM(scaledWorld, 0, MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
 
-                            // Debug: log distance from camera to anchor (once per anchor creation)
-                            val anchorCoord = entry.coordWithModel.coordinate
-                            if (camGeoPose != null) {
-                                val distM = haversineM(
-                                    camGeoPose.latitude, camGeoPose.longitude,
-                                    anchorCoord.latitude, anchorCoord.longitude
-                                )
+                            if (camGeoPose != null && distM != null) {
                                 val bearingDeg = bearingDeg(
                                     camGeoPose.latitude, camGeoPose.longitude,
-                                    anchorCoord.latitude, anchorCoord.longitude
+                                    coord.latitude, coord.longitude
                                 )
                                 android.util.Log.d("OpenInARFragment",
-                                    "Model '${anchorCoord.name}': " +
+                                    "Model '${coord.name}': " +
                                     "%.1fm away, bearing %.0f°, worldPos=(%.2f,%.2f,%.2f)".format(
                                         distM, bearingDeg,
                                         model[12], model[13], model[14]))
                             }
 
                             newModelPoses += ArFilamentRenderer.ModelPose(
-                                key         = anchorCoord.id,
+                                key         = coord.id,
                                 worldMatrix = scaledWorld,
                                 filePath    = entry.modelFilePath
                             )
@@ -969,15 +1012,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
                         }
 
-                        // Distance + bearing subtext for the label
-                        val coord = entry.coordWithModel.coordinate
-                        val subtext = if (camGeoPose != null) {
-                            val dist    = haversineM(camGeoPose.latitude, camGeoPose.longitude, coord.latitude, coord.longitude)
+                        // ── Distance + bearing subtext for label ──────────────────────────
+                        val subtext = if (camGeoPose != null && distM != null) {
                             val bearing = bearingDeg(camGeoPose.latitude, camGeoPose.longitude, coord.latitude, coord.longitude)
-                            "${formatDist(dist)} ${bearingToCompass(bearing)}"
+                            "${formatDist(distM)} ${bearingToCompass(bearing)}"
                         } else ""
 
-                        // Project for on-screen label / off-screen arrow
+                        // ── Project for on-screen label / off-screen arrow ────────────────
                         val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
                         val proj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight)
                         if (proj != null) {
@@ -987,7 +1028,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                                     CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
                                 labelEntries += CoordinateLabelOverlay.LabelEntry(labelText, proj.sx, proj.sy, subtext)
                             } else {
-                                // Off-screen — add an edge arrow
                                 val arrow = computeEdgeArrow(proj.sx, proj.sy, surfaceWidth, surfaceHeight, edgeMargin)
                                 if (arrow != null) {
                                     arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
@@ -1130,6 +1170,51 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     _binding?.textArStatus?.text = topStatus
                     // Already on main thread (inside post{}), assign directly — no extra post needed.
                     _binding?.textArDebug?.text = debugLines.trimEnd()
+                }
+
+                // ── Model load progress chip ──────────────────────────────────
+                // Query each model pose's load state directly on the main thread —
+                // modelLoadState() is safe to call from any thread.
+                val posesSnapshot = modelPoses          // volatile read
+                val total   = posesSnapshot.size
+                val inScene = posesSnapshot.count {
+                    filamentRenderer?.modelLoadState(it.key) ==
+                        ArFilamentRenderer.ModelLoadState.IN_SCENE
+                }
+                val progress = inScene to total
+                if (progress != lastModelProgress) {
+                    lastModelProgress = progress
+                    val loading = total - inScene
+                    when {
+                        total == 0 -> {
+                            // No models assigned — keep chip hidden.
+                            hideModelProgressJob?.cancel()
+                            _binding?.chipModelProgress?.visibility = View.GONE
+                        }
+                        loading > 0 -> {
+                            // At least one model still loading — show chip.
+                            hideModelProgressJob?.cancel()
+                            hideModelProgressJob = null
+                            _binding?.chipModelProgress?.let { chip ->
+                                chip.text = "⏳ $inScene/$total models"
+                                chip.visibility = View.VISIBLE
+                            }
+                        }
+                        else -> {
+                            // All models in scene — show "ready" briefly, then auto-hide.
+                            if (hideModelProgressJob == null) {
+                                _binding?.chipModelProgress?.let { chip ->
+                                    chip.text = "✓ $total/$total models"
+                                    chip.visibility = View.VISIBLE
+                                }
+                                hideModelProgressJob = viewLifecycleOwner.lifecycleScope.launch {
+                                    kotlinx.coroutines.delay(2000)
+                                    _binding?.chipModelProgress?.visibility = View.GONE
+                                    hideModelProgressJob = null
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
