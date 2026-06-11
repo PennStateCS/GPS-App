@@ -52,34 +52,56 @@
         android:clickable="true"
         android:focusable="true" />
 
-    <TextView
-        android:id="@+id/textArStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:padding="8dp"
-        android:background="#66000000"
-        android:textColor="#FFFFFF"
-        android:text="Initializing AR..."
-        android:layout_gravity="top|center_horizontal"
-        android:clickable="false"
-        android:focusable="false"
-        android:focusableInTouchMode="false" />
-
-    <!-- Debug panel: shows Earth state, anchor count, pin distances, model load state.
-         Positioned at the bottom so it doesn't overlap the camera view area. -->
-    <TextView
-        android:id="@+id/textArDebug"
+    <!-- Debug panel: AR status + detailed debug info, shown/hidden together via the toggle button. -->
+    <LinearLayout
+        android:id="@+id/debugPanel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:padding="10dp"
-        android:background="#BB000000"
-        android:textColor="#FFFF00"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/textArStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:background="#66000000"
+            android:textColor="#FFFFFF"
+            android:text="Initializing AR..."
+            android:gravity="center_horizontal"
+            android:clickable="false"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+
+        <TextView
+            android:id="@+id/textArDebug"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:background="#BB000000"
+            android:textColor="#FFFF00"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:text="Debug: initializing..."
+            android:clickable="false"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnToggleDebugOverlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="12dp"
+        android:text="Hide Debug"
         android:textSize="12sp"
-        android:fontFamily="monospace"
-        android:text="Debug: initializing..."
-        android:clickable="false"
-        android:focusable="false"
-        android:focusableInTouchMode="false" />
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:backgroundTint="#CC455A64"
+        android:textColor="#FFFFFF"
+        android:clickable="true"
+        android:focusable="true" />
 
 </FrameLayout>
