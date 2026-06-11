@@ -38,3 +38,7 @@ google-services.json
 
 # Logs
 *.log
+
+# AI coding guide — local only
+AGENTS.md
+
