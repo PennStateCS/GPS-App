@@ -42,3 +42,6 @@ google-services.json
 # AI coding guide — local only
 AGENTS.md
 
+# Extracted Filament AAR artifacts — managed by Gradle, not source
+tmp_filament/
+
