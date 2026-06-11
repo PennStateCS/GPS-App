@@ -25,8 +25,12 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    /** A single label to draw.  [x]/[y] are in raw pixel coordinates. */
-    data class LabelEntry(val text: String, val x: Float, val y: Float)
+    /**
+     * A single label to draw.  [x]/[y] are in raw pixel coordinates.
+     * [subtext] is an optional second line rendered in a smaller, dimmer font
+     * (used for distance + bearing, e.g. "34m SW").
+     */
+    data class LabelEntry(val text: String, val x: Float, val y: Float, val subtext: String = "")
 
     private var labels: List<LabelEntry> = emptyList()
     private val dp = context.resources.displayMetrics.density
@@ -57,6 +61,10 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
         textSize = 11f * dp
         typeface = Typeface.DEFAULT_BOLD
     }
+    private val subtextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFCCCCCC.toInt()
+        textSize = 9f * dp
+    }
 
     init {
         isClickable = false
@@ -81,15 +89,29 @@ class CoordinateLabelOverlay @JvmOverloads constructor(
             val textW = textPaint.measureText(displayText)
             val textH = textPaint.textSize
 
+            val hasSubtext = label.subtext.isNotEmpty()
+            val subW = if (hasSubtext) subtextPaint.measureText(label.subtext) else 0f
+            val subH = if (hasSubtext) subtextPaint.textSize + 2f * dp else 0f
+
+            val totalW = maxOf(textW, subW)
+            val totalH = textH + subH
+
             rect.set(
-                label.x - textW / 2f - pad,
-                label.y - textH - pad * 2f,
-                label.x + textW / 2f + pad,
+                label.x - totalW / 2f - pad,
+                label.y - totalH - pad * 2f,
+                label.x + totalW / 2f + pad,
                 label.y
             )
             canvas.drawRoundRect(rect, cornerR, cornerR, bgPaint)
             if (isModel) canvas.drawRoundRect(rect, cornerR, cornerR, borderPaint)
-            canvas.drawText(displayText, label.x - textW / 2f, label.y - pad, textPaint)
+
+            // Main label — shift up when subtext is present
+            val mainY = label.y - pad - subH
+            canvas.drawText(displayText, label.x - textW / 2f, mainY, textPaint)
+
+            if (hasSubtext) {
+                canvas.drawText(label.subtext, label.x - subW / 2f, label.y - pad, subtextPaint)
+            }
         }
     }
 

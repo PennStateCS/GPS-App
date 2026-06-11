@@ -36,6 +36,16 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
+    <!-- Off-screen pin arrows: drawn at the screen edges pointing toward pins
+         that are in front of the camera but outside the current field of view. -->
+    <com.example.surveyingapp.ui.openinar.OffScreenPinIndicatorOverlay
+        android:id="@+id/offScreenOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
     <!-- Debug: spawn / clear test anchor rings around current position -->
     <Button
         android:id="@+id/btnSpawnTestPoints"
@@ -48,6 +58,22 @@
         android:paddingHorizontal="10dp"
         android:paddingVertical="4dp"
         android:backgroundTint="#CC1565C0"
+        android:textColor="#FFFFFF"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- Re-anchor: force a rebuild of all geospatial anchors using the current GNSS fix -->
+    <Button
+        android:id="@+id/btnReanchor"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="8dp"
+        android:text="🔄 Re-anchor"
+        android:textSize="12sp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:backgroundTint="#CC1B5E20"
         android:textColor="#FFFFFF"
         android:clickable="true"
         android:focusable="true" />
