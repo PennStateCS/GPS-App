@@ -16,6 +16,9 @@ import android.os.Build
 import android.os.Bundle
 import android.content.SharedPreferences
 import com.example.surveyingapp.ui.settings.SettingsFragment
+import com.example.surveyingapp.util.argbIntToRgba
+import com.example.surveyingapp.util.bearingDeg
+import com.example.surveyingapp.util.haversineM
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -45,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 import javax.inject.Inject
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -152,42 +156,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val coordWithModel: CoordWithModel
     )
 
-    private val geoAnchors: MutableList<AnchorEntry> = mutableListOf()
+    // geoAnchors is read on the GL thread and mutated on the main thread (onDestroyView,
+    // rebuildGeoAnchorsIfNeeded). CopyOnWriteArrayList makes iteration on the GL thread
+    // safe without locking — writes create a new backing array so readers never block.
+    private val geoAnchors: MutableList<AnchorEntry> = CopyOnWriteArrayList()
     private var geoAnchorsCreated = false
 
-    // ── Test anchor ring (debug) ──────────────────────────────────────────────
-    /** A single debug pin placed around the user's current GPS position. */
-    private data class TestAnchorEntry(
-        val anchor: Anchor,
-        val modelKey: String?,
-        val label: String,
-        val rgba: FloatArray
-    )
-    /** Written only from the GL thread; read from GL thread during rendering. */
-    private val testAnchors: MutableList<TestAnchorEntry> = mutableListOf()
-    /** Set on main thread (button click); consumed on GL thread (onDrawFrame). */
-    @Volatile private var testAnchorAction: TestAnchorAction = TestAnchorAction.NONE
-    private enum class TestAnchorAction { NONE, SPAWN, CLEAR }
-    /** Tracks whether test anchors are currently visible (used for button label). */
-    @Volatile private var testAnchorsActive = false
-    @Volatile private var testPinModelFilePath: String? = null
-
-    // 3x3 grid centered on current position, 3 meters between points.
-    private val TEST_GRID_RADIUS_CELLS = 1
-    private val TEST_GRID_SPACING_M = 3.0
-    // Keep model cells bounded (1 => entire 3x3 uses pin.glb).
-    private val TEST_MODEL_RING_RADIUS_CELLS = 1
-    // Approx. 1 foot target size for test pins.
-    private val TEST_PIN_MODEL_SCALE = 0.3048f
-    // Lower the model so the bottom tip sits on ground (assumes model origin near center).
-    private val TEST_PIN_GROUND_DROP_M = 0.1524f
-    private val TEST_PIN_ASSET_PATH = "model_images/pin.glb"
+    // All debug test-anchor logic is encapsulated in TestAnchorController.
+    private lateinit var testAnchorController: TestAnchorController
 
     /**
      * Uniform scale applied to every GLB model world matrix before handing it to Filament.
-     * GLB units are metres; most survey-marker models are authored at a few centimetres,
-     * so multiply by a large factor to make them visible at field distances.
-     * Adjust this constant to match the native size of your models.
+     * Adjust to match the native size of your models.
      */
     private val MODEL_SCALE = 2f   // renders the model as a ~2 m tall object
 
@@ -229,14 +209,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var shouldRebuildAnchors = false
 
     /**
-     * Maximum distance (metres) at which geospatial pins are rendered.
-     * Null means "show all". Written on main thread, read on GL thread (@Volatile).
+     * Volatile snapshot of the ViewModel's distanceFilterM — updated via StateFlow collection
+     * on the main thread, read on the GL thread each frame.
      */
     @Volatile private var distanceFilterM: Double? = null
 
+
     companion object {
-        /** Ordered distance-filter steps; null = show all pins regardless of distance. */
-        private val DISTANCE_FILTER_STEPS: List<Double?> = listOf(null, 50.0, 100.0, 500.0)
+        private const val TAG = "OpenInARFragment"
     }
 
     // GLB model renderer (Filament) — created in onViewCreated, destroyed in onDestroyView.
@@ -314,47 +294,43 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        testAnchorController = TestAnchorController(requireContext())
         filamentRenderer = ArFilamentRenderer().also { it.init(binding.filamentSurface) }
-        prepareTestPinModelFile()
+
+        // Prepare the test-pin asset and preload its keys once ready.
+        testAnchorController.prepareAsset(viewLifecycleOwner.lifecycleScope) { _ ->
+            filamentRenderer?.let { renderer ->
+                testAnchorController.preloadModelKeys(renderer, viewLifecycleOwner.lifecycleScope)
+            }
+        }
+
         checkAvailabilityAndInstall()
 
         binding.btnSpawnTestPoints.setOnClickListener {
-            if (testAnchorsActive) {
-                testAnchorAction = TestAnchorAction.CLEAR
+            if (testAnchorController.isActive) {
+                testAnchorController.requestClear()
                 binding.btnSpawnTestPoints.text = "📍 Test Points"
             } else {
-                preloadTestModelKeysIfReady()
-                testAnchorAction = TestAnchorAction.SPAWN
+                filamentRenderer?.let { r ->
+                    testAnchorController.preloadModelKeys(r, viewLifecycleOwner.lifecycleScope)
+                }
+                testAnchorController.requestSpawn()
                 binding.btnSpawnTestPoints.text = "🗑 Clear Tests"
             }
         }
 
         binding.btnToggleDebugOverlay.setOnClickListener {
-            debugOverlayVisible = !debugOverlayVisible
-            val vis = if (debugOverlayVisible) View.VISIBLE else View.GONE
-            binding.textArStatus.visibility = vis
-            binding.textArDebug.visibility = vis
-            binding.btnToggleDebugOverlay.text = if (debugOverlayVisible) "Hide Debug" else "Show Debug"
+            viewModel.toggleDebug()
         }
 
         binding.btnReanchor.setOnClickListener {
             shouldRebuildAnchors = true
             binding.btnReanchor.isEnabled = false
-            // Re-enable after 2 s to prevent accidental rapid taps while ARCore re-localizes.
             binding.btnReanchor.postDelayed({ binding.btnReanchor.isEnabled = true }, 2000)
         }
 
         binding.btnDistanceFilter.setOnClickListener {
-            val currentIndex = DISTANCE_FILTER_STEPS.indexOf(distanceFilterM)
-            val nextIndex = (currentIndex + 1) % DISTANCE_FILTER_STEPS.size
-            distanceFilterM = DISTANCE_FILTER_STEPS[nextIndex]
-            binding.btnDistanceFilter.text = when (distanceFilterM) {
-                null   -> "📏 All"
-                50.0   -> "📏 <50m"
-                100.0  -> "📏 <100m"
-                500.0  -> "📏 <500m"
-                else   -> "📏 <${distanceFilterM!!.toInt()}m"
-            }
+            viewModel.cycleDistanceFilter()
         }
 
         // Round the model-progress badge corners programmatically (avoids a separate drawable).
@@ -363,21 +339,44 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             cornerRadius = 24f * resources.displayMetrics.density
         }
 
-        // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
+        // Observe coordinate + model data from ViewModel.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.coordsWithModels.collect { items ->
-                    setCoordinates(items)
-                }
+                viewModel.coordsWithModels.collect { items -> setCoordinates(items) }
             }
         }
 
-        // Observe GNSS fixes from switchboard for current GPS location
+        // Observe GNSS fixes from switchboard for current GPS location.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 fixSwitchboard.fixes.collect { fix ->
                     currentGnssFix = fix
-                    android.util.Log.d("OpenInARFragment", "GNSS fix updated: lat=${fix.latDeg}, lon=${fix.lonDeg}, alt=${fix.altEllipsoidalM}, provider=${fix.provider}")
+                    android.util.Log.d(TAG, "GNSS fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, provider=${fix.provider}")
+                }
+            }
+        }
+
+        // Keep local volatile copy of distance filter in sync for the GL thread.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.distanceFilterM.collect { distanceFilterM = it }
+            }
+        }
+
+        // Keep button label in sync with filter state.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.distanceFilterLabel.collect { binding.btnDistanceFilter.text = it }
+            }
+        }
+
+        // Sync debug overlay visibility from ViewModel (survives rotation).
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.debugVisible.collect { visible ->
+                    debugOverlayVisible = visible
+                    binding.debugPanel.visibility = if (visible) View.VISIBLE else View.GONE
+                    binding.btnToggleDebugOverlay.text = if (visible) "Hide Debug" else "Show Debug"
                 }
             }
         }
@@ -519,7 +518,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         super.onDestroyView()
         prefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
         prefs = null
-        // Stop Filament loop and destroy renderer (engine destroyed asynchronously)
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         filamentRenderer?.destroy()
@@ -533,22 +531,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         lastModelProgress = null
         hideModelProgressJob?.cancel()
         hideModelProgressJob = null
-        // Clean up test anchors
-        for (entry in testAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
-        testAnchors.clear()
-        testAnchorAction = TestAnchorAction.NONE
-        testAnchorsActive = false
-        // Clean up anchors
-        for (entry in geoAnchors) try {
-            entry.anchor.detach()
-        } catch (_: Exception) {
-        }
+        // Clean up test anchors via controller
+        testAnchorController.cleanup()
+        // Clean up geospatial anchors
+        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
         geoAnchors.clear()
         // Clean up AR session
-        try {
-            session?.close()
-        } catch (_: Exception) {
-        }
+        try { session?.close() } catch (_: Exception) {}
         session = null
         _binding = null
     }
@@ -687,24 +676,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
-    /**
-     * Convert Android ARGB color int to normalized RGBA float array
-     * Ensures minimum alpha of 0.2 for visibility
-     */
-    private fun argbIntToRgba(argb: Int): FloatArray {
-        val a = (argb ushr 24) and 0xFF
-        val r = (argb ushr 16) and 0xFF
-        val g = (argb ushr 8) and 0xFF
-        val b = (argb) and 0xFF
-        return floatArrayOf(r / 255f, g / 255f, b / 255f, max(0.2f, a / 255f))
-    }
-
     // ---------------------------------------------------------------------------------------------
     // Geospatial Anchoring & Earth Tracking
 
     /**
-     * Create geospatial anchors for all coordinate points when Earth tracking is stable
-     * Uses GNSS fix from switchboard instead of ARCore's camera pose for accuracy
+     * Create geospatial anchors for all coordinate points when Earth tracking is stable.
      */
     private fun rebuildGeoAnchorsIfNeeded() {
         if (geoAnchorsCreated || geoItems.isEmpty()) return
@@ -833,391 +809,339 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
         val s = session ?: return
-        // Guard against session.update() being called before session.resume() —
-        // the GL thread starts when the surface is created, which may be before onResume fires.
         if (!sessionReady) return
         try {
             if (cameraTextureId > 0) s.setCameraTextureName(cameraTextureId)
-            // Re-apply display geometry every frame so device rotation changes are handled.
             if (surfaceWidth > 0 && surfaceHeight > 0) {
                 s.setDisplayGeometry(displayRotation, surfaceWidth, surfaceHeight)
             }
 
-            val frame: Frame = s.update()
+            val frame  = s.update()
             val camera = frame.camera
 
-            // 1) Background
+            // 1) Camera background
             backgroundRenderer?.draw(frame, cameraTextureId)
 
-            // 2) Earth state handling - optional geospatial features
-            val earth = s.earth
-            var earthStatus = "Geo: N/A"
+            // 2) Earth / anchor management
+            val earth       = s.earth
+            val earthStatus = processEarthAndAnchors(earth)
 
-            // Process re-anchor request from main thread BEFORE rebuilding.
-            if (shouldRebuildAnchors) {
-                shouldRebuildAnchors = false
-                for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
-                geoAnchors.clear()
-                geoAnchorsCreated = false
-                android.util.Log.d("OpenInARFragment", "Re-anchor triggered — anchors cleared for rebuild")
-            }
+            // 3) Tap-to-place floor marker
+            processTapToPlace(frame, camera)
 
-            if (earth != null) {
-                when (earth.trackingState) {
-                    TrackingState.TRACKING -> {
-                        earthStatus = "Geo: TRACKING"
-                        rebuildGeoAnchorsIfNeeded()
-                        // Process test-anchor spawn/clear request from main thread
-                        when (testAnchorAction) {
-                            TestAnchorAction.SPAWN -> {
-                                testAnchorAction = TestAnchorAction.NONE
-                                spawnTestAnchorsInternal(earth)
-                            }
-                            TestAnchorAction.CLEAR -> {
-                                testAnchorAction = TestAnchorAction.NONE
-                                clearTestAnchorsInternal()
-                            }
-                            TestAnchorAction.NONE -> Unit
-                        }
-                    }
-
-                    TrackingState.PAUSED -> {
-                        earthStatus = "Geo: Localizing..."
-                        // Don't update status text - let AR continue working
-                    }
-
-                    TrackingState.STOPPED -> {
-                        earthStatus = "Geo: Off (AR active)"
-                        // Don't restart - can cause instability
-                        // Basic AR features (planes, points, anchors) still work
-                    }
-                }
-            }
-
-            // 3) Tap-to-place (demo floor marker — green square on detected plane)
-            queuedTap?.let { pt ->
-                if (camera.trackingState == TrackingState.TRACKING) {
-                    val hits = frame.hitTest(pt.x, pt.y)
-                    var foundValidHit = false
-                    for ((index, hit) in hits.withIndex()) {
-                        val trackable = hit.trackable
-                        val isPlaneHit = trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
-                        val isPointHit = trackable is Point &&
-                                trackable.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL
-                        if (isPlaneHit || isPointHit) {
-                            foundValidHit = true
-                            try {
-                                demoFloorAnchor?.detach()
-                                demoFloorAnchor = hit.createAnchor()
-                                android.util.Log.d("OpenInARFragment", "✅ Floor marker placed at hit $index")
-                            } catch (e: Exception) {
-                                android.util.Log.e("OpenInARFragment", "❌ Failed to place anchor: ${e.message}", e)
-                            }
-                            break
-                        }
-                    }
-                    if (!foundValidHit) android.util.Log.w("OpenInARFragment",
-                        if (hits.isEmpty()) "⚠️ No hits — tap on a detected plane (yellow outline)"
-                        else "⚠️ ${hits.size} hits but none were valid planes/points")
-                } else {
-                    android.util.Log.w("OpenInARFragment", "⚠️ Camera not tracking, skipping tap")
-                }
-                queuedTap = null
-            }
-
+            // 4) 3-D rendering (only when camera is tracking)
             var planeCount = 0
             var pointCount = 0
-
-            // 4) Draw helpers & objects when tracking
             if (camera.trackingState == TrackingState.TRACKING) {
                 camera.getViewMatrix(view, 0)
                 camera.getProjectionMatrix(proj, 0, 0.1f, 2000f)
                 Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
-                // Share matrices with Filament (Choreographer, main thread).
                 arViewMatrix = view.copyOf()
                 arProjMatrix = proj.copyOf()
 
-                // helpers - calculate first so we can use planeCount
                 pointCount = pointCloudRenderer?.draw(frame, vp) ?: 0
                 planeCount = planeVisualizer?.drawAllPlanes(s, vp) ?: 0
 
-                // Demo floor object (bright green flat square on floor)
-                demoFloorAnchor?.let { anchor ->
-                    if (anchor.trackingState == TrackingState.TRACKING) {
-                        anchor.pose.toMatrix(model, 0)
-                        System.arraycopy(model, 0, modelScaled, 0, 16)
-                        Matrix.scaleM(modelScaled, 0, 0.3f, 0.02f, 0.3f)
-                        Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                        cubeRenderer?.draw(mvp, 0.0f, 1.0f, 0.0f, 1.0f) // bright green
-                    }
-                }
+                drawFloorMarker(vp)
 
-                // Geospatial pins + Filament model poses + labels + tap cache
+                val edgeMargin    = 40f * resources.displayMetrics.density
                 val pinPositions  = mutableListOf<PinScreenEntry>()
                 val labelEntries  = mutableListOf<CoordinateLabelOverlay.LabelEntry>()
                 val arrowEntries  = mutableListOf<OffScreenPinIndicatorOverlay.ArrowEntry>()
                 val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
-                val earthTracking = earth?.trackingState == TrackingState.TRACKING
-                val edgeMargin    = 40f * resources.displayMetrics.density
 
-                if (earthTracking) {
-                    val camGeoPose = earth?.cameraGeospatialPose
-                    val filterM    = distanceFilterM    // volatile snapshot for this frame
-
-                    for (entry in geoAnchors) {
-                        if (entry.anchor.trackingState != TrackingState.TRACKING) continue
-                        entry.anchor.pose.toMatrix(model, 0)
-                        System.arraycopy(model, 0, modelScaled, 0, 16)
-
-                        // ── Distance calculation (single pass) ───────────────────────────
-                        val coord = entry.coordWithModel.coordinate
-                        val distM: Double? = camGeoPose?.let {
-                            haversineM(it.latitude, it.longitude, coord.latitude, coord.longitude)
-                        }
-
-                        // ── Distance filter — skip anchor entirely if beyond threshold ───
-                        if (filterM != null && distM != null && distM > filterM) continue
-
-                        if (entry.modelFilePath != null) {
-                            // Scale the world matrix so the GLB is visible at field distances.
-                            val scaledWorld = model.copyOf()
-                            Matrix.scaleM(scaledWorld, 0, MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
-
-                            if (camGeoPose != null && distM != null) {
-                                val bearingDeg = bearingDeg(
-                                    camGeoPose.latitude, camGeoPose.longitude,
-                                    coord.latitude, coord.longitude
-                                )
-                                android.util.Log.d("OpenInARFragment",
-                                    "Model '${coord.name}': " +
-                                    "%.1fm away, bearing %.0f°, worldPos=(%.2f,%.2f,%.2f)".format(
-                                        distM, bearingDeg,
-                                        model[12], model[13], model[14]))
-                            }
-
-                            newModelPoses += ArFilamentRenderer.ModelPose(
-                                key         = coord.id,
-                                worldMatrix = scaledWorld,
-                                filePath    = entry.modelFilePath
-                            )
-                        } else {
-                            // Plain coordinate — GLES coloured pin.
-                            Matrix.scaleM(modelScaled, 0, 0.1f, 0.3f, 0.1f)
-                            Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                            cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
-                        }
-
-                        // ── Distance + bearing subtext for label ──────────────────────────
-                        val subtext = if (camGeoPose != null && distM != null) {
-                            val bearing = bearingDeg(camGeoPose.latitude, camGeoPose.longitude, coord.latitude, coord.longitude)
-                            "${formatDist(distM)} ${bearingToCompass(bearing)}"
-                        } else ""
-
-                        // ── Project for on-screen label / off-screen arrow ────────────────
-                        val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
-                        val proj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight)
-                        if (proj != null) {
-                            if (proj.onScreen) {
-                                pinPositions += PinScreenEntry(proj.sx, proj.sy, entry.coordWithModel)
-                                val labelText = if (entry.modelFilePath != null)
-                                    CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
-                                labelEntries += CoordinateLabelOverlay.LabelEntry(labelText, proj.sx, proj.sy, subtext)
-                            } else {
-                                val arrow = computeEdgeArrow(proj.sx, proj.sy, surfaceWidth, surfaceHeight, edgeMargin)
-                                if (arrow != null) {
-                                    arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
-                                        edgeX    = arrow.first.x,
-                                        edgeY    = arrow.first.y,
-                                        angleDeg = arrow.second,
-                                        name     = coord.name,
-                                        distStr  = subtext,
-                                        isModel  = entry.modelFilePath != null
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Test-anchor grid rendering
-                var testAnchorsRendered = 0
-                val testPinPath = testPinModelFilePath
-                for (te in testAnchors) {
-                    if (te.anchor.trackingState != TrackingState.TRACKING) continue
-                    testAnchorsRendered++
-                    te.anchor.pose.toMatrix(model, 0)
-                    if (te.modelKey != null && testPinPath != null) {
-                        val scaledWorld = model.copyOf()
-                        Matrix.scaleM(scaledWorld, 0, TEST_PIN_MODEL_SCALE, TEST_PIN_MODEL_SCALE, TEST_PIN_MODEL_SCALE)
-                        // World-space Y offset to place the pin tip on ground instead of floating.
-                        scaledWorld[13] -= TEST_PIN_GROUND_DROP_M
-                        newModelPoses += ArFilamentRenderer.ModelPose(
-                            key = te.modelKey,
-                            worldMatrix = scaledWorld,
-                            filePath = testPinPath
-                        )
-                    } else {
-                        // Lightweight fallback marker for outer grid cells to avoid OOM.
-                        System.arraycopy(model, 0, modelScaled, 0, 16)
-                        Matrix.scaleM(modelScaled, 0, 0.1f, 0.22f, 0.1f)
-                        Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                        cubeRenderer?.draw(mvp, te.rgba[0], te.rgba[1], te.rgba[2], te.rgba[3])
-                    }
-                    val testWorldPos = floatArrayOf(model[12], model[13] + 0.5f, model[14], 1f)
-                    val testProj = projectToScreen(testWorldPos, vp, surfaceWidth, surfaceHeight)
-                    if (testProj != null) {
-                        if (testProj.onScreen) {
-                            labelEntries += CoordinateLabelOverlay.LabelEntry(te.label, testProj.sx, testProj.sy)
-                        } else {
-                            val arrow = computeEdgeArrow(testProj.sx, testProj.sy, surfaceWidth, surfaceHeight, edgeMargin)
-                            if (arrow != null) {
-                                arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
-                                    edgeX    = arrow.first.x,
-                                    edgeY    = arrow.first.y,
-                                    angleDeg = arrow.second,
-                                    name     = te.label,
-                                    distStr  = "",
-                                    isModel  = te.modelKey != null
-                                )
-                            }
-                        }
-                    }
-                }
-                if (testAnchorsActive && testAnchorsRendered == 0) {
-                    android.util.Log.w("OpenInARFragment", "⚠️  Test anchors created but NONE are TRACKING! Check altitude & GNSS accuracy.")
-                }
+                collectGeoAnchors(earth, vp, edgeMargin, pinPositions, labelEntries, arrowEntries, newModelPoses)
+                testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
+                    surfaceWidth, surfaceHeight, edgeMargin, labelEntries, arrowEntries, newModelPoses)
 
                 pinScreenCache = pinPositions
-                modelPoses     = newModelPoses   // volatile write — Choreographer reads this
-                val labelsSnapshot = labelEntries
-                if (labelsSnapshot != lastPostedLabels) {
-                    lastPostedLabels = labelsSnapshot
-                    _binding?.labelOverlay?.post {
-                        _binding?.labelOverlay?.updateLabels(labelsSnapshot)
-                    }
-                }
-                val arrowsSnapshot = arrowEntries
-                if (arrowsSnapshot != lastPostedArrows) {
-                    lastPostedArrows = arrowsSnapshot
-                    _binding?.offScreenOverlay?.post {
-                        _binding?.offScreenOverlay?.updateArrows(arrowsSnapshot)
-                    }
-                }
+                modelPoses     = newModelPoses
+                postOverlayUpdates(labelEntries, arrowEntries)
             }
 
-            // 5) UI status + debug panel
-            // Use _binding (nullable) — the GL thread can fire after onDestroyView sets it null.
-            _binding?.textArStatus?.post {
-                val gnssFix = currentGnssFix
-                val topStatus = when {
-                    gnssFix == null -> "AR active • Waiting for GNSS • $earthStatus"
-                    else -> "AR active • $earthStatus"
-                }
-
-                // ── Debug panel ──────────────────────────────────────────────
-                val debugLines = buildString {
-                    val providerText = when (gnssFix?.provider) {
-                        com.example.surveyingapp.gnss.model.Provider.INTERNAL -> "Internal GPS"
-                        com.example.surveyingapp.gnss.model.Provider.RS2_EXTERNAL -> "RS2+ (${gnssFix.rtkStatus})"
-                        null -> "Waiting"
-                        else -> gnssFix.provider.toString()
-                    }
-                    val accText = gnssFix?.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
-
-                    appendLine("🌍 Earth: $earthStatus  [${earth?.earthState?.name}]")
-                    appendLine("🧭 AR: Planes=$planeCount  Points=$pointCount")
-                    appendLine("📡 GPS: $providerText  Acc=$accText")
-                    appendLine("⚓ Anchors: ${geoAnchors.size} created  geoAnchorsCreated=$geoAnchorsCreated")
-                    appendLine("📋 Items loaded: ${geoItems.size}")
-
-                    // Show exactly why rebuildGeoAnchorsIfNeeded() might be blocking
-                    val fix = currentGnssFix
-                    val accM = fix?.hAccM
-                    appendLine("📡 GNSS fix: ${if (fix != null) "YES  hAccM=${accM?.let { "%.2f".format(it) } ?: "null (gate skipped)"}" else "NO FIX YET"}")
-                    if (geoItems.isEmpty())                   appendLine("⚠️  BLOCKER: geoItems is empty — no coordinates loaded")
-                    if (fix == null)                          appendLine("⚠️  BLOCKER: currentGnssFix is null")
-                    if (accM != null && accM > 20.0)          appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > 20m threshold")
-                    if (geoAnchorsCreated && geoAnchors.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors — exception during create?")
-
-                    val camGeoPoseStatus = earth?.cameraGeospatialPose
-                    if (camGeoPoseStatus != null) {
-                        appendLine("📍 Cam: %.6f, %.6f  alt=%.1fm  hdg=%.0f°".format(
-                            camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
-                            camGeoPoseStatus.altitude, camGeoPoseStatus.heading))
-                    }
-                    geoAnchors.forEachIndexed { i, entry ->
-                        val coord = entry.coordWithModel.coordinate
-                        val distM = if (camGeoPoseStatus != null)
-                            haversineM(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
-                                coord.latitude, coord.longitude) else -1.0
-                        val bear = if (camGeoPoseStatus != null)
-                            bearingDeg(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
-                                coord.latitude, coord.longitude) else 0.0
-                        val modelState = if (entry.modelFilePath != null)
-                            filamentRenderer?.modelLoadState(coord.id)?.name ?: "NO_RENDERER"
-                        else "GLES_PIN"
-                        appendLine("[$i] ${coord.name}  tracking=${entry.anchor.trackingState == TrackingState.TRACKING}" +
-                            "  %.1fm @ %.0f°  model=$modelState".format(distM, bear))
-                    }
-                    if (geoAnchors.isEmpty()) appendLine("  → no anchors yet")
-                }
-                if (debugOverlayVisible) {
-                    _binding?.textArStatus?.text = topStatus
-                    // Already on main thread (inside post{}), assign directly — no extra post needed.
-                    _binding?.textArDebug?.text = debugLines.trimEnd()
-                }
-
-                // ── Model load progress chip ──────────────────────────────────
-                // Query each model pose's load state directly on the main thread —
-                // modelLoadState() is safe to call from any thread.
-                val posesSnapshot = modelPoses          // volatile read
-                val total   = posesSnapshot.size
-                val inScene = posesSnapshot.count {
-                    filamentRenderer?.modelLoadState(it.key) ==
-                        ArFilamentRenderer.ModelLoadState.IN_SCENE
-                }
-                val progress = inScene to total
-                if (progress != lastModelProgress) {
-                    lastModelProgress = progress
-                    val loading = total - inScene
-                    when {
-                        total == 0 -> {
-                            // No models assigned — keep chip hidden.
-                            hideModelProgressJob?.cancel()
-                            _binding?.chipModelProgress?.visibility = View.GONE
-                        }
-                        loading > 0 -> {
-                            // At least one model still loading — show chip.
-                            hideModelProgressJob?.cancel()
-                            hideModelProgressJob = null
-                            _binding?.chipModelProgress?.let { chip ->
-                                chip.text = "⏳ $inScene/$total models"
-                                chip.visibility = View.VISIBLE
-                            }
-                        }
-                        else -> {
-                            // All models in scene — show "ready" briefly, then auto-hide.
-                            if (hideModelProgressJob == null) {
-                                _binding?.chipModelProgress?.let { chip ->
-                                    chip.text = "✓ $total/$total models"
-                                    chip.visibility = View.VISIBLE
-                                }
-                                hideModelProgressJob = viewLifecycleOwner.lifecycleScope.launch {
-                                    kotlinx.coroutines.delay(2000)
-                                    _binding?.chipModelProgress?.visibility = View.GONE
-                                    hideModelProgressJob = null
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // 5) Status bar, debug panel, model progress chip (posted to main thread)
+            postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount)
 
         } catch (_: CameraNotAvailableException) {
-            // ignore
         } catch (_: Exception) {
-            // ignore
+        }
+    }
+
+    // ── onDrawFrame helpers (all called from the GL thread) ──────────────────
+
+    /**
+     * Handles a pending re-anchor request then processes earth tracking state.
+     * Returns a short human-readable earth status string for the debug panel.
+     */
+    private fun processEarthAndAnchors(earth: Earth?): String {
+        // Process re-anchor request from main thread BEFORE rebuilding.
+        if (shouldRebuildAnchors) {
+            shouldRebuildAnchors = false
+            for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
+            geoAnchors.clear()
+            geoAnchorsCreated = false
+            android.util.Log.d(TAG, "Re-anchor triggered — anchors cleared for rebuild")
+        }
+
+        if (earth == null) return "Geo: N/A"
+
+        return when (earth.trackingState) {
+            TrackingState.TRACKING -> {
+                rebuildGeoAnchorsIfNeeded()
+                val fix = currentGnssFix
+                if (fix != null) {
+                    testAnchorController.processActionIfNeeded(earth, fix.latDeg, fix.lonDeg)
+                }
+                "Geo: TRACKING"
+            }
+            TrackingState.PAUSED  -> "Geo: Localizing..."
+            TrackingState.STOPPED -> "Geo: Off (AR active)"
+        }
+    }
+
+    /** Processes a queued tap: places a floor marker or logs why it failed. */
+    private fun processTapToPlace(frame: Frame, camera: Camera) {
+        queuedTap?.let { pt ->
+            if (camera.trackingState == TrackingState.TRACKING) {
+                val hits = frame.hitTest(pt.x, pt.y)
+                var found = false
+                for ((index, hit) in hits.withIndex()) {
+                    val trackable  = hit.trackable
+                    val isPlane    = trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
+                    val isPoint    = trackable is Point &&
+                            trackable.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL
+                    if (isPlane || isPoint) {
+                        found = true
+                        try {
+                            demoFloorAnchor?.detach()
+                            demoFloorAnchor = hit.createAnchor()
+                            android.util.Log.d(TAG, "✅ Floor marker placed at hit $index")
+                        } catch (e: Exception) {
+                            android.util.Log.e(TAG, "❌ Failed to place anchor: ${e.message}", e)
+                        }
+                        break
+                    }
+                }
+                if (!found) android.util.Log.w(TAG,
+                    if (hits.isEmpty()) "⚠️ No hits — tap on a detected plane"
+                    else "⚠️ ${hits.size} hits but none were valid planes/points")
+            }
+            queuedTap = null
+        }
+    }
+
+    /** Renders the demo floor marker (bright-green flat square) if its anchor is tracking. */
+    private fun drawFloorMarker(vp: FloatArray) {
+        demoFloorAnchor?.let { anchor ->
+            if (anchor.trackingState == TrackingState.TRACKING) {
+                anchor.pose.toMatrix(model, 0)
+                System.arraycopy(model, 0, modelScaled, 0, 16)
+                Matrix.scaleM(modelScaled, 0, 0.3f, 0.02f, 0.3f)
+                Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
+                cubeRenderer?.draw(mvp, 0.0f, 1.0f, 0.0f, 1.0f)
+            }
+        }
+    }
+
+    /**
+     * Iterates [geoAnchors], renders each pin or queues a Filament model pose, and
+     * appends to the label/arrow/pin-position collections for this frame.
+     */
+    private fun collectGeoAnchors(
+        earth: Earth?,
+        vp: FloatArray,
+        edgeMargin: Float,
+        pinPositions: MutableList<PinScreenEntry>,
+        labelEntries: MutableList<CoordinateLabelOverlay.LabelEntry>,
+        arrowEntries: MutableList<OffScreenPinIndicatorOverlay.ArrowEntry>,
+        newModelPoses: MutableList<ArFilamentRenderer.ModelPose>
+    ) {
+        if (earth?.trackingState != TrackingState.TRACKING) return
+        val camGeoPose = earth.cameraGeospatialPose
+        val filterM    = distanceFilterM
+
+        for (entry in geoAnchors) {
+            if (entry.anchor.trackingState != TrackingState.TRACKING) continue
+            entry.anchor.pose.toMatrix(model, 0)
+            System.arraycopy(model, 0, modelScaled, 0, 16)
+
+            val coord = entry.coordWithModel.coordinate
+            val distM = haversineM(camGeoPose.latitude, camGeoPose.longitude,
+                coord.latitude, coord.longitude)
+
+            if (filterM != null && distM > filterM) continue
+
+            if (entry.modelFilePath != null) {
+                val scaledWorld = model.copyOf()
+                Matrix.scaleM(scaledWorld, 0, MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
+                newModelPoses += ArFilamentRenderer.ModelPose(
+                    key         = coord.id,
+                    worldMatrix = scaledWorld,
+                    filePath    = entry.modelFilePath
+                )
+            } else {
+                Matrix.scaleM(modelScaled, 0, 0.1f, 0.3f, 0.1f)
+                Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
+                cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
+            }
+
+            val bearing = bearingDeg(camGeoPose.latitude, camGeoPose.longitude,
+                coord.latitude, coord.longitude)
+            val subtext = "${formatDist(distM)} ${bearingToCompass(bearing)}"
+
+            val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
+            val proj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
+            if (proj.onScreen) {
+                pinPositions  += PinScreenEntry(proj.sx, proj.sy, entry.coordWithModel)
+                val labelText  = if (entry.modelFilePath != null)
+                    CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
+                labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, proj.sx, proj.sy, subtext)
+            } else {
+                val arrow = computeEdgeArrow(proj.sx, proj.sy, surfaceWidth, surfaceHeight, edgeMargin)
+                if (arrow != null) {
+                    arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
+                        edgeX    = arrow.first.x,
+                        edgeY    = arrow.first.y,
+                        angleDeg = arrow.second,
+                        name     = coord.name,
+                        distStr  = subtext,
+                        isModel  = entry.modelFilePath != null
+                    )
+                }
+            }
+        }
+    }
+
+    /** Posts label and arrow overlay updates to the main thread, skipping unchanged frames. */
+    private fun postOverlayUpdates(
+        labelEntries: List<CoordinateLabelOverlay.LabelEntry>,
+        arrowEntries: List<OffScreenPinIndicatorOverlay.ArrowEntry>
+    ) {
+        if (labelEntries != lastPostedLabels) {
+            lastPostedLabels = labelEntries
+            _binding?.labelOverlay?.post { _binding?.labelOverlay?.updateLabels(labelEntries) }
+        }
+        if (arrowEntries != lastPostedArrows) {
+            lastPostedArrows = arrowEntries
+            _binding?.offScreenOverlay?.post { _binding?.offScreenOverlay?.updateArrows(arrowEntries) }
+        }
+    }
+
+    /**
+     * Posts a status bar + debug text + model-progress chip update to the main thread.
+     * All UI writes happen inside `post {}` so they are safe to call from the GL thread.
+     */
+    private fun postDebugPanelUpdate(
+        earth: Earth?,
+        earthStatus: String,
+        planeCount: Int,
+        pointCount: Int
+    ) {
+        _binding?.textArStatus?.post {
+            val gnssFix   = currentGnssFix
+            val topStatus = if (gnssFix == null) "AR active • Waiting for GNSS • $earthStatus"
+                            else "AR active • $earthStatus"
+
+            val debugLines = buildDebugText(earth, earthStatus, planeCount, pointCount, gnssFix)
+
+            if (debugOverlayVisible) {
+                _binding?.textArStatus?.text = topStatus
+                _binding?.textArDebug?.text  = debugLines
+            }
+
+            updateModelProgressChip()
+        }
+    }
+
+    /** Builds the multi-line debug panel string. */
+    private fun buildDebugText(
+        earth: Earth?,
+        earthStatus: String,
+        planeCount: Int,
+        pointCount: Int,
+        gnssFix: Fix?
+    ): String = buildString {
+        val providerText = when (gnssFix?.provider) {
+            com.example.surveyingapp.gnss.model.Provider.INTERNAL    -> "Internal GPS"
+            com.example.surveyingapp.gnss.model.Provider.RS2_EXTERNAL -> "RS2+ (${gnssFix.rtkStatus})"
+            null  -> "Waiting"
+            else  -> gnssFix.provider.toString()
+        }
+        val accText = gnssFix?.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
+
+        appendLine("🌍 Earth: $earthStatus  [${earth?.earthState?.name}]")
+        appendLine("🧭 AR: Planes=$planeCount  Points=$pointCount")
+        appendLine("📡 GPS: $providerText  Acc=$accText")
+        appendLine("⚓ Anchors: ${geoAnchors.size}  geoAnchorsCreated=$geoAnchorsCreated")
+        appendLine("📋 Items loaded: ${geoItems.size}")
+
+        val fix  = currentGnssFix
+        val accM = fix?.hAccM
+        appendLine("📡 GNSS fix: ${if (fix != null) "YES  hAccM=${accM?.let { "%.2f".format(it) } ?: "null (gate skipped)"}" else "NO FIX YET"}")
+        if (geoItems.isEmpty())            appendLine("⚠️  BLOCKER: geoItems is empty")
+        if (fix == null)                   appendLine("⚠️  BLOCKER: currentGnssFix is null")
+        if (accM != null && accM > 20.0)   appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > 20m")
+        if (geoAnchorsCreated && geoAnchors.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors")
+
+        val camGeo = earth?.cameraGeospatialPose
+        if (camGeo != null) {
+            appendLine("📍 Cam: %.6f, %.6f  alt=%.1fm  hdg=%.0f°".format(
+                camGeo.latitude, camGeo.longitude, camGeo.altitude, camGeo.heading))
+        }
+        geoAnchors.forEachIndexed { i, entry ->
+            val coord  = entry.coordWithModel.coordinate
+            val distM  = if (camGeo != null) haversineM(camGeo.latitude, camGeo.longitude,
+                coord.latitude, coord.longitude) else -1.0
+            val bear   = if (camGeo != null) bearingDeg(camGeo.latitude, camGeo.longitude,
+                coord.latitude, coord.longitude) else 0.0
+            val state  = if (entry.modelFilePath != null)
+                filamentRenderer?.modelLoadState(coord.id)?.name ?: "NO_RENDERER"
+            else "GLES_PIN"
+            appendLine("[$i] ${coord.name}  tracking=${entry.anchor.trackingState == TrackingState.TRACKING}" +
+                "  %.1fm @ %.0f°  model=$state".format(distM, bear))
+        }
+        if (geoAnchors.isEmpty()) appendLine("  → no anchors yet")
+    }.trimEnd()
+
+    /** Updates the model-load-progress chip. Must be called on the main thread. */
+    private fun updateModelProgressChip() {
+        val posesSnapshot = modelPoses
+        val total   = posesSnapshot.size
+        val inScene = posesSnapshot.count {
+            filamentRenderer?.modelLoadState(it.key) == ArFilamentRenderer.ModelLoadState.IN_SCENE
+        }
+        val progress = inScene to total
+        if (progress == lastModelProgress) return
+        lastModelProgress = progress
+
+        val loading = total - inScene
+        when {
+            total == 0 -> {
+                hideModelProgressJob?.cancel()
+                _binding?.chipModelProgress?.visibility = View.GONE
+            }
+            loading > 0 -> {
+                hideModelProgressJob?.cancel()
+                hideModelProgressJob = null
+                _binding?.chipModelProgress?.let {
+                    it.text = "⏳ $inScene/$total models"
+                    it.visibility = View.VISIBLE
+                }
+            }
+            else -> {
+                if (hideModelProgressJob == null) {
+                    _binding?.chipModelProgress?.let {
+                        it.text = "✓ $total/$total models"
+                        it.visibility = View.VISIBLE
+                    }
+                    hideModelProgressJob = viewLifecycleOwner.lifecycleScope.launch {
+                        kotlinx.coroutines.delay(2000)
+                        _binding?.chipModelProgress?.visibility = View.GONE
+                        hideModelProgressJob = null
+                    }
+                }
+            }
         }
     }
 
@@ -1252,81 +1176,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         return texId
     }
 
-    /**
-     * Projects a world-space position into 2-D screen pixel coordinates.
-     *
-     * @param worldPos 4-element homogeneous vector [x, y, z, 1]
-     * @param vp       View-projection matrix (column-major, as returned by ARCore)
-     * @param w        Surface width in pixels
-     * @param h        Surface height in pixels
-     * @return Screen position, or null when the point is behind the camera or outside the frustum.
-     */
-    private fun worldToScreen(worldPos: FloatArray, vp: FloatArray, w: Int, h: Int): PointF? {
-        if (w <= 0 || h <= 0) return null
-        val clip = FloatArray(4)
-        Matrix.multiplyMV(clip, 0, vp, 0, worldPos, 0)
-        if (clip[3] <= 0f) return null                       // behind camera
-        val ndcX = clip[0] / clip[3]
-        val ndcY = clip[1] / clip[3]
-        if (ndcX !in -1f..1f || ndcY !in -1f..1f) return null  // outside frustum
-        return PointF(
-            (ndcX + 1f) * 0.5f * w,
-            (1f - ndcY) * 0.5f * h   // NDC Y is up; screen Y is down
-        )
-    }
 
-    /**
-     * Projects a world-space point without frustum-clamping.
-     *
-     * Returns the unclamped pixel position and whether the point falls inside the
-     * visible screen bounds.  Returns null only when the point is behind the camera.
-     * Used for off-screen arrow placement.
-     */
-    private data class ScreenProjection(val sx: Float, val sy: Float, val onScreen: Boolean)
-
-    private fun projectToScreen(worldPos: FloatArray, vp: FloatArray, w: Int, h: Int): ScreenProjection? {
-        if (w <= 0 || h <= 0) return null
-        val clip = FloatArray(4)
-        Matrix.multiplyMV(clip, 0, vp, 0, worldPos, 0)
-        if (clip[3] <= 0f) return null  // behind camera
-        val ndcX = clip[0] / clip[3]
-        val ndcY = clip[1] / clip[3]
-        val sx = (ndcX + 1f) * 0.5f * w
-        val sy = (1f - ndcY) * 0.5f * h
-        return ScreenProjection(sx, sy, ndcX in -1f..1f && ndcY in -1f..1f)
-    }
-
-    /**
-     * Given an unclamped projected screen position [sx]/[sy], computes where to place
-     * an edge arrow and which direction it should point.
-     *
-     * @param margin Edge inset in pixels (keeps arrows away from screen corners).
-     * @return Pair of (edge position, angleDeg toward pin) or null if degenerate.
-     */
-    private fun computeEdgeArrow(
-        sx: Float, sy: Float, w: Int, h: Int, margin: Float
-    ): Pair<PointF, Float>? {
-        if (w <= 0 || h <= 0) return null
-        val cx = w / 2f
-        val cy = h / 2f
-        val dx = sx - cx
-        val dy = sy - cy
-        if (dx == 0f && dy == 0f) return null
-
-        // Find the smallest t that puts the ray from screen-centre through (dx,dy) on a screen edge.
-        val tRight  = if (dx > 0f) (w - margin - cx) / dx else Float.MAX_VALUE
-        val tLeft   = if (dx < 0f) (margin - cx)     / dx else Float.MAX_VALUE
-        val tBottom = if (dy > 0f) (h - margin - cy) / dy else Float.MAX_VALUE
-        val tTop    = if (dy < 0f) (margin - cy)     / dy else Float.MAX_VALUE
-
-        val t = minOf(tRight, tLeft, tBottom, tTop)
-        if (t <= 0f || t == Float.MAX_VALUE) return null
-
-        val ex = (cx + t * dx).coerceIn(margin, w - margin)
-        val ey = (cy + t * dy).coerceIn(margin, h - margin)
-        val angleDeg = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
-        return Pair(PointF(ex, ey), angleDeg)
-    }
 
     /** Converts a bearing in degrees to an 8-point compass abbreviation. */
     private fun bearingToCompass(deg: Double): String {
@@ -1439,148 +1289,5 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         android.util.Log.d("OpenInARFragment", "✅ GLSurfaceView setup complete with touch listener")
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Test-anchor helpers (called from GL thread)
-
-    private fun testGridKey(latOff: Int, lonOff: Int): String = "test_grid_${latOff}_${lonOff}"
-
-    /** Extract `pin.glb` from app assets to internal storage so Filament can load via File(). */
-    private fun prepareTestPinModelFile() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val outFile = withContext(Dispatchers.IO) {
-                runCatching {
-                    val dst = File(requireContext().filesDir, "debug_models/pin.glb")
-                    dst.parentFile?.mkdirs()
-                    if (!dst.exists() || dst.length() == 0L) {
-                        requireContext().assets.open(TEST_PIN_ASSET_PATH).use { input ->
-                            dst.outputStream().use { output -> input.copyTo(output) }
-                        }
-                    }
-                    dst
-                }.getOrNull()
-            }
-            if (outFile != null) {
-                testPinModelFilePath = outFile.absolutePath
-                preloadTestModelKeysIfReady()
-                android.util.Log.d("OpenInARFragment", "Test pin model ready: ${outFile.absolutePath}")
-            } else {
-                android.util.Log.e("OpenInARFragment", "Failed to prepare $TEST_PIN_ASSET_PATH")
-            }
-        }
-    }
-
-    /** Preload only the inner model keys (3x3 by default) to prevent mass OOM. */
-    private fun preloadTestModelKeysIfReady() {
-        val filePath = testPinModelFilePath ?: return
-        val scope = viewLifecycleOwner.lifecycleScope
-        for (latOff in -TEST_MODEL_RING_RADIUS_CELLS..TEST_MODEL_RING_RADIUS_CELLS) {
-            for (lonOff in -TEST_MODEL_RING_RADIUS_CELLS..TEST_MODEL_RING_RADIUS_CELLS) {
-                filamentRenderer?.preload(testGridKey(latOff, lonOff), filePath, scope)
-            }
-        }
-    }
-
-    /**
-     * Spawns a 3×3 test grid centered on the user.
-     * Points are spaced 3m apart to make placement issues obvious in field tests.
-     * Must be called from the GL thread (inside onDrawFrame).
-     *
-     * Grid layout:
-     *   Labels show (northCell,eastCell) offsets where each cell is 3m.
-     */
-    private fun spawnTestAnchorsInternal(earth: Earth) {
-        clearTestAnchorsInternal()
-
-        val fix = currentGnssFix ?: run {
-            android.util.Log.w("OpenInARFragment", "Test anchors: no GNSS fix yet")
-            return
-        }
-        val lat0 = fix.latDeg
-        val lon0 = fix.lonDeg
-        // Prefer ARCore camera geospatial altitude to keep pins on perceived ground locally.
-        val alt = earth.cameraGeospatialPose.altitude
-
-        // Degrees-per-metre for this latitude
-        val dLatPerM = 1.0 / 111_111.0
-        val dLonPerM = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
-
-        data class Spec(
-            val latOff: Int,
-            val lonOff: Int,
-            val dLatM: Double,
-            val dLonM: Double,
-            val label: String,
-            val rgba: FloatArray,
-            val useModel: Boolean
-        )
-
-        val specs = mutableListOf<Spec>()
-        
-        // Create a centered 3×3 grid with 3m spacing.
-        for (latOff in -TEST_GRID_RADIUS_CELLS..TEST_GRID_RADIUS_CELLS) {
-            for (lonOff in -TEST_GRID_RADIUS_CELLS..TEST_GRID_RADIUS_CELLS) {
-                val dLatM = latOff.toDouble() * TEST_GRID_SPACING_M
-                val dLonM = lonOff.toDouble() * TEST_GRID_SPACING_M
-                val label = when {
-                    latOff == 0 && lonOff == 0 -> "●"
-                    else -> "($latOff,$lonOff)"
-                }
-                val dist = kotlin.math.sqrt((latOff * latOff + lonOff * lonOff).toDouble())
-                val bright = (1.0 - (dist / 4.5)).coerceIn(0.3, 1.0).toFloat()
-                val rgba = floatArrayOf(bright, (0.85f * bright), 0.15f, 1f)
-                val useModel = abs(latOff) <= TEST_MODEL_RING_RADIUS_CELLS && abs(lonOff) <= TEST_MODEL_RING_RADIUS_CELLS
-                specs.add(Spec(latOff, lonOff, dLatM, dLonM, label, rgba, useModel))
-            }
-        }
-
-        var created = 0
-        var modelCells = 0
-        for (s in specs) {
-            val lat = lat0 + s.dLatM * dLatPerM
-            val lon = lon0 + s.dLonM * dLonPerM
-            try {
-                val anchor = earth.createAnchor(lat, lon, alt, 0f, 0f, 0f, 1f)
-                val modelKey = if (s.useModel) testGridKey(s.latOff, s.lonOff) else null
-                if (modelKey != null) modelCells++
-                testAnchors += TestAnchorEntry(anchor, modelKey, s.label, s.rgba)
-                created++
-            } catch (e: Exception) {
-                android.util.Log.e("OpenInARFragment", "Test anchor create failed for ${s.label}", e)
-            }
-        }
-        testAnchorsActive = true
-        android.util.Log.d("OpenInARFragment", "Test grid spawned: $created/${specs.size} points, modelCells=$modelCells, cubeCells=${created - modelCells} (3×3, 3m spacing) at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}, alt=${alt}m")
-    }
-
-    /** Detaches and removes all test anchors. Must be called from the GL thread. */
-    private fun clearTestAnchorsInternal() {
-        for (te in testAnchors) try { te.anchor.detach() } catch (_: Exception) {}
-        testAnchors.clear()
-        testAnchorsActive = false
-    }
-
-    // ---------------------------------------------------------------------------------------------
-    // Geo-math helpers
-
-    /** Haversine distance in metres between two WGS84 lat/lon points. */
-    private fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val R = 6_371_000.0
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = Math.sin(dLat / 2).let { it * it } +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLon / 2).let { it * it }
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-    }
-
-    /** True bearing in degrees (0 = North, clockwise) from point 1 to point 2. */
-    private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val dLon = Math.toRadians(lon2 - lon1)
-        val y = Math.sin(dLon) * Math.cos(Math.toRadians(lat2))
-        val x = Math.cos(Math.toRadians(lat1)) * Math.sin(Math.toRadians(lat2)) -
-                Math.sin(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.cos(dLon)
-        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360
     }
 }

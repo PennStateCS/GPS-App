@@ -47,55 +47,88 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
-    <!-- Debug: spawn / clear test anchor rings around current position -->
-    <Button
-        android:id="@+id/btnSpawnTestPoints"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_margin="8dp"
-        android:text="📍 Test Points"
-        android:textSize="12sp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:backgroundTint="#CC1565C0"
-        android:textColor="#FFFFFF"
-        android:clickable="true"
-        android:focusable="true" />
-
-    <!-- Re-anchor: force a rebuild of all geospatial anchors using the current GNSS fix -->
-    <Button
-        android:id="@+id/btnReanchor"
+    <!-- All buttons stacked vertically in the top-right corner -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
+        android:orientation="vertical"
         android:layout_margin="8dp"
-        android:text="🔄 Re-anchor"
-        android:textSize="12sp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:backgroundTint="#CC1B5E20"
-        android:textColor="#FFFFFF"
-        android:clickable="true"
-        android:focusable="true" />
+        android:gravity="end">
 
-    <!-- Model load progress badge — visible while any GLB model is still loading.
-         Positioned in the top-centre gap between the two corner buttons. -->
-    <TextView
-        android:id="@+id/chipModelProgress"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
-        android:layout_margin="8dp"
-        android:text="⏳ 0/0 models"
-        android:textSize="11sp"
-        android:textColor="#FFFFFF"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="5dp"
-        android:background="#CC000000"
-        android:visibility="gone"
-        android:clickable="false"
-        android:focusable="false" />
+        <Button
+            android:id="@+id/btnReanchor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔄 Re-anchor"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC1B5E20"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnSpawnTestPoints"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="📍 Test Points"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC1565C0"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnDistanceFilter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="📏 All"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC455A64"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnToggleDebugOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Hide Debug"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC455A64"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- Model load progress badge -->
+        <TextView
+            android:id="@+id/chipModelProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:layout_marginTop="6dp"
+            android:text="⏳ 0/0 models"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="5dp"
+            android:background="#CC000000"
+            android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false" />
+
+    </LinearLayout>
 
     <!-- Debug panel: AR status + detailed debug info, shown/hidden together via the toggle button. -->
     <LinearLayout
@@ -134,35 +167,5 @@
 
     </LinearLayout>
 
-    <Button
-        android:id="@+id/btnToggleDebugOverlay"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="12dp"
-        android:text="Hide Debug"
-        android:textSize="12sp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:backgroundTint="#CC455A64"
-        android:textColor="#FFFFFF"
-        android:clickable="true"
-        android:focusable="true" />
-
-    <!-- Distance filter: cycles through All / <50m / <100m / <500m -->
-    <Button
-        android:id="@+id/btnDistanceFilter"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_margin="12dp"
-        android:text="📏 All"
-        android:textSize="12sp"
-        android:paddingHorizontal="10dp"
-        android:paddingVertical="4dp"
-        android:backgroundTint="#CC455A64"
-        android:textColor="#FFFFFF"
-        android:clickable="true"
-        android:focusable="true" />
 
 </FrameLayout>
