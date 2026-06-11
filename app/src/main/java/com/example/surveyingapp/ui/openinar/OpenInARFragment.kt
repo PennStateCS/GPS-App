@@ -8,16 +8,15 @@ import android.graphics.PointF
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.opengl.GLES11Ext
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import android.os.Build
 import android.os.Bundle
-import android.content.SharedPreferences
-import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.example.surveyingapp.util.argbIntToRgba
 import com.example.surveyingapp.util.bearingDeg
+import com.example.surveyingapp.util.bearingToCompass
+import com.example.surveyingapp.util.formatDist
 import com.example.surveyingapp.util.haversineM
 
 import android.view.LayoutInflater
@@ -83,24 +82,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     @Volatile private var sessionReady = false
 
-    // OpenGL texture for camera feed
-    private var cameraTextureId: Int = -1
-
     // OpenGL renderers for different AR elements
-    private var backgroundRenderer: BackgroundRenderer? = null  // Camera background
+    private var backgroundRenderer: BackgroundRenderer? = null  // Camera background (also owns OES texture)
     private var cubeRenderer: SimpleObjectRenderer? = null      // 3D objects/pins
     private var planeVisualizer: PlaneVisualizer? = null        // Detected planes
     private var pointCloudRenderer: PointCloudRenderer? = null  // Point cloud visualization
+    // Filament-based renderer for GLB 3D models overlaid on the AR camera feed
+    private var filamentRenderer: ArFilamentRenderer? = null
 
     // Local anchor for tap-to-place (single green floor square — tap on a detected plane)
     private var demoFloorAnchor: Anchor? = null
 
-    // Data class representing a geospatial item to display in AR
+    // Data class representing a geospatial item to display in AR.
+    // `label` removed — coord name is always read from coordWithModel.coordinate.name directly.
     private data class GeoItem(
         val lat: Double,
         val lng: Double,
         val alt: Double?,
-        val label: String?,
         val rgba: FloatArray,
         val modelFilePath: String?,
         val modelId: String?,
@@ -114,7 +112,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             return lat == other.lat &&
                     lng == other.lng &&
                     alt == other.alt &&
-                    label == other.label &&
                     rgba.contentEquals(other.rgba) &&
                     modelFilePath == other.modelFilePath &&
                     modelId == other.modelId &&
@@ -125,7 +122,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             var result = lat.hashCode()
             result = 31 * result + lng.hashCode()
             result = 31 * result + (alt?.hashCode() ?: 0)
-            result = 31 * result + (label?.hashCode() ?: 0)
             result = 31 * result + rgba.contentHashCode()
             result = 31 * result + (modelFilePath?.hashCode() ?: 0)
             result = 31 * result + (modelId?.hashCode() ?: 0)
@@ -141,32 +137,30 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /**
      * Tracks each live ARCore geospatial anchor alongside its rendering metadata.
      *
-     * [AnchorEntry.modelFilePath] is non-null when the coordinate has a 3D model assigned.
-     * Phase 3 will replace the placeholder cube with a Filament GLB renderer keyed on this path.
+     * Not a data class — [rgba] is a FloatArray and this type is never compared by value.
+     * [rgba] is eagerly pre-computed from [coordWithModel.coordinate.color] so it is only
+     * allocated once per anchor rather than on every render frame.
+     * [modelFilePath] and [modelId] are derived from [coordWithModel] via properties.
      */
-    private data class AnchorEntry(
+    private class AnchorEntry(
         val anchor: Anchor,
-        val rgba: FloatArray,
-        val modelFilePath: String?,
-        val modelId: String?,
-        /** Full coordinate + model data for tap-to-inspect. */
         val coordWithModel: CoordWithModel
-    )
+    ) {
+        /** Pre-computed normalised RGBA for GLES pin rendering. */
+        val rgba: FloatArray = argbIntToRgba(coordWithModel.coordinate.color)
+        val modelFilePath: String? get() = coordWithModel.modelFilePath
+        val modelId: String?       get() = coordWithModel.modelId
+    }
 
     // geoAnchors is read on the GL thread and mutated on the main thread (onDestroyView,
     // rebuildGeoAnchorsIfNeeded). CopyOnWriteArrayList makes iteration on the GL thread
     // safe without locking — writes create a new backing array so readers never block.
     private val geoAnchors: MutableList<AnchorEntry> = CopyOnWriteArrayList()
-    private var geoAnchorsCreated = false
+    // @Volatile: written on main thread (setCoordinates), read on GL thread (rebuildGeoAnchorsIfNeeded).
+    @Volatile private var geoAnchorsCreated = false
 
     // All debug test-anchor logic is encapsulated in TestAnchorController.
     private lateinit var testAnchorController: TestAnchorController
-
-    /**
-     * Uniform scale applied to every GLB model world matrix before handing it to Filament.
-     * Adjust to match the native size of your models.
-     */
-    private val MODEL_SCALE = 2f   // renders the model as a ~2 m tall object
 
     // OpenGL transformation matrices
     private val proj = FloatArray(16)    // Projection matrix
@@ -216,10 +210,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private const val TAG = "OpenInARFragment"
         /** Minimum GNSS horizontal accuracy required before creating geospatial anchors. */
         private const val MAX_GNSS_ACCURACY_M = 20.0
+        /**
+         * Uniform scale applied to every GLB model world matrix before handing it to Filament.
+         * Adjust to match the native size of your models.
+         */
+        private const val MODEL_SCALE = 2f
     }
-
-    // GLB model renderer (Filament) — created in onViewCreated, destroyed in onDestroyView.
-    private var filamentRenderer: ArFilamentRenderer? = null
 
     // Drives Filament rendering at display refresh rate on the main thread.
     private var choreographerInstance: android.view.Choreographer? = null
@@ -256,17 +252,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             if (!granted) binding.textArStatus.text = getString(R.string.location_permission_needed)
         }
 
-    // SharedPreferences for high accuracy setting
-    private var prefs: SharedPreferences? = null
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == SettingsFragment.PREF_HIGH_ACCURACY) {
-            applyHighAccuracyPreference()
-        }
-    }
 
     // Track previous brightness so we can restore it on pause
     private var previousBrightness = -1f
-    private var debugOverlayVisible = true
+    // Mirrors ViewModel's debugVisible StateFlow; initialised to false to match the ViewModel default.
+    private var debugOverlayVisible = false
 
     // ---------------------------------------------------------------------------------------------
     // Fragment Lifecycle Methods
@@ -282,11 +272,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         _binding = FragmentOpenInArBinding.inflate(inflater, container, false)
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
-        // Load preferences and register change listener
-        prefs = requireContext()
-            .getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
-            .also { it.registerOnSharedPreferenceChangeListener(prefListener) }
-        applyHighAccuracyPreference()
         return binding.root
     }
 
@@ -381,6 +366,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
         }
+
+        // React to high-accuracy GPS preference changes from the ViewModel.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.highAccuracyEnabled.collect { wantHigh ->
+                    if (!isAdded || _binding == null) return@collect
+                    if (wantHigh) {
+                        val lm = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                        if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                            binding.textArStatus.text = "Enable GPS for high accuracy AR positioning"
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -401,41 +401,36 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onResume() {
         super.onResume()
-        android.util.Log.d("OpenInARFragment", "onResume called")
+        android.util.Log.d(TAG, "onResume called")
 
-        // Capture actual display rotation BEFORE resuming session so the GL thread
-        // picks it up in the very first onSurfaceChanged / onDrawFrame call.
         displayRotation = readDisplayRotation()
-        android.util.Log.d("OpenInARFragment", "Display rotation: $displayRotation")
+        android.util.Log.d(TAG, "Display rotation: $displayRotation")
 
-        // Ensure we have required permissions before starting AR
         if (!checkAndRequestCameraPermission()) {
-            android.util.Log.w("OpenInARFragment", "Camera permission not granted")
+            android.util.Log.w(TAG, "Camera permission not granted")
             return
         }
         if (!checkAndRequestLocationPermission()) {
-            android.util.Log.w("OpenInARFragment", "Location permission not granted")
+            android.util.Log.w(TAG, "Location permission not granted")
             return
         }
 
-        // Create AR session if needed
         if (session == null) {
-            android.util.Log.d("OpenInARFragment", "Creating new AR session")
+            android.util.Log.d(TAG, "Creating new AR session")
             checkAvailabilityAndInstall()
         }
 
-        // Provide user feedback for common issues
         val locationEnabled = isLocationServicesEnabled()
         val networkAvailable = hasNetwork()
-        android.util.Log.d("OpenInARFragment", "Location enabled: $locationEnabled, Network: $networkAvailable")
+        android.util.Log.d(TAG, "Location enabled: $locationEnabled, Network: $networkAvailable")
 
         if (!locationEnabled && !hasWarnedLocationOff) {
             hasWarnedLocationOff = true
-            android.util.Log.w("OpenInARFragment", "Location services disabled - geospatial won't work")
+            android.util.Log.w(TAG, "Location services disabled — geospatial won't work")
         }
         if (!networkAvailable && !hasWarnedNoNetwork) {
             hasWarnedNoNetwork = true
-            android.util.Log.w("OpenInARFragment", "No internet - geospatial won't localize")
+            android.util.Log.w(TAG, "No internet — geospatial won't localize")
         }
 
         // Resume AR session and related components
@@ -446,29 +441,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Start Filament render loop (driven by display vsync)
             choreographerInstance = android.view.Choreographer.getInstance()
             choreographerInstance?.postFrameCallback(filamentFrameCallback)
-            android.util.Log.d("OpenInARFragment", "AR session resumed successfully")
+            android.util.Log.d(TAG, "AR session resumed successfully")
             binding.textArStatus.text = "AR camera active"
-            
-            // Keep screen at maximum brightness for AR viewing
+
             val window = requireActivity().window
             val lp = window.attributes
             previousBrightness = lp.screenBrightness
             lp.screenBrightness = 1.0f
             window.attributes = lp
-            android.util.Log.d("OpenInARFragment", "Screen brightness set to maximum")
-            
-            // Keep screen on during AR mode
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            android.util.Log.d("OpenInARFragment", "Screen wake lock enabled")
+            android.util.Log.d(TAG, "Screen brightness set to maximum")
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            android.util.Log.d(TAG, "Screen wake lock enabled")
         } catch (e: CameraNotAvailableException) {
-            android.util.Log.e("OpenInARFragment", "Camera unavailable", e)
+            android.util.Log.e(TAG, "Camera unavailable", e)
             binding.textArStatus.text = getString(R.string.camera_unavailable)
-            try {
-                session?.pause()
-            } catch (_: Exception) {
-            }
+            try { session?.pause() } catch (_: Exception) {}
         } catch (e: Exception) {
-            android.util.Log.e("OpenInARFragment", "Error resuming session", e)
+            android.util.Log.e(TAG, "Error resuming session", e)
             binding.textArStatus.text = "AR error: ${e.message}"
         }
     }
@@ -481,7 +470,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         displayRotation = readDisplayRotation()
-        android.util.Log.d("OpenInARFragment", "Config changed — display rotation: $displayRotation")
+        android.util.Log.d(TAG, "Config changed — display rotation: $displayRotation")
     }
 
     /**
@@ -489,16 +478,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onPause() {
         super.onPause()
-        // Stop Filament render loop before pausing GL surface
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
-        sessionReady = false   // prevent onDrawFrame calling session.update() while paused
+        sessionReady = false
         binding.glSurfaceViewAr.onPause()
-        try {
-            session?.pause()
-        } catch (_: Exception) {
-        }
-        
+        try { session?.pause() } catch (_: Exception) {}
+
+        // Reset one-shot warning flags so they re-fire if the user navigates away
+        // and back while location/network state has changed.
+        hasWarnedLocationOff = false
+        hasWarnedNoNetwork   = false
+
         // Restore previous screen brightness and allow screen to sleep
         try {
             val window = requireActivity().window
@@ -506,9 +496,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             lp.screenBrightness = previousBrightness
             window.attributes = lp
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            android.util.Log.d("OpenInARFragment", "Screen brightness restored to $previousBrightness, sleep enabled")
+            android.util.Log.d(TAG, "Screen brightness restored to $previousBrightness")
         } catch (e: Exception) {
-            android.util.Log.w("OpenInARFragment", "Failed to restore brightness/sleep", e)
+            android.util.Log.w(TAG, "Failed to restore brightness/sleep", e)
         }
     }
 
@@ -517,8 +507,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onDestroyView() {
         super.onDestroyView()
-        prefs?.unregisterOnSharedPreferenceChangeListener(prefListener)
-        prefs = null
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         filamentRenderer?.destroy()
@@ -598,13 +586,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             if (ses.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                 try {
                     geospatialMode = Config.GeospatialMode.ENABLED
-                    android.util.Log.d("OpenInARFragment", "Geospatial mode enabled")
+                    android.util.Log.d(TAG, "Geospatial mode enabled")
                 } catch (e: Exception) {
-                    android.util.Log.w("OpenInARFragment", "Failed to enable geospatial mode: ${e.message}")
-                    // Continue without geospatial - basic AR still works
+                    android.util.Log.w(TAG, "Failed to enable geospatial mode: ${e.message}")
                 }
             } else {
-                android.util.Log.d("OpenInARFragment", "Geospatial mode not supported on this device")
+                android.util.Log.d(TAG, "Geospatial mode not supported on this device")
             }
             // Configure other AR features
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
@@ -617,10 +604,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
         try {
             ses.configure(config)
-            if (cameraTextureId > 0) ses.setCameraTextureName(cameraTextureId)
-            android.util.Log.d("OpenInARFragment", "AR session configured successfully")
+            if (backgroundRenderer != null) ses.setCameraTextureName(backgroundRenderer!!.textureId)
+            android.util.Log.d(TAG, "AR session configured successfully")
         } catch (e: Exception) {
-            android.util.Log.e("OpenInARFragment", "Error configuring session: ${e.message}", e)
+            android.util.Log.e(TAG, "Error configuring session: ${e.message}", e)
             binding.textArStatus.text = "AR config error: ${e.message}"
         }
     }
@@ -727,15 +714,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val altToUse = item.alt ?: fallbackAlt
             try {
                 val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
-                geoAnchors.add(
-                    AnchorEntry(anchor, item.rgba, item.modelFilePath, item.modelId, item.coordWithModel)
-                )
+                geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
             } catch (_: Exception) {
                 // Skip invalid coordinates silently
             }
         }
 
-        android.util.Log.d("OpenInARFragment", "Created ${geoAnchors.size} geospatial anchors using GNSS fix (accuracy: ${accuracyM}m, alt: $fallbackAlt)")
+        android.util.Log.d(TAG, "Created ${geoAnchors.size} geospatial anchors (accuracy: ${accuracyM}m, alt: $fallbackAlt)")
         geoAnchorsCreated = true
     }
 
@@ -760,26 +745,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    /**
-     * Apply the high accuracy preference based on user settings
-     */
-    private fun applyHighAccuracyPreference() {
-        val wantHigh = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
-        if (!isAdded || _binding == null) return
-        if (wantHigh) {
-            // If user wants high accuracy but GPS provider is off, prompt them
-            val lm = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-            if (!gpsOn) {
-                binding.textArStatus.text = "Enable GPS for high accuracy AR positioning"
-            }
-        } else {
-            // Balanced mode: we can note that network is sufficient (only update if current text is our prior warning)
-            if (binding.textArStatus.text.toString().contains("high accuracy", true)) {
-                binding.textArStatus.text = "Balanced accuracy mode"
-            }
-        }
-    }
 
     // ---------------------------------------------------------------------------------------------
     // GLSurfaceView.Renderer
@@ -789,13 +754,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
         GLES30.glDepthFunc(GLES30.GL_LEQUAL)
 
-        cameraTextureId = createCameraTexture()
+        // BackgroundRenderer creates and owns the OES camera texture.
         backgroundRenderer = BackgroundRenderer()
         cubeRenderer = SimpleObjectRenderer()
         planeVisualizer = PlaneVisualizer()
         pointCloudRenderer = PointCloudRenderer()
 
-        session?.setCameraTextureName(cameraTextureId)
+        session?.setCameraTextureName(backgroundRenderer!!.textureId)
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -814,7 +779,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val s = session ?: return
         if (!sessionReady) return
         try {
-            if (cameraTextureId > 0) s.setCameraTextureName(cameraTextureId)
+            val texId = backgroundRenderer?.textureId ?: return
+            s.setCameraTextureName(texId)
             if (surfaceWidth > 0 && surfaceHeight > 0) {
                 s.setDisplayGeometry(displayRotation, surfaceWidth, surfaceHeight)
             }
@@ -823,7 +789,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val camera = frame.camera
 
             // 1) Camera background
-            backgroundRenderer?.draw(frame, cameraTextureId)
+            backgroundRenderer?.draw(frame)
 
             // 2) Earth / anchor management
             val earth       = s.earth
@@ -975,13 +941,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
             if (filterM != null && distM > filterM) continue
 
-            if (entry.modelFilePath != null) {
+            val entryModelFilePath = entry.modelFilePath
+            if (entryModelFilePath != null) {
                 val scaledWorld = model.copyOf()
                 Matrix.scaleM(scaledWorld, 0, MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
                 newModelPoses += ArFilamentRenderer.ModelPose(
                     key         = coord.id,
                     worldMatrix = scaledWorld,
-                    filePath    = entry.modelFilePath
+                    filePath    = entryModelFilePath
                 )
             } else {
                 Matrix.scaleM(modelScaled, 0, 0.1f, 0.3f, 0.1f)
@@ -1046,9 +1013,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val topStatus = if (gnssFix == null) "AR active • Waiting for GNSS • $earthStatus"
                             else "AR active • $earthStatus"
 
-            val debugLines = buildDebugText(earth, earthStatus, planeCount, pointCount, gnssFix)
-
+            // Only build the debug string (and pay its allocation cost) when the panel is visible.
             if (debugOverlayVisible) {
+                val debugLines = buildDebugText(earth, earthStatus, planeCount, pointCount, gnssFix)
                 _binding?.textArStatus?.text = topStatus
                 _binding?.textArDebug?.text  = debugLines
             }
@@ -1149,69 +1116,31 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // GL helpers & renderers
-
-    private fun createCameraTexture(): Int {
-        val textures = IntArray(1)
-        GLES30.glGenTextures(1, textures, 0)
-        val texId = textures[0]
-        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texId)
-        GLES30.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES30.GL_TEXTURE_WRAP_S,
-            GLES30.GL_CLAMP_TO_EDGE
-        )
-        GLES30.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES30.GL_TEXTURE_WRAP_T,
-            GLES30.GL_CLAMP_TO_EDGE
-        )
-        GLES30.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES30.GL_TEXTURE_MIN_FILTER,
-            GLES30.GL_LINEAR
-        )
-        GLES30.glTexParameteri(
-            GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-            GLES30.GL_TEXTURE_MAG_FILTER,
-            GLES30.GL_LINEAR
-        )
-        return texId
-    }
-
-
-
-    /** Converts a bearing in degrees to an 8-point compass abbreviation. */
-    private fun bearingToCompass(deg: Double): String {
-        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
-        return dirs[((deg + 22.5) / 45.0).toInt() % 8]
-    }
-
-    /** Formats a metre distance as "34m" or "1.23km". */
-    private fun formatDist(metres: Double): String =
-        if (metres < 1000.0) "${"%.0f".format(metres)}m"
-        else "${"%.2f".format(metres / 1000.0)}km"
 
     // ---------------------------------------------------------------------------------------------
     // Coordinate data — handled by OpenInARViewModel; setCoordinates() is called via StateFlow.
 
     /** Map DB rows (with resolved model paths) to internal GeoItem list and mark anchors for rebuild. */
     private fun setCoordinates(items: List<CoordWithModel>) {
-        // Build a completely new immutable list, then assign atomically (@Volatile).
-        geoItems = items.map { item ->
+        // Skip rebuild if the incoming list is identical to what we already have.
+        // Room emits on every observed change; without this guard a no-op emission
+        // clears geoAnchorsCreated and forces a full anchor rebuild at 60fps.
+        val newItems = items.map { item ->
             val c = item.coordinate
             val altitude = if (c.altitude == 0.0 || c.altitude.isNaN()) null else c.altitude
             GeoItem(
                 lat = c.latitude,
                 lng = c.longitude,
                 alt = altitude,
-                label = c.name,
                 rgba = argbIntToRgba(c.color),
                 modelFilePath = item.modelFilePath,
                 modelId = item.modelId,
                 coordWithModel = item
             )
         }
+        if (newItems == geoItems) return   // nothing changed — avoid spurious anchor rebuild
+
+        geoItems = newItems
         geoAnchorsCreated = false
 
         // Kick off Filament GLB loading for every model-linked coordinate.
@@ -1225,7 +1154,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         android.util.Log.d(
-            "OpenInARFragment",
+            TAG,
             "setCoordinates: ${geoItems.size} items " +
                 "(${geoItems.count { it.modelFilePath != null }} with models)"
         )
