@@ -267,6 +267,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // Track previous brightness so we can restore it on pause
     private var previousBrightness = -1f
+    private var debugOverlayVisible = true
 
     // ---------------------------------------------------------------------------------------------
     // Fragment Lifecycle Methods
@@ -308,6 +309,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 testAnchorAction = TestAnchorAction.SPAWN
                 binding.btnSpawnTestPoints.text = "🗑 Clear Tests"
             }
+        }
+
+        binding.btnToggleDebugOverlay.setOnClickListener {
+            debugOverlayVisible = !debugOverlayVisible
+            val vis = if (debugOverlayVisible) View.VISIBLE else View.GONE
+            binding.textArStatus.visibility = vis
+            binding.textArDebug.visibility = vis
+            binding.btnToggleDebugOverlay.text = if (debugOverlayVisible) "Hide Debug" else "Show Debug"
         }
 
         // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
@@ -677,18 +686,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
         geoAnchors.clear()
 
-        // Use GNSS altitude as fallback for coordinates without altitude
+        // Use GNSS ellipsoidal altitude as fallback for coordinates with no recorded altitude.
+        // altEllipsoidalM (WGS84) is preferred because ARCore's createAnchor() expects WGS84 metres.
         val fallbackAlt = gnssFix.altEllipsoidalM ?: gnssFix.altMslM ?: 0.0
 
         // Create new anchors for each coordinate — snapshot geoItems (volatile read) so the
         // main thread can safely call setCoordinates() concurrently without a CME.
         val items = geoItems
         for (item in items) {
-            // TESTING: force ground-level altitude (current GNSS altitude) so the model
-            // appears at the user's feet regardless of the stored coordinate altitude.
-            // Restore to:  val altToUse = item.alt ?: fallbackAlt
-            // once altitude accuracy is confirmed.
-            val altToUse = fallbackAlt
+            // Use the coordinate's stored altitude when available; fall back to the current
+            // GNSS altitude only when the coordinate has no recorded altitude (null / 0 / NaN).
+            val altToUse = item.alt ?: fallbackAlt
             try {
                 val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
                 geoAnchors.add(
@@ -994,43 +1002,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
 
-            // 5) UI status - show GNSS info and AR state
+            // 5) UI status + debug panel
             // Use _binding (nullable) — the GL thread can fire after onDestroyView sets it null.
             _binding?.textArStatus?.post {
                 val gnssFix = currentGnssFix
-                val gnssInfo = if (gnssFix != null) {
-                    val acc = gnssFix.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
-                    val src = when (gnssFix.provider) {
-                        com.example.surveyingapp.gnss.model.Provider.INTERNAL -> "Internal GPS"
-                        com.example.surveyingapp.gnss.model.Provider.RS2_EXTERNAL -> "RS2+ (${gnssFix.rtkStatus})"
-                        else -> gnssFix.provider.toString()
-                    }
-                    "GPS: $src • Acc: $acc"
-                } else {
-                    "GPS: Waiting..."
+                val topStatus = when {
+                    gnssFix == null -> "AR active • Waiting for GNSS • $earthStatus"
+                    else -> "AR active • $earthStatus"
                 }
-
-                // Show distance + bearing to each anchor in the status bar
-                val camGeoPoseStatus = earth?.cameraGeospatialPose
-                val pinSummary = if (camGeoPoseStatus != null && geoAnchors.isNotEmpty()) {
-                    geoAnchors.joinToString("  ") { entry ->
-                        val coord = entry.coordWithModel.coordinate
-                        val distM = haversineM(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
-                            coord.latitude, coord.longitude)
-                        val bear  = bearingDeg(camGeoPoseStatus.latitude, camGeoPoseStatus.longitude,
-                            coord.latitude, coord.longitude)
-                        "📍${coord.name}: ${"%.0f".format(distM)}m ${"%.0f".format(bear)}°"
-                    }
-                } else ""
-
-                // Show AR is working even if geospatial is off
-                val arInfo = "Planes: $planeCount • Points: $pointCount"
-                val pinLine = if (pinSummary.isNotEmpty()) "\n$pinSummary" else ""
-                binding.textArStatus.text = "$gnssInfo • $arInfo • $earthStatus$pinLine"
 
                 // ── Debug panel ──────────────────────────────────────────────
                 val debugLines = buildString {
+                    val providerText = when (gnssFix?.provider) {
+                        com.example.surveyingapp.gnss.model.Provider.INTERNAL -> "Internal GPS"
+                        com.example.surveyingapp.gnss.model.Provider.RS2_EXTERNAL -> "RS2+ (${gnssFix.rtkStatus})"
+                        null -> "Waiting"
+                        else -> gnssFix.provider.toString()
+                    }
+                    val accText = gnssFix?.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
+
                     appendLine("🌍 Earth: $earthStatus  [${earth?.earthState?.name}]")
+                    appendLine("🧭 AR: Planes=$planeCount  Points=$pointCount")
+                    appendLine("📡 GPS: $providerText  Acc=$accText")
                     appendLine("⚓ Anchors: ${geoAnchors.size} created  geoAnchorsCreated=$geoAnchorsCreated")
                     appendLine("📋 Items loaded: ${geoItems.size}")
 
@@ -1065,7 +1058,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     }
                     if (geoAnchors.isEmpty()) appendLine("  → no anchors yet")
                 }
-                _binding?.textArDebug?.post { _binding?.textArDebug?.text = debugLines.trimEnd() }
+                if (debugOverlayVisible) {
+                    _binding?.textArStatus?.text = topStatus
+                    // Already on main thread (inside post{}), assign directly — no extra post needed.
+                    _binding?.textArDebug?.text = debugLines.trimEnd()
+                }
             }
 
         } catch (_: CameraNotAvailableException) {
