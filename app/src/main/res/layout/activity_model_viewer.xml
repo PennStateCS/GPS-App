@@ -31,16 +31,7 @@
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
         <!-- 3D Scene View -->
-        <!-- Placeholder for 3D Scene View (temporarily disabled) -->
-        <View
-            android:id="@+id/placeholder_view"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:background="@android:color/darker_gray"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+        <!-- Placeholder view removed; SurfaceView below is the rendering surface -->
 
         <SurfaceView
             android:id="@+id/modelSurface"
@@ -73,10 +64,10 @@
             android:textColor="@android:color/holo_red_dark"
             android:textSize="16sp"
             android:visibility="gone"
-            app:layout_constraintBottom_toBottomOf="@id/placeholder_view"
-            app:layout_constraintEnd_toEndOf="@id/placeholder_view"
-            app:layout_constraintStart_toStartOf="@id/placeholder_view"
-            app:layout_constraintTop_toTopOf="@id/placeholder_view" />
+            app:layout_constraintBottom_toBottomOf="@id/modelSurface"
+            app:layout_constraintEnd_toEndOf="@id/modelSurface"
+            app:layout_constraintStart_toStartOf="@id/modelSurface"
+            app:layout_constraintTop_toTopOf="@id/modelSurface" />
 
         <!-- Name Container -->
         <LinearLayout

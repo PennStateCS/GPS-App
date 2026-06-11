@@ -15,9 +15,14 @@ import com.google.android.filament.utils.Utils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.Collections
 
 /**
  * Renders GLB models at ARCore geospatial anchor positions using Filament.
@@ -94,6 +99,14 @@ class ArFilamentRenderer {
 
     /** One [CachedAsset] per anchor key (coordinate ID). */
     private val anchorAssets = mutableMapOf<String, CachedAsset>()
+    /** Keys currently being loaded so duplicate preload requests are ignored. */
+    private val loadingKeys = Collections.synchronizedSet(mutableSetOf<String>())
+    /** Shared GLB bytes cache by file path to avoid repeated large allocations. */
+    private val fileBytesCache = mutableMapOf<String, ByteArray>()
+    /** Serialize file reads/cache population to prevent concurrent readBytes() spikes. */
+    private val fileReadMutex = Mutex()
+    /** Limit concurrent preload work to reduce pressure during large test grids. */
+    private val preloadSemaphore = Semaphore(permits = 2)
 
     private var initialized = false
 
@@ -192,24 +205,35 @@ class ArFilamentRenderer {
      * Idempotent — subsequent calls with the same key are silently ignored.
      */
     fun preload(key: String, filePath: String, scope: CoroutineScope) {
-        if (!initialized || anchorAssets.containsKey(key)) return
+        if (!initialized || anchorAssets.containsKey(key) || !loadingKeys.add(key)) return
         scope.launch {
             try {
-                val bytes = withContext(Dispatchers.IO) { File(filePath).readBytes() }
+                preloadSemaphore.withPermit {
+                    val bytes = withContext(Dispatchers.IO) {
+                        fileReadMutex.withLock {
+                            fileBytesCache[filePath] ?: File(filePath).readBytes().also {
+                                fileBytesCache[filePath] = it
+                            }
+                        }
+                    }
                 withContext(Dispatchers.Main) {
                     if (!initialized) return@withContext
                     val buffer = ByteBuffer.wrap(bytes)
                     val asset = assetLoader.createAsset(buffer)
                     if (asset == null) {
                         Log.e(TAG, "createAsset returned null for $filePath")
+                        loadingKeys.remove(key)
                         return@withContext
                     }
                     resourceLoader.asyncBeginLoad(asset)
                     asset.releaseSourceData()
                     anchorAssets[key] = CachedAsset(asset)
+                    loadingKeys.remove(key)
                     Log.d(TAG, "Load started: $key → $filePath")
                 }
+                }
             } catch (e: Exception) {
+                loadingKeys.remove(key)
                 Log.e(TAG, "preload failed for $filePath", e)
             }
         }
@@ -239,6 +263,19 @@ class ArFilamentRenderer {
 
         // Pump async resource loading for all cached assets.
         resourceLoader.asyncUpdateLoad()
+
+        // Remove stale test-grid assets when their keys are no longer present.
+        // This is required so "Clear Tests" actually removes already-added entities.
+        val activeKeys = poses.asSequence().map { it.key }.toHashSet()
+        val staleTestKeys = anchorAssets.keys.filter {
+            it.startsWith(TEST_GRID_KEY_PREFIX) && it !in activeKeys
+        }
+        staleTestKeys.forEach { key ->
+            val cached = anchorAssets.remove(key) ?: return@forEach
+            scene.removeEntities(cached.asset.entities)
+            assetLoader.destroyAsset(cached.asset)
+            loadingKeys.remove(key)
+        }
 
         // Transition LOADING → READY: add entities after the first asyncUpdateLoad pass.
         for (pose in poses) {
@@ -285,6 +322,8 @@ class ArFilamentRenderer {
         initialized = false
 
         resourceLoader.asyncCancelLoad()
+        loadingKeys.clear()
+        fileBytesCache.clear()
         anchorAssets.values.forEach { cached ->
             scene.removeEntities(cached.asset.entities)
             assetLoader.destroyAsset(cached.asset)
@@ -328,5 +367,6 @@ class ArFilamentRenderer {
         private const val TAG        = "ArFilamentRenderer"
         private const val NEAR_PLANE = 0.01
         private const val FAR_PLANE  = 1000.0
+        private const val TEST_GRID_KEY_PREFIX = "test_grid_"
     }
 }

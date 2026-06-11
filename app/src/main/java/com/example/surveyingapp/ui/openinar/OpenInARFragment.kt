@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.content.SharedPreferences
 import com.example.surveyingapp.ui.settings.SettingsFragment
+import kotlin.math.abs
 import kotlin.math.max
 
 import android.view.LayoutInflater
@@ -41,7 +42,10 @@ import com.google.ar.core.Plane
 import com.google.ar.core.exceptions.*
 import com.google.ar.core.Coordinates2d
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -155,6 +159,34 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val geoAnchors: MutableList<AnchorEntry> = mutableListOf()
     private var geoAnchorsCreated = false
 
+    // ── Test anchor ring (debug) ──────────────────────────────────────────────
+    /** A single debug pin placed around the user's current GPS position. */
+    private data class TestAnchorEntry(
+        val anchor: Anchor,
+        val modelKey: String?,
+        val label: String,
+        val rgba: FloatArray
+    )
+    /** Written only from the GL thread; read from GL thread during rendering. */
+    private val testAnchors: MutableList<TestAnchorEntry> = mutableListOf()
+    /** Set on main thread (button click); consumed on GL thread (onDrawFrame). */
+    @Volatile private var testAnchorAction: TestAnchorAction = TestAnchorAction.NONE
+    private enum class TestAnchorAction { NONE, SPAWN, CLEAR }
+    /** Tracks whether test anchors are currently visible (used for button label). */
+    @Volatile private var testAnchorsActive = false
+    @Volatile private var testPinModelFilePath: String? = null
+
+    // 3x3 grid centered on current position, 3 meters between points.
+    private val TEST_GRID_RADIUS_CELLS = 1
+    private val TEST_GRID_SPACING_M = 3.0
+    // Keep model cells bounded (1 => entire 3x3 uses pin.glb).
+    private val TEST_MODEL_RING_RADIUS_CELLS = 1
+    // Approx. 1 foot target size for test pins.
+    private val TEST_PIN_MODEL_SCALE = 0.3048f
+    // Lower the model so the bottom tip sits on ground (assumes model origin near center).
+    private val TEST_PIN_GROUND_DROP_M = 0.1524f
+    private val TEST_PIN_ASSET_PATH = "model_images/pin.glb"
+
     /**
      * Uniform scale applied to every GLB model world matrix before handing it to Filament.
      * GLB units are metres; most survey-marker models are authored at a few centimetres,
@@ -233,6 +265,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
+    // Track previous brightness so we can restore it on pause
+    private var previousBrightness = -1f
+
     // ---------------------------------------------------------------------------------------------
     // Fragment Lifecycle Methods
 
@@ -261,7 +296,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         filamentRenderer = ArFilamentRenderer().also { it.init(binding.filamentSurface) }
+        prepareTestPinModelFile()
         checkAvailabilityAndInstall()
+
+        binding.btnSpawnTestPoints.setOnClickListener {
+            if (testAnchorsActive) {
+                testAnchorAction = TestAnchorAction.CLEAR
+                binding.btnSpawnTestPoints.text = "📍 Test Points"
+            } else {
+                preloadTestModelKeysIfReady()
+                testAnchorAction = TestAnchorAction.SPAWN
+                binding.btnSpawnTestPoints.text = "🗑 Clear Tests"
+            }
+        }
 
         // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
         viewLifecycleOwner.lifecycleScope.launch {
@@ -348,6 +395,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             choreographerInstance?.postFrameCallback(filamentFrameCallback)
             android.util.Log.d("OpenInARFragment", "AR session resumed successfully")
             binding.textArStatus.text = "AR camera active"
+            
+            // Keep screen at maximum brightness for AR viewing
+            val window = requireActivity().window
+            val lp = window.attributes
+            previousBrightness = lp.screenBrightness
+            lp.screenBrightness = 1.0f
+            window.attributes = lp
+            android.util.Log.d("OpenInARFragment", "Screen brightness set to maximum")
+            
+            // Keep screen on during AR mode
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            android.util.Log.d("OpenInARFragment", "Screen wake lock enabled")
         } catch (e: CameraNotAvailableException) {
             android.util.Log.e("OpenInARFragment", "Camera unavailable", e)
             binding.textArStatus.text = getString(R.string.camera_unavailable)
@@ -386,6 +445,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             session?.pause()
         } catch (_: Exception) {
         }
+        
+        // Restore previous screen brightness and allow screen to sleep
+        try {
+            val window = requireActivity().window
+            val lp = window.attributes
+            lp.screenBrightness = previousBrightness
+            window.attributes = lp
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            android.util.Log.d("OpenInARFragment", "Screen brightness restored to $previousBrightness, sleep enabled")
+        } catch (e: Exception) {
+            android.util.Log.w("OpenInARFragment", "Failed to restore brightness/sleep", e)
+        }
     }
 
     /**
@@ -404,6 +475,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         arProjMatrix  = null
         modelPoses    = emptyList()
         pinScreenCache = emptyList()
+        // Clean up test anchors
+        for (entry in testAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
+        testAnchors.clear()
+        testAnchorAction = TestAnchorAction.NONE
+        testAnchorsActive = false
         // Clean up anchors
         for (entry in geoAnchors) try {
             entry.anchor.detach()
@@ -724,6 +800,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     TrackingState.TRACKING -> {
                         earthStatus = "Geo: TRACKING"
                         rebuildGeoAnchorsIfNeeded()
+                        // Process test-anchor spawn/clear request from main thread
+                        when (testAnchorAction) {
+                            TestAnchorAction.SPAWN -> {
+                                testAnchorAction = TestAnchorAction.NONE
+                                spawnTestAnchorsInternal(earth)
+                            }
+                            TestAnchorAction.CLEAR -> {
+                                testAnchorAction = TestAnchorAction.NONE
+                                clearTestAnchorsInternal()
+                            }
+                            TestAnchorAction.NONE -> Unit
+                        }
                     }
 
                     TrackingState.PAUSED -> {
@@ -858,6 +946,41 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             labelEntries += CoordinateLabelOverlay.LabelEntry(labelText, screenPos.x, screenPos.y)
                         }
                     }
+                }
+
+                // Test-anchor grid rendering
+                var testAnchorsRendered = 0
+                val testPinPath = testPinModelFilePath
+                for (te in testAnchors) {
+                    if (te.anchor.trackingState != TrackingState.TRACKING) continue
+                    testAnchorsRendered++
+                    te.anchor.pose.toMatrix(model, 0)
+                    if (te.modelKey != null && testPinPath != null) {
+                        val scaledWorld = model.copyOf()
+                        Matrix.scaleM(scaledWorld, 0, TEST_PIN_MODEL_SCALE, TEST_PIN_MODEL_SCALE, TEST_PIN_MODEL_SCALE)
+                        // World-space Y offset to place the pin tip on ground instead of floating.
+                        scaledWorld[13] -= TEST_PIN_GROUND_DROP_M
+                        newModelPoses += ArFilamentRenderer.ModelPose(
+                            key = te.modelKey,
+                            worldMatrix = scaledWorld,
+                            filePath = testPinPath
+                        )
+                    } else {
+                        // Lightweight fallback marker for outer grid cells to avoid OOM.
+                        System.arraycopy(model, 0, modelScaled, 0, 16)
+                        Matrix.scaleM(modelScaled, 0, 0.1f, 0.22f, 0.1f)
+                        Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
+                        cubeRenderer?.draw(mvp, te.rgba[0], te.rgba[1], te.rgba[2], te.rgba[3])
+                    }
+                    worldToScreen(
+                        floatArrayOf(model[12], model[13] + 0.5f, model[14], 1f),
+                        vp, surfaceWidth, surfaceHeight
+                    )?.let { sp ->
+                        labelEntries += CoordinateLabelOverlay.LabelEntry(te.label, sp.x, sp.y)
+                    }
+                }
+                if (testAnchorsActive && testAnchorsRendered == 0) {
+                    android.util.Log.w("OpenInARFragment", "⚠️  Test anchors created but NONE are TRACKING! Check altitude & GNSS accuracy.")
                 }
 
                 pinScreenCache = pinPositions
@@ -1535,6 +1658,126 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         android.util.Log.d("OpenInARFragment", "✅ GLSurfaceView setup complete with touch listener")
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Test-anchor helpers (called from GL thread)
+
+    private fun testGridKey(latOff: Int, lonOff: Int): String = "test_grid_${latOff}_${lonOff}"
+
+    /** Extract `pin.glb` from app assets to internal storage so Filament can load via File(). */
+    private fun prepareTestPinModelFile() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val outFile = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dst = File(requireContext().filesDir, "debug_models/pin.glb")
+                    dst.parentFile?.mkdirs()
+                    if (!dst.exists() || dst.length() == 0L) {
+                        requireContext().assets.open(TEST_PIN_ASSET_PATH).use { input ->
+                            dst.outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                    dst
+                }.getOrNull()
+            }
+            if (outFile != null) {
+                testPinModelFilePath = outFile.absolutePath
+                preloadTestModelKeysIfReady()
+                android.util.Log.d("OpenInARFragment", "Test pin model ready: ${outFile.absolutePath}")
+            } else {
+                android.util.Log.e("OpenInARFragment", "Failed to prepare $TEST_PIN_ASSET_PATH")
+            }
+        }
+    }
+
+    /** Preload only the inner model keys (3x3 by default) to prevent mass OOM. */
+    private fun preloadTestModelKeysIfReady() {
+        val filePath = testPinModelFilePath ?: return
+        val scope = viewLifecycleOwner.lifecycleScope
+        for (latOff in -TEST_MODEL_RING_RADIUS_CELLS..TEST_MODEL_RING_RADIUS_CELLS) {
+            for (lonOff in -TEST_MODEL_RING_RADIUS_CELLS..TEST_MODEL_RING_RADIUS_CELLS) {
+                filamentRenderer?.preload(testGridKey(latOff, lonOff), filePath, scope)
+            }
+        }
+    }
+
+    /**
+     * Spawns a 3×3 test grid centered on the user.
+     * Points are spaced 3m apart to make placement issues obvious in field tests.
+     * Must be called from the GL thread (inside onDrawFrame).
+     *
+     * Grid layout:
+     *   Labels show (northCell,eastCell) offsets where each cell is 3m.
+     */
+    private fun spawnTestAnchorsInternal(earth: Earth) {
+        clearTestAnchorsInternal()
+
+        val fix = currentGnssFix ?: run {
+            android.util.Log.w("OpenInARFragment", "Test anchors: no GNSS fix yet")
+            return
+        }
+        val lat0 = fix.latDeg
+        val lon0 = fix.lonDeg
+        // Prefer ARCore camera geospatial altitude to keep pins on perceived ground locally.
+        val alt = earth.cameraGeospatialPose.altitude
+
+        // Degrees-per-metre for this latitude
+        val dLatPerM = 1.0 / 111_111.0
+        val dLonPerM = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
+
+        data class Spec(
+            val latOff: Int,
+            val lonOff: Int,
+            val dLatM: Double,
+            val dLonM: Double,
+            val label: String,
+            val rgba: FloatArray,
+            val useModel: Boolean
+        )
+
+        val specs = mutableListOf<Spec>()
+        
+        // Create a centered 3×3 grid with 3m spacing.
+        for (latOff in -TEST_GRID_RADIUS_CELLS..TEST_GRID_RADIUS_CELLS) {
+            for (lonOff in -TEST_GRID_RADIUS_CELLS..TEST_GRID_RADIUS_CELLS) {
+                val dLatM = latOff.toDouble() * TEST_GRID_SPACING_M
+                val dLonM = lonOff.toDouble() * TEST_GRID_SPACING_M
+                val label = when {
+                    latOff == 0 && lonOff == 0 -> "●"
+                    else -> "($latOff,$lonOff)"
+                }
+                val dist = kotlin.math.sqrt((latOff * latOff + lonOff * lonOff).toDouble())
+                val bright = (1.0 - (dist / 4.5)).coerceIn(0.3, 1.0).toFloat()
+                val rgba = floatArrayOf(bright, (0.85f * bright), 0.15f, 1f)
+                val useModel = abs(latOff) <= TEST_MODEL_RING_RADIUS_CELLS && abs(lonOff) <= TEST_MODEL_RING_RADIUS_CELLS
+                specs.add(Spec(latOff, lonOff, dLatM, dLonM, label, rgba, useModel))
+            }
+        }
+
+        var created = 0
+        var modelCells = 0
+        for (s in specs) {
+            val lat = lat0 + s.dLatM * dLatPerM
+            val lon = lon0 + s.dLonM * dLonPerM
+            try {
+                val anchor = earth.createAnchor(lat, lon, alt, 0f, 0f, 0f, 1f)
+                val modelKey = if (s.useModel) testGridKey(s.latOff, s.lonOff) else null
+                if (modelKey != null) modelCells++
+                testAnchors += TestAnchorEntry(anchor, modelKey, s.label, s.rgba)
+                created++
+            } catch (e: Exception) {
+                android.util.Log.e("OpenInARFragment", "Test anchor create failed for ${s.label}", e)
+            }
+        }
+        testAnchorsActive = true
+        android.util.Log.d("OpenInARFragment", "Test grid spawned: $created/${specs.size} points, modelCells=$modelCells, cubeCells=${created - modelCells} (3×3, 3m spacing) at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}, alt=${alt}m")
+    }
+
+    /** Detaches and removes all test anchors. Must be called from the GL thread. */
+    private fun clearTestAnchorsInternal() {
+        for (te in testAnchors) try { te.anchor.detach() } catch (_: Exception) {}
+        testAnchors.clear()
+        testAnchorsActive = false
     }
 
     // ---------------------------------------------------------------------------------------------
