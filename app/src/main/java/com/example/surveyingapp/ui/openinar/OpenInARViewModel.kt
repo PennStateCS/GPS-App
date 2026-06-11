@@ -6,10 +6,13 @@ import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 
 /**
@@ -30,12 +33,16 @@ data class CoordWithModel(
  *
  * Streams all saved coordinates from the database, enriching each entry with the
  * file path of its associated 3D model so the AR renderer can later load it.
+ * Also owns UI state that should survive configuration changes: distance filter
+ * and debug overlay visibility.
  */
 @HiltViewModel
 class OpenInARViewModel @Inject constructor(
     private val coordinateDao: CoordinateDao,
     private val modelDao: ModelDao
 ) : ViewModel() {
+
+    // ── Coordinate stream ─────────────────────────────────────────────────────
 
     /**
      * Live stream of every saved coordinate, each enriched with its associated
@@ -45,11 +52,8 @@ class OpenInARViewModel @Inject constructor(
      */
     val coordsWithModels: StateFlow<List<CoordWithModel>> = coordinateDao.observeAll()
         .map { entities ->
-            // Fetch every model in one query, then join in memory.
-            // This replaces N individual getModelById() calls with a single SELECT *.
             val modelIndex: Map<String, String> = modelDao.getAllModelsList()
                 .associate { it.id to it.filePath }
-
             entities.map { entity ->
                 val modelId = entity.icon
                     .takeIf { it.startsWith("model:") }
@@ -62,4 +66,49 @@ class OpenInARViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyList()
         )
+
+    // ── Distance filter ───────────────────────────────────────────────────────
+
+    private val _distanceFilterIndex = MutableStateFlow(0)
+
+    /** Current maximum display distance in metres, or null for "show all". */
+    val distanceFilterM: StateFlow<Double?> = _distanceFilterIndex
+        .map { DISTANCE_FILTER_STEPS[it] }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Human-readable label for the distance filter button. */
+    val distanceFilterLabel: StateFlow<String> = _distanceFilterIndex
+        .map { i ->
+            when (DISTANCE_FILTER_STEPS[i]) {
+                null  -> "📏 All"
+                50.0  -> "📏 <50m"
+                100.0 -> "📏 <100m"
+                500.0 -> "📏 <500m"
+                else  -> "📏 <${DISTANCE_FILTER_STEPS[i]!!.toInt()}m"
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "📏 All")
+
+    /** Advance to the next distance-filter step (wraps around). */
+    fun cycleDistanceFilter() {
+        _distanceFilterIndex.update { (it + 1) % DISTANCE_FILTER_STEPS.size }
+    }
+
+    // ── Debug overlay ─────────────────────────────────────────────────────────
+
+    private val _debugVisible = MutableStateFlow(true)
+
+    /** Whether the debug overlay panel is currently shown. */
+    val debugVisible: StateFlow<Boolean> = _debugVisible.asStateFlow()
+
+    /** Toggle debug overlay on/off. */
+    fun toggleDebug() { _debugVisible.update { !it } }
+
+    // ── Companion ─────────────────────────────────────────────────────────────
+
+    companion object {
+        /** Ordered distance-filter steps; null = show all pins regardless of distance. */
+        val DISTANCE_FILTER_STEPS: List<Double?> = listOf(null, 50.0, 100.0, 500.0)
+    }
 }
+
