@@ -238,12 +238,21 @@ class MainActivity : AppCompatActivity() {
                 tokenFix.root.isVisible = false
                 tokenSats.root.isVisible = false
                 updateBatteryVisibility(false)
+                // Show coord/alt tokens immediately with placeholders so the user
+                // knows coordinates will appear once the GPS acquires a fix.
+                tokenCoord.value.text = "--"
+                tokenCoord.root.isVisible = true
+                tokenAlt.root.isVisible = false
             } else {
                 tokenFix.root.isVisible = true
                 tokenFix.value.text = "--"
                 tokenSats.root.isVisible = false
+                // Coord will be shown once an RS2+ fix arrives.
+                tokenCoord.value.text = "--"
+                tokenCoord.root.isVisible = true
+                tokenAlt.root.isVisible = false
             }
-            listOf(tokenCoord, tokenAlt, tokenBatt).forEach { it.root.isVisible = false }
+            tokenBatt.root.isVisible = false
         }
 
         // Permissions flow
@@ -469,6 +478,12 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.d("MainActivity", "Provider changed to: $provider, label: $srcLabel")
                     tokenSource.value.text = srcLabel
                     tokenSource.separator?.isVisible = provider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+                    // Immediately show coord token with placeholder so users know GPS is
+                    // the source — actual coordinates fill in once the first fix arrives.
+                    tokenCoord.value.text = "--"
+                    tokenCoord.root.isVisible = true
+                    // Altitude stays hidden until a fix with altitude data arrives.
+                    tokenAlt.root.isVisible = false
                 }
             }
         }
