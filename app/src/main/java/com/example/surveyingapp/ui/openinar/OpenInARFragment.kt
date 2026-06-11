@@ -19,8 +19,6 @@ import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.example.surveyingapp.util.argbIntToRgba
 import com.example.surveyingapp.util.bearingDeg
 import com.example.surveyingapp.util.haversineM
-import kotlin.math.abs
-import kotlin.math.max
 
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -44,10 +42,7 @@ import com.google.ar.core.Point
 import com.google.ar.core.Plane
 import com.google.ar.core.exceptions.*
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.inject.Inject
 import javax.microedition.khronos.egl.EGLConfig
@@ -73,6 +68,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Current GNSS fix from switchboard (surveying-grade GPS)
     @Volatile
     private var currentGnssFix: Fix? = null
+    /** Last logged GNSS provider — used to suppress repeated identical fix logs. */
+    private var lastLoggedProvider: com.example.surveyingapp.gnss.model.Provider? = null
 
     // ARCore session management
     private var session: Session? = null
@@ -217,6 +214,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     companion object {
         private const val TAG = "OpenInARFragment"
+        /** Minimum GNSS horizontal accuracy required before creating geospatial anchors. */
+        private const val MAX_GNSS_ACCURACY_M = 20.0
     }
 
     // GLB model renderer (Filament) — created in onViewCreated, destroyed in onDestroyView.
@@ -227,6 +226,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val filamentFrameCallback = object : android.view.Choreographer.FrameCallback {
         override fun doFrame(frameTimeNs: Long) {
             choreographerInstance?.postFrameCallback(this)
+            // Skip GPU work when there are no GLB models to render this frame.
+            if (modelPoses.isEmpty()) return
             val vm = arViewMatrix ?: return
             val pm = arProjMatrix ?: return
             filamentRenderer?.renderFrame(frameTimeNs, vm, pm, modelPoses)
@@ -333,11 +334,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewModel.cycleDistanceFilter()
         }
 
-        // Round the model-progress badge corners programmatically (avoids a separate drawable).
-        binding.chipModelProgress.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(0xCC000000.toInt())
-            cornerRadius = 24f * resources.displayMetrics.density
-        }
 
         // Observe coordinate + model data from ViewModel.
         viewLifecycleOwner.lifecycleScope.launch {
@@ -351,7 +347,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 fixSwitchboard.fixes.collect { fix ->
                     currentGnssFix = fix
-                    android.util.Log.d(TAG, "GNSS fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, provider=${fix.provider}")
+                    // Only log when the provider changes — fixes arrive at up to 10Hz
+                    // and logging every one would flood logcat.
+                    if (fix.provider != lastLoggedProvider) {
+                        lastLoggedProvider = fix.provider
+                        android.util.Log.d(TAG, "GNSS provider changed: ${fix.provider}, lat=${fix.latDeg}, lon=${fix.lonDeg}")
+                    }
                 }
             }
         }
@@ -690,7 +691,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Use GNSS fix from switchboard for positioning instead of ARCore's camera pose
         val gnssFix = currentGnssFix
         if (gnssFix == null) {
-            android.util.Log.d("OpenInARFragment", "Waiting for GNSS fix before creating anchors")
+            // Not logging here — this fires every frame until a fix arrives;
+            // the debug panel shows "⚠️ BLOCKER: currentGnssFix is null" instead.
             return
         }
 
@@ -699,8 +701,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // blocking forever on a missing field is worse than creating anchors without a
         // verified accuracy figure.
         val accuracyM = gnssFix.hAccM
-        if (accuracyM != null && accuracyM > 20.0) {
-            android.util.Log.d("OpenInARFragment", "GNSS accuracy too low: ${accuracyM}m, waiting for <20m")
+        if (accuracyM != null && accuracyM > MAX_GNSS_ACCURACY_M) {
+            // Not logging here — fires every frame while accuracy is poor;
+            // the debug panel shows "⚠️ BLOCKER: accuracy Xm > 20m" instead.
             return
         }
 
@@ -1081,7 +1084,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         appendLine("📡 GNSS fix: ${if (fix != null) "YES  hAccM=${accM?.let { "%.2f".format(it) } ?: "null (gate skipped)"}" else "NO FIX YET"}")
         if (geoItems.isEmpty())            appendLine("⚠️  BLOCKER: geoItems is empty")
         if (fix == null)                   appendLine("⚠️  BLOCKER: currentGnssFix is null")
-        if (accM != null && accM > 20.0)   appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > 20m")
+        if (accM != null && accM > MAX_GNSS_ACCURACY_M)   appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > ${MAX_GNSS_ACCURACY_M.toInt()}m")
         if (geoAnchorsCreated && geoAnchors.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors")
 
         val camGeo = earth?.cameraGeospatialPose
