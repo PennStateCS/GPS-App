@@ -185,6 +185,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private data class PinScreenEntry(val x: Float, val y: Float, val coordWithModel: CoordWithModel)
     @Volatile private var pinScreenCache: List<PinScreenEntry> = emptyList()
 
+    /**
+     * Snapshot of ARCore Earth state extracted on the GL thread before posting to the main thread.
+     * ARCore native objects ([Earth], [GeospatialPose]) must NOT be accessed from the main thread;
+     * only primitive/string values extracted here are safe to use in [buildDebugText].
+     */
+    private data class EarthDebugSnapshot(
+        val earthStateName: String,
+        val camLat: Double?,
+        val camLon: Double?,
+        val camAlt: Double?,
+        val camHeading: Double?
+    )
+
     // Last label set posted to the overlay — used to skip redundant post() calls (60fps).
     @Volatile private var lastPostedLabels: List<CoordinateLabelOverlay.LabelEntry> = emptyList()
 
@@ -198,6 +211,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // Set true on main thread (button click); consumed on GL thread to detach & rebuild anchors.
     @Volatile private var shouldRebuildAnchors = false
+
+    /**
+     * RTK status at the time the current set of geo-anchors was created.
+     * Used to auto re-anchor when quality improves (e.g., SINGLE → RTK FIX).
+     * Written and read exclusively on the GL thread.
+     */
+    private var lastAnchorRtkStatus: com.example.surveyingapp.gnss.model.RtkStatus? = null
 
     /**
      * Volatile snapshot of the ViewModel's distanceFilterM — updated via StateFlow collection
@@ -215,7 +235,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
          * Adjust to match the native size of your models.
          */
         private const val MODEL_SCALE = 2f
+        /** Near/far clip planes — must match [ArFilamentRenderer] constants. */
+        private const val NEAR_CLIP = 0.1f
+        private const val FAR_CLIP  = 2000f
     }
+
+    /**
+     * Edge margin in pixels for off-screen arrow indicators.
+     * Computed once in [onSurfaceChanged] (density never changes at runtime).
+     */
+    @Volatile private var edgeMarginPx: Float = 0f
 
     // Drives Filament rendering at display refresh rate on the main thread.
     private var choreographerInstance: android.view.Choreographer? = null
@@ -522,9 +551,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         hideModelProgressJob = null
         // Clean up test anchors via controller
         testAnchorController.cleanup()
+        // Clean up tap-to-place floor anchor
+        try { demoFloorAnchor?.detach() } catch (_: Exception) {}
+        demoFloorAnchor = null
         // Clean up geospatial anchors
         for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
         geoAnchors.clear()
+        geoAnchorsCreated = false
+        lastAnchorRtkStatus = null
         // Clean up AR session
         try { session?.close() } catch (_: Exception) {}
         session = null
@@ -669,10 +703,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /**
      * Create geospatial anchors for all coordinate points when Earth tracking is stable.
+     * [earth] is passed in from [processEarthAndAnchors] to avoid a redundant access
+     * to the non-volatile [session] field from the GL thread.
      */
-    private fun rebuildGeoAnchorsIfNeeded() {
+    private fun rebuildGeoAnchorsIfNeeded(earth: Earth) {
         if (geoAnchorsCreated || geoItems.isEmpty()) return
-        val earth = session?.earth ?: return
         if (earth.trackingState != TrackingState.TRACKING) return
 
         // Use GNSS fix from switchboard for positioning instead of ARCore's camera pose
@@ -683,14 +718,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             return
         }
 
-        // Use GNSS horizontal accuracy to determine when to create anchors.
-        // If hAccM is null (e.g. GST sentences not parsed), skip the gate and proceed —
-        // blocking forever on a missing field is worse than creating anchors without a
-        // verified accuracy figure.
-        val accuracyM = gnssFix.hAccM
+        // Determine horizontal accuracy for gating.
+        // Prefer GST-derived hAccM; fall back to a HDOP-based estimate so the gate
+        // always has a value when GST sentences are absent (common with phone GPS).
+        // UERE (User Equivalent Range Error) constants per fix quality:
+        //   RTK FIX ≈ 0.02m/HDOP, RTK FLOAT ≈ 0.1m/HDOP, DGPS ≈ 0.5m/HDOP, SINGLE ≈ 3.0m/HDOP
+        val accuracyM: Double? = gnssFix.hAccM ?: gnssFix.hDop?.let { hdop ->
+            when (gnssFix.rtkStatus) {
+                com.example.surveyingapp.gnss.model.RtkStatus.FIX    -> hdop * 0.02
+                com.example.surveyingapp.gnss.model.RtkStatus.FLOAT  -> hdop * 0.1
+                com.example.surveyingapp.gnss.model.RtkStatus.DGPS   -> hdop * 0.5
+                else                                                  -> hdop * 3.0
+            }
+        }
         if (accuracyM != null && accuracyM > MAX_GNSS_ACCURACY_M) {
-            // Not logging here — fires every frame while accuracy is poor;
-            // the debug panel shows "⚠️ BLOCKER: accuracy Xm > 20m" instead.
             return
         }
 
@@ -702,8 +743,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         geoAnchors.clear()
 
         // Use GNSS ellipsoidal altitude as fallback for coordinates with no recorded altitude.
-        // altEllipsoidalM (WGS84) is preferred because ARCore's createAnchor() expects WGS84 metres.
-        val fallbackAlt = gnssFix.altEllipsoidalM ?: gnssFix.altMslM ?: 0.0
+        // altEllipsoidalM (WGS84 HAE) is required because ARCore's createAnchor() expects it.
+        // If ellipsoidal alt is unavailable, derive it from MSL + geoid separation.
+        // Never use raw altMslM alone — omitting geoid separation causes ±15–85m errors.
+        val fallbackAlt = gnssFix.altEllipsoidalM
+            ?: run {
+                val msl   = gnssFix.altMslM
+                val geoid = gnssFix.geoidSeparationM
+                if (msl != null && geoid != null) msl + geoid else null
+            }
+            ?: 0.0
+
+        // Record the RTK status at the time of anchor creation for auto re-anchor logic.
+        lastAnchorRtkStatus = gnssFix.rtkStatus
 
         // Create new anchors for each coordinate — snapshot geoItems (volatile read) so the
         // main thread can safely call setCoordinates() concurrently without a CME.
@@ -767,6 +819,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glViewport(0, 0, width, height)
         surfaceWidth = width
         surfaceHeight = height
+        edgeMarginPx = 40f * resources.displayMetrics.density
         try {
             session?.setDisplayGeometry(displayRotation, width, height)
         } catch (_: Exception) {
@@ -803,7 +856,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             var pointCount = 0
             if (camera.trackingState == TrackingState.TRACKING) {
                 camera.getViewMatrix(view, 0)
-                camera.getProjectionMatrix(proj, 0, 0.1f, 2000f)
+                camera.getProjectionMatrix(proj, 0, NEAR_CLIP, FAR_CLIP)
                 Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
                 arViewMatrix = view.copyOf()
@@ -814,15 +867,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
                 drawFloorMarker(vp)
 
-                val edgeMargin    = 40f * resources.displayMetrics.density
+                val margin        = edgeMarginPx
                 val pinPositions  = mutableListOf<PinScreenEntry>()
                 val labelEntries  = mutableListOf<CoordinateLabelOverlay.LabelEntry>()
                 val arrowEntries  = mutableListOf<OffScreenPinIndicatorOverlay.ArrowEntry>()
                 val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
 
-                collectGeoAnchors(earth, vp, edgeMargin, pinPositions, labelEntries, arrowEntries, newModelPoses)
+                collectGeoAnchors(earth, vp, margin, pinPositions, labelEntries, arrowEntries, newModelPoses)
                 testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
-                    surfaceWidth, surfaceHeight, edgeMargin, labelEntries, arrowEntries, newModelPoses)
+                    surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses)
 
                 pinScreenCache = pinPositions
                 modelPoses     = newModelPoses
@@ -833,23 +886,35 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount)
 
         } catch (_: CameraNotAvailableException) {
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "onDrawFrame error", e)
         }
     }
 
     // ── onDrawFrame helpers (all called from the GL thread) ──────────────────
+
+    /** Ordered quality levels for auto re-anchor; higher index = better quality. */
+    private fun rtkQualityRank(status: com.example.surveyingapp.gnss.model.RtkStatus?): Int =
+        when (status) {
+            com.example.surveyingapp.gnss.model.RtkStatus.FIX    -> 4
+            com.example.surveyingapp.gnss.model.RtkStatus.FLOAT  -> 3
+            com.example.surveyingapp.gnss.model.RtkStatus.DGPS   -> 2
+            com.example.surveyingapp.gnss.model.RtkStatus.SINGLE -> 1
+            else                                                  -> 0
+        }
 
     /**
      * Handles a pending re-anchor request then processes earth tracking state.
      * Returns a short human-readable earth status string for the debug panel.
      */
     private fun processEarthAndAnchors(earth: Earth?): String {
-        // Process re-anchor request from main thread BEFORE rebuilding.
+        // Process manual re-anchor request from main thread BEFORE rebuilding.
         if (shouldRebuildAnchors) {
             shouldRebuildAnchors = false
             for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
             geoAnchors.clear()
             geoAnchorsCreated = false
+            lastAnchorRtkStatus = null
             android.util.Log.d(TAG, "Re-anchor triggered — anchors cleared for rebuild")
         }
 
@@ -857,7 +922,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         return when (earth.trackingState) {
             TrackingState.TRACKING -> {
-                rebuildGeoAnchorsIfNeeded()
+                // Auto re-anchor when RTK quality improves (e.g., SINGLE → FIX).
+                // This ensures anchors always use the best fix quality seen so far.
+                val currentFix = currentGnssFix
+                if (geoAnchorsCreated && currentFix != null) {
+                    val newRank  = rtkQualityRank(currentFix.rtkStatus)
+                    val lastRank = rtkQualityRank(lastAnchorRtkStatus)
+                    if (newRank > lastRank) {
+                        android.util.Log.d(TAG, "RTK quality improved ($lastAnchorRtkStatus → ${currentFix.rtkStatus}) — auto re-anchoring")
+                        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
+                        geoAnchors.clear()
+                        geoAnchorsCreated = false
+                        lastAnchorRtkStatus = null
+                    }
+                }
+                rebuildGeoAnchorsIfNeeded(earth)
                 val fix = currentGnssFix
                 if (fix != null) {
                     testAnchorController.processActionIfNeeded(earth, fix.latDeg, fix.lonDeg)
@@ -961,14 +1040,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val subtext = "${formatDist(distM)} ${bearingToCompass(bearing)}"
 
             val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
-            val proj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
-            if (proj.onScreen) {
-                pinPositions  += PinScreenEntry(proj.sx, proj.sy, entry.coordWithModel)
-                val labelText  = if (entry.modelFilePath != null)
+            val screenProj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
+            if (screenProj.onScreen) {
+                pinPositions  += PinScreenEntry(screenProj.sx, screenProj.sy, entry.coordWithModel)
+                val labelText  = if (entryModelFilePath != null)
                     CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
-                labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, proj.sx, proj.sy, subtext)
+                labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, screenProj.sx, screenProj.sy, subtext)
             } else {
-                val arrow = computeEdgeArrow(proj.sx, proj.sy, surfaceWidth, surfaceHeight, edgeMargin)
+                val arrow = computeEdgeArrow(screenProj.sx, screenProj.sy, surfaceWidth, surfaceHeight, edgeMargin)
                 if (arrow != null) {
                     arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
                         edgeX    = arrow.first.x,
@@ -976,7 +1055,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         angleDeg = arrow.second,
                         name     = coord.name,
                         distStr  = subtext,
-                        isModel  = entry.modelFilePath != null
+                        isModel  = entryModelFilePath != null
                     )
                 }
             }
@@ -998,9 +1077,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
+    /** Per-anchor data extracted on the GL thread for safe use in [buildDebugText] on the main thread. */
+    private data class AnchorDebugEntry(
+        val name: String,
+        val coordId: String,
+        val tracking: Boolean,
+        val distM: Double,
+        val bear: Double,
+        val hasModel: Boolean
+    )
+
     /**
      * Posts a status bar + debug text + model-progress chip update to the main thread.
      * All UI writes happen inside `post {}` so they are safe to call from the GL thread.
+     * All ARCore state ([Earth], anchor [TrackingState]) is extracted here on the GL thread
+     * into plain data before posting — ARCore objects must never be read on the main thread.
      */
     private fun postDebugPanelUpdate(
         earth: Earth?,
@@ -1008,15 +1099,50 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         planeCount: Int,
         pointCount: Int
     ) {
+        // Extract all ARCore earth values NOW on the GL thread before posting.
+        val snapshot: EarthDebugSnapshot? = if (earth != null) {
+            val camGeo = runCatching {
+                if (earth.trackingState == TrackingState.TRACKING) earth.cameraGeospatialPose else null
+            }.getOrNull()
+            EarthDebugSnapshot(
+                earthStateName = earth.earthState?.name ?: "null",
+                camLat         = camGeo?.latitude,
+                camLon         = camGeo?.longitude,
+                camAlt         = camGeo?.altitude,
+                camHeading     = camGeo?.heading
+            )
+        } else null
+
+        // Extract per-anchor states on the GL thread (anchor.trackingState is an ARCore call).
+        val camLat = snapshot?.camLat
+        val camLon = snapshot?.camLon
+        val anchorDebug: List<AnchorDebugEntry> = geoAnchors.map { entry ->
+            val coord = entry.coordWithModel.coordinate
+            val distM = if (camLat != null && camLon != null)
+                haversineM(camLat, camLon, coord.latitude, coord.longitude) else -1.0
+            val bear = if (camLat != null && camLon != null)
+                bearingDeg(camLat, camLon, coord.latitude, coord.longitude) else 0.0
+            AnchorDebugEntry(
+                name     = coord.name,
+                coordId  = coord.id,
+                tracking = entry.anchor.trackingState == TrackingState.TRACKING,
+                distM    = distM,
+                bear     = bear,
+                hasModel = entry.modelFilePath != null
+            )
+        }
+
         _binding?.textArStatus?.post {
             val gnssFix   = currentGnssFix
             val topStatus = if (gnssFix == null) "AR active • Waiting for GNSS • $earthStatus"
                             else "AR active • $earthStatus"
 
+            // Always update the top status bar.
+            _binding?.textArStatus?.text = topStatus
+
             // Only build the debug string (and pay its allocation cost) when the panel is visible.
             if (debugOverlayVisible) {
-                val debugLines = buildDebugText(earth, earthStatus, planeCount, pointCount, gnssFix)
-                _binding?.textArStatus?.text = topStatus
+                val debugLines = buildDebugText(snapshot, earthStatus, planeCount, pointCount, gnssFix, anchorDebug)
                 _binding?.textArDebug?.text  = debugLines
             }
 
@@ -1024,13 +1150,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
-    /** Builds the multi-line debug panel string. */
+    /** Builds the multi-line debug panel string. Must be called on the main thread. */
     private fun buildDebugText(
-        earth: Earth?,
+        snapshot: EarthDebugSnapshot?,
         earthStatus: String,
         planeCount: Int,
         pointCount: Int,
-        gnssFix: Fix?
+        gnssFix: Fix?,
+        anchorDebug: List<AnchorDebugEntry>
     ): String = buildString {
         val providerText = when (gnssFix?.provider) {
             com.example.surveyingapp.gnss.model.Provider.INTERNAL    -> "Internal GPS"
@@ -1040,38 +1167,32 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
         val accText = gnssFix?.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
 
-        appendLine("🌍 Earth: $earthStatus  [${earth?.earthState?.name}]")
+        appendLine("🌍 Earth: $earthStatus  [${snapshot?.earthStateName}]")
         appendLine("🧭 AR: Planes=$planeCount  Points=$pointCount")
         appendLine("📡 GPS: $providerText  Acc=$accText")
-        appendLine("⚓ Anchors: ${geoAnchors.size}  geoAnchorsCreated=$geoAnchorsCreated")
+        appendLine("⚓ Anchors: ${anchorDebug.size}  geoAnchorsCreated=$geoAnchorsCreated")
         appendLine("📋 Items loaded: ${geoItems.size}")
 
         val fix  = currentGnssFix
         val accM = fix?.hAccM
         appendLine("📡 GNSS fix: ${if (fix != null) "YES  hAccM=${accM?.let { "%.2f".format(it) } ?: "null (gate skipped)"}" else "NO FIX YET"}")
-        if (geoItems.isEmpty())            appendLine("⚠️  BLOCKER: geoItems is empty")
-        if (fix == null)                   appendLine("⚠️  BLOCKER: currentGnssFix is null")
-        if (accM != null && accM > MAX_GNSS_ACCURACY_M)   appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > ${MAX_GNSS_ACCURACY_M.toInt()}m")
-        if (geoAnchorsCreated && geoAnchors.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors")
+        if (geoItems.isEmpty())          appendLine("⚠️  BLOCKER: geoItems is empty")
+        if (fix == null)                 appendLine("⚠️  BLOCKER: currentGnssFix is null")
+        if (accM != null && accM > MAX_GNSS_ACCURACY_M) appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > ${MAX_GNSS_ACCURACY_M.toInt()}m")
+        if (geoAnchorsCreated && anchorDebug.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors")
 
-        val camGeo = earth?.cameraGeospatialPose
-        if (camGeo != null) {
+        if (snapshot?.camLat != null) {
             appendLine("📍 Cam: %.6f, %.6f  alt=%.1fm  hdg=%.0f°".format(
-                camGeo.latitude, camGeo.longitude, camGeo.altitude, camGeo.heading))
+                snapshot.camLat, snapshot.camLon, snapshot.camAlt, snapshot.camHeading))
         }
-        geoAnchors.forEachIndexed { i, entry ->
-            val coord  = entry.coordWithModel.coordinate
-            val distM  = if (camGeo != null) haversineM(camGeo.latitude, camGeo.longitude,
-                coord.latitude, coord.longitude) else -1.0
-            val bear   = if (camGeo != null) bearingDeg(camGeo.latitude, camGeo.longitude,
-                coord.latitude, coord.longitude) else 0.0
-            val state  = if (entry.modelFilePath != null)
-                filamentRenderer?.modelLoadState(coord.id)?.name ?: "NO_RENDERER"
+        anchorDebug.forEachIndexed { i, entry ->
+            val state = if (entry.hasModel)
+                filamentRenderer?.modelLoadState(entry.coordId)?.name ?: "NO_RENDERER"
             else "GLES_PIN"
-            appendLine("[$i] ${coord.name}  tracking=${entry.anchor.trackingState == TrackingState.TRACKING}" +
-                "  %.1fm @ %.0f°  model=$state".format(distM, bear))
+            appendLine("[$i] ${entry.name}  tracking=${entry.tracking}" +
+                "  %.1fm @ %.0f°  model=$state".format(entry.distM, entry.bear))
         }
-        if (geoAnchors.isEmpty()) appendLine("  → no anchors yet")
+        if (anchorDebug.isEmpty()) appendLine("  → no anchors yet")
     }.trimEnd()
 
     /** Updates the model-load-progress chip. Must be called on the main thread. */
@@ -1105,10 +1226,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         it.text = "✓ $total/$total models"
                         it.visibility = View.VISIBLE
                     }
-                    hideModelProgressJob = viewLifecycleOwner.lifecycleScope.launch {
-                        kotlinx.coroutines.delay(2000)
-                        _binding?.chipModelProgress?.visibility = View.GONE
-                        hideModelProgressJob = null
+                    // Guard: only launch if the view is still attached.
+                    if (_binding != null) {
+                        hideModelProgressJob = viewLifecycleOwner.lifecycleScope.launch {
+                            kotlinx.coroutines.delay(2000)
+                            _binding?.chipModelProgress?.visibility = View.GONE
+                            hideModelProgressJob = null
+                        }
                     }
                 }
             }
@@ -1127,7 +1251,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // clears geoAnchorsCreated and forces a full anchor rebuild at 60fps.
         val newItems = items.map { item ->
             val c = item.coordinate
-            val altitude = if (c.altitude == 0.0 || c.altitude.isNaN()) null else c.altitude
+            // Only treat altitude as absent when it is NaN or infinite.
+            // DO NOT exclude 0.0 — coordinates at sea level have a legitimate 0m ellipsoidal altitude.
+            val altitude = if (c.altitude.isNaN() || !c.altitude.isFinite()) null else c.altitude
             GeoItem(
                 lat = c.latitude,
                 lng = c.longitude,
@@ -1192,20 +1318,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     if (dx * dx + dy * dy <= threshSq) {
                         // CoordWithModel is embedded in PinScreenEntry — no geoAnchors access needed
                         val coord = hit.coordWithModel.coordinate
-                        activity?.runOnUiThread {
-                            PinInspectBottomSheet.show(
-                                childFragmentManager,
-                                name      = coord.name,
-                                lat       = coord.latitude,
-                                lon       = coord.longitude,
-                                alt       = coord.altitude,
-                                hAccM     = coord.horizontalAccuracyM,
-                                rtkStatus = coord.rtkStatus?.name,
-                                provider  = coord.provider.name,
-                                modelId   = hit.coordWithModel.modelId,
-                                timestamp = coord.timestamp
-                            )
-                        }
+                        // Touch listeners always run on the main thread — no runOnUiThread needed.
+                        PinInspectBottomSheet.show(
+                            childFragmentManager,
+                            name      = coord.name,
+                            lat       = coord.latitude,
+                            lon       = coord.longitude,
+                            alt       = coord.altitude,
+                            hAccM     = coord.horizontalAccuracyM,
+                            rtkStatus = coord.rtkStatus?.name,
+                            provider  = coord.provider.name,
+                            modelId   = hit.coordWithModel.modelId,
+                            timestamp = coord.timestamp
+                        )
                         v.performClick()
                         return@setOnTouchListener true
                     }
