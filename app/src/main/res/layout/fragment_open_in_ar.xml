@@ -36,6 +36,22 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
+    <!-- Debug: spawn / clear test anchor rings around current position -->
+    <Button
+        android:id="@+id/btnSpawnTestPoints"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="8dp"
+        android:text="📍 Test Points"
+        android:textSize="12sp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="4dp"
+        android:backgroundTint="#CC1565C0"
+        android:textColor="#FFFFFF"
+        android:clickable="true"
+        android:focusable="true" />
+
     <TextView
         android:id="@+id/textArStatus"
         android:layout_width="wrap_content"
