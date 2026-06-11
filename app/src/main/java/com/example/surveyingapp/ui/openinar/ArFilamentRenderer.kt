@@ -365,8 +365,9 @@ class ArFilamentRenderer {
     // -------------------------------------------------------------------------
     companion object {
         private const val TAG        = "ArFilamentRenderer"
-        private const val NEAR_PLANE = 0.01
-        private const val FAR_PLANE  = 1000.0
+        /** Must match the near/far values used in ARCore's getProjectionMatrix() call. */
+        private const val NEAR_PLANE = 0.1
+        private const val FAR_PLANE  = 2000.0
         private const val TEST_GRID_KEY_PREFIX = "test_grid_"
     }
 }

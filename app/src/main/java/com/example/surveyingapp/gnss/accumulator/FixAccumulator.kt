@@ -178,11 +178,19 @@ class FixAccumulator {
     }
 
     /**
-     * Calculate horizontal accuracy in meters from GPS Error Statistics.
-     * Uses the formula: sqrt(stdDevMajor * stdDevMinor) to estimate horizontal accuracy.
+     * Calculate 1-sigma circular horizontal accuracy (DRMS) from GST error ellipse semi-axes.
+     *
+     * The NMEA GST sentence provides [stdDevMajor] (σ_max) and [stdDevMinor] (σ_min) as the
+     * semi-axes of the 1-sigma position error ellipse.
+     *
+     * DRMS (Distance Root Mean Square) = sqrt((σ_major² + σ_minor²) / 2) is the standard
+     * single-value horizontal accuracy metric and correctly reflects elongated ellipses.
+     *
+     * The previous formula sqrt(σ_major * σ_minor) (geometric mean) underestimates accuracy
+     * when σ_major >> σ_minor, which is exactly when satellite geometry is poorest.
      */
     private fun calculateHorizontalAccuracy(stdDevMajor: Double?, stdDevMinor: Double?): Double? {
         if (stdDevMajor == null || stdDevMinor == null) return null
-        return Math.sqrt(stdDevMajor * stdDevMinor)
+        return Math.sqrt((stdDevMajor * stdDevMajor + stdDevMinor * stdDevMinor) / 2.0)
     }
 }
