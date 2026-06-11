@@ -221,6 +221,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Last label set posted to the overlay — used to skip redundant post() calls (60fps).
     @Volatile private var lastPostedLabels: List<CoordinateLabelOverlay.LabelEntry> = emptyList()
 
+    // Last off-screen arrow set posted — used to skip redundant invalidations.
+    @Volatile private var lastPostedArrows: List<OffScreenPinIndicatorOverlay.ArrowEntry> = emptyList()
+
+    // Set true on main thread (button click); consumed on GL thread to detach & rebuild anchors.
+    @Volatile private var shouldRebuildAnchors = false
+
     // GLB model renderer (Filament) — created in onViewCreated, destroyed in onDestroyView.
     private var filamentRenderer: ArFilamentRenderer? = null
 
@@ -317,6 +323,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             binding.textArStatus.visibility = vis
             binding.textArDebug.visibility = vis
             binding.btnToggleDebugOverlay.text = if (debugOverlayVisible) "Hide Debug" else "Show Debug"
+        }
+
+        binding.btnReanchor.setOnClickListener {
+            shouldRebuildAnchors = true
+            binding.btnReanchor.isEnabled = false
+            // Re-enable after 2 s to prevent accidental rapid taps while ARCore re-localizes.
+            binding.btnReanchor.postDelayed({ binding.btnReanchor.isEnabled = true }, 2000)
         }
 
         // Observe coordinate + model data from ViewModel and push into the AR anchor pipeline.
@@ -484,6 +497,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         arProjMatrix  = null
         modelPoses    = emptyList()
         pinScreenCache = emptyList()
+        lastPostedLabels = emptyList()
+        lastPostedArrows = emptyList()
         // Clean up test anchors
         for (entry in testAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
         testAnchors.clear()
@@ -803,6 +818,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // 2) Earth state handling - optional geospatial features
             val earth = s.earth
             var earthStatus = "Geo: N/A"
+
+            // Process re-anchor request from main thread BEFORE rebuilding.
+            if (shouldRebuildAnchors) {
+                shouldRebuildAnchors = false
+                for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
+                geoAnchors.clear()
+                geoAnchorsCreated = false
+                android.util.Log.d("OpenInARFragment", "Re-anchor triggered — anchors cleared for rebuild")
+            }
+
             if (earth != null) {
                 when (earth.trackingState) {
                     TrackingState.TRACKING -> {
@@ -897,8 +922,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 // Geospatial pins + Filament model poses + labels + tap cache
                 val pinPositions  = mutableListOf<PinScreenEntry>()
                 val labelEntries  = mutableListOf<CoordinateLabelOverlay.LabelEntry>()
+                val arrowEntries  = mutableListOf<OffScreenPinIndicatorOverlay.ArrowEntry>()
                 val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
                 val earthTracking = earth?.trackingState == TrackingState.TRACKING
+                val edgeMargin    = 40f * resources.displayMetrics.density
 
                 if (earthTracking) {
                     val camGeoPose = earth?.cameraGeospatialPose
@@ -942,16 +969,37 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
                         }
 
-                        // Project for label + tap hit-test
-                        worldToScreen(
-                            floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f),
-                            vp, surfaceWidth, surfaceHeight
-                        )?.let { screenPos ->
-                            pinPositions += PinScreenEntry(screenPos.x, screenPos.y, entry.coordWithModel)
-                            val name      = entry.coordWithModel.coordinate.name
-                            val labelText = if (entry.modelFilePath != null)
-                                CoordinateLabelOverlay.MODEL_TAG + name else name
-                            labelEntries += CoordinateLabelOverlay.LabelEntry(labelText, screenPos.x, screenPos.y)
+                        // Distance + bearing subtext for the label
+                        val coord = entry.coordWithModel.coordinate
+                        val subtext = if (camGeoPose != null) {
+                            val dist    = haversineM(camGeoPose.latitude, camGeoPose.longitude, coord.latitude, coord.longitude)
+                            val bearing = bearingDeg(camGeoPose.latitude, camGeoPose.longitude, coord.latitude, coord.longitude)
+                            "${formatDist(dist)} ${bearingToCompass(bearing)}"
+                        } else ""
+
+                        // Project for on-screen label / off-screen arrow
+                        val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
+                        val proj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight)
+                        if (proj != null) {
+                            if (proj.onScreen) {
+                                pinPositions += PinScreenEntry(proj.sx, proj.sy, entry.coordWithModel)
+                                val labelText = if (entry.modelFilePath != null)
+                                    CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
+                                labelEntries += CoordinateLabelOverlay.LabelEntry(labelText, proj.sx, proj.sy, subtext)
+                            } else {
+                                // Off-screen — add an edge arrow
+                                val arrow = computeEdgeArrow(proj.sx, proj.sy, surfaceWidth, surfaceHeight, edgeMargin)
+                                if (arrow != null) {
+                                    arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
+                                        edgeX    = arrow.first.x,
+                                        edgeY    = arrow.first.y,
+                                        angleDeg = arrow.second,
+                                        name     = coord.name,
+                                        distStr  = subtext,
+                                        isModel  = entry.modelFilePath != null
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -980,11 +1028,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
                         cubeRenderer?.draw(mvp, te.rgba[0], te.rgba[1], te.rgba[2], te.rgba[3])
                     }
-                    worldToScreen(
-                        floatArrayOf(model[12], model[13] + 0.5f, model[14], 1f),
-                        vp, surfaceWidth, surfaceHeight
-                    )?.let { sp ->
-                        labelEntries += CoordinateLabelOverlay.LabelEntry(te.label, sp.x, sp.y)
+                    val testWorldPos = floatArrayOf(model[12], model[13] + 0.5f, model[14], 1f)
+                    val testProj = projectToScreen(testWorldPos, vp, surfaceWidth, surfaceHeight)
+                    if (testProj != null) {
+                        if (testProj.onScreen) {
+                            labelEntries += CoordinateLabelOverlay.LabelEntry(te.label, testProj.sx, testProj.sy)
+                        } else {
+                            val arrow = computeEdgeArrow(testProj.sx, testProj.sy, surfaceWidth, surfaceHeight, edgeMargin)
+                            if (arrow != null) {
+                                arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
+                                    edgeX    = arrow.first.x,
+                                    edgeY    = arrow.first.y,
+                                    angleDeg = arrow.second,
+                                    name     = te.label,
+                                    distStr  = "",
+                                    isModel  = te.modelKey != null
+                                )
+                            }
+                        }
                     }
                 }
                 if (testAnchorsActive && testAnchorsRendered == 0) {
@@ -998,6 +1059,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     lastPostedLabels = labelsSnapshot
                     _binding?.labelOverlay?.post {
                         _binding?.labelOverlay?.updateLabels(labelsSnapshot)
+                    }
+                }
+                val arrowsSnapshot = arrowEntries
+                if (arrowsSnapshot != lastPostedArrows) {
+                    lastPostedArrows = arrowsSnapshot
+                    _binding?.offScreenOverlay?.post {
+                        _binding?.offScreenOverlay?.updateArrows(arrowsSnapshot)
                     }
                 }
             }
@@ -1125,6 +1193,70 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             (1f - ndcY) * 0.5f * h   // NDC Y is up; screen Y is down
         )
     }
+
+    /**
+     * Projects a world-space point without frustum-clamping.
+     *
+     * Returns the unclamped pixel position and whether the point falls inside the
+     * visible screen bounds.  Returns null only when the point is behind the camera.
+     * Used for off-screen arrow placement.
+     */
+    private data class ScreenProjection(val sx: Float, val sy: Float, val onScreen: Boolean)
+
+    private fun projectToScreen(worldPos: FloatArray, vp: FloatArray, w: Int, h: Int): ScreenProjection? {
+        if (w <= 0 || h <= 0) return null
+        val clip = FloatArray(4)
+        Matrix.multiplyMV(clip, 0, vp, 0, worldPos, 0)
+        if (clip[3] <= 0f) return null  // behind camera
+        val ndcX = clip[0] / clip[3]
+        val ndcY = clip[1] / clip[3]
+        val sx = (ndcX + 1f) * 0.5f * w
+        val sy = (1f - ndcY) * 0.5f * h
+        return ScreenProjection(sx, sy, ndcX in -1f..1f && ndcY in -1f..1f)
+    }
+
+    /**
+     * Given an unclamped projected screen position [sx]/[sy], computes where to place
+     * an edge arrow and which direction it should point.
+     *
+     * @param margin Edge inset in pixels (keeps arrows away from screen corners).
+     * @return Pair of (edge position, angleDeg toward pin) or null if degenerate.
+     */
+    private fun computeEdgeArrow(
+        sx: Float, sy: Float, w: Int, h: Int, margin: Float
+    ): Pair<PointF, Float>? {
+        if (w <= 0 || h <= 0) return null
+        val cx = w / 2f
+        val cy = h / 2f
+        val dx = sx - cx
+        val dy = sy - cy
+        if (dx == 0f && dy == 0f) return null
+
+        // Find the smallest t that puts the ray from screen-centre through (dx,dy) on a screen edge.
+        val tRight  = if (dx > 0f) (w - margin - cx) / dx else Float.MAX_VALUE
+        val tLeft   = if (dx < 0f) (margin - cx)     / dx else Float.MAX_VALUE
+        val tBottom = if (dy > 0f) (h - margin - cy) / dy else Float.MAX_VALUE
+        val tTop    = if (dy < 0f) (margin - cy)     / dy else Float.MAX_VALUE
+
+        val t = minOf(tRight, tLeft, tBottom, tTop)
+        if (t <= 0f || t == Float.MAX_VALUE) return null
+
+        val ex = (cx + t * dx).coerceIn(margin, w - margin)
+        val ey = (cy + t * dy).coerceIn(margin, h - margin)
+        val angleDeg = Math.toDegrees(Math.atan2(dy.toDouble(), dx.toDouble())).toFloat()
+        return Pair(PointF(ex, ey), angleDeg)
+    }
+
+    /** Converts a bearing in degrees to an 8-point compass abbreviation. */
+    private fun bearingToCompass(deg: Double): String {
+        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        return dirs[((deg + 22.5) / 45.0).toInt() % 8]
+    }
+
+    /** Formats a metre distance as "34m" or "1.23km". */
+    private fun formatDist(metres: Double): String =
+        if (metres < 1000.0) "${"%.0f".format(metres)}m"
+        else "${"%.2f".format(metres / 1000.0)}km"
 
     // Background renderer using ARCore's UV transform (correct orientation)
     private class BackgroundRenderer {
