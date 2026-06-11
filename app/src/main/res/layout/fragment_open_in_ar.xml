@@ -102,7 +102,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Hide Debug"
+            android:text="Show Debug"
             android:textSize="12sp"
             android:paddingHorizontal="10dp"
             android:paddingVertical="4dp"
@@ -123,7 +123,7 @@
             android:textColor="#FFFFFF"
             android:paddingHorizontal="12dp"
             android:paddingVertical="5dp"
-            android:background="#CC000000"
+            android:background="@drawable/bg_ar_chip"
             android:visibility="gone"
             android:clickable="false"
             android:focusable="false" />
@@ -136,7 +136,8 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:visibility="gone">
 
         <TextView
             android:id="@+id/textArStatus"

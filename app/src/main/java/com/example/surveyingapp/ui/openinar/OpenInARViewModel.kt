@@ -96,7 +96,7 @@ class OpenInARViewModel @Inject constructor(
 
     // ── Debug overlay ─────────────────────────────────────────────────────────
 
-    private val _debugVisible = MutableStateFlow(true)
+    private val _debugVisible = MutableStateFlow(false)
 
     /** Whether the debug overlay panel is currently shown. */
     val debugVisible: StateFlow<Boolean> = _debugVisible.asStateFlow()
