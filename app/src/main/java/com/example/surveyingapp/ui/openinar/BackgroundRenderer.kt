@@ -11,6 +11,9 @@ import java.nio.FloatBuffer
 /**
  * Renders the ARCore camera feed as a full-screen background quad.
  *
+ * Owns the OES external texture used for the camera feed. Call [textureId] after
+ * construction to pass the ID to [Session.setCameraTextureName].
+ *
  * Uses ARCore's [Frame.transformCoordinates2d] to correctly orient the camera
  * texture UVs for any device rotation, then draws with an OES external texture
  * sampler so no pixel copies are needed.
@@ -40,12 +43,27 @@ internal class BackgroundRenderer {
     private val attribUv = 1
     private var haveValidUvs = false
 
+    /**
+     * The OpenGL OES texture ID used for the camera feed.
+     * Created in [init] on the GL thread; pass to [Session.setCameraTextureName] before use.
+     */
+    val textureId: Int
+
     init {
+        // Create the OES camera texture.
+        val textures = IntArray(1)
+        GLES30.glGenTextures(1, textures, 0)
+        textureId = textures[0]
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
+        GLES30.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
+
         program = createProgram(VS_BG, FS_BG)
     }
 
-    fun draw(frame: Frame, oesTexId: Int) {
-        if (oesTexId <= 0) return
+    fun draw(frame: Frame) {
         if (frame.hasDisplayGeometryChanged() || !haveValidUvs) {
             frame.transformCoordinates2d(
                 Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES, ndcQuad,
@@ -67,7 +85,7 @@ internal class BackgroundRenderer {
         GLES30.glEnableVertexAttribArray(attribUv)
 
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, oesTexId)
+        GLES30.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
 
         GLES30.glDrawArrays(GLES30.GL_TRIANGLE_STRIP, 0, 4)
 
@@ -125,4 +143,3 @@ internal class BackgroundRenderer {
         }
     }
 }
-
