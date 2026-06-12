@@ -564,10 +564,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
                 R.id.radio_es2_tcp -> {
-                    Log.d("SettingsFragment", "Radio switched to RS2_EXTERNAL")
+                    Log.d("SettingsFragment", "Radio switched to EXTERNAL_TCP")
                     // Update switchboard provider to external
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
-                    Log.d("SettingsFragment", "Called setActiveProvider(RS2_EXTERNAL)")
+                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
+                    Log.d("SettingsFragment", "Called setActiveProvider(EXTERNAL_TCP)")
                     // Update categories immediately when switching to external (show RS2+)
                     refreshCategoriesForSource(LocationSourceType.EXTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)
@@ -682,7 +682,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 val success = connectAndReadTcpNmea(host, port)
                 Log.d("SettingsFragment", "connectViaTcpFlow: connection result=$success")
                 if (success) {
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.RS2_EXTERNAL)
+                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
                     val currentSource = settingsRepo.locationSource.first()
                     if (currentSource != LocationSourceType.EXTERNAL) {
                         Log.w("SettingsFragment", "connectViaTcpFlow: source switched to INTERNAL during connection, aborting")

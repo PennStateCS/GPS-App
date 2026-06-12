@@ -27,18 +27,22 @@ import kotlin.random.Random
 import kotlin.coroutines.coroutineContext
 
 /**
- * External GNSS adapter (e.g., RS2+) that converts an NMEA source into:
- *  - fixes: normalized GNSS fixes
- *  - sky:   smoothed SNR + tallies via SatelliteInventory
+ * Adapter for any external GNSS receiver whose fixes arrive via a [NmeaSource].
  *
- * Explicit start/stop to tie lifecycle to connection state.
+ * Converts the NMEA stream into:
+ *  - [fixes]: normalized [Fix] objects forwarded to [FixSwitchboard]
+ *  - [sky]:   smoothed SNR snapshots via [SatelliteInventory]
+ *
+ * Includes exponential-backoff reconnection logic so a transient TCP drop is recovered
+ * automatically without user intervention.
+ *
+ * To add a new external provider (e.g., u-blox over Bluetooth), create a new [NmeaSource]
+ * implementation and wrap it in a new [ExternalAdapter] instance registered in [AppModule].
  */
 class ExternalAdapter(
     private val scope: CoroutineScope,
-    private val context: android.content.Context,
-    private val settingsRepository: com.example.surveyingapp.domain.repository.SettingsRepository,
-    private val nmea: NmeaSource,                 // bridge to your existing NMEA accumulator
-    private val inv: SatelliteInventory           // shared inventory for SNR smoothing
+    private val nmea: NmeaSource,
+    private val inv: SatelliteInventory
 ) : SourceAdapter, SkyProvider, Startable {
 
     companion object {
@@ -128,6 +132,10 @@ class ExternalAdapter(
     }
 
     private fun startInternalConnection() {
+        // Always stop the NmeaSource first so its internal state is clean on each attempt.
+        // This is a no-op on the first call (source not yet started).
+        runCatching { nmea.stop() }
+
         // Reset flags
         firstDataArrived = false
         lastDataTimeMs = 0L

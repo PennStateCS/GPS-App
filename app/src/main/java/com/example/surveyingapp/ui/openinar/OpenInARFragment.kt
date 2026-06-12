@@ -220,6 +220,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var lastAnchorRtkStatus: com.example.surveyingapp.gnss.model.RtkStatus? = null
 
     /**
+     * Timestamp (from [System.currentTimeMillis]) of the last anchor rebuild (manual or auto).
+     * Enforces [REANCHOR_COOLDOWN_MS] to prevent ARCore resource exhaustion when RTK quality
+     * steps up rapidly (e.g., SINGLE → DGPS → FLOAT → FIX in <500ms when switching to RS2+).
+     * Written and read exclusively on the GL thread.
+     */
+    private var lastReanchorTimeMs: Long = 0L
+
+    /**
      * Volatile snapshot of the ViewModel's distanceFilterM — updated via StateFlow collection
      * on the main thread, read on the GL thread each frame.
      */
@@ -238,6 +246,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         /** Near/far clip planes — must match [ArFilamentRenderer] constants. */
         private const val NEAR_CLIP = 0.1f
         private const val FAR_CLIP  = 2000f
+        /**
+         * Minimum milliseconds between any two anchor rebuilds (manual button resets this).
+         * Prevents ARCore resource exhaustion when RTK quality steps through SINGLE→DGPS→FLOAT→FIX
+         * in rapid succession after switching to an external receiver like the RS2+.
+         */
+        private const val REANCHOR_COOLDOWN_MS = 30_000L
         /**
          * Approximate camera lens height above ground when holding a phone at eye level.
          * Used to convert [cameraGeospatialPose.altitude] to a ground-level estimate
@@ -487,6 +501,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             session?.resume()
             sessionReady = true
             binding.glSurfaceViewAr.onResume()
+
+            // Ensure the camera texture name is registered with the session.
+            // onSurfaceCreated may have run before the session was created (first launch),
+            // in which case the setCameraTextureName call there was a no-op. Calling it here
+            // guarantees ARCore receives camera frames from the very first update() call,
+            // preventing the "IMU buffer overflow / Last visual features at: 0 ns" condition.
+            backgroundRenderer?.let { br ->
+                session?.setCameraTextureName(br.textureId)
+            }
+
             // Start Filament render loop (driven by display vsync)
             choreographerInstance = android.view.Choreographer.getInstance()
             choreographerInstance?.postFrameCallback(filamentFrameCallback)
@@ -579,6 +603,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         geoAnchors.clear()
         geoAnchorsCreated = false
         lastAnchorRtkStatus = null
+        lastReanchorTimeMs = 0L
         // Clean up AR session
         try { session?.close() } catch (_: Exception) {}
         session = null
@@ -852,11 +877,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glDepthFunc(GLES30.GL_LEQUAL)
 
         // BackgroundRenderer creates and owns the OES camera texture.
-        backgroundRenderer = BackgroundRenderer()
-        cubeRenderer = SimpleObjectRenderer()
-        planeVisualizer = PlaneVisualizer()
-        pointCloudRenderer = PointCloudRenderer()
+        // Wrap in try-catch: a shader compilation failure here would leave backgroundRenderer
+        // null, causing onDrawFrame to return before setCameraTextureName() is called →
+        // ARCore never receives camera frames → persistent "Last visual features at: 0 ns".
+        try {
+            backgroundRenderer   = BackgroundRenderer()
+            cubeRenderer         = SimpleObjectRenderer()
+            planeVisualizer      = PlaneVisualizer()
+            pointCloudRenderer   = PointCloudRenderer()
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "onSurfaceCreated: renderer init failed", e)
+            // backgroundRenderer remains null; onDrawFrame will retry on the next frame.
+            return
+        }
 
+        // Pre-register the camera texture name with the session so that ARCore can start
+        // delivering camera frames immediately without waiting for the first onDrawFrame call.
+        // If the session is not created yet (first launch), onDrawFrame will set it anyway.
         session?.setCameraTextureName(backgroundRenderer!!.textureId)
     }
 
@@ -960,25 +997,33 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             geoAnchors.clear()
             geoAnchorsCreated = false
             lastAnchorRtkStatus = null
-            android.util.Log.d(TAG, "Re-anchor triggered — anchors cleared for rebuild")
+            lastReanchorTimeMs = System.currentTimeMillis()
+            android.util.Log.d(TAG, "Re-anchor triggered manually — anchors cleared for rebuild")
         }
 
         if (earth == null) return "Geo: N/A"
 
         return when (earth.trackingState) {
             TrackingState.TRACKING -> {
-                // Auto re-anchor when RTK quality improves (e.g., SINGLE → FIX).
-                // This ensures anchors always use the best fix quality seen so far.
+                // Auto re-anchor only for a meaningful quality jump: non-RTK → RTK.
+                // Incremental steps (SINGLE→DGPS or FLOAT→FIX) are deliberately excluded
+                // because switching to RS2+ causes rapid steps through all quality levels
+                // in <500ms, which would flood ARCore with create/cancel terrain-anchor
+                // requests and crash the session. The manual Re-anchor button handles
+                // deliberate upgrades; the cooldown prevents a repeat within 30s.
                 val currentFix = currentGnssFix
                 if (geoAnchorsCreated && currentFix != null) {
                     val newRank  = rtkQualityRank(currentFix.rtkStatus)
                     val lastRank = rtkQualityRank(lastAnchorRtkStatus)
-                    if (newRank > lastRank) {
-                        android.util.Log.d(TAG, "RTK quality improved ($lastAnchorRtkStatus → ${currentFix.rtkStatus}) — auto re-anchoring")
+                    val isRtkUpgrade = newRank >= 3 && lastRank < 3   // non-RTK → RTK threshold
+                    val cooldownElapsed = System.currentTimeMillis() - lastReanchorTimeMs >= REANCHOR_COOLDOWN_MS
+                    if (isRtkUpgrade && cooldownElapsed) {
+                        android.util.Log.d(TAG, "RTK upgrade ($lastAnchorRtkStatus → ${currentFix.rtkStatus}) — auto re-anchoring")
                         for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
                         geoAnchors.clear()
                         geoAnchorsCreated = false
                         lastAnchorRtkStatus = null
+                        lastReanchorTimeMs = System.currentTimeMillis()
                     }
                 }
                 rebuildGeoAnchorsIfNeeded(earth)
