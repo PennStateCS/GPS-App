@@ -238,7 +238,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         /** Near/far clip planes — must match [ArFilamentRenderer] constants. */
         private const val NEAR_CLIP = 0.1f
         private const val FAR_CLIP  = 2000f
+        /**
+         * Approximate camera lens height above ground when holding a phone at eye level.
+         * Used to convert [cameraGeospatialPose.altitude] to a ground-level estimate
+         * in terrain-altitude mode.
+         */
+        private const val CAMERA_EYE_HEIGHT_M = 1.65
     }
+
+    /**
+     * When false (default): real coordinate anchors are placed at their stored ellipsoidal altitude.
+     * When true (terrain mode): all anchors are placed at the current detected ground level
+     * ([cameraGeospatialPose.altitude] − [CAMERA_EYE_HEIGHT_M]), ignoring stored altitudes.
+     * Written on the main thread (button click); read on the GL thread (rebuildGeoAnchorsIfNeeded).
+     */
+    @Volatile private var useTerrainAltitude: Boolean = false
 
     /**
      * Edge margin in pixels for off-screen arrow indicators.
@@ -346,6 +360,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         binding.btnDistanceFilter.setOnClickListener {
             viewModel.cycleDistanceFilter()
+        }
+
+        binding.btnAltitudeMode.setOnClickListener {
+            useTerrainAltitude = !useTerrainAltitude
+            shouldRebuildAnchors = true
+            binding.btnAltitudeMode.text = if (useTerrainAltitude) "🌍 Terrain Alt" else "🏔 Stored Alt"
         }
 
 
@@ -754,25 +774,50 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             ?: 0.0
 
+        // In terrain mode, snap every anchor to the current detected ground level so
+        // models appear on the ground regardless of their stored altitude.
+        // Ground level = camera ellipsoidal altitude − eye height above ground.
+        val terrainAlt: Double? = if (useTerrainAltitude)
+            earth.cameraGeospatialPose.altitude - CAMERA_EYE_HEIGHT_M
+        else null
+
         // Record the RTK status at the time of anchor creation for auto re-anchor logic.
         lastAnchorRtkStatus = gnssFix.rtkStatus
 
         // Create new anchors for each coordinate — snapshot geoItems (volatile read) so the
         // main thread can safely call setCoordinates() concurrently without a CME.
         val items = geoItems
-        for (item in items) {
-            // Use the coordinate's stored altitude when available; fall back to the current
-            // GNSS altitude only when the coordinate has no recorded altitude (null / 0 / NaN).
-            val altToUse = item.alt ?: fallbackAlt
-            try {
-                val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
-                geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
-            } catch (_: Exception) {
-                // Skip invalid coordinates silently
+
+        if (useTerrainAltitude) {
+            // Terrain mode: resolveAnchorOnTerrain places each anchor at altitudeAboveTerrain=0.0
+            // (exactly on the terrain surface at that lat/lon). The anchor starts with
+            // TrackingState.PAUSED and self-updates to TRACKING once ARCore downloads the
+            // terrain elevation for that location — no manual polling required.
+            for (item in items) {
+                try {
+                    val anchor = earth.resolveAnchorOnTerrain(
+                        item.lat, item.lng, 0.0, 0f, 0f, 0f, 1f)
+                    geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
+                } catch (e: Exception) {
+                    android.util.Log.w(TAG, "resolveAnchorOnTerrain failed for " +
+                            item.coordWithModel.coordinate.name, e)
+                }
             }
+            android.util.Log.d(TAG, "Submitted ${geoAnchors.size} terrain anchors " +
+                    "(accuracy: ${accuracyM}m) — will appear as terrain resolves")
+        } else {
+            // Stored-altitude mode: create WGS84 anchors at each coordinate's recorded altitude.
+            for (item in items) {
+                val altToUse = item.alt ?: fallbackAlt
+                try {
+                    val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
+                    geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
+                } catch (_: Exception) {}
+            }
+            android.util.Log.d(TAG, "Created ${geoAnchors.size} geospatial anchors " +
+                    "(accuracy: ${accuracyM}m, altMode: STORED)")
         }
 
-        android.util.Log.d(TAG, "Created ${geoAnchors.size} geospatial anchors (accuracy: ${accuracyM}m, alt: $fallbackAlt)")
         geoAnchorsCreated = true
     }
 

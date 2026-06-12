@@ -98,6 +98,20 @@
             android:focusable="true" />
 
         <Button
+            android:id="@+id/btnAltitudeMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="🏔 Stored Alt"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC6A1E78"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
             android:id="@+id/btnToggleDebugOverlay"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -11,8 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.abs
-import kotlin.math.sqrt
 
 /**
  * Encapsulates all debug test-anchor grid logic, keeping it out of [OpenInARFragment].
@@ -39,11 +37,13 @@ class TestAnchorController(private val context: Context) {
     companion object {
         private const val TAG = "TestAnchorController"
         const val ASSET_PATH = "model_images/pin.glb"
-        const val GRID_RADIUS = 1
-        const val GRID_SPACING_M = 3.0
-        const val MODEL_RING_RADIUS = 1
         const val PIN_SCALE = 0.3048f
         const val PIN_GROUND_DROP_M = 0.1524f
+
+        /** Half-width of the grid in cells. Total grid = (2*GRID_RADIUS+1)² points. */
+        const val GRID_RADIUS = 2
+        /** Distance between adjacent grid points in metres. */
+        const val GRID_SPACING_M = 5.0
 
         fun gridKey(latOff: Int, lonOff: Int): String = "test_grid_${latOff}_${lonOff}"
     }
@@ -93,13 +93,13 @@ class TestAnchorController(private val context: Context) {
     }
 
     /**
-     * Preload the inner model-grid keys into Filament so they are ready when spawned.
+     * Preload all grid cell keys into Filament so models are ready when spawned.
      * Call on the main thread after [pinModelFilePath] is set.
      */
     fun preloadModelKeys(filamentRenderer: ArFilamentRenderer, scope: CoroutineScope) {
         val filePath = pinModelFilePath ?: return
-        for (latOff in -MODEL_RING_RADIUS..MODEL_RING_RADIUS) {
-            for (lonOff in -MODEL_RING_RADIUS..MODEL_RING_RADIUS) {
+        for (latOff in -GRID_RADIUS..GRID_RADIUS) {
+            for (lonOff in -GRID_RADIUS..GRID_RADIUS) {
                 filamentRenderer.preload(gridKey(latOff, lonOff), filePath, scope)
             }
         }
@@ -130,6 +130,7 @@ class TestAnchorController(private val context: Context) {
             Action.NONE -> Unit
         }
     }
+
 
     /**
      * Renders all live test anchors and fills [labelEntries], [arrowEntries], and [newModelPoses].
@@ -201,7 +202,7 @@ class TestAnchorController(private val context: Context) {
         }
     }
 
-    /** Detach and remove all anchors. Safe to call from any thread after the GL thread is stopped. */
+    /** Detach and clear all test anchors. Safe to call after the GL thread stops. */
     fun cleanup() {
         for (te in anchors) try { te.anchor.detach() } catch (_: Exception) {}
         anchors.clear()
@@ -214,40 +215,43 @@ class TestAnchorController(private val context: Context) {
     private fun spawnGrid(earth: Earth, lat0: Double, lon0: Double) {
         clearGrid()
 
-        val alt       = earth.cameraGeospatialPose.altitude
-        val dLatPerM  = 1.0 / 111_111.0
-        val dLonPerM  = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
+        val dLatPerM = 1.0 / 111_111.0
+        val dLonPerM = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
 
-        var created   = 0
-        var modelCells = 0
+        val pinPath = pinModelFilePath
+        var created = 0
+        val total   = (2 * GRID_RADIUS + 1) * (2 * GRID_RADIUS + 1)
 
         for (latOff in -GRID_RADIUS..GRID_RADIUS) {
             for (lonOff in -GRID_RADIUS..GRID_RADIUS) {
-                val lat   = lat0 + latOff * GRID_SPACING_M * dLatPerM
-                val lon   = lon0 + lonOff * GRID_SPACING_M * dLonPerM
-                val label = if (latOff == 0 && lonOff == 0) "●" else "($latOff,$lonOff)"
-                val dist  = sqrt((latOff * latOff + lonOff * lonOff).toDouble())
-                val bright = (1.0 - dist / 4.5).coerceIn(0.3, 1.0).toFloat()
+                val lat    = lat0 + latOff * GRID_SPACING_M * dLatPerM
+                val lon    = lon0 + lonOff * GRID_SPACING_M * dLonPerM
+                val label  = if (latOff == 0 && lonOff == 0) "●" else "($latOff,$lonOff)"
+                val dist   = kotlin.math.sqrt((latOff * latOff + lonOff * lonOff).toDouble())
+                val bright = (1.0 - dist / (GRID_RADIUS * 2.0)).coerceIn(0.4, 1.0).toFloat()
                 val rgba   = floatArrayOf(bright, 0.85f * bright, 0.15f, 1f)
-                val useModel = abs(latOff) <= MODEL_RING_RADIUS && abs(lonOff) <= MODEL_RING_RADIUS
 
                 try {
-                    val anchor   = earth.createAnchor(lat, lon, alt, 0f, 0f, 0f, 1f)
-                    val modelKey = if (useModel) gridKey(latOff, lonOff) else null
-                    if (modelKey != null) modelCells++
-                    anchors += TestAnchorEntry(anchor, modelKey, label, rgba)
+                    // resolveAnchorOnTerrain places the anchor at altitudeAboveTerrain = 0.0
+                    // (exactly on the terrain surface). The anchor starts as TrackingState.PAUSED
+                    // and transitions to TRACKING once ARCore resolves the terrain elevation.
+                    val anchor = earth.resolveAnchorOnTerrain(lat, lon, 0.0, 0f, 0f, 0f, 1f)
+                    anchors += TestAnchorEntry(
+                        anchor   = anchor,
+                        modelKey = if (pinPath != null) gridKey(latOff, lonOff) else null,
+                        label    = label,
+                        rgba     = rgba
+                    )
                     created++
                 } catch (e: Exception) {
-                    Log.e(TAG, "Anchor create failed for $label", e)
+                    Log.e(TAG, "resolveAnchorOnTerrain failed for $label", e)
                 }
             }
         }
 
         isActive = true
-        val total = (2 * GRID_RADIUS + 1) * (2 * GRID_RADIUS + 1)
-        Log.d(TAG, "Grid spawned: $created/$total points, $modelCells model cells, " +
-                "${created - modelCells} cube cells — " +
-                "${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}, alt=${alt}m")
+        Log.d(TAG, "Grid spawned: $created/$total terrain anchors, spacing=${GRID_SPACING_M}m — " +
+                "${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}")
     }
 
     private fun clearGrid() {
