@@ -76,12 +76,13 @@ class OpenInARViewModel @Inject constructor(
 
     // ── Distance filter ───────────────────────────────────────────────────────
 
-    private val _distanceFilterIndex = MutableStateFlow(0)
+    /** Default to the 50 m step so only nearby models are shown on first launch. */
+    private val _distanceFilterIndex = MutableStateFlow(1)
 
     /** Current maximum display distance in metres, or null for "show all". */
     val distanceFilterM: StateFlow<Double?> = _distanceFilterIndex
         .map { DISTANCE_FILTER_STEPS[it] }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 50.0)
 
     /** Human-readable label for the distance filter button. */
     val distanceFilterLabel: StateFlow<String> = _distanceFilterIndex
@@ -94,7 +95,7 @@ class OpenInARViewModel @Inject constructor(
                 else  -> "📏 <${DISTANCE_FILTER_STEPS[i]!!.toInt()}m"
             }
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "📏 All")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "📏 <50m")
 
     /** Advance to the next distance-filter step (wraps around). */
     fun cycleDistanceFilter() {

@@ -72,8 +72,12 @@ class ArFilamentRenderer {
 
     private data class CachedAsset(
         val asset: FilamentAsset,
-        /** Frame counter: entities are added to scene after the first asyncUpdateLoad() call. */
-        var framesUpdated: Int = 0
+        /**
+         * True once [scene.addEntities] has been called for this asset.
+         * Entities must NOT be added before [ResourceLoader.asyncGetLoadProgress] reaches 1.0;
+         * adding them while GPU resource uploads are still in flight causes PreconditionPanic.
+         */
+        var addedToScene: Boolean = false
     )
 
     private lateinit var engine: Engine
@@ -118,7 +122,7 @@ class ArFilamentRenderer {
     /** Returns the current load state for [key], safe to call from any thread. */
     fun modelLoadState(key: String): ModelLoadState {
         val cached = anchorAssets[key] ?: return ModelLoadState.NOT_REQUESTED
-        return if (cached.framesUpdated >= 2) ModelLoadState.IN_SCENE else ModelLoadState.LOADING
+        return if (cached.addedToScene) ModelLoadState.IN_SCENE else ModelLoadState.LOADING
     }
 
     // -------------------------------------------------------------------------
@@ -261,41 +265,74 @@ class ArFilamentRenderer {
         if (!uiHelper.isReadyToRender) return
         val sc = swapChain ?: return
 
-        // Pump async resource loading for all cached assets.
+        // Pump async resource loading for all cached assets, then sample progress.
+        // We only add entities to the scene once ALL pending GPU uploads reach 1.0 to
+        // guarantee every renderable has its GPU buffers/textures fully resident.
+        // Adding entities with incomplete resources triggers PreconditionPanic.
         resourceLoader.asyncUpdateLoad()
+        val allLoaded = resourceLoader.asyncGetLoadProgress() >= 1.0f
 
         // Remove stale test-grid assets when their keys are no longer present.
         // This is required so "Clear Tests" actually removes already-added entities.
-        val activeKeys = poses.asSequence().map { it.key }.toHashSet()
-        val staleTestKeys = anchorAssets.keys.filter {
+        val activeKeys     = poses.asSequence().map { it.key }.toHashSet()
+        val staleTestKeys  = anchorAssets.keys.filter {
             it.startsWith(TEST_GRID_KEY_PREFIX) && it !in activeKeys
         }
-        staleTestKeys.forEach { key ->
-            val cached = anchorAssets.remove(key) ?: return@forEach
-            scene.removeEntities(cached.asset.entities)
-            assetLoader.destroyAsset(cached.asset)
-            loadingKeys.remove(key)
+        if (staleTestKeys.isNotEmpty()) {
+            // Stale assets that have not yet been fully added to the scene may still be
+            // in the ResourceLoader's upload queue. Calling destroyAsset() on an asset
+            // that is currently being uploaded triggers a PreconditionPanic — cancel all
+            // pending loads first, then re-start loads for non-stale unfinished assets.
+            val anyStillLoading = staleTestKeys.any { !anchorAssets[it]!!.addedToScene }
+            if (anyStillLoading) {
+                resourceLoader.asyncCancelLoad()
+            }
+            staleTestKeys.forEach { key ->
+                val cached = anchorAssets.remove(key) ?: return@forEach
+                if (cached.addedToScene) {
+                    scene.removeEntities(cached.asset.entities)
+                }
+                runCatching { assetLoader.destroyAsset(cached.asset) }
+                loadingKeys.remove(key)
+                Log.d(TAG, "Stale test asset removed: $key")
+            }
+            if (anyStillLoading) {
+                // Re-start uploads for non-stale assets whose loads were interrupted above.
+                for ((_, cached) in anchorAssets) {
+                    if (!cached.addedToScene) {
+                        runCatching { resourceLoader.asyncBeginLoad(cached.asset) }
+                    }
+                }
+            }
         }
 
-        // Transition LOADING → READY: add entities after the first asyncUpdateLoad pass.
+        // Transition LOADING → IN_SCENE once all pending GPU uploads are complete.
+        // The framesUpdated-based heuristic is NOT safe: on slow devices (e.g., feature
+        // extraction taking 124 ms/frame) two asyncUpdateLoad() calls may not be enough
+        // to fully upload textures, and adding entities with incomplete GPU resources
+        // triggers PreconditionPanic ("scene.addEntities on unready asset").
         for (pose in poses) {
             val cached = anchorAssets[pose.key] ?: continue
-            if (cached.framesUpdated < 2) {
-                cached.framesUpdated++
-                if (cached.framesUpdated == 2) {
-                    scene.addEntities(cached.asset.entities)
-                    Log.d(TAG, "Model added to scene: ${pose.key}")
-                } else continue
+            if (!cached.addedToScene) {
+                if (!allLoaded) continue   // wait until all uploads are complete
+                cached.addedToScene = true
+                scene.addEntities(cached.asset.entities)
+                Log.d(TAG, "Model added to scene: ${pose.key}")
             }
-            // framesUpdated >= 2: update transform
+            // Asset is in scene — update its world transform every frame.
             val tm = engine.transformManager
             val ti = tm.getInstance(cached.asset.root)
             tm.setTransform(ti, pose.worldMatrix)
         }
 
         // Camera — ARCore gives world→camera; Filament camera.setModelMatrix wants camera→world.
+        // Guard against a degenerate view matrix (should not happen with a healthy ARCore session,
+        // but a singular matrix would produce NaN/Inf values that trigger PreconditionPanic).
         val cameraWorld = FloatArray(16)
-        Matrix.invertM(cameraWorld, 0, viewMatrix, 0)
+        if (!Matrix.invertM(cameraWorld, 0, viewMatrix, 0)) {
+            Log.w(TAG, "renderFrame: view matrix is singular — skipping frame")
+            return
+        }
         camera.setModelMatrix(cameraWorld)
         camera.setCustomProjection(
             DoubleArray(16) { i -> projMatrix[i].toDouble() },
@@ -316,6 +353,16 @@ class ArFilamentRenderer {
      * Engine.destroy() is deferred by 50 ms (same workaround as [ModelViewerActivity])
      * to avoid the SIGABRT that occurs when the deferred UiHelper cleanup message runs
      * after the engine has already been destroyed.
+     *
+     * Destruction order matters:
+     *  1. Cancel async loads; destroy all gltfio assets.
+     *  2. Explicitly destroy [resourceLoader] and [assetLoader] — these gltfio objects hold
+     *     native state and have JVM finalizers. If NOT destroyed here, the GC may invoke
+     *     their finalizers after engine.destroy() → `utils::PreconditionPanic` (SIGABRT).
+     *  3. Detach UiHelper (fires onDetachedFromSurface → destroySwapChain).
+     *  4. Destroy remaining engine-owned objects (renderer, view, camera, scene).
+     *  5. Deferred: engine.flushAndWait() + engine.destroy() after 50 ms so that any
+     *     messages posted by UiHelper/DisplayHelper have already run on the main thread.
      */
     fun destroy() {
         if (!initialized) return
@@ -325,29 +372,35 @@ class ArFilamentRenderer {
         loadingKeys.clear()
         fileBytesCache.clear()
         anchorAssets.values.forEach { cached ->
-            scene.removeEntities(cached.asset.entities)
-            assetLoader.destroyAsset(cached.asset)
+            runCatching { scene.removeEntities(cached.asset.entities) }
+            runCatching { assetLoader.destroyAsset(cached.asset) }
         }
         anchorAssets.clear()
 
         if (sunEntity != 0) {
-            scene.removeEntity(sunEntity)
-            engine.lightManager.destroy(sunEntity)
-            EntityManager.get().destroy(sunEntity)
+            runCatching { scene.removeEntity(sunEntity) }
+            runCatching { engine.lightManager.destroy(sunEntity) }
+            runCatching { EntityManager.get().destroy(sunEntity) }
             sunEntity = 0
         }
 
-        // Detach UiHelper — it will call onDetachedFromSurface() → destroySwapChain().
-        uiHelper.detach()
+        // Explicitly destroy gltfio utility objects BEFORE the engine.
+        // Their JVM finalizers call back into native; if the engine is already
+        // gone when finalizers run, Filament throws PreconditionPanic.
+        runCatching { resourceLoader.destroy() }.onFailure { Log.w(TAG, "resourceLoader.destroy() threw", it) }
+        runCatching { assetLoader.destroy()    }.onFailure { Log.w(TAG, "assetLoader.destroy() threw", it) }
 
-        engine.destroyRenderer(renderer)
-        engine.destroyView(view)
-        engine.destroyCameraComponent(cameraEntity)
-        EntityManager.get().destroy(cameraEntity)
-        engine.destroyScene(scene)
+        // Detach UiHelper — triggers onDetachedFromSurface() → destroySwapChain().
+        runCatching { uiHelper.detach() }
+
+        runCatching { engine.destroyRenderer(renderer) }
+        runCatching { engine.destroyView(view) }
+        runCatching { engine.destroyCameraComponent(cameraEntity) }
+        runCatching { EntityManager.get().destroy(cameraEntity) }
+        runCatching { engine.destroyScene(scene) }
 
         // Defer engine.destroy() so any queued Filament main-thread messages
-        // can run while the engine is still alive (mirrors ModelViewerActivity pattern).
+        // (e.g. from UiHelper's DisplayHelper) can run while the engine is still alive.
         val eng = engine
         Handler(Looper.getMainLooper()).postDelayed({
             try {
