@@ -219,6 +219,24 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
+        <!-- GNSS source / RTK status chip – top-left of map -->
+        <TextView
+            android:id="@+id/text_gnss_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="10dp"
+            android:background="#CC000000"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:text="GNSS: --"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:visibility="visible" />
+
         <TextView
             android:id="@+id/text_render_map"
             android:layout_width="wrap_content"

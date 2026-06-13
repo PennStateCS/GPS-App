@@ -313,10 +313,14 @@ class AddCoordinateDialogFragment(
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {
-        // Obtain a single external fix via the injected switchboard
+        // Obtain a single external fix via the injected switchboard.
+        // Filter out Provider.INTERNAL so that a stale replayed internal fix from before the
+        // user switched sources is never returned as an "external" position.
         val fix = withTimeoutOrNull(12_000L) {
             withContext(Dispatchers.IO) {
-                runCatching { fixSwitchboard.fixes.first() }.getOrNull()
+                runCatching {
+                    fixSwitchboard.fixes.first { it.provider != Provider.INTERNAL }
+                }.getOrNull()
             }
         }
         if (fix != null) {
