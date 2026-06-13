@@ -13,8 +13,7 @@
         android:focusableInTouchMode="true"
         android:clickable="true" />
 
-    <!-- 2-D text labels projected above each geospatial pin.
-         Non-clickable so touches pass through to the GLSurfaceView. -->
+    <!-- 2-D text labels projected above each geospatial pin. -->
     <com.example.surveyingapp.ui.openinar.CoordinateLabelOverlay
         android:id="@+id/labelOverlay"
         android:layout_width="match_parent"
@@ -23,11 +22,7 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
-    <!-- Filament renders GLB models here with a transparent background,
-         composited on top of the camera GLSurfaceView below.
-         layerType=HARDWARE ensures the view is composited via hardware with alpha blending.
-         opaque="false" is set programmatically in ArFilamentRenderer.init(); here we
-         pre-set the layer type so the TextureView never flashes opaque before init. -->
+    <!-- Filament GLB model overlay (transparent, hardware composited). -->
     <TextureView
         android:id="@+id/filamentSurface"
         android:layout_width="match_parent"
@@ -37,8 +32,7 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
-    <!-- Off-screen pin arrows: drawn at the screen edges pointing toward pins
-         that are in front of the camera but outside the current field of view. -->
+    <!-- Off-screen pin arrows at screen edges. -->
     <com.example.surveyingapp.ui.openinar.OffScreenPinIndicatorOverlay
         android:id="@+id/offScreenOverlay"
         android:layout_width="match_parent"
@@ -47,104 +41,232 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
-    <!-- All buttons stacked vertically in the top-right corner -->
-    <LinearLayout
+    <!-- ── Floating toolbar ───────────────────────────────────────────────── -->
+
+    <!--
+        Toggle button — always visible in the top-right corner.
+        Tapping shows or hides the full toolbar card below it.
+    -->
+    <ImageButton
+        android:id="@+id/btnToolbarToggle"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:src="@drawable/ic_ar_menu"
+        android:background="#CC000000"
+        android:scaleType="center"
+        android:padding="10dp"
+        android:contentDescription="Toggle AR toolbar"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <!-- Model load progress chip — anchored just below the toggle button. -->
+    <TextView
+        android:id="@+id/chipModelProgress"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
-        android:orientation="vertical"
-        android:layout_margin="8dp"
-        android:gravity="end">
+        android:layout_marginTop="64dp"
+        android:layout_marginEnd="12dp"
+        android:text="⏳ 0/0 models"
+        android:textSize="11sp"
+        android:textColor="#FFFFFF"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="5dp"
+        android:background="@drawable/bg_ar_chip"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false" />
 
-        <Button
-            android:id="@+id/btnReanchor"
+    <!--
+        Floating icon toolbar card.
+        Hidden by default (GONE). The toggle button slides it in/out with a
+        translationX animation so it never overlaps the camera feed unnecessarily.
+
+        Each item: 24dp icon + 9sp label, separated by subtle dividers.
+    -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/arFloatingToolbar"
+        android:layout_width="72dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="64dp"
+        android:layout_marginEnd="12dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="#CC000000"
+        app:cardCornerRadius="14dp"
+        app:cardElevation="8dp"
+        app:strokeWidth="0dp">
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🔄 Re-anchor"
-            android:textSize="12sp"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="4dp"
-            android:backgroundTint="#CC1B5E20"
-            android:textColor="#FFFFFF"
-            android:clickable="true"
-            android:focusable="true" />
+            android:orientation="vertical"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
 
-        <Button
-            android:id="@+id/btnSpawnTestPoints"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="📍 Test Points"
-            android:textSize="12sp"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="4dp"
-            android:backgroundTint="#CC1565C0"
-            android:textColor="#FFFFFF"
-            android:clickable="true"
-            android:focusable="true" />
+            <!-- Reanchor -->
+            <LinearLayout
+                android:id="@+id/btnReanchor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Re-anchor">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_refresh_24_white"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Anchor"
+                    android:textSize="9sp"
+                    android:textColor="#FFFFFF"
+                    android:gravity="center" />
+            </LinearLayout>
 
-        <Button
-            android:id="@+id/btnDistanceFilter"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="📏 All"
-            android:textSize="12sp"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="4dp"
-            android:backgroundTint="#CC455A64"
-            android:textColor="#FFFFFF"
-            android:clickable="true"
-            android:focusable="true" />
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
 
-        <Button
-            android:id="@+id/btnAltitudeMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="🏔 Stored Alt"
-            android:textSize="12sp"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="4dp"
-            android:backgroundTint="#CC6A1E78"
-            android:textColor="#FFFFFF"
-            android:clickable="true"
-            android:focusable="true" />
+            <!-- Test Points -->
+            <LinearLayout
+                android:id="@+id/btnSpawnTestPoints"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Spawn test points">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_pin"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/txtTestPoints"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Test"
+                    android:textSize="9sp"
+                    android:textColor="#FFFFFF"
+                    android:gravity="center" />
+            </LinearLayout>
 
-        <Button
-            android:id="@+id/btnToggleDebugOverlay"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Show Debug"
-            android:textSize="12sp"
-            android:paddingHorizontal="10dp"
-            android:paddingVertical="4dp"
-            android:backgroundTint="#CC455A64"
-            android:textColor="#FFFFFF"
-            android:clickable="true"
-            android:focusable="true" />
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
 
-        <!-- Model load progress badge -->
-        <TextView
-            android:id="@+id/chipModelProgress"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:layout_marginTop="6dp"
-            android:text="⏳ 0/0 models"
-            android:textSize="11sp"
-            android:textColor="#FFFFFF"
-            android:paddingHorizontal="12dp"
-            android:paddingVertical="5dp"
-            android:background="@drawable/bg_ar_chip"
-            android:visibility="gone"
-            android:clickable="false"
-            android:focusable="false" />
+            <!-- Distance Filter -->
+            <LinearLayout
+                android:id="@+id/btnDistanceFilter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Distance filter">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_ar_filter"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/txtDistanceFilter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="All"
+                    android:textSize="9sp"
+                    android:textColor="#FFFFFF"
+                    android:gravity="center" />
+            </LinearLayout>
 
-    </LinearLayout>
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
 
-    <!-- Debug panel: AR status + detailed debug info, shown/hidden together via the toggle button. -->
+            <!-- Altitude Mode -->
+            <LinearLayout
+                android:id="@+id/btnAltitudeMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Altitude mode">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_ar_altitude"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/txtAltitudeMode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Stored"
+                    android:textSize="9sp"
+                    android:textColor="#FFFFFF"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
+
+            <!-- Debug Overlay -->
+            <LinearLayout
+                android:id="@+id/btnToggleDebugOverlay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Toggle debug overlay">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_ar_debug"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/txtDebugOverlay"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Debug"
+                    android:textSize="9sp"
+                    android:textColor="#FFFFFF"
+                    android:gravity="center" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- ── Debug panel (shown via debug toggle) ───────────────────────────── -->
     <LinearLayout
         android:id="@+id/debugPanel"
         android:layout_width="match_parent"
@@ -181,6 +303,5 @@
             android:focusableInTouchMode="false" />
 
     </LinearLayout>
-
 
 </FrameLayout>
