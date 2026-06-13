@@ -3,6 +3,31 @@ package com.example.surveyingapp.util
 import kotlin.math.*
 
 /**
+ * Haversine distance in metres between two WGS84 lat/lon points.
+ * Accurate to within ~0.5% at field distances relevant for surveying.
+ */
+fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val R = 6_371_000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = sin(dLat / 2).let { it * it } +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
+            sin(dLon / 2).let { it * it }
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+}
+
+/**
+ * True bearing in degrees (0 = North, clockwise) from point 1 to point 2.
+ */
+fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val dLon = Math.toRadians(lon2 - lon1)
+    val y = sin(dLon) * cos(Math.toRadians(lat2))
+    val x = cos(Math.toRadians(lat1)) * sin(Math.toRadians(lat2)) -
+            sin(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * cos(dLon)
+    return (Math.toDegrees(atan2(y, x)) + 360) % 360
+}
+
+/**
  * Minimal WGS84 -> UTM conversion for client-side projection display.
  *
  * - Accuracy is sufficient for UI display/export (cm-level or better for typical lat/lon ranges).

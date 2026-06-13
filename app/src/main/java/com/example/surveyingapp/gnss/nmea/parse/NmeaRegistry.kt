@@ -2,9 +2,20 @@ package com.example.surveyingapp.gnss.nmea.parse
 
 import com.example.surveyingapp.gnss.nmea.sentence.NmeaSentence
 
+/**
+ * Central NMEA sentence parser registry.
+ *
+ * @param parsers Map of sentence type (e.g., "GGA", "RMC") to parser implementation
+ * @param verifyChecksum If true, validates checksums when present. If [requireChecksum] is also
+ *                       true, rejects sentences without checksums entirely.
+ * @param requireChecksum If true (and [verifyChecksum] is true), rejects sentences that lack a
+ *                        checksum. Set to false for dev/replay scenarios where test data may
+ *                        omit checksums.
+ */
 class NmeaRegistry(
     private val parsers: Map<String, SentenceParser<out NmeaSentence>>,
-    private val verifyChecksum: Boolean = true
+    private val verifyChecksum: Boolean = true,
+    private val requireChecksum: Boolean = false
 ) {
     fun parse(line: String): NmeaSentence? {
         val trimmed = line.trim()
@@ -16,10 +27,22 @@ class NmeaRegistry(
 
         val payload = trimmed.substring(1, payloadEnd)
 
-        if (verifyChecksum && starIdx >= 0 && starIdx + 3 <= trimmed.length) {
-            val csHex = trimmed.substring(starIdx + 1, starIdx + 3)
-            val expected = csHex.toIntOrNull(16) ?: return null
-            if (xorChecksum(payload) != expected) return null
+        // Checksum validation
+        if (verifyChecksum) {
+            if (starIdx >= 0 && starIdx + 3 <= trimmed.length) {
+                // Checksum present: validate it
+                val csHex = trimmed.substring(starIdx + 1, starIdx + 3)
+                val expected = csHex.toIntOrNull(16) ?: return null
+                if (xorChecksum(payload) != expected) {
+                    android.util.Log.w("NmeaRegistry", "Checksum mismatch: $trimmed")
+                    return null
+                }
+            } else if (requireChecksum) {
+                // Checksum missing but required: reject sentence
+                android.util.Log.w("NmeaRegistry", "Missing required checksum: $trimmed")
+                return null
+            }
+            // else: checksum missing but not required; allow sentence
         }
 
         val fields = payload.split(',')

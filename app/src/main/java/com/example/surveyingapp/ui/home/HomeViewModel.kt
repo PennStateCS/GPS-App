@@ -17,15 +17,17 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.surveyingapp.gnss.accumulator.FixAccumulator
 import com.example.surveyingapp.gnss.accumulator.FixSnapshot
+import com.example.surveyingapp.gnss.model.TimestampSource
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.logging.NmeaLogger
 import com.example.surveyingapp.gnss.logging.NmeaLogStats
+import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -33,36 +35,73 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val coordinateRepository: CoordinateRepository,
-    private val fixAccumulator: FixAccumulator,
     private val nmeaLogger: NmeaLogger
 ) : ViewModel() {
 
-    // Private MutableLiveData - only this ViewModel can change the value
-    private val _text = MutableLiveData<String>().apply {
-        value = "Welcome to SurveyingApp!\n\nCapture precise coordinates, manage survey points, and visualize your data with our comprehensive surveying tools.\n\nGet started by capturing coordinates or viewing your existing points."
-    }
-
-    // Public LiveData - UI can observe but not modify
-    // This encapsulation protects data integrity
-    val text: LiveData<String> = _text
+    // ...existing code...
 
     /**
-     * Exposes the current GNSS fix snapshot with position data, quality metrics, and timestamp info.
-     * This StateFlow automatically updates when new NMEA data is processed.
+     * Maps a [Fix] from the active provider (internal GPS or RS2+) to a [FixSnapshot] for the
+     * FixBadgeView. This ensures the badge always reflects whichever source is selected, rather
+     * than the legacy FixAccumulator which was never connected to the live data path.
      */
-    val fixSnapshot: StateFlow<FixSnapshot> = fixAccumulator.state.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = fixAccumulator.state.value
+    private fun Fix.toFixSnapshot() = FixSnapshot(
+        timestampMillis      = timeUtc.toEpochMilli(),
+        timestampSource      = timestampSource,
+        lat                  = latDeg,
+        lon                  = lonDeg,
+        altMsl               = altMslM,
+        geoidSeparation      = geoidSeparationM,
+        altEllipsoidal       = altEllipsoidalM,
+        speedMps             = speedMps,
+        courseDeg            = courseDeg,
+        satsUsed             = satsUsed,
+        hdop                 = hDop,
+        vDop                 = vDop,
+        pDop                 = pDop,
+        satellitesInView     = satsVisible,
+        horizontalAccuracyM  = hAccM,
+        verticalAccuracyM    = vAccM,
+        correctionAgeS       = diffAgeS,
+        correctionStationId  = correctionStationId,
+        multipathIndex       = multipathIndex,
+        rtkStatus            = rtkStatus.name,
+        stdLatM              = null,
+        stdLonM              = null,
+        stdAltM              = null
     )
 
     /**
+     * Exposes the current GNSS fix snapshot with position data, quality metrics, and timestamp.
+     * Derived from [FixSwitchboard.fixes] so it automatically reflects the active provider
+     * (internal GPS or RS2+) as set in Settings.
+     */
+    val fixSnapshot: StateFlow<FixSnapshot> = fixSwitchboard.fixes
+        .map { it.toFixSnapshot() }
+        .stateIn(
+            scope        = viewModelScope,
+            started      = SharingStarted.WhileSubscribed(5_000),
+            initialValue = FixSnapshot(
+                timestampMillis = 0L,
+                timestampSource = TimestampSource.DEVICE,
+                lat = null, lon = null,
+                altMsl = null, geoidSeparation = null, altEllipsoidal = null,
+                speedMps = null, courseDeg = null,
+                satsUsed = null, hdop = null,
+                vDop = null, pDop = null,
+                satellitesInView = null, horizontalAccuracyM = null,
+                verticalAccuracyM = null, correctionAgeS = null,
+                correctionStationId = null, multipathIndex = null,
+                rtkStatus = null, stdLatM = null, stdLonM = null, stdAltM = null
+            )
+        )
+
+    /**
      * Exposes NMEA stream statistics for monitoring data flow health.
-     * Includes lines per second, parse errors, and buffer status.
      */
     val nmeaStats: StateFlow<NmeaLogStats> = nmeaLogger.stats.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        scope        = viewModelScope,
+        started      = SharingStarted.WhileSubscribed(5_000),
         initialValue = nmeaLogger.stats.value
     )
 }
