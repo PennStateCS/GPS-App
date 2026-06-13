@@ -43,13 +43,16 @@ class ObservationSession(
 
     private var job: Job? = null
 
-    // Track the latest quality snapshot so we can persist it in the result
     private var lastRtk: RtkStatus? = null
     private var lastSatsUsed: Int? = null
+    private var lastSatsVisible: Int? = null
     private var lastHdop: Double? = null
+    private var lastVDop: Double? = null
+    private var lastPDop: Double? = null
     private var lastHAcc: Double? = null
     private var lastVAcc: Double? = null
     private var lastDiffAge: Double? = null
+    private var lastCorrectionStationId: String? = null
 
     fun start() {
         if (job != null) return
@@ -61,7 +64,8 @@ class ObservationSession(
         job = scope.launch {
             fixes
                 .filter { fix ->
-                    // Quality gate: RTK status and corrections age if present
+                    // Only accept fixes that meet the minimum RTK quality, are fresh,
+                    // and have corrections that haven't aged out
                     val okMode = fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus)
                     val freshFix = Duration.between(fix.timeUtc, Instant.now()).seconds <= policy.maxFixAgeSec
                     val freshCorr = fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true
@@ -73,14 +77,18 @@ class ObservationSession(
                     xs.push(x); ys.push(y); zs.push(z)
                     samples++
 
-                    // Update latest quality snapshot
+                    // Update quality snapshot from this epoch
                     lastRtk = fix.rtkStatus
                     lastSatsUsed = fix.satsUsed
+                    lastSatsVisible = fix.satsVisible
                     lastHdop = fix.hDop
+                    lastVDop = fix.vDop
+                    lastPDop = fix.pDop
                     val (h, v) = AccuracyEstimator.estimate1SigmaMeters(fix, uere)
                     lastHAcc = h
                     lastVAcc = v
                     lastDiffAge = fix.diffAgeS
+                    lastCorrectionStationId = fix.correctionStationId
 
                     val elapsed = Duration.between(start, Instant.now()).seconds.toInt()
                     _state.value = State.Capturing(
@@ -95,6 +103,7 @@ class ObservationSession(
                     val reachedDuration = elapsed >= policy.minDurationSec
                     val reachedSamples = samples >= policy.minSamples
                     val capDuration = elapsed >= policy.maxDurationSec
+                    // Finish when both minimums are met, or when the hard cap is reached
                     if ((reachedDuration && reachedSamples) || capDuration) {
                         finalize(start, xs, ys, zs, samples)
                     }
@@ -123,15 +132,18 @@ class ObservationSession(
             lonDeg = lon,
             altEllipsoidalM = h,
             ecefStd = Triple(xs.stddev(), ys.stddev(), zs.stddev()),
-            // New quality fields (from the latest good epoch)
             rtkStatus = lastRtk,
             satsUsed = lastSatsUsed,
+            satsVisible = lastSatsVisible,
             hdop = lastHdop,
+            vDop = lastVDop,
+            pDop = lastPDop,
             hAccM = lastHAcc,
             vAccM = lastVAcc,
-            diffAgeS = lastDiffAge
+            diffAgeS = lastDiffAge,
+            correctionStationId = lastCorrectionStationId
         )
-        // Stop collection job without resetting state to Idle (preserve Complete state)
+        // Cancel the collection job (State.Complete is already set; don't reset to Idle)
         job?.cancel()
         job = null
         _state.value = State.Complete(result)

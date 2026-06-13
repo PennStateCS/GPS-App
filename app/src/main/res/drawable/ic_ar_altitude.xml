@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stacked-layers icon representing stored / terrain altitude mode. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Top layer -->
+    <path
+        android:pathData="M12,2 L2,7 L12,12 L22,7 Z"
+        android:fillColor="#FFFFFF" />
+    <!-- Middle layer stroke -->
+    <path
+        android:pathData="M2,12 L12,17 L22,12"
+        android:fillColor="@android:color/transparent"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Bottom layer stroke -->
+    <path
+        android:pathData="M2,17 L12,22 L22,17"
+        android:fillColor="@android:color/transparent"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
+

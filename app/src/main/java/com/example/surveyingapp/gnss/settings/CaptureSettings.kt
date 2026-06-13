@@ -6,23 +6,26 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.StateFlow
 
-/** Acceptance gates for capture. */
+/** Thresholds that a fix must satisfy before it is accepted into a capture session. */
 data class CaptureSettings(
     val minSats: Int = 10,
     val maxPdop: Double = 3.0,
     val allowed: Set<RtkStatus> = setOf(RtkStatus.FIX, RtkStatus.FLOAT),
     val minDwell: Duration = 2.seconds
 ) {
-    /** True if this fix passes current acceptance thresholds (ignores dwell/windowing). */
+    /**
+     * Returns true if [fix] passes all quality thresholds.
+     * Does not consider dwell time or windowing — the session handles those separately.
+     */
     fun accepts(fix: Fix): Boolean {
-        val satsOk = (fix.satsUsed ?: 0) >= minSats
+        val satsOk = fix.satsUsed >= minSats
         val pdopOk = (fix.pDop ?: Double.POSITIVE_INFINITY) <= maxPdop
-        val modeOk = fix.rtkStatus?.let { it in allowed } ?: false
+        val modeOk = fix.rtkStatus in allowed
         return satsOk && pdopOk && modeOk
     }
 }
 
-/** Per-mode UERE overrides in meters (1-sigma). */
+/** Per-mode UERE overrides in metres (1-sigma). Affects DOP-based accuracy fallback estimates. */
 data class UereOverrides(
     val forSingle: Double = 3.0,
     val forDgps: Double = 1.5,
@@ -31,8 +34,9 @@ data class UereOverrides(
 )
 
 /**
- * Accuracy knobs. Flows live in the repo; consumers can collect these.
- * If overrideUere = true, use values from uereOverrides; else fall back to your default table.
+ * Accuracy configuration knobs exposed as StateFlows so UI can toggle them live.
+ * When [overrideUere] is true the [uereOverrides] values are used instead of the
+ * built-in defaults in [UereTable].
  */
 data class AccuracySettings(
     val overrideUere: StateFlow<Boolean>,

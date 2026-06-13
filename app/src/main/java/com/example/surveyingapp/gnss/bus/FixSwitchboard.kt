@@ -12,17 +12,15 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 
 /**
- * Routes fix and sky streams from whichever [SourceAdapter] is currently selected.
+ * Routes GNSS fixes and sky snapshots from the currently selected source.
  *
- * Provider switching is driven by [SourceSettings.activeProvider]. When the active provider
- * changes, the old adapter is stopped and the new one is started automatically.
+ * The rest of the app should collect from this switchboard instead of talking
+ * directly to internal GNSS, TCP, Bluetooth, or any other source adapter. When
+ * the active provider changes, the switchboard stops the current adapter, starts
+ * the new adapter, and republishes its streams through the shared buses.
  *
- * **Extensibility**: to add a new provider, add a value to [ProviderChoice], implement a
- * [SourceAdapter], and register it in the [adapters] map passed at construction time.
- * No changes to [FixSwitchboard] itself are required.
- *
- * @param adapters  Map from every supported [ProviderChoice] to its [SourceAdapter].
- *                  An unknown choice is logged as a warning and results in an empty stream.
+ * To add another provider, add a new ProviderChoice, implement SourceAdapter,
+ * and include it in the adapters map.
  */
 class FixSwitchboard(
     private val scope: CoroutineScope,
@@ -31,13 +29,16 @@ class FixSwitchboard(
 ) : FixBus, SkyBus {
 
     private val EmptySky = SkySnapshot(
-        satellites   = emptyList(),
-        epoch        = Instant.EPOCH,
-        source       = com.example.surveyingapp.gnss.model.SkySource.UNKNOWN,
+        satellites = emptyList(),
+        epoch = Instant.EPOCH,
+        source = com.example.surveyingapp.gnss.model.SkySource.UNKNOWN,
         smoothWindowMs = null
     )
 
-    // replay(1) so new collectors immediately see the latest fix
+    /*
+     * Keep the most recent fix available for late collectors. The extra buffer
+     * gives short UI stalls some breathing room without blocking the GNSS source.
+     */
     private val _fixes = MutableSharedFlow<Fix>(
         replay = 1,
         extraBufferCapacity = 64,
@@ -53,16 +54,26 @@ class FixSwitchboard(
     private var skyJob: Job? = null
     private var currentAdapter: SourceAdapter? = null
 
-    /** Begin observing provider choice and route streams accordingly. Call once at app start. */
+    /**
+     * Starts watching the selected provider and binds to the matching adapter.
+     *
+     * This is expected to be called once during app startup. Calling it again
+     * replaces the provider watcher instead of creating a second collector.
+     */
     fun start() {
         android.util.Log.d("FixSwitchboard", "Starting switchboard")
+
         providerCollectJob?.cancel()
         providerCollectJob = scope.launch {
             sourceSettings.activeProvider.collect { choice ->
-                android.util.Log.d("FixSwitchboard", "Provider changed → $choice")
+                android.util.Log.d("FixSwitchboard", "Provider changed: $choice")
+
                 val adapter = adapters[choice]
                 if (adapter == null) {
-                    android.util.Log.w("FixSwitchboard", "No adapter registered for $choice — stream will be empty")
+                    android.util.Log.w(
+                        "FixSwitchboard",
+                        "No adapter registered for $choice. GNSS stream will be empty."
+                    )
                     rebindTo(null)
                 } else {
                     bind(adapter)
@@ -71,26 +82,38 @@ class FixSwitchboard(
         }
     }
 
-    /** Public stop for lifecycle symmetry. */
+    /**
+     * Stops provider observation and disconnects from the active adapter.
+     */
     fun stop() {
         android.util.Log.d("FixSwitchboard", "Stopping switchboard")
-        providerCollectJob?.cancel(); providerCollectJob = null
+
+        providerCollectJob?.cancel()
+        providerCollectJob = null
+
         rebindTo(null)
     }
 
     private fun bind(adapter: SourceAdapter) {
-        if (currentAdapter === adapter) return // already active
+        if (currentAdapter === adapter) return
         rebindTo(adapter)
     }
 
     private fun rebindTo(next: SourceAdapter?) {
         android.util.Log.d(
             "FixSwitchboard",
-            "rebindTo: ${currentAdapter?.let { it::class.simpleName }} → ${next?.let { it::class.simpleName }}"
+            "Rebinding source: ${currentAdapter?.let { it::class.simpleName }} -> ${next?.let { it::class.simpleName }}"
         )
 
-        currentFixCollector?.cancel(); currentFixCollector = null
-        skyJob?.cancel();              skyJob              = null
+        /*
+         * Stop collectors before stopping the adapter. That prevents old source
+         * emissions from leaking through while the provider switch is in progress.
+         */
+        currentFixCollector?.cancel()
+        currentFixCollector = null
+
+        skyJob?.cancel()
+        skyJob = null
 
         (currentAdapter as? Startable)?.stop()
         currentAdapter = next
@@ -103,6 +126,10 @@ class FixSwitchboard(
         (next as? Startable)?.start()
 
         currentFixCollector = scope.launch {
+            /*
+             * Only the latest fix matters for the live UI. Conflation prevents slow
+             * collectors from building a backlog during high-rate GNSS updates.
+             */
             next.fixes.conflate().collect { fix ->
                 _fixes.emit(fix)
             }
@@ -110,7 +137,11 @@ class FixSwitchboard(
 
         val skyFlow = (next as? SkyProvider)?.sky
         skyJob = if (skyFlow != null) {
-            scope.launch { skyFlow.collect { snap -> _sky.value = snap } }
+            scope.launch {
+                skyFlow.collect { snapshot ->
+                    _sky.value = snapshot
+                }
+            }
         } else {
             _sky.value = EmptySky
             null
@@ -118,17 +149,23 @@ class FixSwitchboard(
     }
 }
 
-/** Minimal surface area required from any GNSS source adapter. */
+/**
+ * Minimum contract for a source that can publish GNSS fixes.
+ */
 interface SourceAdapter {
     val fixes: SharedFlow<Fix>
 }
 
-/** Implement if the adapter exposes sky/satellite snapshots. */
+/**
+ * Optional contract for adapters that publish satellite sky state.
+ */
 interface SkyProvider {
     val sky: StateFlow<SkySnapshot>
 }
 
-/** Implement if the adapter requires explicit lifecycle management (start/stop). */
+/**
+ * Optional contract for adapters that need explicit lifecycle control.
+ */
 interface Startable {
     fun start()
     fun stop()

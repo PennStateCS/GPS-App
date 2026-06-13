@@ -36,6 +36,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.model.RtkStatus
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -103,6 +105,7 @@ class RenderMapFragment : Fragment() {
     private var liveTrail: Polyline? = null
     private val trailPoints = mutableListOf<LatLng>()
     private var lastTrailFix: Fix? = null
+    private var gnssStatusChip: TextView? = null
 
     // Stakeout features
     private var isStakeoutMode = false
@@ -124,6 +127,7 @@ class RenderMapFragment : Fragment() {
         val root = inflater.inflate(R.layout.fragment_render_map, container, false)
         mapView = root.findViewById(R.id.mapView)
         placeholder = root.findViewById(R.id.text_render_map)
+        gnssStatusChip = root.findViewById(R.id.text_gnss_status)
         toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
         toggleSatBtn = root.findViewById(R.id.fab_toggle_sat)
         gridBtn = root.findViewById(R.id.fab_toggle_grid)
@@ -201,13 +205,44 @@ class RenderMapFragment : Fragment() {
         try {
             val currentPos = LatLng(fix.latDeg, fix.lonDeg)
             currentFix = fix
-            try { updateCurrentMarker(fix.latDeg, fix.lonDeg) } catch (e: Exception) { Log.w(TAG, "updateCurrentMarker failed", e) }
+            try { updateCurrentMarker(fix.latDeg, fix.lonDeg, fix.rtkStatus) } catch (e: Exception) { Log.w(TAG, "updateCurrentMarker failed", e) }
             try { updateAccuracyCircle(currentPos, fix.hAccM) } catch (e: Exception) { Log.w(TAG, "updateAccuracyCircle failed", e) }
             try { updateLiveTrail(currentPos, fix) } catch (e: Exception) { Log.w(TAG, "updateLiveTrail failed", e) }
             try { updateStakeoutCalculations(currentPos) } catch (e: Exception) { Log.w(TAG, "updateStakeoutCalculations failed", e) }
+            try { updateGnssStatusChip(fix) } catch (e: Exception) { Log.w(TAG, "updateGnssStatusChip failed", e) }
         } catch (e: Exception) {
             Log.e(TAG, "updateLiveTracking error", e)
         }
+    }
+
+    /** Updates the GNSS source/status chip overlay on the map. */
+    private fun updateGnssStatusChip(fix: Fix) {
+        val chip = gnssStatusChip ?: return
+        val sourceLabel = when (fix.provider) {
+            Provider.INTERNAL                                      -> "Internal GPS"
+            Provider.RS2_TCP, Provider.RS2_EXTERNAL, Provider.RS2_BT -> "RS2+"
+            Provider.OTHER                                         -> "External"
+        }
+        val rtkLabel = when (fix.rtkStatus) {
+            RtkStatus.FIX            -> "RTK FIX"
+            RtkStatus.FLOAT          -> "RTK FLOAT"
+            RtkStatus.DGPS           -> "DGPS"
+            RtkStatus.SINGLE         -> "SINGLE"
+            RtkStatus.DEAD_RECKONING -> "DEAD RECKONING"
+            RtkStatus.NONE,
+            RtkStatus.INVALID        -> "NO FIX"
+        }
+        val accLabel = fix.hAccM?.let { " ±${"%.2f".format(it)}m" } ?: ""
+        chip.text = "$sourceLabel | $rtkLabel$accLabel"
+        chip.setBackgroundColor(when (fix.rtkStatus) {
+            RtkStatus.FIX            -> 0xCC1B5E20.toInt()  // dark green
+            RtkStatus.FLOAT          -> 0xCCE65100.toInt()  // dark orange
+            RtkStatus.DGPS           -> 0xCC0D47A1.toInt()  // dark blue
+            RtkStatus.SINGLE         -> 0xCCB71C1C.toInt()  // dark red
+            RtkStatus.DEAD_RECKONING -> 0xCC4A148C.toInt()  // dark purple
+            RtkStatus.NONE,
+            RtkStatus.INVALID        -> 0xCC424242.toInt()  // dark grey
+        })
     }
 
     private fun updateStakeoutCalculations(currentPos: LatLng) {
@@ -246,20 +281,29 @@ class RenderMapFragment : Fragment() {
         stakeoutMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
     }
 
-    private fun updateCurrentMarker(lat: Double, lon: Double) {
+    private fun updateCurrentMarker(lat: Double, lon: Double, rtkStatus: RtkStatus = RtkStatus.NONE) {
         val pos = LatLng(lat, lon)
         lastFixLatLng = pos
-
+        val hue = when (rtkStatus) {
+            RtkStatus.FIX            -> BitmapDescriptorFactory.HUE_GREEN
+            RtkStatus.FLOAT          -> BitmapDescriptorFactory.HUE_YELLOW
+            RtkStatus.DGPS           -> BitmapDescriptorFactory.HUE_AZURE
+            RtkStatus.SINGLE         -> BitmapDescriptorFactory.HUE_ORANGE
+            RtkStatus.DEAD_RECKONING -> BitmapDescriptorFactory.HUE_VIOLET
+            RtkStatus.NONE,
+            RtkStatus.INVALID        -> BitmapDescriptorFactory.HUE_RED
+        }
         if (currentMarker == null) {
             currentMarker = googleMap?.addMarker(
                 MarkerOptions()
                     .position(pos)
                     .title("Current Position")
-                    .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_BLUE))
+                    .icon(BitmapDescriptorFactory.defaultMarker(hue))
             )
         } else {
             try {
                 currentMarker?.position = pos
+                currentMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to update marker position", e)
             }

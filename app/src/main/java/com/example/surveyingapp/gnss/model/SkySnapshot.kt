@@ -5,19 +5,25 @@ import java.time.Instant
 enum class SkySource { NMEA_GSV, PLATFORM_API, PROPRIETARY, UNKNOWN }
 
 /**
- * Per-satellite snapshot suitable for UI and quality heuristics.
+ * Holds everything the skyplot and signal-strength charts need for one receiver update.
+ *
+ * [satellites] is the single source of truth. The properties below it are derived
+ * views computed lazily — they exist to keep UI code concise without duplicating
+ * grouping logic everywhere.
  */
 data class SatInfo(
     val constellation: Constellation,
-    val svid: Int,                  // platform/NMEA SVID (interpretation depends on constellation)
+    val svid: Int,                  // platform/NMEA SVID (meaning varies by constellation)
     val elevationDeg: Double?,      // may be null on some APIs
     val azimuthDeg: Double?,        // may be null on some APIs
-    val cn0DbHz: Double?,           // carrier-to-noise density (dB-Hz)
-    val usedInFix: Boolean? = null  // true if used in current solution, null if unknown
+    val cn0DbHz: Double?,           // carrier-to-noise density in dB-Hz (higher = stronger signal)
+    val usedInFix: Boolean? = null  // true if this satellite contributed to the position solution
 )
 
 /**
- * Snapshot of the visible sky. Keep it cohesive: satellites[] is the source of truth;
+ * Snapshot of the visible sky at one point in time.
+ *
+ * Keep it cohesive: [satellites] is the source of truth;
  * aggregated maps are derived lazily to avoid drift.
  */
 data class SkySnapshot(
@@ -26,7 +32,7 @@ data class SkySnapshot(
     val source: SkySource = SkySource.UNKNOWN,
     val smoothWindowMs: Long? = null
 ) {
-    // --- Derived views for fast UI ---
+    // --- Derived views (computed once, cached by lazy) ---
     val totalVisible: Int get() = satellites.size
 
     val totalUsed: Int get() = satellites.count { it.usedInFix == true }
