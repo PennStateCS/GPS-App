@@ -1,6 +1,7 @@
 package com.example.surveyingapp.ui.viewpoints
 
 import android.Manifest
+import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.PackageManager
@@ -9,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -42,37 +44,16 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import androidx.activity.result.contract.ActivityResultContracts
+import com.example.surveyingapp.ui.models.ModelPickerActivity
+import com.google.android.material.button.MaterialButton
 import java.io.File
 import java.util.Locale
 import kotlin.coroutines.resume
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import androidx.core.graphics.drawable.toDrawable
 
-/**
- * Represents a single entry in the icon spinner.
- * Either a built-in asset icon or a model from the database.
- */
-sealed class IconItem {
-    /** A built-in icon stored as a PNG in assets/model_images/ */
-    data class BuiltIn(val assetName: String) : IconItem()
-
-    /** A model from the Room database. Uses its thumbnail if available. */
-    data class DbModel(val model: Model) : IconItem()
-
-    /** The string key stored on the Coordinate (what [Coordinate.icon] is set to) */
-    fun iconKey(): String = when (this) {
-        is BuiltIn -> assetName
-        is DbModel -> "model:${model.id}"   // prefix so it's unambiguous
-    }
-
-    /** Human-readable label shown in the spinner */
-    fun label(): String = when (this) {
-        is BuiltIn -> assetName
-            .replace('_', ' ')
-            .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
-        is DbModel -> model.name
-    }
-}
 
 @AndroidEntryPoint
 class AddCoordinateDialogFragment(
@@ -86,6 +67,27 @@ class AddCoordinateDialogFragment(
 
     // Reference to EditText for proper cleanup
     private var editTextRef: EditText? = null
+
+    // Icon picker state - the button that shows the chosen model and the icon key
+    // model : <id>
+    private var iconButtonRef: MaterialButton? = null
+    private var selectedIconKey: String? = null
+
+
+    private val modelPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data ?: return@registerForActivityResult
+            val id = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_MODEL_ID)
+                ?: return@registerForActivityResult
+            val name = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_MODEL_NAME)
+            val thumbnailPath = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_THUMBNAIL_PATH)
+            applySelectedModel(id, name, thumbnailPath)
+        }
+    }
+
+
 
     // Variables to store the GPS coordinates
     private var latitude: Double = 0.0
@@ -124,18 +126,25 @@ class AddCoordinateDialogFragment(
         // Get references to the UI elements
         val nameEdit = view.findViewById<EditText>(R.id.edit_point_name)
         val locationText = view.findViewById<TextView>(R.id.text_location)
-        val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
+        val iconButton = view.findViewById<MaterialButton>(R.id.button_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
 
         // Store reference to EditText for proper cleanup
         editTextRef = nameEdit
 
-        // Build combined icon list: built-ins first, then DB models
-        val builtInNames = listOf("transformer", "hydrant", "sign", "lightpole", "shrub", "building")
-        val iconItems: List<IconItem> = builtInNames.map { IconItem.BuiltIn(it) } +
-                dbModels.map { IconItem.DbModel(it) }
+        // The icon is now chosen via the model picker, not the spinner.
+        iconButtonRef = iconButton
+        iconButton.setOnClickListener {
+            modelPickerLauncher.launch(
+                ModelPickerActivity.newIntent(requireContext(), "Choose a Model")
+            )
+        }
 
-        iconSpinner.adapter = IconSpinnerAdapter(requireContext(), iconItems)
+        // Default to the first available model so a point always gets a valid icon,
+        // matching the previous spinner which defaulted to its first entry.
+//        dbModels.firstOrNull()?.let { model ->
+//            applySelectedModel(model.id, model.name, model.thumbnailFilePath)
+//        }
 
         // Set up color choices with predefined colors
         val colors = listOf(
@@ -167,8 +176,10 @@ class AddCoordinateDialogFragment(
             .setPositiveButton("Add") { _, _ ->
                 // Create a new Coordinate object with user input
                 val name = nameEdit.text.toString().ifBlank { "Unnamed Coordinate" }
-                val selectedIcon = iconItems[iconSpinner.selectedItemPosition]
-                val icon = selectedIcon.iconKey()
+
+                // To select models
+                val icon = selectedIconKey ?: ""
+
                 val color = colors[colorSpinner.selectedItemPosition].second
 
                 // Compute UTM projection from current lat/lon
@@ -211,6 +222,40 @@ class AddCoordinateDialogFragment(
             .setNegativeButton("Cancel", null)
             .create()
     }
+
+    private fun applySelectedModel(modelId: String, name: String?, thumbnailPath: String?) {
+        selectedIconKey = "model:$modelId"
+
+        // If the button isn't available, we can't apply the model so return
+        val button = iconButtonRef ?: return
+
+        button.text = name ?: "Selected model"
+
+        if (thumbnailPath.isNullOrBlank()) {
+            button.icon = null
+            return
+        }
+
+        lifecycleScope.launch {
+            val bmp = withContext(Dispatchers.IO) {
+                try {
+                    val file = File(thumbnailPath)
+                    if (file.exists()) BitmapFactory.decodeFile(thumbnailPath) else null
+                } catch (e: Exception) {
+                    Log.w("AddCoordinateDialog", "Failed to decode thumbnail: $thumbnailPath", e)
+                    null
+                }
+            }
+
+            // Guards against the dialog being torn down while decoding
+            if (bmp != null) {
+                iconButtonRef?.iconTint = null // Fixes weird default tint Android adds for some reason to Material UI
+                iconButtonRef?.icon = bmp.toDrawable(resources)
+            }
+        }
+    }
+
+
 
     private suspend fun fetchInternalOneShot(locationText: TextView) {
         val fineGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -309,80 +354,81 @@ class AddCoordinateDialogFragment(
             addOnCanceledListener { if (cont.isActive) cont.resume(null) }
         }
 
-    /**
-     * Spinner adapter that handles both built-in asset icons and DB model thumbnails.
-     */
-    class IconSpinnerAdapter(
-        context: Context,
-        private val items: List<IconItem>
-    ) : ArrayAdapter<String>(context, 0, items.map { it.label() }) {
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
-            createItemView(position, convertView, parent)
-
-        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
-            createItemView(position, convertView, parent)
-
-        private fun createItemView(position: Int, convertView: View?, parent: ViewGroup): View {
-            val inflater = LayoutInflater.from(context)
-            val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
-            val imageView = view.findViewById<ImageView>(R.id.image_icon)
-            val textView = view.findViewById<TextView>(R.id.text_icon_name)
-
-            val item = items[position]
-            textView.text = item.label()
-
-            when (item) {
-                is IconItem.BuiltIn -> {
-                    try {
-                        val stream = context.assets.open("model_images/${item.assetName}.png")
-                        imageView.setImageBitmap(BitmapFactory.decodeStream(stream))
-                    } catch (e: Exception) {
-                        Log.w("IconSpinnerAdapter", "Asset not found: ${item.assetName}", e)
-                        imageView.setImageBitmap(makePlaceholderBitmap(item.label()))
-                    }
-                }
-                is IconItem.DbModel -> {
-                    val thumbPath = item.model.thumbnailFilePath
-                    if (!thumbPath.isNullOrBlank()) {
-                        val thumbFile = File(thumbPath)
-                        if (thumbFile.exists()) {
-                            imageView.setImageBitmap(BitmapFactory.decodeFile(thumbPath))
-                        } else {
-                            imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
-                        }
-                    } else {
-                        // No thumbnail yet — show initials placeholder
-                        imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
-                    }
-                }
-            }
-            return view
-        }
-
-        /** Generates a simple grey square with the first letter of [label] as a fallback image. */
-        private fun makePlaceholderBitmap(label: String): Bitmap {
-            val size = 64
-            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bmp)
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            paint.color = Color.parseColor("#BDBDBD")
-            canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
-            paint.color = Color.WHITE
-            paint.textSize = size * 0.5f
-            paint.textAlign = Paint.Align.CENTER
-            val initial = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-            val yPos = (canvas.height / 2f) - ((paint.descent() + paint.ascent()) / 2f)
-            canvas.drawText(initial, size / 2f, yPos, paint)
-            return bmp
-        }
-    }
+//    /**
+//     * Spinner adapter that handles both built-in asset icons and DB model thumbnails.
+//     */
+//    class IconSpinnerAdapter(
+//        context: Context,
+//        private val items: List<IconItem>
+//    ) : ArrayAdapter<String>(context, 0, items.map { it.label() }) {
+//
+//        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+//            createItemView(position, convertView, parent)
+//
+//        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
+//            createItemView(position, convertView, parent)
+//
+//        private fun createItemView(position: Int, convertView: View?, parent: ViewGroup): View {
+//            val inflater = LayoutInflater.from(context)
+//            val view = convertView ?: inflater.inflate(R.layout.item_icon_spinner, parent, false)
+//            val imageView = view.findViewById<ImageView>(R.id.image_icon)
+//            val textView = view.findViewById<TextView>(R.id.text_icon_name)
+//
+//            val item = items[position]
+//            textView.text = item.label()
+//
+//            when (item) {
+//                is IconItem.BuiltIn -> {
+//                    try {
+//                        val stream = context.assets.open("model_images/${item.assetName}.png")
+//                        imageView.setImageBitmap(BitmapFactory.decodeStream(stream))
+//                    } catch (e: Exception) {
+//                        Log.w("IconSpinnerAdapter", "Asset not found: ${item.assetName}", e)
+//                        imageView.setImageBitmap(makePlaceholderBitmap(item.label()))
+//                    }
+//                }
+//                is IconItem.DbModel -> {
+//                    val thumbPath = item.model.thumbnailFilePath
+//                    if (!thumbPath.isNullOrBlank()) {
+//                        val thumbFile = File(thumbPath)
+//                        if (thumbFile.exists()) {
+//                            imageView.setImageBitmap(BitmapFactory.decodeFile(thumbPath))
+//                        } else {
+//                            imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
+//                        }
+//                    } else {
+//                        // No thumbnail yet — show initials placeholder
+//                        imageView.setImageBitmap(makePlaceholderBitmap(item.model.name))
+//                    }
+//                }
+//            }
+//            return view
+//        }
+//
+//        /** Generates a simple grey square with the first letter of [label] as a fallback image. */
+//        private fun makePlaceholderBitmap(label: String): Bitmap {
+//            val size = 64
+//            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+//            val canvas = Canvas(bmp)
+//            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+//            paint.color = Color.parseColor("#BDBDBD")
+//            canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+//            paint.color = Color.WHITE
+//            paint.textSize = size * 0.5f
+//            paint.textAlign = Paint.Align.CENTER
+//            val initial = label.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+//            val yPos = (canvas.height / 2f) - ((paint.descent() + paint.ascent()) / 2f)
+//            canvas.drawText(initial, size / 2f, yPos, paint)
+//            return bmp
+//        }
+//    }
 
     override fun onDestroyView() {
         super.onDestroyView()
         // Clear EditText focus and references to prevent IME callback errors
         editTextRef?.clearFocus()
         editTextRef = null
+        iconButtonRef = null
     }
 
     override fun onDetach() {
