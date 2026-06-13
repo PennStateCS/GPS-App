@@ -39,13 +39,8 @@
             app:iconGravity="textStart"
             app:iconPadding="12dp"
             android:textColor="#424242"
-            app:iconTint="#424242"
             app:strokeColor="#9E9E9E"
             app:rippleColor="#BDBDBD" />
-        <Spinner
-            android:id="@+id/spinner_icon"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
 
         <TextView
             android:layout_width="match_parent"
