@@ -1,10 +1,12 @@
 package com.example.surveyingapp.domain.repository
 
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.reach.ReachBatteryService
+import com.example.surveyingapp.gnss.reach.ReachCorrectionsInfo
+import com.example.surveyingapp.gnss.reach.ReachCorrectionsService
 import com.example.surveyingapp.gnss.reach.ReachDeviceService
 import com.example.surveyingapp.gnss.reach.ReachHttpClient
+import com.example.surveyingapp.gnss.settings.SourceSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,9 +22,9 @@ data class ReachBatteryInfo(
     val currentA: Double?,
     val temperatureC: Double?,
     val chargerStatus: String?,
-    val otg: Boolean? = null,              // USB OTG power status
-    val chargingTime: Long? = null,        // Estimated charging time remaining
-    val batteryHealth: String? = null      // Battery health status
+    val otg: Boolean? = null,
+    val usbChargerCurrentA: Double? = null,
+    val usbChargerVoltageV: Double? = null
 )
 
 data class ReachDeviceInfo(
@@ -32,11 +34,11 @@ data class ReachDeviceInfo(
     val firmware: String?,
     val serial: String?,
     val uptimeSec: Long?,
-    val uptime: String? = null,            // Formatted uptime string
-    val temperature: Double? = null,       // Device temperature
-    val storage: StorageInfo? = null,      // Storage information
-    val network: NetworkInfo? = null,      // Network status
-    val gnssStatus: GnssStatus? = null     // GNSS receiver status
+    val uptime: String? = null,               // Formatted uptime string
+    val gnssReceiverFirmware: String? = null, // GNSS receiver chip firmware (e.g. "HPG_1.50")
+    val hostname: String? = null,             // mDNS hostname e.g. "Reach6.local"
+    val rawResponse: String? = null,          // First 300 chars of HTTP response (diagnostics)
+    val storage: StorageInfo? = null          // Storage information
 )
 
 data class StorageInfo(
@@ -47,19 +49,6 @@ data class StorageInfo(
     val usagePercent: Int get() = ((usedMB.toDouble() / totalMB) * 100).toInt()
 }
 
-data class NetworkInfo(
-    val signalStrength: Int?,              // WiFi signal strength
-    val ssid: String?,                     // Connected WiFi network
-    val macAddress: String?,               // Device MAC address
-    val isConnected: Boolean
-)
-
-data class GnssStatus(
-    val isReceiving: Boolean,
-    val lastFixTime: Long?,
-    val satelliteCount: Int?,
-    val rtkStatus: String?
-)
 
 enum class DeviceConnectionStatus {
     CONNECTED,
@@ -78,7 +67,9 @@ enum class DeviceCommand {
 }
 
 @Singleton
-class ReachDeviceRepository @Inject constructor() {
+class ReachDeviceRepository @Inject constructor(
+    private val sourceSettings: SourceSettings
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -87,6 +78,9 @@ class ReachDeviceRepository @Inject constructor() {
 
     private val _deviceInfo = MutableStateFlow<ReachDeviceInfo?>(null)
     val deviceInfo: StateFlow<ReachDeviceInfo?> = _deviceInfo.asStateFlow()
+
+    private val _correctionsInfo = MutableStateFlow<ReachCorrectionsInfo?>(null)
+    val correctionsInfo: StateFlow<ReachCorrectionsInfo?> = _correctionsInfo.asStateFlow()
 
     private val _connectionStatus = MutableStateFlow(DeviceConnectionStatus.DISCONNECTED)
     val connectionStatus: StateFlow<DeviceConnectionStatus> = _connectionStatus.asStateFlow()
@@ -103,10 +97,9 @@ class ReachDeviceRepository @Inject constructor() {
 
     init {
         scope.launch {
-            SurveyingApp.settingsRepo.locationSource
-                .distinctUntilChanged()
-                .collectLatest { source ->
-                    val shouldPoll = source == LocationSourceType.EXTERNAL
+            sourceSettings.activeProvider
+                .collectLatest { provider ->
+                    val shouldPoll = provider == SourceSettings.ProviderChoice.EXTERNAL_TCP
                     if (shouldPoll && !isPolling) {
                         startPolling()
                     } else if (!shouldPoll) {
@@ -120,12 +113,14 @@ class ReachDeviceRepository @Inject constructor() {
         isPolling = true
         scope.launch { pollBattery() }
         scope.launch { pollDevice() }
+        scope.launch { pollCorrections() }
     }
 
     private fun stopPolling() {
         isPolling = false
         _batteryInfo.value = null
         _deviceInfo.value = null
+        _correctionsInfo.value = null
     }
 
     private suspend fun pollBattery() {
@@ -139,11 +134,14 @@ class ReachDeviceRepository @Inject constructor() {
                 val battery = runCatching { service.read() }.getOrNull()
                 _batteryInfo.value = battery?.let {
                     ReachBatteryInfo(
-                        percent = it.percent,
-                        voltageV = it.voltageV,
-                        currentA = it.currentA,
-                        temperatureC = it.temperatureC,
-                        chargerStatus = it.chargerStatus
+                        percent           = it.percent,
+                        voltageV          = it.voltageV,
+                        currentA          = it.currentA,
+                        temperatureC      = it.temperatureC,
+                        chargerStatus     = it.chargerStatus,
+                        otg               = it.otg,
+                        usbChargerCurrentA = it.usbChargerCurrentA,
+                        usbChargerVoltageV = it.usbChargerVoltageV
                     )
                 }
             }
@@ -159,17 +157,78 @@ class ReachDeviceRepository @Inject constructor() {
             } else {
                 val client = ReachHttpClient(ip)
                 val service = ReachDeviceService(client)
-                val device = runCatching { service.read() }.getOrNull()
+                val result = runCatching { service.read() }
+                val device = result.getOrNull()
+                val errorMsg = result.exceptionOrNull()?.message
+
+                fun String?.blankToNull() = takeIf { !it.isNullOrBlank() }
+
+                val storageInfo: StorageInfo? = if (device?.storageTotalMb != null) {
+                    val total = device.storageTotalMb
+                    val free  = device.storageFreeMb ?: 0L
+                    StorageInfo(totalMB = total, usedMB = total - free, availableMB = free)
+                } else null
+
                 _deviceInfo.value = ReachDeviceInfo(
-                    ip = ip,
-                    name = device?.name,
-                    model = device?.model,
-                    firmware = device?.firmware,
-                    serial = device?.serial,
-                    uptimeSec = device?.uptimeSec
+                    ip                   = ip,
+                    name                 = device?.name.blankToNull(),
+                    model                = device?.model.blankToNull(),
+                    firmware             = device?.firmware.blankToNull(),
+                    serial               = device?.serial.blankToNull(),
+                    uptimeSec            = parseUptimeToSeconds(device?.uptime),
+                    uptime               = device?.uptime.blankToNull(),
+                    gnssReceiverFirmware = device?.gnssReceiverFirmware.blankToNull(),
+                    hostname             = device?.hostname.blankToNull(),
+                    storage              = storageInfo,
+                    rawResponse          = device?.rawResponse
+                        ?: errorMsg?.let { "ERROR: $it" }
                 )
             }
             delay(30_000) // Poll every 30 seconds
+        }
+    }
+
+    /**
+     * Parses RS2+ uptime string "2 days, 1:08:08" into seconds.
+     * Returns null if parsing fails.
+     */
+    private fun parseUptimeToSeconds(uptimeStr: String?): Long? {
+        if (uptimeStr == null) return null
+        return try {
+            var totalSeconds = 0L
+
+            // Handle days (e.g., "2 days, ")
+            val daysMatch = Regex("""(\d+)\s+days?""").find(uptimeStr)
+            if (daysMatch != null) {
+                totalSeconds += daysMatch.groupValues[1].toLong() * 86400
+            }
+
+            // Handle time portion (e.g., "1:08:08")
+            val timeMatch = Regex("""(\d+):(\d+):(\d+)""").find(uptimeStr)
+            if (timeMatch != null) {
+                val hours = timeMatch.groupValues[1].toLong()
+                val minutes = timeMatch.groupValues[2].toLong()
+                val seconds = timeMatch.groupValues[3].toLong()
+                totalSeconds += hours * 3600 + minutes * 60 + seconds
+            }
+
+            totalSeconds
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private suspend fun pollCorrections() {
+        while (isPolling) {
+            val ip = getReachIp()
+            if (ip == null) {
+                _correctionsInfo.value = null
+            } else {
+                val client = ReachHttpClient(ip)
+                val service = ReachCorrectionsService(client)
+                _correctionsInfo.value = runCatching { service.read() }.getOrNull()
+            }
+            delay(5_000) // Poll corrections more frequently (every 5 seconds) since age/baseline changes often
         }
     }
 
@@ -256,7 +315,6 @@ class ReachDeviceRepository @Inject constructor() {
     fun isDeviceHealthy(): Boolean {
         val battery = _batteryInfo.value
         val device = _deviceInfo.value
-
         return when {
             battery == null || device == null -> false
             battery.percent < 10 -> false
@@ -276,47 +334,6 @@ class ReachDeviceRepository @Inject constructor() {
         }
     }
 
-    // Storage management
-    suspend fun getStorageInfo(): StorageInfo? {
-        val ip = getReachIp() ?: return null
-        return try {
-            val client = ReachHttpClient(ip)
-            // Implementation would fetch storage information
-            null // Placeholder
-        } catch (e: Exception) {
-            _lastError.value = "Failed to get storage info: ${e.message}"
-            null
-        }
-    }
-
-    suspend fun clearDeviceLogs(): Boolean {
-        return sendCommand(DeviceCommand.CLEAR_LOGS)
-    }
-
-    // Network diagnostics
-    suspend fun pingDevice(): Boolean {
-        val ip = getReachIp() ?: return false
-        return try {
-            val client = ReachHttpClient(ip)
-            // Simple ping test
-            client.toString() // Placeholder for actual ping
-            true
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    suspend fun getNetworkInfo(): NetworkInfo? {
-        val ip = getReachIp() ?: return null
-        return try {
-            val client = ReachHttpClient(ip)
-            // Implementation would fetch network information
-            null // Placeholder
-        } catch (e: Exception) {
-            _lastError.value = "Failed to get network info: ${e.message}"
-            null
-        }
-    }
 
     // Auto-reconnection logic
     private suspend fun attemptReconnection() {

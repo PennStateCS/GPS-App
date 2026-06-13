@@ -20,7 +20,14 @@ class ReachHttpClient(
             connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs
             requestMethod = "GET"
+            instanceFollowRedirects = true
         }
-        conn.inputStream.bufferedReader().use { it.readText() }
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) throw java.io.IOException("HTTP $code for http://$host$path")
+            conn.inputStream.bufferedReader().use { it.readText() }
+        } finally {
+            conn.disconnect()
+        }
     }
 }

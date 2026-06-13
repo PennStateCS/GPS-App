@@ -1,33 +1,26 @@
 package com.example.surveyingapp.gnss.parser
 
 import com.example.surveyingapp.gnss.model.Constellation
-import com.example.surveyingapp.gnss.nmea.parse.*
+import com.example.surveyingapp.gnss.nmea.parse.DefaultNmeaRegistry
+import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
 import com.example.surveyingapp.gnss.nmea.sentence.NmeaSentence
 
 /**
- * Consolidated NMEA parser that uses the proper Constellation enum from gnss.model
- * This class serves as a bridge for legacy code while ensuring all enums come from gnss.model
+ * Thin façade over [NmeaRegistry] used by tests and the NMEA replay pipeline.
+ *
+ * Production GNSS sources ([InternalNmeaSource], [TcpNmeaSource]) use [NmeaFuser] directly
+ * with the singleton [NmeaRegistry] provided by DI, so they do not instantiate this class.
  */
-class NmeaParser {
+class NmeaParser(registry: NmeaRegistry = DefaultNmeaRegistry.create()) {
 
-    private val registry = NmeaRegistry(
-        mapOf(
-            "GGA" to GgaParser(),
-            "GSA" to GsaParser(),
-            "GSV" to GsvParser(),
-            "RMC" to RmcParser(),
-            "ZDA" to ZdaParser()
-        )
-    )
+    private val registry: NmeaRegistry = registry
 
     sealed class ParseResult {
         data class Success(val sentence: NmeaSentence) : ParseResult()
         data class Error(val message: String) : ParseResult()
     }
 
-    /**
-     * Legacy satellite data structure for backward compatibility
-     */
+    /** Legacy satellite data structure retained for test compatibility. */
     data class Satellite(
         val prn: Int,
         val constellation: Constellation,
@@ -42,7 +35,7 @@ class NmeaParser {
             if (sentence != null) {
                 ParseResult.Success(sentence)
             } else {
-                ParseResult.Error("Failed to parse NMEA sentence: $line")
+                ParseResult.Error("Unrecognised or invalid NMEA sentence: $line")
             }
         } catch (e: Exception) {
             ParseResult.Error("Parse error: ${e.message}")

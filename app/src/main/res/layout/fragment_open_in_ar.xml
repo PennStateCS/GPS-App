@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
@@ -12,17 +13,174 @@
         android:focusableInTouchMode="true"
         android:clickable="true" />
 
-    <TextView
-        android:id="@+id/textArStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:padding="8dp"
-        android:background="#66000000"
-        android:textColor="#FFFFFF"
-        android:text="Initializing AR..."
-        android:layout_gravity="top|center_horizontal"
+    <!-- 2-D text labels projected above each geospatial pin.
+         Non-clickable so touches pass through to the GLSurfaceView. -->
+    <com.example.surveyingapp.ui.openinar.CoordinateLabelOverlay
+        android:id="@+id/labelOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:clickable="false"
         android:focusable="false"
         android:focusableInTouchMode="false" />
+
+    <!-- Filament renders GLB models here with a transparent background,
+         composited on top of the camera GLSurfaceView below.
+         layerType=HARDWARE ensures the view is composited via hardware with alpha blending.
+         opaque="false" is set programmatically in ArFilamentRenderer.init(); here we
+         pre-set the layer type so the TextureView never flashes opaque before init. -->
+    <TextureView
+        android:id="@+id/filamentSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layerType="hardware"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
+    <!-- Off-screen pin arrows: drawn at the screen edges pointing toward pins
+         that are in front of the camera but outside the current field of view. -->
+    <com.example.surveyingapp.ui.openinar.OffScreenPinIndicatorOverlay
+        android:id="@+id/offScreenOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
+    <!-- All buttons stacked vertically in the top-right corner -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:orientation="vertical"
+        android:layout_margin="8dp"
+        android:gravity="end">
+
+        <Button
+            android:id="@+id/btnReanchor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔄 Re-anchor"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC1B5E20"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnSpawnTestPoints"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="📍 Test Points"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC1565C0"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnDistanceFilter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="📏 All"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC455A64"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnAltitudeMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="🏔 Stored Alt"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC6A1E78"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <Button
+            android:id="@+id/btnToggleDebugOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Show Debug"
+            android:textSize="12sp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:backgroundTint="#CC455A64"
+            android:textColor="#FFFFFF"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- Model load progress badge -->
+        <TextView
+            android:id="@+id/chipModelProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:layout_marginTop="6dp"
+            android:text="⏳ 0/0 models"
+            android:textSize="11sp"
+            android:textColor="#FFFFFF"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="5dp"
+            android:background="@drawable/bg_ar_chip"
+            android:visibility="gone"
+            android:clickable="false"
+            android:focusable="false" />
+
+    </LinearLayout>
+
+    <!-- Debug panel: AR status + detailed debug info, shown/hidden together via the toggle button. -->
+    <LinearLayout
+        android:id="@+id/debugPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/textArStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:background="#66000000"
+            android:textColor="#FFFFFF"
+            android:text="Initializing AR..."
+            android:gravity="center_horizontal"
+            android:clickable="false"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+
+        <TextView
+            android:id="@+id/textArDebug"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="10dp"
+            android:background="#BB000000"
+            android:textColor="#FFFF00"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:text="Debug: initializing..."
+            android:clickable="false"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+
+    </LinearLayout>
+
 
 </FrameLayout>

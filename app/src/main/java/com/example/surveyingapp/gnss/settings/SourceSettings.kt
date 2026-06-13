@@ -18,72 +18,69 @@ data class ConnectionProfile(
 data class ConnectionInfo(val host: String, val port: Int)
 
 /**
- * Minimal source-selection surface.
+ * Manages GNSS provider selection and TCP connection profiles.
  *
- * NOTE:
- * - We keep a private MutableStateFlow for the provider so you can change it via setActiveProvider().
- * - All other inputs can be StateFlow from your SettingsRepository/DataStore.
+ * Provider switching is reactive: update [_activeProvider] via [setActiveProvider] and
+ * [FixSwitchboard] will automatically route to the corresponding [SourceAdapter].
+ *
+ * **Profile Support (Future)**: Connection profiles allow multiple named TCP endpoints to be
+ * stored and selected without restarting the app. The active profile is resolved lazily via
+ * [getConnectionInfo] / [connectionInfoFlow].
+ *
+ * **Current Status**: Profiles are initialized empty and not yet populated from UI. TCP
+ * connection parameters are read from [SettingsRepository] by [TcpNmeaSource]. Once profile
+ * UI is implemented, [TcpNmeaSource] can switch to using [getConnectionInfo] instead.
  */
 class SourceSettings(
     private val _activeProvider: MutableStateFlow<ProviderChoice>,
-
-    @Deprecated("Use connectionProfiles/activeProfileId instead")
-    @Suppress("UNUSED_PARAMETER")
-    val rs2Host: StateFlow<String?>,
-
     val connectionProfiles: StateFlow<List<ConnectionProfile>>,
-    val activeProfileId: StateFlow<String?> // selected profile id
+    val activeProfileId: StateFlow<String?>
 ) {
     /** Read-only view for consumers. */
     val activeProvider: StateFlow<ProviderChoice> get() = _activeProvider
+
     fun setActiveProvider(choice: ProviderChoice) {
-        android.util.Log.d("SourceSettings", "setActiveProvider called: old=${_activeProvider.value}, new=$choice")
+        android.util.Log.d("SourceSettings", "setActiveProvider: ${_activeProvider.value} → $choice")
         _activeProvider.value = choice
-        android.util.Log.d("SourceSettings", "setActiveProvider updated to: ${_activeProvider.value}")
     }
 
-    /** GNSS provider selection (internal device vs external receiver). */
-    enum class ProviderChoice { INTERNAL, RS2_EXTERNAL }
+    /**
+     * GNSS provider selection.
+     *
+     * - [INTERNAL]     — Android device's built-in GNSS chip (via NMEA listener)
+     * - [EXTERNAL_TCP] — External GNSS receiver connected over TCP/IP (e.g. RS2+, u-blox, Reach)
+     *
+     * The enum is transport-level, not device-specific, so adding a new provider only requires
+     * a new [SourceAdapter] implementation and a new entry here.
+     */
+    enum class ProviderChoice { INTERNAL, EXTERNAL_TCP }
 
-    /** Currently selected profile as a flow (null if none). */
+    /** Currently selected profile as a flow (null if none selected or list is empty). */
     val activeProfileFlow: Flow<ConnectionProfile?> =
         combine(connectionProfiles, activeProfileId) { profiles, id ->
-            id?.let { profiles.firstOrNull { it.id == id } }
+            id?.let { profiles.firstOrNull { p -> p.id == id } }
         }.distinctUntilChanged()
 
-    /** Synchronous helpers. */
+    /** Synchronous helper — returns null when no profile is selected. */
     fun getActiveProfile(): ConnectionProfile? {
         val id = activeProfileId.value ?: return null
         return connectionProfiles.value.firstOrNull { it.id == id }
     }
 
-    fun getConnectionInfo(): ConnectionInfo? =
-        connectionInfoFor(getActiveProfile(), rs2Host.value)
-
-    /** Shared builder for sync + flow logic. */
-    private fun connectionInfoFor(profile: ConnectionProfile?, legacy: String?): ConnectionInfo? = when {
-        profile != null        -> ConnectionInfo(profile.host, profile.port.validPortOrDefault(DEFAULT_NMEA_PORT))
-        !legacy.isNullOrBlank() -> ConnectionInfo(legacy, DEFAULT_NMEA_PORT)
-        else                   -> null
-    }
+    /** Returns [ConnectionInfo] for the currently active profile, or null if none is selected. */
+    fun getConnectionInfo(): ConnectionInfo? = getActiveProfile()?.toConnectionInfo()
 
     /**
-     * Emits whenever profile list, selected profile, or legacy host changes.
-     * ExternalAdapter can collect this to (re)connect automatically.
+     * Emits whenever the active profile changes.
+     * [ExternalAdapter] / [TcpNmeaSource] can collect this to (re)connect automatically.
      */
     val connectionInfoFlow: Flow<ConnectionInfo?> =
-        combine(activeProfileFlow, rs2Host) { profile, legacy ->
-            connectionInfoFor(profile, legacy)
-        }.distinctUntilChanged()
+        activeProfileFlow
+            .map { it?.toConnectionInfo() }
+            .distinctUntilChanged()
 
-    /**
-     * Returns connection info from the currently active profile.
-     * This is the preferred way to get connection details.
-     */
-    fun resolveActiveConnection(): ConnectionInfo? {
-        val profile = getActiveProfile()
-        return profile?.let { ConnectionInfo(it.host, it.port) }
-    }
+    private fun ConnectionProfile.toConnectionInfo() =
+        ConnectionInfo(host, port.validPortOrDefault(DEFAULT_NMEA_PORT))
 }
 
 /** Port guard: keep within [1, 65535]; else return the provided default. */

@@ -62,7 +62,7 @@ class ObservationSession(
             fixes
                 .filter { fix ->
                     // Quality gate: RTK status and corrections age if present
-                    val okMode = fix.rtkStatus.ordinal >= policy.requiredMinStatus.ordinal
+                    val okMode = fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus)
                     val freshFix = Duration.between(fix.timeUtc, Instant.now()).seconds <= policy.maxFixAgeSec
                     val freshCorr = fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true
                     okMode && freshFix && freshCorr && fix.altEllipsoidalM != null
@@ -131,7 +131,9 @@ class ObservationSession(
             vAccM = lastVAcc,
             diffAgeS = lastDiffAge
         )
+        // Stop collection job without resetting state to Idle (preserve Complete state)
+        job?.cancel()
+        job = null
         _state.value = State.Complete(result)
-        cancel()
     }
 }

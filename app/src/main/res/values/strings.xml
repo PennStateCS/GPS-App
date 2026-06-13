@@ -37,7 +37,7 @@
     <string name="menu_render_map">Render Map</string>
     <string name="menu_open_in_ar">Open in AR</string>
     <string name="menu_models">Models</string>
-    <string name="menu_development">Development</string>
+    <string name="menu_development">Developer Tools</string>
     <string name="action_settings">Settings</string>
     <string name="action_replay">Replay NMEA</string>
     <string name="action_diagnostics">GNSS Diagnostics</string>
@@ -171,7 +171,7 @@
     <!-- GNSS Live dev pane strings -->
     <string name="dev_gnss_live_pause">⏸ Pause</string>
     <string name="dev_gnss_live_resume">▶ Resume</string>
-    <string name="dev_gnss_live_reset_stats">Reset Stats</string>
+    <string name="dev_gnss_live_reset_stats">Reset Statistics</string>
     <string name="dev_gnss_live_reset_toast">Diagnostics counters reset</string>
     <string name="dev_gnss_section_fix">GNSS Fix</string>
     <string name="dev_gnss_section_stats">Stream Stats</string>

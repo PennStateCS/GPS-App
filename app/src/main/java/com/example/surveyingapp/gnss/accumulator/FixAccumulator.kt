@@ -67,6 +67,11 @@ class FixAccumulator {
     )
     val state: StateFlow<FixSnapshot> = _state.asStateFlow()
 
+    // GSA multi-constellation accumulation: receivers emit one GSA per constellation (GP, GL, GA, GB, etc.)
+    private val gsaUsedSvids: MutableSet<Int> = mutableSetOf()
+    private var lastGsaUpdateMs: Long = 0L
+    private val GSA_EPOCH_TIMEOUT_MS = 2000L  // Clear accumulated SVIDs if no new GSA for 2 seconds
+
     /**
      * Accept an NMEA sentence and update the fused fix state.
      * This function must never throw; tolerate malformed or partial data.
@@ -106,12 +111,25 @@ class FixAccumulator {
             }
 
             is GSA -> {
+                // Clear stale accumulated SVIDs if timeout exceeded
+                val now = System.currentTimeMillis()
+                if (now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
+                    gsaUsedSvids.clear()
+                }
+                lastGsaUpdateMs = now
+
+                // Accumulate SVIDs from all constellations (GPGSA, GLGSA, GAGSA, GBGSA, etc.)
+                if (sentence.usedSvids.isNotEmpty()) {
+                    gsaUsedSvids.addAll(sentence.usedSvids)
+                }
+
                 // Extract all DOP values from GSA - this is the primary source for DOP data
+                // Use accumulated satellite count from all constellations
                 _state.value = current.copy(
                     hdop = sentence.hdop ?: current.hdop,
                     vDop = sentence.vdop ?: current.vDop,
                     pDop = sentence.pdop ?: current.pDop,
-                    satsUsed = if (sentence.usedSvids.isNotEmpty()) sentence.usedSvids.size else current.satsUsed
+                    satsUsed = if (gsaUsedSvids.isNotEmpty()) gsaUsedSvids.size else current.satsUsed
                 )
             }
 
@@ -178,11 +196,19 @@ class FixAccumulator {
     }
 
     /**
-     * Calculate horizontal accuracy in meters from GPS Error Statistics.
-     * Uses the formula: sqrt(stdDevMajor * stdDevMinor) to estimate horizontal accuracy.
+     * Calculate 1-sigma circular horizontal accuracy (DRMS) from GST error ellipse semi-axes.
+     *
+     * The NMEA GST sentence provides [stdDevMajor] (σ_max) and [stdDevMinor] (σ_min) as the
+     * semi-axes of the 1-sigma position error ellipse.
+     *
+     * DRMS (Distance Root Mean Square) = sqrt((σ_major² + σ_minor²) / 2) is the standard
+     * single-value horizontal accuracy metric and correctly reflects elongated ellipses.
+     *
+     * The previous formula sqrt(σ_major * σ_minor) (geometric mean) underestimates accuracy
+     * when σ_major >> σ_minor, which is exactly when satellite geometry is poorest.
      */
     private fun calculateHorizontalAccuracy(stdDevMajor: Double?, stdDevMinor: Double?): Double? {
         if (stdDevMajor == null || stdDevMinor == null) return null
-        return Math.sqrt(stdDevMajor * stdDevMinor)
+        return Math.sqrt((stdDevMajor * stdDevMajor + stdDevMinor * stdDevMinor) / 2.0)
     }
 }
