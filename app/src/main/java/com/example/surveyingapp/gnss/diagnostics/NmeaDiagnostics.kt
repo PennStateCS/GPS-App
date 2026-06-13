@@ -15,8 +15,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Diagnostic utility to test if the device provides NMEA data.
- * Use this to verify if InternalNmeaSource can work on this device.
+ * One-shot hardware check that confirms whether this device exposes NMEA sentences.
+ *
+ * Some Android devices report satellite positions via the platform API but never
+ * deliver raw NMEA lines through [OnNmeaMessageListener]. This class runs a short
+ * test and reports whether NMEA data arrived, satellites were visible, both, or neither.
+ *
+ * Use [runDiagnostic] from a coroutine once at startup or from a debug screen to verify
+ * that [InternalNmeaSource] will actually produce data on the current device.
  */
 class NmeaDiagnostics(private val context: Context) {
 

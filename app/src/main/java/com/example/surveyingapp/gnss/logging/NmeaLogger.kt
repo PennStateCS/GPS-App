@@ -8,9 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Statistics for NMEA logging operations
- */
+/** Rolling stats snapshot published by [NmeaLogger]. */
 data class NmeaLogStats(
     val totalLines: Long = 0,
     val linesPerSecond: Double = 0.0,
@@ -18,9 +16,7 @@ data class NmeaLogStats(
     val bufferSize: Int = 0
 )
 
-/**
- * Ring buffer entry for NMEA data
- */
+/** One entry in the NMEA ring buffer, with a wall-clock timestamp. */
 data class NmeaLogEntry(
     val timestamp: Long,
     val nmeaLine: String,
@@ -28,10 +24,13 @@ data class NmeaLogEntry(
 )
 
 /**
- * NMEA Logger with ring buffer and statistics tracking
+ * Thread-safe NMEA ring buffer with live throughput statistics.
  *
- * Maintains a ring buffer of the last 2000 NMEA lines and provides
- * real-time statistics including lines per second and parse error counts.
+ * The buffer holds up to 2000 entries. When it fills up, the oldest entry is
+ * dropped automatically. Throughput stats are recalculated once per second.
+ *
+ * All public methods are suspend functions protected by a [Mutex], so they are
+ * safe to call from multiple coroutines without external synchronisation.
  */
 @Singleton
 class NmeaLogger @Inject constructor() {
@@ -53,9 +52,7 @@ class NmeaLogger @Inject constructor() {
     private val _stats = MutableStateFlow(NmeaLogStats())
     val stats: StateFlow<NmeaLogStats> = _stats.asStateFlow()
 
-    /**
-     * Log a successful NMEA line
-     */
+    /** Adds a successfully received NMEA line to the buffer and updates stats. */
     suspend fun logNmeaLine(nmeaLine: String) {
         mutex.withLock {
             val entry = NmeaLogEntry(
@@ -72,9 +69,7 @@ class NmeaLogger @Inject constructor() {
         }
     }
 
-    /**
-     * Log a parse error
-     */
+    /** Adds a parse error to the buffer. The error detail is appended inline for easy reading. */
     suspend fun logParseError(errorLine: String, error: String? = null) {
         mutex.withLock {
             val entry = NmeaLogEntry(
@@ -91,27 +86,21 @@ class NmeaLogger @Inject constructor() {
         }
     }
 
-    /**
-     * Get the current buffer contents (most recent first)
-     */
+    /** Returns up to [maxLines] entries from the buffer, most recent first. */
     suspend fun getRecentLines(maxLines: Int = MAX_BUFFER_SIZE): List<NmeaLogEntry> {
         mutex.withLock {
             return buffer.getAll().takeLast(maxLines).reversed()
         }
     }
 
-    /**
-     * Get all error entries from the buffer
-     */
+    /** Returns only the entries that recorded parse errors. */
     suspend fun getErrorLines(): List<NmeaLogEntry> {
         mutex.withLock {
             return buffer.getAll().filter { it.isError }
         }
     }
 
-    /**
-     * Clear the buffer and reset counters
-     */
+    /** Empties the buffer and resets all counters back to zero. */
     suspend fun clear() {
         mutex.withLock {
             buffer.clear()
@@ -145,7 +134,8 @@ class NmeaLogger @Inject constructor() {
 }
 
 /**
- * Ring buffer implementation for NMEA log entries
+ * Fixed-capacity circular buffer. When full, adding a new item overwrites the oldest one.
+ * Head tracks the oldest entry; tail tracks where the next write goes.
  */
 private class RingBuffer<T>(private val maxSize: Int) {
     private val buffer = Array<Any?>(maxSize) { null }

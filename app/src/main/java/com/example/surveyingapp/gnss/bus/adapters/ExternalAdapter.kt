@@ -76,7 +76,7 @@ class ExternalAdapter(
     private var fixesJob: Job? = null
     private var gsvJob: Job? = null
 
-    // health/data flags
+    // ---- health/data tracking ----
     @Volatile private var firstDataArrived = false
     @Volatile private var lastDataTimeMs: Long = 0L
 
@@ -132,15 +132,17 @@ class ExternalAdapter(
     }
 
     private fun startInternalConnection() {
-        // Always stop the NmeaSource first so its internal state is clean on each attempt.
-        // This is a no-op on the first call (source not yet started).
+        /*
+         * Always stop the source first so any open socket or listener from a previous
+         * attempt is cleaned up before we start a fresh one.
+         */
         runCatching { nmea.stop() }
 
         // Reset flags
         firstDataArrived = false
         lastDataTimeMs = 0L
 
-        // Clear stale satellites from previous provider
+        // Clear satellite data from the previous provider so stale entries don't appear
         inv.reset()
 
         nmea.start()
@@ -204,14 +206,21 @@ class ExternalAdapter(
 }
 
 /**
- * Abstraction for your (new) NMEA pipeline. It should NOT be the legacy bridge.
+ * Contract for an NMEA data pipeline that wraps a physical or virtual connection.
+ *
+ * Implementations are responsible for opening the connection, forwarding raw lines
+ * through [NmeaFuser], and publishing the resulting [Fix] and [GsvMessage] streams.
+ * The [ExternalAdapter] owns reconnection; the source itself makes a single attempt.
+ *
+ * To add support for a new transport (e.g. u-blox over Bluetooth), implement this
+ * interface and pass the instance to a new [ExternalAdapter] registered in AppModule.
  */
 interface NmeaSource : Startable {
     fun parsedFixes(): SharedFlow<Fix>
     fun gsvStream(): SharedFlow<GsvMessage>
 }
 
-/** Minimal GSV message for the satellite inventory. */
+/** Satellite data entry from a single GSV sentence, normalised for [SatelliteInventory]. */
 data class GsvMessage(
     val constellation: String,
     val entries: List<GsvEntry>
@@ -221,6 +230,6 @@ data class GsvEntry(
     val svid: Int,
     val elevationDeg: Int?,
     val azimuthDeg: Int?,
-    val snrDbHz: Double?,   // nullable is fine
+    val snrDbHz: Double?,
     val usedInFix: Boolean
 )

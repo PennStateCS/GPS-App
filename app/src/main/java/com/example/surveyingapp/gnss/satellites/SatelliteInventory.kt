@@ -10,23 +10,28 @@ import com.example.surveyingapp.gnss.model.Constellation
 import kotlin.math.max
 
 /**
- * Maintains smoothed SNR per satellite and rolls up used/visible per constellation.
- * Evicts stale satellites not seen within [evictionSeconds].
+ * Maintains a smoothed SNR reading and geometry snapshot for each visible satellite.
  *
- * Thread-safety: confine to a single coroutine/thread, or guard calls with a Mutex.
+ * Every time a complete GSV epoch arrives, [consume] updates the signal strength
+ * using an exponential moving average (half-life configurable), records the latest
+ * azimuth/elevation/used-in-fix state, and evicts any satellite not seen within
+ * [evictionSeconds]. The result is a [SkySnapshot] ready for the skyplot UI.
+ *
+ * The EMA smoothing prevents the chart from flickering when the receiver reports
+ * slightly different SNR values between updates.
+ *
+ * Not thread-safe — confine all calls to a single coroutine or add a Mutex.
  */
 class SatelliteInventory(
     private val halfLifeSeconds: Double = 10.0,
     private val evictionSeconds: Double = 30.0,
     private val nowSeconds: () -> Double = { System.nanoTime() / 1e9 }
 ) {
-    /** Namespaced satellite id to avoid SVID collisions across constellations. */
+    /** Namespaced key to avoid SVID collisions across constellations (GPS and GLONASS can share numbers). */
     private data class SatId(val c: Constellation, val svid: Int)
 
-    /** smoothed SNR + lastSeen seconds */
-    private val snrBySat = mutableMapOf<SatId, Pair<Double, Double>>()   // SatId -> (snr, lastSeen)
-    /** latest geometry per satellite */
-    private val geometryBySat = mutableMapOf<SatId, GeometryData>()      // SatId -> geometry
+    private val snrBySat = mutableMapOf<SatId, Pair<Double, Double>>()   // SatId → (smoothedSnr, lastSeenSec)
+    private val geometryBySat = mutableMapOf<SatId, GeometryData>()
 
     private data class GeometryData(
         val id: SatId,
@@ -42,7 +47,7 @@ class SatelliteInventory(
 
         android.util.Log.d("SatelliteInventory", "Consuming GSV: constellation=${gsv.constellation} (mapped to $const), ${gsv.entries.size} satellites")
 
-        // Update SNR smoothing and geometry for each entry in this message
+        // Apply EMA smoothing to SNR and record the latest geometry for each satellite
         gsv.entries.forEach { e ->
             val id = SatId(const, e.svid)
 
@@ -65,7 +70,7 @@ class SatelliteInventory(
             )
         }
 
-        // Evict stale satellites from both maps
+        // Evict satellites that have not been seen recently
         val cutoff = t - evictionSeconds
         val evictedSnr = snrBySat.entries.removeIf { (_, v) -> v.second < cutoff }
         val evictedGeom = geometryBySat.entries.removeIf { (_, g) -> g.lastSeen < cutoff }
@@ -73,7 +78,7 @@ class SatelliteInventory(
             android.util.Log.d("SatelliteInventory", "Evicted stale satellites (older than ${evictionSeconds}s)")
         }
 
-        // Rebuild tallies from current geometry (no double-counting)
+        // Rebuild per-constellation tallies from the current geometry map
         val visibleByConstellation = mutableMapOf<Constellation, Int>()
         val usedByConstellation = mutableMapOf<Constellation, Int>()
 
@@ -84,7 +89,7 @@ class SatelliteInventory(
             }
         }
 
-        // Build SatInfo list for SkySnapshot
+        // Build the SatInfo list for the SkySnapshot
         val satInfoList = geometryBySat.values.map { g ->
             SatInfo(
                 constellation = g.id.c,
@@ -100,7 +105,6 @@ class SatelliteInventory(
         val totalUsed = usedByConstellation.values.sum()
         android.util.Log.d("SatelliteInventory", "SkySnapshot built: ${satInfoList.size} satellites, $totalUsed used, $totalVisible visible | By constellation: ${visibleByConstellation.entries.sortedByDescending { it.value }.joinToString { "${it.key.name}=${it.value}" }}")
 
-        // Create SkySnapshot with proper constructor parameters
         return SkySnapshot(
             satellites = satInfoList,
             epoch = java.time.Instant.ofEpochSecond(t.toLong(), ((t % 1.0) * 1e9).toLong()),
@@ -120,7 +124,7 @@ class SatelliteInventory(
 
     private fun mapConstellationName(name: String): Constellation =
         when (name.uppercase()) {
-            // Full names
+            // Full constellation names (used by higher-level code)
             "GPS"            -> Constellation.GPS
             "GLO", "GLONASS" -> Constellation.GLONASS
             "GAL", "GALILEO" -> Constellation.GALILEO
@@ -128,14 +132,14 @@ class SatelliteInventory(
             "QZSS"           -> Constellation.QZSS
             "SBAS"           -> Constellation.SBAS
             "IRNSS", "NAVIC" -> Constellation.IRNSS
-            // 2-letter NMEA talker prefixes (used by NmeaFuser)
+            // 2-letter NMEA talker prefixes (used by NmeaFuser when labelling GSV epochs)
             "GP"             -> Constellation.GPS
             "GL"             -> Constellation.GLONASS
             "GA"             -> Constellation.GALILEO
             "GB", "BD"       -> Constellation.BEIDOU
             "GQ"             -> Constellation.QZSS
             "GI"             -> Constellation.IRNSS
-            // "GN" = combined GNSS — treat as GPS since we can't know per-sat
+            // "GN" means combined GNSS; we can't tell which constellation per satellite
             "GN"             -> Constellation.GPS
             else             -> Constellation.UNKNOWN
         }

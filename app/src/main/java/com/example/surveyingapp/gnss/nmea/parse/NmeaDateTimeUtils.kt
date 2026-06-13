@@ -5,12 +5,26 @@ import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
+/**
+ * Standalone date/time helpers for NMEA sentences.
+ *
+ * These utilities are shared by code that needs to parse NMEA time or date strings
+ * outside of a specific sentence parser — for example, test helpers or legacy adapter
+ * code. The individual sentence parsers (RmcParser, ZdaParser) contain their own
+ * equivalent parsing because they have slightly different tolerance requirements
+ * (leap-second handling, nanosecond precision, etc.).
+ *
+ * If you are adding a new sentence parser, prefer writing the parsing inline rather
+ * than adding new methods here; keep this object narrow to avoid it growing into
+ * a catch-all utilities class.
+ */
 object NmeaDateTimeUtils {
 
     /**
-     * Parses NMEA time string in HHMMSS.sss format
-     * @param timeRaw Raw time string from NMEA sentence
-     * @return LocalTime object or null if parsing fails
+     * Parses an NMEA time field (HHMMSS[.sss]) into a [LocalTime].
+     *
+     * @param timeRaw Raw time string from an NMEA sentence field.
+     * @return A [LocalTime] in UTC, or null if the string is missing or malformed.
      */
     fun parseNmeaTime(timeRaw: String?): LocalTime? {
         if (timeRaw.isNullOrEmpty()) return null
@@ -39,9 +53,12 @@ object NmeaDateTimeUtils {
     }
 
     /**
-     * Parses NMEA date string in DDMMYY format
-     * @param dateRaw Raw date string from NMEA sentence
-     * @return LocalDate object or null if parsing fails
+     * Parses an NMEA date field (DDMMYY) into a [LocalDate].
+     *
+     * Two-digit years 00–79 are treated as 2000–2079; years 80–99 as 1980–1999.
+     *
+     * @param dateRaw Raw date string from an NMEA sentence field.
+     * @return A [LocalDate], or null if the string is missing or malformed.
      */
     fun parseNmeaDate(dateRaw: String?): LocalDate? {
         if (dateRaw.isNullOrEmpty() || dateRaw.length != 6) return null
@@ -62,10 +79,14 @@ object NmeaDateTimeUtils {
     }
 
     /**
-     * Combines NMEA time and date into a UTC epoch timestamp
-     * @param timeRaw Raw time string from NMEA sentence
-     * @param dateRaw Raw date string from NMEA sentence
-     * @return Epoch milliseconds in UTC or null if parsing fails
+     * Combines an NMEA time and date field into a UTC epoch timestamp.
+     *
+     * Both fields must parse successfully; if either is null or malformed the
+     * function returns null rather than producing a partially-correct timestamp.
+     *
+     * @param timeRaw NMEA time string (HHMMSS[.sss]).
+     * @param dateRaw NMEA date string (DDMMYY).
+     * @return Milliseconds since the Unix epoch in UTC, or null on failure.
      */
     fun parseNmeaDateTime(timeRaw: String?, dateRaw: String?): Long? {
         val time = parseNmeaTime(timeRaw) ?: return null
