@@ -3,12 +3,18 @@ package com.example.surveyingapp.gnss.capture.math
 import kotlin.math.*
 
 /**
- * Minimal ECEF<->LLA for short-duration averaging.
+ * Minimal WGS84 coordinate conversions used during position averaging.
+ *
+ * Averaging is done in ECEF (Earth-Centred, Earth-Fixed) Cartesian space because
+ * simple arithmetic on latitude/longitude produces wrong results near the poles and
+ * across the prime meridian. Converting to ECEF first, averaging the X/Y/Z
+ * components, then converting back gives a mathematically correct mean position
+ * for short observation windows.
  */
 object Geodesy {
-    private const val A = 6378137.0             // WGS84 major axis (semi-major axis in meters)
+    private const val A = 6378137.0             // WGS84 semi-major axis (metres)
     private const val F = 1.0 / 298.257223563   // WGS84 flattening factor
-    private const val B = A * (1 - F)           // WGS84 minor axis (semi-minor axis)
+    private const val B = A * (1 - F)           // WGS84 semi-minor axis (metres)
     private val E2 = 1 - (B*B)/(A*A)            // First eccentricity squared
 
     fun llaToEcef(latDeg: Double, lonDeg: Double, h: Double): Triple<Double, Double, Double> {

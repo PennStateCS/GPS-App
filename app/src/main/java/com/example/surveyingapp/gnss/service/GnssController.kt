@@ -18,10 +18,14 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 
 /**
- * Orchestrates: GnssSource.lines() -> NmeaRegistry.parse() -> FixAccumulator.accept()
- * - Buffers the stream to tolerate bursts (DROP_OLDEST to avoid stalls)
- * - Never throws on bad input
- * - Optional lightweight stats via callbacks
+ * Wires a [GnssSource] to a [FixAccumulator] through the [NmeaRegistry].
+ *
+ * The pipeline is: source.lines() → checksum + registry.parse() → accumulator.accept()
+ *
+ * Buffering absorbs bursts from high-rate receivers. Lines that can't be parsed are
+ * counted as dropped rather than crashing the pipeline. The optional [onStats] and
+ * [onError] callbacks let callers observe throughput or react to source-level failures
+ * without coupling this class to any specific UI or logging framework.
  */
 class GnssController(
     private val scope: CoroutineScope,
@@ -62,17 +66,17 @@ class GnssController(
                     }
                 }
                 .onEach { sentence ->
-                    // Fuse into current fix; accumulator must never throw.
                     try {
                         accumulator.accept(sentence)
                     } catch (t: Throwable) {
-                        // Extremely defensive: if fusion fails, count as dropped and continue.
+                        // Defensive catch: accumulator should never throw, but if it does
+                        // we count the sentence as dropped and keep the pipeline running.
                         dropped++
                         onError?.invoke(t)
                     }
                 }
                 .catch { e ->
-                    // Source/flow level failure: report and keep the coroutine alive (if desired).
+                    // A failure at the source level ends the stream. Report it and stop.
                     onError?.invoke(e)
                 }
                 .flowOn(Dispatchers.Default)

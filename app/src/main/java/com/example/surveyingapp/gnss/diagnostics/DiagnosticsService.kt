@@ -8,7 +8,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Diagnostic data for NMEA processing performance and current status
+ * A snapshot of NMEA processing stats at a given moment.
+ *
+ * The UI consumes this as a StateFlow; values are recalculated roughly once per second.
+ * Zero values are valid — they just mean nothing has been processed yet.
  */
 data class DiagnosticData(
     val linesPerSecond: Double = 0.0,
@@ -20,7 +23,15 @@ data class DiagnosticData(
 )
 
 /**
- * Service to track NMEA processing diagnostics including throughput and errors
+ * Tracks NMEA throughput and error rates for the Developer Tools screen.
+ *
+ * Both [InternalNmeaSource] and [TcpNmeaSource] feed raw NMEA lines here before
+ * passing them to the fuser. The service counts lines, tracks errors, and keeps a
+ * rolling list of the last 20 sentences — enough to spot obvious receiver problems
+ * without the overhead of a full NMEA log.
+ *
+ * Metrics are recalculated once per second. Thread safety is handled through
+ * atomic counters and synchronized history access.
  */
 @Singleton
 class DiagnosticsService @Inject constructor() {
@@ -37,7 +48,8 @@ class DiagnosticsService @Inject constructor() {
     private val maxHistorySize = 20
 
     /**
-     * Records a successfully processed NMEA line
+     * Records one successfully received NMEA line and updates throughput stats.
+     * Call this for every line that reaches the fuser, regardless of whether it parses.
      */
     fun recordLine(nmeaLine: String) {
         val lines = lineCount.incrementAndGet()
@@ -53,7 +65,8 @@ class DiagnosticsService @Inject constructor() {
     }
 
     /**
-     * Records a parse error for an NMEA line
+     * Records a line that failed to parse. Prefixes the history entry with ❌
+     * so parse errors stand out in the Developer Tools sentence list.
      */
     fun recordParseError(nmeaLine: String) {
         val lines = lineCount.incrementAndGet()
@@ -73,7 +86,6 @@ class DiagnosticsService @Inject constructor() {
         val currentTime = System.currentTimeMillis()
         val timeDiff = currentTime - lastCalculationTime
 
-        // Update metrics every second
         if (timeDiff >= 1000) {
             val linesDiff = totalLines - lastLineCount
             val linesPerSecond = if (timeDiff > 0) {
@@ -107,9 +119,7 @@ class DiagnosticsService @Inject constructor() {
         }
     }
 
-    /**
-     * Resets all diagnostic counters
-     */
+    /** Clears all counters and empties the sentence history. */
     fun reset() {
         lineCount.set(0)
         errorCount.set(0)
