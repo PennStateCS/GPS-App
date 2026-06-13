@@ -27,8 +27,12 @@ data class CaptureResult(
     /** Quality snapshot from the last accepted epoch in the session. */
     val rtkStatus: RtkStatus?,
     val satsUsed: Int?,
+    val satsVisible: Int?,
     val hdop: Double?,
+    val vDop: Double?,
+    val pDop: Double?,
     val hAccM: Double?,
     val vAccM: Double?,
-    val diffAgeS: Double?
+    val diffAgeS: Double?,
+    val correctionStationId: String?
 )

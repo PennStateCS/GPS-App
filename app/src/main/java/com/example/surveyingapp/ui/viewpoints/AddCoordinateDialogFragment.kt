@@ -94,15 +94,23 @@ class AddCoordinateDialogFragment(
     private var longitude: Double = 0.0
     private var altitude: Double = 0.0
 
-    // Extra quality/metadata captured from external RS2+/NMEA fix
+    // Quality/metadata captured from the fix
     private var providerStr: String = "fused"
     private var rtkStatusStr: String? = null
     private var satsUsedVal: Int? = null
+    private var satsVisibleVal: Int? = null
     private var hdopVal: Double? = null
+    private var vDopVal: Double? = null
+    private var pDopVal: Double? = null
     private var hAccVal: Double? = null
     private var vAccVal: Double? = null
     private var correctionSourceStr: String? = null
     private var correctionAgeSeconds: Double? = null
+    private var correctionStationIdStr: String? = null
+    private var speedMpsVal: Double? = null
+    private var courseDegVal: Double? = null
+    private var timestampSourceStr: String? = null
+    private var multipathIndexVal: Double? = null
     private var altitudeMslVal: Double? = null
     private var geoidSeparationVal: Double? = null
     private var crsEpsgVal: Int? = 4326
@@ -193,18 +201,26 @@ class AddCoordinateDialogFragment(
                     name = name,
                     latitude = latitude,
                     longitude = longitude,
-                    altitude = altitude, // ellipsoidal
+                    altitude = altitude,
                     timestamp = capturedTimestampMs,
                     icon = icon,
                     color = color,
                     provider = providerStr,
                     rtkStatus = rtkStatusStr,
                     satsUsed = satsUsedVal,
+                    satsVisible = satsVisibleVal,
                     hdop = hdopVal,
+                    vDop = vDopVal,
+                    pDop = pDopVal,
                     horizontalAccuracyM = hAccVal,
                     verticalAccuracyM = vAccVal,
                     correctionSource = correctionSourceStr,
                     correctionAgeS = correctionAgeSeconds,
+                    correctionStationId = correctionStationIdStr,
+                    speedMps = speedMpsVal,
+                    courseDeg = courseDegVal,
+                    timestampSource = timestampSourceStr,
+                    multipathIndex = multipathIndexVal,
                     altitudeMsl = altitudeMslVal,
                     geoidSeparationM = geoidSeparationVal,
                     crsEpsg = crsEpsgVal,
@@ -327,20 +343,30 @@ class AddCoordinateDialogFragment(
             latitude = fix.latDeg
             longitude = fix.lonDeg
             altitude = fix.altEllipsoidalM ?: 0.0
-            // Map provider enum to display/storage string (collapse external variants)
             providerStr = when (fix.provider) {
                 Provider.INTERNAL -> "fused"
                 Provider.RS2_EXTERNAL, Provider.RS2_BT, Provider.RS2_TCP, Provider.OTHER -> "external"
             }
             rtkStatusStr = fix.rtkStatus.name
             satsUsedVal = fix.satsUsed
+            satsVisibleVal = fix.satsVisible
             hdopVal = fix.hDop
+            vDopVal = fix.vDop
+            pDopVal = fix.pDop
             hAccVal = fix.hAccM
             vAccVal = fix.vAccM
             correctionAgeSeconds = fix.diffAgeS
+            correctionStationIdStr = fix.correctionStationId
+            speedMpsVal = fix.speedMps
+            courseDegVal = fix.courseDeg
+            timestampSourceStr = fix.timestampSource.name
+            multipathIndexVal = fix.multipathIndex
             altitudeMslVal = fix.altMslM
             geoidSeparationVal = fix.geoidSeparationM
-            crsEpsgVal = 4326 // WGS84
+            stdLatVal = fix.stdDevNorthM
+            stdLonVal = fix.stdDevEastM
+            stdAltVal = fix.stdDevUpM
+            crsEpsgVal = 4326
             capturedTimestampMs = fix.timeUtc.toEpochMilli()
 
             val mode = rtkStatusStr ?: "SINGLE"
