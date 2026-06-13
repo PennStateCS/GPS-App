@@ -140,6 +140,9 @@ class ExternalAdapter(
         firstDataArrived = false
         lastDataTimeMs = 0L
 
+        // Clear stale satellites from previous provider
+        inv.reset()
+
         nmea.start()
 
         fixesJob = scope.launch {

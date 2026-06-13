@@ -20,6 +20,9 @@ data class Fix(
     val pDop: Double?,                              // Position dilution of precision (from GSA sentence)
     val hAccM: Double?,                             // Horizontal accuracy (meters, 1-sigma); from GST or null
     val vAccM: Double?,                             // Vertical accuracy (meters, 1-sigma); from GST or null
+    val stdDevEastM: Double?,                       // East standard deviation (meters, 1-sigma); from GST stdDevLon
+    val stdDevNorthM: Double?,                      // North standard deviation (meters, 1-sigma); from GST stdDevLat
+    val stdDevUpM: Double?,                         // Up standard deviation (meters, 1-sigma); from GST stdDevAlt
     val rtkStatus: RtkStatus,                       // RTK status: NONE, DGPS, FLOAT, FIX
     val satsUsed: Int,                              // Number of satellites used in solution
     val satsVisible: Int?,                          // Total satellites in view (if known)

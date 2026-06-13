@@ -1,5 +1,6 @@
 package com.example.surveyingapp.gnss.satellites
 
+import android.util.Log
 import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
 import com.example.surveyingapp.gnss.model.SkySnapshot
 import com.example.surveyingapp.gnss.model.SatInfo
@@ -39,6 +40,8 @@ class SatelliteInventory(
         val t = nowSeconds()
         val const = mapConstellationName(gsv.constellation)
 
+        android.util.Log.d("SatelliteInventory", "Consuming GSV: constellation=${gsv.constellation} (mapped to $const), ${gsv.entries.size} satellites")
+
         // Update SNR smoothing and geometry for each entry in this message
         gsv.entries.forEach { e ->
             val id = SatId(const, e.svid)
@@ -64,8 +67,11 @@ class SatelliteInventory(
 
         // Evict stale satellites from both maps
         val cutoff = t - evictionSeconds
-        snrBySat.entries.removeIf { (_, v) -> v.second < cutoff }
-        geometryBySat.entries.removeIf { (_, g) -> g.lastSeen < cutoff }
+        val evictedSnr = snrBySat.entries.removeIf { (_, v) -> v.second < cutoff }
+        val evictedGeom = geometryBySat.entries.removeIf { (_, g) -> g.lastSeen < cutoff }
+        if (evictedSnr || evictedGeom) {
+            android.util.Log.d("SatelliteInventory", "Evicted stale satellites (older than ${evictionSeconds}s)")
+        }
 
         // Rebuild tallies from current geometry (no double-counting)
         val visibleByConstellation = mutableMapOf<Constellation, Int>()
@@ -90,6 +96,10 @@ class SatelliteInventory(
             )
         }
 
+        val totalVisible = visibleByConstellation.values.sum()
+        val totalUsed = usedByConstellation.values.sum()
+        android.util.Log.d("SatelliteInventory", "SkySnapshot built: ${satInfoList.size} satellites, $totalUsed used, $totalVisible visible | By constellation: ${visibleByConstellation.entries.sortedByDescending { it.value }.joinToString { "${it.key.name}=${it.value}" }}")
+
         // Create SkySnapshot with proper constructor parameters
         return SkySnapshot(
             satellites = satInfoList,
@@ -98,8 +108,19 @@ class SatelliteInventory(
         )
     }
 
+    /**
+     * Clears all accumulated satellite state. Call when switching GNSS providers
+     * to avoid stale satellites from the previous source appearing in the sky view.
+     */
+    fun reset() {
+        snrBySat.clear()
+        geometryBySat.clear()
+        android.util.Log.d("SatelliteInventory", "Reset: cleared all satellite state")
+    }
+
     private fun mapConstellationName(name: String): Constellation =
         when (name.uppercase()) {
+            // Full names
             "GPS"            -> Constellation.GPS
             "GLO", "GLONASS" -> Constellation.GLONASS
             "GAL", "GALILEO" -> Constellation.GALILEO
@@ -107,6 +128,15 @@ class SatelliteInventory(
             "QZSS"           -> Constellation.QZSS
             "SBAS"           -> Constellation.SBAS
             "IRNSS", "NAVIC" -> Constellation.IRNSS
+            // 2-letter NMEA talker prefixes (used by NmeaFuser)
+            "GP"             -> Constellation.GPS
+            "GL"             -> Constellation.GLONASS
+            "GA"             -> Constellation.GALILEO
+            "GB", "BD"       -> Constellation.BEIDOU
+            "GQ"             -> Constellation.QZSS
+            "GI"             -> Constellation.IRNSS
+            // "GN" = combined GNSS — treat as GPS since we can't know per-sat
+            "GN"             -> Constellation.GPS
             else             -> Constellation.UNKNOWN
         }
 }

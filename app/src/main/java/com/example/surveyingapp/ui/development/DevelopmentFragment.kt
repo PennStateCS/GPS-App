@@ -41,18 +41,19 @@ import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.*
-import com.example.surveyingapp.SurveyingApp
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.io.ByteArrayOutputStream
-import kotlinx.coroutines.flow.firstOrNull
 import androidx.fragment.app.viewModels
+import com.example.surveyingapp.ui.common.SatelliteSignalChartView
+import com.example.surveyingapp.ui.common.SkyplotView
+import com.example.surveyingapp.gnss.model.Constellation
+import com.example.surveyingapp.gnss.model.SkyGeometry
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticData
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.gnss.model.SkySnapshot
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -68,12 +69,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     // Add/remove here to extend; IDs must remain stable for state restoration.
     private val devCategories = listOf(
         SettingsCategory(1, "System Info", R.drawable.ic_section_info),
-        SettingsCategory(2, "Permissions", R.drawable.ic_section_location),
+        SettingsCategory(2, "Permissions", R.drawable.ic_lock_24),
         SettingsCategory(3, "AR Debug", R.drawable.ic_dev_tools),
         SettingsCategory(4, "Maps Debug", R.drawable.ic_map),
         SettingsCategory(5, "Coordinates", R.drawable.ic_section_location),
-        SettingsCategory(6, "RS2+", R.drawable.ic_section_location),
-        SettingsCategory(7, "GNSS Live", R.drawable.ic_satellite_24)
+        SettingsCategory(7, "GNSS", R.drawable.ic_satellite_24)
     )
 
     private lateinit var coordinateRepository: CoordinateRepositoryImpl
@@ -111,7 +111,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 3 -> setupArDebugContent(inflater)        // ARCore capability probe (no camera start)
                 4 -> setupMapsDebugContent(inflater)      // Google Maps / Play Services debug
                 5 -> setupCoordinatesDevContent(inflater) // Coordinate generation and management
-                6 -> setupRs2DevContent(inflater)         // RS2+ diagnostics and stream viewer
                 7 -> setupGnssLiveContent()               // Live GNSS fix + NMEA sentence history
                 else -> null
             }
@@ -779,105 +778,10 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }
     }
 
-    private fun setupRs2DevContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.dev_page_rs2, null)
-
-        val tvSaved = view.findViewById<TextView>(R.id.text_saved_host_port)
-        val editHost = view.findViewById<android.widget.EditText>(R.id.edit_host_rs2)
-        val editPort = view.findViewById<android.widget.EditText>(R.id.edit_port_rs2)
-        val btnTest = view.findViewById<Button>(R.id.btn_diag_test)
-        val tvStatus = view.findViewById<TextView>(R.id.text_diag_status)
-        val tvPreview = view.findViewById<TextView>(R.id.text_diag_preview)
-        val btnStart = view.findViewById<Button>(R.id.btn_start_stream)
-        val btnStop = view.findViewById<Button>(R.id.btn_stop_stream)
-        val btnClear = view.findViewById<Button>(R.id.btn_clear_stream)
-
-        fun setSavedLabel(host: String?, port: Int?) {
-            val label = if (!host.isNullOrBlank() && port != null) "$host:$port" else "--"
-            tvSaved?.text = "Saved: $label"
-            if (!host.isNullOrBlank() && editHost?.text?.isNullOrBlank() == true) editHost.setText(host)
-            if (port != null && editPort?.text?.isNullOrBlank() == true) editPort.setText(port.toString())
-        }
-
-        // Prefill saved RS2 host:port
-        viewLifecycleOwner.lifecycleScope.launch {
-            val repo = SurveyingApp.settingsRepo
-            val host = repo.externalTcpHost.firstOrNull()
-            val port = repo.externalTcpPort.firstOrNull()
-            setSavedLabel(host, port)
-            if (editPort?.text.isNullOrBlank()) editPort?.setText(getString(R.string.default_port))
-        }
-
-        // Stream preview state
-        fun updateButtons() {
-            btnStart?.isEnabled = !isStreamViewingActive
-            btnStop?.isEnabled = isStreamViewingActive
-        }
-        updateButtons()
-
-        btnStart?.setOnClickListener {
-            if (isStreamViewingActive) return@setOnClickListener
-            isStreamViewingActive = true
-            updateButtons()
-            streamCollectionJob = viewLifecycleOwner.lifecycleScope.launch {
-                // Show real NMEA sentence history from DiagnosticsService
-                viewModel.diagnosticData.collect { data ->
-                    if (!isStreamViewingActive) return@collect
-                    val sentences = data.lastTwentySentences
-                    tvPreview?.text = if (sentences.isEmpty()) "(no NMEA data yet)"
-                    else sentences.reversed().joinToString("\n")
-                    val scroller = view.findViewById<android.widget.ScrollView>(R.id.scroll_diag_preview)
-                    scroller?.post { scroller.scrollTo(0, 0) }
-                }
-            }
-        }
-        btnStop?.setOnClickListener {
-            if (!isStreamViewingActive) return@setOnClickListener
-            isStreamViewingActive = false
-            streamCollectionJob?.cancel(); streamCollectionJob = null
-            updateButtons()
-            Toast.makeText(requireContext(), "Stream viewing stopped", Toast.LENGTH_SHORT).show()
-        }
-        btnClear?.setOnClickListener {
-            // Clear the displayed preview; next DiagnosticsService update will repopulate
-            tvPreview?.text = ""
-            Toast.makeText(requireContext(), "Stream cleared", Toast.LENGTH_SHORT).show()
-        }
-
-        btnTest?.setOnClickListener {
-            val host = editHost?.text?.toString()?.trim().orEmpty()
-            val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
-            if (host.isEmpty()) { Toast.makeText(requireContext(), getString(R.string.host_required), Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            tvStatus?.text = getString(R.string.diag_status, getString(R.string.diag_testing))
-            tvPreview?.text = ""
-            viewLifecycleOwner.lifecycleScope.launch {
-                val (result, sample) = withContext(Dispatchers.IO) { testRs2Tcp(host, port) }
-                val status = when (result) {
-                    TcpTestResult.CONNECT_FAILED -> getString(R.string.diag_connect_failed)
-                    TcpTestResult.CONNECTED_NO_DATA -> getString(R.string.diag_connected_no_data)
-                    TcpTestResult.RECEIVING_NMEA -> getString(R.string.diag_receiving_nmea)
-                    TcpTestResult.RECEIVING_RTCM_OR_BIN -> getString(R.string.diag_receiving_binary)
-                }
-                val preview = when {
-                    sample == null || sample.isEmpty() -> ""
-                    result == TcpTestResult.RECEIVING_NMEA -> runCatching { sample.toString(Charsets.US_ASCII).lineSequence().firstOrNull()?.take(160).orEmpty() }.getOrElse { "" }
-                    else -> bytesToHexPreview(sample)
-                }
-                tvStatus?.text = getString(R.string.diag_status, status)
-                tvPreview?.text = if (preview.isNotBlank()) getString(R.string.diag_preview, preview) else ""
-            }
-        }
-
-        return view
-    }
 
     // ─────────────────────────── GNSS Live pane ──────────────────────────────
 
-    /**
-     * Live GNSS Fix viewer: shows real-time position/quality fields from the active provider
-     * and the last 20 NMEA sentences captured by DiagnosticsService.
-     * Starts collecting automatically; a Pause/Resume toggle lets the user freeze the view.
-     */
+    /** Live GNSS viewer with source-specific sections for Internal vs RS2+ providers. */
     private fun setupGnssLiveContent(): View {
         val ctx = requireContext()
         val density = resources.displayMetrics.density
@@ -888,191 +792,367 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             setPadding(dp(16f), dp(12f), dp(16f), dp(24f))
         }
 
-        // ── Control row ──────────────────────────────────────────────────────
-        val btnToggle = androidx.appcompat.widget.AppCompatButton(ctx).apply {
-            text = "⏸ Pause"
+        // ── Control row removed – Reset button is now inline with Statistics ──
+
+        data class SectionViews(
+            val container: LinearLayout,
+            val values: MutableMap<String, TextView>
+        )
+
+        // ── Helper: build a key/value row section ─────────────────────────────
+        fun buildSection(title: String, fields: List<String>): SectionViews {
+            val values = mutableMapOf<String, TextView>()
+            val sectionContainer = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            val table = buildInfoTable(ctx)
+            fields.forEachIndexed { idx, label ->
+                val row = LinearLayout(ctx).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(12, 8, 12, 8)
+                    if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
+                }
+                val lv = TextView(ctx).apply {
+                    text = label
+                    setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+                    textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
+                }
+                val vv = TextView(ctx).apply {
+                    text = "--"
+                    setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+                    textSize = 13f; setTextIsSelectable(true)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
+                    maxLines = 3
+                }
+                values[label] = vv
+                row.addView(lv); row.addView(vv)
+                table.addView(row)
+                if (idx < fields.lastIndex) table.addView(View(ctx).apply {
+                    setBackgroundColor(0x14000000)
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+                })
+            }
+            sectionContainer.addView(gnssLiveSectionHeader(ctx, title))
+            sectionContainer.addView(table)
+            root.addView(sectionContainer)
+            return SectionViews(sectionContainer, values)
         }
-        val btnReset = androidx.appcompat.widget.AppCompatButton(ctx).apply {
-            text = "Reset Stats"
+
+        // ── Source & Status ───────────────────────────────────────────────────
+        val sourceSection = buildSection("Source and Time", listOf(
+            "GNSS Source",
+            "RTK Fix Status",
+            "UTC Timestamp",
+            "Timestamp Source"
+        ))
+
+        // ── Position ──────────────────────────────────────────────────────────
+        val posSection = buildSection("Position", listOf(
+            "Latitude",
+            "Longitude",
+            "Mean Sea Level Altitude",
+            "Ellipsoidal Altitude",
+            "Geoid Separation",
+            "Horizontal Accuracy (1σ)",
+            "Vertical Accuracy (1σ)",
+            "East Precision (σE)",
+            "North Precision (σN)",
+            "Up Precision (σU)"
+        ))
+
+        // ── Motion ────────────────────────────────────────────────────────────
+        val motionSection = buildSection("Motion", listOf("Speed", "Course Over Ground"))
+
+        // ── Signal Quality ────────────────────────────────────────────────────
+        val qualitySection = buildSection("Signal Quality", listOf(
+            "Horizontal Dilution of Precision",
+            "Vertical Dilution of Precision",
+            "Position Dilution of Precision",
+            "Satellites Used",
+            "Satellites Visible"
+        ))
+
+        // ── Differential corrections (external only) ─────────────────────────
+        val correctionsSection = buildSection("Differential Corrections (RS2+)", listOf(
+            "Correction Age",
+            "Correction Station ID"
+        ))
+
+        // ── Satellite Sky ─────────────────────────────────────────────────────
+        root.addView(gnssLiveSectionHeader(ctx, "Satellite Sky"))
+        val skyTable = buildInfoTable(ctx)
+        val skyTotalView = TextView(ctx).apply {
+            text = "--"
+            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+            textSize = 13f; setTextIsSelectable(true)
+            setPadding(12, 8, 12, 4)
         }
-        root.addView(LinearLayout(ctx).apply {
+        val skyConstellationView = TextView(ctx).apply {
+            text = "(no GSV data yet)"
+            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
+            textSize = 12f; setTextIsSelectable(true); typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(12, 4, 12, 8)
+        }
+        skyTable.addView(skyTotalView)
+        skyTable.addView(View(ctx).apply {
+            setBackgroundColor(0x14000000)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+        })
+        skyTable.addView(skyConstellationView)
+        root.addView(skyTable)
+
+        // ── RS2+ Device (battery + device info) ──────────────────────────────
+        val batterySection = buildSection("RS2+ Battery", listOf(
+            "SoC", "Voltage", "Current", "USB Charger Current", "USB Charger Voltage",
+            "Temperature", "Charger Status", "OTG Power"
+        ))
+        val deviceSection = buildSection("RS2+ Device", listOf(
+            "IP", "Hostname", "Name", "Model", "Firmware", "GNSS Receiver FW",
+            "Serial", "Uptime", "Storage"
+        ))
+
+        // ── Skyplot ───────────────────────────────────────────────────────────
+        root.addView(gnssLiveSectionHeader(ctx, "Satellite Skyplot"))
+        val skyplotView = SkyplotView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(420f)
+            )
+        }
+        root.addView(skyplotView)
+
+        // ── Signal charts (one per constellation) ─────────────────────────────
+        root.addView(gnssLiveSectionHeader(ctx, "Signal Strength"))
+        val constellations = listOf(
+            Constellation.GPS to "GPS",
+            Constellation.GLONASS to "GLONASS",
+            Constellation.GALILEO to "Galileo",
+            Constellation.BEIDOU to "BeiDou",
+            Constellation.QZSS to "QZSS",
+            Constellation.SBAS to "SBAS"
+        )
+        val charts = constellations.map { (c, label) ->
+            root.addView(gnssLiveSectionHeader(ctx, label).apply {
+                textSize = 12f
+                setPadding(0, dp(8f), 0, dp(2f))
+            })
+            val chart = SatelliteSignalChartView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(160f)
+                )
+                setConstellationFilter(c)
+            }
+            root.addView(chart)
+            c to chart
+        }.toMap()
+
+        // ── Stream stats ──────────────────────────────────────────────────────
+        val btnReset = androidx.appcompat.widget.AppCompatButton(ctx).apply { text = "Reset" }
+        val statsSection = buildSection("Stream Statistics", listOf(
+            "Lines/sec", "Error Rate", "Total Lines", "Total Errors"
+        ))
+        // Swap the plain header for a title + Reset button row
+        val statsHeader = statsSection.container.getChildAt(0)
+        statsSection.container.removeViewAt(0)
+        statsSection.container.addView(LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(12f))
-            addView(btnToggle, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).also { it.marginEnd = dp(8f) })
+            addView(statsHeader, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(btnReset, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        })
+        }, 0)
 
-        // ── Fix table ────────────────────────────────────────────────────────
-        root.addView(gnssLiveSectionHeader(ctx, "GNSS Fix"))
-        val fixTable = buildInfoTable(ctx)
-        val fixValues = mutableMapOf<String, TextView>()
-        val fixFields = listOf(
-            "Provider", "Latitude", "Longitude",
-            "Alt MSL", "Alt Ellip.", "Geoid Sep.",
-            "Sats Used/Vis", "HDOP", "VDOP", "PDOP",
-            "RTK Status", "H.Acc", "V.Acc",
-            "Speed", "Course", "Diff Age", "Station ID"
-        )
-        fixFields.forEachIndexed { idx, label ->
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(12, 8, 12, 8)
-                if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
-            }
-            val lv = TextView(ctx).apply {
-                text = label
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-                textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-            }
-            val vv = TextView(ctx).apply {
-                text = "--"
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-                textSize = 13f; setTextIsSelectable(true)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
-                maxLines = 2
-            }
-            fixValues[label] = vv
-            row.addView(lv); row.addView(vv)
-            fixTable.addView(row)
-            if (idx < fixFields.lastIndex) fixTable.addView(View(ctx).apply {
-                setBackgroundColor(0x14000000)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-            })
-        }
-        root.addView(fixTable)
-
-        // ── Stream stats ─────────────────────────────────────────────────────
-        root.addView(gnssLiveSectionHeader(ctx, "Stream Stats"))
-        val statsTable = buildInfoTable(ctx)
-        val statsValues = mutableMapOf<String, TextView>()
-        val statsFields = listOf("Lines/sec", "Error Rate", "Total Lines", "Total Errors")
-        statsFields.forEachIndexed { idx, label ->
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(12, 8, 12, 8)
-                if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
-            }
-            val lv = TextView(ctx).apply {
-                text = label
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-                textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-            }
-            val vv = TextView(ctx).apply {
-                text = "--"
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-                textSize = 13f; setTextIsSelectable(true)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
-            }
-            statsValues[label] = vv
-            row.addView(lv); row.addView(vv)
-            statsTable.addView(row)
-            if (idx < statsFields.lastIndex) statsTable.addView(View(ctx).apply {
-                setBackgroundColor(0x14000000)
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-            })
-        }
-        root.addView(statsTable)
-
-        // ── NMEA sentence history ─────────────────────────────────────────────
-        root.addView(gnssLiveSectionHeader(ctx, "NMEA History (newest first)"))
+        // ── NMEA sentence history (last 5 sentences, no inner scroll) ────────
+        root.addView(gnssLiveSectionHeader(ctx, "NMEA History (last 5)"))
         val historyText = TextView(ctx).apply {
             text = "(no NMEA data yet)"
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
-            setTextIsSelectable(true)
+            isFocusable = false
+            isFocusableInTouchMode = false
             setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
             setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
             setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
-        val historyScroll = android.widget.ScrollView(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(210f))
-            setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
-        }
-        historyScroll.addView(historyText)
-        root.addView(historyScroll)
+        root.addView(historyText)
 
         // ── Live update helpers ───────────────────────────────────────────────
-        fun fmt1(d: Double?) = d?.let { "%.2f".format(it) } ?: "--"
+        val utcFmt = SimpleDateFormat("HH:mm:ss.SSS 'UTC'", Locale.US).also { it.timeZone = TimeZone.getTimeZone("UTC") }
         fun fmtM(d: Double?) = d?.let { "%.3f m".format(it) } ?: "--"
         fun fmtDeg(d: Double?) = d?.let { "%.8f°".format(it) } ?: "--"
+        fun fmt2(d: Double?) = d?.let { "%.2f".format(it) } ?: "--"
+
+        var latestProviderLabel = "Unknown"
+        var latestSkySnapshot: SkySnapshot? = null
+
+        fun setExternalSectionVisibility(providerLabel: String) {
+            val isExternal = providerLabel.contains("RS2+", ignoreCase = true) ||
+                providerLabel.contains("External", ignoreCase = true)
+            correctionsSection.container.visibility = if (isExternal) View.VISIBLE else View.GONE
+            batterySection.container.visibility = if (isExternal) View.VISIBLE else View.GONE
+            deviceSection.container.visibility = if (isExternal) View.VISIBLE else View.GONE
+        }
 
         fun applyFix(fix: Fix?) {
+            sourceSection.values["GNSS Source"]?.text = latestProviderLabel
             if (fix == null) {
-                fixFields.forEach { fixValues[it]?.apply { text = "--"; setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value)) } }
+                sourceSection.values.values.forEach { it.apply { text = "--"; setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value)) } }
+                sourceSection.values["GNSS Source"]?.text = latestProviderLabel
+                posSection.values.values.forEach { it.text = "--" }
+                motionSection.values.values.forEach { it.text = "--" }
+                qualitySection.values.values.forEach { it.text = "--" }
+                correctionsSection.values.values.forEach { it.text = "--" }
                 return
             }
-            fixValues["Provider"]?.text = fix.provider.name
-            fixValues["Latitude"]?.text = fmtDeg(fix.latDeg)
-            fixValues["Longitude"]?.text = fmtDeg(fix.lonDeg)
-            fixValues["Alt MSL"]?.text = fmtM(fix.altMslM)
-            fixValues["Alt Ellip."]?.text = fmtM(fix.altEllipsoidalM)
-            fixValues["Geoid Sep."]?.text = fmtM(fix.geoidSeparationM)
-            val satsVis = fix.satsVisible ?: "?"
-            fixValues["Sats Used/Vis"]?.text = "${fix.satsUsed}/$satsVis"
-            fixValues["HDOP"]?.text = fmt1(fix.hDop)
-            fixValues["VDOP"]?.text = fmt1(fix.vDop)
-            fixValues["PDOP"]?.text = fmt1(fix.pDop)
-            fixValues["RTK Status"]?.apply {
+            // Source & Status
+            sourceSection.values["RTK Fix Status"]?.apply {
                 text = fix.rtkStatus.name
                 setTextColor(when (fix.rtkStatus) {
-                    RtkStatus.FIX             -> 0xFF2E7D32.toInt()
-                    RtkStatus.FLOAT           -> 0xFFF9A825.toInt()
-                    RtkStatus.DGPS            -> 0xFF1565C0.toInt()
-                    RtkStatus.SINGLE          -> 0xFFFF5722.toInt()
-                    RtkStatus.DEAD_RECKONING  -> 0xFF9E9E9E.toInt()
-                    else                      -> 0xFFC62828.toInt()
+                    RtkStatus.FIX            -> 0xFF2E7D32.toInt()
+                    RtkStatus.FLOAT          -> 0xFFF9A825.toInt()
+                    RtkStatus.DGPS           -> 0xFF1565C0.toInt()
+                    RtkStatus.SINGLE         -> 0xFFFF5722.toInt()
+                    RtkStatus.DEAD_RECKONING -> 0xFF9E9E9E.toInt()
+                    else                     -> 0xFFC62828.toInt()
                 })
             }
-            fixValues["H.Acc"]?.text = fmtM(fix.hAccM)
-            fixValues["V.Acc"]?.text = fmtM(fix.vAccM)
-            fixValues["Speed"]?.text = fix.speedMps?.let { "%.2f m/s".format(it) } ?: "--"
-            fixValues["Course"]?.text = fix.courseDeg?.let { "%.1f°".format(it) } ?: "--"
-            fixValues["Diff Age"]?.text = fix.diffAgeS?.let { "%.1f s".format(it) } ?: "--"
-            fixValues["Station ID"]?.text = fix.correctionStationId ?: "--"
+            sourceSection.values["UTC Timestamp"]?.text = utcFmt.format(Date(fix.timeUtc.toEpochMilli()))
+            sourceSection.values["Timestamp Source"]?.text = fix.timestampSource.name.replace('_', ' ')
+            // Position
+            posSection.values["Latitude"]?.text = fmtDeg(fix.latDeg)
+            posSection.values["Longitude"]?.text = fmtDeg(fix.lonDeg)
+            posSection.values["Mean Sea Level Altitude"]?.text = fmtM(fix.altMslM)
+            posSection.values["Ellipsoidal Altitude"]?.text = fmtM(fix.altEllipsoidalM)
+            posSection.values["Geoid Separation"]?.text = fmtM(fix.geoidSeparationM)
+            posSection.values["Horizontal Accuracy (1σ)"]?.text = fix.hAccM?.let { "%.3f m".format(it) } ?: "--"
+            posSection.values["Vertical Accuracy (1σ)"]?.text = fix.vAccM?.let { "%.3f m".format(it) } ?: "--"
+            posSection.values["East Precision (σE)"]?.text = fix.stdDevEastM?.let { "%.3f m".format(it) } ?: "--"
+            posSection.values["North Precision (σN)"]?.text = fix.stdDevNorthM?.let { "%.3f m".format(it) } ?: "--"
+            posSection.values["Up Precision (σU)"]?.text = fix.stdDevUpM?.let { "%.3f m".format(it) } ?: "--"
+            // Motion
+            val knots = fix.speedMps?.let { it * 1.94384 }
+            motionSection.values["Speed"]?.text = fix.speedMps?.let { "%.2f m/s  (%.1f kn)".format(it, knots!!) } ?: "--"
+            motionSection.values["Course Over Ground"]?.text = fix.courseDeg?.let { "%.1f°".format(it) } ?: "--"
+            // Quality
+            qualitySection.values["Horizontal Dilution of Precision"]?.text = fmt2(fix.hDop)
+            qualitySection.values["Vertical Dilution of Precision"]?.text = fmt2(fix.vDop)
+            qualitySection.values["Position Dilution of Precision"]?.text = fmt2(fix.pDop)
+            // Use SkySnapshot data for satellite counts (from GSV sentences) for consistency with Satellite Sky section
+            val sky = latestSkySnapshot
+            qualitySection.values["Satellites Used"]?.text = sky?.totalUsed?.toString() ?: fix.satsUsed.toString()
+            qualitySection.values["Satellites Visible"]?.text = sky?.totalVisible?.toString() ?: (fix.satsVisible?.toString() ?: "--")
+            // Correction Age and Station ID come from Fix (NMEA GGA)
+            correctionsSection.values["Correction Age"]?.text = fix.diffAgeS?.let { "%.1f s".format(it) } ?: "--"
+            correctionsSection.values["Correction Station ID"]?.text = fix.correctionStationId ?: "--"
+        }
+
+        fun applyBattery(b: com.example.surveyingapp.domain.repository.ReachBatteryInfo?) {
+            batterySection.values["SoC"]?.text = b?.percent?.let { "$it%" } ?: "--"
+            batterySection.values["Voltage"]?.text = b?.voltageV?.let { "%.2f V".format(it) } ?: "--"
+            batterySection.values["Current"]?.text = b?.currentA?.let { "%.2f A".format(it) } ?: "--"
+            batterySection.values["USB Charger Current"]?.text = b?.usbChargerCurrentA?.let { "%.2f A".format(it) } ?: "--"
+            batterySection.values["USB Charger Voltage"]?.text = b?.usbChargerVoltageV?.let { "%.2f V".format(it) } ?: "--"
+            batterySection.values["Temperature"]?.text = b?.temperatureC?.let { "%.1f °C".format(it) } ?: "--"
+            batterySection.values["Charger Status"]?.text = b?.chargerStatus ?: "--"
+            batterySection.values["OTG Power"]?.text = when (b?.otg) {
+                true -> "Enabled"
+                false -> "Disabled"
+                null -> "--"
+            }
+        }
+
+        fun applyDevice(d: com.example.surveyingapp.domain.repository.ReachDeviceInfo?) {
+            deviceSection.values["IP"]?.text = d?.ip ?: "--"
+            deviceSection.values["Hostname"]?.text = d?.hostname ?: "--"
+            deviceSection.values["Name"]?.text = d?.name ?: "--"
+            deviceSection.values["Model"]?.text = d?.model ?: "--"
+            deviceSection.values["Firmware"]?.text = d?.firmware ?: "--"
+            deviceSection.values["GNSS Receiver FW"]?.text = d?.gnssReceiverFirmware ?: "--"
+            deviceSection.values["Serial"]?.text = d?.serial ?: "--"
+            deviceSection.values["Uptime"]?.text = d?.uptime ?: d?.uptimeSec?.let {
+                val days = it / 86400; val h = (it % 86400) / 3600; val m = (it % 3600) / 60
+                when {
+                    days > 0 -> "${days}d ${h}h ${m}m"
+                    h > 0    -> "${h}h ${m}m"
+                    else     -> "${m}m"
+                }
+            } ?: "--"
+            deviceSection.values["Storage"]?.text = d?.storage?.let { s ->
+                val usedPct = s.usagePercent
+                "${s.usedMB} MB used / ${s.totalMB} MB total (${usedPct}%  —  ${s.availableMB} MB free)"
+            } ?: "--"
+        }
+
+        fun applySky(sky: SkySnapshot) {
+            latestSkySnapshot = sky
+            skyTotalView.text = "Total Used / Visible:  ${sky.totalUsed} / ${sky.totalVisible}"
+            // Update Signal Quality section with latest satellite counts
+            qualitySection.values["Satellites Used"]?.text = sky.totalUsed.toString()
+            qualitySection.values["Satellites Visible"]?.text = sky.totalVisible.toString()
+            if (sky.satellites.isEmpty()) {
+                skyConstellationView.text = "(no GSV data yet)"
+                skyplotView.setGeometry(emptyList())
+                charts.values.forEach { it.setGeometry(emptyList()) }
+                return
+            }
+            val sb = StringBuilder()
+            sky.visibleByConstellation.entries.sortedByDescending { it.value }.forEach { (c, vis) ->
+                val used = sky.usedByConstellation[c] ?: 0
+                sb.appendLine("  ${c.name.padEnd(10)}  used=$used   vis=$vis")
+            }
+            skyConstellationView.text = sb.toString().trimEnd()
+
+            // Build SkyGeometry list for charts and skyplot
+            val geoms = sky.satellites.mapNotNull { sat ->
+                if (sat.azimuthDeg != null && sat.elevationDeg != null) {
+                    SkyGeometry(
+                        svid = sat.svid,
+                        constellation = sat.constellation,
+                        azDeg = sat.azimuthDeg,
+                        elDeg = sat.elevationDeg,
+                        snrDbHz = sat.cn0DbHz,
+                        usedInFix = sat.usedInFix ?: false
+                    )
+                } else null
+            }
+            skyplotView.setGeometry(geoms)
+            charts.values.forEach { it.setGeometry(geoms) }
         }
 
         fun applyDiagnostics(data: DiagnosticData) {
-            statsValues["Lines/sec"]?.text = "%.2f".format(data.linesPerSecond)
-            statsValues["Error Rate"]?.text = "%.2f%%".format(data.parseErrorRate)
-            statsValues["Total Lines"]?.text = data.totalLinesProcessed.toString()
-            statsValues["Total Errors"]?.text = data.totalParseErrors.toString()
-            val sentences = data.lastTwentySentences
-            historyText.text = if (sentences.isEmpty()) "(no NMEA data yet)"
-            else sentences.reversed().joinToString("\n")
-            historyScroll.scrollTo(0, 0)
+            statsSection.values["Lines/sec"]?.text = "%.2f".format(data.linesPerSecond)
+            statsSection.values["Error Rate"]?.text = "%.2f%%".format(data.parseErrorRate)
+            statsSection.values["Total Lines"]?.text = data.totalLinesProcessed.toString()
+            statsSection.values["Total Errors"]?.text = data.totalParseErrors.toString()
+            historyText.text = data.lastTwentySentences.takeIf { it.isNotEmpty() }
+                ?.takeLast(5)?.reversed()?.joinToString("\n") ?: "(no NMEA data yet)"
         }
 
-        // ── Live toggle logic ─────────────────────────────────────────────────
-        var isLive = false
-        var liveJob: Job? = null
-
-        fun startLive() {
-            if (isLive) return
-            isLive = true
-            btnToggle.text = "⏸ Pause"
-            liveJob = viewLifecycleOwner.lifecycleScope.launch {
-                launch { viewModel.latestFix.collect { fix -> applyFix(fix) } }
-                launch { viewModel.diagnosticData.collect { data -> applyDiagnostics(data) } }
+        viewLifecycleOwner.lifecycleScope.launch {
+            launch { viewModel.latestFix.collect { fix -> applyFix(fix) } }
+            launch { viewModel.skySnapshot.collect { sky -> applySky(sky) } }
+            launch { viewModel.diagnosticData.collect { data -> applyDiagnostics(data) } }
+            launch { viewModel.batteryInfo.collect { b -> applyBattery(b) } }
+            launch { viewModel.deviceInfo.collect { d -> applyDevice(d) } }
+            launch {
+                viewModel.activeProviderLabel.collect { providerLabel ->
+                    latestProviderLabel = providerLabel
+                    sourceSection.values["GNSS Source"]?.text = providerLabel
+                    setExternalSectionVisibility(providerLabel)
+                }
             }
         }
 
-        fun stopLive() {
-            if (!isLive) return
-            isLive = false
-            liveJob?.cancel(); liveJob = null
-            btnToggle.text = "▶ Resume"
-        }
-
-        btnToggle.setOnClickListener { if (isLive) stopLive() else startLive() }
         btnReset.setOnClickListener {
             viewModel.resetDiagnostics()
             Toast.makeText(ctx, "Diagnostics counters reset", Toast.LENGTH_SHORT).show()
         }
 
-        startLive()
+        setExternalSectionVisibility(latestProviderLabel)
         return root
     }
 
@@ -1087,59 +1167,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
             setPadding(0, dp(16f), 0, dp(6f))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-    }
-
-    // ─────────────────────────── RS2 diagnostics state ───────────────────────
-    private var isStreamViewingActive = false
-    private var streamCollectionJob: Job? = null
-
-    private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
-
-    private fun bytesToHexPreview(bytes: ByteArray, max: Int = 64): String {
-        val sb = StringBuilder()
-        val limit = min(bytes.size, max)
-        for (i in 0 until limit) {
-            sb.append(String.format("%02X", bytes[i]))
-            if (i < limit - 1) sb.append(' ')
-        }
-        return sb.toString()
-    }
-
-    private fun testRs2Tcp(host: String, port: Int): Pair<TcpTestResult, ByteArray?> {
-        var socket: Socket? = null
-        return try {
-            socket = Socket().apply {
-                tcpNoDelay = true
-                keepAlive = true
-            }
-            socket.connect(InetSocketAddress(host, port), 4000)
-            socket.soTimeout = 2000
-            val inp = socket.getInputStream()
-            val buffer = ByteArray(512)
-            val baos = ByteArrayOutputStream()
-            val start = System.currentTimeMillis()
-            while (System.currentTimeMillis() - start < 2500) {
-                val n = inp.read(buffer)
-                if (n > 0) {
-                    baos.write(buffer, 0, n)
-                    if (baos.size() >= 64) break
-                } else if (n == 0) {
-                    Thread.sleep(20)
-                }
-            }
-            val data = baos.toByteArray()
-            if (data.isEmpty()) return TcpTestResult.CONNECTED_NO_DATA to null
-            val ascii = runCatching { data.toString(Charsets.US_ASCII) }.getOrNull()
-            if (ascii != null) {
-                val hasNmea = ascii.lineSequence().any { it.startsWith("$") }
-                if (hasNmea) return TcpTestResult.RECEIVING_NMEA to data
-            }
-            TcpTestResult.RECEIVING_RTCM_OR_BIN to data
-        } catch (_: Exception) {
-            TcpTestResult.CONNECT_FAILED to null
-        } finally {
-            runCatching { socket?.close() }
         }
     }
 

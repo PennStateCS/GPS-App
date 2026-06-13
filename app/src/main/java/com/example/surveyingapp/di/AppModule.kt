@@ -10,7 +10,9 @@ import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.domain.repository.ReachDeviceRepository
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.bus.FixBus
+import com.example.surveyingapp.gnss.bus.SkyBus
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter
 import com.example.surveyingapp.gnss.bus.adapters.InternalAdapter
@@ -70,11 +72,15 @@ object AppModule {
     fun provideExternalNmeaSource(
         appScope: CoroutineScope,
         settingsRepository: SettingsRepository,
-        registry: NmeaRegistry
+        sourceSettings: SourceSettings,
+        registry: NmeaRegistry,
+        diagnosticsService: DiagnosticsService
     ): NmeaSource = TcpNmeaSource(
         scope               = appScope,
         settingsRepository  = settingsRepository,
-        registry            = registry
+        sourceSettings      = sourceSettings,  // Reserved for future profile support
+        registry            = registry,
+        diagnostics         = diagnosticsService
     )
 
     // --- App-wide CoroutineScope (long-lived for GNSS streams/parsing) ---
@@ -104,14 +110,11 @@ object AppModule {
         )
     }
 
-    @Provides
-    @Singleton
-    fun provideSatelliteInventory(): SatelliteInventory = SatelliteInventory()
-
     // --- Reach Device Repository for shared battery/device polling ---
     @Provides
     @Singleton
-    fun provideReachDeviceRepository(): ReachDeviceRepository = ReachDeviceRepository()
+    fun provideReachDeviceRepository(sourceSettings: SourceSettings): ReachDeviceRepository =
+        ReachDeviceRepository(sourceSettings)
 
     // --- Internal GNSS source (uses device's internal GPS via NMEA) ---
     @Provides
@@ -119,16 +122,39 @@ object AppModule {
     fun provideInternalNmeaSource(
         @ApplicationContext context: Context,
         appScope: CoroutineScope,
-        registry: NmeaRegistry
-    ): InternalNmeaSource = InternalNmeaSource(context, appScope, registry)
+        registry: NmeaRegistry,
+        diagnosticsService: DiagnosticsService
+    ): InternalNmeaSource = InternalNmeaSource(context, appScope, registry, diagnosticsService)
+
+    /**
+     * Provides a dedicated [SatelliteInventory] for the internal adapter.
+     * Separate instances per adapter prevent stale satellite contamination when switching providers.
+     */
+    @Provides
+    @Singleton
+    @InternalSatellites
+    fun provideInternalSatelliteInventory(): SatelliteInventory = SatelliteInventory(
+        evictionSeconds = 60.0  // Increased from default 30s to prevent premature eviction of sparse GLONASS updates
+    )
+
+    /**
+     * Provides a dedicated [SatelliteInventory] for the external adapter.
+     * Separate instances per adapter prevent stale satellite contamination when switching providers.
+     */
+    @Provides
+    @Singleton
+    @ExternalSatellites
+    fun provideExternalSatelliteInventory(): SatelliteInventory = SatelliteInventory(
+        evictionSeconds = 60.0
+    )
 
     @Provides
     @Singleton
     fun provideInternalAdapter(
         appScope: CoroutineScope,
         internalNmea: InternalNmeaSource,
-        inv: SatelliteInventory
-    ): InternalAdapter = InternalAdapter(appScope, internalNmea, inv)
+        @InternalSatellites internalInventory: SatelliteInventory
+    ): InternalAdapter = InternalAdapter(appScope, internalNmea, internalInventory)
 
     // --- External adapter (wire with required deps) ---
     @Provides
@@ -136,11 +162,11 @@ object AppModule {
     fun provideExternalAdapter(
         appScope: CoroutineScope,
         nmea: NmeaSource,
-        inv: SatelliteInventory
+        @ExternalSatellites externalInventory: SatelliteInventory
     ): ExternalAdapter = ExternalAdapter(
         scope = appScope,
         nmea  = nmea,
-        inv   = inv
+        inv   = externalInventory
     )
 
     // --- Switchboard (single point to select/internal/external and expose flows) ---
@@ -167,4 +193,11 @@ object AppModule {
     @Provides
     @Singleton
     fun provideFixBus(switchboard: FixSwitchboard): FixBus = switchboard
+
+    /**
+     * Exposes [FixSwitchboard] as [SkyBus] for satellite sky consumers.
+     */
+    @Provides
+    @Singleton
+    fun provideSkyBus(switchboard: FixSwitchboard): SkyBus = switchboard
 }

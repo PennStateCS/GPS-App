@@ -33,15 +33,37 @@ class NmeaFuser(
     private val onFix: (Fix) -> Unit,
     private val onGsv: (GsvMessage) -> Unit
 ) {
+    /** Constellation-aware satellite ID to prevent SVID collisions across GNSS systems. */
+    private data class SatId(val talker: String, val svid: Int)
+
     private var lastGga: GGA? = null
     private var lastRmc: RMC? = null
     private var lastGsa: GSA? = null
     private var lastZda: ZDA? = null
     private var lastGst: GST? = null   // GPS Error Statistics (accuracy ellipse)
 
-    // GSV multi-message aggregation
-    private var pendingGsvTotal: Int? = null
-    private val pendingGsvSats: MutableList<GSVSatellite> = mutableListOf()
+    // Epoch deduplication: track last emitted GGA timestamp to prevent duplicate fix emissions
+    private var lastEmittedGgaTimeUtc: Long? = null
+    private val EPOCH_DEDUP_WINDOW_MS = 500L  // Treat fixes within 500ms as duplicate epochs
+
+    // GSA multi-constellation accumulation: receivers emit one GSA per constellation (GP, GL, GA, GB, etc.)
+    private val gsaUsedSatIds: MutableSet<SatId> = mutableSetOf()
+    private var lastGsaUpdateMs: Long = 0L
+    private val GSA_EPOCH_TIMEOUT_MS = 2000L  // Clear accumulated SatIds if no new GSA for 2 seconds
+
+    // GSV multi-message aggregation: track per talker to handle interleaved constellations
+    private val pendingGsvByTalker: MutableMap<String, PendingGsvEpoch> = mutableMapOf()
+
+    /**
+     * Track visible satellite count per constellation (talker).
+     * Updated each time a GSV epoch completes. Summed to get total satsVisible for Fix.
+     */
+    private val gsvVisibleByTalker: MutableMap<String, Int> = mutableMapOf()
+
+    private data class PendingGsvEpoch(
+        var totalMessages: Int,
+        val satellites: MutableList<GSVSatellite>
+    )
 
     /** Feed one raw NMEA line into the fuser. Silently ignores unparseable lines. */
     fun accept(line: String) {
@@ -52,45 +74,102 @@ class NmeaFuser(
     private fun handle(sentence: NmeaSentence) {
         when (sentence) {
             is GGA -> { lastGga = sentence; maybeEmitFix() }
-            is RMC -> { lastRmc = sentence; if (lastGga != null) maybeEmitFix() }
-            is GSA -> lastGsa = sentence
+            is RMC -> lastRmc = sentence  // Enrich with speed/course; do not trigger fix emission
+            is GSA -> handleGsa(sentence)
             is GSV -> handleGsv(sentence)
-            is ZDA -> lastZda = sentence
+            is ZDA -> handleZda(sentence)
             is GST -> lastGst = sentence  // store accuracy ellipse; used in next fix emission
             else   -> Unit // unknown sentence type — fuser is tolerant by design
         }
     }
 
+    private fun handleZda(zda: ZDA) {
+        // Only update if timestamp is reasonable (simple staleness check)
+        val epochMs = zda.epochMillis
+        if (epochMs != null) {
+            val ageSec = (System.currentTimeMillis() - epochMs) / 1000.0
+            if (ageSec in -5.0..10.0) {  // Allow 5s future tolerance for clock skew, 10s past
+                lastZda = zda
+            } else {
+                android.util.Log.w("NmeaFuser", "Stale ZDA ignored: age=${ageSec}s")
+            }
+        }
+    }
+
+    private fun handleGsa(gsa: GSA) {
+        lastGsa = gsa  // Keep last GSA for DOP values
+
+        // Clear stale accumulated SatIds if timeout exceeded
+        val now = System.currentTimeMillis()
+        if (now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
+            gsaUsedSatIds.clear()
+            android.util.Log.d("NmeaFuser", "GSA epoch timeout: cleared accumulated SatIds")
+        }
+        lastGsaUpdateMs = now
+
+        // Accumulate SatIds from all constellations (GPGSA, GLGSA, GAGSA, GBGSA, etc.)
+        if (gsa.usedSvids.isNotEmpty()) {
+            val sizeBefore = gsaUsedSatIds.size
+            gsa.usedSvids.forEach { svid ->
+                gsaUsedSatIds.add(SatId(gsa.talker, svid))
+            }
+            android.util.Log.d("NmeaFuser", "GSA (${gsa.talker}): added ${gsa.usedSvids.size} satellites → total ${gsaUsedSatIds.size} (was $sizeBefore)")
+        }
+    }
+
     private fun handleGsv(gsv: GSV) {
+        val talker = gsv.talker
         val total = gsv.totalMessages ?: 1
         val num   = gsv.messageNumber ?: total
 
-        if (num == 1) {
-            // Start of a new GSV epoch; discard any partial previous epoch
-            pendingGsvTotal = total
-            pendingGsvSats.clear()
+        // Get or create pending epoch for this talker
+        val pending = pendingGsvByTalker.getOrPut(talker) {
+            PendingGsvEpoch(totalMessages = total, satellites = mutableListOf())
         }
-        pendingGsvSats.addAll(gsv.satellites)
 
-        if (num >= total || pendingGsvTotal == null) {
-            val used = lastGsa?.usedSvids ?: emptyList()
-            val entries = pendingGsvSats.mapNotNull { s ->
+        if (num == 1) {
+            // Start of a new GSV epoch for this talker; reset its accumulator
+            pending.totalMessages = total
+            pending.satellites.clear()
+            android.util.Log.w("NmeaFuser", "⭐ GSV EPOCH START: Talker=$talker, TotalMsgs=$total, TotalSats=${gsv.totalSatellites}")
+        }
+
+        pending.satellites.addAll(gsv.satellites)
+        android.util.Log.d("NmeaFuser", "GSV msg ${num}/${total} ($talker): ${gsv.satellites.size} sats, accumulated ${pending.satellites.size} sats, Details: ${gsv.satellites.joinToString { "SVID=${it.svid} SNR=${it.snrDb}dB EL=${it.elevationDeg}° AZ=${it.azimuthDeg}°" }}")
+
+        if (num >= total) {
+            // Complete epoch for this talker
+            val entries = pending.satellites.mapNotNull { s ->
                 s.svid?.let { svid ->
+                    val satId = SatId(talker, svid)
+                    // Check if satellite is used: first check specific talker, then fallback to GN (combined GNSS)
+                    val isUsed = gsaUsedSatIds.contains(satId) ||
+                                 gsaUsedSatIds.contains(SatId("GN", svid))
                     GsvEntry(
                         svid         = svid,
                         elevationDeg = s.elevationDeg,
                         azimuthDeg   = s.azimuthDeg,
                         snrDbHz      = s.snrDb?.toDouble(),
-                        usedInFix    = used.contains(svid)
+                        usedInFix    = isUsed
                     )
                 }
             }
-            // Use the talker ID (e.g. "GP", "GL", "GA", "GB", "GN") as the constellation label so
-            // callers can distinguish GPS, GLONASS, Galileo, BeiDou, and multi-constellation epochs.
-            val label = if (entries.isEmpty()) "UNKNOWN" else gsv.talker
+            val nullSvidCount = pending.satellites.count { it.svid == null }
+            if (nullSvidCount > 0) {
+                android.util.Log.w("NmeaFuser", "GSV epoch complete ($talker): $nullSvidCount satellites skipped due to null SVID")
+            }
+
+            // Update visible satellite count for this constellation
+            val visibleCount = gsv.totalSatellites ?: pending.satellites.size
+            gsvVisibleByTalker[talker] = visibleCount
+
+            val label = if (entries.isEmpty()) "UNKNOWN" else talker
+            val totalVisible = gsvVisibleByTalker.values.sum()
+            android.util.Log.d("NmeaFuser", "GSV epoch complete: $label, ${entries.size} entries, ${entries.count { it.usedInFix }} used | Total visible across all constellations: $totalVisible")
             onGsv(GsvMessage(label, entries))
-            pendingGsvTotal = null
-            pendingGsvSats.clear()
+
+            // Clear this talker's epoch (ready for next one)
+            pendingGsvByTalker.remove(talker)
         }
     }
 
@@ -106,6 +185,14 @@ class NmeaFuser(
             else                         -> System.currentTimeMillis() to TimestampSource.DEVICE
         }
 
+        // Epoch deduplication: skip if we already emitted this timestamp recently
+        val lastEmitted = lastEmittedGgaTimeUtc
+        if (lastEmitted != null && kotlin.math.abs(epochMs - lastEmitted) < EPOCH_DEDUP_WINDOW_MS) {
+            android.util.Log.v("NmeaFuser", "Duplicate epoch skipped: ${epochMs}ms (within ${EPOCH_DEDUP_WINDOW_MS}ms of last)")
+            return
+        }
+        lastEmittedGgaTimeUtc = epochMs
+
         val altEllipsoidal = sumIfFinite(gga.altMsl, gga.geoidSeparation)
 
         val rtk = when (gga.fixQuality) {
@@ -116,12 +203,18 @@ class NmeaFuser(
             else -> RtkStatus.NONE
         }
 
-        // Prefer GSA satellite count (includes SVIDs actually used), fall back to GGA's field
-        val satsUsed = lastGsa?.usedSvids?.size ?: gga.satsUsed ?: 0
+        // Prefer accumulated constellation-aware satellite count, fall back to GGA's field
+        val satsUsed = if (gsaUsedSatIds.isNotEmpty()) gsaUsedSatIds.size else (gga.satsUsed ?: 0)
+
+        // Sum visible satellites across all constellations (from completed GSV epochs)
+        val satsVisible = gsvVisibleByTalker.values.sum().takeIf { it > 0 }
 
         // Derive 1-sigma circular horizontal accuracy (DRMS) from GST error ellipse axes
         val hAccM = drmsAccuracy(lastGst?.stdDevMajor, lastGst?.stdDevMinor)
         val vAccM = lastGst?.stdDevAlt
+        val stdDevEastM = lastGst?.stdDevLon
+        val stdDevNorthM = lastGst?.stdDevLat
+        val stdDevUpM = lastGst?.stdDevAlt
 
         onFix(
             Fix(
@@ -138,9 +231,12 @@ class NmeaFuser(
                 pDop                = lastGsa?.pdop,
                 hAccM               = hAccM,
                 vAccM               = vAccM,
+                stdDevEastM         = stdDevEastM,
+                stdDevNorthM        = stdDevNorthM,
+                stdDevUpM           = stdDevUpM,
                 rtkStatus           = rtk,
                 satsUsed            = satsUsed,
-                satsVisible         = pendingGsvSats.size.takeIf { it > 0 },
+                satsVisible         = satsVisible,
                 diffAgeS            = gga.diffAge,
                 speedMps            = lastRmc?.speedKnots?.let { it * 0.514444 },
                 courseDeg           = lastRmc?.courseDeg,
@@ -152,7 +248,9 @@ class NmeaFuser(
     /** Clears all accumulated sentence state. Call when the underlying GNSS source is stopped. */
     fun reset() {
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
-        pendingGsvTotal = null; pendingGsvSats.clear()
+        lastEmittedGgaTimeUtc = null
+        gsaUsedSatIds.clear(); lastGsaUpdateMs = 0L
+        pendingGsvByTalker.clear(); gsvVisibleByTalker.clear()
     }
 
     /**

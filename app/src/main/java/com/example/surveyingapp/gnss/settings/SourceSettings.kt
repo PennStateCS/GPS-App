@@ -23,9 +23,13 @@ data class ConnectionInfo(val host: String, val port: Int)
  * Provider switching is reactive: update [_activeProvider] via [setActiveProvider] and
  * [FixSwitchboard] will automatically route to the corresponding [SourceAdapter].
  *
- * Connection profiles allow multiple named TCP endpoints to be stored and selected without
- * restarting the app. The active profile is resolved lazily via [getConnectionInfo] /
- * [connectionInfoFlow].
+ * **Profile Support (Future)**: Connection profiles allow multiple named TCP endpoints to be
+ * stored and selected without restarting the app. The active profile is resolved lazily via
+ * [getConnectionInfo] / [connectionInfoFlow].
+ *
+ * **Current Status**: Profiles are initialized empty and not yet populated from UI. TCP
+ * connection parameters are read from [SettingsRepository] by [TcpNmeaSource]. Once profile
+ * UI is implemented, [TcpNmeaSource] can switch to using [getConnectionInfo] instead.
  */
 class SourceSettings(
     private val _activeProvider: MutableStateFlow<ProviderChoice>,
