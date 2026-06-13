@@ -1,17 +1,30 @@
 package com.example.surveyingapp.ui.viewpoints
 
+import android.app.Activity
 import android.app.Dialog
+import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.Spinner
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import androidx.core.graphics.drawable.toDrawable
 import androidx.fragment.app.DialogFragment
+import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.ui.models.ModelPickerActivity
+import com.google.android.material.button.MaterialButton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class EditCoordinateDialogFragment(
     private val coordinate: Coordinate,
@@ -19,15 +32,32 @@ class EditCoordinateDialogFragment(
     private val onCoordinateEdited: (Coordinate) -> Unit
 ) : DialogFragment() {
 
-    private var iconSpinnerRef: Spinner? = null
-    private var selectedIconIndex: Int = 0
+    private var iconButtonRef: MaterialButton? = null
+
+    // Defaults to the coordinate's existing icon so saving without re-choosing keeps it.
+    private var selectedIconKey: String = coordinate.icon
+
+    // Launches the model picker and applies the chosen model to the icon button.
+    private val modelPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data ?: return@registerForActivityResult
+            val id = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_MODEL_ID)
+                ?: return@registerForActivityResult
+            val name = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_MODEL_NAME)
+            val thumbnailPath = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_THUMBNAIL_PATH)
+            applySelectedModel(id, name, thumbnailPath)
+        }
+    }
+
     private var editTextRef: EditText? = null
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val inflater = requireActivity().layoutInflater
         val view = inflater.inflate(R.layout.dialog_add_point, null)
         val nameEdit = view.findViewById<EditText>(R.id.edit_point_name)
-        val iconSpinner = view.findViewById<Spinner>(R.id.spinner_icon)
+        val iconButton = view.findViewById<MaterialButton>(R.id.button_icon)
         val colorSpinner = view.findViewById<Spinner>(R.id.spinner_color)
         val locationText = view.findViewById<TextView>(R.id.text_location)
         locationText.visibility = View.GONE // Hide location for edit
@@ -35,15 +65,23 @@ class EditCoordinateDialogFragment(
         editTextRef = nameEdit
         nameEdit.setText(coordinate.name)
 
-        // Build icon list matching AddCoordinateDialogFragment exactly
-        val builtInNames = listOf("transformer", "hydrant", "sign", "lightpole", "shrub", "building")
-        val iconItems: List<IconItem> = builtInNames.map { IconItem.BuiltIn(it) } +
-                dbModels.map { IconItem.DbModel(it) }
+        // Icon is chosen through the model picker
+        iconButtonRef = iconButton
 
-        iconSpinner.adapter = AddCoordinateDialogFragment.IconSpinnerAdapter(requireContext(), iconItems)
-        selectedIconIndex = iconItems.indexOfFirst { it.iconKey() == coordinate.icon }.takeIf { it >= 0 } ?: 0
-        iconSpinner.setSelection(selectedIconIndex)
-        iconSpinnerRef = iconSpinner
+        iconButton.setOnClickListener {
+            modelPickerLauncher.launch(
+                ModelPickerActivity.newIntent(requireContext(), "Choose a Model")
+            )
+        }
+
+        // Get coordinate icon and put it on the button
+        // Inline suggestion
+        coordinate.icon
+            .takeIf { it.startsWith("model:") }
+            ?.removePrefix("model:")
+            ?.let { id -> dbModels.firstOrNull { it.id == id } }
+            ?.let { model -> applySelectedModel(model.id, model.name, model.thumbnailFilePath) }
+
 
         // Color choices
         val colors = listOf(
@@ -53,6 +91,7 @@ class EditCoordinateDialogFragment(
             "Orange" to 0xFFFFB74D.toInt(),
             "Purple" to 0xFFBA68C8.toInt()
         )
+
         colorSpinner.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, colors.map { it.first })
         colorSpinner.setSelection(colors.indexOfFirst { it.second == coordinate.color }.coerceAtLeast(0))
 
@@ -61,7 +100,7 @@ class EditCoordinateDialogFragment(
             .setView(view)
             .setPositiveButton("Save") { _, _ ->
                 val name = nameEdit.text.toString().ifBlank { coordinate.name }
-                val icon = iconItems[iconSpinner.selectedItemPosition].iconKey()
+                val icon = selectedIconKey
                 val color = colors[colorSpinner.selectedItemPosition].second
                 if (name != coordinate.name || icon != coordinate.icon || color != coordinate.color) {
                     val updated = coordinate.copy(name = name, icon = icon, color = color)
@@ -72,17 +111,43 @@ class EditCoordinateDialogFragment(
             .create()
     }
 
-    override fun onStart() {
-        super.onStart()
-        // Re-apply selection after the dialog window is attached and laid out,
-        // so the collapsed spinner view correctly reflects the coordinate's current icon.
-        iconSpinnerRef?.setSelection(selectedIconIndex)
+    private fun applySelectedModel(modelId: String, name: String?, thumbnailPath: String?) {
+        selectedIconKey = "model:$modelId"
+
+        // If the button isn't available, we can't apply the model so return
+        val button = iconButtonRef ?: return
+
+        button.text = name ?: "Selected model"
+
+        if (thumbnailPath.isNullOrBlank()) {
+            button.icon = null
+            return
+        }
+
+        lifecycleScope.launch {
+            val bmp = withContext(Dispatchers.IO) {
+                try {
+                    val file = File(thumbnailPath)
+                    if (file.exists()) BitmapFactory.decodeFile(thumbnailPath) else null
+                } catch (e: Exception) {
+                    Log.w("EditCoordinateDialog", "Failed to decode thumbnail: $thumbnailPath", e)
+                    null
+                }
+            }
+
+            // Guards against the dialog being torn down while decoding
+            if (bmp != null) {
+                iconButtonRef?.iconTint = null // Fixes weird default tint Android adds for some reason to Material UI
+                iconButtonRef?.icon = bmp.toDrawable(resources)
+            }
+        }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         editTextRef?.clearFocus()
         editTextRef = null
+        iconButtonRef = null
     }
 
     override fun onDetach() {
