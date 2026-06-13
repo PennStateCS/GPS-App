@@ -18,9 +18,9 @@ data class CaptureSettings(
      * Does not consider dwell time or windowing — the session handles those separately.
      */
     fun accepts(fix: Fix): Boolean {
-        val satsOk = (fix.satsUsed ?: 0) >= minSats
+        val satsOk = fix.satsUsed >= minSats
         val pdopOk = (fix.pDop ?: Double.POSITIVE_INFINITY) <= maxPdop
-        val modeOk = fix.rtkStatus?.let { it in allowed } ?: false
+        val modeOk = fix.rtkStatus in allowed
         return satsOk && pdopOk && modeOk
     }
 }

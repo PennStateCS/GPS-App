@@ -1,14 +1,13 @@
 package com.example.surveyingapp.di
 
 import android.content.Context
-import androidx.room.Room
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.repository.SettingsRepository
-import com.example.surveyingapp.domain.repository.ReachDeviceRepository
+import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.bus.FixBus
@@ -41,13 +40,16 @@ import javax.inject.Singleton
 object AppModule {
 
     // --- Database + DAO ---
+    /**
+     * Delegates to the [AppDatabase] static singleton so the Hilt-injected instance and
+     * any direct [AppDatabase.getDatabase] calls in legacy Fragment code share the exact
+     * same Room connection. Using a separate builder here would open a second connection
+     * to the same SQLite file and bypass the registered migrations.
+     */
     @Provides
     @Singleton
-    @Suppress("DEPRECATION")
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
-        Room.databaseBuilder(context, AppDatabase::class.java, "surveying_app.db")
-            .fallbackToDestructiveMigration() // <- correct API
-            .build()
+        AppDatabase.getDatabase(context)
 
     @Provides
     fun provideCoordinateDao(db: AppDatabase): CoordinateDao = db.coordinateDao()
@@ -92,14 +94,13 @@ object AppModule {
     // --- GNSS settings & satellite store ---
     @Provides
     @Singleton
-    @Suppress("UNUSED_PARAMETER")
     fun provideSourceSettings(settingsRepository: SettingsRepository): SourceSettings {
         // Initialize provider synchronously from persisted settings so UI/components
         // reading SourceSettings immediately (at app startup) see the correct choice.
         val providerChoice = runBlocking {
-            val loc = try { settingsRepository.locationSource.first() } catch (_: Exception) { com.example.surveyingapp.domain.model.LocationSourceType.INTERNAL }
+            val loc = try { settingsRepository.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
             when (loc) {
-                com.example.surveyingapp.domain.model.LocationSourceType.EXTERNAL -> ProviderChoice.EXTERNAL_TCP
+                LocationSourceType.EXTERNAL -> ProviderChoice.EXTERNAL_TCP
                 else -> ProviderChoice.INTERNAL
             }
         }
@@ -110,11 +111,6 @@ object AppModule {
         )
     }
 
-    // --- Reach Device Repository for shared battery/device polling ---
-    @Provides
-    @Singleton
-    fun provideReachDeviceRepository(sourceSettings: SourceSettings): ReachDeviceRepository =
-        ReachDeviceRepository(sourceSettings)
 
     // --- Internal GNSS source (uses device's internal GPS via NMEA) ---
     @Provides
