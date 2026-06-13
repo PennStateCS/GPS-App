@@ -8,7 +8,7 @@ import java.util.UUID
 
 /**
  * Builds a CoordinateEntity row from a finished capture.
- * Only fields we can justify from the capture context are populated.
+ * Only fields that are meaningful for an averaged position are populated.
  */
 object Mappers {
 
@@ -36,11 +36,15 @@ object Mappers {
             provider = provider,
             rtkStatus = result.rtkStatus,
             satsUsed = result.satsUsed,
+            satsVisible = result.satsVisible,
             hdop = result.hdop,
+            vDop = result.vDop,
+            pDop = result.pDop,
             horizontalAccuracyM = result.hAccM,
             verticalAccuracyM = result.vAccM,
             correctionSource = null,
             correctionAgeS = result.diffAgeS,
+            correctionStationId = result.correctionStationId,
 
             altitudeMsl = null,
             geoidSeparationM = null,

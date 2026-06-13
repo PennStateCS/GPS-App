@@ -276,14 +276,25 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // Drives Filament rendering at display refresh rate on the main thread.
     private var choreographerInstance: android.view.Choreographer? = null
+    private var choreographerFrameCount = 0L
     private val filamentFrameCallback = object : android.view.Choreographer.FrameCallback {
         override fun doFrame(frameTimeNs: Long) {
             choreographerInstance?.postFrameCallback(this)
-            // Skip GPU work when there are no GLB models to render this frame.
-            if (modelPoses.isEmpty()) return
+            choreographerFrameCount++
+            // Always pump asset loading / scene management so models load as soon as
+            // preload() is called — even before ARCore anchors start tracking or the
+            // Filament TextureView surface has been fully created.
+            filamentRenderer?.tickAndApplyLoads(modelPoses)
+            // Skip GPU rendering when there are no GLB models to draw this frame.
+            if (modelPoses.isEmpty()) {
+                if ((choreographerFrameCount % 300L) == 0L)
+                    android.util.Log.d(ArFilamentRenderer.DIAG,
+                        "Choreographer#$choreographerFrameCount — modelPoses empty (no anchors tracking or no models)")
+                return
+            }
             val vm = arViewMatrix ?: return
             val pm = arProjMatrix ?: return
-            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, modelPoses)
+            filamentRenderer?.renderFrame(frameTimeNs, vm, pm)
         }
     }
 
@@ -314,6 +325,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var previousBrightness = -1f
     // Mirrors ViewModel's debugVisible StateFlow; initialised to false to match the ViewModel default.
     private var debugOverlayVisible = false
+
+    // Whether the floating toolbar is currently visible.
+    private var toolbarVisible = false
 
     // ---------------------------------------------------------------------------------------------
     // Fragment Lifecycle Methods
@@ -349,16 +363,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         checkAvailabilityAndInstall()
 
+        // Toolbar toggle — show/hide with a slide-in animation from the right edge.
+        binding.btnToolbarToggle.setOnClickListener {
+            if (toolbarVisible) hideToolbar() else showToolbar()
+        }
+
         binding.btnSpawnTestPoints.setOnClickListener {
             if (testAnchorController.isActive) {
                 testAnchorController.requestClear()
-                binding.btnSpawnTestPoints.text = "📍 Test Points"
+                binding.txtTestPoints.text = "Test"
             } else {
                 filamentRenderer?.let { r ->
                     testAnchorController.preloadModelKeys(r, viewLifecycleOwner.lifecycleScope)
                 }
                 testAnchorController.requestSpawn()
-                binding.btnSpawnTestPoints.text = "🗑 Clear Tests"
+                binding.txtTestPoints.text = "Clear"
             }
         }
 
@@ -379,7 +398,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         binding.btnAltitudeMode.setOnClickListener {
             useTerrainAltitude = !useTerrainAltitude
             shouldRebuildAnchors = true
-            binding.btnAltitudeMode.text = if (useTerrainAltitude) "🌍 Terrain Alt" else "🏔 Stored Alt"
+            binding.txtAltitudeMode.text = if (useTerrainAltitude) "Terrain" else "Stored"
         }
 
 
@@ -415,7 +434,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Keep button label in sync with filter state.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.distanceFilterLabel.collect { binding.btnDistanceFilter.text = it }
+                viewModel.distanceFilterLabel.collect { label ->
+                    // Strip the leading emoji prefix and trim to keep the label short.
+                    binding.txtDistanceFilter.text = label.replace("📏 ", "").take(8)
+                }
             }
         }
 
@@ -425,7 +447,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 viewModel.debugVisible.collect { visible ->
                     debugOverlayVisible = visible
                     binding.debugPanel.visibility = if (visible) View.VISIBLE else View.GONE
-                    binding.btnToggleDebugOverlay.text = if (visible) "Hide Debug" else "Show Debug"
+                    binding.txtDebugOverlay.text = if (visible) "Hide" else "Debug"
                 }
             }
         }
@@ -445,6 +467,53 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Floating toolbar show / hide
+
+    /**
+     * Slides the toolbar card in from the right edge and makes it visible.
+     * The toggle button icon rotates to signal the open state.
+     */
+    private fun showToolbar() {
+        val toolbar = binding.arFloatingToolbar
+        toolbar.translationX = toolbar.width.toFloat().coerceAtLeast(200f)
+        toolbar.alpha = 0f
+        toolbar.visibility = View.VISIBLE
+        toolbar.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(200)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+        binding.btnToolbarToggle.animate()
+            .rotation(90f)
+            .setDuration(200)
+            .start()
+        toolbarVisible = true
+    }
+
+    /**
+     * Slides the toolbar card back out to the right and hides it when the animation ends.
+     */
+    private fun hideToolbar() {
+        val toolbar = binding.arFloatingToolbar
+        toolbar.animate()
+            .translationX(toolbar.width.toFloat().coerceAtLeast(200f))
+            .alpha(0f)
+            .setDuration(160)
+            .setInterpolator(android.view.animation.AccelerateInterpolator())
+            .withEndAction { toolbar.visibility = View.GONE }
+            .start()
+        binding.btnToolbarToggle.animate()
+            .rotation(0f)
+            .setDuration(160)
+            .start()
+        toolbarVisible = false
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Display rotation helper
 
     /**
      * Returns the current display rotation constant (Surface.ROTATION_*).
@@ -1336,6 +1405,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /** Map DB rows (with resolved model paths) to internal GeoItem list and mark anchors for rebuild. */
     private fun setCoordinates(items: List<CoordWithModel>) {
+        // Log every incoming emission so we can confirm models reach the fragment.
+        val withModels = items.filter { it.modelFilePath != null }
+        android.util.Log.d(ArFilamentRenderer.DIAG,
+            "setCoordinates: ${items.size} total  ${withModels.size} with models" +
+            if (withModels.isNotEmpty())
+                "  paths=" + withModels.joinToString { "${it.coordinate.id}→${it.modelFilePath}" }
+            else "  (no model paths)"
+        )
         // Skip rebuild if the incoming list is identical to what we already have.
         // Room emits on every observed change; without this guard a no-op emission
         // clears geoAnchorsCreated and forces a full anchor rebuild at 60fps.

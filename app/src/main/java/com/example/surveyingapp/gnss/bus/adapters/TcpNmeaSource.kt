@@ -81,8 +81,8 @@ class TcpNmeaSource(
 
     /**
      * Reads host/port from [SettingsRepository] and initiates a single TCP connection attempt.
-     * The connection runs until the stream ends, a read error occurs, or [stop] is called.
-     * [ExternalAdapter] is responsible for calling [stop] then [start] again to reconnect.
+     * The connection streams lines until the remote closes it, a read error occurs, or [stop]
+     * is called. Reconnection with exponential back-off is the responsibility of [ExternalAdapter].
      */
     override fun start() {
         if (started) return
@@ -97,7 +97,6 @@ class TcpNmeaSource(
                     return@launch
                 }
 
-                // Only set started flag after we have valid connection parameters
                 started = true
                 Log.d(TAG, "Connecting to $host:$port")
                 connectAndRead(host, port)
@@ -106,7 +105,7 @@ class TcpNmeaSource(
                 throw ce
             } catch (e: Exception) {
                 Log.e(TAG, "Connection error: ${e.message}")
-                started = false  // Reset on failure so next start() attempt can proceed
+                started = false
                 // Let ExternalAdapter's reconnect loop handle the retry
             }
         }
@@ -140,7 +139,6 @@ class TcpNmeaSource(
                     }
                     val clean = line.trim()
                     if (clean.isNotEmpty() && clean[0] == '$') {
-                        // Log all GSV sentences to diagnose satellite count discrepancy
                         if (clean.contains("GSV")) {
                             android.util.Log.i(TAG, "📡 RAW GSV: $clean")
                         }

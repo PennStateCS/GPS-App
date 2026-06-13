@@ -6,25 +6,36 @@ import com.example.surveyingapp.util.UtmConverter
 /**
  * Factory + helpers for constructing Coordinate domain models.
  *
+ * The preferred path for live captures is [toEntityFromFix] in CoordinateMappers,
+ * which works directly with the typed [Fix] model. This factory targets the legacy
+ * [FixSnapshot] accumulator and is kept for compatibility.
+ *
  * Semantics:
- * - altitude = ellipsoidal height (meters)
+ * - altitude = ellipsoidal height (metres)
  * - altitudeMsl + geoidSeparationM are stored when available
  */
 object CoordinateFactory {
 
+    /**
+     * Builds a [Coordinate] from a [FixSnapshot].
+     *
+     * @param provider The display/storage string for the GNSS source (e.g. "fused", "rs2-tcp").
+     *                 Defaults to "fused". Do NOT pass [fix.timestampSource.name] — that gives
+     *                 the clock source ("DEVICE", "NMEA_ZDA"), not the GNSS receiver.
+     */
     fun fromFix(
         id: String,
         name: String,
         fix: FixSnapshot,
         icon: String,
         color: Int,
+        provider: String = "fused",
         note: String? = null,
         averagedSamples: Int? = null,
         averageDurationMs: Long? = null,
         sourceDevice: String? = null,
         appVersion: String? = null
     ): Coordinate {
-        // Calculate UTM coordinates from lat/lon when available
         val (utmEasting, utmNorthing, utmZone) = if (fix.lat != null && fix.lon != null &&
             !fix.lat.isNaN() && !fix.lon.isNaN()) {
             try {
@@ -42,11 +53,11 @@ object CoordinateFactory {
             name = name,
             latitude = fix.lat ?: Double.NaN,
             longitude = fix.lon ?: Double.NaN,
-            altitude = fix.altEllipsoidal ?: Double.NaN,  // ellipsoidal by definition
+            altitude = fix.altEllipsoidal ?: Double.NaN,
             timestamp = fix.timestampMillis,
             icon = icon,
             color = color,
-            provider = fix.timestampSource.name,
+            provider = provider,
             rtkStatus = fix.rtkStatus,
             satsUsed = fix.satsUsed,
             satsVisible = fix.satellitesInView,
@@ -79,9 +90,6 @@ object CoordinateFactory {
         )
     }
 
-    /**
-     * Derive correction source description from station ID.
-     */
     private fun deriveCorrectionsSource(stationId: String?): String? {
         return when {
             stationId.isNullOrBlank() -> null

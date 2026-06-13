@@ -4,30 +4,35 @@ import com.example.surveyingapp.gnss.model.RtkStatus
 import java.time.Instant
 
 /**
- * Averaged point and the key survey/timing/quality fields needed for persistence.
- * This is the single handoff object from the capture engine to storage/UI.
+ * The averaged position and quality snapshot produced by a completed capture session.
+ *
+ * This is the single handoff object from [ObservationSession] to storage and UI.
+ * All fields that could not be determined during the session are nullable.
  */
 data class CaptureResult(
-    // When the averaging started/ended (UTC)
     val startedAt: Instant,
     val endedAt: Instant,
 
-    // How many epochs were used
+    /** Number of GNSS epochs that were accepted and averaged. */
     val samples: Int,
 
-    // Final averaged position (WGS84)
+    /** Averaged WGS84 position from the session. */
     val latDeg: Double,
     val lonDeg: Double,
     val altEllipsoidalM: Double,
 
-    // Empirical spread in ECEF (for audits; optional to display)
+    /** Empirical ECEF spread (X, Y, Z standard deviations in metres). Useful for audit logs. */
     val ecefStd: Triple<Double, Double, Double>,
 
-    // --- New: survey quality snapshot pulled from the last good epoch ---
-    val rtkStatus: RtkStatus?,        // FIX/FLOAT/DGPS/NONE (null if not known)
-    val satsUsed: Int?,               // satellites in solution at capture completion
-    val hdop: Double?,                // from GSA if available at completion
-    val hAccM: Double?,               // 1-sigma horizontal (GST preferred, else DOP×UERE)
-    val vAccM: Double?,               // 1-sigma vertical
-    val diffAgeS: Double?             // corrections age in seconds, if provided by receiver
+    /** Quality snapshot from the last accepted epoch in the session. */
+    val rtkStatus: RtkStatus?,
+    val satsUsed: Int?,
+    val satsVisible: Int?,
+    val hdop: Double?,
+    val vDop: Double?,
+    val pDop: Double?,
+    val hAccM: Double?,
+    val vAccM: Double?,
+    val diffAgeS: Double?,
+    val correctionStationId: String?
 )

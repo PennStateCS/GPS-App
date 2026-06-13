@@ -49,49 +49,51 @@ fun toEntityFromFix(
     color: Int,
     note: String?,
     fix: Fix
-): CoordinateEntity {
-    val ellipAlt = fix.altEllipsoidalM ?: 0.0
-    val mslAlt = fix.altMslM ?: 0.0
+): CoordinateEntity = CoordinateEntity(
+    id = id,
+    name = name,
+    latitude = fix.latDeg,
+    longitude = fix.lonDeg,
+    altitude = fix.altEllipsoidalM ?: 0.0,     // ellipsoidal height; 0.0 if receiver didn't provide it
+    timestamp = fix.timeUtc.toEpochMilli(),
+    icon = icon,
+    color = color,
 
-    return CoordinateEntity(
-        id = id,
-        name = name,
-        latitude = fix.latDeg,
-        longitude = fix.lonDeg,
-        altitude = ellipAlt,                       // store ellipsoidal as primary
-        timestamp = fix.timeUtc.toEpochMilli(),    // Convert Instant to Long
-        icon = icon,
-        color = color,
+    provider = fix.provider,
+    rtkStatus = fix.rtkStatus,
+    satsUsed = fix.satsUsed,
+    satsVisible = fix.satsVisible,
+    hdop = fix.hDop,
+    vDop = fix.vDop,
+    pDop = fix.pDop,
+    horizontalAccuracyM = fix.hAccM,
+    verticalAccuracyM = fix.vAccM,
+    correctionSource = null,                    // CorrectionSource enum not carried in Fix
+    correctionAgeS = fix.diffAgeS,
+    correctionStationId = fix.correctionStationId,
+    speedMps = fix.speedMps,
+    courseDeg = fix.courseDeg,
+    timestampSource = fix.timestampSource.name,
+    multipathIndex = fix.multipathIndex,
 
-        // ENTITY expects enums:
-        provider = fix.provider,                   // Provider enum
-        rtkStatus = fix.rtkStatus,                 // RtkStatus? enum
-        satsUsed = fix.satsUsed,
-        hdop = fix.hDop,
-        horizontalAccuracyM = fix.hAccM,
-        verticalAccuracyM = fix.vAccM,
-        correctionSource = null,                   // Not available in Fix class
-        correctionAgeS = fix.diffAgeS,
+    altitudeMsl = fix.altMslM,
+    geoidSeparationM = fix.geoidSeparationM,
+    crsEpsg = 4326,
 
-        altitudeMsl = mslAlt,
-        geoidSeparationM = fix.geoidSeparationM,
-        crsEpsg = 4326,                           // Default to WGS84
+    easting = null,
+    northing = null,
+    utmZone = null,
 
-        easting = null,
-        northing = null,
-        utmZone = null,
+    note = note,
+    averagedSamples = null,
+    averageDurationMs = null,
+    stdLatM = fix.stdDevNorthM,
+    stdLonM = fix.stdDevEastM,
+    stdAltM = fix.stdDevUpM,
 
-        note = note,
-        averagedSamples = null,
-        averageDurationMs = null,
-        stdLatM = null,                           // Not available in Fix class
-        stdLonM = null,                           // Not available in Fix class
-        stdAltM = null,                           // Not available in Fix class
-
-        sourceDevice = null,
-        appVersion = null
-    )
-}
+    sourceDevice = null,
+    appVersion = null
+)
 
 /**
  * TEMP compatibility wrapper, in case other call sites still use the old name.
@@ -107,26 +109,33 @@ fun toEntity(
     fix: Fix
 ): CoordinateEntity = toEntityFromFix(id, name, icon, color, note, fix)
 
-/** Map DB row back to your domain Coordinate (domain uses strings). */
+/** Map a DB row back to the domain Coordinate. */
 fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     id = id,
     name = name,
     latitude = latitude,
     longitude = longitude,
-    altitude = altitude,                // ellipsoidal stored as altitude
+    altitude = altitude,
     timestamp = timestamp,
     icon = icon,
     color = color,
 
-    // Convert enums -> strings for domain:
     provider = providerEnumToDomainString(provider),
     rtkStatus = rtkEnumToDomainString(rtkStatus),
     satsUsed = satsUsed,
+    satsVisible = satsVisible,
     hdop = hdop,
+    vDop = vDop,
+    pDop = pDop,
     horizontalAccuracyM = horizontalAccuracyM,
     verticalAccuracyM = verticalAccuracyM,
     correctionSource = corrEnumToDomainString(correctionSource),
     correctionAgeS = correctionAgeS,
+    correctionStationId = correctionStationId,
+    speedMps = speedMps,
+    courseDeg = courseDeg,
+    timestampSource = timestampSource,
+    multipathIndex = multipathIndex,
 
     altitudeMsl = altitudeMsl,
     geoidSeparationM = geoidSeparationM,
@@ -147,7 +156,7 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     appVersion = appVersion
 )
 
-/** New point/update coming from the domain Coordinate (strings) to the DB (enums). */
+/** Map a domain Coordinate back to a CoordinateEntity for DB writes. */
 fun Coordinate.toEntity(): CoordinateEntity =
     CoordinateEntity(
         id = id,
@@ -159,15 +168,22 @@ fun Coordinate.toEntity(): CoordinateEntity =
         icon = icon,
         color = color,
 
-        // Convert strings -> enums for entity:
         provider = providerDomainStringToEnum(provider),
         rtkStatus = rtkDomainStringToEnum(rtkStatus),
         satsUsed = satsUsed,
+        satsVisible = satsVisible,
         hdop = hdop,
+        vDop = vDop,
+        pDop = pDop,
         horizontalAccuracyM = horizontalAccuracyM,
         verticalAccuracyM = verticalAccuracyM,
         correctionSource = corrDomainStringToEnum(correctionSource),
         correctionAgeS = correctionAgeS,
+        correctionStationId = correctionStationId,
+        speedMps = speedMps,
+        courseDeg = courseDeg,
+        timestampSource = timestampSource,
+        multipathIndex = multipathIndex,
 
         altitudeMsl = altitudeMsl,
         geoidSeparationM = geoidSeparationM,

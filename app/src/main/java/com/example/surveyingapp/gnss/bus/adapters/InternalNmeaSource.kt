@@ -16,11 +16,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
 /**
- * Wires Android's internal GPS NMEA listener into the [InternalAdapter].
+ * Reads NMEA sentences from Android's internal GNSS provider.
  *
- * NMEA callbacks arrive on the main thread (via [Handler(Looper.getMainLooper())]).
- * Sentence fusion is delegated to [NmeaFuser]; the shared [NmeaRegistry] instance
- * from DI is reused so no extra parser allocations occur.
+ * Android delivers raw NMEA lines through LocationManager. This source forwards
+ * those lines into NmeaFuser, then publishes the normalized fixes and GSV updates
+ * consumed by InternalAdapter.
  */
 class InternalNmeaSource(
     context: Context,
@@ -29,24 +29,42 @@ class InternalNmeaSource(
     private val diagnostics: DiagnosticsService? = null
 ) : NmeaSource {
 
+    private companion object {
+        const val TAG = "InternalNmeaSource"
+    }
+
     private val lm: LocationManager =
         context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
     private val _fixes = MutableSharedFlow<Fix>(
-        replay = 1, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 1,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
+
     private val _gsv = MutableSharedFlow<GsvMessage>(
-        replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
     override fun parsedFixes(): SharedFlow<Fix> = _fixes
+
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv
 
     private val fuser = NmeaFuser(
         provider = Provider.INTERNAL,
         registry = registry,
-        onFix    = { fix -> scope.launch { _fixes.emit(fix) } },
-        onGsv    = { gsv -> scope.launch { _gsv.emit(gsv) } }
+        onFix = { fix ->
+            scope.launch {
+                _fixes.emit(fix)
+            }
+        },
+        onGsv = { gsv ->
+            scope.launch {
+                _gsv.emit(gsv)
+            }
+        }
     )
 
     private var started = false
@@ -54,28 +72,58 @@ class InternalNmeaSource(
 
     override fun start() {
         if (started) return
-        android.util.Log.d("InternalNmeaSource", "Starting internal GPS NMEA listener")
+
+        android.util.Log.d(TAG, "Starting internal GNSS NMEA listener")
+
         val listener = OnNmeaMessageListener { message, _ ->
+            /*
+             * Diagnostics records the raw receiver stream before fusion. This makes
+             * parser and receiver issues easier to inspect without changing runtime
+             * behavior for the normal fix pipeline.
+             */
             diagnostics?.recordLine(message)
             fuser.accept(message)
         }
+
         nmeaListener = listener
+
         try {
+            /*
+             * Register on the main looper because Android's NMEA listener API expects
+             * a Handler-backed callback thread. Mark the source started only after
+             * registration succeeds so permission failures can be retried later.
+             */
             lm.addNmeaListener(listener, Handler(Looper.getMainLooper()))
-            started = true  // Only set after successful registration
-            android.util.Log.d("InternalNmeaSource", "NMEA listener added successfully")
+            started = true
+
+            android.util.Log.d(TAG, "Internal NMEA listener registered")
         } catch (e: SecurityException) {
-            android.util.Log.e("InternalNmeaSource", "Missing location permission", e)
-            nmeaListener = null  // Clear listener reference on failure
-            // started remains false so retry is possible
+            android.util.Log.e(TAG, "Missing location permission for internal NMEA listener", e)
+
+            /*
+             * Leave started=false and clear the listener reference. The adapter can call
+             * start() again after location permission is granted.
+             */
+            nmeaListener = null
         }
     }
 
     override fun stop() {
-        nmeaListener?.let { runCatching { lm.removeNmeaListener(it) } }
+        nmeaListener?.let { listener ->
+            runCatching {
+                lm.removeNmeaListener(listener)
+            }
+        }
+
         nmeaListener = null
         started = false
+
+        /*
+         * The fuser carries sentence state across messages. Reset it so the next start
+         * does not combine new receiver output with stale fields from a previous run.
+         */
         fuser.reset()
-        android.util.Log.d("InternalNmeaSource", "NMEA listener removed")
+
+        android.util.Log.d(TAG, "Internal NMEA listener removed")
     }
 }

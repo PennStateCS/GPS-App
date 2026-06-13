@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bug / debug icon for the AR debug overlay toggle button. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Body -->
+    <path
+        android:pathData="M12,6 C9.8,6 8,7.8 8,10 L8,14 C8,16.2 9.8,18 12,18 C14.2,18 16,16.2 16,14 L16,10 C16,7.8 14.2,6 12,6 Z"
+        android:fillColor="#FFFFFF" />
+    <!-- Head / antennae -->
+    <path
+        android:pathData="M10,6 L9,4 M14,6 L15,4"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+    <!-- Left legs -->
+    <path
+        android:pathData="M8,10 L5,9 M8,12 L5,12 M8,14 L5,15"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+    <!-- Right legs -->
+    <path
+        android:pathData="M16,10 L19,9 M16,12 L19,12 M16,14 L19,15"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+    <!-- Mid line -->
+    <path
+        android:pathData="M8,12 L16,12"
+        android:strokeWidth="1.5"
+        android:strokeColor="#BB000000"
+        android:strokeLineCap="round" />
+</vector>
+

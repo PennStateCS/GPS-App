@@ -61,7 +61,7 @@ class SatelliteSignalChartViewTest {
                   dataset.all { it.constellation == Constellation.GPS })
 
         // Assert the first bar is marked 'used' when usedInFix=true
-        val firstSatellite = dataset.find { it.prn == 1 }
+        val firstSatellite = dataset.find { it.svid == 1 }
         assertNotNull("First satellite (svid=1) should be in dataset", firstSatellite)
         assertTrue("First satellite should be marked as used", usedPrns.contains(1))
 
@@ -70,6 +70,6 @@ class SatelliteSignalChartViewTest {
 
         // Verify GLONASS satellite is not in the filtered dataset
         assertFalse("GLONASS satellite should not be in GPS-filtered dataset",
-                   dataset.any { it.prn == 65 })
+                   dataset.any { it.svid == 65 })
     }
 }

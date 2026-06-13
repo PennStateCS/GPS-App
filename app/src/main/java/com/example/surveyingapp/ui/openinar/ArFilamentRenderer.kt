@@ -40,15 +40,16 @@ import java.util.Collections
  * `EGL_BAD_ACCESS` spam in logcat. [UiHelper] sets the attribute automatically.
  *
  * ## Threading contract
- * All public methods ([init], [preload], [renderFrame], [destroy]) **must be
- * called from the main thread** (the Choreographer callback or Fragment lifecycle).
+ * All public methods ([init], [preload], [tickAndApplyLoads], [renderFrame], [destroy])
+ * **must be called from the main thread** (the Choreographer callback or Fragment lifecycle).
  * File I/O inside [preload] is dispatched to [Dispatchers.IO] automatically.
  *
  * ## Typical lifecycle
  * ```
  * onViewCreated  → init(textureView)
  * setCoordinates → preload(key, filePath, lifecycleScope)
- * Choreographer  → renderFrame(frameTimeNs, viewMatrix, projMatrix, poses)
+ * Choreographer  → tickAndApplyLoads(modelPoses)   // every frame — pumps uploads
+ * Choreographer  → renderFrame(frameTimeNs, view, proj)  // only when poses non-empty
  * onDestroyView  → destroy()
  * ```
  */
@@ -74,10 +75,22 @@ class ArFilamentRenderer {
         val asset: FilamentAsset,
         /**
          * True once [scene.addEntities] has been called for this asset.
-         * Entities must NOT be added before [ResourceLoader.asyncGetLoadProgress] reaches 1.0;
-         * adding them while GPU resource uploads are still in flight causes PreconditionPanic.
          */
-        var addedToScene: Boolean = false
+        var addedToScene: Boolean = false,
+        /**
+         * Number of [tickAndApplyLoads] calls since [ResourceLoader.asyncBeginLoad] was called
+         * for this asset.  Used as a per-asset readiness gate: once this reaches
+         * [MIN_TICKS_BEFORE_SCENE_ADD] the asset is added to the scene regardless of the
+         * global [ResourceLoader.asyncGetLoadProgress] value.
+         *
+         * Background: asyncGetLoadProgress() aggregates decode-task completions across ALL
+         * loaded assets.  When many assets are loaded simultaneously (e.g. a 25-point test
+         * grid), Filament's decode thread pool can be overwhelmed and drops tasks silently,
+         * causing global progress to stall permanently below 1.0.  The per-asset tick counter
+         * bypasses this: mesh buffers are uploaded synchronously inside asyncBeginLoad(), so
+         * after a few vsync ticks the GPU data is resident and safe to render.
+         */
+        var ticksSinceLoad: Int = 0
     )
 
     private lateinit var engine: Engine
@@ -113,6 +126,11 @@ class ArFilamentRenderer {
     private val preloadSemaphore = Semaphore(permits = 2)
 
     private var initialized = false
+
+    /** Counts every tickAndApplyLoads() call; used to throttle per-frame log spam. */
+    private var tickCount = 0L
+    /** Whether isReadyToRender was false on the last renderFrame call — avoids log spam. */
+    private var lastReadyToRender = true
 
     // -------------------------------------------------------------------------
     // Debug / diagnostics
@@ -209,7 +227,19 @@ class ArFilamentRenderer {
      * Idempotent — subsequent calls with the same key are silently ignored.
      */
     fun preload(key: String, filePath: String, scope: CoroutineScope) {
-        if (!initialized || anchorAssets.containsKey(key) || !loadingKeys.add(key)) return
+        if (!initialized) {
+            Log.w(DIAG, "preload($key) skipped — not initialized")
+            return
+        }
+        if (anchorAssets.containsKey(key)) {
+            Log.d(DIAG, "preload($key) skipped — already in anchorAssets (state=${modelLoadState(key)})")
+            return
+        }
+        if (!loadingKeys.add(key)) {
+            Log.d(DIAG, "preload($key) skipped — already in loadingKeys")
+            return
+        }
+        Log.d(DIAG, "preload($key) starting  path=$filePath  fileExists=${File(filePath).exists()}  fileSize=${File(filePath).length()}B")
         scope.launch {
             try {
                 preloadSemaphore.withPermit {
@@ -220,25 +250,29 @@ class ArFilamentRenderer {
                             }
                         }
                     }
-                withContext(Dispatchers.Main) {
-                    if (!initialized) return@withContext
-                    val buffer = ByteBuffer.wrap(bytes)
-                    val asset = assetLoader.createAsset(buffer)
-                    if (asset == null) {
-                        Log.e(TAG, "createAsset returned null for $filePath")
+                    Log.d(DIAG, "preload($key) IO done — ${bytes.size}B read")
+                    withContext(Dispatchers.Main) {
+                        if (!initialized) {
+                            Log.w(DIAG, "preload($key) aborted — renderer destroyed while loading")
+                            return@withContext
+                        }
+                        val buffer = ByteBuffer.wrap(bytes)
+                        val asset = assetLoader.createAsset(buffer)
+                        if (asset == null) {
+                            Log.e(DIAG, "preload($key) FAILED — createAsset returned null  path=$filePath")
+                            loadingKeys.remove(key)
+                            return@withContext
+                        }
+                        resourceLoader.asyncBeginLoad(asset)
+                        asset.releaseSourceData()
+                        anchorAssets[key] = CachedAsset(asset)
                         loadingKeys.remove(key)
-                        return@withContext
+                        Log.d(DIAG, "preload($key) asyncBeginLoad called — entities=${asset.entities.size}  path=$filePath")
                     }
-                    resourceLoader.asyncBeginLoad(asset)
-                    asset.releaseSourceData()
-                    anchorAssets[key] = CachedAsset(asset)
-                    loadingKeys.remove(key)
-                    Log.d(TAG, "Load started: $key → $filePath")
-                }
                 }
             } catch (e: Exception) {
                 loadingKeys.remove(key)
-                Log.e(TAG, "preload failed for $filePath", e)
+                Log.e(DIAG, "preload($key) EXCEPTION  path=$filePath", e)
             }
         }
     }
@@ -247,35 +281,42 @@ class ArFilamentRenderer {
     // Rendering
 
     /**
-     * Render one frame. Call from [android.view.Choreographer.FrameCallback.doFrame].
+     * Pump [ResourceLoader.asyncUpdateLoad] and advance any LOADING assets to IN_SCENE once
+     * all pending GPU uploads are complete.  Must be called from the main thread every
+     * Choreographer frame — even when [renderFrame] is skipped because there are no poses
+     * or the Filament surface is not yet ready.  Separating pumping from rendering means
+     * model assets begin loading as soon as [preload] is called, regardless of whether
+     * ARCore anchors are tracking or the TextureView surface has been created.
      *
-     * @param frameTimeNs Choreographer frame time (nanoseconds).
-     * @param viewMatrix  ARCore view matrix (world → camera, column-major float[16]).
-     * @param projMatrix  ARCore projection matrix (column-major float[16]).
-     * @param poses       Model poses to render; entries with unloaded/missing assets are skipped.
+     * @param poses The current set of model poses; used to (a) remove stale test-grid assets
+     *              and (b) call [scene.addEntities] / [TransformManager.setTransform] for each
+     *              asset that has just finished uploading.
      */
-    fun renderFrame(
-        frameTimeNs: Long,
-        viewMatrix: FloatArray,
-        projMatrix: FloatArray,
-        poses: List<ModelPose>
-    ) {
+    fun tickAndApplyLoads(poses: List<ModelPose>) {
         if (!initialized) return
-        // UiHelper.isReadyToRender: true once the surface is available and sized.
-        if (!uiHelper.isReadyToRender) return
-        val sc = swapChain ?: return
 
-        // Pump async resource loading for all cached assets, then sample progress.
-        // We only add entities to the scene once ALL pending GPU uploads reach 1.0 to
-        // guarantee every renderable has its GPU buffers/textures fully resident.
-        // Adding entities with incomplete resources triggers PreconditionPanic.
+        tickCount++
+        val logThisFrame = (tickCount % 60L) == 0L  // log once per ~second at 60 fps
+
         resourceLoader.asyncUpdateLoad()
-        val allLoaded = resourceLoader.asyncGetLoadProgress() >= 1.0f
+        val progress  = resourceLoader.asyncGetLoadProgress()
+        val allLoaded = progress >= 1.0f
+
+        if (logThisFrame) {
+            val states = anchorAssets.entries.joinToString { (k, v) ->
+                "$k→${if (v.addedToScene) "IN_SCENE" else "LOADING"}"
+            }
+            Log.d(DIAG, "tick#$tickCount  poses=${poses.size}  cached=${anchorAssets.size}" +
+                    "  loading=${loadingKeys.size}  progress=${"%.2f".format(progress)}" +
+                    "  allLoaded=$allLoaded  swapChain=${swapChain != null}" +
+                    "  ready=${uiHelper.isReadyToRender}" +
+                    if (anchorAssets.isNotEmpty()) "  assets=[$states]" else "  assets=[]")
+        }
 
         // Remove stale test-grid assets when their keys are no longer present.
         // This is required so "Clear Tests" actually removes already-added entities.
-        val activeKeys     = poses.asSequence().map { it.key }.toHashSet()
-        val staleTestKeys  = anchorAssets.keys.filter {
+        val activeKeys    = poses.asSequence().map { it.key }.toHashSet()
+        val staleTestKeys = anchorAssets.keys.filter {
             it.startsWith(TEST_GRID_KEY_PREFIX) && it !in activeKeys
         }
         if (staleTestKeys.isNotEmpty()) {
@@ -306,23 +347,67 @@ class ArFilamentRenderer {
             }
         }
 
-        // Transition LOADING → IN_SCENE once all pending GPU uploads are complete.
-        // The framesUpdated-based heuristic is NOT safe: on slow devices (e.g., feature
-        // extraction taking 124 ms/frame) two asyncUpdateLoad() calls may not be enough
-        // to fully upload textures, and adding entities with incomplete GPU resources
-        // triggers PreconditionPanic ("scene.addEntities on unready asset").
+        // Transition LOADING → IN_SCENE using a two-path gate:
+        //   Path A (fast): asyncGetLoadProgress() reaches 1.0 — all decode tasks finished.
+        //   Path B (fallback): per-asset ticksSinceLoad reaches MIN_TICKS_BEFORE_SCENE_ADD.
+        //     Mesh buffers are uploaded synchronously inside asyncBeginLoad(), so after a small
+        //     number of vsync ticks the GPU data is resident.  This fallback handles the case
+        //     where Filament's decode thread pool is overwhelmed by many simultaneous loads
+        //     (e.g., a large test grid), causing the global progress counter to stall below 1.0.
         for (pose in poses) {
-            val cached = anchorAssets[pose.key] ?: continue
+            val cached = anchorAssets[pose.key]
+            if (cached == null) {
+                if (logThisFrame) Log.d(DIAG, "  pose ${pose.key} → NOT in anchorAssets (preload pending or failed)")
+                continue
+            }
             if (!cached.addedToScene) {
-                if (!allLoaded) continue   // wait until all uploads are complete
+                cached.ticksSinceLoad++
+                val readyByProgress = allLoaded
+                val readyByTicks    = cached.ticksSinceLoad >= MIN_TICKS_BEFORE_SCENE_ADD
+                if (!readyByProgress && !readyByTicks) {
+                    if (logThisFrame) Log.d(DIAG, "  pose ${pose.key} → LOADING  progress=${"%.2f".format(progress)}" +
+                            "  ticks=${cached.ticksSinceLoad}/$MIN_TICKS_BEFORE_SCENE_ADD")
+                    continue
+                }
+                val reason = if (readyByProgress) "progress=1.0" else "ticks=${cached.ticksSinceLoad}"
                 cached.addedToScene = true
                 scene.addEntities(cached.asset.entities)
-                Log.d(TAG, "Model added to scene: ${pose.key}")
+                Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)  entities=${cached.asset.entities.size}")
             }
             // Asset is in scene — update its world transform every frame.
             val tm = engine.transformManager
             val ti = tm.getInstance(cached.asset.root)
             tm.setTransform(ti, pose.worldMatrix)
+        }
+    }
+
+    /**
+     * Render one frame. Call from [android.view.Choreographer.FrameCallback.doFrame].
+     *
+     * Asset loading/management is handled separately in [tickAndApplyLoads], which must be
+     * called every frame before this method.  [renderFrame] is responsible only for the
+     * GPU rendering pass and may be skipped when there are no poses to draw.
+     *
+     * @param frameTimeNs Choreographer frame time (nanoseconds).
+     * @param viewMatrix  ARCore view matrix (world → camera, column-major float[16]).
+     * @param projMatrix  ARCore projection matrix (column-major float[16]).
+     */
+    fun renderFrame(
+        frameTimeNs: Long,
+        viewMatrix: FloatArray,
+        projMatrix: FloatArray,
+    ) {
+        if (!initialized) return
+
+        val ready = uiHelper.isReadyToRender
+        if (ready != lastReadyToRender) {
+            Log.d(DIAG, "renderFrame: isReadyToRender changed → $ready  swapChain=${swapChain != null}")
+            lastReadyToRender = ready
+        }
+        if (!ready) return
+        val sc = swapChain ?: run {
+            Log.w(DIAG, "renderFrame: swapChain is null despite isReadyToRender=true")
+            return
         }
 
         // Camera — ARCore gives world→camera; Filament camera.setModelMatrix wants camera→world.
@@ -418,9 +503,18 @@ class ArFilamentRenderer {
     // -------------------------------------------------------------------------
     companion object {
         private const val TAG        = "ArFilamentRenderer"
+        /** Dedicated tag for model-loading diagnostics — filter logcat by this tag. */
+        const val DIAG               = "AR_MDL"
         /** Must match the near/far values used in ARCore's getProjectionMatrix() call. */
         private const val NEAR_PLANE = 0.1
         private const val FAR_PLANE  = 2000.0
         private const val TEST_GRID_KEY_PREFIX = "test_grid_"
+        /**
+         * Minimum number of [tickAndApplyLoads] calls that must occur after [asyncBeginLoad]
+         * before an asset is added to the scene via the tick-based fallback path.
+         * 5 ticks ≈ 83 ms at 60 fps — enough for mesh-buffer uploads queued inside
+         * asyncBeginLoad() to drain through the Filament backend command queue.
+         */
+        private const val MIN_TICKS_BEFORE_SCENE_ADD = 5
     }
 }
