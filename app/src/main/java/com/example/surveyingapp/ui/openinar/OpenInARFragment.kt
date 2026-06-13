@@ -276,14 +276,25 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // Drives Filament rendering at display refresh rate on the main thread.
     private var choreographerInstance: android.view.Choreographer? = null
+    private var choreographerFrameCount = 0L
     private val filamentFrameCallback = object : android.view.Choreographer.FrameCallback {
         override fun doFrame(frameTimeNs: Long) {
             choreographerInstance?.postFrameCallback(this)
-            // Skip GPU work when there are no GLB models to render this frame.
-            if (modelPoses.isEmpty()) return
+            choreographerFrameCount++
+            // Always pump asset loading / scene management so models load as soon as
+            // preload() is called — even before ARCore anchors start tracking or the
+            // Filament TextureView surface has been fully created.
+            filamentRenderer?.tickAndApplyLoads(modelPoses)
+            // Skip GPU rendering when there are no GLB models to draw this frame.
+            if (modelPoses.isEmpty()) {
+                if ((choreographerFrameCount % 300L) == 0L)
+                    android.util.Log.d(ArFilamentRenderer.DIAG,
+                        "Choreographer#$choreographerFrameCount — modelPoses empty (no anchors tracking or no models)")
+                return
+            }
             val vm = arViewMatrix ?: return
             val pm = arProjMatrix ?: return
-            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, modelPoses)
+            filamentRenderer?.renderFrame(frameTimeNs, vm, pm)
         }
     }
 
@@ -1394,6 +1405,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /** Map DB rows (with resolved model paths) to internal GeoItem list and mark anchors for rebuild. */
     private fun setCoordinates(items: List<CoordWithModel>) {
+        // Log every incoming emission so we can confirm models reach the fragment.
+        val withModels = items.filter { it.modelFilePath != null }
+        android.util.Log.d(ArFilamentRenderer.DIAG,
+            "setCoordinates: ${items.size} total  ${withModels.size} with models" +
+            if (withModels.isNotEmpty())
+                "  paths=" + withModels.joinToString { "${it.coordinate.id}→${it.modelFilePath}" }
+            else "  (no model paths)"
+        )
         // Skip rebuild if the incoming list is identical to what we already have.
         // Room emits on every observed change; without this guard a no-op emission
         // clears geoAnchorsCreated and forces a full anchor rebuild at 60fps.
