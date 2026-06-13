@@ -62,14 +62,13 @@
         android:clickable="true"
         android:focusable="true" />
 
-    <!-- Model load progress chip — anchored just below the toggle button. -->
+    <!-- Model load progress chip — top centre, above the floating toolbar. -->
     <TextView
         android:id="@+id/chipModelProgress"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="64dp"
-        android:layout_marginEnd="12dp"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="12dp"
         android:text="⏳ 0/0 models"
         android:textSize="11sp"
         android:textColor="#FFFFFF"
@@ -155,6 +154,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_pin"
+                    android:tint="#FFFFFF"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:id="@+id/txtTestPoints"
