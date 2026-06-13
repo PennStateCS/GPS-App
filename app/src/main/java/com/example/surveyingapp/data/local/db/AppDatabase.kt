@@ -30,8 +30,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(Migration4To5())
-                    .fallbackToDestructiveMigration() // still present as a safe fallback
+                    .addMigrations(MIGRATION_2_3, Migration4To5())
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build().also { INSTANCE = it }
             }
         private const val DATABASE_NAME = "surveying_app.db"
