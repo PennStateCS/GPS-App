@@ -70,6 +70,14 @@ class MainActivity : AppCompatActivity() {
 
     private var batteryJob: Job? = null
 
+    // Track last GNSS data update time for stale detection
+    @Volatile
+    private var lastDataUpdateTime = System.currentTimeMillis()
+
+    // Track latest sky snapshot for accurate satellite counts
+    @Volatile
+    private var latestSkySnapshot: com.example.surveyingapp.gnss.model.SkySnapshot? = null
+
     // Hilt injected GNSS components
     @Inject lateinit var switchboard: FixSwitchboard
     @Inject lateinit var externalAdapter: ExternalAdapter
@@ -209,18 +217,6 @@ class MainActivity : AppCompatActivity() {
         navView.setupWithNavController(navController)
         updateDevToolsVisibility()
 
-        // RS2 visibility initial + updates
-        lifecycleScope.launch {
-            val src = SurveyingApp.settingsRepo.locationSource.first()
-            updateRs2Visibility(src == LocationSourceType.EXTERNAL)
-        }
-        lifecycleScope.launch {
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                SurveyingApp.settingsRepo.locationSource
-                    .distinctUntilChanged()
-                    .collectLatest { src -> updateRs2Visibility(src == LocationSourceType.EXTERNAL) }
-            }
-        }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             if (destination.id == R.id.nav_open_in_ar) {
@@ -228,31 +224,40 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Pre-populate minimal status based on initial source
+        // Pre-populate initial status tokens with placeholders
         lifecycleScope.launch {
-            val initialProvider = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL }
-            val srcLabel = if (initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
-            tokenSource.value.text = srcLabel
-            tokenSource.separator?.isVisible = initialProvider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
-            if (initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) {
-                tokenFix.root.isVisible = false
-                tokenSats.root.isVisible = false
-                updateBatteryVisibility(false)
-                // Show coord/alt tokens immediately with placeholders so the user
-                // knows coordinates will appear once the GPS acquires a fix.
-                tokenCoord.value.text = "--"
-                tokenCoord.root.isVisible = true
-                tokenAlt.root.isVisible = false
-            } else {
-                tokenFix.root.isVisible = true
-                tokenFix.value.text = "--"
-                tokenSats.root.isVisible = false
-                // Coord will be shown once an RS2+ fix arrives.
-                tokenCoord.value.text = "--"
-                tokenCoord.root.isVisible = true
-                tokenAlt.root.isVisible = false
+            val initialProvider = try { 
+                sourceSettings.activeProvider.first() 
+            } catch (_: Exception) { 
+                com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL 
             }
+            
+            val isInternal = initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+            val srcLabel = if (isInternal) "Internal" else "RS2+"
+            
+            // Set initial source label
+            tokenSource.value.text = srcLabel
+            tokenSource.separator?.isVisible = !isInternal
+            
+            // Set visibility based on source type
+            tokenFix.root.isVisible = !isInternal
+            if (!isInternal) {
+                tokenFix.value.text = "--"
+                tokenFix.value.setTextColor(0xFF9E9E9E.toInt())
+            }
+            
+            tokenSats.root.isVisible = false // Hidden until first fix with sat data
+            
+            // Show coordinate placeholder
+            tokenCoord.value.text = "--"
+            tokenCoord.root.isVisible = true
+            
+            // Hide altitude until first fix
+            tokenAlt.root.isVisible = false
+            
+            // Battery only for external
             tokenBatt.root.isVisible = false
+            updateBatteryVisibility(!isInternal)
         }
 
         // Permissions flow
@@ -470,60 +475,78 @@ class MainActivity : AppCompatActivity() {
 
     /** Status bar observers */
     private fun startStatusBarObservers() {
-        // Separate observer for instant source label updates
+
+        // Single consolidated observer for all status bar updates
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                sourceSettings.activeProvider.collect { provider ->
-                    val srcLabel = if (provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
-                    android.util.Log.d("MainActivity", "Provider changed to: $provider, label: $srcLabel")
-                    tokenSource.value.text = srcLabel
-                    tokenSource.separator?.isVisible = provider != com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
-                    // Immediately show coord token with placeholder so users know GPS is
-                    // the source — actual coordinates fill in once the first fix arrives.
-                    tokenCoord.value.text = "--"
-                    tokenCoord.root.isVisible = true
-                    // Altitude stays hidden until a fix with altitude data arrives.
-                    tokenAlt.root.isVisible = false
+                var consecutiveErrors = 0
+
+                combine(
+                    switchboard.fixes,
+                    switchboard.sky,
+                    sourceSettings.activeProvider
+                ) { fix, sky, provider ->
+                    Triple(fix, sky, provider)
                 }
+                    .catch { e ->
+                        android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
+                        consecutiveErrors++
+                        if (consecutiveErrors >= 3) {
+                            // After 3 consecutive errors, reset tokens
+                            withContext(Dispatchers.Main) {
+                                tokenSource.value.text = "Error"
+                                tokenFix.value.text = "--"
+                                tokenSats.value.text = "--"
+                                tokenCoord.value.text = "--"
+                                tokenAlt.value.text = "--"
+                                updateBatteryVisibility(false)
+                            }
+                        }
+                        // Emit a retry signal after delay
+                        delay(5000)
+                        emitAll(flowOf())
+                    }
+                    .collectLatest { (fix, sky, provider) ->
+                        consecutiveErrors = 0 // Reset error counter on success
+                        lastDataUpdateTime = System.currentTimeMillis() // Update the shared timestamp
+                        latestSkySnapshot = sky // Store latest sky snapshot
+
+                        val source = if (provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) {
+                            LocationSourceType.INTERNAL
+                        } else {
+                            LocationSourceType.EXTERNAL
+                        }
+
+                        android.util.Log.d("MainActivity", "Updating status tokens: provider=$provider, source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
+
+                        withContext(Dispatchers.Main) {
+                            updateStatusTokens(source, fix, sky)
+                            updateBatteryVisibility(source == LocationSourceType.EXTERNAL)
+                            // Reset alpha when fresh data arrives
+                            tokenSource.value.alpha = 1.0f
+                        }
+                    }
             }
         }
 
+        // Stale data detection - dim source token if no updates for 15 seconds
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(
-                    switchboard.fixes,
-                    // Use provider choice for immediate UI updates on toggle
-                    sourceSettings.activeProvider.map { prov ->
-                        if (prov == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) LocationSourceType.INTERNAL else LocationSourceType.EXTERNAL
-                    }
-                ) { fix: Fix, source: LocationSourceType -> fix to source }
-                    // Remove sampling to reflect changes instantly
-                    .distinctUntilChanged { (oFix, oSrc), (nFix, nSrc) ->
-                        oSrc == nSrc &&
-                                oFix.rtkStatus == nFix.rtkStatus &&
-                                oFix.satsUsed == nFix.satsUsed &&
-                                oFix.satsVisible == nFix.satsVisible &&
-                                (oFix.latDeg * 1e6).toLong() == (nFix.latDeg * 1e6).toLong() &&
-                                (oFix.lonDeg * 1e6).toLong() == (nFix.lonDeg * 1e6).toLong() &&
-                                (((oFix.altMslM ?: oFix.altEllipsoidalM) ?: -999.0) * 100).toLong() ==
-                                (((nFix.altMslM ?: nFix.altEllipsoidalM) ?: -999.0) * 100).toLong()
-                    }
-                    .catch { e ->
-                        android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
-                        runOnUiThread {
-                            tokenSource.value.text = "--"
-                            tokenFix.value.text = "--"
-                            tokenSats.value.text = "--"
-                            tokenCoord.value.text = "--"
-                            tokenAlt.value.text = "--"
-                            tokenBatt.value.text = "--"
+                while (true) {
+                    delay(5_000) // Check every 5 seconds
+                    val now = System.currentTimeMillis()
+                    val elapsed = now - lastDataUpdateTime
+
+                    // If we haven't seen an update in 15+ seconds, show stale indicator
+                    withContext(Dispatchers.Main) {
+                        if (elapsed > 15_000) {
+                            // Dim the source token to indicate stale data
+                            tokenSource.value.alpha = 0.5f
+                        } else {
+                            tokenSource.value.alpha = 1.0f
                         }
                     }
-                    .collectLatest { (fix, source) ->
-                        android.util.Log.d("MainActivity", "Updating status tokens for source: $source")
-                        updateStatusTokens(source, fix)
-                        updateBatteryVisibility(source == LocationSourceType.EXTERNAL)
-                    }
+                }
             }
         }
     }
@@ -531,6 +554,12 @@ class MainActivity : AppCompatActivity() {
     private fun updateBatteryVisibility(shouldShow: Boolean) {
         if (shouldShow) {
             tokenAlt.separator?.isVisible = true
+            // Show token immediately with placeholder so the user knows it's present
+            // while the HTTP poll is in flight; the icon / value are filled once data arrives.
+            if (!tokenBatt.root.isVisible) {
+                tokenBatt.value.text = "--"
+                tokenBatt.root.isVisible = true
+            }
             if (batteryJob == null) startBatteryPolling()
         } else {
             tokenAlt.separator?.isVisible = false
@@ -540,10 +569,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateBatteryIcon(percentage: Int?, charging: Boolean? = null) {
-        // Hide if no data
+        // No data: show "--" placeholder if token is already visible (external mode),
+        // otherwise keep it hidden.
         if (percentage == null) {
-            tokenBatt.root.isVisible = false
-            tokenBatt.value.text = "" // Clear stale text to prevent flash when becoming visible again
+            if (tokenBatt.root.isVisible) {
+                tokenBatt.value.text = "--"
+                // Reset the fill so the bar looks empty
+                batteryFillClip?.level = 0
+                try { batteryLayer?.findDrawableByLayerId(R.id.battery_bolt)?.alpha = 0x00 } catch (_: Exception) {}
+            }
             return
         }
         tokenBatt.root.isVisible = true
@@ -617,12 +651,19 @@ class MainActivity : AppCompatActivity() {
             var client: ReachHttpClient? = null
             var service: ReachBatteryService? = null
 
+            android.util.Log.d("MainActivity", "Battery polling started")
+
             while (true) {
                 try {
-                    val ip = runCatching { SurveyingApp.settingsRepo.externalTcpHost.first() }.getOrNull()
+                    // Get configured IP from settings
+                    val ip = runCatching {
+                        SurveyingApp.settingsRepo.externalTcpHost.first()
+                    }.getOrNull()
 
+                    // No IP configured - hide battery and wait
                     if (ip.isNullOrBlank()) {
                         if (!batteryHidden) {
+                            android.util.Log.d("MainActivity", "No IP configured, hiding battery")
                             updateBatteryIcon(null)
                             batteryHidden = true
                             hideStartTime = SystemClock.elapsedRealtime()
@@ -632,53 +673,81 @@ class MainActivity : AppCompatActivity() {
                         continue
                     }
 
+                    // IP changed - reinitialize client
                     if (ip != lastIp) {
+                        android.util.Log.d("MainActivity", "Battery IP changed to: $ip")
+
                         try {
                             client = ReachHttpClient(ip)
-                            service = ReachBatteryService(client!!)
+                            service = ReachBatteryService(client)
+                            lastIp = ip
+                            consecutiveFailures = 0 // Reset failures on new IP
                         } catch (e: Exception) {
-                            android.util.Log.e("MainActivity", "Error initializing battery service: ", e)
+                            android.util.Log.e("MainActivity", "Error initializing battery service for $ip", e)
                             updateBatteryIcon(null)
                             delay(30_000)
                             continue
                         }
-                        lastIp = ip
                     }
 
+                    // Auto-unhide after 60 seconds if hidden
                     if (batteryHidden && SystemClock.elapsedRealtime() - hideStartTime >= 60_000) {
+                        android.util.Log.d("MainActivity", "Auto-unhiding battery after timeout")
                         batteryHidden = false
                         consecutiveFailures = 0
                     }
-                    if (batteryHidden) { delay(15_000); continue }
 
+                    // Skip fetch if hidden (waiting for timeout)
+                    if (batteryHidden) {
+                        delay(15_000)
+                        continue
+                    }
+
+                    // Fetch battery data
                     val batt = try {
-                        withContext(Dispatchers.IO) { runCatching { service?.read() }.getOrNull() }
+                        withContext(Dispatchers.IO) {
+                            runCatching { service?.read() }.getOrNull()
+                        }
                     } catch (e: Exception) {
-                        android.util.Log.e("MainActivity", "Error reading battery data: ", e)
+                        android.util.Log.e("MainActivity", "Error reading battery data", e)
                         null
                     }
 
+                    // Process battery data
                     if (batt?.percent != null) {
                         consecutiveFailures = 0
-                        val isCharging = batt.chargerStatus?.contains("charg", ignoreCase = true)
+                        val isCharging = batt.chargerStatus?.contains("charg", ignoreCase = true) ?: false
                         updateBatteryIcon(batt.percent, isCharging)
                         delay(15_000)
                     } else {
+                        // Failed to get battery data
                         consecutiveFailures++
                         val now = SystemClock.elapsedRealtime()
+
+                        // Log failure periodically
                         if (now - lastLoggedFailure >= 60_000) {
-                            android.util.Log.w("MainActivity", "Battery fetch failed for $ip (#$consecutiveFailures)")
+                            android.util.Log.w("MainActivity", "Battery fetch failed for $ip (failure #$consecutiveFailures)")
                             lastLoggedFailure = now
                         }
+
+                        // Hide after 3 consecutive failures
                         if (consecutiveFailures >= 3 && !batteryHidden) {
+                            android.util.Log.w("MainActivity", "Hiding battery after $consecutiveFailures consecutive failures")
                             updateBatteryIcon(null)
                             batteryHidden = true
                             hideStartTime = SystemClock.elapsedRealtime()
                         }
-                        delay( when (consecutiveFailures) { 1 -> 15_000L; 2 -> 30_000L; else -> 45_000L } )
+
+                        // Progressive backoff delay
+                        val delayMs = when (consecutiveFailures) {
+                            1 -> 15_000L
+                            2 -> 30_000L
+                            else -> 45_000L
+                        }
+                        delay(delayMs)
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Battery polling error: ", e)
+                    android.util.Log.e("MainActivity", "Battery polling error", e)
                     if (!batteryHidden) {
                         updateBatteryIcon(null)
                         batteryHidden = true
@@ -710,68 +779,56 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val src = try { SurveyingApp.settingsRepo.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
-            if (src == LocationSourceType.EXTERNAL) {
-                topLevel.add(R.id.nav_rs2)
-            }
             appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
             setupActionBarWithNavController(navController, appBarConfiguration)
         }
     }
 
-    private fun updateRs2Visibility(shouldShow: Boolean) {
-        val navView: NavigationView = binding.navView
-        val menu = navView.menu
-        val rs2MenuItem = menu.findItem(R.id.nav_rs2)
-        rs2MenuItem?.isVisible = shouldShow
-
-        val topLevel = mutableSetOf(
-            R.id.nav_home,
-            R.id.nav_models,
-            R.id.nav_view_coordinates,
-            R.id.nav_render_map,
-            R.id.nav_open_in_ar,
-            R.id.nav_settings
-        )
-        if (shouldShow) topLevel.add(R.id.nav_rs2)
-        val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
-        if (devEnabled) topLevel.add(R.id.nav_development)
-
-        appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
-        setupActionBarWithNavController(navController, appBarConfiguration)
-    }
-
     private fun updateStatusTokens(
         source: LocationSourceType,
-        fix: Fix
+        fix: Fix,
+        sky: com.example.surveyingapp.gnss.model.SkySnapshot
     ) {
+        // Validate coordinate ranges (WGS84 bounds)
+        val latValid = fix.latDeg in -90.0..90.0
+        val lonValid = fix.lonDeg in -180.0..180.0
+
+        if (!latValid || !lonValid) {
+            android.util.Log.w("MainActivity", "Invalid coordinates: lat=${fix.latDeg}, lon=${fix.lonDeg}")
+            tokenCoord.value.text = "Invalid"
+            tokenCoord.root.isVisible = true
+            return
+        }
+
         val srcLabel = if (source == LocationSourceType.INTERNAL) "Internal" else "RS2+"
         tokenSource.value.text = srcLabel
 
         val isInternal = source == LocationSourceType.INTERNAL
         tokenSource.separator?.isVisible = !isInternal
+
         if (isInternal) {
-            // Hide FIX/SATS entirely
+            // Internal GPS: Hide FIX/SATS tokens entirely
             tokenFix.root.isVisible = false
             tokenSats.root.isVisible = false
             // Hide battery immediately when internal
             updateBatteryVisibility(false)
 
-            // Coordinates
+            // Coordinates with validation
             val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
             val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
             tokenCoord.value.text = "$latStr, $lonStr"
             tokenCoord.root.isVisible = true
 
-            // Altitude: prefer MSL if available
+            // Altitude: prefer MSL if available, validate range
             val altMsl = fix.altMslM
             val altEllip = fix.altEllipsoidalM
             when {
-                altMsl != null -> {
-                    tokenAlt.value.text = String.format(Locale.US, "%.2f", altMsl) + "m"
+                altMsl != null && altMsl in -500.0..10000.0 -> {
+                    tokenAlt.value.text = String.format(Locale.US, "%.2fm", altMsl)
                     tokenAlt.root.isVisible = true
                 }
-                altEllip != null -> {
-                    tokenAlt.value.text = String.format(Locale.US, "%.2f", altEllip) + "m"
+                altEllip != null && altEllip in -500.0..10000.0 -> {
+                    tokenAlt.value.text = String.format(Locale.US, "%.2fm", altEllip)
                     tokenAlt.root.isVisible = true
                 }
                 else -> tokenAlt.root.isVisible = false
@@ -779,7 +836,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // External (RS2+)
+        // External (RS2+): Show FIX and SATS tokens
         tokenFix.root.isVisible = true
         val (fixLabel, fixColor) = when (fix.rtkStatus) {
             RtkStatus.NONE    -> "--"      to 0xFF9E9E9E.toInt()
@@ -793,32 +850,35 @@ class MainActivity : AppCompatActivity() {
         tokenFix.value.text = fixLabel
         tokenFix.value.setTextColor(fixColor)
 
-        // Satellites (sanitize impossible combos)
-        val used = fix.satsUsed.coerceAtLeast(0)
-        val vis  = (fix.satsVisible ?: used).coerceAtLeast(used)
+        // Satellites: Use SkySnapshot data (GSV) for consistency with Developer Tools
+        // Fallback to Fix data (GGA) if SkySnapshot has no data yet
+        val used = if (sky.totalUsed > 0) sky.totalUsed else fix.satsUsed.coerceIn(0, 100)
+        val vis = if (sky.totalVisible > 0) sky.totalVisible else (fix.satsVisible ?: used).coerceIn(used, 100)
+
         if (used > 0 || vis > 0) {
             tokenSats.value.text = "$used/$vis"
             tokenSats.root.isVisible = true
         } else {
+            // Even for RS2+, hide sats if zero (waiting for first fix)
             tokenSats.root.isVisible = false
         }
 
-        // Coordinates
+        // Coordinates with validation
         val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
         val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
         tokenCoord.value.text = "$latStr, $lonStr"
         tokenCoord.root.isVisible = true
 
-        // Altitude: prefer MSL, else ellipsoidal
+        // Altitude: prefer MSL, else ellipsoidal, validate range
         val altMsl = fix.altMslM
         val altEllip = fix.altEllipsoidalM
         when {
-            altMsl != null -> {
-                tokenAlt.value.text = String.format(Locale.US, "%.2f", altMsl) + "m"
+            altMsl != null && altMsl in -500.0..10000.0 -> {
+                tokenAlt.value.text = String.format(Locale.US, "%.2fm", altMsl)
                 tokenAlt.root.isVisible = true
             }
-            altEllip != null -> {
-                tokenAlt.value.text = String.format(Locale.US, "%.2f", altEllip) + "m"
+            altEllip != null && altEllip in -500.0..10000.0 -> {
+                tokenAlt.value.text = String.format(Locale.US, "%.2fm", altEllip)
                 tokenAlt.root.isVisible = true
             }
             else -> tokenAlt.root.isVisible = false

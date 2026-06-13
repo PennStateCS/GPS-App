@@ -5,6 +5,7 @@ import android.location.LocationManager
 import android.location.OnNmeaMessageListener
 import android.os.Handler
 import android.os.Looper
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
@@ -24,7 +25,8 @@ import kotlinx.coroutines.launch
 class InternalNmeaSource(
     context: Context,
     private val scope: CoroutineScope,
-    registry: NmeaRegistry
+    registry: NmeaRegistry,
+    private val diagnostics: DiagnosticsService? = null
 ) : NmeaSource {
 
     private val lm: LocationManager =
@@ -52,15 +54,20 @@ class InternalNmeaSource(
 
     override fun start() {
         if (started) return
-        started = true
         android.util.Log.d("InternalNmeaSource", "Starting internal GPS NMEA listener")
-        val listener = OnNmeaMessageListener { message, _ -> fuser.accept(message) }
+        val listener = OnNmeaMessageListener { message, _ ->
+            diagnostics?.recordLine(message)
+            fuser.accept(message)
+        }
         nmeaListener = listener
         try {
             lm.addNmeaListener(listener, Handler(Looper.getMainLooper()))
+            started = true  // Only set after successful registration
             android.util.Log.d("InternalNmeaSource", "NMEA listener added successfully")
         } catch (e: SecurityException) {
             android.util.Log.e("InternalNmeaSource", "Missing location permission", e)
+            nmeaListener = null  // Clear listener reference on failure
+            // started remains false so retry is possible
         }
     }
 

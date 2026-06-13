@@ -44,6 +44,9 @@ class InternalAdapter(
         if (collectJob != null) return // Already started
         android.util.Log.d("InternalAdapter", "Starting internal GPS adapter")
 
+        // Clear stale satellites from previous provider
+        inv.reset()
+
         nmea.start()
 
         collectJob = scope.launch {

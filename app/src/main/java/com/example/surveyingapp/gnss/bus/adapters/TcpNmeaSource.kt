@@ -2,9 +2,11 @@ package com.example.surveyingapp.gnss.bus.adapters
 
 import android.util.Log
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
+import com.example.surveyingapp.gnss.settings.SourceSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +28,12 @@ import kotlin.coroutines.coroutineContext
 /**
  * [NmeaSource] that reads NMEA sentences from an external GNSS receiver over TCP.
  *
- * Connection parameters (host/port) are read from [SettingsRepository] once per [start] call.
+ * Connection parameters (host/port) are read from [SettingsRepository].
+ *
+ * **Future**: [SourceSettings] is wired for multi-profile support but profiles are not yet
+ * populated from UI. When profile UI is implemented, this class can switch to using
+ * [SourceSettings.getConnectionInfo] instead of [SettingsRepository] for connection parameters.
+ *
  * This source makes a **single connection attempt** and streams until the connection drops or
  * [stop] is called. Reconnection logic (with exponential back-off) is the responsibility of
  * [ExternalAdapter], which owns the lifecycle of this source.
@@ -41,8 +48,10 @@ import kotlin.coroutines.coroutineContext
 class TcpNmeaSource(
     private val scope: CoroutineScope,
     private val settingsRepository: SettingsRepository,
+    @Suppress("UNUSED_PARAMETER") sourceSettings: SourceSettings,  // Reserved for future profile support
     registry: NmeaRegistry,
-    private val provider: Provider = Provider.RS2_EXTERNAL
+    private val provider: Provider = Provider.RS2_EXTERNAL,
+    private val diagnostics: DiagnosticsService? = null
 ) : NmeaSource {
 
     companion object {
@@ -71,13 +80,12 @@ class TcpNmeaSource(
     @Volatile private var started = false
 
     /**
-     * Reads host/port from settings and initiates a single TCP connection attempt.
+     * Reads host/port from [SettingsRepository] and initiates a single TCP connection attempt.
      * The connection runs until the stream ends, a read error occurs, or [stop] is called.
      * [ExternalAdapter] is responsible for calling [stop] then [start] again to reconnect.
      */
     override fun start() {
         if (started) return
-        started = true
         Log.d(TAG, "Starting TCP NMEA source (single-connect)")
         connectionJob = scope.launch(Dispatchers.IO) {
             try {
@@ -89,6 +97,8 @@ class TcpNmeaSource(
                     return@launch
                 }
 
+                // Only set started flag after we have valid connection parameters
+                started = true
                 Log.d(TAG, "Connecting to $host:$port")
                 connectAndRead(host, port)
 
@@ -96,6 +106,7 @@ class TcpNmeaSource(
                 throw ce
             } catch (e: Exception) {
                 Log.e(TAG, "Connection error: ${e.message}")
+                started = false  // Reset on failure so next start() attempt can proceed
                 // Let ExternalAdapter's reconnect loop handle the retry
             }
         }
@@ -129,6 +140,11 @@ class TcpNmeaSource(
                     }
                     val clean = line.trim()
                     if (clean.isNotEmpty() && clean[0] == '$') {
+                        // Log all GSV sentences to diagnose satellite count discrepancy
+                        if (clean.contains("GSV")) {
+                            android.util.Log.i(TAG, "📡 RAW GSV: $clean")
+                        }
+                        diagnostics?.recordLine(clean)
                         fuser.accept(clean)
                     }
                 } catch (_: SocketTimeoutException) {
