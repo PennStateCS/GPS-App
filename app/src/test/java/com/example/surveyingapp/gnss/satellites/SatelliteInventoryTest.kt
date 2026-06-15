@@ -31,7 +31,7 @@ class SatelliteInventoryTest {
         ))
 
         val snapshot1 = inventory.consume(gpsMsg)
-        assertEquals(2, snapshot1.satellites.size, "Should have 2 GPS satellites")
+        assertEquals("Should have 2 GPS satellites", 2, snapshot1.satellites.size)
 
         // Reset inventory
         inventory.reset()
@@ -42,8 +42,8 @@ class SatelliteInventoryTest {
         ))
 
         val snapshot2 = inventory.consume(glonassMsg)
-        assertEquals(1, snapshot2.satellites.size, "After reset, should only have new GLONASS satellite")
-        assertEquals(Constellation.GLONASS, snapshot2.satellites[0].constellation, "Should be GLONASS")
+        assertEquals("After reset, should only have new GLONASS satellite", 1, snapshot2.satellites.size)
+        assertEquals("Should be GLONASS", Constellation.GLONASS, snapshot2.satellites[0].constellation)
     }
 
     @Test
@@ -61,11 +61,11 @@ class SatelliteInventoryTest {
         val snapshot = inventory.consume(glonassMsg)
 
         // Should have both satellites tracked separately
-        assertEquals(2, snapshot.satellites.size, "GPS and GLONASS SVID 5 should be distinct")
+        assertEquals("GPS and GLONASS SVID 5 should be distinct", 2, snapshot.satellites.size)
 
         val constellations = snapshot.satellites.map { it.constellation }.toSet()
-        assertTrue(constellations.contains(Constellation.GPS), "Should have GPS")
-        assertTrue(constellations.contains(Constellation.GLONASS), "Should have GLONASS")
+        assertTrue("Should have GPS", constellations.contains(Constellation.GPS))
+        assertTrue("Should have GLONASS", constellations.contains(Constellation.GLONASS))
     }
 
     @Test
@@ -87,8 +87,8 @@ class SatelliteInventoryTest {
         val snapshot2 = inventory.consume(msg2)
 
         // Old satellite should be evicted
-        assertEquals(1, snapshot2.satellites.size, "Stale satellite should be evicted")
-        assertEquals(9, snapshot2.satellites[0].svid, "Only new satellite should remain")
+        assertEquals("Stale satellite should be evicted", 1, snapshot2.satellites.size)
+        assertEquals("Only new satellite should remain", 9, snapshot2.satellites[0].svid)
     }
 
     @Test
@@ -98,7 +98,7 @@ class SatelliteInventoryTest {
             GsvEntry(svid = 5, elevationDeg = 45, azimuthDeg = 120, snrDbHz = 40.0, usedInFix = true)
         ))
         val snapshot1 = inventory.consume(msg1)
-        assertEquals(40.0, snapshot1.satellites[0].cn0DbHz, 0.01, "Initial SNR should be exact")
+        assertEquals("Initial SNR should be exact", 40.0, snapshot1.satellites[0].cn0DbHz ?: -1.0, 0.01)
 
         // Advance time by half-life (10 seconds) for predictable smoothing
         currentTimeSeconds += 10.0
@@ -111,7 +111,7 @@ class SatelliteInventoryTest {
 
         // Should be smoothed (between 30 and 40, closer to 30 after one half-life)
         val smoothedSnr = snapshot2.satellites[0].cn0DbHz!!
-        assertTrue(smoothedSnr > 30.0 && smoothedSnr < 40.0, "SNR should be smoothed: $smoothedSnr")
+        assertTrue("SNR should be smoothed: $smoothedSnr", smoothedSnr > 30.0 && smoothedSnr < 40.0)
     }
 
     @Test
@@ -134,9 +134,8 @@ class SatelliteInventoryTest {
             ))
             val snapshot = inventory.consume(msg)
 
-            assertEquals(expectedConstellation, snapshot.satellites[0].constellation,
-                "Talker $talker should map to $expectedConstellation")
+            assertEquals("Talker $talker should map to $expectedConstellation",
+                expectedConstellation, snapshot.satellites[0].constellation)
         }
     }
 }
-

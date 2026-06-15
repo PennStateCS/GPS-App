@@ -142,3 +142,4 @@ ksp {
     arg("room.generateKotlin", "true")
     arg("room.incremental", "true")
 }
+

@@ -86,7 +86,7 @@ object GeoProjection {
          * UTM has 60 zones, each 6 degrees wide. Zone 1 starts at 180°W.
          * The central meridian is the middle of the selected zone.
          */
-        val zone = floor((lonWrapped + 180.0) / 6.0).toInt() + 1
+        val zone = minOf(60, floor((lonWrapped + 180.0) / 6.0).toInt() + 1)
         val lon0 = Math.toRadians((zone - 1) * 6.0 - 180.0 + 3.0)
 
         val lat = latDeg
@@ -205,7 +205,7 @@ object GeoProjection {
      */
     private fun wrapLongitude(lon: Double): Double {
         var x = lon
-        while (x <= -180.0) x += 360.0
+        while (x < -180.0) x += 360.0
         while (x > 180.0) x -= 360.0
         return x
     }
