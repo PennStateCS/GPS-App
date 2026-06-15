@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SurveyingApp</string>
+    <string name="app_name">SurReal AR</string>
     <string name="degrees">%1$d°</string>
     <string name="stop_rotate">Stop Rotate</string>
     <string name="auto_rotate">Auto Rotate</string>
@@ -31,7 +31,7 @@
     <string name="dev_category_icon_desc">Category icon</string>
     <string name="twopane_placeholder_select">Select an item from the list</string>
     <string name="nav_header_desc">Navigation header image</string>
-    <string name="nav_header_title">SurveyingApp</string>
+    <string name="nav_header_title">SurReal AR</string>
     <string name="nav_header_subtitle">Welcome</string>
     <string name="menu_home">Home</string>
     <string name="menu_render_map">Render Map</string>
