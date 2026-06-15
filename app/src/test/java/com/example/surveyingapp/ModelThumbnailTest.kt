@@ -1,7 +1,7 @@
 package com.example.surveyingapp
 
 import com.example.surveyingapp.domain.model.Model
-// thumbnailFileExists is an extension on Model; no top-level import needed
+import com.example.surveyingapp.domain.model.thumbnailFileExists
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Test
