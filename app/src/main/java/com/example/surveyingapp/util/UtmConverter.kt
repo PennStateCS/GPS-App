@@ -68,7 +68,7 @@ object UtmConverter {
          * The projection is centered on the zone's central meridian to keep
          * distortion low inside that zone.
          */
-        val zone = ((lonDeg + 180) / 6).toInt() + 1
+        val zone = minOf(60, ((lonDeg + 180) / 6).toInt() + 1)
         val zoneLetter = getUtmLetter(latDeg)
         val hemisphere = if (latDeg >= 0) 'N' else 'S'
 

@@ -1,9 +1,9 @@
 package com.example.surveyingapp.gnss.nmea.parse
 
 import com.example.surveyingapp.gnss.nmea.sentence.GGA
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.Assert.*;
+import org.junit.Before;
+import org.junit.Test;
 
 class GgaParserTest {
 
@@ -29,9 +29,9 @@ class GgaParserTest {
         assertEquals(48.1173, result?.lat ?: 0.0, 0.0001) // 48°07.038' N
         assertEquals(11.51666667, result?.lon ?: 0.0, 0.0001) // 11°31.000' E
         assertEquals(1, result?.fixQuality)
-        assertEquals(8, result?.numSatellites)
+        assertEquals(8, result?.satsUsed)
         assertEquals(0.9, result?.hdop ?: 0.0, 0.0001)
-        assertEquals(545.4, result?.altitudeMsl ?: 0.0, 0.0001)
+        assertEquals(545.4, result?.altMsl ?: 0.0, 0.0001)
         assertEquals(46.9, result?.geoidSeparation ?: 0.0, 0.0001)
         assertNull(result?.diffAge)
         assertNull(result?.stationId)
@@ -50,7 +50,7 @@ class GgaParserTest {
         assertEquals(40.06506583, result?.lat ?: 0.0, 0.0001) // 40°03.90395' N
         assertEquals(-105.2096556, result?.lon ?: 0.0, 0.0001) // 105°12.57934' W
         assertEquals(0, result?.fixQuality) // No fix
-        assertEquals(3, result?.numSatellites)
+        assertEquals(3, result?.satsUsed)
         assertEquals(2.36, result?.hdop ?: 0.0, 0.0001)
     }
 
@@ -67,9 +67,9 @@ class GgaParserTest {
         assertEquals(51.1163200, result?.lat ?: 0.0, 0.0001) // 51°06.9792' N
         assertEquals(-114.0383838, result?.lon ?: 0.0, 0.0001) // 114°02.3003' W
         assertEquals(4, result?.fixQuality) // RTK fixed
-        assertEquals(9, result?.numSatellites)
+        assertEquals(9, result?.satsUsed)
         assertEquals(2.3, result?.hdop ?: 0.0, 0.0001)
-        assertEquals(1048.47, result?.altitudeMsl ?: 0.0, 0.0001)
+        assertEquals(1048.47, result?.altMsl ?: 0.0, 0.0001)
         assertEquals(-16.27, result?.geoidSeparation ?: 0.0, 0.0001)
         assertEquals(8.0, result?.diffAge ?: 0.0, 0.0001)
         assertEquals("AAAA", result?.stationId)
@@ -88,7 +88,7 @@ class GgaParserTest {
         assertEquals(53.36133667, result?.lat ?: 0.0, 0.0001) // 53°21.6802' N
         assertEquals(-6.505620, result?.lon ?: 0.0, 0.0001) // 6°30.3372' W
         assertEquals(1, result?.fixQuality)
-        assertEquals(8, result?.numSatellites)
+        assertEquals(8, result?.satsUsed)
     }
 
     @Test
@@ -104,15 +104,12 @@ class GgaParserTest {
         assertNull("Latitude should be null", result?.lat)
         assertNull("Longitude should be null", result?.lon)
         assertEquals(0, result?.fixQuality)
-        assertEquals(0, result?.numSatellites)
+        assertEquals(0, result?.satsUsed)
     }
 
     @Test
     fun `parse malformed GGA sentence returns null`() {
-        val malformedSentence = "\$GPGGA,123456"
-
-        val result = registry.parse(malformedSentence)
-
+        val result = registry.parse("\$GPGGA,123456")
         assertNull("Should return null for malformed sentence", result)
     }
 

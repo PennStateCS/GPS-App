@@ -6,35 +6,20 @@ import org.junit.Assert.*
 class SkySnapshotTest {
 
     @Test
-    fun testSkySnapshotWithSingleGeometryItem() {
-        // Create visible/used maps
-        val visibleByConstellation = mapOf("GPS" to 1)
-        val usedByConstellation = mapOf("GPS" to 1)
-        val snrBySvid = mapOf(5 to 41.0)
-
-        // Create a single SkyGeometry item
-        val geometry = listOf(
-            SkyGeometry(
-                svid = 5,
-                constellation = Constellation.GPS,
-                azDeg = 123.0,
-                elDeg = 45.5,
-                snrDbHz = 41.0,
-                usedInFix = true
-            )
+    fun testSkySnapshotWithSingleSatellite() {
+        val satellite = SatInfo(
+            constellation = Constellation.GPS,
+            svid = 5,
+            elevationDeg = 45.5,
+            azimuthDeg = 123.0,
+            cn0DbHz = 41.0,
+            usedInFix = true
         )
 
-        // Construct SkySnapshot
-        val skySnapshot = SkySnapshot(
-            visibleByConstellation = visibleByConstellation,
-            usedByConstellation = usedByConstellation,
-            snrBySvid = snrBySvid,
-            geometry = geometry
-        )
+        val skySnapshot = SkySnapshot(satellites = listOf(satellite))
 
-        // Assert conditions
-        assertTrue("geometry should not be empty", skySnapshot.geometry.isNotEmpty())
-        assertEquals("GPS visible count should be 1", 1, skySnapshot.visibleByConstellation["GPS"])
-        assertEquals("GPS used count should be 1", 1, skySnapshot.usedByConstellation["GPS"])
+        assertTrue("geometry should not be empty", skySnapshot.satellites.isNotEmpty())
+        assertEquals("GPS visible count should be 1", 1, skySnapshot.visibleByConstellation[Constellation.GPS] ?: -1)
+        assertEquals("GPS used count should be 1", 1, skySnapshot.usedByConstellation[Constellation.GPS] ?: -1)
     }
 }
