@@ -14,8 +14,21 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Collects fixes under a policy, averages in ECEF, and produces a CaptureResult.
- * Pauses collection if fixes become stale or quality drops below the policy.
+ * Runs a GNSS averaging capture session.
+ *
+ * The session listens to a stream of fixes, accepts only fixes that satisfy the
+ * averaging policy, converts each accepted latitude/longitude/height position to
+ * ECEF, and averages the ECEF coordinates.
+ *
+ * ECEF is used for averaging because latitude and longitude are angular values on
+ * an ellipsoid. Averaging them directly can introduce small geometric errors,
+ * especially when points are spread out or near coordinate wrap boundaries. ECEF
+ * represents each fix as an X/Y/Z position in meters, so the mean is computed in
+ * a linear coordinate space before being converted back to latitude, longitude,
+ * and ellipsoidal height.
+ *
+ * Collection pauses by ignoring fixes that are stale, below the required RTK
+ * quality, missing ellipsoidal height, or using stale correction data.
  */
 class ObservationSession(
     private val scope: CoroutineScope,
@@ -24,8 +37,21 @@ class ObservationSession(
     private val uere: UereTable = UereTable()
 ) {
 
+    /**
+     * Public state of the capture session.
+     *
+     * UI code can observe this state to show capture progress, pause reasons, or
+     * the final averaged result.
+     */
     sealed interface State {
         data object Idle : State
+
+        /**
+         * Capture is actively accepting fixes that pass the policy gates.
+         *
+         * The accuracy values shown here are from the most recent accepted fix, not
+         * from the final averaged result.
+         */
         data class Capturing(
             val startedAt: Instant,
             val elapsedSec: Int,
@@ -34,7 +60,11 @@ class ObservationSession(
             val hAccM: Double?,
             val vAccM: Double?
         ) : State
+
+        /** Capture finished and produced an averaged result. */
         data class Complete(val result: CaptureResult) : State
+
+        /** Capture could not continue because the stream failed or became invalid. */
         data class Paused(val reason: String) : State
     }
 
@@ -43,6 +73,13 @@ class ObservationSession(
 
     private var job: Job? = null
 
+    /*
+     * Quality snapshot copied from the most recent accepted fix.
+     *
+     * These fields are reported with the final CaptureResult so the stored point
+     * includes the receiver quality, satellite counts, DOP values, accuracy, and
+     * correction metadata available at the end of the capture.
+     */
     private var lastRtk: RtkStatus? = null
     private var lastSatsUsed: Int? = null
     private var lastSatsVisible: Int? = null
@@ -54,30 +91,51 @@ class ObservationSession(
     private var lastDiffAge: Double? = null
     private var lastCorrectionStationId: String? = null
 
+    /**
+     * Starts collecting fixes for the averaging session.
+     *
+     * Calling start while a session is already active has no effect.
+     */
     fun start() {
         if (job != null) return
         val start = Instant.now()
 
+        /*
+         * RunningStats keeps the mean and spread of each ECEF axis without storing
+         * every accepted fix. X, Y, and Z are tracked independently.
+         */
         val xs = RunningStats(); val ys = RunningStats(); val zs = RunningStats()
         var samples = 0
 
         job = scope.launch {
             fixes
                 .filter { fix ->
-                    // Only accept fixes that meet the minimum RTK quality, are fresh,
-                    // and have corrections that haven't aged out
+                    /*
+                     * A fix is accepted only when it passes every policy gate:
+                     *
+                     * - RTK status is at or above the required quality.
+                     * - Fix timestamp is recent enough.
+                     * - Differential/RTK correction age is still valid.
+                     * - Ellipsoidal height exists so the fix can be converted to ECEF.
+                     */
                     val okMode = fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus)
                     val freshFix = Duration.between(fix.timeUtc, Instant.now()).seconds <= policy.maxFixAgeSec
                     val freshCorr = fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true
                     okMode && freshFix && freshCorr && fix.altEllipsoidalM != null
                 }
                 .onEach { fix ->
-                    // Accumulate in ECEF
+                    /*
+                     * Convert the accepted geodetic position to ECEF before averaging.
+                     * This puts the samples into a meter-based 3D coordinate system.
+                     */
                     val (x, y, z) = Geodesy.llaToEcef(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM!!)
                     xs.push(x); ys.push(y); zs.push(z)
                     samples++
 
-                    // Update quality snapshot from this epoch
+                    /*
+                     * Keep a quality snapshot from the accepted epoch. The final
+                     * CaptureResult stores these as the session's ending quality state.
+                     */
                     lastRtk = fix.rtkStatus
                     lastSatsUsed = fix.satsUsed
                     lastSatsVisible = fix.satsVisible
@@ -103,7 +161,12 @@ class ObservationSession(
                     val reachedDuration = elapsed >= policy.minDurationSec
                     val reachedSamples = samples >= policy.minSamples
                     val capDuration = elapsed >= policy.maxDurationSec
-                    // Finish when both minimums are met, or when the hard cap is reached
+
+                    /*
+                     * Finish when both minimum quality gates are satisfied, or when the
+                     * maximum duration is reached. The maximum duration prevents a session
+                     * from running indefinitely if the sample count is slow.
+                     */
                     if ((reachedDuration && reachedSamples) || capDuration) {
                         finalize(start, xs, ys, zs, samples)
                     }
@@ -113,6 +176,12 @@ class ObservationSession(
         }
     }
 
+    /**
+     * Cancels the current capture and returns the session to Idle.
+     *
+     * This is for user-initiated cancellation. A completed session is finalized
+     * through finalize(), which leaves the state as Complete.
+     */
     fun cancel() {
         job?.cancel()
         job = null
@@ -123,7 +192,12 @@ class ObservationSession(
         start: Instant,
         xs: RunningStats, ys: RunningStats, zs: RunningStats, samples: Int
     ) {
+        /*
+         * Convert the averaged ECEF coordinate back to latitude, longitude, and
+         * ellipsoidal height for storage and display.
+         */
         val (lat, lon, h) = Geodesy.ecefToLla(xs.mean(), ys.mean(), zs.mean())
+
         val result = CaptureResult(
             startedAt = start,
             endedAt = Instant.now(),
@@ -143,7 +217,11 @@ class ObservationSession(
             diffAgeS = lastDiffAge,
             correctionStationId = lastCorrectionStationId
         )
-        // Cancel the collection job (State.Complete is already set; don't reset to Idle)
+
+        /*
+         * Stop collecting after the result is created. Do not call cancel(), because
+         * cancel() resets the public state to Idle and would hide the completed result.
+         */
         job?.cancel()
         job = null
         _state.value = State.Complete(result)

@@ -20,9 +20,9 @@ class SkyGeometryTest {
         // Assert all fields are preserved
         assertEquals(5, skyGeometry.svid)
         assertEquals(Constellation.GPS, skyGeometry.constellation)
-        assertEquals(123.0, skyGeometry.azDeg, 0.001)
-        assertEquals(45.5, skyGeometry.elDeg, 0.001)
-        assertEquals(41.0, skyGeometry.snrDbHz, 0.001)
+        assertEquals(123.0, skyGeometry.azDeg ?: -1.0, 0.001)
+        assertEquals(45.5, skyGeometry.elDeg ?: -1.0, 0.001)
+        assertEquals(41.0, skyGeometry.snrDbHz ?: -1.0, 0.001)
         assertTrue(skyGeometry.usedInFix)
     }
 }

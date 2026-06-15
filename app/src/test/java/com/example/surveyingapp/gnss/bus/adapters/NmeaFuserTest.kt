@@ -43,14 +43,14 @@ class NmeaFuserTest {
         val date = "220620"  // June 22, 2020
 
         fuser.accept("\$GPGGA,$time,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,2.0,0001")
-        assertEquals(1, emittedFixes.size, "GGA should emit one fix")
+        assertEquals("GGA should emit one fix", 1, emittedFixes.size)
 
         fuser.accept("\$GPRMC,$time,A,4807.038,N,01131.000,E,0.0,54.7,$date,020.3,E,D")
-        assertEquals(1, emittedFixes.size, "RMC with same timestamp should not emit duplicate")
+        assertEquals("RMC with same timestamp should not emit duplicate", 1, emittedFixes.size)
 
         // New GGA with different timestamp should emit
         fuser.accept("\$GPGGA,123520.00,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,2.0,0001")
-        assertEquals(2, emittedFixes.size, "New GGA timestamp should emit second fix")
+        assertEquals("New GGA timestamp should emit second fix", 2, emittedFixes.size)
     }
 
     @Test
@@ -69,11 +69,11 @@ class NmeaFuserTest {
         // Emit fix to use accumulated satellites
         fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,2.0,0001")
 
-        assertEquals(1, emittedFixes.size, "Should emit one fix")
+        assertEquals("Should emit one fix", 1, emittedFixes.size)
         val fix = emittedFixes[0]
 
         // Should count satellites from both constellations
-        assertTrue(fix.satsUsed >= 8, "Should accumulate satellites from multiple GSA sentences")
+        assertTrue("Should accumulate satellites from multiple GSA sentences", fix.satsUsed >= 8)
     }
 
     @Test
@@ -94,11 +94,11 @@ class NmeaFuserTest {
         fuser.accept("\$GLGSV,2,2,07,76,10,250,39,77,35,090,41,78,25,315,42")
 
         // Should have completed both GPS and GLONASS GSV epochs
-        assertEquals(2, emittedGsvMessages.size, "Should emit GSV for each constellation")
+        assertEquals("Should emit GSV for each constellation", 2, emittedGsvMessages.size)
 
         val talkers = emittedGsvMessages.map { it.constellation }.toSet()
-        assertTrue(talkers.contains("GP"), "Should have GPS GSV message")
-        assertTrue(talkers.contains("GL"), "Should have GLONASS GSV message")
+        assertTrue("Should have GPS GSV message", talkers.contains("GP"))
+        assertTrue("Should have GLONASS GSV message", talkers.contains("GL"))
     }
 
     @Test
@@ -122,13 +122,13 @@ class NmeaFuserTest {
         // Check GPS constellation
         assertEquals(1, emittedGsvMessages.size)
         val gpsMsg = emittedGsvMessages[0]
-        assertEquals(2, gpsMsg.entries.size, "Should have 2 GPS satellites")
+        assertEquals("Should have 2 GPS satellites", 2, gpsMsg.entries.size)
 
         val sat05 = gpsMsg.entries.find { it.svid == 5 }
         val sat02 = gpsMsg.entries.find { it.svid == 2 }
 
-        assertTrue(sat05?.usedInFix == true, "GPS SVID 5 should be marked as used")
-        assertTrue(sat02?.usedInFix == false, "GPS SVID 2 should not be marked as used")
+        assertTrue("GPS SVID 5 should be marked as used", sat05?.usedInFix == true)
+        assertTrue("GPS SVID 2 should not be marked as used", sat02?.usedInFix == false)
     }
 
     @Test
@@ -169,7 +169,7 @@ class NmeaFuserTest {
 
         // Same GGA should emit again (dedup cleared)
         fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,2.0,0001")
-        assertEquals(2, emittedFixes.size, "After reset, same fix should emit again")
+        assertEquals("After reset, same fix should emit again", 2, emittedFixes.size)
     }
 }
 
