@@ -3,44 +3,48 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="24dp">
+    android:paddingTop="24dp"
+    android:paddingBottom="24dp"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp">
 
     <!-- Generate Coordinates Button -->
-    <androidx.appcompat.widget.AppCompatButton
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnGenerateCoords"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/dev_coord_generate" />
 
-    <!-- Clear All Coordinates Button -->
-    <androidx.appcompat.widget.AppCompatButton
+    <!-- Clear All Coordinates Button — destructive, uses error colors -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnClearAllCoords"
+        style="@style/Widget.Material3.Button.OutlinedButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/dev_coord_clear_all" />
-
-    <!-- Spacer -->
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="8dp" />
+        android:layout_marginTop="8dp"
+        android:text="@string/dev_coord_clear_all"
+        app:strokeColor="?attr/colorError"
+        android:textColor="?attr/colorError"
+        xmlns:app="http://schemas.android.com/apk/res-auto" />
 
     <!-- Status Text -->
     <TextView
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:text="@string/dev_status_ready"
-        android:textColor="@color/dev_info_label"
-        android:textSize="14sp" />
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurface" />
 
     <!-- Hint Text -->
     <TextView
         android:id="@+id/hintText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
         android:text="@string/dev_coord_hint"
-        android:textSize="12sp"
-        android:textColor="@color/dev_info_value"
-        android:paddingTop="12dp" />
+        android:textAppearance="?attr/textAppearanceBodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
 
 </LinearLayout>

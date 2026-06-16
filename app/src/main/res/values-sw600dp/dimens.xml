@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="toolbar_height">56dp</dimen>
+    <dimen name="nav_drawer_width">320dp</dimen>
     <dimen name="coord_item_spacing">12dp</dimen>
     <dimen name="coord_horizontal_padding">24dp</dimen>
+    <dimen name="settings_content_padding_h">24dp</dimen>
+    <dimen name="page_content_padding">20dp</dimen>
 </resources>
 

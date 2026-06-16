@@ -40,7 +40,7 @@
             app:iconPadding="12dp"
             android:textColor="?attr/colorOnSurface"
             app:strokeColor="?attr/colorOutlineVariant"
-            app:rippleColor="#BDBDBD" />
+            app:rippleColor="?attr/colorControlHighlight" />
 
         <TextView
             android:layout_width="match_parent"

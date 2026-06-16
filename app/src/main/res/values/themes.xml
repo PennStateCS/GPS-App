@@ -43,6 +43,15 @@
         <item name="colorSurfaceInverse">@color/md_neutral_20</item>
         <item name="colorOnSurfaceInverse">@color/md_neutral_95</item>
 
+        <!-- ── Surface Containers ─────────────────────────────────────────── -->
+        <!-- Explicitly defined to prevent fallback to M3's default purple palette. -->
+        <!-- colorSurfaceContainerHigh is the dropdown/menu/dialog popup background. -->
+        <item name="colorSurfaceContainerLowest">@color/md_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/md_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/md_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/md_surface_container_highest</item>
+
         <!-- ── Background ─────────────────────────────────────────────────── -->
         <item name="android:colorBackground">@color/md_neutral_95</item>
         <item name="colorOnBackground">@color/md_neutral_10</item>

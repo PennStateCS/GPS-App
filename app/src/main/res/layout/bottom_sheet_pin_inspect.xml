@@ -27,7 +27,7 @@
             android:layout_height="wrap_content"
             android:textAppearance="?attr/textAppearanceTitleLarge"
             android:textStyle="bold"
-            android:textColor="?android:attr/textColorPrimary"
+            android:textColor="?attr/colorOnSurface"
             android:paddingBottom="4dp" />
 
         <!-- Timestamp -->
@@ -36,14 +36,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textAppearance="@style/TextAppearance.App.Supporting"
-            android:textColor="?android:attr/textColorSecondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:paddingBottom="12dp" />
 
         <!-- Divider -->
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="?android:attr/listDivider"
+            android:background="?attr/colorOutlineVariant"
             android:layout_marginBottom="12dp" />
 
         <!-- Lat / Lon -->

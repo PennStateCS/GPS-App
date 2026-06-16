@@ -3,7 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:showIn="navigation_view">
 
-    <group android:checkableBehavior="single">
+    <!-- Main workflow -->
+    <group
+        android:id="@+id/group_main"
+        android:checkableBehavior="single">
         <item
             android:id="@+id/nav_home"
             android:icon="@drawable/ic_home"
@@ -14,23 +17,36 @@
             android:title="@string/menu_view_coordinates" />
         <item
             android:id="@+id/nav_render_map"
-            android:icon="@drawable/ic_render_map"
+            android:icon="@drawable/ic_map"
             android:title="@string/menu_render_map" />
         <item
             android:id="@+id/nav_open_in_ar"
-            android:icon="@drawable/ic_menu_camera"
+            android:icon="@drawable/ic_section_ar"
             android:title="@string/menu_open_in_ar" />
         <item
             android:id="@+id/nav_models"
             android:icon="@drawable/ic_menu_gallery"
             android:title="@string/menu_models" />
-        <item
-            android:id="@+id/nav_development"
-            android:icon="@drawable/ic_satellite_24"
-            android:title="@string/menu_development" />
+    </group>
+
+    <!-- System -->
+    <group
+        android:id="@+id/group_system"
+        android:checkableBehavior="single">
         <item
             android:id="@+id/nav_settings"
             android:icon="@drawable/ic_settings_24"
             android:title="@string/action_settings" />
     </group>
+
+    <!-- Advanced (Developer Tools visibility controlled by MainActivity) -->
+    <group
+        android:id="@+id/group_advanced"
+        android:checkableBehavior="single">
+        <item
+            android:id="@+id/nav_development"
+            android:icon="@drawable/ic_dev_tools"
+            android:title="@string/menu_development" />
+    </group>
+
 </menu>
