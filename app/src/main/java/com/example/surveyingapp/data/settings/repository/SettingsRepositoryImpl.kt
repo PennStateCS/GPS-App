@@ -6,6 +6,9 @@ import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.gnss.settings.ArDisplaySettings
+import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
+import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -99,6 +102,93 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setGnssCaptureMinSamples(settings.minSamples)
         local.setGnssCaptureMaxFixAgeSec(settings.maxFixAgeSec)
         local.setGnssCaptureMaxDiffAgeSec(settings.maxDiffAgeSec)
+    }
+
+    // AR Display
+    override val arDisplaySettings: Flow<ArDisplaySettings> = combine(
+        local.arAltitudeMode,
+        local.arDistanceFilterIndex,
+        local.arShowDebugOverlay,
+        local.arShowLabels,
+        combine(local.arShowOffscreenArrows, local.arModelScale) { arrows, scale -> arrows to scale }
+    ) { altitude, filterIdx, debug, labels, (arrows, scale) ->
+        ArDisplaySettings(
+            altitudeMode         = altitude,
+            distanceFilterIndex  = filterIdx.coerceIn(0, 3),
+            showDebugOverlay     = debug,
+            showLabels           = labels,
+            showOffscreenArrows  = arrows,
+            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: 2.0f
+        )
+    }
+
+    override suspend fun setArDisplaySettings(settings: ArDisplaySettings) {
+        local.setArAltitudeMode(settings.altitudeMode)
+        local.setArDistanceFilterIndex(settings.distanceFilterIndex.coerceIn(0, 3))
+        local.setArShowDebugOverlay(settings.showDebugOverlay)
+        local.setArShowLabels(settings.showLabels)
+        local.setArShowOffscreenArrows(settings.showOffscreenArrows)
+        local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
+    }
+
+    // Coordinate display & units
+    override val coordinateDisplaySettings: Flow<CoordinateDisplaySettings> = combine(
+        local.coordinateDisplayFormat,
+        local.unitsDistance,
+        local.showAccuracyIndicators,
+        local.showRtkStatusBadges,
+        combine(local.defaultCoordinateNamePrefix, local.autoIncrementCoordinateNames) { prefix, auto -> prefix to auto }
+    ) { format, units, accuracy, rtkBadges, (prefix, autoInc) ->
+        CoordinateDisplaySettings(
+            format                = format ?: "DECIMAL_DEGREES",
+            distanceUnits         = units  ?: "METERS",
+            showAccuracyIndicators = accuracy,
+            showRtkStatusBadges   = rtkBadges,
+            defaultNamePrefix     = prefix ?: "Point",
+            autoIncrementNames    = autoInc
+        )
+    }
+
+    override suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings) {
+        local.setCoordinateDisplayFormat(settings.format)
+        local.setUnitsDistance(settings.distanceUnits)
+        local.setShowAccuracyIndicators(settings.showAccuracyIndicators)
+        local.setShowRtkStatusBadges(settings.showRtkStatusBadges)
+        local.setDefaultCoordinateNamePrefix(settings.defaultNamePrefix)
+        local.setAutoIncrementCoordinateNames(settings.autoIncrementNames)
+    }
+
+    // Diagnostics & logging
+    override val diagnosticsSettings: Flow<DiagnosticsSettings> = combine(
+        local.nmeaLoggingEnabled,
+        local.nmeaLogMaxFileSizeMB,
+        local.diagShowRawNmea,
+        local.diagShowSatelliteDiag,
+        combine(
+            local.diagLogRawNmeaLines,
+            local.diagLogParsedFixes,
+            local.diagLogSatelliteDetails
+        ) { raw, fixes, sat -> Triple(raw, fixes, sat) }
+    ) { logging, size, showRaw, showSat, (logRaw, logFixes, logSat) ->
+        DiagnosticsSettings(
+            nmeaLoggingEnabled       = logging,
+            nmeaLogMaxFileSizeMB     = size,
+            showRawNmea              = showRaw,
+            showSatelliteDiagnostics = showSat,
+            logRawNmeaLines          = logRaw,
+            logParsedFixes           = logFixes,
+            logSatelliteDetails      = logSat
+        )
+    }
+
+    override suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings) {
+        local.setNmeaLoggingEnabled(settings.nmeaLoggingEnabled)
+        local.setNmeaLogMaxFileSizeMB(settings.nmeaLogMaxFileSizeMB.coerceAtLeast(1))
+        local.setDiagShowRawNmea(settings.showRawNmea)
+        local.setDiagShowSatelliteDiag(settings.showSatelliteDiagnostics)
+        local.setDiagLogRawNmeaLines(settings.logRawNmeaLines)
+        local.setDiagLogParsedFixes(settings.logParsedFixes)
+        local.setDiagLogSatelliteDetails(settings.logSatelliteDetails)
     }
 
     private fun String.toRtkStatus(): RtkStatus = when (this) {

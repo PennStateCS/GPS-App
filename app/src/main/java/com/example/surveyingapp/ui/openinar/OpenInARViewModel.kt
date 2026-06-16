@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
+import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.ui.settings.SettingsFragment
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -15,10 +16,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -74,9 +77,21 @@ class OpenInARViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
+    // ── Init: read persisted AR display defaults ──────────────────────────────
+
+    init {
+        viewModelScope.launch {
+            runCatching {
+                val ar = SurveyingApp.settingsRepo.arDisplaySettings.first()
+                _distanceFilterIndex.value = ar.distanceFilterIndex.coerceIn(0, DISTANCE_FILTER_STEPS.lastIndex)
+                _debugVisible.value = ar.showDebugOverlay
+            }
+        }
+    }
+
     // ── Distance filter ───────────────────────────────────────────────────────
 
-    /** Default to the 50 m step so only nearby models are shown on first launch. */
+    /** Defaults to index 1 (50 m) until the persisted setting is loaded in init. */
     private val _distanceFilterIndex = MutableStateFlow(1)
 
     /** Current maximum display distance in metres, or null for "show all". */
