@@ -30,10 +30,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val externalTcpPort = local.externalTcpPort
     override val externalTcpName = local.externalTcpName
 
-    // NMEA logging settings
-    override val nmeaLoggingEnabled = local.nmeaLoggingEnabled
-    override val nmeaLogMaxFileSizeMB = local.nmeaLogMaxFileSizeMB
-
     override val locationSettings: Flow<LocationSettings>
         get() = combine(
             locationSource,
@@ -68,15 +64,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     override suspend fun clearExternalTcp() {
         local.clearExternalTcp()
-    }
-
-    // NMEA logging methods
-    override suspend fun setNmeaLoggingEnabled(enabled: Boolean) {
-        local.setNmeaLoggingEnabled(enabled)
-    }
-
-    override suspend fun setNmeaLogMaxFileSizeMB(sizeMB: Int) {
-        local.setNmeaLogMaxFileSizeMB(sizeMB)
     }
 
     // GNSS capture averaging policy
@@ -133,95 +120,51 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
     }
 
-    // Coordinate display & units
+    // Coordinate display
     override val coordinateDisplaySettings: Flow<CoordinateDisplaySettings> = combine(
-        local.coordinateDisplayFormat,
-        local.unitsDistance,
         local.showAccuracyIndicators,
-        local.showRtkStatusBadges,
-        combine(local.defaultCoordinateNamePrefix, local.autoIncrementCoordinateNames) { prefix, auto -> prefix to auto }
-    ) { format, units, accuracy, rtkBadges, (prefix, autoInc) ->
+        local.defaultCoordinateNamePrefix,
+        local.autoIncrementCoordinateNames
+    ) { accuracy, prefix, autoInc ->
         CoordinateDisplaySettings(
-            format                = format ?: "DECIMAL_DEGREES",
-            distanceUnits         = units  ?: "METERS",
             showAccuracyIndicators = accuracy,
-            showRtkStatusBadges   = rtkBadges,
-            defaultNamePrefix     = prefix ?: "Point",
-            autoIncrementNames    = autoInc
+            defaultNamePrefix      = prefix ?: "Point",
+            autoIncrementNames     = autoInc
         )
     }
 
     override suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings) {
-        local.setCoordinateDisplayFormat(settings.format)
-        local.setUnitsDistance(settings.distanceUnits)
         local.setShowAccuracyIndicators(settings.showAccuracyIndicators)
-        local.setShowRtkStatusBadges(settings.showRtkStatusBadges)
         local.setDefaultCoordinateNamePrefix(settings.defaultNamePrefix)
         local.setAutoIncrementCoordinateNames(settings.autoIncrementNames)
     }
 
-    // Diagnostics & logging
+    // Diagnostics
     override val diagnosticsSettings: Flow<DiagnosticsSettings> = combine(
-        local.nmeaLoggingEnabled,
-        local.nmeaLogMaxFileSizeMB,
         local.diagShowRawNmea,
-        local.diagShowSatelliteDiag,
-        combine(
-            local.diagLogRawNmeaLines,
-            local.diagLogParsedFixes,
-            local.diagLogSatelliteDetails
-        ) { raw, fixes, sat -> Triple(raw, fixes, sat) }
-    ) { logging, size, showRaw, showSat, (logRaw, logFixes, logSat) ->
+        local.diagShowSatelliteDiag
+    ) { showRaw, showSat ->
         DiagnosticsSettings(
-            nmeaLoggingEnabled       = logging,
-            nmeaLogMaxFileSizeMB     = size,
             showRawNmea              = showRaw,
-            showSatelliteDiagnostics = showSat,
-            logRawNmeaLines          = logRaw,
-            logParsedFixes           = logFixes,
-            logSatelliteDetails      = logSat
+            showSatelliteDiagnostics = showSat
         )
     }
 
     override suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings) {
-        local.setNmeaLoggingEnabled(settings.nmeaLoggingEnabled)
-        local.setNmeaLogMaxFileSizeMB(settings.nmeaLogMaxFileSizeMB.coerceAtLeast(1))
         local.setDiagShowRawNmea(settings.showRawNmea)
         local.setDiagShowSatelliteDiag(settings.showSatelliteDiagnostics)
-        local.setDiagLogRawNmeaLines(settings.logRawNmeaLines)
-        local.setDiagLogParsedFixes(settings.logParsedFixes)
-        local.setDiagLogSatelliteDetails(settings.logSatelliteDetails)
     }
 
     // Mock location publishing
     override val mockLocationEnabled: Flow<Boolean> = local.mockLocationEnabled
     override suspend fun setMockLocationEnabled(enabled: Boolean) { local.setMockLocationEnabled(enabled) }
 
-    // GNSS receiver settings (high accuracy + connection behavior)
-    // TODO: migrate from SurveyingAppPrefs SharedPreferences (keys: high_accuracy, dev_tools,
-    //       conn_auto_reconnect, conn_validate_checksum, conn_timeout_sec, conn_max_reconnect)
-    override val gnssReceiverSettings: Flow<GnssReceiverSettings> = combine(
-        local.highAccuracy,
-        local.autoReconnect,
-        local.validateNmeaChecksum,
-        local.connectionTimeoutSeconds,
-        local.maxReconnectAttempts
-    ) { highAccuracy, autoReconnect, validateNmeaChecksum, timeoutSec, maxReconnect ->
-        GnssReceiverSettings(
-            highAccuracy = highAccuracy,
-            autoReconnect = autoReconnect,
-            validateNmeaChecksum = validateNmeaChecksum,
-            connectionTimeoutSeconds = timeoutSec.coerceIn(5, 60),
-            maxReconnectAttempts = maxReconnect.coerceIn(1, 20)
-        )
-    }
+    // GNSS receiver settings
+    override val gnssReceiverSettings: Flow<GnssReceiverSettings> =
+        local.highAccuracy.map { GnssReceiverSettings(highAccuracy = it) }
 
     override suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings) {
         local.setHighAccuracy(settings.highAccuracy)
-        local.setAutoReconnect(settings.autoReconnect)
-        local.setValidateNmeaChecksum(settings.validateNmeaChecksum)
-        local.setConnectionTimeoutSeconds(settings.connectionTimeoutSeconds.coerceIn(5, 60))
-        local.setMaxReconnectAttempts(settings.maxReconnectAttempts.coerceIn(1, 20))
     }
 
     // Developer settings

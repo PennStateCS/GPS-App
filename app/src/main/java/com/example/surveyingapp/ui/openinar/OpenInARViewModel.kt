@@ -7,6 +7,7 @@ import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -131,6 +132,11 @@ class OpenInARViewModel @Inject constructor(
     val highAccuracyEnabled: StateFlow<Boolean> = settingsRepository.gnssReceiverSettings
         .map { it.highAccuracy }
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    // ── AR Display settings ───────────────────────────────────────────────────
+
+    val arDisplaySettings: StateFlow<ArDisplaySettings> = settingsRepository.arDisplaySettings
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ArDisplaySettings())
 
     // ── Companion ─────────────────────────────────────────────────────────────
 

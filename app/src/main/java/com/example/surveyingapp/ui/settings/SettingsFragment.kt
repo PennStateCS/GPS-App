@@ -327,30 +327,17 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
         try {
-            val spinnerFormat   = view.findViewById<AutoCompleteTextView>(R.id.spinner_coordinate_format)
-            val spinnerUnits    = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_units)
             val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
-            val switchRtkBadges = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_rtk_badges)
             val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
             val switchAutoInc   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_increment_names)
             val btnSave         = view.findViewById<Button>(R.id.btn_save_coordinate_display)
 
-            val formats = listOf("Decimal Degrees" to "DECIMAL_DEGREES", "Degrees Minutes" to "DEGREES_MINUTES",
-                "Degrees Minutes Seconds" to "DMS", "UTM" to "UTM")
-            val units   = listOf("Meters" to "METERS", "US Survey Feet" to "US_SURVEY_FEET", "International Feet" to "FEET")
-
-            spinnerFormat?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, formats.map { it.first }))
-            spinnerUnits?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, units.map { it.first }))
-
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     val s = settingsRepo.coordinateDisplaySettings.first()
-                    spinnerFormat?.setText(formats.getOrElse(formats.indexOfFirst { it.second == s.format }.coerceAtLeast(0)) { formats.first() }.first, false)
-                    spinnerUnits?.setText(units.getOrElse(units.indexOfFirst { it.second == s.distanceUnits }.coerceAtLeast(0)) { units.first() }.first, false)
-                    switchAccuracy?.isChecked  = s.showAccuracyIndicators
-                    switchRtkBadges?.isChecked = s.showRtkStatusBadges
+                    switchAccuracy?.isChecked = s.showAccuracyIndicators
                     editPrefix?.setText(s.defaultNamePrefix)
-                    switchAutoInc?.isChecked   = s.autoIncrementNames
+                    switchAutoInc?.isChecked  = s.autoIncrementNames
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "Failed to load coordinate display settings", e)
                 }
@@ -364,10 +351,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         return@setOnClickListener
                     }
                     val settings = CoordinateDisplaySettings(
-                        format                 = formats.firstOrNull { it.first == spinnerFormat?.text?.toString() }?.second ?: "DECIMAL_DEGREES",
-                        distanceUnits          = units.firstOrNull { it.first == spinnerUnits?.text?.toString() }?.second ?: "METERS",
                         showAccuracyIndicators = switchAccuracy?.isChecked ?: true,
-                        showRtkStatusBadges    = switchRtkBadges?.isChecked ?: true,
                         defaultNamePrefix      = prefix.ifEmpty { "Point" },
                         autoIncrementNames     = switchAutoInc?.isChecked ?: true
                     )
@@ -393,25 +377,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupDiagnosticsContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_diagnostics, contentContainer, false)
         try {
-            val switchNmeaLog      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_nmea_logging_enabled)
-            val editMaxSize        = view.findViewById<EditText>(R.id.edit_nmea_log_max_size)
-            val switchShowRaw      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_raw_nmea)
-            val switchShowSat      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_satellite_diagnostics)
-            val switchLogRaw       = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_log_raw_nmea_lines)
-            val switchLogFixes     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_log_parsed_fixes)
-            val switchLogSat       = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_log_satellite_details)
-            val btnSave            = view.findViewById<Button>(R.id.btn_save_diagnostics)
+            val switchShowRaw  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_raw_nmea)
+            val switchShowSat  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_satellite_diagnostics)
+            val btnSave        = view.findViewById<Button>(R.id.btn_save_diagnostics)
 
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     val s = settingsRepo.diagnosticsSettings.first()
-                    switchNmeaLog?.isChecked  = s.nmeaLoggingEnabled
-                    editMaxSize?.setText(s.nmeaLogMaxFileSizeMB.toString())
-                    switchShowRaw?.isChecked  = s.showRawNmea
-                    switchShowSat?.isChecked  = s.showSatelliteDiagnostics
-                    switchLogRaw?.isChecked   = s.logRawNmeaLines
-                    switchLogFixes?.isChecked = s.logParsedFixes
-                    switchLogSat?.isChecked   = s.logSatelliteDetails
+                    switchShowRaw?.isChecked = s.showRawNmea
+                    switchShowSat?.isChecked = s.showSatelliteDiagnostics
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "Failed to load diagnostics settings", e)
                 }
@@ -419,19 +393,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
             btnSave?.setOnClickListener {
                 try {
-                    val size = editMaxSize?.text?.toString()?.toIntOrNull()
-                    if (size == null || size !in 1..100) {
-                        Toast.makeText(requireContext(), "Log file size must be between 1 and 100 MB.", Toast.LENGTH_LONG).show()
-                        return@setOnClickListener
-                    }
                     val settings = DiagnosticsSettings(
-                        nmeaLoggingEnabled       = switchNmeaLog?.isChecked ?: false,
-                        nmeaLogMaxFileSizeMB     = size,
                         showRawNmea              = switchShowRaw?.isChecked ?: false,
-                        showSatelliteDiagnostics = switchShowSat?.isChecked ?: false,
-                        logRawNmeaLines          = switchLogRaw?.isChecked ?: false,
-                        logParsedFixes           = switchLogFixes?.isChecked ?: false,
-                        logSatelliteDetails      = switchLogSat?.isChecked ?: false
+                        showSatelliteDiagnostics = switchShowSat?.isChecked ?: true
                     )
                     viewLifecycleOwner.lifecycleScope.launch {
                         try {
@@ -830,68 +794,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     }
                 }
                 Toast.makeText(requireContext(), "High accuracy: $v", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // ── Connection Behavior section ──
-        val switchAutoReconnect = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_reconnect)
-        val switchValidateChecksum = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_validate_nmea_checksum)
-        val editTimeout = view.findViewById<EditText>(R.id.edit_connection_timeout_sec)
-        val editMaxReconnect = view.findViewById<EditText>(R.id.edit_max_reconnect_attempts)
-
-        lifecycleScope.launch {
-            try {
-                val s = settingsRepo.gnssReceiverSettings.first()
-                switchAutoReconnect?.isChecked = s.autoReconnect
-                switchValidateChecksum?.isChecked = s.validateNmeaChecksum
-                editTimeout?.setText(s.connectionTimeoutSeconds.toString())
-                editMaxReconnect?.setText(s.maxReconnectAttempts.toString())
-            } catch (e: Exception) {
-                Log.e("SettingsFragment", "connection behavior initial load error", e)
-            }
-        }
-        switchAutoReconnect?.setOnCheckedChangeListener { _, v ->
-            lifecycleScope.launch {
-                try {
-                    val current = settingsRepo.gnssReceiverSettings.first()
-                    settingsRepo.setGnssReceiverSettings(current.copy(autoReconnect = v))
-                } catch (e: Exception) {
-                    Log.e("SettingsFragment", "auto reconnect save error", e)
-                }
-            }
-        }
-        switchValidateChecksum?.setOnCheckedChangeListener { _, v ->
-            lifecycleScope.launch {
-                try {
-                    val current = settingsRepo.gnssReceiverSettings.first()
-                    settingsRepo.setGnssReceiverSettings(current.copy(validateNmeaChecksum = v))
-                } catch (e: Exception) {
-                    Log.e("SettingsFragment", "validate checksum save error", e)
-                }
-            }
-        }
-        view.findViewById<Button>(R.id.btn_save_connection_behavior)?.setOnClickListener {
-            try {
-                val timeout = editTimeout?.text?.toString()?.toIntOrNull()
-                val maxR    = editMaxReconnect?.text?.toString()?.toIntOrNull()
-                val timeoutErr = when { timeout == null || timeout !in 5..60 -> "Connection timeout must be 5–60 seconds."; else -> null }
-                val maxRErr    = when { maxR    == null || maxR    !in 1..20 -> "Max reconnect attempts must be 1–20.";       else -> null }
-                val err = timeoutErr ?: maxRErr
-                if (err != null) { Toast.makeText(requireContext(), err, Toast.LENGTH_LONG).show(); return@setOnClickListener }
-                lifecycleScope.launch {
-                    try {
-                        val current = settingsRepo.gnssReceiverSettings.first()
-                        settingsRepo.setGnssReceiverSettings(current.copy(
-                            connectionTimeoutSeconds = timeout!!,
-                            maxReconnectAttempts = maxR!!
-                        ))
-                        Toast.makeText(requireContext(), "Connection settings saved.", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        Log.e("SettingsFragment", "save connection behavior error", e)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("SettingsFragment", "save connection behavior error", e)
             }
         }
 

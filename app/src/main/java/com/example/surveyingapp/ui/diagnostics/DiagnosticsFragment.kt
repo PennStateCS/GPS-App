@@ -14,10 +14,12 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.model.SkySnapshot
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -67,6 +69,12 @@ class DiagnosticsFragment : Fragment() {
     private lateinit var linesPerSecText: TextView
     private lateinit var parseErrText: TextView
     private lateinit var sentenceHistoryText: TextView
+
+    // Settings-gated section roots
+    private lateinit var skyHeader: TextView
+    private lateinit var skyBox: LinearLayout
+    private lateinit var histHeader: TextView
+    private lateinit var histBox: LinearLayout
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -141,8 +149,8 @@ class DiagnosticsFragment : Fragment() {
         diffAgeText     = rowView("Diff. Age: —").also { qualBox.addView(it) }
 
         // ── Sky / Constellations ──────────────────────────────────────────
-        container.addView(sectionHeader("Satellite Sky"))
-        val skyBox = cardBox(0xFFE3F2FD.toInt()).also { container.addView(it) }
+        skyHeader = sectionHeader("Satellite Sky").also { container.addView(it) }
+        skyBox = cardBox(0xFFE3F2FD.toInt()).also { container.addView(it) }
         skyTotalText          = rowView("Total Used / Visible: —").also { skyBox.addView(it) }
         skyConstellationsText = rowView("Constellations: —").also { skyBox.addView(it) }
 
@@ -152,8 +160,8 @@ class DiagnosticsFragment : Fragment() {
         linesPerSecText = rowView("Lines/sec: —").also { replayBox.addView(it) }
         parseErrText    = rowView("Parse error rate: —").also { replayBox.addView(it) }
 
-        container.addView(sectionHeader("Last 20 NMEA Sentences  (replay only)"))
-        val histBox = cardBox(0xFFFFF8F0.toInt()).also { container.addView(it) }
+        histHeader = sectionHeader("Last 20 NMEA Sentences  (replay only)").also { container.addView(it) }
+        histBox = cardBox(0xFFFFF8F0.toInt()).also { container.addView(it) }
         sentenceHistoryText = TextView(ctx).apply {
             text = "No NMEA replay active…"
             textSize = 11f
@@ -167,6 +175,15 @@ class DiagnosticsFragment : Fragment() {
     // ── Observers ─────────────────────────────────────────────────────────────
 
     private fun observeData() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val settings = SurveyingApp.settingsRepo.diagnosticsSettings.first()
+            val skyVis  = if (settings.showSatelliteDiagnostics) View.VISIBLE else View.GONE
+            val rawVis  = if (settings.showRawNmea) View.VISIBLE else View.GONE
+            skyHeader.visibility  = skyVis
+            skyBox.visibility     = skyVis
+            histHeader.visibility = rawVis
+            histBox.visibility    = rawVis
+        }
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
 
