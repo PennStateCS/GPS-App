@@ -55,6 +55,14 @@ object SettingsKeys {
     val UNITS_DISTANCE = stringPreferencesKey("units_distance")
     val UNITS_AREA = stringPreferencesKey("units_area")
     val SHOW_ACCURACY_INDICATORS = booleanPreferencesKey("show_accuracy_indicators")
+
+    // GNSS capture averaging policy settings
+    val GNSS_CAPTURE_RTK_STATUS        = stringPreferencesKey("gnss_capture_rtk_status")
+    val GNSS_CAPTURE_MIN_DURATION_SEC  = intPreferencesKey("gnss_capture_min_duration_sec")
+    val GNSS_CAPTURE_MAX_DURATION_SEC  = intPreferencesKey("gnss_capture_max_duration_sec")
+    val GNSS_CAPTURE_MIN_SAMPLES       = intPreferencesKey("gnss_capture_min_samples")
+    val GNSS_CAPTURE_MAX_FIX_AGE_SEC   = intPreferencesKey("gnss_capture_max_fix_age_sec")
+    val GNSS_CAPTURE_MAX_DIFF_AGE_SEC  = intPreferencesKey("gnss_capture_max_diff_age_sec")
 }
 
 /**
@@ -99,6 +107,14 @@ class SettingsLocalDataSource(private val context: Context) {
     val unitsArea: Flow<String?> = context.appDataStore.data.map { it[SettingsKeys.UNITS_AREA] }
     val showAccuracyIndicators: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.SHOW_ACCURACY_INDICATORS] ?: false }
 
+    // GNSS capture averaging policy flows (defaults mirror GnssCaptureSettings)
+    val gnssCaptureRtkStatus:       Flow<String>  = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_RTK_STATUS]       ?: "FIX" }
+    val gnssCaptureMinDurationSec:  Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MIN_DURATION_SEC]  ?: 60   }
+    val gnssCaptureMaxDurationSec:  Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MAX_DURATION_SEC]  ?: 120  }
+    val gnssCaptureMinSamples:      Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MIN_SAMPLES]       ?: 150  }
+    val gnssCaptureMaxFixAgeSec:    Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MAX_FIX_AGE_SEC]   ?: 3    }
+    val gnssCaptureMaxDiffAgeSec:   Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MAX_DIFF_AGE_SEC]  ?: 10   }
+
     suspend fun setLocationSourceString(v: String) { context.appDataStore.edit { it[SettingsKeys.LOCATION_SOURCE] = v } }
     suspend fun setExternalConnTypeString(v: String) { context.appDataStore.edit { it[SettingsKeys.EXTERNAL_CONN_TYPE] = v } }
     suspend fun setExternalTcp(host: String, port: Int) { context.appDataStore.edit { prefs ->
@@ -138,4 +154,12 @@ class SettingsLocalDataSource(private val context: Context) {
     suspend fun setUnitsDistance(units: String) { context.appDataStore.edit { it[SettingsKeys.UNITS_DISTANCE] = units } }
     suspend fun setUnitsArea(units: String) { context.appDataStore.edit { it[SettingsKeys.UNITS_AREA] = units } }
     suspend fun setShowAccuracyIndicators(enabled: Boolean) { context.appDataStore.edit { it[SettingsKeys.SHOW_ACCURACY_INDICATORS] = enabled } }
+
+    // GNSS capture averaging policy setters
+    suspend fun setGnssCaptureRtkStatus(v: String)      { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_RTK_STATUS]       = v } }
+    suspend fun setGnssCaptureMinDurationSec(v: Int)    { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MIN_DURATION_SEC]  = v } }
+    suspend fun setGnssCaptureMaxDurationSec(v: Int)    { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_DURATION_SEC]  = v } }
+    suspend fun setGnssCaptureMinSamples(v: Int)        { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MIN_SAMPLES]       = v } }
+    suspend fun setGnssCaptureMaxFixAgeSec(v: Int)      { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_FIX_AGE_SEC]   = v } }
+    suspend fun setGnssCaptureMaxDiffAgeSec(v: Int)     { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_DIFF_AGE_SEC]  = v } }
 }

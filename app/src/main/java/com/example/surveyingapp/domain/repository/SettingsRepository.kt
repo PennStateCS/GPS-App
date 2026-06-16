@@ -3,6 +3,7 @@ package com.example.surveyingapp.domain.repository
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSettings
+import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
@@ -26,4 +27,8 @@ interface SettingsRepository {
     // NMEA logging methods
     suspend fun setNmeaLoggingEnabled(enabled: Boolean)
     suspend fun setNmeaLogMaxFileSizeMB(sizeMB: Int)
+
+    // GNSS capture averaging policy
+    val gnssCaptureSettings: Flow<GnssCaptureSettings>
+    suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings)
 }

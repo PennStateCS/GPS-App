@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GNSS Capture settings content (outer dynamic header supplies the main title) -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Page description -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="These settings apply only when saving an averaged GNSS capture point. They decide which GNSS fixes are accepted into the average and when the capture can finish. They do not affect live AR rendering or provider selection."
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="The policy applies to the currently active GNSS provider. RTK FIX is recommended for external RTK receivers. Internal phone GPS may not satisfy a FIX-only policy."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: Capture Quality ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Capture Quality"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Required RTK Status"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <Spinner
+        android:id="@+id/spinner_rtk_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="4dp"
+        android:minHeight="48dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Controls the minimum GNSS quality accepted into a saved averaged capture. RTK FIX is recommended for survey-grade external GNSS receivers. Internal phone GPS may not meet this requirement."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: Timing ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Timing"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Minimum Capture Duration (seconds)"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <EditText
+        android:id="@+id/edit_min_duration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Minimum time the app must collect accepted fixes before a capture is allowed to finish. Range: 1–600 seconds."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Maximum Capture Duration (seconds)"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <EditText
+        android:id="@+id/edit_max_duration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Hard time limit for the capture session. The session can finish at this point even if the minimum sample count has not been reached. Must be ≥ minimum duration. Range: 1–600 seconds."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: Sampling ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Sampling"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Minimum Accepted Samples"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <EditText
+        android:id="@+id/edit_min_samples"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Minimum number of accepted GNSS fixes required before the capture is allowed to finish. Must be at least 1."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: Fix Quality ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Fix Quality"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Maximum Fix Age (seconds)"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <EditText
+        android:id="@+id/edit_max_fix_age"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Rejects stale GNSS fixes if the receiver has not produced a recent position update. Must be at least 1 second."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Maximum Correction Age (seconds)"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <EditText
+        android:id="@+id/edit_max_diff_age"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Rejects fixes when differential or RTK correction data is too old. Must be at least 1 second."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Save button -->
+    <Button
+        android:id="@+id/btn_save_gnss_capture"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Save"
+        android:minHeight="48dp" />
+
+</LinearLayout>
