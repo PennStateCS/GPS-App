@@ -199,7 +199,6 @@ class MainActivity : AppCompatActivity() {
             R.id.nav_open_in_ar,
             R.id.nav_settings
         )
-        if (devEnabled) initialTopLevel.add(R.id.nav_development)
         appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
         navView.setupWithNavController(navController)

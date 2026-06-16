@@ -20,18 +20,10 @@ interface SettingsRepository {
     val externalTcpName: Flow<String?>
     val locationSettings: Flow<LocationSettings>
 
-    // NMEA logging settings (kept for backward compat; also exposed via diagnosticsSettings)
-    val nmeaLoggingEnabled: Flow<Boolean>
-    val nmeaLogMaxFileSizeMB: Flow<Int>
-
     suspend fun setLocationSource(v: LocationSourceType)
     suspend fun setExternalConnType(v: ExternalConnectionType)
     suspend fun setExternalTcp(host: String, port: Int, name: String = "")
     suspend fun clearExternalTcp()
-
-    // NMEA logging methods (kept for backward compat)
-    suspend fun setNmeaLoggingEnabled(enabled: Boolean)
-    suspend fun setNmeaLogMaxFileSizeMB(sizeMB: Int)
 
     // GNSS capture averaging policy
     val gnssCaptureSettings: Flow<GnssCaptureSettings>
@@ -41,19 +33,19 @@ interface SettingsRepository {
     val arDisplaySettings: Flow<ArDisplaySettings>
     suspend fun setArDisplaySettings(settings: ArDisplaySettings)
 
-    // Coordinate display & units
+    // Coordinate display
     val coordinateDisplaySettings: Flow<CoordinateDisplaySettings>
     suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings)
 
-    // Diagnostics & logging
+    // Diagnostics
     val diagnosticsSettings: Flow<DiagnosticsSettings>
     suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings)
 
-    // Advanced: mock location publishing
+    // Mock location publishing
     val mockLocationEnabled: Flow<Boolean>
     suspend fun setMockLocationEnabled(enabled: Boolean)
 
-    // GNSS receiver settings (high accuracy + connection behavior)
+    // GNSS receiver settings
     val gnssReceiverSettings: Flow<GnssReceiverSettings>
     suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings)
 

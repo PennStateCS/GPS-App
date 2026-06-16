@@ -267,6 +267,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Written on the main thread (button click); read on the GL thread (rebuildGeoAnchorsIfNeeded).
      */
     @Volatile private var useTerrainAltitude: Boolean = false
+    @Volatile private var arModelScale: Float = 2f
+    @Volatile private var arShowLabels: Boolean = true
+    @Volatile private var arShowOffscreenArrows: Boolean = true
 
     /**
      * Edge margin in pixels for off-screen arrow indicators.
@@ -463,6 +466,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             binding.textArStatus.text = "Enable GPS for high accuracy AR positioning"
                         }
                     }
+                }
+            }
+        }
+
+        // Apply AR Display settings (altitude mode, model scale, label/arrow visibility).
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.arDisplaySettings.collect { ar ->
+                    val terrain = ar.altitudeMode == "TERRAIN"
+                    if (terrain != useTerrainAltitude) {
+                        useTerrainAltitude = terrain
+                        shouldRebuildAnchors = true
+                        _binding?.txtAltitudeMode?.text = if (terrain) "Terrain" else "Stored"
+                    }
+                    arModelScale = ar.modelScale
+                    arShowLabels = ar.showLabels
+                    arShowOffscreenArrows = ar.showOffscreenArrows
                 }
             }
         }
@@ -1182,7 +1202,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val entryModelFilePath = entry.modelFilePath
             if (entryModelFilePath != null) {
                 val scaledWorld = model.copyOf()
-                Matrix.scaleM(scaledWorld, 0, MODEL_SCALE, MODEL_SCALE, MODEL_SCALE)
+                val s = arModelScale
+                Matrix.scaleM(scaledWorld, 0, s, s, s)
                 newModelPoses += ArFilamentRenderer.ModelPose(
                     key         = coord.id,
                     worldMatrix = scaledWorld,
@@ -1202,10 +1223,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val screenProj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
             if (screenProj.onScreen) {
                 pinPositions  += PinScreenEntry(screenProj.sx, screenProj.sy, entry.coordWithModel)
-                val labelText  = if (entryModelFilePath != null)
-                    CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
-                labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, screenProj.sx, screenProj.sy, subtext)
-            } else {
+                if (arShowLabels) {
+                    val labelText  = if (entryModelFilePath != null)
+                        CoordinateLabelOverlay.MODEL_TAG + coord.name else coord.name
+                    labelEntries  += CoordinateLabelOverlay.LabelEntry(labelText, screenProj.sx, screenProj.sy, subtext)
+                }
+            } else if (arShowOffscreenArrows) {
                 val arrow = computeEdgeArrow(screenProj.sx, screenProj.sy, surfaceWidth, surfaceHeight, edgeMargin)
                 if (arrow != null) {
                     arrowEntries += OffScreenPinIndicatorOverlay.ArrowEntry(
