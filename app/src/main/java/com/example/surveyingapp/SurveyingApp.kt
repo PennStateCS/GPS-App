@@ -10,17 +10,32 @@ import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
+import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.util.UtmConverter
 import dagger.hilt.android.HiltAndroidApp
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.*
 import org.osmdroid.config.Configuration
+
+/** Hilt entry point for accessing Hilt singletons from non-injected Application code. */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SurveyingAppEntryPoint {
+    fun fixSwitchboard(): FixSwitchboard
+}
 
 @HiltAndroidApp
 class SurveyingApp : Application() {
     companion object {
-        // Global settings repository (initialized in Application.onCreate)
         lateinit var settingsRepo: SettingsRepository
-        private lateinit var appScope: CoroutineScope // Supervisor scope for long‑lived background jobs
+            private set
+        lateinit var mockLocationPublisher: AndroidMockLocationPublisher
+            private set
+        private lateinit var appScope: CoroutineScope
     }
 
     override fun onCreate() {
@@ -50,10 +65,9 @@ class SurveyingApp : Application() {
         }
         Log.d("SurveyingApp","Application started; global crash handler & osmdroid config done")
 
-        setupSettings() // Initialize settings repository
-        createNotificationChannel() // Required for foreground service notifications on O+
-
-        // One-time lightweight backfill: populate UTM fields if missing
+        setupSettings()
+        createNotificationChannel()
+        startMockLocationPublisher()
         runUtmBackfill()
     }
 
@@ -86,11 +100,19 @@ class SurveyingApp : Application() {
     }
 
     private fun setupSettings() {
-        // Dedicated supervisor scope for background operations
         appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
         val localDs = SettingsLocalDataSource(this)
         settingsRepo = SettingsRepositoryImpl(localDs)
+    }
+
+    private fun startMockLocationPublisher() {
+        try {
+            val entryPoint = EntryPointAccessors.fromApplication(this, SurveyingAppEntryPoint::class.java)
+            mockLocationPublisher = AndroidMockLocationPublisher(this, entryPoint.fixSwitchboard(), settingsRepo)
+            mockLocationPublisher.start(appScope)
+        } catch (e: Exception) {
+            Log.e("SurveyingApp", "Failed to start mock location publisher", e)
+        }
     }
 
     private fun createNotificationChannel() {

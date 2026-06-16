@@ -74,10 +74,7 @@ abstract class BaseTwoPaneFragment : Fragment() {
         }
         val view = buildCategoryContent(category, layoutInflater) ?: return
         currentContentView = view
-        headerView.apply {
-            text = category.title
-            visibility = View.VISIBLE
-        }
+        headerView.visibility = View.GONE
         placeholderView.visibility = View.GONE
         internalContentContainer.addView(view)
     }

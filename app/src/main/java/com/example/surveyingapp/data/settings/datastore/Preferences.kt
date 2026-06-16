@@ -75,6 +75,9 @@ object SettingsKeys {
     // Coordinate display — new key (other keys already existed above)
     val SHOW_RTK_STATUS_BADGES         = booleanPreferencesKey("show_rtk_status_badges")
 
+    // Advanced GNSS receiver — mock location publishing
+    val MOCK_LOCATION_ENABLED          = booleanPreferencesKey("mock_location_enabled")
+
     // Diagnostics & logging — granular toggles (NMEA_LOGGING_* keys already existed above)
     val DIAG_SHOW_RAW_NMEA             = booleanPreferencesKey("diag_show_raw_nmea")
     val DIAG_SHOW_SATELLITE_DIAG       = booleanPreferencesKey("diag_show_satellite_diagnostics")
@@ -209,6 +212,10 @@ class SettingsLocalDataSource(private val context: Context) {
 
     // Coordinate display setter
     suspend fun setShowRtkStatusBadges(v: Boolean)      { context.appDataStore.edit { it[SettingsKeys.SHOW_RTK_STATUS_BADGES]    = v } }
+
+    // Mock location flow and setter
+    val mockLocationEnabled: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.MOCK_LOCATION_ENABLED] ?: false }
+    suspend fun setMockLocationEnabled(v: Boolean) { context.appDataStore.edit { it[SettingsKeys.MOCK_LOCATION_ENABLED] = v } }
 
     // Diagnostics setters
     suspend fun setDiagShowRawNmea(v: Boolean)          { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_RAW_NMEA]           = v } }
