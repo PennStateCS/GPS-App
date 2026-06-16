@@ -40,6 +40,9 @@ import com.example.surveyingapp.domain.model.TestStatus
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.domain.repository.ReachDeviceRepository
 import com.example.surveyingapp.service.LocationService
+import androidx.appcompat.app.AppCompatDelegate
+import com.example.surveyingapp.gnss.settings.AppThemeMode
+import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import com.example.surveyingapp.util.ReachNameResolver
 import kotlinx.coroutines.*
@@ -156,6 +159,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         private const val CAT_ID_DIAGNOSTICS        = 6
         private const val CAT_ID_DEV                = 7
         private const val CAT_ID_ABOUT              = 8
+        private const val CAT_ID_APPEARANCE         = 9
         // Connection status timing thresholds (ms)
         const val FRESH_FIX_MAX_AGE_MS = 5_000L
         const val STALE_FIX_MAX_AGE_MS = 15_000L
@@ -173,13 +177,14 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
 
     private fun baseCategories(): List<SettingsCategory> = listOf(
-        SettingsCategory(CAT_ID_LOCATION,           "GNSS Receiver",           R.drawable.ic_section_location),
-        SettingsCategory(CAT_ID_GNSS_CAPTURE,       "GNSS Capture",            R.drawable.ic_satellite_24),
+        SettingsCategory(CAT_ID_APPEARANCE,         "Appearance",              R.drawable.ic_appearance_24),
         SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_section_ar),
         SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinate Display",      R.drawable.ic_list_coordinates),
         SettingsCategory(CAT_ID_DATA,               "Data Import / Export",    R.drawable.ic_file),
-        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_section_diagnostics),
         SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
+        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_section_diagnostics),
+        SettingsCategory(CAT_ID_GNSS_CAPTURE,       "GNSS Capture",            R.drawable.ic_satellite_24),
+        SettingsCategory(CAT_ID_LOCATION,           "GNSS Receiver",           R.drawable.ic_section_location),
         SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info)
     )
 
@@ -199,6 +204,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 CAT_ID_DIAGNOSTICS        -> setupDiagnosticsContent(inflater)
                 CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 CAT_ID_ABOUT              -> setupAboutContent(inflater)
+                CAT_ID_APPEARANCE         -> setupAppearanceContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -208,6 +214,61 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
 
     // ───────────────────────────── Category builders ───────────────────────────
+
+    private fun setupAppearanceContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_appearance, contentContainer, false)
+        try {
+            val spinner = view.findViewById<AutoCompleteTextView>(R.id.spinner_theme_mode)
+
+            val options = listOf(
+                "System Default" to AppThemeMode.SYSTEM,
+                "Light"          to AppThemeMode.LIGHT,
+                "Dark"           to AppThemeMode.DARK
+            )
+
+            spinner?.setAdapter(
+                ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, options.map { it.first })
+            )
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val current = settingsRepo.appearanceSettings.first().themeMode
+                    val label = options.firstOrNull { it.second == current }?.first ?: options.first().first
+                    spinner?.setText(label, false)
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load appearance settings", e)
+                }
+            }
+
+            spinner?.setOnItemClickListener { _, _, position, _ ->
+                val selected = options.getOrNull(position) ?: return@setOnItemClickListener
+                val ctx = context ?: return@setOnItemClickListener
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        settingsRepo.setAppearanceSettings(AppearanceSettings(themeMode = selected.second))
+                        // Show Toast BEFORE setDefaultNightMode — the Activity recreates
+                        // immediately on a real uiMode change, detaching the Fragment before
+                        // requireContext() would be reachable on the next line.
+                        Toast.makeText(ctx, "Theme set to ${selected.first}.", Toast.LENGTH_SHORT).show()
+                        AppCompatDelegate.setDefaultNightMode(
+                            when (selected.second) {
+                                AppThemeMode.LIGHT  -> AppCompatDelegate.MODE_NIGHT_NO
+                                AppThemeMode.DARK   -> AppCompatDelegate.MODE_NIGHT_YES
+                                AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                            }
+                        )
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save appearance settings", e)
+                        Toast.makeText(ctx, "Failed to save theme.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupAppearanceContent failed", e)
+        }
+        return view
+    }
+
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
         try { setupLocationSourceUi(view) } catch (e: Exception) { Log.e("SettingsFragment", "setupLocationSourceUi failed", e) }

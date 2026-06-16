@@ -7,9 +7,11 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.core.widget.ImageViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
+import com.google.android.material.color.MaterialColors
 
 // Represents a sidebar/settings section. Consider moving to its own file if reused elsewhere.
 data class SettingsCategory(
@@ -70,8 +72,13 @@ class SettingsCategoryAdapter(
                 } catch (_: Exception) {}
             }
 
-            holder.icon.alpha = if (isSelected) 1.0f else 0.7f
-            holder.title.alpha = if (isSelected) 1.0f else 0.85f
+            val selectedColor = MaterialColors.getColor(ctx, com.google.android.material.R.attr.colorPrimary, 0)
+            val unselectedColor = MaterialColors.getColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
+            val iconColor = if (isSelected) selectedColor else unselectedColor
+            ImageViewCompat.setImageTintList(holder.icon, ColorStateList.valueOf(iconColor))
+            holder.title.setTextColor(if (isSelected) selectedColor else unselectedColor)
+            holder.icon.alpha = 1.0f
+            holder.title.alpha = 1.0f
 
             holder.itemView.contentDescription =
                 if (isSelected) ctx.getString(R.string.dev_category_selected_desc) + ": " + category.title

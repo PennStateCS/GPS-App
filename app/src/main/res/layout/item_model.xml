@@ -7,12 +7,14 @@
     android:gravity="center_horizontal"
     android:padding="6dp">
 
-    <androidx.cardview.widget.CardView
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:cardCornerRadius="10dp"
-        app:cardElevation="4dp"
-        app:cardUseCompatPadding="true">
+        app:cardCornerRadius="12dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="1dp"
+        app:cardBackgroundColor="?attr/colorSurface">
 
         <LinearLayout
             android:layout_width="wrap_content"
@@ -139,7 +141,8 @@
                     android:id="@+id/btn_edit_model"
                     android:layout_width="36dp"
                     android:layout_height="36dp"
-                    android:src="@drawable/ic_edit_blue"
+                    android:src="@drawable/ic_edit_24"
+                    android:tint="?attr/colorPrimary"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Edit Model"
                     android:padding="6dp" />
@@ -157,7 +160,8 @@
                     android:id="@+id/btn_delete_model"
                     android:layout_width="36dp"
                     android:layout_height="36dp"
-                    android:src="@drawable/ic_delete_red"
+                    android:src="@drawable/ic_delete"
+                    android:tint="?attr/colorError"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Delete Model"
                     android:padding="6dp" />
@@ -165,6 +169,6 @@
             </LinearLayout>
 
         </LinearLayout>
-    </androidx.cardview.widget.CardView>
+    </com.google.android.material.card.MaterialCardView>
 
 </LinearLayout>

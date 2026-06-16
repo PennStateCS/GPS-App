@@ -14,8 +14,7 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:orientation="vertical"
-        android:background="@color/dev_panel_bg"
-        android:elevation="2dp"
+        android:background="?attr/colorSurfaceVariant"
         android:padding="0dp">
 
         <androidx.recyclerview.widget.RecyclerView

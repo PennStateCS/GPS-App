@@ -14,7 +14,7 @@
 
     <!-- Developer panel – night versions -->
     <color name="dev_panel_bg">#FF1E2124</color>
-    <color name="dev_category_selected_bg">#FF2E3338</color>
+    <color name="dev_category_selected_bg">@color/md_primary_30</color>
     <color name="dev_info_label">#FFCACFD4</color>
     <color name="dev_info_value">#FFE2E4E7</color>
     <color name="dev_info_section_bg">#FF1E2124</color>

@@ -11,6 +11,8 @@ import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
 import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.AppThemeMode
+import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -173,6 +175,20 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     override suspend fun setDeveloperSettings(settings: DeveloperSettings) {
         local.setDeveloperToolsEnabled(settings.developerToolsEnabled)
+    }
+
+    // Appearance
+    override val appearanceSettings: Flow<AppearanceSettings> =
+        local.appThemeModeRaw.map { AppearanceSettings(themeMode = it.toAppThemeMode()) }
+
+    override suspend fun setAppearanceSettings(settings: AppearanceSettings) {
+        local.setAppThemeModeString(settings.themeMode.name)
+    }
+
+    private fun String.toAppThemeMode(): AppThemeMode = when (this) {
+        "LIGHT"  -> AppThemeMode.LIGHT
+        "DARK"   -> AppThemeMode.DARK
+        else     -> AppThemeMode.SYSTEM
     }
 
     private fun String.toRtkStatus(): RtkStatus = when (this) {

@@ -8,6 +8,7 @@ import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
 import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 
@@ -52,4 +53,8 @@ interface SettingsRepository {
     // Developer settings
     val developerSettings: Flow<DeveloperSettings>
     suspend fun setDeveloperSettings(settings: DeveloperSettings)
+
+    // Appearance
+    val appearanceSettings: Flow<AppearanceSettings>
+    suspend fun setAppearanceSettings(settings: AppearanceSettings)
 }
