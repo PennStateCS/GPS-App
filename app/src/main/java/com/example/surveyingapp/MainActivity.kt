@@ -887,11 +887,7 @@ class MainActivity : AppCompatActivity() {
                 showNmeaFileSelectionDialog()
                 true
             }
-            R.id.action_diagnostics -> {
-                navController.navigate(R.id.nav_diagnostics)
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
+else -> super.onOptionsItemSelected(item)
         }
     }
 

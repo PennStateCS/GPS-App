@@ -28,6 +28,7 @@
     <color name="app_on_surface_variant">#C1C8CE</color>
     <color name="app_surface_container">#16212B</color>
     <color name="app_surface_container_high">#1D2A36</color>
+    <color name="app_surface_container_highest">#243042</color>
     <color name="app_outline">#8B9198</color>
     <color name="app_outline_variant">#334454</color>
 
