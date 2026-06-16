@@ -12,7 +12,7 @@ import android.widget.TextView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
+
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.data.local.db.AppDatabase
@@ -202,91 +202,82 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             } else TextView(ctx).apply {
                 setText(R.string.dev_perm_none)
                 textSize = 14f
-                setPadding(8, 0, 0, 16)
+                setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             }
         } catch (e: Exception) {
             TextView(ctx).apply {
                 text = "${getString(R.string.dev_perm_error)}: ${e.message ?: ""}"
                 textSize = 14f
-                setPadding(8, 0, 0, 16)
+                setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             }
         }
     }
 
     private fun createPermissionsTableLayout(permissions: Array<String>, pm: android.content.pm.PackageManager, packageName: String): View {
         val ctx = requireContext()
-        val table = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        // Summary row
-        table.addView(TextView(ctx).apply {
+        val density = ctx.resources.displayMetrics.density
+        fun dp(v: Float) = (v * density + 0.5f).toInt()
+
+        val (card, rows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_permission_status))
+
+        // Summary header inside card before rows
+        val summaryView = TextView(ctx).apply {
             text = "${getString(R.string.dev_perm_total)}: ${permissions.size}"
-            textSize = 14f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-            setPadding(0, 0, 0, 16)
-        })
-        // Header
-        val header = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 8, 12, 8)
-            setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_perm_header_bg))
+            textSize = 12f
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setPadding(dp(20f), 0, dp(20f), dp(8f))
         }
-        fun headerCell(txt: Int, weight: Float) = TextView(ctx).apply {
-            setText(txt)
-            textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_perm_header_text))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, weight)
-            setPadding(4, 0, 4, 0)
-        }
-        header.addView(headerCell(R.string.dev_perm_status, 0.7f))
-        header.addView(headerCell(R.string.dev_perm_name, 1.2f))
-        header.addView(headerCell(R.string.dev_perm_full_path, 3.1f))
-        table.addView(header)
+        // Insert summary before the row container (card header is index 0, rowContainer is index 1 inside cardContent)
+        (rows.parent as? LinearLayout)?.addView(summaryView, 1)
 
         permissions.forEachIndexed { idx, perm ->
             val granted = pm.checkPermission(perm, packageName) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(12, 6, 12, 6)
-                if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
-            }
-            fun cell(weight: Float) = TextView(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, weight)
-                textSize = 12f
-                setPadding(4, 2, 4, 2)
-                setTextIsSelectable(true)
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-            }
-            val statusView = cell(0.7f).apply {
-                text = if (granted) "GRNT" else "DENY"
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor((if (granted) 0xFF2E7D32 else 0xFFC62828).toInt())
-                // Align left (start) instead of centered
-                gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
-                textSize = 11f
-            }
             val shortName = perm.substringAfterLast('.')
-            val nameView = cell(1.2f).apply {
-                text = shortName
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+            val isLast = idx == permissions.lastIndex
+
+            // Vertical layout: short name + status on one row, full path below
+            val rowWrap = LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20f), dp(10f), dp(20f), dp(10f))
             }
-            val fullView = cell(3.1f).apply {
+            val topRow = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            val nameView = TextView(ctx).apply {
+                text = shortName
+                textSize = 13f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurface))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val statusView = TextView(ctx).apply {
+                text = if (granted) "GRANTED" else "DENIED"
+                textSize = 11f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(if (granted) 0xFF2E7D32.toInt() else 0xFFC62828.toInt())
+            }
+            topRow.addView(nameView)
+            topRow.addView(statusView)
+            val pathView = TextView(ctx).apply {
                 text = perm
-                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                textSize = 11f
+                setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+                setTextIsSelectable(true)
                 maxLines = 2
             }
-            row.addView(statusView)
-            row.addView(nameView)
-            row.addView(fullView)
-            table.addView(row)
-            // Divider
-            if (idx < permissions.lastIndex) table.addView(View(ctx).apply {
+            rowWrap.addView(topRow)
+            rowWrap.addView(pathView)
+            rows.addView(rowWrap)
+
+            if (!isLast) rows.addView(View(ctx).apply {
                 setBackgroundColor(dividerColor(ctx))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
+                    marginStart = dp(20f)
+                }
             })
         }
-        return table
+        return card
     }
 
     private fun setupSystemInfoContent(inflater: LayoutInflater): View {
@@ -347,40 +338,48 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             } else packageName
         }.getOrElse { getString(R.string.dev_value_unknown) }
 
-        // Populate app info table
-        val appTable = buildInfoTable(ctx).apply {
-            addRow(ctx.getString(R.string.dev_label_package_name), packageName, 0)
-            addRow(ctx.getString(R.string.dev_label_version_name), versionName, 1)
-            addRow(ctx.getString(R.string.dev_label_version_code), versionCode, 2)
-            addRow(ctx.getString(R.string.dev_label_first_install), formatTime(firstInstall), 3)
-            addRow(ctx.getString(R.string.dev_label_last_update), formatTime(lastUpdate), 4)
-            addRow(ctx.getString(R.string.dev_label_target_sdk), targetSdk, 5)
-            addRow(ctx.getString(R.string.dev_label_min_sdk), minSdk, 6)
-            addRow(ctx.getString(R.string.dev_label_debuggable), debuggable.toString(), 7)
-            addRow(ctx.getString(R.string.dev_label_system_app), systemApp.toString(), 8)
-            addRow(ctx.getString(R.string.dev_label_app_size), if (apkSize >= 0) formatBytes(apkSize) else getString(R.string.dev_value_unknown), 9)
-            addRow(ctx.getString(R.string.dev_label_source_dir), appInfo?.sourceDir ?: getString(R.string.dev_value_unknown), 10)
-            addRow(ctx.getString(R.string.dev_label_data_dir), appInfo?.dataDir ?: getString(R.string.dev_value_unknown), 11)
+        // App Info card
+        val appInfoData = listOf(
+            ctx.getString(R.string.dev_label_package_name) to packageName,
+            ctx.getString(R.string.dev_label_version_name) to versionName,
+            ctx.getString(R.string.dev_label_version_code) to versionCode,
+            ctx.getString(R.string.dev_label_first_install) to formatTime(firstInstall),
+            ctx.getString(R.string.dev_label_last_update) to formatTime(lastUpdate),
+            ctx.getString(R.string.dev_label_target_sdk) to targetSdk,
+            ctx.getString(R.string.dev_label_min_sdk) to minSdk,
+            ctx.getString(R.string.dev_label_debuggable) to debuggable.toString(),
+            ctx.getString(R.string.dev_label_system_app) to systemApp.toString(),
+            ctx.getString(R.string.dev_label_app_size) to (if (apkSize >= 0) formatBytes(apkSize) else getString(R.string.dev_value_unknown)),
+            ctx.getString(R.string.dev_label_source_dir) to (appInfo?.sourceDir ?: getString(R.string.dev_value_unknown)),
+            ctx.getString(R.string.dev_label_data_dir) to (appInfo?.dataDir ?: getString(R.string.dev_value_unknown))
+        )
+        val (appCard, appRows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_app_info))
+        appInfoData.forEachIndexed { idx, (label, value) ->
+            appRows.addInfoRow(ctx, label, value, isLast = idx == appInfoData.lastIndex)
         }
-        appInfoTableContainer.addView(appTable)
+        appInfoTableContainer.addView(appCard)
 
-        // Populate device info table
-        val deviceTable = buildInfoTable(ctx).apply {
-            addRow(ctx.getString(R.string.dev_label_android_version), androidVersion, 0)
-            addRow(ctx.getString(R.string.dev_label_sdk_int), sdkInt, 1)
-            addRow(ctx.getString(R.string.dev_label_device_model), model, 2)
-            addRow(ctx.getString(R.string.dev_label_manufacturer), manufacturer, 3)
-            addRow(ctx.getString(R.string.dev_label_brand), brand, 4)
-            addRow(ctx.getString(R.string.dev_label_abis), abis, 5)
-            addRow(ctx.getString(R.string.dev_label_process_name), processName, 6)
-            addRow(ctx.getString(R.string.dev_label_runtime_threads), threadCount.toString(), 7)
-            addRow(ctx.getString(R.string.dev_label_heap_used), formatBytes(heapUsed), 8)
-            addRow(ctx.getString(R.string.dev_label_heap_free), formatBytes(heapFree), 9)
-            addRow(ctx.getString(R.string.dev_label_heap_max), formatBytes(heapMax), 10)
-            addRow(ctx.getString(R.string.dev_label_internal_free), formatBytes(internalFree), 11)
-            addRow(ctx.getString(R.string.dev_label_internal_total), formatBytes(internalTotal), 12)
+        // Device Info card
+        val deviceInfoData = listOf(
+            ctx.getString(R.string.dev_label_android_version) to androidVersion,
+            ctx.getString(R.string.dev_label_sdk_int) to sdkInt,
+            ctx.getString(R.string.dev_label_device_model) to model,
+            ctx.getString(R.string.dev_label_manufacturer) to manufacturer,
+            ctx.getString(R.string.dev_label_brand) to brand,
+            ctx.getString(R.string.dev_label_abis) to abis,
+            ctx.getString(R.string.dev_label_process_name) to processName,
+            ctx.getString(R.string.dev_label_runtime_threads) to threadCount.toString(),
+            ctx.getString(R.string.dev_label_heap_used) to formatBytes(heapUsed),
+            ctx.getString(R.string.dev_label_heap_free) to formatBytes(heapFree),
+            ctx.getString(R.string.dev_label_heap_max) to formatBytes(heapMax),
+            ctx.getString(R.string.dev_label_internal_free) to formatBytes(internalFree),
+            ctx.getString(R.string.dev_label_internal_total) to formatBytes(internalTotal)
+        )
+        val (deviceCard, deviceRows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_device_info))
+        deviceInfoData.forEachIndexed { idx, (label, value) ->
+            deviceRows.addInfoRow(ctx, label, value, isLast = idx == deviceInfoData.lastIndex)
         }
-        deviceInfoTableContainer.addView(deviceTable)
+        deviceInfoTableContainer.addView(deviceCard)
 
         return view
     }
@@ -393,8 +392,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val tableContainer = view.findViewById<LinearLayout>(R.id.arInfoTableContainer)
 
         val ctx = requireContext()
-        val infoTable = buildInfoTable(ctx)
-        fun add(label: String, value: String, idx: Int) = infoTable.addRow(label, value, idx)
+        val (arCard, arRows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_ar_diagnostics))
         fun gather(): List<Pair<String,String>> {
             val list = mutableListOf<Pair<String,String>>()
             val availability = runCatching { ArCoreApk.getInstance().checkAvailability(ctx).toString() }.getOrElse { it.javaClass.simpleName }
@@ -435,17 +433,19 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             runCatching { session?.close() } // Cleanup
             return list
         }
-        // Populate table using gather()
+        // Populate card using gather()
         fun populate() {
-            infoTable.removeAllViews()
+            arRows.removeAllViews()
             val data = gather()
-            data.forEachIndexed { idx, pair -> add(pair.first, pair.second, idx) }
+            data.forEachIndexed { idx, pair ->
+                arRows.addInfoRow(ctx, pair.first, pair.second, isLast = idx == data.lastIndex)
+            }
         }
         populate()
 
-        // Add refresh bar and table to containers
+        // Add refresh bar and card to containers
         refreshBarContainer.addView(createRefreshBar { populate() })
-        tableContainer.addView(infoTable)
+        tableContainer.addView(arCard)
 
         return view
     }
@@ -464,45 +464,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
         val ctx = requireContext()
 
-        // Table container (we'll build custom rows for color coding)
-        val table = buildInfoTable(ctx)
-        var rowIndex = 0
+        // Card for maps diagnostics rows (color-coded by status)
+        val (mapsCard, mapsRows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_maps_diagnostics))
+        val mapsRowsList = mutableListOf<Triple<String, String, MapsStatus?>>()
         fun addRow(label: String, value: String, status: MapsStatus? = null) {
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(12, 8, 12, 8)
-                if (rowIndex % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
-            }
-            val labelView = TextView(ctx).apply {
-                text = label
-                setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-                textSize = 13f
-                setTypeface(null, android.graphics.Typeface.BOLD)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-            }
-            val valueView = TextView(ctx).apply {
-                text = value
-                textSize = 13f
-                setTextIsSelectable(true)
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
-                maxLines = 4
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                val color = when (status) {
-                    MapsStatus.OK -> 0xFF2E7D32.toInt() // green
-                    MapsStatus.WARN -> 0xFFF9A825.toInt() // amber
-                    MapsStatus.ERROR -> 0xFFC62828.toInt() // red
-                    null -> ContextCompat.getColor(ctx, R.color.dev_info_value)
-                }
-                setTextColor(color)
-            }
-            row.addView(labelView)
-            row.addView(valueView)
-            table.addView(row)
-            table.addView(View(ctx).apply {
-                setBackgroundColor(dividerColor(ctx))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-            })
-            rowIndex++
+            mapsRowsList.add(Triple(label, value, status))
         }
 
         // Gather statuses
@@ -570,12 +536,23 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         addRow("Network Status", networkStatus.first, networkStatus.second)
 
         // Placeholder for runtime MapView test (async result inserted below)
-        val mapTestLabel = "Runtime MapView Test"
-        addRow(mapTestLabel, "PENDING", MapsStatus.WARN)
-        val runtimeStatusIndex = rowIndex - 1
-        val valueHolder = (table.getChildAt(runtimeStatusIndex*2 -1) as? LinearLayout)?.getChildAt(1) as? TextView
+        addRow("Runtime MapView Test", "PENDING", MapsStatus.WARN)
 
-        // Add refresh bar and table to containers
+        // Flush collected rows into the card, capturing the runtime status TextView
+        var runtimeValueHolder: TextView? = null
+        mapsRowsList.forEachIndexed { idx, (label, value, status) ->
+            val vv = mapsRows.addInfoRow(ctx, label, value, isLast = idx == mapsRowsList.lastIndex)
+            val statusColor = when (status) {
+                MapsStatus.OK   -> 0xFF2E7D32.toInt()
+                MapsStatus.WARN -> 0xFFF9A825.toInt()
+                MapsStatus.ERROR -> 0xFFC62828.toInt()
+                null -> resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant)
+            }
+            vv.setTextColor(statusColor)
+            if (label == "Runtime MapView Test") runtimeValueHolder = vv
+        }
+
+        // Add refresh bar and card to containers
         fun refresh() {
             val parent = view.parent as? ViewGroup
             if (parent != null) {
@@ -585,7 +562,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             }
         }
         refreshBarContainer.addView(createRefreshBar { refresh() })
-        tableContainer.addView(table)
+        tableContainer.addView(mapsCard)
 
         // Set up API key reveal/copy functionality
         apiKeyFullView.text = apiKeyFull
@@ -614,14 +591,12 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         var completed = false
 
         fun updateRuntimeStatus(text: String, status: MapsStatus) {
-            valueHolder?.text = text
-            valueHolder?.setTextColor(
-                when(status){
-                    MapsStatus.OK -> 0xFF2E7D32.toInt()
-                    MapsStatus.WARN -> 0xFFF9A825.toInt()
-                    MapsStatus.ERROR -> 0xFFC62828.toInt()
-                }
-            )
+            runtimeValueHolder?.text = text
+            runtimeValueHolder?.setTextColor(when (status) {
+                MapsStatus.OK    -> 0xFF2E7D32.toInt()
+                MapsStatus.WARN  -> 0xFFF9A825.toInt()
+                MapsStatus.ERROR -> 0xFFC62828.toInt()
+            })
         }
         try {
             miniMapView.getMapAsync { gMap ->
@@ -797,58 +772,45 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(12f), dp(16f), dp(24f))
+            setPadding(dp(24f), dp(24f), dp(24f), dp(24f))
         }
+
+        // Page title + subtitle
+        root.addView(TextView(ctx).apply {
+            text = getString(R.string.dev_page_title_gnss)
+            textSize = 24f
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnBackground))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        root.addView(TextView(ctx).apply {
+            text = getString(R.string.dev_page_subtitle_gnss)
+            textSize = 14f
+            alpha = 0.7f
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(4f)
+                bottomMargin = dp(20f)
+            }
+        })
 
         // ── Control row removed – Reset button is now inline with Statistics ──
 
         data class SectionViews(
-            val container: LinearLayout,
+            val container: View,
             val values: MutableMap<String, TextView>
         )
 
-        // ── Helper: build a key/value row section ─────────────────────────────
+        // ── Helper: build a key/value section as a Material 3 card ───────────
         fun buildSection(title: String, fields: List<String>): SectionViews {
             val values = mutableMapOf<String, TextView>()
-            val sectionContainer = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-            val table = buildInfoTable(ctx)
+            val (card, rowContainer) = buildInfoCard(ctx, title)
             fields.forEachIndexed { idx, label ->
-                val row = LinearLayout(ctx).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setPadding(12, 8, 12, 8)
-                    if (idx % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
-                }
-                val lv = TextView(ctx).apply {
-                    text = label
-                    setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
-                    textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
-                }
-                val vv = TextView(ctx).apply {
-                    text = "--"
-                    setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-                    textSize = 13f; setTextIsSelectable(true)
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
-                    maxLines = 3
-                }
+                val vv = rowContainer.addInfoRow(ctx, label, "--", isLast = idx == fields.lastIndex)
+                vv.maxLines = 3
                 values[label] = vv
-                row.addView(lv); row.addView(vv)
-                table.addView(row)
-                if (idx < fields.lastIndex) table.addView(View(ctx).apply {
-                    setBackgroundColor(dividerColor(ctx))
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-                })
             }
-            sectionContainer.addView(gnssLiveSectionHeader(ctx, title))
-            sectionContainer.addView(table)
-            root.addView(sectionContainer)
-            return SectionViews(sectionContainer, values)
+            root.addView(card)
+            return SectionViews(card, values)
         }
 
         // ── Source & Status ───────────────────────────────────────────────────
@@ -892,27 +854,31 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         ))
 
         // ── Satellite Sky ─────────────────────────────────────────────────────
-        root.addView(gnssLiveSectionHeader(ctx, "Satellite Sky"))
-        val skyTable = buildInfoTable(ctx)
+        val (skyCard, skyCardRows) = buildInfoCard(ctx, "Satellite Sky")
         val skyTotalView = TextView(ctx).apply {
             text = "--"
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-            textSize = 13f; setTextIsSelectable(true)
-            setPadding(12, 8, 12, 4)
+            textSize = 13f
+            setTextIsSelectable(true)
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setPadding(dp(20f), dp(8f), dp(20f), dp(4f))
         }
         val skyConstellationView = TextView(ctx).apply {
             text = "(no GSV data yet)"
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-            textSize = 12f; setTextIsSelectable(true); typeface = android.graphics.Typeface.MONOSPACE
-            setPadding(12, 4, 12, 8)
+            textSize = 12f
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setPadding(dp(20f), dp(4f), dp(20f), dp(12f))
         }
-        skyTable.addView(skyTotalView)
-        skyTable.addView(View(ctx).apply {
+        skyCardRows.addView(skyTotalView)
+        skyCardRows.addView(View(ctx).apply {
             setBackgroundColor(dividerColor(ctx))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
+                marginStart = dp(20f)
+            }
         })
-        skyTable.addView(skyConstellationView)
-        root.addView(skyTable)
+        skyCardRows.addView(skyConstellationView)
+        root.addView(skyCard)
 
         // ── RS2+ Device (battery + device info) ──────────────────────────────
         val batterySection = buildSection("RS2+ Battery", listOf(
@@ -925,16 +891,17 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         ))
 
         // ── Skyplot ───────────────────────────────────────────────────────────
-        root.addView(gnssLiveSectionHeader(ctx, "Satellite Skyplot"))
+        val (skyplotCard, skyplotCardRows) = buildInfoCard(ctx, "Satellite Skyplot")
         val skyplotView = SkyplotView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(420f)
             )
         }
-        root.addView(skyplotView)
+        skyplotCardRows.addView(skyplotView)
+        root.addView(skyplotCard)
 
         // ── Signal charts (one per constellation) ─────────────────────────────
-        root.addView(gnssLiveSectionHeader(ctx, "Signal Strength"))
+        val (signalCard, signalCardRows) = buildInfoCard(ctx, "Signal Strength")
         val constellations = listOf(
             Constellation.GPS to "GPS",
             Constellation.GLONASS to "GLONASS",
@@ -944,49 +911,60 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             Constellation.SBAS to "SBAS"
         )
         val charts = constellations.map { (c, label) ->
-            root.addView(gnssLiveSectionHeader(ctx, label).apply {
+            val subLabel = TextView(ctx).apply {
+                text = label
                 textSize = 12f
-                setPadding(0, dp(8f), 0, dp(2f))
-            })
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+                setPadding(dp(20f), dp(12f), dp(20f), dp(2f))
+            }
+            signalCardRows.addView(subLabel)
             val chart = SatelliteSignalChartView(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, dp(160f)
                 )
                 setConstellationFilter(c)
             }
-            root.addView(chart)
+            signalCardRows.addView(chart)
             c to chart
         }.toMap()
+        root.addView(signalCard)
 
         // ── Stream stats ──────────────────────────────────────────────────────
         val btnReset = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply { text = "Reset" }
         val statsSection = buildSection("Stream Statistics", listOf(
             "Lines/sec", "Error Rate", "Total Lines", "Total Errors"
         ))
-        // Swap the plain header for a title + Reset button row
-        val statsHeader = statsSection.container.getChildAt(0)
-        statsSection.container.removeViewAt(0)
-        statsSection.container.addView(LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            addView(statsHeader, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(btnReset, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        }, 0)
+        // Replace the card's section header with a header+Reset button row.
+        // Card structure: card → cardContent (LinearLayout) → [header at 0, rowContainer at 1]
+        val statsCardContent = (statsSection.container as? com.google.android.material.card.MaterialCardView)?.getChildAt(0) as? LinearLayout
+        val statsHeaderView = statsCardContent?.getChildAt(0)
+        if (statsCardContent != null && statsHeaderView != null) {
+            statsCardContent.removeViewAt(0)
+            statsCardContent.addView(LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                addView(statsHeaderView, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(btnReset, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = dp(12f)
+                })
+            }, 0)
+        }
 
         // ── NMEA sentence history (last 5 sentences, no inner scroll) ────────
-        root.addView(gnssLiveSectionHeader(ctx, "NMEA History (last 5)"))
+        val (historyCard, historyCardRows) = buildInfoCard(ctx, "NMEA History (last 5)")
         val historyText = TextView(ctx).apply {
             text = "(no NMEA data yet)"
             textSize = 11f
             typeface = android.graphics.Typeface.MONOSPACE
             isFocusable = false
             isFocusableInTouchMode = false
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
-            setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
-            setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            setPadding(dp(20f), dp(8f), dp(20f), dp(16f))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
-        root.addView(historyText)
+        historyCardRows.addView(historyText)
+        root.addView(historyCard)
 
         // ── Live update helpers ───────────────────────────────────────────────
         val utcFmt = SimpleDateFormat("HH:mm:ss.SSS 'UTC'", Locale.US).also { it.timeZone = TimeZone.getTimeZone("UTC") }
@@ -1008,7 +986,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         fun applyFix(fix: Fix?) {
             sourceSection.values["GNSS Source"]?.text = latestProviderLabel
             if (fix == null) {
-                sourceSection.values.values.forEach { it.apply { text = "--"; setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value)) } }
+                val noFixColor = resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant)
+                sourceSection.values.values.forEach { it.apply { text = "--"; setTextColor(noFixColor) } }
                 sourceSection.values["GNSS Source"]?.text = latestProviderLabel
                 posSection.values.values.forEach { it.text = "--" }
                 motionSection.values.values.forEach { it.text = "--" }
@@ -1164,23 +1143,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         return root
     }
 
-    /** Small bold section header used by the GNSS Live pane. */
-    private fun gnssLiveSectionHeader(ctx: android.content.Context, title: String): TextView {
-        val density = resources.displayMetrics.density
-        fun dp(v: Float) = (v * density + 0.5f).toInt()
-        val attrVal = TypedValue()
-        val primaryColor = if (ctx.theme.resolveAttribute(com.google.android.material.R.attr.colorPrimary, attrVal, true)) attrVal.data
-        else ContextCompat.getColor(ctx, R.color.dev_info_label)
-        return TextView(ctx).apply {
-            text = title
-            textSize = 14f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(primaryColor)
-            setPadding(0, dp(16f), 0, dp(6f))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-    }
-
     private fun showDeveloperMessage(message: String) {
         val v = view ?: return
         Snackbar.make(v, message, Snackbar.LENGTH_SHORT).show()
@@ -1193,46 +1155,96 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         else 0x30808080
     }
 
-    // Helpers restored (table builders, formatting, dp conversion)
-    private fun DevelopmentFragment.dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
-
-    private fun DevelopmentFragment.buildInfoTable(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
-        orientation = LinearLayout.VERTICAL
-        setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_section_bg))
-        elevation = 1f
+    /** Resolves any Material/theme color attribute to an ARGB int. */
+    private fun resolveAttrColor(ctx: Context, attr: Int): Int {
+        val tv = TypedValue()
+        return if (ctx.theme.resolveAttribute(attr, tv, true)) tv.data
+        else 0xFF808080.toInt()
     }
 
-    private fun LinearLayout.addRow(label: String, value: String, index: Int) {
-        val ctx = context
+    /**
+     * Builds a Material 3 outlined card containing a primary-colored section header and a
+     * vertical LinearLayout for info rows. Returns the card (to add to a parent) and the
+     * inner row container (to add rows into).
+     */
+    private fun buildInfoCard(ctx: Context, sectionTitle: String): Pair<com.google.android.material.card.MaterialCardView, LinearLayout> {
+        val density = ctx.resources.displayMetrics.density
+        fun dp(v: Float) = (v * density + 0.5f).toInt()
+        val rowContainer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        val header = TextView(ctx).apply {
+            text = sectionTitle
+            textSize = 14f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorPrimary))
+            setPadding(dp(20f), dp(16f), dp(20f), dp(8f))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        val cardContent = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            addView(header)
+            addView(rowContainer)
+        }
+        val card = com.google.android.material.card.MaterialCardView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(16f) }
+            setCardBackgroundColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorSurface))
+            strokeColor = resolveAttrColor(ctx, com.google.android.material.R.attr.colorOutlineVariant)
+            strokeWidth = dp(1f)
+            radius = dp(12f).toFloat()
+            cardElevation = 0f
+            addView(cardContent)
+        }
+        return card to rowContainer
+    }
+
+    /**
+     * Adds a label/value info row to this LinearLayout using M3 theme colors and dp-based
+     * padding. Returns the value TextView so callers can update or color-code it.
+     */
+    private fun LinearLayout.addInfoRow(ctx: Context, label: String, value: String, isLast: Boolean = false): TextView {
+        val density = ctx.resources.displayMetrics.density
+        fun dp(v: Float) = (v * density + 0.5f).toInt()
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 8, 12, 8)
-            if (index % 2 == 1) setBackgroundColor(ContextCompat.getColor(ctx, R.color.dev_info_row_alt))
+            minimumHeight = dp(48f)
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(20f), dp(12f), dp(20f), dp(12f))
         }
         val labelView = TextView(ctx).apply {
             text = label
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
             textSize = 13f
             setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurface))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f)
         }
         val valueView = TextView(ctx).apply {
             text = value
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_value))
             textSize = 13f
+            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 3f)
             setTextIsSelectable(true)
-            ellipsize = android.text.TextUtils.TruncateAt.END
             maxLines = 4
         }
         row.addView(labelView)
         row.addView(valueView)
         addView(row)
-        addView(View(ctx).apply {
+        if (!isLast) addView(View(ctx).apply {
             setBackgroundColor(dividerColor(ctx))
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply {
+                marginStart = dp(20f)
+            }
         })
+        return valueView
     }
+
+    // Helpers
+    private fun DevelopmentFragment.dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
     private fun DevelopmentFragment.formatTime(ts: Long): String {
         if (ts <= 0) return getString(R.string.dev_value_unknown)

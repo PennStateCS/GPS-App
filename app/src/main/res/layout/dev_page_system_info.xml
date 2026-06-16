@@ -5,38 +5,34 @@
     android:orientation="vertical"
     android:paddingTop="24dp"
     android:paddingBottom="24dp"
-    android:paddingStart="20dp"
-    android:paddingEnd="20dp">
+    android:paddingStart="@dimen/settings_content_padding_h"
+    android:paddingEnd="@dimen/settings_content_padding_h">
 
-    <!-- App Info Section -->
+    <!-- Page title -->
     <TextView
-        android:id="@+id/appInfoHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/dev_section_app_info"
-        android:textAppearance="?attr/textAppearanceLabelLarge"
-        android:textColor="?attr/colorPrimary"
-        android:paddingBottom="8dp" />
+        android:text="@string/dev_page_title_system_info"
+        android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
-    <!-- App info table container - populated programmatically -->
+    <!-- Page subtitle -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="20dp"
+        android:alpha="0.7"
+        android:text="@string/dev_page_subtitle_system_info"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+    <!-- App info card container - populated programmatically -->
     <LinearLayout
         android:id="@+id/appInfoTableContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="24dp"
         android:orientation="vertical" />
 
-    <!-- Device Info Section -->
-    <TextView
-        android:id="@+id/deviceInfoHeader"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/dev_section_device_info"
-        android:textAppearance="?attr/textAppearanceLabelLarge"
-        android:textColor="?attr/colorPrimary"
-        android:paddingBottom="8dp" />
-
-    <!-- Device info table container - populated programmatically -->
+    <!-- Device info card container - populated programmatically -->
     <LinearLayout
         android:id="@+id/deviceInfoTableContainer"
         android:layout_width="match_parent"

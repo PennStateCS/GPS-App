@@ -75,6 +75,50 @@
     <color name="md_surface_container_highest">#E3E7ED</color> <!-- chips / pressed state     -->
 
     <!-- ══════════════════════════════════════════════════════════════════════
+         APP SEMANTIC COLORS  (light)
+         Named app_* so they can be overridden in values-night/colors.xml and
+         referenced from themes.xml with no hard-coded hex values in themes.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!-- Top app bar – deep navy brand bar -->
+    <color name="app_top_app_bar">#0B1F33</color>
+    <color name="app_on_top_app_bar">#FFFFFF</color>
+
+    <!-- GNSS/source status strip – connected-but-distinct navy band -->
+    <color name="app_status_strip">#0E2A44</color>
+    <color name="app_on_status_strip">#B8D0E8</color>
+
+    <!-- Primary – professional blue (#155DA8) -->
+    <color name="app_primary">#155DA8</color>
+    <color name="app_on_primary">#FFFFFF</color>
+    <color name="app_primary_container">#D7E8FF</color>
+    <color name="app_on_primary_container">#001B44</color>
+
+    <!-- Secondary – GNSS/success teal (#00796B) -->
+    <color name="app_secondary">#00796B</color>
+    <color name="app_on_secondary">#FFFFFF</color>
+    <color name="app_secondary_container">#BFEDE6</color>
+    <color name="app_on_secondary_container">#002019</color>
+
+    <!-- Background – soft neutral blue-gray -->
+    <color name="app_background">#F4F7FA</color>
+    <color name="app_on_background">#1A1C1E</color>
+
+    <!-- Surface / cards -->
+    <color name="app_surface">#FFFFFF</color>
+    <color name="app_on_surface">#1A1C1E</color>
+    <color name="app_surface_variant">#EAF0F6</color>
+    <color name="app_on_surface_variant">#41484D</color>
+
+    <!-- Surface containers (dropdowns, nav drawer, stat tiles) -->
+    <color name="app_surface_container">#EAF0F6</color>
+    <color name="app_surface_container_high">#DFE7F0</color>
+
+    <!-- Outline -->
+    <color name="app_outline">#71787E</color>
+    <color name="app_outline_variant">#C5CED8</color>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
          APP-SPECIFIC SEMANTIC COLORS
          These are referenced by name from layouts, adapters, or Kotlin code.
          Hardcoded page/layout colors will migrate to ?attr/* in a later pass.

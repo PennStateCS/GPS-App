@@ -9,17 +9,17 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorPrimaryContainer"
-        app:liftOnScroll="true">
+        android:background="@color/app_top_app_bar"
+        app:liftOnScroll="false">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="@dimen/toolbar_height"
-            android:background="?attr/colorPrimaryContainer"
-            app:titleTextColor="?attr/colorOnPrimaryContainer"
+            android:background="@color/app_top_app_bar"
+            app:titleTextColor="@color/app_on_top_app_bar"
             app:titleTextAppearance="?attr/textAppearanceTitleMedium"
-            app:navigationIconTint="?attr/colorOnPrimaryContainer"
+            app:navigationIconTint="@color/app_on_top_app_bar"
             app:popupTheme="@style/Theme.SurveyingApp.PopupOverlay" />
 
     </com.google.android.material.appbar.AppBarLayout>

@@ -10,6 +10,26 @@
     <string name="lighting_off">Enable Light</string>
 
 
+    <!-- Developer Tools page titles and subtitles -->
+    <string name="dev_page_title_system_info">System Info</string>
+    <string name="dev_page_subtitle_system_info">App, device, and runtime information useful for debugging.</string>
+    <string name="dev_page_title_permissions">Permissions</string>
+    <string name="dev_page_subtitle_permissions">Current permission status for location, camera, storage, and system features.</string>
+    <string name="dev_page_title_ar_debug">AR Debug</string>
+    <string name="dev_page_subtitle_ar_debug">ARCore, geospatial, anchors, and rendering diagnostics.</string>
+    <string name="dev_page_title_maps_debug">Maps Debug</string>
+    <string name="dev_page_subtitle_maps_debug">Map provider, Play Services, and location display diagnostics.</string>
+    <string name="dev_page_title_coordinates">Coordinates</string>
+    <string name="dev_page_subtitle_coordinates">Stored coordinate and model-link debugging tools.</string>
+    <string name="dev_page_title_gnss">GNSS</string>
+    <string name="dev_page_subtitle_gnss">Receiver state, NMEA flow, fix quality, and satellite diagnostics.</string>
+    <string name="dev_section_actions">Actions</string>
+    <string name="dev_section_api_key">API Key</string>
+    <string name="dev_section_ar_diagnostics">AR Diagnostics</string>
+    <string name="dev_section_maps_diagnostics">Maps Diagnostics</string>
+    <string name="dev_section_permission_status">Permission Status</string>
+    <string name="dev_perm_open_settings">Open App Settings</string>
+
     <!-- Strings required by layouts -->
     <string name="icon_content_desc">Icon</string>
     <string name="dev_coord_generate">Generate Coordinates</string>
