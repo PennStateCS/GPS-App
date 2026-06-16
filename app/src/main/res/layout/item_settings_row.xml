@@ -35,7 +35,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textColor="?attr/colorOnSurface"
+            android:textColor="?attr/colorOnSurface" />
 
         <TextView
             android:id="@+id/setting_summary"
