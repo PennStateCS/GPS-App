@@ -36,7 +36,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.databinding.FragmentCoordinatesBinding
-import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.google.android.material.snackbar.Snackbar
 import com.example.surveyingapp.SurveyingApp
 import kotlinx.coroutines.flow.first
@@ -252,8 +251,8 @@ class CoordinatesFragment : Fragment() {
             }
         }
 
-        // Preferences for UI display toggles
-        prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        // Preferences for UI-only display toggles (not app settings)
+        prefs = requireContext().getSharedPreferences("CoordinatesFragmentPrefs", Context.MODE_PRIVATE)
 
         // Observe models so the list can show model thumbnails for coordinates that use a model icon
         viewLifecycleOwner.lifecycleScope.launch {
@@ -286,7 +285,7 @@ class CoordinatesFragment : Fragment() {
             }
 
             try {
-                val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+                val highAcc = runCatching { SurveyingApp.settingsRepo.gnssReceiverSettings.first().highAccuracy }.getOrDefault(true)
                 val dialog = AddCoordinateDialogFragment(
                     highAccuracy = highAcc,
                     dbModels = models
