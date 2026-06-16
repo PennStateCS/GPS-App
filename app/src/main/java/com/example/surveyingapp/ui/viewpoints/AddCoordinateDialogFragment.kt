@@ -29,7 +29,7 @@ import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.LocationSourceType
-import com.example.surveyingapp.util.GeoProjection
+import com.example.surveyingapp.util.UtmConverter
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -191,10 +191,10 @@ class AddCoordinateDialogFragment(
                 val color = colors[colorSpinner.selectedItemPosition].second
 
                 // Compute UTM projection from current lat/lon
-                val utm = try { GeoProjection.wgs84ToUtm(latitude, longitude) } catch (_: Exception) { null }
+                val utm = try { UtmConverter.latLonToUtm(latitude, longitude) } catch (_: Exception) { null }
                 val eastingVal = utm?.easting
                 val northingVal = utm?.northing
-                val utmZoneVal = utm?.zoneString
+                val utmZoneVal = utm?.utmZone
 
                 val point = Coordinate(
                     id = UUID.randomUUID().toString(),
