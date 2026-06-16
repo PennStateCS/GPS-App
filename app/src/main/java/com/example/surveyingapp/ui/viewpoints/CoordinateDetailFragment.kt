@@ -73,6 +73,8 @@ class CoordinateDetailFragment : Fragment() {
     private var lastCoordinate: Coordinate? = null
     private var textDate: TextView? = null
 
+    private var showAccuracyIndicators: Boolean = true
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -228,7 +230,10 @@ class CoordinateDetailFragment : Fragment() {
         view.findViewById<View>(R.id.btn_edit_coordinate)?.setOnClickListener { launchEditDialog() }
 
         currentId = arguments?.getString(ARG_ID)
-        loadCurrentId()
+        viewLifecycleOwner.lifecycleScope.launch {
+            showAccuracyIndicators = SurveyingApp.settingsRepo.coordinateDisplaySettings.first().showAccuracyIndicators
+            loadCurrentId()
+        }
     }
 
     private fun loadCurrentId() {
@@ -295,11 +300,16 @@ class CoordinateDetailFragment : Fragment() {
         textRtk?.text = c.rtkStatus?.ifBlank { "--" } ?: "--"
         textHdop?.text = c.hdop?.let { String.format(Locale.US, "%.1f", it) } ?: "--"
 
-        // Accuracy (values only H/V)
-        val accVals = mutableListOf<String>()
-        c.horizontalAccuracyM?.let { accVals += String.format(Locale.US, "%.2f m", it) }
-        c.verticalAccuracyM?.let { accVals += String.format(Locale.US, "%.2f m", it) }
-        textAccuracy?.text = if (accVals.isNotEmpty()) accVals.joinToString(" / ") else "--"
+        // Accuracy (values only H/V) — gated by showAccuracyIndicators setting
+        if (showAccuracyIndicators) {
+            textAccuracy?.visibility = View.VISIBLE
+            val accVals = mutableListOf<String>()
+            c.horizontalAccuracyM?.let { accVals += String.format(Locale.US, "%.2f m", it) }
+            c.verticalAccuracyM?.let { accVals += String.format(Locale.US, "%.2f m", it) }
+            textAccuracy?.text = if (accVals.isNotEmpty()) accVals.joinToString(" / ") else "--"
+        } else {
+            textAccuracy?.visibility = View.GONE
+        }
 
         // Satellites
         textSats?.text = c.satsUsed?.toString() ?: "--"
@@ -321,7 +331,7 @@ class CoordinateDetailFragment : Fragment() {
         // Removed: Std Dev and Averaging rows
 
         applyRtkBadge(c)
-        applyAccuracyBadge(c)
+        if (showAccuracyIndicators) applyAccuracyBadge(c) else badgeAccuracy?.visibility = View.GONE
         rowBadges?.visibility = if ((badgeRtk?.visibility == View.VISIBLE) || (badgeAccuracy?.visibility == View.VISIBLE)) View.VISIBLE else View.GONE
     }
 
