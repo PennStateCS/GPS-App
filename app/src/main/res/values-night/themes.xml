@@ -45,7 +45,7 @@
         <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
         <item name="colorSurfaceContainer">@color/app_surface_container</item>
         <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
-        <item name="colorSurfaceContainerHighest">@color/md_surface_container_highest</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
 
         <!-- ── Background (dark) ──────────────────────────────────────────── -->
         <item name="android:colorBackground">@color/app_background</item>

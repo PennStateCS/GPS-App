@@ -113,6 +113,7 @@
     <!-- Surface containers (dropdowns, nav drawer, stat tiles) -->
     <color name="app_surface_container">#EAF0F6</color>
     <color name="app_surface_container_high">#DFE7F0</color>
+    <color name="app_surface_container_highest">#D4DCE8</color>
 
     <!-- Outline -->
     <color name="app_outline">#71787E</color>

@@ -50,7 +50,7 @@
         <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
         <item name="colorSurfaceContainer">@color/app_surface_container</item>
         <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
-        <item name="colorSurfaceContainerHighest">@color/md_surface_container_highest</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
 
         <!-- ── Background ─────────────────────────────────────────────────── -->
         <item name="android:colorBackground">@color/app_background</item>
@@ -97,9 +97,36 @@
     <style name="Theme.SurveyingApp.AppBarOverlay" parent="ThemeOverlay.Material3.Dark" />
 
     <!--
-        Popup overlay for light-themed popup menus anchored to a dark toolbar.
-        Replaced ThemeOverlay.AppCompat.Light with the M3 equivalent.
+        Popup overlay for the overflow menu anchored to the dark-navy toolbar.
+        Parent provides the Light framing; the overrides below replace every
+        purple-prone color with the app's neutral blue-gray palette so the
+        popup background, text, and ripple states are all purple-free.
+        @color/app_* references resolve to their values-night variants automatically
+        when the device is in dark mode, giving a dark-neutral popup in dark mode.
     -->
-    <style name="Theme.SurveyingApp.PopupOverlay" parent="ThemeOverlay.Material3.Light" />
+    <style name="Theme.SurveyingApp.PopupOverlay" parent="ThemeOverlay.Material3.Light">
+        <!-- Primary / secondary – prevents purple selected/checked state -->
+        <item name="colorPrimary">@color/app_primary</item>
+        <item name="colorOnPrimary">@color/app_on_primary</item>
+        <item name="colorPrimaryContainer">@color/app_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/app_on_primary_container</item>
+        <item name="colorSecondary">@color/app_secondary</item>
+        <item name="colorSecondaryContainer">@color/app_primary_container</item>
+        <!-- Surface / popup background -->
+        <item name="colorSurface">@color/app_surface</item>
+        <item name="colorOnSurface">@color/app_on_surface</item>
+        <item name="colorSurfaceVariant">@color/app_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
+        <item name="colorSurfaceContainer">@color/app_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
+        <!-- Window background used by older popup path and AppCompat fallback -->
+        <item name="android:colorBackground">@color/app_surface_container_high</item>
+        <!-- Ripple / pressed overlay – 10 % primary blue -->
+        <item name="colorControlHighlight">#1A155DA8</item>
+        <!-- Text -->
+        <item name="android:textColorPrimary">@color/app_on_surface</item>
+        <item name="android:textColorSecondary">@color/app_on_surface_variant</item>
+    </style>
 
 </resources>
