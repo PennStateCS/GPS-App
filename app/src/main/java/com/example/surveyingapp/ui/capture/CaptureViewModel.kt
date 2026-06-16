@@ -3,6 +3,7 @@ package com.example.surveyingapp.ui.capture
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.domain.model.CoordinateFactory
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -17,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import java.time.Duration
+import java.util.UUID
 
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
@@ -100,32 +101,20 @@ class CaptureViewModel @Inject constructor(
         val finished = (state.value as? ObservationSession.State.Complete)?.result ?: return
 
         val src = SurveyingApp.settingsRepo.locationSource.first()
-        val providerEnum = when (src) {
-            LocationSourceType.INTERNAL -> Provider.INTERNAL
-            LocationSourceType.EXTERNAL -> Provider.RS2_EXTERNAL
+        val provider = when (src) {
+            LocationSourceType.INTERNAL  -> Provider.INTERNAL
+            LocationSourceType.EXTERNAL  -> Provider.RS2_EXTERNAL
             LocationSourceType.SIMULATOR -> Provider.OTHER
         }
 
-        // Create coordinate from capture result including quality metadata
-        val coordinate = com.example.surveyingapp.domain.model.Coordinate(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            latitude = finished.latDeg,
-            longitude = finished.lonDeg,
-            altitude = finished.altEllipsoidalM, // non-null in CaptureResult
-            timestamp = System.currentTimeMillis(),
-            icon = iconId,
-            color = color,
-            provider = providerEnum.name,
-            rtkStatus = finished.rtkStatus?.name,
-            satsUsed = finished.satsUsed,
-            hdop = finished.hdop,
-            horizontalAccuracyM = finished.hAccM,
-            verticalAccuracyM = finished.vAccM,
-            correctionAgeS = finished.diffAgeS,
-            averagedSamples = finished.samples,
-            averageDurationMs = Duration.between(finished.startedAt, finished.endedAt).toMillis(),
-            note = note
+        val coordinate = CoordinateFactory.fromCaptureResult(
+            id       = UUID.randomUUID().toString(),
+            name     = name,
+            note     = note,
+            color    = color,
+            iconId   = iconId,
+            provider = provider,
+            result   = finished
         )
 
         coordinateRepository.insert(coordinate)
