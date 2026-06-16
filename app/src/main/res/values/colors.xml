@@ -127,6 +127,16 @@
     <color name="chip_settings_bg">@color/md_primary_40</color>
     <color name="chip_ripple_overlay">#40FFFFFF</color>
 
+    <!-- AR / Map camera overlay backgrounds ────────────────────────────── -->
+    <!-- These are intentional non-theme values used over a camera preview.  -->
+    <color name="ar_overlay_bg_dark">#CC000000</color>    <!-- 80 % black – AR toolbar card -->
+    <color name="ar_overlay_bg_medium">#66000000</color>  <!-- 40 % black – status strip -->
+    <color name="ar_overlay_bg_heavy">#BB000000</color>   <!-- 73 % black – alert strip -->
+    <color name="ar_overlay_divider">#33FFFFFF</color>    <!-- 20 % white – separator line -->
+    <color name="ar_overlay_text">#FFFFFFFF</color>       <!-- pure white – primary text -->
+    <color name="ar_overlay_alert">#FFFFC107</color>      <!-- amber – alert/debug text -->
+    <color name="map_overlay_bg">#AAFFFFFF</color>        <!-- 67 % white – map panel -->
+
     <!-- GNSS / satellite chart ──────────────────────────────────────────── -->
     <color name="chart_axis">#BDBDBD</color>
     <color name="chart_grid">#E0E0E0</color>

@@ -1,0 +1,395 @@
+<resources>
+
+    <!--
+    ╔══════════════════════════════════════════════════════════════════════════╗
+    ║  SurveyingApp  –  Shared Style System                                   ║
+    ║                                                                          ║
+    ║  All styles are organised into five sections:                            ║
+    ║    1. Cards                                                              ║
+    ║    2. Text appearances                                                   ║
+    ║    3. Buttons                                                            ║
+    ║    4. Settings page helpers                                              ║
+    ║    5. AR / Map overlay styles                                            ║
+    ║                                                                          ║
+    ║  Normal screens must use M3 theme attributes (?attr/color*, ?attr/text*)║
+    ║  AR/map overlays may use intentional white/black values but only via    ║
+    ║  these centralized styles so the values live in one place.               ║
+    ╚══════════════════════════════════════════════════════════════════════════╝
+    -->
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         1.  CARDS
+         Usage: add  style="@style/Widget.App.Card.*"  to MaterialCardView.
+         All card styles follow M3 "outlined" pattern (stroke, zero elevation)
+         which is appropriate for this data-dense field app.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!--
+        Standard content card.
+        Use for: settings sections, info panels, coordinate lists, data groups.
+        Corner radius 12 dp matches the settings pages that already exist.
+    -->
+    <style name="Widget.App.Card.Outlined" parent="Widget.Material3.CardView.Outlined">
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeColor">?attr/colorOutlineVariant</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+    </style>
+
+    <!--
+        Slightly elevated card for emphasis (dialogs, FAB-adjacent panels).
+        Use for: the "Add Coordinate" dialog body, pinned coordinate cards.
+    -->
+    <style name="Widget.App.Card.Elevated" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">2dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="cardBackgroundColor">?attr/colorSurface</item>
+    </style>
+
+    <!--
+        Tonal / filled card – uses surfaceVariant background.
+        Use for: summary/stat tiles on the home screen, secondary info panels.
+    -->
+    <style name="Widget.App.Card.Filled" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceVariant</item>
+    </style>
+
+    <!--
+        Selected state card – outlined with primary color border.
+        Use for: the currently-selected coordinate in the list.
+        Apply programmatically by swapping style or setting strokeColor in code.
+    -->
+    <style name="Widget.App.Card.Outlined.Selected" parent="Widget.App.Card.Outlined">
+        <item name="strokeColor">?attr/colorPrimary</item>
+        <item name="strokeWidth">2dp</item>
+    </style>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         2.  TEXT APPEARANCES
+         Usage: android:textAppearance="@style/TextAppearance.App.*"
+         Each style delegates to the M3 type scale parent so font metrics,
+         letter spacing, and line height come from the theme; only semantic
+         color or weight overrides are added here.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!--
+        Full-screen page heading (e.g. "Settings", "Coordinates").
+        M3 equivalent: HeadlineSmall  (24 sp, weight 400).
+        Maps directly to ?attr/textAppearanceHeadlineSmall.
+        Use for: the top title TextView in every content/fragment layout.
+    -->
+    <style name="TextAppearance.App.PageTitle" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textColor">?attr/colorOnBackground</item>
+    </style>
+
+    <!--
+        One-line page description below the title.
+        M3 equivalent: BodyMedium  (14 sp, weight 400).
+        Use for: the alpha=0.7 subtitle beneath page titles.
+    -->
+    <style name="TextAppearance.App.PageSubtitle" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!--
+        Section divider heading (bold section breaks within a page).
+        M3 equivalent: TitleMedium  (16 sp, weight 500).
+        Use for: major section labels in settings and coordinate detail.
+    -->
+    <style name="TextAppearance.App.SectionTitle" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!--
+        Primary label inside a card's header row, coloured with primary.
+        M3 equivalent: LabelLarge  (14 sp, weight 500).
+        Use for: the coloured card-section labels already present in settings
+                 (e.g. "GNSS Capture", "Live Diagnostics", "Location Source").
+    -->
+    <style name="TextAppearance.App.CardSectionLabel" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">?attr/colorPrimary</item>
+    </style>
+
+    <!--
+        Primary body text – main row labels in lists and settings rows.
+        M3 equivalent: BodyLarge  (16 sp, weight 400).
+        Replaces: TextAppearance.AppCompat.Body1 in row label positions.
+    -->
+    <style name="TextAppearance.App.BodyPrimary" parent="TextAppearance.Material3.BodyLarge">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!--
+        Secondary body text – descriptions, values, secondary lines.
+        M3 equivalent: BodyMedium  (14 sp, weight 400).
+        Replaces: TextAppearance.AppCompat.Body1 in value/secondary positions.
+    -->
+    <style name="TextAppearance.App.BodySecondary" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <!--
+        Supporting / hint text beneath a primary label.
+        M3 equivalent: BodySmall  (12 sp, weight 400).
+        Use for: the description/caption lines in settings rows (alpha=0.7 lines).
+    -->
+    <style name="TextAppearance.App.Supporting" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!--
+        Coordinate / data value display.
+        M3 equivalent: BodyMedium, slightly reduced letter spacing for tabular data.
+        Use for: every value cell in the coordinate detail table.
+        Replaces: TextAppearance.AppCompat.Medium + @dimen/coord_table_text_size
+                  across all 25+ rows in fragment_coordinate_detail.xml.
+    -->
+    <style name="TextAppearance.App.DataValue" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:letterSpacing">0</item>
+    </style>
+
+    <!--
+        Data label – the left-column key name in a key/value table.
+        M3 equivalent: LabelMedium  (12 sp, weight 500).
+        Use for: "Latitude", "Longitude", "HDOP" etc. in coordinate detail.
+    -->
+    <style name="TextAppearance.App.DataLabel" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+    <!--
+        Status / badge label – compact uppercase chips and inline status text.
+        M3 equivalent: LabelSmall  (11 sp, weight 500).
+        Use for: RTK status badges, accuracy badges, fix-quality chips.
+    -->
+    <style name="TextAppearance.App.StatusLabel" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textColor">?attr/colorOnSurface</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!--
+        Small metadata text – timestamps, IDs, secondary counts.
+        M3 equivalent: BodySmall  (12 sp, weight 400).
+        Use for: capture timestamps, satellite counts, correction ages.
+    -->
+    <style name="TextAppearance.App.Metadata" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+    </style>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         3.  BUTTONS
+         Usage: style="@style/Widget.App.Button.*" on MaterialButton.
+         All button styles extend official M3 base styles so ripple, shape,
+         and state-layer behaviour come from the theme automatically.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!--
+        Primary action – filled, full-width save / confirm buttons.
+        Use for: all "Save" buttons at the bottom of settings pages,
+                 "Add" / "Confirm" primary CTAs.
+        Current layouts: btn_save_ar_display, btn_save_diagnostics,
+                         btn_save_coordinate_display, btn_save_gnss_capture.
+    -->
+    <style name="Widget.App.Button.Primary" parent="Widget.Material3.Button">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:layout_marginTop">8dp</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <!--
+        Secondary action – outlined, for less prominent actions.
+        Use for: Export / Import / Refresh / Cancel buttons in data settings,
+                 the "Choose Model" icon-picker button in dialog_add_point.xml.
+    -->
+    <style name="Widget.App.Button.Secondary" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <!--
+        Text-only button – lowest emphasis, no background.
+        Use for: "Learn more", "Advanced options", inline navigation links.
+    -->
+    <style name="Widget.App.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:minHeight">40dp</item>
+    </style>
+
+    <!--
+        Tonal button – medium emphasis, uses secondaryContainer colour.
+        Use for: the "Disconnect" button in location settings (currently uses
+                 Widget.Material3.Button.TonalButton directly).
+    -->
+    <style name="Widget.App.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:minHeight">48dp</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <!--
+        Danger / destructive action – filled with error colour role.
+        Use for: "Delete coordinate", "Clear all data", "Factory reset".
+        No current layout uses this yet – add when building destructive flows.
+    -->
+    <style name="Widget.App.Button.Danger" parent="Widget.Material3.Button">
+        <item name="backgroundTint">?attr/colorError</item>
+        <item name="android:textColor">?attr/colorOnError</item>
+        <item name="iconTint">?attr/colorOnError</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <!--
+        Outlined danger – lower emphasis destructive (e.g. "Remove from list").
+    -->
+    <style name="Widget.App.Button.Danger.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="strokeColor">?attr/colorError</item>
+        <item name="android:textColor">?attr/colorError</item>
+        <item name="iconTint">?attr/colorError</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         4.  SETTINGS PAGE HELPERS
+         Centralise the visual contract for the settings two-pane layout so
+         individual content_settings_*.xml files share identical card/label
+         anatomy without repeating attribute values.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!--
+        The standard card used in every settings content page.
+        Identical to Widget.App.Card.Outlined; aliased here so settings files
+        can opt into this semantic name and be migrated independently.
+    -->
+    <style name="Widget.App.Settings.Card" parent="Widget.App.Card.Outlined" />
+
+    <!--
+        Save button anchored to the bottom of a settings content page.
+        Inherits Widget.App.Button.Primary; aliased for discoverability.
+    -->
+    <style name="Widget.App.Settings.SaveButton" parent="Widget.App.Button.Primary" />
+
+    <!--
+        Text appearance for the coloured section header inside a settings card
+        (e.g. "GNSS Capture", "Live Diagnostics").
+        Colour comes from ?attr/colorPrimary so it adapts to theme changes.
+    -->
+    <style name="TextAppearance.App.Settings.CardHeader" parent="TextAppearance.App.CardSectionLabel" />
+
+    <!--
+        Primary label in a settings row (the option name).
+    -->
+    <style name="TextAppearance.App.Settings.RowLabel" parent="TextAppearance.App.BodyPrimary" />
+
+    <!--
+        Supporting text in a settings row (the option description).
+    -->
+    <style name="TextAppearance.App.Settings.RowSupporting" parent="TextAppearance.App.Supporting" />
+
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         5.  AR / MAP OVERLAY STYLES
+         These overlays intentionally use dark semi-transparent backgrounds and
+         white text for camera-view legibility. These are NOT M3 surface colours.
+         Values are centralised here so every AR/map file can reference a style
+         name rather than repeating raw hex strings.
+
+         Do NOT apply these styles to normal (non-camera) app screens.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!--
+        Floating dark card panel in the AR camera view.
+        Current usage: the toolbar/filter card in fragment_open_in_ar.xml
+        (cardBackgroundColor="#CC000000", elevation=8dp, radius=14dp).
+    -->
+    <style name="Widget.App.AR.Card" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">#CC000000</item>
+        <item name="cardCornerRadius">14dp</item>
+        <item name="cardElevation">8dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!--
+        Semi-opaque dark status strip across the bottom of the AR/map view.
+        Not a card – apply to a plain View or LinearLayout via android:background.
+        Used for the "debug" and "altitude mode" strips in fragment_open_in_ar.xml
+        (#66000000 = 40 % black).
+        Apply: android:background="@style/..." does not work for backgrounds;
+               instead apply via a <layer-list> drawable or reference the color
+               @color/ar_overlay_bg_medium defined below.
+    -->
+    <!-- Colour tokens for AR backgrounds – reference these from layouts
+         instead of inline hex so they are all changed from one place.          -->
+
+    <!--
+        Primary text in an AR camera overlay (heading, distance, status).
+        12 sp white, used on any dark semi-transparent background.
+        Use for: the altitude-mode label, filter button labels in AR.
+    -->
+    <style name="TextAppearance.App.AR.Overlay" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">#FFFFFFFF</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!--
+        Small data label in an AR camera overlay (sub-values, counts).
+        9 sp white monospace-feel for tight data rows inside the AR card.
+        Use for: the per-button data lines inside the AR toolbar card.
+    -->
+    <style name="TextAppearance.App.AR.OverlaySmall" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textColor">#FFFFFFFF</item>
+        <item name="android:textSize">9sp</item>
+    </style>
+
+    <!--
+        Status / alert text in the AR view – amber on very dark background.
+        Used for the "debug overlay" amber-text strip (#FFFF00 on #BB000000).
+        12 sp, high-visibility amber.
+    -->
+    <style name="TextAppearance.App.AR.Alert" parent="TextAppearance.Material3.LabelMedium">
+        <item name="android:textColor">#FFFFC107</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!--
+        Map overlay card (the coordinate info panel in fragment_render_map.xml).
+        Uses a light semi-opaque white surface rather than the dark AR card.
+        Apply to the outer ConstraintLayout or a wrapping card.
+    -->
+    <style name="Widget.App.Map.OverlayCard" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardBackgroundColor">#AAFFFFFF</item>
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">4dp</item>
+        <item name="strokeWidth">0dp</item>
+    </style>
+
+    <!--
+        Primary text inside the map overlay panel.
+        Uses dark-on-light (same as normal app) since the map card background
+        is near-white.
+        Use for: coordinate name, primary distance, coordinate values.
+    -->
+    <style name="TextAppearance.App.Map.OverlayPrimary" parent="TextAppearance.Material3.TitleSmall">
+        <item name="android:textColor">#FF1A1C1E</item>
+    </style>
+
+    <!--
+        Secondary text inside the map overlay panel.
+        Use for: sub-labels, distances, timestamps beneath primary text.
+    -->
+    <style name="TextAppearance.App.Map.OverlaySecondary" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textColor">#FF41484D</item>
+    </style>
+
+</resources>
