@@ -60,5 +60,9 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">@color/app_background</item>
 
+        <!-- ── Overflow / popup menu (dark) ──────────────────────────────── -->
+        <item name="actionOverflowMenuStyle">@style/Widget.App.OverflowMenu</item>
+        <item name="popupMenuStyle">@style/Widget.App.OverflowMenu</item>
+
     </style>
 </resources>

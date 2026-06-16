@@ -66,6 +66,12 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">@color/app_background</item>
 
+        <!-- ── Overflow / popup menu ──────────────────────────────────────── -->
+        <!-- Belt-and-suspenders: ensures the overflow popup uses our          -->
+        <!-- blue-gray surface regardless of which M3 rendering path is taken. -->
+        <item name="actionOverflowMenuStyle">@style/Widget.App.OverflowMenu</item>
+        <item name="popupMenuStyle">@style/Widget.App.OverflowMenu</item>
+
     </style>
 
     <!--
@@ -74,6 +80,16 @@
         manifest entries that reference it continue to resolve.
     -->
     <style name="Theme.SurveyingApp.NoActionBar" />
+
+    <!--
+        Overflow popup menu background — neutral blue-gray, no purple.
+        Referenced from both Theme.SurveyingApp and Theme.SurveyingApp.PopupOverlay.
+        Using android:popupBackground as a belt-and-suspenders override in case
+        the M3 popup rendering path ignores colorSurfaceContainerHigh.
+    -->
+    <style name="Widget.App.OverflowMenu" parent="Widget.Material3.PopupMenu">
+        <item name="android:popupBackground">@color/app_surface_container_high</item>
+    </style>
 
     <!--
         Used by ThumbnailCaptureActivity — completely invisible to the user.

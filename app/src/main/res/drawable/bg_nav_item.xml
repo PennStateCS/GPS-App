@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="@color/nav_selected_bg">
+    android:color="@color/nav_ripple_color">
 
     <item android:id="@android:id/mask">
         <shape android:shape="rectangle">
