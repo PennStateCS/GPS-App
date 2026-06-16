@@ -369,31 +369,7 @@
                     app:cardCornerRadius="12dp"
                     app:cardElevation="0dp"
                     app:strokeColor="?attr/colorSecondaryContainer"
-                    app:strokeWidth="1dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="start"
-                        android:orientation="horizontal"
-                        android:padding="16dp">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginEnd="12dp"
-                            android:layout_marginTop="2dp"
-                            android:text="ℹ"
-                            android:textAppearance="@style/TextAppearance.App.SectionTitle" />
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Advanced setting. Adjusts the visual scale of imported 3D models. Does not change the saved coordinate location."
-                            android:textAppearance="?attr/textAppearanceBodySmall" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
+                    app:strokeWidth="1dp"/>
 
                 <!-- Model Scale row -->
                 <LinearLayout
