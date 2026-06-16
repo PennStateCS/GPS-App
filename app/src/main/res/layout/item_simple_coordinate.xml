@@ -77,7 +77,7 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/edit_coordinate"
         android:src="@drawable/ic_edit_blue"
-        app:tint="#0D47A1" />
+        app:tint="?attr/colorPrimary" />
 
     <!-- Delete (trash) button -->
     <ImageButton
@@ -89,5 +89,5 @@
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/delete_coordinate"
         android:src="@drawable/ic_delete_red"
-        app:tint="#B71C1C" />
+        app:tint="?attr/colorError" />
 </LinearLayout>

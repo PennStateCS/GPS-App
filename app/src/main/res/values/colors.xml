@@ -65,6 +65,15 @@
     <color name="md_neutral_var_80">#C1C8CE</color>
     <color name="md_neutral_var_90">#DDE3EA</color>
 
+    <!-- Surface Container family (light) – neutral blue-gray, overrides M3 purple defaults -->
+    <!-- Steps from near-white (lowest) to lightest visible container (highest).            -->
+    <!-- Used by dropdowns, dialogs, nav drawer, bottom sheets, and other M3 surfaces.      -->
+    <color name="md_surface_container_lowest">#FFFFFF</color>  <!-- pure white elevated card -->
+    <color name="md_surface_container_low">#F5F7FB</color>     <!-- barely-there blue-gray   -->
+    <color name="md_surface_container">#EFF2F6</color>         <!-- standard container        -->
+    <color name="md_surface_container_high">#E9EDF2</color>    <!-- dropdown / menu surface   -->
+    <color name="md_surface_container_highest">#E3E7ED</color> <!-- chips / pressed state     -->
+
     <!-- ══════════════════════════════════════════════════════════════════════
          APP-SPECIFIC SEMANTIC COLORS
          These are referenced by name from layouts, adapters, or Kotlin code.
@@ -119,6 +128,15 @@
 
     <!-- Card outlines ───────────────────────────────────────────────────── -->
     <color name="card_stroke_light">@color/md_neutral_var_80</color>
+
+    <!-- Navigation drawer selected pill ───────────────────────────────────── -->
+    <!-- Night override in values-night/colors.xml                             -->
+    <color name="nav_selected_bg">@color/md_primary_90</color>
+
+    <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) ──────── -->
+    <!-- Night overrides are in values-night/colors.xml -->
+    <color name="stat_card_bg">#FFFFFF</color>
+    <color name="stat_card_stroke">#D0D0D0</color>
 
     <!-- Quick-action chip backgrounds ───────────────────────────────────── -->
     <!-- Map and AR chips keep their distinct brand colors; Settings now uses primary -->

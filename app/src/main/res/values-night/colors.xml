@@ -34,4 +34,18 @@
     <color name="chart_title">#FFFFFFFF</color>
     <color name="chart_bar_unused">#FF8B9198</color>
 
+    <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) – night -->
+    <color name="stat_card_bg">@color/md_surface_container_high</color>
+    <color name="stat_card_stroke">#3D4349</color>
+
+    <!-- Navigation drawer selected pill – dark blue tone for night -->
+    <color name="nav_selected_bg">@color/md_primary_30</color>
+
+    <!-- Surface Container family (dark) – deep blue-gray, overrides M3 purple defaults -->
+    <color name="md_surface_container_lowest">#0B1017</color>  <!-- below background         -->
+    <color name="md_surface_container_low">#111920</color>     <!-- standard dark surface    -->
+    <color name="md_surface_container">#162029</color>         <!-- modal / sheet base       -->
+    <color name="md_surface_container_high">#1D2836</color>    <!-- dropdown / menu surface  -->
+    <color name="md_surface_container_highest">#243042</color> <!-- chips / pressed state    -->
+
 </resources>

@@ -14,7 +14,7 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorPrimary"
-            app:titleTextColor="@android:color/white"
+            app:titleTextColor="?attr/colorOnPrimary"
             app:navigationIcon="?attr/homeAsUpIndicator" />
 
     </com.google.android.material.appbar.AppBarLayout>
@@ -38,7 +38,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:text="Select This Folder"
-        android:textColor="@android:color/white"
+        android:textColor="?attr/colorOnPrimary"
         android:background="?attr/colorPrimary"
         android:visibility="gone" />
 

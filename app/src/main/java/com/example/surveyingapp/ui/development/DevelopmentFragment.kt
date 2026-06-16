@@ -9,7 +9,8 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -89,7 +90,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             val denied = permissions.filterValues { !it }.keys
             "Permissions denied: ${denied.joinToString(", ") { it.substringAfterLast('.') }}"
         }
-        Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+        showDeveloperMessage(message)
         // Refresh the permissions table to show updated status
         refreshPermissionsTable()
     }
@@ -152,7 +153,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         // Get references to the layout components
         val refreshBarContainer = view.findViewById<LinearLayout>(R.id.refreshBarContainer)
         val tableHolder = view.findViewById<LinearLayout>(R.id.permissionsTableContainer)
-        val requestButton = view.findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnRequestCorePermissions)
+        val requestButton = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnRequestCorePermissions)
 
         fun rebuild() {
             tableHolder.removeAllViews()
@@ -281,7 +282,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             table.addView(row)
             // Divider
             if (idx < permissions.lastIndex) table.addView(View(ctx).apply {
-                setBackgroundColor(0x14000000)
+                setBackgroundColor(dividerColor(ctx))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
             })
         }
@@ -498,7 +499,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             row.addView(valueView)
             table.addView(row)
             table.addView(View(ctx).apply {
-                setBackgroundColor(0x14000000)
+                setBackgroundColor(dividerColor(ctx))
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
             })
             rowIndex++
@@ -602,7 +603,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             val clip = ClipData.newPlainText("Maps API Key", apiKeyFull)
             val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             cm.setPrimaryClip(clip)
-            Toast.makeText(ctx, "API key copied", Toast.LENGTH_SHORT).show()
+            showDeveloperMessage("API key copied")
         }
 
         // Runtime MapView test
@@ -647,8 +648,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val view = inflater.inflate(R.layout.dev_page_coordinates, null)
 
         // Get references to the layout components
-        val generateButton = view.findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnGenerateCoords)
-        val clearButton = view.findViewById<androidx.appcompat.widget.AppCompatButton>(R.id.btnClearAllCoords)
+        val generateButton = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnGenerateCoords)
+        val clearButton = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnClearAllCoords)
         val statusText = view.findViewById<TextView>(R.id.statusText)
 
         fun setStatus(msg: String) { statusText.text = msg }
@@ -660,12 +661,19 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }
 
         clearButton.setOnClickListener {
-            setStatus("Clearing…")
-            viewLifecycleOwner.lifecycleScope.launch {
-                runCatching { coordinateRepository.deleteAll() }
-                    .onSuccess { setStatus("All coordinates cleared") }
-                    .onFailure { setStatus("Clear failed: ${it.message}") }
-            }
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Clear All Coordinates?")
+                .setMessage("This will permanently delete all saved coordinates. This cannot be undone.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Clear") { _, _ ->
+                    setStatus("Clearing…")
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        runCatching { coordinateRepository.deleteAll() }
+                            .onSuccess { setStatus("All coordinates cleared") }
+                            .onFailure { setStatus("Clear failed: ${it.message}") }
+                    }
+                }
+                .show()
         }
 
         return view
@@ -833,7 +841,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 row.addView(lv); row.addView(vv)
                 table.addView(row)
                 if (idx < fields.lastIndex) table.addView(View(ctx).apply {
-                    setBackgroundColor(0x14000000)
+                    setBackgroundColor(dividerColor(ctx))
                     layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
                 })
             }
@@ -900,7 +908,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }
         skyTable.addView(skyTotalView)
         skyTable.addView(View(ctx).apply {
-            setBackgroundColor(0x14000000)
+            setBackgroundColor(dividerColor(ctx))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
         })
         skyTable.addView(skyConstellationView)
@@ -951,7 +959,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         }.toMap()
 
         // ── Stream stats ──────────────────────────────────────────────────────
-        val btnReset = androidx.appcompat.widget.AppCompatButton(ctx).apply { text = "Reset" }
+        val btnReset = com.google.android.material.button.MaterialButton(ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply { text = "Reset" }
         val statsSection = buildSection("Stream Statistics", listOf(
             "Lines/sec", "Error Rate", "Total Lines", "Total Errors"
         ))
@@ -1149,7 +1157,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
         btnReset.setOnClickListener {
             viewModel.resetDiagnostics()
-            Toast.makeText(ctx, "Diagnostics counters reset", Toast.LENGTH_SHORT).show()
+            showDeveloperMessage("Diagnostics counters reset")
         }
 
         setExternalSectionVisibility(latestProviderLabel)
@@ -1160,14 +1168,29 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     private fun gnssLiveSectionHeader(ctx: android.content.Context, title: String): TextView {
         val density = resources.displayMetrics.density
         fun dp(v: Float) = (v * density + 0.5f).toInt()
+        val attrVal = TypedValue()
+        val primaryColor = if (ctx.theme.resolveAttribute(com.google.android.material.R.attr.colorPrimary, attrVal, true)) attrVal.data
+        else ContextCompat.getColor(ctx, R.color.dev_info_label)
         return TextView(ctx).apply {
             text = title
             textSize = 14f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(ContextCompat.getColor(ctx, R.color.dev_info_label))
+            setTextColor(primaryColor)
             setPadding(0, dp(16f), 0, dp(6f))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }
+    }
+
+    private fun showDeveloperMessage(message: String) {
+        val v = view ?: return
+        Snackbar.make(v, message, Snackbar.LENGTH_SHORT).show()
+    }
+
+    /** Resolves a theme color attribute to an ARGB int using the current context's theme. */
+    private fun dividerColor(ctx: Context): Int {
+        val tv = TypedValue()
+        return if (ctx.theme.resolveAttribute(com.google.android.material.R.attr.colorOutlineVariant, tv, true)) tv.data
+        else 0x30808080
     }
 
     // Helpers restored (table builders, formatting, dp conversion)
@@ -1206,7 +1229,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         row.addView(valueView)
         addView(row)
         addView(View(ctx).apply {
-            setBackgroundColor(0x14000000)
+            setBackgroundColor(dividerColor(ctx))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
         })
     }

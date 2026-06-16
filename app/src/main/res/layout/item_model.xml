@@ -143,7 +143,7 @@
                     android:layout_height="36dp"
                     android:src="@drawable/ic_edit_24"
                     android:tint="?attr/colorPrimary"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Edit Model"
                     android:padding="6dp" />
 
@@ -152,7 +152,7 @@
 <!--                    android:layout_width="36dp"-->
 <!--                    android:layout_height="36dp"-->
 <!--                    android:src="@drawable/ic_camera_orange"-->
-<!--                    android:background="?android:attr/selectableItemBackgroundBorderless"-->
+<!--                    android:background="?attr/selectableItemBackgroundBorderless"-->
 <!--                    android:contentDescription="Recapture Thumbnail"-->
 <!--                    android:padding="6dp" />-->
 
@@ -162,7 +162,7 @@
                     android:layout_height="36dp"
                     android:src="@drawable/ic_delete"
                     android:tint="?attr/colorError"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Delete Model"
                     android:padding="6dp" />
 

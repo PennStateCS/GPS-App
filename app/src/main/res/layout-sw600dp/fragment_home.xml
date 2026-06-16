@@ -33,9 +33,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     app:cardCornerRadius="12dp"
-                    app:cardElevation="6dp"
+                    app:cardElevation="0dp"
                     app:cardUseCompatPadding="true"
-                    app:strokeColor="@color/card_stroke_light"
+                    app:strokeColor="?attr/colorOutlineVariant"
                     app:strokeWidth="1dp">
 
                     <LinearLayout
@@ -56,7 +56,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_section_location"
                                 android:layout_marginEnd="6dp"
-                                app:tint="?android:attr/colorPrimary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -65,7 +65,7 @@
                                 android:text="Current Location"
                                 android:textAppearance="@style/TextAppearance.App.BodySecondary"
                                 android:textStyle="bold"
-                                android:textColor="?android:attr/textColorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                         </LinearLayout>
 
@@ -106,7 +106,7 @@
                                     android:src="@drawable/ic_render_map"
                                     android:layout_marginBottom="12dp"
                                     android:alpha="0.5"
-                                    app:tint="?android:attr/textColorSecondary" />
+                                    app:tint="?attr/colorOnSurfaceVariant" />
 
                                 <TextView
                                     android:id="@+id/text_map_placeholder"
@@ -114,7 +114,7 @@
                                     android:layout_height="wrap_content"
                                     android:text="Acquiring location…"
                                     android:textAppearance="@style/TextAppearance.App.BodySecondary"
-                                    android:textColor="?android:attr/textColorSecondary" />
+                                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                             </LinearLayout>
 
@@ -137,7 +137,7 @@
                                     app:chipIcon="@drawable/ic_map"
                                     app:chipIconVisible="true"
                                     app:chipIconSize="16dp"
-                                    app:chipIconTint="?android:attr/textColorPrimary"
+                                    app:chipIconTint="?attr/colorOnSurface"
                                     app:iconStartPadding="8dp"
                                     app:rippleColor="?attr/colorControlHighlight" />
 
@@ -153,7 +153,7 @@
                                     app:chipIcon="@drawable/ic_triangle"
                                     app:chipIconVisible="true"
                                     app:chipIconSize="16dp"
-                                    app:chipIconTint="?android:attr/textColorPrimary"
+                                    app:chipIconTint="?attr/colorOnSurface"
                                     app:iconStartPadding="8dp"
                                     app:rippleColor="?attr/colorControlHighlight"
                                     android:layout_marginStart="8dp" />
@@ -181,9 +181,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     app:cardCornerRadius="12dp"
-                    app:cardElevation="6dp"
+                    app:cardElevation="0dp"
                     app:cardUseCompatPadding="true"
-                    app:strokeColor="@color/card_stroke_light"
+                    app:strokeColor="?attr/colorOutlineVariant"
                     app:strokeWidth="1dp">
 
                     <LinearLayout
@@ -205,7 +205,7 @@
                                 android:layout_height="20dp"
                                 android:src="@drawable/ic_section_info"
                                 android:layout_marginEnd="6dp"
-                                app:tint="?android:attr/colorPrimary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <TextView
                                 android:layout_width="0dp"
@@ -214,7 +214,7 @@
                                 android:text="Insights"
                                 android:textAppearance="@style/TextAppearance.App.BodySecondary"
                                 android:textStyle="bold"
-                                android:textColor="?android:attr/textColorPrimary" />
+                                android:textColor="?attr/colorOnSurface" />
 
                         </LinearLayout>
 
@@ -227,7 +227,7 @@
                             android:text="RS2+ Device"
                             android:textAppearance="@style/TextAppearance.App.Supporting"
                             android:textStyle="bold"
-                            android:textColor="?android:attr/textColorPrimary"
+                            android:textColor="?attr/colorOnSurface"
                             android:layout_marginBottom="8dp"
                             android:visibility="gone" />
 
@@ -253,7 +253,7 @@
                                     android:layout_weight="1"
                                     android:text="Name"
                                     android:textStyle="bold"
-                                    android:textColor="?android:attr/textColorPrimary" />
+                                    android:textColor="?attr/colorOnSurface" />
 
                                 <TextView
                                     android:id="@+id/text_rs2_name"
@@ -261,7 +261,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
                                     android:text="--"
-                                    android:textColor="?android:attr/textColorPrimary" />
+                                    android:textColor="?attr/colorOnSurface" />
                             </LinearLayout>
 
                             <LinearLayout
@@ -275,7 +275,7 @@
                                     android:layout_weight="1"
                                     android:text="Address"
                                     android:textStyle="bold"
-                                    android:textColor="?android:attr/textColorPrimary" />
+                                    android:textColor="?attr/colorOnSurface" />
 
                                 <TextView
                                     android:id="@+id/text_rs2_address"
@@ -283,7 +283,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
                                     android:text="--"
-                                    android:textColor="?android:attr/textColorPrimary" />
+                                    android:textColor="?attr/colorOnSurface" />
                             </LinearLayout>
                         </LinearLayout>
 
@@ -293,7 +293,7 @@
                             android:text="Survey Data"
                             android:textAppearance="@style/TextAppearance.App.Supporting"
                             android:textStyle="bold"
-                            android:textColor="?android:attr/textColorPrimary"
+                            android:textColor="?attr/colorOnSurface"
                             android:layout_marginBottom="8dp" />
 
                         <!-- Coordinates Count -->
@@ -311,7 +311,7 @@
                                 android:src="@android:drawable/ic_menu_compass"
                                 android:layout_marginEnd="8dp"
                                 android:layout_gravity="center_vertical"
-                                app:tint="?android:attr/colorPrimary" />
+                                app:tint="?attr/colorPrimary" />
 
                             <LinearLayout
                                 android:layout_width="0dp"
@@ -327,14 +327,14 @@
                                     android:text="0"
                                     android:textSize="24sp"
                                     android:textStyle="bold"
-                                    android:textColor="?android:attr/colorPrimary" />
+                                    android:textColor="?attr/colorPrimary" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Coordinates"
                                     android:textSize="10sp"
-                                    android:textColor="?android:attr/textColorSecondary" />
+                                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                             </LinearLayout>
 
@@ -344,9 +344,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="View"
-                                android:textColor="@android:color/white"
+                                android:textColor="?attr/colorOnPrimary"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
-                                app:chipBackgroundColor="?android:attr/colorPrimary"
+                                app:chipBackgroundColor="?attr/colorPrimary"
                                 android:layout_gravity="center_vertical" />
 
                         </LinearLayout>
@@ -366,7 +366,7 @@
                                 android:src="@drawable/ic_menu_gallery"
                                 android:layout_marginEnd="8dp"
                                 android:layout_gravity="center_vertical"
-                                app:tint="?android:attr/colorAccent" />
+                                app:tint="?attr/colorSecondary" />
 
                             <LinearLayout
                                 android:layout_width="0dp"
@@ -382,14 +382,14 @@
                                     android:text="0"
                                     android:textSize="24sp"
                                     android:textStyle="bold"
-                                    android:textColor="?android:attr/colorAccent" />
+                                    android:textColor="?attr/colorSecondary" />
 
                                 <TextView
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Models"
                                     android:textSize="10sp"
-                                    android:textColor="?android:attr/textColorSecondary" />
+                                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                             </LinearLayout>
 
@@ -399,9 +399,9 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="View"
-                                android:textColor="@android:color/white"
+                                android:textColor="?attr/colorOnSecondary"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
-                                app:chipBackgroundColor="@color/chip_map_bg"
+                                app:chipBackgroundColor="?attr/colorSecondary"
                                 android:layout_gravity="center_vertical" />
 
                         </LinearLayout>
@@ -413,7 +413,7 @@
                             android:text="Quick Actions"
                             android:textAppearance="@style/TextAppearance.App.Supporting"
                             android:textStyle="bold"
-                            android:textColor="?android:attr/textColorPrimary"
+                            android:textColor="?attr/colorOnSurface"
                             android:layout_marginBottom="8dp" />
 
                         <com.google.android.material.chip.ChipGroup
@@ -428,14 +428,14 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Open Map"
-                                android:textColor="@android:color/white"
+                                android:textColor="?attr/colorOnPrimaryContainer"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipIcon="@drawable/ic_render_map"
                                 app:chipIconVisible="true"
                                 app:chipIconSize="16dp"
-                                app:chipIconTint="@android:color/white"
+                                app:chipIconTint="?attr/colorOnPrimaryContainer"
                                 app:iconStartPadding="8dp"
-                                app:chipBackgroundColor="@color/chip_map_bg" />
+                                app:chipBackgroundColor="?attr/colorPrimaryContainer" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_quick_ar"
@@ -443,14 +443,14 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Open AR"
-                                android:textColor="@android:color/white"
+                                android:textColor="?attr/colorOnPrimaryContainer"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipIcon="@drawable/ic_section_ar"
                                 app:chipIconVisible="true"
                                 app:chipIconSize="16dp"
-                                app:chipIconTint="@android:color/white"
+                                app:chipIconTint="?attr/colorOnPrimaryContainer"
                                 app:iconStartPadding="8dp"
-                                app:chipBackgroundColor="@color/chip_map_bg" />
+                                app:chipBackgroundColor="?attr/colorPrimaryContainer" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_quick_settings"
@@ -458,14 +458,14 @@
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Settings"
-                                android:textColor="@android:color/white"
+                                android:textColor="?attr/colorOnPrimaryContainer"
                                 android:textAppearance="?attr/textAppearanceBodyMedium"
-                                app:chipIcon="@drawable/ic_section_info"
+                                app:chipIcon="@drawable/ic_settings_24"
                                 app:chipIconVisible="true"
                                 app:chipIconSize="16dp"
-                                app:chipIconTint="@android:color/white"
+                                app:chipIconTint="?attr/colorOnPrimaryContainer"
                                 app:iconStartPadding="8dp"
-                                app:chipBackgroundColor="@color/chip_map_bg" />
+                                app:chipBackgroundColor="?attr/colorPrimaryContainer" />
 
                         </com.google.android.material.chip.ChipGroup>
 

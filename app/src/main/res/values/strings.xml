@@ -26,7 +26,7 @@
     <string name="capture_coordinates">Capture Coordinates</string>
     <string name="dev_category_placeholder">Development tools</string>
     <string name="render_map_placeholder">No render available</string>
-    <string name="menu_view_coordinates">View Coordinates</string>
+    <string name="menu_view_coordinates">Coordinates</string>
     <string name="delete_coordinate">Delete Coordinate</string>
     <string name="dev_category_icon_desc">Category icon</string>
     <string name="twopane_placeholder_select">Select an item from the list</string>
@@ -34,8 +34,8 @@
     <string name="nav_header_title">SurReal AR</string>
     <string name="nav_header_subtitle">Surveying · GNSS · AR</string>
     <string name="menu_home">Home</string>
-    <string name="menu_render_map">Render Map</string>
-    <string name="menu_open_in_ar">Open in AR</string>
+    <string name="menu_render_map">Map</string>
+    <string name="menu_open_in_ar">AR View</string>
     <string name="menu_models">Models</string>
     <string name="menu_development">Developer Tools</string>
     <string name="action_settings">Settings</string>
