@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!-- Added ScrollView root to allow vertical scrolling when content exceeds screen height -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -16,7 +16,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Location Settings"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
             android:textSize="18sp"
@@ -41,7 +41,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="When enabled the app keeps recording location (foreground notification) after you leave the app. Turn off to stop logging when in background to save battery."
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="@android:color/darker_gray"
             android:layout_marginBottom="16dp" />
 
@@ -142,7 +142,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text=""
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:textAppearance="?attr/textAppearanceBodySmall"
                 android:padding="4dp"
                 android:background="#08000000" />
         </LinearLayout>
@@ -151,7 +151,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Display Settings"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
             android:textSize="18sp"
@@ -176,7 +176,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Data Management"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
             android:textSize="18sp"
@@ -221,7 +221,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Import progress"
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:textAppearance="?attr/textAppearanceBodySmall"
                 android:paddingTop="4dp"
                 android:layout_marginBottom="8dp" />
 
@@ -236,7 +236,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Developer"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
             android:textSize="18sp"
@@ -255,7 +255,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Satellite Signal Strength"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
             android:textSize="18sp"
@@ -282,7 +282,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="About"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
             android:textSize="18sp"
@@ -293,7 +293,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="@android:color/darker_gray" />
 
     </LinearLayout>

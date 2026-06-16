@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -49,7 +49,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Latitude"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -57,7 +57,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -66,7 +66,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Accuracy (H / V)"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -74,7 +74,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -85,7 +85,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Longitude"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -93,7 +93,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -102,7 +102,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Satellites used"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -110,7 +110,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -121,7 +121,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Altitude (ellipsoidal)"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -129,7 +129,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -138,7 +138,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="RTK status"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -146,7 +146,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -157,7 +157,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Date"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -165,7 +165,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -174,7 +174,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="HDOP"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -182,7 +182,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -193,7 +193,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Time"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -201,7 +201,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -210,7 +210,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Correction (source · age)"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -218,7 +218,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -229,7 +229,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Provider"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -237,7 +237,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -246,7 +246,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:text="Projection (E · N · Zone · EPSG)"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
@@ -254,7 +254,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:textColor="@android:color/black"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
@@ -312,7 +312,7 @@
             android:visibility="gone"
             android:textStyle="italic"
             android:textColor="@android:color/darker_gray"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium" />
+            android:textAppearance="@style/TextAppearance.App.DataValue" />
 
         <!-- Map spanning all columns -->
         <com.google.android.gms.maps.MapView

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -129,11 +129,11 @@
 
                                 <com.google.android.material.chip.Chip
                                     android:id="@+id/chip_map_type"
-                                    style="@style/Widget.MaterialComponents.Chip.Action"
+                                    style="@style/Widget.Material3.Chip.Assist"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="Map Type"
-                                    android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium"
                                     app:chipIcon="@drawable/ic_map"
                                     app:chipIconVisible="true"
                                     app:chipIconSize="16dp"
@@ -143,13 +143,13 @@
 
                                 <com.google.android.material.chip.Chip
                                     android:id="@+id/chip_toggle_3d"
-                                    style="@style/Widget.MaterialComponents.Chip.Filter"
+                                    style="@style/Widget.Material3.Chip.Filter"
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="3D"
                                     android:checkable="true"
                                     android:checked="true"
-                                    android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium"
                                     app:chipIcon="@drawable/ic_triangle"
                                     app:chipIconVisible="true"
                                     app:chipIconSize="16dp"
@@ -340,12 +340,12 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_view_coordinates"
-                                style="@style/Widget.MaterialComponents.Chip.Action"
+                                style="@style/Widget.Material3.Chip.Assist"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="View"
                                 android:textColor="@android:color/white"
-                                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipBackgroundColor="?android:attr/colorPrimary"
                                 android:layout_gravity="center_vertical" />
 
@@ -395,12 +395,12 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_view_models"
-                                style="@style/Widget.MaterialComponents.Chip.Action"
+                                style="@style/Widget.Material3.Chip.Assist"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="View"
                                 android:textColor="@android:color/white"
-                                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipBackgroundColor="@color/chip_map_bg"
                                 android:layout_gravity="center_vertical" />
 
@@ -424,12 +424,12 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_quick_map"
-                                style="@style/Widget.MaterialComponents.Chip.Action"
+                                style="@style/Widget.Material3.Chip.Assist"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Open Map"
                                 android:textColor="@android:color/white"
-                                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipIcon="@drawable/ic_render_map"
                                 app:chipIconVisible="true"
                                 app:chipIconSize="16dp"
@@ -439,12 +439,12 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_quick_ar"
-                                style="@style/Widget.MaterialComponents.Chip.Action"
+                                style="@style/Widget.Material3.Chip.Assist"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Open AR"
                                 android:textColor="@android:color/white"
-                                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipIcon="@drawable/ic_section_ar"
                                 app:chipIconVisible="true"
                                 app:chipIconSize="16dp"
@@ -454,12 +454,12 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/chip_quick_settings"
-                                style="@style/Widget.MaterialComponents.Chip.Action"
+                                style="@style/Widget.Material3.Chip.Assist"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:text="Settings"
                                 android:textColor="@android:color/white"
-                                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
                                 app:chipIcon="@drawable/ic_section_info"
                                 app:chipIconVisible="true"
                                 app:chipIconSize="16dp"
