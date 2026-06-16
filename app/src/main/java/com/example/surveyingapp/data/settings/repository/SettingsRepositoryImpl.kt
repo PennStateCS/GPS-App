@@ -5,6 +5,8 @@ import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSettings
+import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -70,6 +72,41 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     override suspend fun setNmeaLogMaxFileSizeMB(sizeMB: Int) {
         local.setNmeaLogMaxFileSizeMB(sizeMB)
+    }
+
+    // GNSS capture averaging policy
+    override val gnssCaptureSettings: Flow<GnssCaptureSettings> = combine(
+        local.gnssCaptureRtkStatus,
+        local.gnssCaptureMinDurationSec,
+        local.gnssCaptureMaxDurationSec,
+        local.gnssCaptureMinSamples,
+        combine(local.gnssCaptureMaxFixAgeSec, local.gnssCaptureMaxDiffAgeSec) { fix, diff -> fix to diff }
+    ) { rtkStr, minDur, maxDur, minSamples, (maxFix, maxDiff) ->
+        GnssCaptureSettings(
+            requiredMinStatus = rtkStr.toRtkStatus(),
+            minDurationSec    = minDur,
+            maxDurationSec    = maxDur,
+            minSamples        = minSamples,
+            maxFixAgeSec      = maxFix,
+            maxDiffAgeSec     = maxDiff
+        )
+    }
+
+    override suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings) {
+        local.setGnssCaptureRtkStatus(settings.requiredMinStatus.name)
+        local.setGnssCaptureMinDurationSec(settings.minDurationSec)
+        local.setGnssCaptureMaxDurationSec(settings.maxDurationSec)
+        local.setGnssCaptureMinSamples(settings.minSamples)
+        local.setGnssCaptureMaxFixAgeSec(settings.maxFixAgeSec)
+        local.setGnssCaptureMaxDiffAgeSec(settings.maxDiffAgeSec)
+    }
+
+    private fun String.toRtkStatus(): RtkStatus = when (this) {
+        "FIX"    -> RtkStatus.FIX
+        "FLOAT"  -> RtkStatus.FLOAT
+        "DGPS"   -> RtkStatus.DGPS
+        "SINGLE" -> RtkStatus.SINGLE
+        else     -> RtkStatus.FIX
     }
 
     private fun String?.toLocationSourceType(): LocationSourceType = when (this) {

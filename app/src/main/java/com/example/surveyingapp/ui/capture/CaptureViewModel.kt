@@ -6,6 +6,7 @@ import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.model.CoordinateFactory
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.settings.toAveragingPolicy
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.capture.ObservationSession
@@ -73,6 +74,19 @@ class CaptureViewModel @Inject constructor(
     }
 
     private fun checkFixSatisfiesSettings(fix: Fix): Boolean = captureSettings.accepts(fix)
+
+    /**
+     * Loads the saved GNSS Capture settings and starts an averaging session with that policy.
+     * Falls back to safe defaults if settings cannot be read.
+     */
+    fun startWithSavedPolicy() {
+        viewModelScope.launch {
+            val policy = runCatching {
+                SurveyingApp.settingsRepo.gnssCaptureSettings.first().toAveragingPolicy()
+            }.getOrDefault(AveragingPolicy())
+            start(policy)
+        }
+    }
 
     fun start(policy: AveragingPolicy) {
         val s = ObservationSession(viewModelScope, fixSwitchboard.fixes, policy)

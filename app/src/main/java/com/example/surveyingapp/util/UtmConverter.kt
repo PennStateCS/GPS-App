@@ -90,16 +90,13 @@ object UtmConverter {
         val a = cos(lat) * (lon - lonOrigin)
 
         /*
-         * Meridional arc length from the equator to this latitude on the WGS84
-         * ellipsoid. Northing starts with this north-south distance, then adds
-         * corrections for the point's east-west offset within the UTM zone.
+         * Meridional arc from the equator to the point latitude (M) and to the
+         * grid origin latitude (M0). UTM uses the equator as its latitude of origin,
+         * so M0 = meridionalArc(0) = 0. Both are kept explicit so the code matches
+         * the published Transverse Mercator reference formula.
          */
-        val m = WGS84_A * (
-                (1 - WGS84_E2 / 4 - 3 * WGS84_E2.pow(2) / 64 - 5 * WGS84_E2.pow(3) / 256) * lat -
-                        (3 * WGS84_E2 / 8 + 3 * WGS84_E2.pow(2) / 32 + 45 * WGS84_E2.pow(3) / 1024) * sin(2 * lat) +
-                        (15 * WGS84_E2.pow(2) / 256 + 45 * WGS84_E2.pow(3) / 1024) * sin(4 * lat) -
-                        (35 * WGS84_E2.pow(3) / 3072) * sin(6 * lat)
-                )
+        val m  = meridionalArc(lat)
+        val m0 = meridionalArc(0.0)
 
         /*
          * Easting is the projected east-west distance from the central meridian.
@@ -111,12 +108,16 @@ object UtmConverter {
                 ) + UTM_E0
 
         /*
-         * Northing is based on the meridional arc plus correction terms for the
-         * point's distance from the central meridian. Southern hemisphere values
-         * receive a 10,000,000 m false northing so coordinates remain positive.
+         * Northing follows the standard Transverse Mercator form:
+         *   N = k0 * { (M - M0) + N1 * tan(phi) * correctionTerms } + falseNorthing
+         *
+         * For UTM, the latitude of origin is the equator, so M0 = meridionalArc(0) = 0.
+         * It is kept explicit here so the code matches the reference formula.
+         * The remaining terms correct for distance east/west from the central meridian.
+         * False northing: 0 m (northern hemisphere), 10,000,000 m (southern hemisphere).
          */
         val northing = UTM_K0 * (
-                m + n * tan(lat) * (
+                (m - m0) + n * tan(lat) * (
                         a.pow(2) / 2 + (5 - t + 9 * c + 4 * c.pow(2)) * a.pow(4) / 24 +
                                 (61 - 58 * t + t.pow(2) + 600 * c - 330 * WGS84_E_PRIME2) * a.pow(6) / 720
                         )
@@ -221,6 +222,36 @@ object UtmConverter {
             latDeg < 72 -> 'W'
             else -> 'X'
         }
+    }
+
+    /**
+     * Meridional arc: north-south distance along the WGS84 ellipsoid from the equator to [phi].
+     *
+     * UTM northing is built from this arc value, then adjusted by Transverse Mercator correction
+     * terms that account for the point's east-west offset from the zone's central meridian.
+     *
+     * The series is the standard WGS84 meridional arc expansion through e⁶. Coefficients are
+     * written in expanded form so each term can be compared directly against published references
+     * (e.g. Bowring 1983, EPSG Guidance Note 7-2).
+     *
+     * @param phi Geodetic latitude in radians.
+     */
+    private fun meridionalArc(phi: Double): Double {
+        val e2 = WGS84_E2
+        val e4 = e2 * e2
+        val e6 = e4 * e2
+
+        val a0 = 1.0 - e2 / 4.0 - 3.0 * e4 / 64.0 - 5.0 * e6 / 256.0
+        val a2 = 3.0 * e2 / 8.0 + 3.0 * e4 / 32.0 + 45.0 * e6 / 1024.0
+        val a4 = 15.0 * e4 / 256.0 + 45.0 * e6 / 1024.0
+        val a6 = 35.0 * e6 / 3072.0
+
+        return WGS84_A * (
+            a0 * phi -
+            a2 * sin(2.0 * phi) +
+            a4 * sin(4.0 * phi) -
+            a6 * sin(6.0 * phi)
+        )
     }
 
     /**

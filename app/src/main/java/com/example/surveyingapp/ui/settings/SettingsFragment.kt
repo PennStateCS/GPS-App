@@ -8,6 +8,8 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.*
+import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.toAveragingPolicy
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
@@ -148,6 +150,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         private const val CAT_ID_DATA = 2
         private const val CAT_ID_DEV = 3
         private const val CAT_ID_ABOUT = 4
+        private const val CAT_ID_GNSS_CAPTURE = 5
         // Connection status timing thresholds (ms)
         const val FRESH_FIX_MAX_AGE_MS = 5_000L
         const val STALE_FIX_MAX_AGE_MS = 15_000L
@@ -168,6 +171,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun baseCategories(): List<SettingsCategory> = listOf(
         SettingsCategory(CAT_ID_LOCATION, "Location", R.drawable.ic_section_location),
         SettingsCategory(CAT_ID_DATA, "Data", R.drawable.ic_section_data),
+        SettingsCategory(CAT_ID_GNSS_CAPTURE, "GNSS Capture", R.drawable.ic_satellite_24),
         SettingsCategory(CAT_ID_DEV, "Developer Tools", R.drawable.ic_dev_tools),
         SettingsCategory(CAT_ID_ABOUT, "About", R.drawable.ic_home)
     )
@@ -180,10 +184,11 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
         try {
             when (category.id) {
-                CAT_ID_LOCATION -> setupLocationContent(inflater)
-                CAT_ID_DATA -> setupDataContent(inflater)
-                CAT_ID_DEV -> setupDeveloperContent(inflater)
-                CAT_ID_ABOUT -> setupAboutContent(inflater)
+                CAT_ID_LOCATION     -> setupLocationContent(inflater)
+                CAT_ID_DATA         -> setupDataContent(inflater)
+                CAT_ID_GNSS_CAPTURE -> setupGnssCaptureContent(inflater)
+                CAT_ID_DEV          -> setupDeveloperContent(inflater)
+                CAT_ID_ABOUT        -> setupAboutContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -233,6 +238,103 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     private fun setupAboutContent(inflater: LayoutInflater): View =
         inflater.inflate(R.layout.content_settings_about, contentContainer, false)
+
+    // ───────────────────────────── GNSS Capture Settings ──────────────────────
+    private fun setupGnssCaptureContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_gnss_capture, contentContainer, false)
+        try {
+            val spinner     = view.findViewById<Spinner>(R.id.spinner_rtk_status)
+            val editMinDur  = view.findViewById<EditText>(R.id.edit_min_duration)
+            val editMaxDur  = view.findViewById<EditText>(R.id.edit_max_duration)
+            val editSamples = view.findViewById<EditText>(R.id.edit_min_samples)
+            val editFixAge  = view.findViewById<EditText>(R.id.edit_max_fix_age)
+            val editDiffAge = view.findViewById<EditText>(R.id.edit_max_diff_age)
+            val btnSave     = view.findViewById<Button>(R.id.btn_save_gnss_capture)
+
+            // Spinner entries and their RtkStatus mapping (display order matches task spec)
+            val rtkOptions = listOf(
+                "RTK FIX only"          to RtkStatus.FIX,
+                "RTK FLOAT or better"   to RtkStatus.FLOAT,
+                "DGPS or better"        to RtkStatus.DGPS,
+                "Single GPS or better"  to RtkStatus.SINGLE
+            )
+            val spinnerAdapter = ArrayAdapter(
+                requireContext(),
+                android.R.layout.simple_spinner_item,
+                rtkOptions.map { it.first }
+            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinner?.adapter = spinnerAdapter
+
+            // Load current saved settings and populate the form
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val saved = settingsRepo.gnssCaptureSettings.first()
+                    val spinnerIndex = rtkOptions.indexOfFirst { it.second == saved.requiredMinStatus }
+                        .coerceAtLeast(0)
+                    spinner?.setSelection(spinnerIndex)
+                    editMinDur?.setText(saved.minDurationSec.toString())
+                    editMaxDur?.setText(saved.maxDurationSec.toString())
+                    editSamples?.setText(saved.minSamples.toString())
+                    editFixAge?.setText(saved.maxFixAgeSec.toString())
+                    editDiffAge?.setText(saved.maxDiffAgeSec.toString())
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load GNSS capture settings", e)
+                }
+            }
+
+            btnSave?.setOnClickListener {
+                try {
+                    val minDur  = editMinDur?.text?.toString()?.toIntOrNull()
+                    val maxDur  = editMaxDur?.text?.toString()?.toIntOrNull()
+                    val samples = editSamples?.text?.toString()?.toIntOrNull()
+                    val fixAge  = editFixAge?.text?.toString()?.toIntOrNull()
+                    val diffAge = editDiffAge?.text?.toString()?.toIntOrNull()
+
+                    val error: String? = when {
+                        minDur == null || minDur !in 1..600    -> "Minimum duration must be between 1 and 600 seconds."
+                        maxDur == null || maxDur !in 1..600    -> "Maximum duration must be between 1 and 600 seconds."
+                        maxDur < minDur                        -> "Maximum duration must be ≥ minimum duration."
+                        samples == null || samples < 1         -> "Minimum samples must be at least 1."
+                        fixAge == null || fixAge < 1           -> "Maximum fix age must be at least 1 second."
+                        diffAge == null || diffAge < 1         -> "Maximum correction age must be at least 1 second."
+                        else -> null
+                    }
+
+                    if (error != null) {
+                        Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+
+                    val selectedStatus = rtkOptions.getOrNull(spinner?.selectedItemPosition ?: 0)?.second
+                        ?: RtkStatus.FIX
+
+                    val settings = GnssCaptureSettings(
+                        requiredMinStatus = selectedStatus,
+                        minDurationSec    = minDur!!,
+                        maxDurationSec    = maxDur!!,
+                        minSamples        = samples!!,
+                        maxFixAgeSec      = fixAge!!,
+                        maxDiffAgeSec     = diffAge!!
+                    )
+
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            settingsRepo.setGnssCaptureSettings(settings)
+                            Toast.makeText(requireContext(), "GNSS Capture settings saved.", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Log.e("SettingsFragment", "Failed to save GNSS capture settings", e)
+                            Toast.makeText(requireContext(), "Failed to save settings.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "setupGnssCaptureContent save error", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupGnssCaptureContent failed", e)
+        }
+        return view
+    }
 
     // ───────────────────────────── Location Source UI ─────────────────────────
     private fun setupLocationSourceUi(view: View) {

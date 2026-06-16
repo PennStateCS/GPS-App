@@ -3,10 +3,12 @@ package com.example.surveyingapp.util
 import kotlin.math.*
 
 /**
- * Computes the great-circle distance between two WGS84 latitude/longitude points.
+ * Approximate great-circle distance between two WGS84 latitude/longitude points.
  *
- * Uses the haversine formula, which treats the Earth as a sphere.
- * Inputs are decimal degrees. The returned distance is in meters.
+ * This uses the haversine formula, which treats the Earth as a sphere. It is
+ * intended for lightweight UI display, AR distance labels, filtering, and debug
+ * output. Do not use this for survey-grade measurements or final coordinate
+ * calculations; use a WGS84 ellipsoidal geodesic method for that.
  */
 fun haversineM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
     val R = 6_371_000.0
