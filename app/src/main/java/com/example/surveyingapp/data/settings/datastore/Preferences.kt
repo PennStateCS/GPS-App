@@ -63,6 +63,24 @@ object SettingsKeys {
     val GNSS_CAPTURE_MIN_SAMPLES       = intPreferencesKey("gnss_capture_min_samples")
     val GNSS_CAPTURE_MAX_FIX_AGE_SEC   = intPreferencesKey("gnss_capture_max_fix_age_sec")
     val GNSS_CAPTURE_MAX_DIFF_AGE_SEC  = intPreferencesKey("gnss_capture_max_diff_age_sec")
+
+    // AR Display settings
+    val AR_ALTITUDE_MODE               = stringPreferencesKey("ar_altitude_mode")
+    val AR_DISTANCE_FILTER_INDEX       = intPreferencesKey("ar_distance_filter_index")
+    val AR_SHOW_DEBUG_OVERLAY          = booleanPreferencesKey("ar_show_debug_overlay")
+    val AR_SHOW_LABELS                 = booleanPreferencesKey("ar_show_labels")
+    val AR_SHOW_OFFSCREEN_ARROWS       = booleanPreferencesKey("ar_show_offscreen_arrows")
+    val AR_MODEL_SCALE                 = stringPreferencesKey("ar_model_scale")
+
+    // Coordinate display — new key (other keys already existed above)
+    val SHOW_RTK_STATUS_BADGES         = booleanPreferencesKey("show_rtk_status_badges")
+
+    // Diagnostics & logging — granular toggles (NMEA_LOGGING_* keys already existed above)
+    val DIAG_SHOW_RAW_NMEA             = booleanPreferencesKey("diag_show_raw_nmea")
+    val DIAG_SHOW_SATELLITE_DIAG       = booleanPreferencesKey("diag_show_satellite_diagnostics")
+    val DIAG_LOG_RAW_NMEA_LINES        = booleanPreferencesKey("diag_log_raw_nmea_lines")
+    val DIAG_LOG_PARSED_FIXES          = booleanPreferencesKey("diag_log_parsed_fixes")
+    val DIAG_LOG_SATELLITE_DETAILS     = booleanPreferencesKey("diag_log_satellite_details")
 }
 
 /**
@@ -115,6 +133,24 @@ class SettingsLocalDataSource(private val context: Context) {
     val gnssCaptureMaxFixAgeSec:    Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MAX_FIX_AGE_SEC]   ?: 3    }
     val gnssCaptureMaxDiffAgeSec:   Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_MAX_DIFF_AGE_SEC]  ?: 10   }
 
+    // AR Display settings flows
+    val arAltitudeMode:           Flow<String>  = context.appDataStore.data.map { it[SettingsKeys.AR_ALTITUDE_MODE]         ?: "STORED" }
+    val arDistanceFilterIndex:    Flow<Int>     = context.appDataStore.data.map { it[SettingsKeys.AR_DISTANCE_FILTER_INDEX]  ?: 1       }
+    val arShowDebugOverlay:       Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.AR_SHOW_DEBUG_OVERLAY]     ?: false   }
+    val arShowLabels:             Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.AR_SHOW_LABELS]            ?: true    }
+    val arShowOffscreenArrows:    Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  ?: true    }
+    val arModelScale:             Flow<String>  = context.appDataStore.data.map { it[SettingsKeys.AR_MODEL_SCALE]            ?: "2.0"   }
+
+    // Coordinate display — supplemental key
+    val showRtkStatusBadges:      Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.SHOW_RTK_STATUS_BADGES]   ?: true    }
+
+    // Diagnostics — granular toggle flows
+    val diagShowRawNmea:          Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_SHOW_RAW_NMEA]           ?: false }
+    val diagShowSatelliteDiag:    Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_SHOW_SATELLITE_DIAG]     ?: false }
+    val diagLogRawNmeaLines:      Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_LOG_RAW_NMEA_LINES]      ?: false }
+    val diagLogParsedFixes:       Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_LOG_PARSED_FIXES]        ?: false }
+    val diagLogSatelliteDetails:  Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_LOG_SATELLITE_DETAILS]   ?: false }
+
     suspend fun setLocationSourceString(v: String) { context.appDataStore.edit { it[SettingsKeys.LOCATION_SOURCE] = v } }
     suspend fun setExternalConnTypeString(v: String) { context.appDataStore.edit { it[SettingsKeys.EXTERNAL_CONN_TYPE] = v } }
     suspend fun setExternalTcp(host: String, port: Int) { context.appDataStore.edit { prefs ->
@@ -162,4 +198,22 @@ class SettingsLocalDataSource(private val context: Context) {
     suspend fun setGnssCaptureMinSamples(v: Int)        { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MIN_SAMPLES]       = v } }
     suspend fun setGnssCaptureMaxFixAgeSec(v: Int)      { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_FIX_AGE_SEC]   = v } }
     suspend fun setGnssCaptureMaxDiffAgeSec(v: Int)     { context.appDataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_DIFF_AGE_SEC]  = v } }
+
+    // AR Display setters
+    suspend fun setArAltitudeMode(v: String)            { context.appDataStore.edit { it[SettingsKeys.AR_ALTITUDE_MODE]          = v } }
+    suspend fun setArDistanceFilterIndex(v: Int)        { context.appDataStore.edit { it[SettingsKeys.AR_DISTANCE_FILTER_INDEX]  = v } }
+    suspend fun setArShowDebugOverlay(v: Boolean)       { context.appDataStore.edit { it[SettingsKeys.AR_SHOW_DEBUG_OVERLAY]     = v } }
+    suspend fun setArShowLabels(v: Boolean)             { context.appDataStore.edit { it[SettingsKeys.AR_SHOW_LABELS]            = v } }
+    suspend fun setArShowOffscreenArrows(v: Boolean)    { context.appDataStore.edit { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  = v } }
+    suspend fun setArModelScale(v: String)              { context.appDataStore.edit { it[SettingsKeys.AR_MODEL_SCALE]            = v } }
+
+    // Coordinate display setter
+    suspend fun setShowRtkStatusBadges(v: Boolean)      { context.appDataStore.edit { it[SettingsKeys.SHOW_RTK_STATUS_BADGES]    = v } }
+
+    // Diagnostics setters
+    suspend fun setDiagShowRawNmea(v: Boolean)          { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_RAW_NMEA]           = v } }
+    suspend fun setDiagShowSatelliteDiag(v: Boolean)    { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_SATELLITE_DIAG]     = v } }
+    suspend fun setDiagLogRawNmeaLines(v: Boolean)      { context.appDataStore.edit { it[SettingsKeys.DIAG_LOG_RAW_NMEA_LINES]      = v } }
+    suspend fun setDiagLogParsedFixes(v: Boolean)       { context.appDataStore.edit { it[SettingsKeys.DIAG_LOG_PARSED_FIXES]        = v } }
+    suspend fun setDiagLogSatelliteDetails(v: Boolean)  { context.appDataStore.edit { it[SettingsKeys.DIAG_LOG_SATELLITE_DETAILS]   = v } }
 }

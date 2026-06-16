@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Diagnostics settings are intended for troubleshooting and field verification. High-rate logging options can significantly increase storage use and battery drain — disable them during normal field work."
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: NMEA Logging ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="NMEA Logging"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_nmea_logging_enabled"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Enable NMEA File Logging"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Write all received NMEA sentences to a rolling log file. Useful for post-processing or debugging receiver issues."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Maximum Log File Size (MB)"
+        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
+        android:layout_marginBottom="4dp" />
+
+    <EditText
+        android:id="@+id/edit_nmea_log_max_size"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log file rolls over when this size is reached. Range: 1–100 MB. Default: 5 MB."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: Live Diagnostics Panels ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Live Diagnostics Panels"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_show_raw_nmea"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show Raw NMEA Panel"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show a live scrolling panel of raw NMEA sentences in the GNSS status view."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="16dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_show_satellite_diagnostics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show Satellite Diagnostics Panel"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Show per-satellite signal strength and tracking detail in the GNSS status view."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- ── Section: Advanced Logcat Logging ── -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Advanced Logcat Logging"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:textStyle="bold"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="These options produce high-rate Logcat output. Use only when actively debugging. Disable before field work."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="12dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_log_raw_nmea_lines"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log Raw NMEA Lines"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log every received NMEA sentence to Logcat. Very high rate."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="12dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_log_parsed_fixes"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log Parsed GNSS Fixes"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log every parsed Fix struct to Logcat. High rate at 1 Hz or faster."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="12dp" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/switch_log_satellite_details"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log Satellite Epoch Details"
+        android:minHeight="48dp"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Log per-satellite GSV data each epoch. Very high rate with many visible satellites."
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:textColor="@android:color/darker_gray"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Save -->
+    <Button
+        android:id="@+id/btn_save_diagnostics"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Save"
+        android:minHeight="48dp" />
+
+</LinearLayout>

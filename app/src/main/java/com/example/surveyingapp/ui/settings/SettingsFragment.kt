@@ -8,8 +8,10 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.*
+import com.example.surveyingapp.gnss.settings.ArDisplaySettings
+import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
+import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
-import com.example.surveyingapp.gnss.settings.toAveragingPolicy
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
@@ -146,11 +148,14 @@ class SettingsFragment : BaseTwoPaneFragment() {
         const val PREF_HIGH_ACCURACY = "high_accuracy"
         const val PREF_DEV_TOOLS = "dev_tools"
         // Category IDs (internal)
-        private const val CAT_ID_LOCATION = 1
-        private const val CAT_ID_DATA = 2
-        private const val CAT_ID_DEV = 3
-        private const val CAT_ID_ABOUT = 4
-        private const val CAT_ID_GNSS_CAPTURE = 5
+        private const val CAT_ID_LOCATION           = 1
+        private const val CAT_ID_GNSS_CAPTURE       = 2
+        private const val CAT_ID_AR_DISPLAY         = 3
+        private const val CAT_ID_COORDINATE_DISPLAY = 4
+        private const val CAT_ID_DATA               = 5
+        private const val CAT_ID_DIAGNOSTICS        = 6
+        private const val CAT_ID_DEV                = 7
+        private const val CAT_ID_ABOUT              = 8
         // Connection status timing thresholds (ms)
         const val FRESH_FIX_MAX_AGE_MS = 5_000L
         const val STALE_FIX_MAX_AGE_MS = 15_000L
@@ -169,11 +174,14 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
 
     private fun baseCategories(): List<SettingsCategory> = listOf(
-        SettingsCategory(CAT_ID_LOCATION, "Location", R.drawable.ic_section_location),
-        SettingsCategory(CAT_ID_DATA, "Data", R.drawable.ic_section_data),
-        SettingsCategory(CAT_ID_GNSS_CAPTURE, "GNSS Capture", R.drawable.ic_satellite_24),
-        SettingsCategory(CAT_ID_DEV, "Developer Tools", R.drawable.ic_dev_tools),
-        SettingsCategory(CAT_ID_ABOUT, "About", R.drawable.ic_home)
+        SettingsCategory(CAT_ID_LOCATION,           "GNSS Receiver",           R.drawable.ic_section_location),
+        SettingsCategory(CAT_ID_GNSS_CAPTURE,       "GNSS Capture",            R.drawable.ic_satellite_24),
+        SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_home),
+        SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinate Display",      R.drawable.ic_section_data),
+        SettingsCategory(CAT_ID_DATA,               "Data Import / Export",    R.drawable.ic_section_data),
+        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_dev_tools),
+        SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
+        SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_home)
     )
 
     private fun refreshCategoriesForSource(@Suppress("UNUSED_PARAMETER") source: LocationSourceType) {
@@ -184,11 +192,14 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
         try {
             when (category.id) {
-                CAT_ID_LOCATION     -> setupLocationContent(inflater)
-                CAT_ID_DATA         -> setupDataContent(inflater)
-                CAT_ID_GNSS_CAPTURE -> setupGnssCaptureContent(inflater)
-                CAT_ID_DEV          -> setupDeveloperContent(inflater)
-                CAT_ID_ABOUT        -> setupAboutContent(inflater)
+                CAT_ID_LOCATION           -> setupLocationContent(inflater)
+                CAT_ID_GNSS_CAPTURE       -> setupGnssCaptureContent(inflater)
+                CAT_ID_AR_DISPLAY         -> setupARDisplayContent(inflater)
+                CAT_ID_COORDINATE_DISPLAY -> setupCoordinateDisplayContent(inflater)
+                CAT_ID_DATA               -> setupDataContent(inflater)
+                CAT_ID_DIAGNOSTICS        -> setupDiagnosticsContent(inflater)
+                CAT_ID_DEV                -> setupDeveloperContent(inflater)
+                CAT_ID_ABOUT              -> setupAboutContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -232,6 +243,203 @@ class SettingsFragment : BaseTwoPaneFragment() {
             }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupDeveloperContent wiring failed", e)
+        }
+        return view
+    }
+
+    private fun setupARDisplayContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_ar_display, contentContainer, false)
+        try {
+            val spinnerAltitude    = view.findViewById<Spinner>(R.id.spinner_altitude_mode)
+            val spinnerFilter      = view.findViewById<Spinner>(R.id.spinner_distance_filter)
+            val switchLabels       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_ar_show_labels)
+            val switchArrows       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_ar_show_offscreen_arrows)
+            val switchDebug        = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_ar_debug_overlay)
+            val editScale          = view.findViewById<EditText>(R.id.edit_ar_model_scale)
+            val btnSave            = view.findViewById<Button>(R.id.btn_save_ar_display)
+
+            val altitudeModes = listOf("Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
+            val distanceOptions = listOf("All distances" to -1, "50 m" to 0, "100 m" to 1, "500 m" to 2)
+
+            spinnerAltitude?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, altitudeModes.map { it.first })
+                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinnerFilter?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, distanceOptions.map { it.first })
+                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.arDisplaySettings.first()
+                    spinnerAltitude?.setSelection(altitudeModes.indexOfFirst { it.second == s.altitudeMode }.coerceAtLeast(0))
+                    spinnerFilter?.setSelection(s.distanceFilterIndex.coerceIn(0, distanceOptions.lastIndex))
+                    switchLabels?.isChecked = s.showLabels
+                    switchArrows?.isChecked = s.showOffscreenArrows
+                    switchDebug?.isChecked  = s.showDebugOverlay
+                    editScale?.setText(s.modelScale.toString())
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load AR display settings", e)
+                }
+            }
+
+            btnSave?.setOnClickListener {
+                try {
+                    val scale = editScale?.text?.toString()?.toFloatOrNull()
+                    if (scale == null || scale !in 0.1f..10.0f) {
+                        Toast.makeText(requireContext(), "Model scale must be between 0.1 and 10.0.", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    val settings = ArDisplaySettings(
+                        altitudeMode        = altitudeModes.getOrNull(spinnerAltitude?.selectedItemPosition ?: 0)?.second ?: "STORED",
+                        distanceFilterIndex = (spinnerFilter?.selectedItemPosition ?: 0).coerceIn(0, distanceOptions.lastIndex),
+                        showDebugOverlay    = switchDebug?.isChecked ?: false,
+                        showLabels          = switchLabels?.isChecked ?: true,
+                        showOffscreenArrows = switchArrows?.isChecked ?: true,
+                        modelScale          = scale
+                    )
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            settingsRepo.setArDisplaySettings(settings)
+                            Toast.makeText(requireContext(), "AR Display settings saved.", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Log.e("SettingsFragment", "Failed to save AR display settings", e)
+                            Toast.makeText(requireContext(), "Failed to save settings.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "setupARDisplayContent save error", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupARDisplayContent failed", e)
+        }
+        return view
+    }
+
+    private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
+        try {
+            val spinnerFormat   = view.findViewById<Spinner>(R.id.spinner_coordinate_format)
+            val spinnerUnits    = view.findViewById<Spinner>(R.id.spinner_distance_units)
+            val switchAccuracy  = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_accuracy_indicators)
+            val switchRtkBadges = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_rtk_badges)
+            val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
+            val switchAutoInc   = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_auto_increment_names)
+            val btnSave         = view.findViewById<Button>(R.id.btn_save_coordinate_display)
+
+            val formats = listOf("Decimal Degrees" to "DECIMAL_DEGREES", "Degrees Minutes" to "DEGREES_MINUTES",
+                "Degrees Minutes Seconds" to "DMS", "UTM" to "UTM")
+            val units   = listOf("Meters" to "METERS", "US Survey Feet" to "US_SURVEY_FEET", "International Feet" to "FEET")
+
+            spinnerFormat?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, formats.map { it.first })
+                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinnerUnits?.adapter  = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, units.map { it.first })
+                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.coordinateDisplaySettings.first()
+                    spinnerFormat?.setSelection(formats.indexOfFirst { it.second == s.format }.coerceAtLeast(0))
+                    spinnerUnits?.setSelection(units.indexOfFirst { it.second == s.distanceUnits }.coerceAtLeast(0))
+                    switchAccuracy?.isChecked  = s.showAccuracyIndicators
+                    switchRtkBadges?.isChecked = s.showRtkStatusBadges
+                    editPrefix?.setText(s.defaultNamePrefix)
+                    switchAutoInc?.isChecked   = s.autoIncrementNames
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load coordinate display settings", e)
+                }
+            }
+
+            btnSave?.setOnClickListener {
+                try {
+                    val prefix = editPrefix?.text?.toString()?.trim().orEmpty()
+                    if (prefix.length > 20) {
+                        Toast.makeText(requireContext(), "Name prefix must be 20 characters or fewer.", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    val settings = CoordinateDisplaySettings(
+                        format                 = formats.getOrNull(spinnerFormat?.selectedItemPosition ?: 0)?.second ?: "DECIMAL_DEGREES",
+                        distanceUnits          = units.getOrNull(spinnerUnits?.selectedItemPosition ?: 0)?.second ?: "METERS",
+                        showAccuracyIndicators = switchAccuracy?.isChecked ?: true,
+                        showRtkStatusBadges    = switchRtkBadges?.isChecked ?: true,
+                        defaultNamePrefix      = prefix.ifEmpty { "Point" },
+                        autoIncrementNames     = switchAutoInc?.isChecked ?: true
+                    )
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            settingsRepo.setCoordinateDisplaySettings(settings)
+                            Toast.makeText(requireContext(), "Coordinate Display settings saved.", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Log.e("SettingsFragment", "Failed to save coordinate display settings", e)
+                            Toast.makeText(requireContext(), "Failed to save settings.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "setupCoordinateDisplayContent save error", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupCoordinateDisplayContent failed", e)
+        }
+        return view
+    }
+
+    private fun setupDiagnosticsContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_diagnostics, contentContainer, false)
+        try {
+            val switchNmeaLog      = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_nmea_logging_enabled)
+            val editMaxSize        = view.findViewById<EditText>(R.id.edit_nmea_log_max_size)
+            val switchShowRaw      = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_raw_nmea)
+            val switchShowSat      = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_satellite_diagnostics)
+            val switchLogRaw       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_log_raw_nmea_lines)
+            val switchLogFixes     = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_log_parsed_fixes)
+            val switchLogSat       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_log_satellite_details)
+            val btnSave            = view.findViewById<Button>(R.id.btn_save_diagnostics)
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.diagnosticsSettings.first()
+                    switchNmeaLog?.isChecked  = s.nmeaLoggingEnabled
+                    editMaxSize?.setText(s.nmeaLogMaxFileSizeMB.toString())
+                    switchShowRaw?.isChecked  = s.showRawNmea
+                    switchShowSat?.isChecked  = s.showSatelliteDiagnostics
+                    switchLogRaw?.isChecked   = s.logRawNmeaLines
+                    switchLogFixes?.isChecked = s.logParsedFixes
+                    switchLogSat?.isChecked   = s.logSatelliteDetails
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load diagnostics settings", e)
+                }
+            }
+
+            btnSave?.setOnClickListener {
+                try {
+                    val size = editMaxSize?.text?.toString()?.toIntOrNull()
+                    if (size == null || size !in 1..100) {
+                        Toast.makeText(requireContext(), "Log file size must be between 1 and 100 MB.", Toast.LENGTH_LONG).show()
+                        return@setOnClickListener
+                    }
+                    val settings = DiagnosticsSettings(
+                        nmeaLoggingEnabled       = switchNmeaLog?.isChecked ?: false,
+                        nmeaLogMaxFileSizeMB     = size,
+                        showRawNmea              = switchShowRaw?.isChecked ?: false,
+                        showSatelliteDiagnostics = switchShowSat?.isChecked ?: false,
+                        logRawNmeaLines          = switchLogRaw?.isChecked ?: false,
+                        logParsedFixes           = switchLogFixes?.isChecked ?: false,
+                        logSatelliteDetails      = switchLogSat?.isChecked ?: false
+                    )
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        try {
+                            settingsRepo.setDiagnosticsSettings(settings)
+                            Toast.makeText(requireContext(), "Diagnostics settings saved.", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Log.e("SettingsFragment", "Failed to save diagnostics settings", e)
+                            Toast.makeText(requireContext(), "Failed to save settings.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "setupDiagnosticsContent save error", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupDiagnosticsContent failed", e)
         }
         return view
     }
@@ -608,6 +816,37 @@ class SettingsFragment : BaseTwoPaneFragment() {
             setOnCheckedChangeListener { _, v ->
                 preferences.edit { putBoolean(PREF_HIGH_ACCURACY, v) }
                 Toast.makeText(requireContext(), "High accuracy: $v", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // ── Connection Behavior section ──
+        view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_auto_reconnect)?.apply {
+            isChecked = preferences.getBoolean("conn_auto_reconnect", true)
+            setOnCheckedChangeListener { _, v -> preferences.edit { putBoolean("conn_auto_reconnect", v) } }
+        }
+        view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_validate_nmea_checksum)?.apply {
+            isChecked = preferences.getBoolean("conn_validate_checksum", true)
+            setOnCheckedChangeListener { _, v -> preferences.edit { putBoolean("conn_validate_checksum", v) } }
+        }
+        val editTimeout = view.findViewById<EditText>(R.id.edit_connection_timeout_sec)
+        editTimeout?.setText(preferences.getInt("conn_timeout_sec", 10).toString())
+        val editMaxReconnect = view.findViewById<EditText>(R.id.edit_max_reconnect_attempts)
+        editMaxReconnect?.setText(preferences.getInt("conn_max_reconnect", 5).toString())
+        view.findViewById<Button>(R.id.btn_save_connection_behavior)?.setOnClickListener {
+            try {
+                val timeout = editTimeout?.text?.toString()?.toIntOrNull()
+                val maxR    = editMaxReconnect?.text?.toString()?.toIntOrNull()
+                val timeoutErr = when { timeout == null || timeout !in 5..60 -> "Connection timeout must be 5–60 seconds."; else -> null }
+                val maxRErr    = when { maxR    == null || maxR    !in 1..20 -> "Max reconnect attempts must be 1–20.";       else -> null }
+                val err = timeoutErr ?: maxRErr
+                if (err != null) { Toast.makeText(requireContext(), err, Toast.LENGTH_LONG).show(); return@setOnClickListener }
+                preferences.edit {
+                    putInt("conn_timeout_sec", timeout!!)
+                    putInt("conn_max_reconnect", maxR!!)
+                }
+                Toast.makeText(requireContext(), "Connection settings saved.", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "save connection behavior error", e)
             }
         }
 
