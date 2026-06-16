@@ -1,12 +1,10 @@
 package com.example.surveyingapp.ui.viewpoints
 
-import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PorterDuff
 import android.util.Log
 import android.util.LruCache
 import android.view.LayoutInflater
@@ -198,8 +196,6 @@ class SimpleCoordinatesAdapter(
         // Edit button
         val editBtn = holder.itemView.findViewById<ImageButton>(R.id.button_edit)
         if (editBtn != null) {
-            editBtn.imageTintList = ColorStateList.valueOf(Color.parseColor("#0D47A1"))
-            editBtn.imageTintMode = PorterDuff.Mode.SRC_IN
             editBtn.setOnClickListener {
                 Log.d("SimpleCoordinatesAdapter", "Edit clicked for coordinate: ${p.id}")
                 onEdit(p)
@@ -209,8 +205,6 @@ class SimpleCoordinatesAdapter(
         // Delete button
         val deleteBtn = holder.itemView.findViewById<ImageButton>(R.id.button_delete)
         if (deleteBtn != null) {
-            deleteBtn.imageTintList = ColorStateList.valueOf(Color.parseColor("#B71C1C"))
-            deleteBtn.imageTintMode = PorterDuff.Mode.SRC_IN
             deleteBtn.setOnClickListener {
                 Log.d("SimpleCoordinatesAdapter", "Delete clicked for coordinate: ${p.id}")
                 onDelete(p)
