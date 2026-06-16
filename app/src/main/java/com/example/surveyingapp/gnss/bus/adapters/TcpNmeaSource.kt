@@ -139,9 +139,6 @@ class TcpNmeaSource(
                     }
                     val clean = line.trim()
                     if (clean.isNotEmpty() && clean[0] == '$') {
-                        if (clean.contains("GSV")) {
-                            android.util.Log.i(TAG, "📡 RAW GSV: $clean")
-                        }
                         diagnostics?.recordLine(clean)
                         fuser.accept(clean)
                     }
