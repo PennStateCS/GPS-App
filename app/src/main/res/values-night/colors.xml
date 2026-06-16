@@ -1,13 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Night theme overrides for chart colors -->
-    <color name="chart_axis">#888888</color>
-    <color name="chart_grid">#555555</color>
-    <color name="chart_text">#EEEEEE</color>
-    <color name="chart_title">#FFFFFFFF</color>
-    <color name="chart_bar_strong">@color/status_fix</color>
-    <color name="chart_bar_medium">@color/status_float</color>
-    <color name="chart_bar_weak">@color/status_no_fix</color>
-    <color name="chart_bar_unused">#90A4AE</color>
-</resources>
 
+    <!--
+        Night-mode overrides for app-specific semantic colors.
+        M3 theme role colors (colorPrimary, colorSurface, etc.) are overridden
+        in values-night/themes.xml and do not need to appear here.
+    -->
+
+    <!-- Coordinate list / card – darker stripe for night -->
+    <color name="coordinate_row_even">#FF1E2024</color>
+    <color name="coordinate_row_odd">#FF252A2E</color>
+    <color name="coordinate_list_bg">#FF1A1C1E</color>
+
+    <!-- Developer panel – night versions -->
+    <color name="dev_panel_bg">#FF1E2124</color>
+    <color name="dev_category_selected_bg">#FF2E3338</color>
+    <color name="dev_info_label">#FFCACFD4</color>
+    <color name="dev_info_value">#FFE2E4E7</color>
+    <color name="dev_info_section_bg">#FF1E2124</color>
+    <color name="dev_info_row_alt">#FF232729</color>
+
+    <!-- Permissions table – night -->
+    <color name="dev_perm_row_even">#FF1E2124</color>
+    <color name="dev_perm_row_odd">#FF252B30</color>
+
+    <!-- Home screen right column – night -->
+    <color name="home_right_column_bg">#FF252B30</color>
+
+    <!-- GNSS / satellite chart – night -->
+    <color name="chart_axis">#FF8B9198</color>
+    <color name="chart_grid">#FF41484D</color>
+    <color name="chart_text">#FFE2E4E7</color>
+    <color name="chart_title">#FFFFFFFF</color>
+    <color name="chart_bar_unused">#FF8B9198</color>
+
+</resources>

@@ -1,18 +1,51 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme (night). -->
-    <style name="Theme.SurveyingApp" parent="Theme.Material3.DayNight">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_200</item>
-        <item name="colorOnPrimary">@color/black</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Neutral surfaces (override M3 tonal tinting) -->
-        <item name="colorSurface">#FF1C1B1F</item>
-        <item name="colorOnSurface">#FFE6E1E5</item>
-        <item name="colorSurfaceVariant">#FF2B2B2B</item>
-        <item name="colorOnSurfaceVariant">#FFCAC4D0</item>
-        <item name="colorOutlineVariant">#FF444444</item>
-        <item name="android:colorBackground">#FF1C1B1F</item>
+<resources>
+    <!--
+        Night/dark overrides for Theme.SurveyingApp.
+        M3 dark theme convention: primary uses T80 (light on dark surface),
+        containers use T30 (dark enough to contrast with T80 content).
+    -->
+    <style name="Theme.SurveyingApp" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- ── Primary: Blue (dark) ───────────────────────────────────────── -->
+        <item name="colorPrimary">@color/md_primary_80</item>
+        <item name="colorOnPrimary">@color/md_primary_20</item>
+        <item name="colorPrimaryContainer">@color/md_primary_30</item>
+        <item name="colorOnPrimaryContainer">@color/md_primary_90</item>
+        <item name="colorInversePrimary">@color/md_primary_40</item>
+
+        <!-- ── Secondary: Teal (dark) ─────────────────────────────────────── -->
+        <item name="colorSecondary">@color/md_secondary_80</item>
+        <item name="colorOnSecondary">@color/md_secondary_20</item>
+        <item name="colorSecondaryContainer">@color/md_secondary_30</item>
+        <item name="colorOnSecondaryContainer">@color/md_secondary_90</item>
+
+        <!-- ── Tertiary: Amber (dark) ─────────────────────────────────────── -->
+        <item name="colorTertiary">@color/md_tertiary_80</item>
+        <item name="colorOnTertiary">@color/md_tertiary_20</item>
+        <item name="colorTertiaryContainer">@color/md_tertiary_30</item>
+        <item name="colorOnTertiaryContainer">@color/md_tertiary_90</item>
+
+        <!-- ── Error (dark) ───────────────────────────────────────────────── -->
+        <item name="colorError">@color/md_error_80</item>
+        <item name="colorOnError">@color/md_error_20</item>
+        <item name="colorErrorContainer">@color/md_error_30</item>
+        <item name="colorOnErrorContainer">@color/md_error_90</item>
+
+        <!-- ── Surfaces (dark) ────────────────────────────────────────────── -->
+        <item name="colorSurface">@color/md_neutral_6</item>
+        <item name="colorOnSurface">@color/md_neutral_90</item>
+        <item name="colorSurfaceVariant">@color/md_neutral_var_20</item>
+        <item name="colorOnSurfaceVariant">@color/md_neutral_var_80</item>
+        <item name="colorInverseSurface">@color/md_neutral_90</item>
+        <item name="colorInverseOnSurface">@color/md_neutral_20</item>
+
+        <!-- ── Background (dark) ──────────────────────────────────────────── -->
+        <item name="android:colorBackground">@color/md_neutral_4</item>
+        <item name="colorOnBackground">@color/md_neutral_90</item>
+
+        <!-- ── Outline (dark) ─────────────────────────────────────────────── -->
+        <item name="colorOutline">@color/md_neutral_var_60</item>
+        <item name="colorOutlineVariant">@color/md_neutral_var_20</item>
+
     </style>
 </resources>
