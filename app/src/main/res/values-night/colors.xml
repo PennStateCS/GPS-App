@@ -7,6 +7,30 @@
         in values-night/themes.xml and do not need to appear here.
     -->
 
+    <!-- App semantic colors – dark overrides -->
+    <color name="app_top_app_bar">#07121E</color>
+    <color name="app_on_top_app_bar">#FFFFFF</color>
+    <color name="app_status_strip">#0A1B2B</color>
+    <color name="app_on_status_strip">#7DA8C8</color>
+    <color name="app_primary">#8FC5FF</color>
+    <color name="app_on_primary">#0F3A63</color>
+    <color name="app_primary_container">#0F3A63</color>
+    <color name="app_on_primary_container">#D7E8FF</color>
+    <color name="app_secondary">#79D7C9</color>
+    <color name="app_on_secondary">#003731</color>
+    <color name="app_secondary_container">#00534A</color>
+    <color name="app_on_secondary_container">#BCEDE4</color>
+    <color name="app_background">#0B1117</color>
+    <color name="app_on_background">#E2E4E7</color>
+    <color name="app_surface">#101820</color>
+    <color name="app_on_surface">#E2E4E7</color>
+    <color name="app_surface_variant">#1D2A36</color>
+    <color name="app_on_surface_variant">#C1C8CE</color>
+    <color name="app_surface_container">#16212B</color>
+    <color name="app_surface_container_high">#1D2A36</color>
+    <color name="app_outline">#8B9198</color>
+    <color name="app_outline_variant">#334454</color>
+
     <!-- Coordinate list / card – darker stripe for night -->
     <color name="coordinate_row_even">#FF1E2024</color>
     <color name="coordinate_row_odd">#FF252A2E</color>
