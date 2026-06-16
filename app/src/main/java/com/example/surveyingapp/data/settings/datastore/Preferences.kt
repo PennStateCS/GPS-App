@@ -75,6 +75,12 @@ object SettingsKeys {
     // Coordinate display — new key (other keys already existed above)
     val SHOW_RTK_STATUS_BADGES         = booleanPreferencesKey("show_rtk_status_badges")
 
+    // GNSS receiver — high accuracy
+    val HIGH_ACCURACY = booleanPreferencesKey("high_accuracy")
+
+    // Developer settings
+    val DEV_TOOLS_ENABLED = booleanPreferencesKey("dev_tools_enabled")
+
     // Advanced GNSS receiver — mock location publishing
     val MOCK_LOCATION_ENABLED          = booleanPreferencesKey("mock_location_enabled")
 
@@ -212,6 +218,14 @@ class SettingsLocalDataSource(private val context: Context) {
 
     // Coordinate display setter
     suspend fun setShowRtkStatusBadges(v: Boolean)      { context.appDataStore.edit { it[SettingsKeys.SHOW_RTK_STATUS_BADGES]    = v } }
+
+    // GNSS receiver high accuracy
+    val highAccuracy: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.HIGH_ACCURACY] ?: true }
+    suspend fun setHighAccuracy(enabled: Boolean) { context.appDataStore.edit { it[SettingsKeys.HIGH_ACCURACY] = enabled } }
+
+    // Developer settings
+    val developerToolsEnabled: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DEV_TOOLS_ENABLED] ?: false }
+    suspend fun setDeveloperToolsEnabled(enabled: Boolean) { context.appDataStore.edit { it[SettingsKeys.DEV_TOOLS_ENABLED] = enabled } }
 
     // Mock location flow and setter
     val mockLocationEnabled: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.MOCK_LOCATION_ENABLED] ?: false }

@@ -8,8 +8,10 @@ import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
+import com.example.surveyingapp.gnss.settings.DeveloperSettings
 import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -194,6 +196,41 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     // Mock location publishing
     override val mockLocationEnabled: Flow<Boolean> = local.mockLocationEnabled
     override suspend fun setMockLocationEnabled(enabled: Boolean) { local.setMockLocationEnabled(enabled) }
+
+    // GNSS receiver settings (high accuracy + connection behavior)
+    // TODO: migrate from SurveyingAppPrefs SharedPreferences (keys: high_accuracy, dev_tools,
+    //       conn_auto_reconnect, conn_validate_checksum, conn_timeout_sec, conn_max_reconnect)
+    override val gnssReceiverSettings: Flow<GnssReceiverSettings> = combine(
+        local.highAccuracy,
+        local.autoReconnect,
+        local.validateNmeaChecksum,
+        local.connectionTimeoutSeconds,
+        local.maxReconnectAttempts
+    ) { highAccuracy, autoReconnect, validateNmeaChecksum, timeoutSec, maxReconnect ->
+        GnssReceiverSettings(
+            highAccuracy = highAccuracy,
+            autoReconnect = autoReconnect,
+            validateNmeaChecksum = validateNmeaChecksum,
+            connectionTimeoutSeconds = timeoutSec.coerceIn(5, 60),
+            maxReconnectAttempts = maxReconnect.coerceIn(1, 20)
+        )
+    }
+
+    override suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings) {
+        local.setHighAccuracy(settings.highAccuracy)
+        local.setAutoReconnect(settings.autoReconnect)
+        local.setValidateNmeaChecksum(settings.validateNmeaChecksum)
+        local.setConnectionTimeoutSeconds(settings.connectionTimeoutSeconds.coerceIn(5, 60))
+        local.setMaxReconnectAttempts(settings.maxReconnectAttempts.coerceIn(1, 20))
+    }
+
+    // Developer settings
+    override val developerSettings: Flow<DeveloperSettings> =
+        local.developerToolsEnabled.map { DeveloperSettings(developerToolsEnabled = it) }
+
+    override suspend fun setDeveloperSettings(settings: DeveloperSettings) {
+        local.setDeveloperToolsEnabled(settings.developerToolsEnabled)
+    }
 
     private fun String.toRtkStatus(): RtkStatus = when (this) {
         "FIX"    -> RtkStatus.FIX

@@ -1,21 +1,16 @@
 package com.example.surveyingapp.ui.openinar
 
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.ui.settings.SettingsFragment
+import com.example.surveyingapp.domain.repository.SettingsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -49,7 +44,7 @@ data class CoordWithModel(
 class OpenInARViewModel @Inject constructor(
     private val coordinateDao: CoordinateDao,
     private val modelDao: ModelDao,
-    @ApplicationContext private val appContext: Context
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     // ── Coordinate stream ─────────────────────────────────────────────────────
@@ -130,23 +125,12 @@ class OpenInARViewModel @Inject constructor(
     // ── High-accuracy GPS preference ──────────────────────────────────────────
 
     /**
-     * Reflects the user's "high accuracy" GPS preference from SharedPreferences.
+     * Reflects the user's "high accuracy" GPS preference from SettingsRepository (DataStore).
      * Emits immediately with the current value and again whenever it changes.
-     * Moves SharedPreferences coupling out of the Fragment.
      */
-    val highAccuracyEnabled: StateFlow<Boolean> = callbackFlow {
-        val prefs = appContext.getSharedPreferences(
-            SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE
-        )
-        trySend(prefs.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true))
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
-            if (key == SettingsFragment.PREF_HIGH_ACCURACY) {
-                trySend(sp.getBoolean(key, true))
-            }
-        }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val highAccuracyEnabled: StateFlow<Boolean> = settingsRepository.gnssReceiverSettings
+        .map { it.highAccuracy }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     // ── Companion ─────────────────────────────────────────────────────────────
 

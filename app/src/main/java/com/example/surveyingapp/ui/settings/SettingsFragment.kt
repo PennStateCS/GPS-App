@@ -1,6 +1,9 @@
 package com.example.surveyingapp.ui.settings
 
-import android.content.*
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
@@ -11,12 +14,13 @@ import android.widget.*
 import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
+import com.example.surveyingapp.gnss.settings.DeveloperSettings
 import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
@@ -68,7 +72,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // lateinit var settingsViewModel: SettingsViewModel
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
-    private lateinit var preferences: SharedPreferences
     private lateinit var repository: CoordinateRepositoryImpl
     private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
 
@@ -144,10 +147,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     companion object {
-        // Preference keys (public for external access e.g., MainActivity)
-        const val PREFS_NAME = "SurveyingAppPrefs"
-        const val PREF_HIGH_ACCURACY = "high_accuracy"
-        const val PREF_DEV_TOOLS = "dev_tools"
         // Category IDs (internal)
         private const val CAT_ID_LOCATION           = 1
         private const val CAT_ID_GNSS_CAPTURE       = 2
@@ -165,7 +164,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
     override fun onRootCreated(root: View) {
         try {
-            preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             repository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
         } catch (e: Exception) {
             Log.e("SettingsFragment", "onRootCreated failed", e)
@@ -231,11 +229,24 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupDeveloperContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
         try {
-            view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_dev_tools)?.apply {
-                isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
-                setOnCheckedChangeListener { _, v ->
+            val switchDevTools = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_dev_tools)
+            if (switchDevTools != null) {
+                lifecycleScope.launch {
                     try {
-                        preferences.edit { putBoolean(PREF_DEV_TOOLS, v) }
+                        switchDevTools.isChecked = settingsRepo.developerSettings.first().developerToolsEnabled
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "dev tools initial load error", e)
+                    }
+                }
+                switchDevTools.setOnCheckedChangeListener { _, v ->
+                    try {
+                        lifecycleScope.launch {
+                            try {
+                                settingsRepo.setDeveloperSettings(DeveloperSettings(developerToolsEnabled = v))
+                            } catch (e: Exception) {
+                                Log.e("SettingsFragment", "dev tools save error", e)
+                            }
+                        }
                         Toast.makeText(requireContext(), getString(R.string.dev_toggle_developer_tools_toast), Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "dev tools switch error", e)
@@ -802,26 +813,63 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
 
         switchHighAccuracy?.apply {
-            isChecked = preferences.getBoolean(PREF_HIGH_ACCURACY, true)
+            lifecycleScope.launch {
+                try {
+                    isChecked = settingsRepo.gnssReceiverSettings.first().highAccuracy
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "high accuracy initial load error", e)
+                }
+            }
             setOnCheckedChangeListener { _, v ->
-                preferences.edit { putBoolean(PREF_HIGH_ACCURACY, v) }
+                lifecycleScope.launch {
+                    try {
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        settingsRepo.setGnssReceiverSettings(current.copy(highAccuracy = v))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "high accuracy save error", e)
+                    }
+                }
                 Toast.makeText(requireContext(), "High accuracy: $v", Toast.LENGTH_SHORT).show()
             }
         }
 
         // ── Connection Behavior section ──
-        view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_reconnect)?.apply {
-            isChecked = preferences.getBoolean("conn_auto_reconnect", true)
-            setOnCheckedChangeListener { _, v -> preferences.edit { putBoolean("conn_auto_reconnect", v) } }
-        }
-        view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_validate_nmea_checksum)?.apply {
-            isChecked = preferences.getBoolean("conn_validate_checksum", true)
-            setOnCheckedChangeListener { _, v -> preferences.edit { putBoolean("conn_validate_checksum", v) } }
-        }
+        val switchAutoReconnect = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_reconnect)
+        val switchValidateChecksum = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_validate_nmea_checksum)
         val editTimeout = view.findViewById<EditText>(R.id.edit_connection_timeout_sec)
-        editTimeout?.setText(preferences.getInt("conn_timeout_sec", 10).toString())
         val editMaxReconnect = view.findViewById<EditText>(R.id.edit_max_reconnect_attempts)
-        editMaxReconnect?.setText(preferences.getInt("conn_max_reconnect", 5).toString())
+
+        lifecycleScope.launch {
+            try {
+                val s = settingsRepo.gnssReceiverSettings.first()
+                switchAutoReconnect?.isChecked = s.autoReconnect
+                switchValidateChecksum?.isChecked = s.validateNmeaChecksum
+                editTimeout?.setText(s.connectionTimeoutSeconds.toString())
+                editMaxReconnect?.setText(s.maxReconnectAttempts.toString())
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "connection behavior initial load error", e)
+            }
+        }
+        switchAutoReconnect?.setOnCheckedChangeListener { _, v ->
+            lifecycleScope.launch {
+                try {
+                    val current = settingsRepo.gnssReceiverSettings.first()
+                    settingsRepo.setGnssReceiverSettings(current.copy(autoReconnect = v))
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "auto reconnect save error", e)
+                }
+            }
+        }
+        switchValidateChecksum?.setOnCheckedChangeListener { _, v ->
+            lifecycleScope.launch {
+                try {
+                    val current = settingsRepo.gnssReceiverSettings.first()
+                    settingsRepo.setGnssReceiverSettings(current.copy(validateNmeaChecksum = v))
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "validate checksum save error", e)
+                }
+            }
+        }
         view.findViewById<Button>(R.id.btn_save_connection_behavior)?.setOnClickListener {
             try {
                 val timeout = editTimeout?.text?.toString()?.toIntOrNull()
@@ -830,11 +878,18 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 val maxRErr    = when { maxR    == null || maxR    !in 1..20 -> "Max reconnect attempts must be 1–20.";       else -> null }
                 val err = timeoutErr ?: maxRErr
                 if (err != null) { Toast.makeText(requireContext(), err, Toast.LENGTH_LONG).show(); return@setOnClickListener }
-                preferences.edit {
-                    putInt("conn_timeout_sec", timeout!!)
-                    putInt("conn_max_reconnect", maxR!!)
+                lifecycleScope.launch {
+                    try {
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        settingsRepo.setGnssReceiverSettings(current.copy(
+                            connectionTimeoutSeconds = timeout!!,
+                            maxReconnectAttempts = maxR!!
+                        ))
+                        Toast.makeText(requireContext(), "Connection settings saved.", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "save connection behavior error", e)
+                    }
                 }
-                Toast.makeText(requireContext(), "Connection settings saved.", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Log.e("SettingsFragment", "save connection behavior error", e)
             }

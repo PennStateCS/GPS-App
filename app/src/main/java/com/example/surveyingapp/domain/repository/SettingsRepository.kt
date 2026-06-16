@@ -5,8 +5,10 @@ import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
+import com.example.surveyingapp.gnss.settings.DeveloperSettings
 import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
@@ -50,4 +52,12 @@ interface SettingsRepository {
     // Advanced: mock location publishing
     val mockLocationEnabled: Flow<Boolean>
     suspend fun setMockLocationEnabled(enabled: Boolean)
+
+    // GNSS receiver settings (high accuracy + connection behavior)
+    val gnssReceiverSettings: Flow<GnssReceiverSettings>
+    suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings)
+
+    // Developer settings
+    val developerSettings: Flow<DeveloperSettings>
+    suspend fun setDeveloperSettings(settings: DeveloperSettings)
 }
