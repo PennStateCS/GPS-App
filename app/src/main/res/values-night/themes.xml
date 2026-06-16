@@ -11,7 +11,7 @@
         <item name="colorOnPrimary">@color/md_primary_20</item>
         <item name="colorPrimaryContainer">@color/md_primary_30</item>
         <item name="colorOnPrimaryContainer">@color/md_primary_90</item>
-        <item name="colorInversePrimary">@color/md_primary_40</item>
+        <item name="colorPrimaryInverse">@color/md_primary_40</item>
 
         <!-- ── Secondary: Teal (dark) ─────────────────────────────────────── -->
         <item name="colorSecondary">@color/md_secondary_80</item>
@@ -36,8 +36,8 @@
         <item name="colorOnSurface">@color/md_neutral_90</item>
         <item name="colorSurfaceVariant">@color/md_neutral_var_20</item>
         <item name="colorOnSurfaceVariant">@color/md_neutral_var_80</item>
-        <item name="colorInverseSurface">@color/md_neutral_90</item>
-        <item name="colorInverseOnSurface">@color/md_neutral_20</item>
+        <item name="colorSurfaceInverse">@color/md_neutral_90</item>
+        <item name="colorOnSurfaceInverse">@color/md_neutral_20</item>
 
         <!-- ── Background (dark) ──────────────────────────────────────────── -->
         <item name="android:colorBackground">@color/md_neutral_4</item>
