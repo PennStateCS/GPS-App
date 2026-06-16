@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- Developer page with two-pane layout matching Settings format exactly -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -32,7 +32,7 @@
     <View
         android:layout_width="1dp"
         android:layout_height="match_parent"
-        android:background="@android:color/darker_gray" />
+        android:background="?attr/colorOutlineVariant" />
 
     <!-- Right pane: Content -->
     <ScrollView
@@ -55,7 +55,7 @@
                 android:textStyle="bold"
                 android:textSize="20sp"
                 android:paddingBottom="12dp"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 android:visibility="gone" />
 
             <!-- Placeholder until a category is selected -->

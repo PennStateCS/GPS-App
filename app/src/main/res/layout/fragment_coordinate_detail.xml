@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -29,7 +29,7 @@
                 android:layout_weight="1"
                 android:fontFamily="sans-serif-medium"
                 android:text="Name"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="24sp"
                 android:textStyle="bold" />
             <ImageButton
@@ -40,7 +40,7 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:padding="4dp"
                 android:src="@drawable/ic_edit_24"
-                android:tint="@android:color/black" />
+                android:tint="?attr/colorOnSurface" />
         </LinearLayout>
 
         <!-- Row 1: Latitude | Accuracy (moved up) -->
@@ -50,7 +50,7 @@
             android:layout_columnWeight="1"
             android:text="Latitude"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_latitude"
@@ -58,7 +58,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
         <TextView
@@ -67,7 +67,7 @@
             android:layout_columnWeight="1"
             android:text="Accuracy (H / V)"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_accuracy"
@@ -75,7 +75,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
@@ -86,7 +86,7 @@
             android:layout_columnWeight="1"
             android:text="Longitude"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_longitude"
@@ -94,7 +94,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
         <TextView
@@ -103,7 +103,7 @@
             android:layout_columnWeight="1"
             android:text="Satellites used"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_sats"
@@ -111,7 +111,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
@@ -122,7 +122,7 @@
             android:layout_columnWeight="1"
             android:text="Altitude (ellipsoidal)"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_altitude"
@@ -130,7 +130,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
         <TextView
@@ -139,7 +139,7 @@
             android:layout_columnWeight="1"
             android:text="RTK status"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_rtk"
@@ -147,7 +147,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
@@ -158,7 +158,7 @@
             android:layout_columnWeight="1"
             android:text="Date"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_date"
@@ -166,7 +166,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
         <TextView
@@ -175,7 +175,7 @@
             android:layout_columnWeight="1"
             android:text="HDOP"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_hdop"
@@ -183,7 +183,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
@@ -194,7 +194,7 @@
             android:layout_columnWeight="1"
             android:text="Time"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_time"
@@ -202,7 +202,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
         <TextView
@@ -211,7 +211,7 @@
             android:layout_columnWeight="1"
             android:text="Correction (source · age)"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_correction"
@@ -219,7 +219,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
@@ -230,7 +230,7 @@
             android:layout_columnWeight="1"
             android:text="Provider"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_provider"
@@ -238,7 +238,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
         <TextView
@@ -247,7 +247,7 @@
             android:layout_columnWeight="1"
             android:text="Projection (E · N · Zone · EPSG)"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size" />
         <TextView
             android:id="@+id/text_projection"
@@ -255,7 +255,7 @@
             android:layout_height="wrap_content"
             android:layout_columnWeight="1"
             android:textAppearance="@style/TextAppearance.App.DataValue"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="@dimen/coord_table_text_size"
             android:text="--" />
 
@@ -311,7 +311,7 @@
             android:text="Coordinate not found"
             android:visibility="gone"
             android:textStyle="italic"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:textAppearance="@style/TextAppearance.App.DataValue" />
 
         <!-- Map spanning all columns -->

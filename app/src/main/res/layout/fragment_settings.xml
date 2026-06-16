@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <!-- Added ScrollView root to allow vertical scrolling when content exceeds screen height -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -42,7 +42,7 @@
             android:layout_height="wrap_content"
             android:text="When enabled the app keeps recording location (foreground notification) after you leave the app. Turn off to stop logging when in background to save battery."
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="@android:color/darker_gray"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:layout_marginBottom="16dp" />
 
         <!-- New Location Source selection -->
@@ -294,7 +294,7 @@
             android:layout_height="wrap_content"
             android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textColor="@android:color/darker_gray" />
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
     </LinearLayout>
 </ScrollView>

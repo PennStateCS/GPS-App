@@ -33,7 +33,7 @@
                 android:layout_height="wrap_content"
                 android:text="RTK: FIX"
                 android:textSize="12sp"
-                android:textColor="@android:color/holo_green_dark" />
+                android:textColor="@color/status_fix" />
 
         </LinearLayout>
 
@@ -59,7 +59,7 @@
                 android:layout_weight="1"
                 android:text="H: 0.05m V: 0.08m"
                 android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <TextView
                 android:id="@+id/provider_text"
@@ -67,7 +67,7 @@
                 android:layout_height="wrap_content"
                 android:text="Provider: RS2_EXTERNAL"
                 android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
         </LinearLayout>
 

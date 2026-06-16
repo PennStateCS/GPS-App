@@ -55,7 +55,7 @@
         android:layout_marginTop="12dp"
         android:layout_marginEnd="12dp"
         android:src="@drawable/ic_ar_menu"
-        android:background="#CC000000"
+        android:background="@color/ar_overlay_bg_dark"
         android:scaleType="center"
         android:padding="10dp"
         android:contentDescription="Toggle AR toolbar"
@@ -71,7 +71,7 @@
         android:layout_marginTop="12dp"
         android:text="⏳ 0/0 models"
         android:textSize="11sp"
-        android:textColor="#FFFFFF"
+        android:textColor="@color/ar_overlay_text"
         android:paddingHorizontal="12dp"
         android:paddingVertical="5dp"
         android:background="@drawable/bg_ar_chip"
@@ -94,7 +94,7 @@
         android:layout_marginTop="64dp"
         android:layout_marginEnd="12dp"
         android:visibility="gone"
-        app:cardBackgroundColor="#CC000000"
+        app:cardBackgroundColor="@color/ar_overlay_bg_dark"
         app:cardCornerRadius="14dp"
         app:cardElevation="8dp"
         app:strokeWidth="0dp">
@@ -130,12 +130,12 @@
                     android:layout_marginTop="3dp"
                     android:text="Anchor"
                     android:textSize="9sp"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/ar_overlay_text"
                     android:gravity="center" />
             </LinearLayout>
 
             <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
             <!-- Test Points -->
             <LinearLayout
@@ -154,7 +154,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_pin"
-                    android:tint="#FFFFFF"
+                    android:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:id="@+id/txtTestPoints"
@@ -163,12 +163,12 @@
                     android:layout_marginTop="3dp"
                     android:text="Test"
                     android:textSize="9sp"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/ar_overlay_text"
                     android:gravity="center" />
             </LinearLayout>
 
             <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
             <!-- Distance Filter -->
             <LinearLayout
@@ -195,12 +195,12 @@
                     android:layout_marginTop="3dp"
                     android:text="All"
                     android:textSize="9sp"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/ar_overlay_text"
                     android:gravity="center" />
             </LinearLayout>
 
             <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
             <!-- Altitude Mode -->
             <LinearLayout
@@ -227,12 +227,12 @@
                     android:layout_marginTop="3dp"
                     android:text="Stored"
                     android:textSize="9sp"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/ar_overlay_text"
                     android:gravity="center" />
             </LinearLayout>
 
             <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="#33FFFFFF" android:layout_marginHorizontal="8dp" />
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
             <!-- Debug Overlay -->
             <LinearLayout
@@ -259,7 +259,7 @@
                     android:layout_marginTop="3dp"
                     android:text="Debug"
                     android:textSize="9sp"
-                    android:textColor="#FFFFFF"
+                    android:textColor="@color/ar_overlay_text"
                     android:gravity="center" />
             </LinearLayout>
 
@@ -280,8 +280,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:padding="8dp"
-            android:background="#66000000"
-            android:textColor="#FFFFFF"
+            android:background="@color/ar_overlay_bg_medium"
+            android:textColor="@color/ar_overlay_text"
             android:text="Initializing AR..."
             android:gravity="center_horizontal"
             android:clickable="false"
@@ -293,8 +293,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:padding="10dp"
-            android:background="#BB000000"
-            android:textColor="#FFFF00"
+            android:background="@color/ar_overlay_bg_heavy"
+            android:textColor="@color/ar_overlay_alert"
             android:textSize="12sp"
             android:fontFamily="monospace"
             android:text="Debug: initializing..."

@@ -17,7 +17,7 @@
             android:text="3D Models"
             android:textSize="24sp"
             android:textStyle="bold"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:paddingBottom="16dp" />
 
         <!-- Status Message -->
@@ -27,8 +27,8 @@
             android:layout_height="wrap_content"
             android:visibility="gone"
             android:padding="12dp"
-            android:background="#E8F5E8"
-            android:textColor="#2E7D32"
+            android:background="?attr/colorSecondaryContainer"
+            android:textColor="?attr/colorOnSecondaryContainer"
             android:layout_marginBottom="8dp" />
 
         <!-- Loading Indicator -->
@@ -78,7 +78,7 @@
                 android:layout_height="wrap_content"
                 android:text="No 3D models added yet"
                 android:textSize="18sp"
-                android:textColor="@android:color/darker_gray"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginBottom="8dp" />
 
             <TextView
@@ -86,7 +86,7 @@
                 android:layout_height="wrap_content"
                 android:text="Tap the + button to add your first .glb model"
                 android:textSize="14sp"
-                android:textColor="@android:color/darker_gray"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:gravity="center" />
 
         </LinearLayout>
