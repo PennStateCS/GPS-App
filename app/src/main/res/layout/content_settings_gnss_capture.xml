@@ -1,207 +1,432 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- GNSS Capture settings content (outer dynamic header supplies the main title) -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:layout_height="match_parent"
+    android:fillViewport="false">
 
-    <!-- Page description -->
-    <TextView
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="These settings apply only when saving an averaged GNSS capture point. They decide which GNSS fixes are accepted into the average and when the capture can finish. They do not affect live AR rendering or provider selection."
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="8dp" />
+        android:orientation="vertical"
+        android:padding="24dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="The policy applies to the currently active GNSS provider. RTK FIX is recommended for external RTK receivers. Internal phone GPS may not satisfy a FIX-only policy."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="24dp" />
+        <!-- Page title -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="GNSS Capture"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
-    <!-- ── Section: Capture Quality ── -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Capture Quality"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+        <!-- Page description -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
+            android:alpha="0.7"
+            android:text="These settings apply only when saving an averaged GNSS capture point. They decide which GNSS fixes are accepted into the average and when the capture can finish. They do not affect live AR rendering, ARCore geospatial anchors, provider selection, or live location display. The capture policy applies to the currently active GNSS provider. RTK FIX is recommended for external RTK receivers. Internal phone GPS may not satisfy a FIX-only policy. Lower the Required RTK Status to allow internal GPS or lower-quality captures."
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Required RTK Status"
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:layout_marginBottom="4dp" />
+        <!-- Info card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorSecondaryContainer"
+            app:strokeWidth="1dp"/>
 
-    <Spinner
-        android:id="@+id/spinner_rtk_status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
-        android:minHeight="48dp" />
+        <!-- Section 1: Quality -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Controls the minimum GNSS quality accepted into a saved averaged capture. RTK FIX is recommended for survey-grade external GNSS receivers. Internal phone GPS may not meet this requirement."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="24dp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-    <!-- ── Section: Timing ── -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Timing"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="Quality"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Minimum Capture Duration (seconds)"
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:layout_marginBottom="4dp" />
+                <!-- Required RTK Status row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
 
-    <EditText
-        android:id="@+id/edit_min_duration"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:minHeight="48dp"
-        android:layout_marginBottom="4dp" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Minimum time the app must collect accepted fixes before a capture is allowed to finish. Range: 1–600 seconds."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="16dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Required RTK Status"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Maximum Capture Duration (seconds)"
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:layout_marginBottom="4dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Minimum GNSS quality accepted into a saved averaged capture"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
 
-    <EditText
-        android:id="@+id/edit_max_duration"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:minHeight="48dp"
-        android:layout_marginBottom="4dp" />
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="240dp"
+                        android:layout_height="wrap_content"
+                        android:hint="Select">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Hard time limit for the capture session. The session can finish at this point even if the minimum sample count has not been reached. Must be ≥ minimum duration. Range: 1–600 seconds."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="24dp" />
+                        <AutoCompleteTextView
+                            android:id="@+id/spinner_rtk_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-    <!-- ── Section: Sampling ── -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Sampling"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+        <!-- Section 2: Timing -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Minimum Accepted Samples"
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:layout_marginBottom="4dp" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-    <EditText
-        android:id="@+id/edit_min_samples"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:minHeight="48dp"
-        android:layout_marginBottom="4dp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="Timing"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Minimum number of accepted GNSS fixes required before the capture is allowed to finish. Must be at least 1."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="24dp" />
+                <!-- Min Duration row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
 
-    <!-- ── Section: Fix Quality ── -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Fix Quality"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Maximum Fix Age (seconds)"
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:layout_marginBottom="4dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Min Duration"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
 
-    <EditText
-        android:id="@+id/edit_max_fix_age"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:minHeight="48dp"
-        android:layout_marginBottom="4dp" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Minimum time before capture can finish. Range: 1–600 s"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Rejects stale GNSS fixes if the receiver has not produced a recent position update. Must be at least 1 second."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="16dp" />
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        app:suffixText="sec">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Maximum Correction Age (seconds)"
-        android:textAppearance="@style/TextAppearance.AppCompat.Body1"
-        android:layout_marginBottom="4dp" />
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_min_duration"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
-    <EditText
-        android:id="@+id/edit_max_diff_age"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:inputType="number"
-        android:minHeight="48dp"
-        android:layout_marginBottom="4dp" />
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="20dp"
+                    android:background="?attr/colorOutlineVariant" />
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Rejects fixes when differential or RTK correction data is too old. Must be at least 1 second."
-        android:textAppearance="@style/TextAppearance.AppCompat.Small"
-        android:textColor="@android:color/darker_gray"
-        android:layout_marginBottom="24dp" />
+                <!-- Max Duration row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
 
-    <!-- Save button -->
-    <Button
-        android:id="@+id/btn_save_gnss_capture"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Save"
-        android:minHeight="48dp" />
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
 
-</LinearLayout>
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Max Duration"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Hard time limit. Must be ≥ minimum. Range: 1–600 s"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        app:suffixText="sec">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_max_duration"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Section 3: Acceptance Rules -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="Acceptance Rules"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <!-- Min Accepted Samples row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Min Accepted Samples"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Minimum accepted fixes required before capture finishes. Must be ≥ 1"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="160dp"
+                        android:layout_height="wrap_content"
+                        app:suffixText="samples">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_min_samples"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="20dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- Max Fix Age row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Max Fix Age"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Reject stale fixes older than this. Must be ≥ 1 s"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        app:suffixText="sec">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_max_fix_age"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="20dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- Max Correction Age row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Max Correction Age"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Reject fixes with differential corrections older than this. Must be ≥ 1 s"
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content"
+                        app:suffixText="sec">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_max_diff_age"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="number"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Save button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_save_gnss_capture"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Save Changes" />
+
+    </LinearLayout>
+</ScrollView>

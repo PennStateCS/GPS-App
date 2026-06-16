@@ -46,4 +46,8 @@ interface SettingsRepository {
     // Diagnostics & logging
     val diagnosticsSettings: Flow<DiagnosticsSettings>
     suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings)
+
+    // Advanced: mock location publishing
+    val mockLocationEnabled: Flow<Boolean>
+    suspend fun setMockLocationEnabled(enabled: Boolean)
 }

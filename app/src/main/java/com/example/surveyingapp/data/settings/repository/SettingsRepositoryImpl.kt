@@ -191,6 +191,10 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setDiagLogSatelliteDetails(settings.logSatelliteDetails)
     }
 
+    // Mock location publishing
+    override val mockLocationEnabled: Flow<Boolean> = local.mockLocationEnabled
+    override suspend fun setMockLocationEnabled(enabled: Boolean) { local.setMockLocationEnabled(enabled) }
+
     private fun String.toRtkStatus(): RtkStatus = when (this) {
         "FIX"    -> RtkStatus.FIX
         "FLOAT"  -> RtkStatus.FLOAT

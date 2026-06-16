@@ -8,6 +8,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.*
+import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
@@ -176,12 +177,12 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun baseCategories(): List<SettingsCategory> = listOf(
         SettingsCategory(CAT_ID_LOCATION,           "GNSS Receiver",           R.drawable.ic_section_location),
         SettingsCategory(CAT_ID_GNSS_CAPTURE,       "GNSS Capture",            R.drawable.ic_satellite_24),
-        SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_home),
-        SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinate Display",      R.drawable.ic_section_data),
-        SettingsCategory(CAT_ID_DATA,               "Data Import / Export",    R.drawable.ic_section_data),
-        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_dev_tools),
+        SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_section_ar),
+        SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinate Display",      R.drawable.ic_list_coordinates),
+        SettingsCategory(CAT_ID_DATA,               "Data Import / Export",    R.drawable.ic_file),
+        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_section_diagnostics),
         SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
-        SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_home)
+        SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info)
     )
 
     private fun refreshCategoriesForSource(@Suppress("UNUSED_PARAMETER") source: LocationSourceType) {
@@ -230,7 +231,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupDeveloperContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
         try {
-            view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_dev_tools)?.apply {
+            view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_dev_tools)?.apply {
                 isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
                 setOnCheckedChangeListener { _, v ->
                     try {
@@ -250,27 +251,25 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupARDisplayContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_ar_display, contentContainer, false)
         try {
-            val spinnerAltitude    = view.findViewById<Spinner>(R.id.spinner_altitude_mode)
-            val spinnerFilter      = view.findViewById<Spinner>(R.id.spinner_distance_filter)
-            val switchLabels       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_ar_show_labels)
-            val switchArrows       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_ar_show_offscreen_arrows)
-            val switchDebug        = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_ar_debug_overlay)
+            val spinnerAltitude    = view.findViewById<AutoCompleteTextView>(R.id.spinner_altitude_mode)
+            val spinnerFilter      = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter)
+            val switchLabels       = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_labels)
+            val switchArrows       = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_offscreen_arrows)
+            val switchDebug        = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_overlay)
             val editScale          = view.findViewById<EditText>(R.id.edit_ar_model_scale)
             val btnSave            = view.findViewById<Button>(R.id.btn_save_ar_display)
 
             val altitudeModes = listOf("Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
             val distanceOptions = listOf("All distances" to -1, "50 m" to 0, "100 m" to 1, "500 m" to 2)
 
-            spinnerAltitude?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, altitudeModes.map { it.first })
-                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            spinnerFilter?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, distanceOptions.map { it.first })
-                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinnerAltitude?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, altitudeModes.map { it.first }))
+            spinnerFilter?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, distanceOptions.map { it.first }))
 
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     val s = settingsRepo.arDisplaySettings.first()
-                    spinnerAltitude?.setSelection(altitudeModes.indexOfFirst { it.second == s.altitudeMode }.coerceAtLeast(0))
-                    spinnerFilter?.setSelection(s.distanceFilterIndex.coerceIn(0, distanceOptions.lastIndex))
+                    spinnerAltitude?.setText(altitudeModes.getOrElse(altitudeModes.indexOfFirst { it.second == s.altitudeMode }.coerceAtLeast(0)) { altitudeModes.first() }.first, false)
+                    spinnerFilter?.setText(distanceOptions.getOrElse(s.distanceFilterIndex.coerceIn(0, distanceOptions.lastIndex)) { distanceOptions.first() }.first, false)
                     switchLabels?.isChecked = s.showLabels
                     switchArrows?.isChecked = s.showOffscreenArrows
                     switchDebug?.isChecked  = s.showDebugOverlay
@@ -288,8 +287,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         return@setOnClickListener
                     }
                     val settings = ArDisplaySettings(
-                        altitudeMode        = altitudeModes.getOrNull(spinnerAltitude?.selectedItemPosition ?: 0)?.second ?: "STORED",
-                        distanceFilterIndex = (spinnerFilter?.selectedItemPosition ?: 0).coerceIn(0, distanceOptions.lastIndex),
+                        altitudeMode        = altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "STORED",
+                        distanceFilterIndex = distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
                         showDebugOverlay    = switchDebug?.isChecked ?: false,
                         showLabels          = switchLabels?.isChecked ?: true,
                         showOffscreenArrows = switchArrows?.isChecked ?: true,
@@ -317,28 +316,26 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
         try {
-            val spinnerFormat   = view.findViewById<Spinner>(R.id.spinner_coordinate_format)
-            val spinnerUnits    = view.findViewById<Spinner>(R.id.spinner_distance_units)
-            val switchAccuracy  = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_accuracy_indicators)
-            val switchRtkBadges = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_rtk_badges)
+            val spinnerFormat   = view.findViewById<AutoCompleteTextView>(R.id.spinner_coordinate_format)
+            val spinnerUnits    = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_units)
+            val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
+            val switchRtkBadges = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_rtk_badges)
             val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
-            val switchAutoInc   = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_auto_increment_names)
+            val switchAutoInc   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_increment_names)
             val btnSave         = view.findViewById<Button>(R.id.btn_save_coordinate_display)
 
             val formats = listOf("Decimal Degrees" to "DECIMAL_DEGREES", "Degrees Minutes" to "DEGREES_MINUTES",
                 "Degrees Minutes Seconds" to "DMS", "UTM" to "UTM")
             val units   = listOf("Meters" to "METERS", "US Survey Feet" to "US_SURVEY_FEET", "International Feet" to "FEET")
 
-            spinnerFormat?.adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, formats.map { it.first })
-                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            spinnerUnits?.adapter  = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, units.map { it.first })
-                .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+            spinnerFormat?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, formats.map { it.first }))
+            spinnerUnits?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, units.map { it.first }))
 
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     val s = settingsRepo.coordinateDisplaySettings.first()
-                    spinnerFormat?.setSelection(formats.indexOfFirst { it.second == s.format }.coerceAtLeast(0))
-                    spinnerUnits?.setSelection(units.indexOfFirst { it.second == s.distanceUnits }.coerceAtLeast(0))
+                    spinnerFormat?.setText(formats.getOrElse(formats.indexOfFirst { it.second == s.format }.coerceAtLeast(0)) { formats.first() }.first, false)
+                    spinnerUnits?.setText(units.getOrElse(units.indexOfFirst { it.second == s.distanceUnits }.coerceAtLeast(0)) { units.first() }.first, false)
                     switchAccuracy?.isChecked  = s.showAccuracyIndicators
                     switchRtkBadges?.isChecked = s.showRtkStatusBadges
                     editPrefix?.setText(s.defaultNamePrefix)
@@ -356,8 +353,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         return@setOnClickListener
                     }
                     val settings = CoordinateDisplaySettings(
-                        format                 = formats.getOrNull(spinnerFormat?.selectedItemPosition ?: 0)?.second ?: "DECIMAL_DEGREES",
-                        distanceUnits          = units.getOrNull(spinnerUnits?.selectedItemPosition ?: 0)?.second ?: "METERS",
+                        format                 = formats.firstOrNull { it.first == spinnerFormat?.text?.toString() }?.second ?: "DECIMAL_DEGREES",
+                        distanceUnits          = units.firstOrNull { it.first == spinnerUnits?.text?.toString() }?.second ?: "METERS",
                         showAccuracyIndicators = switchAccuracy?.isChecked ?: true,
                         showRtkStatusBadges    = switchRtkBadges?.isChecked ?: true,
                         defaultNamePrefix      = prefix.ifEmpty { "Point" },
@@ -385,13 +382,13 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupDiagnosticsContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_diagnostics, contentContainer, false)
         try {
-            val switchNmeaLog      = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_nmea_logging_enabled)
+            val switchNmeaLog      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_nmea_logging_enabled)
             val editMaxSize        = view.findViewById<EditText>(R.id.edit_nmea_log_max_size)
-            val switchShowRaw      = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_raw_nmea)
-            val switchShowSat      = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_show_satellite_diagnostics)
-            val switchLogRaw       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_log_raw_nmea_lines)
-            val switchLogFixes     = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_log_parsed_fixes)
-            val switchLogSat       = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_log_satellite_details)
+            val switchShowRaw      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_raw_nmea)
+            val switchShowSat      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_satellite_diagnostics)
+            val switchLogRaw       = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_log_raw_nmea_lines)
+            val switchLogFixes     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_log_parsed_fixes)
+            val switchLogSat       = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_log_satellite_details)
             val btnSave            = view.findViewById<Button>(R.id.btn_save_diagnostics)
 
             viewLifecycleOwner.lifecycleScope.launch {
@@ -451,7 +448,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupGnssCaptureContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_gnss_capture, contentContainer, false)
         try {
-            val spinner     = view.findViewById<Spinner>(R.id.spinner_rtk_status)
+            val spinner     = view.findViewById<AutoCompleteTextView>(R.id.spinner_rtk_status)
             val editMinDur  = view.findViewById<EditText>(R.id.edit_min_duration)
             val editMaxDur  = view.findViewById<EditText>(R.id.edit_max_duration)
             val editSamples = view.findViewById<EditText>(R.id.edit_min_samples)
@@ -466,20 +463,13 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 "DGPS or better"        to RtkStatus.DGPS,
                 "Single GPS or better"  to RtkStatus.SINGLE
             )
-            val spinnerAdapter = ArrayAdapter(
-                requireContext(),
-                android.R.layout.simple_spinner_item,
-                rtkOptions.map { it.first }
-            ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
-            spinner?.adapter = spinnerAdapter
+            spinner?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, rtkOptions.map { it.first }))
 
             // Load current saved settings and populate the form
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
                     val saved = settingsRepo.gnssCaptureSettings.first()
-                    val spinnerIndex = rtkOptions.indexOfFirst { it.second == saved.requiredMinStatus }
-                        .coerceAtLeast(0)
-                    spinner?.setSelection(spinnerIndex)
+                    spinner?.setText(rtkOptions.getOrElse(rtkOptions.indexOfFirst { it.second == saved.requiredMinStatus }.coerceAtLeast(0)) { rtkOptions.first() }.first, false)
                     editMinDur?.setText(saved.minDurationSec.toString())
                     editMaxDur?.setText(saved.maxDurationSec.toString())
                     editSamples?.setText(saved.minSamples.toString())
@@ -513,7 +503,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         return@setOnClickListener
                     }
 
-                    val selectedStatus = rtkOptions.getOrNull(spinner?.selectedItemPosition ?: 0)?.second
+                    val selectedStatus = rtkOptions.firstOrNull { it.first == spinner?.text?.toString() }?.second
                         ?: RtkStatus.FIX
 
                     val settings = GnssCaptureSettings(
@@ -548,7 +538,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupLocationSourceUi(view: View) {
         val radioGroup = view.findViewById<RadioGroup>(R.id.radio_location_source)
         val internalGpsGroup = view.findViewById<LinearLayout>(R.id.group_internal_gps)
-        val switchHighAccuracy = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_high_accuracy)
+        val switchHighAccuracy = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_high_accuracy)
         val rs2OptionsLayout = view.findViewById<LinearLayout>(R.id.layout_rs2_options)
         val editHost = view.findViewById<EditText>(R.id.edit_host)
         val editPort = view.findViewById<EditText>(R.id.edit_port)
@@ -820,11 +810,11 @@ class SettingsFragment : BaseTwoPaneFragment() {
         }
 
         // ── Connection Behavior section ──
-        view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_auto_reconnect)?.apply {
+        view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_reconnect)?.apply {
             isChecked = preferences.getBoolean("conn_auto_reconnect", true)
             setOnCheckedChangeListener { _, v -> preferences.edit { putBoolean("conn_auto_reconnect", v) } }
         }
-        view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_validate_nmea_checksum)?.apply {
+        view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_validate_nmea_checksum)?.apply {
             isChecked = preferences.getBoolean("conn_validate_checksum", true)
             setOnCheckedChangeListener { _, v -> preferences.edit { putBoolean("conn_validate_checksum", v) } }
         }
@@ -847,6 +837,62 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 Toast.makeText(requireContext(), "Connection settings saved.", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Log.e("SettingsFragment", "save connection behavior error", e)
+            }
+        }
+
+        // ── Advanced: mock location publishing ──
+        val switchMock   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
+        val errorBanner  = view.findViewById<LinearLayout>(R.id.layout_mock_location_error)
+        val btnDevOpts   = view.findViewById<Button>(R.id.btn_open_developer_options)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                switchMock?.isChecked = settingsRepo.mockLocationEnabled.first()
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "Failed to load mock location setting", e)
+            }
+        }
+
+        switchMock?.setOnCheckedChangeListener { _, checked ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    settingsRepo.setMockLocationEnabled(checked)
+                    if (!checked) errorBanner?.visibility = View.GONE
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to save mock location setting", e)
+                }
+            }
+        }
+
+        btnDevOpts?.setOnClickListener {
+            try {
+                startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            } catch (e: Exception) {
+                try {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+                } catch (ex: Exception) {
+                    Log.w("SettingsFragment", "Could not open developer settings", ex)
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                try {
+                    SurveyingApp.mockLocationPublisher.errorEvents.collect { error ->
+                        val msg = when (error) {
+                            AndroidMockLocationPublisher.MockLocationError.NOT_PERMITTED ->
+                                "Mock location is not enabled for this app. Open Developer Options and select this app as the mock location app."
+                            AndroidMockLocationPublisher.MockLocationError.PROVIDER_ERROR ->
+                                "Mock location provider error. See Logcat for details."
+                        }
+                        errorBanner?.visibility = View.VISIBLE
+                        view.findViewById<TextView>(R.id.text_mock_location_error)?.text = msg
+                        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "mock location error observer failed", e)
+                }
             }
         }
 
