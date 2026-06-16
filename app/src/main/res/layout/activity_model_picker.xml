@@ -84,7 +84,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="No 3D models added yet"
-                android:textSize="18sp"
+                android:textAppearance="@style/TextAppearance.App.SectionTitle"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginBottom="8dp" />
 

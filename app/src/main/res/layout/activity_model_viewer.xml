@@ -62,7 +62,7 @@
             android:gravity="center"
             android:text="@string/failed_load_model"
             android:textColor="?attr/colorError"
-            android:textSize="16sp"
+            android:textAppearance="@style/TextAppearance.App.BodyPrimary"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
@@ -88,7 +88,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:textSize="24sp"
+                android:textAppearance="@style/TextAppearance.App.PageTitle"
                 android:textStyle="bold"
                 android:textColor="?attr/colorOnSurface"
                 tools:text="Model Name" />
@@ -98,7 +98,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:textSize="16sp"
+                android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                 android:textStyle="bold"
                 tools:text="Model Filename" />
         </LinearLayout>

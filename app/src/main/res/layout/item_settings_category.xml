@@ -46,7 +46,6 @@
             android:layout_weight="1"
             android:text="Category Name"
             android:textAppearance="@style/TextAppearance.App.BodyPrimary"
-            android:textSize="16sp"
             android:maxLines="1"
             android:ellipsize="end" />
     </LinearLayout>

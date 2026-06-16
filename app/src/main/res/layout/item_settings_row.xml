@@ -36,7 +36,6 @@
             android:layout_height="wrap_content"
             android:textAppearance="?android:attr/textAppearanceMedium"
             android:textColor="?attr/colorOnSurface"
-            android:textSize="16sp" />
 
         <TextView
             android:id="@+id/setting_summary"
@@ -45,7 +44,6 @@
             android:textAppearance="?android:attr/textAppearanceSmall"
             android:textColor="?attr/colorOnSurface"
             android:alpha="0.7"
-            android:textSize="14sp"
             android:visibility="gone" />
 
     </LinearLayout>

@@ -25,14 +25,14 @@
             android:id="@+id/point_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="18sp"
+            android:textAppearance="@style/TextAppearance.App.SectionTitle"
             android:textColor="?attr/colorOnSurface" />
 
         <TextView
             android:id="@+id/point_coordinates"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
+            android:textAppearance="@style/TextAppearance.App.Supporting"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:visibility="gone" />
     </LinearLayout>
