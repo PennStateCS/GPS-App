@@ -1,6 +1,5 @@
 package com.example.surveyingapp.gnss.satellites
 
-import android.util.Log
 import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
 import com.example.surveyingapp.gnss.model.SkySnapshot
 import com.example.surveyingapp.gnss.model.SatInfo
@@ -44,8 +43,6 @@ class SatelliteInventory(
     fun consume(gsv: GsvMessage): SkySnapshot {
         val t = nowSeconds()
         val const = mapConstellationName(gsv.constellation)
-
-        android.util.Log.d("SatelliteInventory", "Consuming GSV: constellation=${gsv.constellation} (mapped to $const), ${gsv.entries.size} satellites")
 
         // Apply EMA smoothing to SNR and record the latest geometry for each satellite
         gsv.entries.forEach { e ->
@@ -100,10 +97,6 @@ class SatelliteInventory(
                 usedInFix = g.usedInFix
             )
         }
-
-        val totalVisible = visibleByConstellation.values.sum()
-        val totalUsed = usedByConstellation.values.sum()
-        android.util.Log.d("SatelliteInventory", "SkySnapshot built: ${satInfoList.size} satellites, $totalUsed used, $totalVisible visible | By constellation: ${visibleByConstellation.entries.sortedByDescending { it.value }.joinToString { "${it.key.name}=${it.value}" }}")
 
         return SkySnapshot(
             satellites = satInfoList,
