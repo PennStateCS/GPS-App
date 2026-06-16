@@ -89,7 +89,7 @@
 
     <!-- Developer panel ─────────────────────────────────────────────────── -->
     <color name="dev_panel_bg">#F5F5F5</color>
-    <color name="dev_category_selected_bg">#E0E0E0</color>
+    <color name="dev_category_selected_bg">@color/md_primary_90</color>
     <!-- Accent now follows the new primary blue instead of M2 purple -->
     <color name="dev_category_selected_accent">@color/md_primary_40</color>
     <color name="dev_category_ripple_mask">#33000000</color>

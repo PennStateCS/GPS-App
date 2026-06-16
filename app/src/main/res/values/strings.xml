@@ -32,7 +32,7 @@
     <string name="twopane_placeholder_select">Select an item from the list</string>
     <string name="nav_header_desc">Navigation header image</string>
     <string name="nav_header_title">SurReal AR</string>
-    <string name="nav_header_subtitle">Welcome</string>
+    <string name="nav_header_subtitle">Surveying · GNSS · AR</string>
     <string name="menu_home">Home</string>
     <string name="menu_render_map">Render Map</string>
     <string name="menu_open_in_ar">Open in AR</string>

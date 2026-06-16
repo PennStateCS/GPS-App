@@ -9,18 +9,21 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:theme="@style/Theme.SurveyingApp.AppBarOverlay">
+        android:background="?attr/colorPrimaryContainer"
+        app:liftOnScroll="true">
 
-        <androidx.appcompat.widget.Toolbar
+        <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorPrimary"
+            android:layout_height="@dimen/toolbar_height"
+            android:background="?attr/colorPrimaryContainer"
+            app:titleTextColor="?attr/colorOnPrimaryContainer"
+            app:titleTextAppearance="?attr/textAppearanceTitleMedium"
+            app:navigationIconTint="?attr/colorOnPrimaryContainer"
             app:popupTheme="@style/Theme.SurveyingApp.PopupOverlay" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
     <include layout="@layout/content_main" />
-
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

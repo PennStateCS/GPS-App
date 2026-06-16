@@ -54,6 +54,9 @@ object SettingsKeys {
     // Diagnostics panel visibility
     val DIAG_SHOW_RAW_NMEA             = booleanPreferencesKey("diag_show_raw_nmea")
     val DIAG_SHOW_SATELLITE_DIAG       = booleanPreferencesKey("diag_show_satellite_diagnostics")
+
+    // Appearance
+    val APP_THEME_MODE                 = stringPreferencesKey("app_theme_mode")
 }
 
 /**
@@ -143,4 +146,8 @@ class SettingsLocalDataSource(private val context: Context) {
     // Diagnostics setters
     suspend fun setDiagShowRawNmea(v: Boolean)          { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_RAW_NMEA]       = v } }
     suspend fun setDiagShowSatelliteDiag(v: Boolean)    { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_SATELLITE_DIAG] = v } }
+
+    // Appearance
+    val appThemeModeRaw: Flow<String> = context.appDataStore.data.map { it[SettingsKeys.APP_THEME_MODE] ?: "SYSTEM" }
+    suspend fun setAppThemeModeString(v: String) { context.appDataStore.edit { it[SettingsKeys.APP_THEME_MODE] = v } }
 }

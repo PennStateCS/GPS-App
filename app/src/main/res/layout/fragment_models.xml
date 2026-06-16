@@ -29,6 +29,7 @@
             android:padding="12dp"
             android:background="?attr/colorSecondaryContainer"
             android:textColor="?attr/colorOnSecondaryContainer"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
             android:layout_marginBottom="8dp" />
 
         <!-- Loading Indicator -->
@@ -67,11 +68,12 @@
             android:visibility="gone">
 
             <ImageView
-                android:layout_width="96dp"
-                android:layout_height="96dp"
-                android:src="@android:drawable/ic_menu_gallery"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/ic_menu_gallery"
                 android:alpha="0.3"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="16dp"
+                app:tint="?attr/colorOnSurface" />
 
             <TextView
                 android:layout_width="wrap_content"

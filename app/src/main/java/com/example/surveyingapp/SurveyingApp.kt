@@ -18,7 +18,10 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import androidx.appcompat.app.AppCompatDelegate
+import com.example.surveyingapp.gnss.settings.AppThemeMode
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.osmdroid.config.Configuration
 
 /** Hilt entry point for accessing Hilt singletons from non-injected Application code. */
@@ -66,6 +69,7 @@ class SurveyingApp : Application() {
         Log.d("SurveyingApp","Application started; global crash handler & osmdroid config done")
 
         setupSettings()
+        applyThemeFromSettings()
         createNotificationChannel()
         startMockLocationPublisher()
         runUtmBackfill()
@@ -103,6 +107,22 @@ class SurveyingApp : Application() {
         appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val localDs = SettingsLocalDataSource(this)
         settingsRepo = SettingsRepositoryImpl(localDs)
+    }
+
+    private fun applyThemeFromSettings() {
+        try {
+            val themeMode = runBlocking { settingsRepo.appearanceSettings.first().themeMode }
+            AppCompatDelegate.setDefaultNightMode(
+                when (themeMode) {
+                    AppThemeMode.LIGHT  -> AppCompatDelegate.MODE_NIGHT_NO
+                    AppThemeMode.DARK   -> AppCompatDelegate.MODE_NIGHT_YES
+                    AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                }
+            )
+        } catch (e: Exception) {
+            Log.w("SurveyingApp", "Failed to apply theme from settings: ${e.message}")
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        }
     }
 
     private fun startMockLocationPublisher() {

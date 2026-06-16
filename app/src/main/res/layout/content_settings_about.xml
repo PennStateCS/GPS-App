@@ -94,21 +94,6 @@
                         android:textAppearance="?attr/textAppearanceBodyLarge" />
                 </LinearLayout>
 
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="20dp"
-                    android:background="?attr/colorOutlineVariant" />
-
-                <!-- ARCore note row -->
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginStart="20dp"
-                    android:background="?attr/colorOutlineVariant" />
-
-                <!-- External GNSS note row -->
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -125,7 +110,28 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"/>
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="Supported Workflows"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:alpha="0.7"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="16dp"
+                    android:paddingTop="4dp"
+                    android:text="RTK GNSS capture with averaging · AR pin placement via ARCore Geospatial API · 3D model import and placement · Map view with coordinate overlay · Mock location publishing for third-party apps"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+            </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- Section 3: Legal -->
