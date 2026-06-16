@@ -11,6 +11,7 @@ import com.example.surveyingapp.gnss.capture.ObservationSession
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.gnss.settings.CaptureSettings
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
@@ -26,8 +27,10 @@ class CaptureViewModel @Inject constructor(
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
-    private lateinit var _state: StateFlow<ObservationSession.State>
-    val state: StateFlow<ObservationSession.State> get() = _state
+    private var sessionForwardJob: Job? = null
+
+    private val _state = MutableStateFlow<ObservationSession.State>(ObservationSession.State.Idle)
+    val state: StateFlow<ObservationSession.State> = _state.asStateFlow()
 
     // Track when fixes start satisfying capture settings
     private var satisfyingStartTime: Long? = null
@@ -72,14 +75,25 @@ class CaptureViewModel @Inject constructor(
 
     fun start(policy: AveragingPolicy) {
         val s = ObservationSession(viewModelScope, fixSwitchboard.fixes, policy)
-        _state = s.state
         session = s
+        sessionForwardJob?.cancel()
+        sessionForwardJob = viewModelScope.launch {
+            s.state.collect { _state.value = it }
+        }
         s.start()
     }
 
     fun cancel() {
         session?.cancel()
         session = null
+        sessionForwardJob?.cancel()
+        sessionForwardJob = null
+        _state.value = ObservationSession.State.Idle
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sessionForwardJob?.cancel()
     }
 
     suspend fun save(name: String, note: String?, color: Int, iconId: String) {
