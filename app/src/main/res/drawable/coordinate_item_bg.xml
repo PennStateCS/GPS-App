@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Transparent shape — selection state is handled via the accent bar in the list item.
+     This replaces the old hardcoded white background. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@android:color/white" />
-    <corners android:radius="0dp" />
+    <solid android:color="@android:color/transparent" />
 </shape>
-

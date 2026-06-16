@@ -1,56 +1,172 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Tablet (sw600dp+) two-pane coordinator layout.
+    - list_pane_container (weight=3): collapsible left list pane
+    - list_pane_divider: 1dp vertical separator
+    - coord_detail_container (weight=7): detail pane, fills remainder
+    All IDs required by FragmentCoordinatesBinding are present:
+    pointsRecyclerView, emptyCoordinatesText (LinearLayout), fab_add_coordinate.
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Two-pane horizontal layout -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:weightSum="10">
+        android:orientation="horizontal">
 
+        <!-- ── LEFT: List pane ──────────────────────────────────────────── -->
         <FrameLayout
             android:id="@+id/list_pane_container"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="3">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/pointsRecyclerView"
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="match_parent" />
+                android:layout_height="match_parent"
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/emptyCoordinatesText"
+                <!-- Pane header: title + collapse button -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="4dp"
+                    android:background="?attr/colorSurface"
+                    android:elevation="2dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Coordinates"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:textColor="?attr/colorOnSurface" />
+
+                    <ImageButton
+                        android:id="@+id/btn_collapse_list"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:padding="10dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Collapse list"
+                        android:src="@drawable/ic_chevron_right"
+                        android:rotation="180"
+                        app:tint="?attr/colorOnSurfaceVariant" />
+
+                </LinearLayout>
+
+                <!-- Hairline separator below header -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- Content area: RecyclerView + empty state overlay -->
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/pointsRecyclerView"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:paddingBottom="80dp"
+                        android:clipToPadding="false"
+                        android:scrollbars="vertical" />
+
+                    <!-- Empty state — LinearLayout matches phone layout contract for ViewBinding -->
+                    <LinearLayout
+                        android:id="@+id/emptyCoordinatesText"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="32dp"
+                        android:visibility="gone">
+
+                        <ImageView
+                            android:layout_width="64dp"
+                            android:layout_height="64dp"
+                            android:layout_marginBottom="16dp"
+                            android:src="@drawable/ic_list_coordinates"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            android:contentDescription="@null" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="No coordinates saved"
+                            android:textAppearance="?attr/textAppearanceBodyLarge"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Tap + to capture the current GNSS position"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:gravity="center" />
+
+                    </LinearLayout>
+
+                </FrameLayout>
+
+            </LinearLayout>
+
+            <!-- FAB overlaid at bottom-end of list pane -->
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/fab_add_coordinate"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/empty_coordinates_text"
-                android:textAppearance="?attr/textAppearanceTitleMedium"
-                android:layout_gravity="center"
-                android:visibility="gone" />
+                android:layout_gravity="bottom|end"
+                android:layout_margin="16dp"
+                android:contentDescription="@string/capture_coordinates"
+                android:src="@drawable/ic_stat_location"
+                app:backgroundTint="?attr/colorPrimaryContainer"
+                app:tint="?attr/colorOnPrimaryContainer" />
+
         </FrameLayout>
 
+        <!-- ── Vertical divider ──────────────────────────────────────────── -->
         <View
+            android:id="@+id/list_pane_divider"
             android:layout_width="1dp"
             android:layout_height="match_parent"
-            android:background="@color/coordinate_divider" />
+            android:background="?attr/colorOutlineVariant" />
 
+        <!-- ── RIGHT: Detail pane ────────────────────────────────────────── -->
         <FrameLayout
             android:id="@+id/coord_detail_container"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="7"
-            android:background="@android:color/white" />
+            android:background="?android:attr/colorBackground">
+
+            <!-- Mini FAB shown only when list pane is collapsed -->
+            <com.google.android.material.floatingactionbutton.FloatingActionButton
+                android:id="@+id/btn_expand_list"
+                style="@style/Widget.Material3.FloatingActionButton.Small.Secondary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="12dp"
+                android:contentDescription="Show coordinate list"
+                android:src="@drawable/ic_list_coordinates"
+                android:visibility="gone"
+                app:backgroundTint="?attr/colorSurfaceContainerHigh"
+                app:tint="?attr/colorOnSurface" />
+
+        </FrameLayout>
+
     </LinearLayout>
 
-    <!-- FAB anchored to overall bottom-right -->
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab_add_coordinate"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_margin="24dp"
-        android:contentDescription="@string/capture_coordinates"
-        android:src="@android:drawable/ic_input_add" />
 </FrameLayout>

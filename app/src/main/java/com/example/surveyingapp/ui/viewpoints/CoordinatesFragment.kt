@@ -56,6 +56,9 @@ class CoordinatesFragment : Fragment() {
     // Track whether we've already added the vertical divider decoration
     private var dividerAdded = false
 
+    // Tablet: whether the left list pane is currently visible
+    private var listPaneVisible = true
+
     // View binding (valid between onCreateView and onDestroyView)
     private var _binding: FragmentCoordinatesBinding? = null
     private val binding get() = _binding!!
@@ -251,6 +254,29 @@ class CoordinatesFragment : Fragment() {
             }
         }
 
+        // Tablet two-pane: wire collapsible list pane controls
+        val listPane = root.findViewById<View>(R.id.list_pane_container)
+        val divider = root.findViewById<View>(R.id.list_pane_divider)
+        val btnCollapse = root.findViewById<View>(R.id.btn_collapse_list)
+        val btnExpand = root.findViewById<View>(R.id.btn_expand_list)
+        if (listPane != null && divider != null && btnCollapse != null && btnExpand != null) {
+            fun applyListPaneVisibility() {
+                val vis = if (listPaneVisible) View.VISIBLE else View.GONE
+                listPane.visibility = vis
+                divider.visibility = vis
+                btnExpand.visibility = if (listPaneVisible) View.GONE else View.VISIBLE
+            }
+            applyListPaneVisibility()
+            btnCollapse.setOnClickListener {
+                listPaneVisible = false
+                applyListPaneVisibility()
+            }
+            btnExpand.setOnClickListener {
+                listPaneVisible = true
+                applyListPaneVisibility()
+            }
+        }
+
         // Preferences for UI-only display toggles (not app settings)
         prefs = requireContext().getSharedPreferences("CoordinatesFragmentPrefs", Context.MODE_PRIVATE)
 
@@ -389,11 +415,13 @@ class CoordinatesFragment : Fragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         currentSelectionId = savedInstanceState?.getString("coord_selected_id")
+        listPaneVisible = savedInstanceState?.getBoolean("list_pane_visible", true) ?: true
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         currentSelectionId?.let { outState.putString("coord_selected_id", it) }
+        outState.putBoolean("list_pane_visible", listPaneVisible)
     }
 
     // Grid spacing decoration
