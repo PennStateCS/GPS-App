@@ -24,6 +24,7 @@ import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -139,6 +140,21 @@ class AddCoordinateDialogFragment(
 
         // Store reference to EditText for proper cleanup
         editTextRef = nameEdit
+
+        // Prefill name from coordinateDisplaySettings (prefix + optional auto-increment index)
+        lifecycleScope.launch {
+            val coordSettings = SurveyingApp.settingsRepo.coordinateDisplaySettings.first()
+            val prefix = coordSettings.defaultNamePrefix
+            val proposedName = if (coordSettings.autoIncrementNames) {
+                val count = withContext(Dispatchers.IO) {
+                    AppDatabase.getDatabase(requireContext()).coordinateDao().count()
+                }
+                "$prefix ${count + 1}"
+            } else {
+                prefix
+            }
+            editTextRef?.setText(proposedName)
+        }
 
         // The icon is now chosen via the model picker, not the spinner.
         iconButtonRef = iconButton
