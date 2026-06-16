@@ -34,8 +34,8 @@
             android:layout_height="wrap_content"
             android:visibility="gone"
             android:padding="12dp"
-            android:background="#E8F5E8"
-            android:textColor="#2E7D32"
+            android:background="?attr/colorSecondaryContainer"
+            android:textColor="?attr/colorOnSecondaryContainer"
             android:layout_marginBottom="8dp" />
 
         <!-- Loading Indicator -->
@@ -85,7 +85,7 @@
                 android:layout_height="wrap_content"
                 android:text="No 3D models added yet"
                 android:textSize="18sp"
-                android:textColor="@android:color/darker_gray"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginBottom="8dp" />
 
         </LinearLayout>

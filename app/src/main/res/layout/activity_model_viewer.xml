@@ -61,7 +61,7 @@
             android:layout_margin="16dp"
             android:gravity="center"
             android:text="@string/failed_load_model"
-            android:textColor="@android:color/holo_red_dark"
+            android:textColor="?attr/colorError"
             android:textSize="16sp"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
@@ -90,7 +90,7 @@
                 android:gravity="center"
                 android:textSize="24sp"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 tools:text="Model Name" />
 
             <TextView

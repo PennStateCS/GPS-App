@@ -26,8 +26,8 @@
         android:padding="16dp"
         android:text="/storage/emulated/0"
         android:textSize="14sp"
-        android:textColor="@android:color/darker_gray"
-        android:background="#F5F5F5"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:background="?attr/colorSurfaceVariant"
         android:ellipsize="start"
         android:singleLine="true" />
 
@@ -56,7 +56,7 @@
         android:gravity="center"
         android:text="No files found"
         android:textSize="16sp"
-        android:textColor="@android:color/darker_gray"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
 
 </LinearLayout>

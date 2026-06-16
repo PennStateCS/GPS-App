@@ -352,7 +352,7 @@
                                         android:layout_height="wrap_content"
                                         android:textAppearance="?attr/textAppearanceBodySmall"
                                         android:textStyle="bold"
-                                        android:textColor="@android:color/holo_green_dark" />
+                                        android:textColor="@color/status_fix" />
                                 </LinearLayout>
 
                                 <LinearLayout

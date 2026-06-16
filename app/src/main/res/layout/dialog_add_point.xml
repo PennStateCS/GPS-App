@@ -38,8 +38,8 @@
             app:iconSize="24dp"
             app:iconGravity="textStart"
             app:iconPadding="12dp"
-            android:textColor="#424242"
-            app:strokeColor="#9E9E9E"
+            android:textColor="?attr/colorOnSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
             app:rippleColor="#BDBDBD" />
 
         <TextView
