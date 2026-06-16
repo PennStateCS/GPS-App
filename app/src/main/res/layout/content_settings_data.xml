@@ -189,13 +189,13 @@
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary" />
 
-                <ProgressBar
+                <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/progress_import"
-                    style="@style/Widget.AppCompat.ProgressBar.Horizontal"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="8dp"
-                    android:max="100" />
+                    android:max="100"
+                    app:trackCornerRadius="4dp" />
 
                 <TextView
                     android:id="@+id/text_import_progress"
