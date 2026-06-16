@@ -25,14 +25,14 @@
                 android:layout_weight="1"
                 android:text="12:34:56"
                 android:textStyle="bold"
-                android:textSize="16sp" />
+                android:textAppearance="@style/TextAppearance.App.BodyPrimary" />
 
             <TextView
                 android:id="@+id/rtk_status_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="RTK: FIX"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Supporting"
                 android:textColor="@color/status_fix" />
 
         </LinearLayout>
@@ -42,7 +42,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="40.12345678, -74.12345678"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:fontFamily="monospace"
             android:layout_marginTop="4dp" />
 
@@ -58,7 +58,7 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="H: 0.05m V: 0.08m"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Supporting"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
             <TextView
@@ -66,7 +66,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Provider: RS2_EXTERNAL"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Supporting"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
         </LinearLayout>

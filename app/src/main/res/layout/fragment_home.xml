@@ -47,7 +47,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Current Location"
-                        android:textSize="14sp"
+                        android:textAppearance="@style/TextAppearance.App.BodySecondary"
                         android:textStyle="bold"
                         android:textColor="?android:attr/textColorPrimary" />
 
@@ -96,7 +96,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Acquiring location…"
-                            android:textSize="14sp"
+                            android:textAppearance="@style/TextAppearance.App.BodySecondary"
                             android:textColor="?android:attr/textColorSecondary" />
 
                     </LinearLayout>
@@ -185,7 +185,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Insights"
-                        android:textSize="14sp"
+                        android:textAppearance="@style/TextAppearance.App.BodySecondary"
                         android:textStyle="bold"
                         android:textColor="?android:attr/textColorPrimary" />
 
@@ -197,7 +197,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="RS2+ Device"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Supporting"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"
                     android:layout_marginBottom="8dp"
@@ -263,7 +263,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Survey Data"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Supporting"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"
                     android:layout_marginBottom="8dp" />
@@ -383,7 +383,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Quick Actions"
-                    android:textSize="12sp"
+                    android:textAppearance="@style/TextAppearance.App.Supporting"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"
                     android:layout_marginBottom="8dp" />

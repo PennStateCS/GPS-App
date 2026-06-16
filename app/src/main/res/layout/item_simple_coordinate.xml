@@ -52,7 +52,7 @@
                 android:id="@+id/text_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="16sp"
+                android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                 android:textColor="?attr/colorOnSurface"
                 android:maxLines="2"
                 android:ellipsize="end" />
@@ -62,7 +62,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:textSize="12sp"
+                android:textAppearance="@style/TextAppearance.App.Supporting"
                 android:textColor="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
     </LinearLayout>

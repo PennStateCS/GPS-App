@@ -19,7 +19,6 @@
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:paddingBottom="8dp" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -154,7 +153,6 @@
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -179,7 +177,6 @@
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -239,7 +236,6 @@
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -258,7 +254,6 @@
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -285,7 +280,6 @@
             android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 

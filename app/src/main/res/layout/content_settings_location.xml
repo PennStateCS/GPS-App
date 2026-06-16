@@ -545,7 +545,7 @@
                                 android:layout_marginEnd="12dp"
                                 android:layout_marginTop="2dp"
                                 android:text="⚠"
-                                android:textSize="18sp"
+                                android:textAppearance="@style/TextAppearance.App.SectionTitle"
                                 android:textColor="?attr/colorError" />
 
                             <LinearLayout

@@ -379,7 +379,7 @@
                             android:layout_marginEnd="12dp"
                             android:layout_marginTop="2dp"
                             android:text="ℹ"
-                            android:textSize="18sp" />
+                            android:textAppearance="@style/TextAppearance.App.SectionTitle" />
 
                         <TextView
                             android:layout_width="0dp"

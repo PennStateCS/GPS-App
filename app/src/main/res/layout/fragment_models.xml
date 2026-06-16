@@ -15,7 +15,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="3D Models"
-            android:textSize="24sp"
+            android:textAppearance="@style/TextAppearance.App.PageTitle"
             android:textStyle="bold"
             android:textColor="?attr/colorOnSurface"
             android:paddingBottom="16dp" />
@@ -77,7 +77,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="No 3D models added yet"
-                android:textSize="18sp"
+                android:textAppearance="@style/TextAppearance.App.SectionTitle"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginBottom="8dp" />
 
@@ -85,7 +85,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Tap the + button to add your first .glb model"
-                android:textSize="14sp"
+                android:textAppearance="@style/TextAppearance.App.BodySecondary"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:gravity="center" />
 

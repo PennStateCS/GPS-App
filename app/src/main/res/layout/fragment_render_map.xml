@@ -26,7 +26,7 @@
                 android:layout_weight="1"
                 android:paddingBottom="8dp"
                 android:text="Coordinates"
-                android:textSize="18sp"
+                android:textAppearance="@style/TextAppearance.App.SectionTitle"
                 android:textStyle="bold" />
 
             <ImageButton
@@ -95,7 +95,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="Stakeout"
-                    android:textSize="16sp"
+                    android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                     android:textStyle="bold" />
 
                 <Button
@@ -116,7 +116,7 @@
                 android:paddingTop="4dp"
                 android:text="Target: Tap map to set"
                 android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="12sp" />
+                android:textAppearance="@style/TextAppearance.App.Supporting" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -143,7 +143,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="--"
-                        android:textSize="16sp"
+                        android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                         android:textStyle="bold" />
                 </LinearLayout>
 
@@ -166,7 +166,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="--"
-                        android:textSize="16sp"
+                        android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                         android:textStyle="bold" />
                 </LinearLayout>
 
@@ -182,7 +182,7 @@
             android:background="?android:attr/selectableItemBackground"
             android:text="Enable Stakeout"
             android:textColor="?attr/colorSecondary"
-            android:textSize="12sp" />
+            android:textAppearance="@style/TextAppearance.App.Supporting" />
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/coordinate_toggle_list"
@@ -196,7 +196,7 @@
             android:layout_height="wrap_content"
             android:text="No coordinates"
             android:textColor="?attr/colorOnSurfaceVariant"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:visibility="gone" />
     </LinearLayout>
 

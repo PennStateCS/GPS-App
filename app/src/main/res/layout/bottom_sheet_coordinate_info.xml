@@ -23,7 +23,7 @@
             android:id="@+id/bs_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="18sp"
+            android:textAppearance="@style/TextAppearance.App.SectionTitle"
             android:textStyle="bold"
             android:textColor="?attr/colorOnSurface" />
 
@@ -31,14 +31,14 @@
             android:id="@+id/bs_coords"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:textColor="?attr/colorOnSurfaceVariant" />
 
         <TextView
             android:id="@+id/bs_altitude"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 </LinearLayout>
