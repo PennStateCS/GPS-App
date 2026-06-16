@@ -10,7 +10,7 @@ import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.util.GeoProjection
+import com.example.surveyingapp.util.UtmConverter
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.*
 import org.osmdroid.config.Configuration
@@ -67,11 +67,11 @@ class SurveyingApp : Application() {
                 list.forEach { e ->
                     if (e.easting == null || e.northing == null || e.utmZone == null) {
                         try {
-                            val utm = GeoProjection.wgs84ToUtm(e.latitude, e.longitude)
+                            val utm = UtmConverter.latLonToUtm(e.latitude, e.longitude)
                             val copy = e.copy(
                                 easting = utm.easting,
                                 northing = utm.northing,
-                                utmZone = utm.zoneString
+                                utmZone = utm.utmZone
                             )
                             dao.update(copy)
                             updated++
