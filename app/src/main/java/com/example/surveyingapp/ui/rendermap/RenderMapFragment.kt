@@ -1,6 +1,5 @@
 package com.example.surveyingapp.ui.rendermap
 
-import android.animation.ValueAnimator
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -19,7 +18,6 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.widget.PopupMenu
-import androidx.core.animation.doOnEnd
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -925,51 +923,61 @@ class RenderMapFragment : Fragment() {
         }
     }
 
+    /** Distance to slide the panel fully off-screen-left: its width + start margin + shadow. */
+    private fun panelSlideDistance(): Float {
+        val panel = leftPanel
+        val w = if (panel != null && panel.width > 0) panel.width else panelWidthPx
+        return (w + dpToPx(20f)).toFloat()
+    }
+
     private fun collapsePanel() {
         if (panelCollapsed) return
-        val lp = leftPanel?.layoutParams ?: return
-        val start = lp.width
-        val anim = ValueAnimator.ofInt(start, 0).apply {
-            duration = 200
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { lp.width = it.animatedValue as Int; leftPanel?.layoutParams = lp }
-            doOnEnd {
-                panelCollapsed = true
-                leftPanel?.visibility = View.GONE
-                expandBtn?.visibility = View.VISIBLE
+        val panel = leftPanel ?: return
+        panelCollapsed = true
+        panel.animate().cancel()
+        panel.animate()
+            .translationX(-panelSlideDistance())
+            .alpha(0f)
+            .setDuration(220)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .withEndAction {
+                panel.visibility = View.GONE
+                expandBtn?.apply {
+                    alpha = 0f
+                    visibility = View.VISIBLE
+                    animate().alpha(1f).setDuration(150).start()
+                }
             }
-        }
-        anim.start()
+            .start()
     }
 
     private fun expandPanel() {
         if (!panelCollapsed) return
-        val target = if (panelWidthPx <= 0) dpToPx(272f) else panelWidthPx
-        panelWidthPx = target
-        leftPanel?.visibility = View.VISIBLE
+        val panel = leftPanel ?: return
+        panelCollapsed = false
         expandBtn?.visibility = View.GONE
-        val lp = leftPanel?.layoutParams ?: return
-        lp.width = 0; leftPanel?.layoutParams = lp
-        val anim = ValueAnimator.ofInt(0, target).apply {
-            duration = 220
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { lp.width = it.animatedValue as Int; leftPanel?.layoutParams = lp }
-            doOnEnd { panelCollapsed = false }
-        }
-        anim.start()
+        panel.animate().cancel()
+        // Pre-position off-screen, then slide in — content stays laid out at full width.
+        panel.translationX = -panelSlideDistance()
+        panel.alpha = 0f
+        panel.visibility = View.VISIBLE
+        panel.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(220)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .start()
     }
 
     private fun applyPanelState() {
+        val panel = leftPanel
         if (panelCollapsed) {
-            leftPanel?.visibility = View.GONE
+            panel?.visibility = View.GONE
             expandBtn?.visibility = View.VISIBLE
         } else {
-            val lp = leftPanel?.layoutParams
-            if (lp != null) {
-                if (panelWidthPx <= 0) panelWidthPx = dpToPx(272f)
-                lp.width = panelWidthPx; leftPanel?.layoutParams = lp
-            }
-            leftPanel?.visibility = View.VISIBLE
+            panel?.translationX = 0f
+            panel?.alpha = 1f
+            panel?.visibility = View.VISIBLE
             expandBtn?.visibility = View.GONE
         }
     }

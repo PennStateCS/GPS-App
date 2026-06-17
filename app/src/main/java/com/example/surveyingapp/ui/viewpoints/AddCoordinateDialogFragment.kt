@@ -90,6 +90,7 @@ class AddCoordinateDialogFragment(
     private var altitudeMslVal: Double? = null
     private var geoidSeparationVal: Double? = null
     private var crsEpsgVal: Int? = 4326
+    private var captureMethodStr: String? = null
     private var stdLatVal: Double? = null
     private var stdLonVal: Double? = null
     private var stdAltVal: Double? = null
@@ -113,6 +114,7 @@ class AddCoordinateDialogFragment(
         val view = inflater.inflate(R.layout.dialog_add_point, null)
 
         val nameEdit = view.findViewById<EditText>(R.id.edit_point_name)
+        val noteEdit = view.findViewById<EditText>(R.id.edit_point_note)
         val locationText = view.findViewById<TextView>(R.id.text_location)
         val iconButton = view.findViewById<MaterialButton>(R.id.button_icon)
 
@@ -191,6 +193,8 @@ class AddCoordinateDialogFragment(
                     easting = utm?.easting,
                     northing = utm?.northing,
                     utmZone = utm?.utmZone,
+                    note = noteEdit.text?.toString()?.trim()?.ifBlank { null },
+                    captureMethod = captureMethodStr,
                     stdLatM = stdLatVal,
                     stdLonM = stdLonVal,
                     stdAltM = stdAltVal
@@ -206,13 +210,7 @@ class AddCoordinateDialogFragment(
     private fun onModelSelected(modelId: String, name: String?, thumbnailPath: String?) {
         lifecycleScope.launch {
             val model = dbModels.firstOrNull { it.id == modelId }
-            val filePath = model?.filePath
-
-            val embedded: EmbeddedModelLocation? = if (!filePath.isNullOrBlank()) {
-                withContext(Dispatchers.IO) {
-                    GlbGeoreferenceDetector.detect(File(filePath))
-                }
-            } else null
+            val embedded = resolveEmbeddedLocation(model)
 
             if (embedded != null) {
                 showModelLocationDialog(embedded, modelId, name, thumbnailPath)
@@ -222,22 +220,46 @@ class AddCoordinateDialogFragment(
         }
     }
 
+    /**
+     * Resolves a model's embedded geographic origin: prefers the value captured at import
+     * (georeferenced GLBs are reprojected on import, erasing the in-file signal), and falls
+     * back to on-the-fly detection for models imported before that was stored.
+     */
+    private suspend fun resolveEmbeddedLocation(model: Model?): EmbeddedModelLocation? {
+        model ?: return null
+        if (model.embeddedLatitude != null && model.embeddedLongitude != null) {
+            return EmbeddedModelLocation(
+                latitude = model.embeddedLatitude,
+                longitude = model.embeddedLongitude,
+                altitudeMeters = model.embeddedAltitudeM,
+                confidence = ModelLocationConfidence.HIGH,
+                source = "GLB_POSITION_WGS_LIKE"
+            )
+        }
+        val fp = model.filePath
+        if (fp.isBlank()) return null
+        return withContext(Dispatchers.IO) { GlbGeoreferenceDetector.detect(File(fp)) }
+    }
+
     private fun showModelLocationDialog(
         embedded: EmbeddedModelLocation,
         modelId: String,
         modelName: String?,
         thumbnailPath: String?
     ) {
-        val altStr = embedded.altitudeMeters?.let { "%.2f m".format(it) } ?: "—"
+        val altStr = embedded.altitudeMeters?.let { String.format(Locale.US, "%.2f m", it) } ?: "—"
         val confidenceNote = when (embedded.confidence) {
             ModelLocationConfidence.HIGH   -> ""
             ModelLocationConfidence.MEDIUM -> "\n(Confidence: medium)"
             ModelLocationConfidence.LOW    -> "\n(Confidence: low)"
         }
-        val message = "This model appears to contain an embedded location:\n\n" +
-            "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
-            "How would you like to place it?"
-                .format(embedded.latitude, embedded.longitude, altStr, confidenceNote)
+        val message = String.format(
+            Locale.US,
+            "This model appears to contain an embedded location:\n\n" +
+                "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
+                "How would you like to place it?",
+            embedded.latitude, embedded.longitude, altStr, confidenceNote
+        )
 
         if (!isAdded || activity == null) return
 
@@ -249,9 +271,11 @@ class AddCoordinateDialogFragment(
                 longitude = embedded.longitude
                 altitude = embedded.altitudeMeters ?: altitude
                 providerStr = "model"
+                captureMethodStr = "model_embedded"
                 // Show updated location in the dialog
-                locationTextRef?.text = "From model: %.6f, %.6f, %.2fm"
-                    .format(latitude, longitude, altitude)
+                locationTextRef?.text = String.format(
+                    Locale.US, "From model: %.6f, %.6f, %.2fm", latitude, longitude, altitude
+                )
                 applySelectedModel(modelId, modelName, thumbnailPath)
             }
             .setNegativeButton("Use Current Coordinate") { _, _ ->
@@ -291,6 +315,7 @@ class AddCoordinateDialogFragment(
     // ── Location fetching ──────────────────────────────────────────────────────
 
     private suspend fun fetchInternalOneShot(locationText: TextView) {
+        captureMethodStr = "internal_gps"
         val fineGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fineGranted && !coarseGranted) {
@@ -330,6 +355,7 @@ class AddCoordinateDialogFragment(
     }
 
     private suspend fun fetchExternalOneShot(locationText: TextView) {
+        captureMethodStr = "external_gnss"
         val fix = withTimeoutOrNull(12_000L) {
             withContext(Dispatchers.IO) {
                 runCatching {

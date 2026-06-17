@@ -43,6 +43,15 @@
     <string name="dev_section_device_info">Device Info</string>
     <string name="edit_coordinate">Edit Coordinate</string>
     <string name="show_coordinate_list">Show coordinate list</string>
+    <string name="linked_model_thumbnail_desc">Linked model thumbnail</string>
+    <string name="view_model">View Model</string>
+    <string name="open_in_ar">Open in AR</string>
+    <string name="change_model">Change Model</string>
+    <string name="remove_link">Remove Link</string>
+    <string name="select_model">Select Model</string>
+    <string name="no_model_linked">No model linked to this coordinate.</string>
+    <string name="model_file_missing">Model file missing</string>
+    <string name="model_linked_desc">Has linked model</string>
     <string name="copy_coordinates">Copy Coordinates</string>
     <string name="empty_coordinates_text">No coordinates available</string>
     <string name="capture_coordinates">Capture Coordinates</string>

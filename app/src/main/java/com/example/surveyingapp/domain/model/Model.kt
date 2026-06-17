@@ -24,6 +24,11 @@ data class Model(
     val thumbnailFileName: String? = null,
     val thumbnailFilePath: String? = null,
 
+    // Embedded geographic origin (from georeferenced GLBs, captured at import)
+    val embeddedLatitude: Double? = null,
+    val embeddedLongitude: Double? = null,
+    val embeddedAltitudeM: Double? = null,
+
     // Survey-specific metadata
     val projectId: String? = null,
     val surveyDate: Long? = null,

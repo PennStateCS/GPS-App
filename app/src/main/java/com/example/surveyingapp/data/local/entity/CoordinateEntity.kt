@@ -30,7 +30,7 @@ data class CoordinateEntity(
 
     val timestamp: Long,                   // epoch millis
     val icon: String,                      // UI icon name
-    val color: Int,                        // ARGB
+    val color: Int,                        // ARGB marker color — auto-assigned default; no longer user-selectable
 
     // --- Provenance & quality (now type-safe enums) ---
     val provider: Provider = Provider.INTERNAL,     // INTERNAL | RS2_BT | RS2_TCP | OTHER
@@ -62,6 +62,7 @@ data class CoordinateEntity(
 
     // --- Survey/Audit ---
     val note: String? = null,
+    val captureMethod: String? = null,    // auto-set: internal_gps | external_gnss | model_embedded | map_tap | manual | imported | averaged
     val averagedSamples: Int? = null,
     val averageDurationMs: Long? = null,
     val stdLatM: Double? = null,           // from GST if present

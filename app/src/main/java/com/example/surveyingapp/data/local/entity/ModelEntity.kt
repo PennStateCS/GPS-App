@@ -16,5 +16,12 @@ data class ModelEntity(
 
     // Thumbnail fields (nullable for backward compatibility)
     val thumbnailFileName: String? = null,
-    val thumbnailFilePath: String? = null
+    val thumbnailFilePath: String? = null,
+
+    // Embedded geographic origin extracted from georeferenced GLBs at import time.
+    // Persisted because reprojection recenters the geometry, erasing the in-file signal —
+    // these let the coordinate-linking flow still offer "Use Model Location".
+    val embeddedLatitude: Double? = null,
+    val embeddedLongitude: Double? = null,
+    val embeddedAltitudeM: Double? = null
 )

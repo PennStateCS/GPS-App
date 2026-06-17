@@ -25,9 +25,25 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
+import android.app.Activity
+import android.widget.ImageView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.navigation.fragment.NavHostFragment
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.EmbeddedModelLocation
+import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.domain.model.ModelLocationConfidence
+import com.example.surveyingapp.ui.models.ModelPickerActivity
+import com.example.surveyingapp.ui.models.ModelViewerActivity
+import com.example.surveyingapp.util.GlbGeoreferenceDetector
+import com.example.surveyingapp.util.UtmConverter
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.imageview.ShapeableImageView
+import com.google.android.material.snackbar.Snackbar
+import java.io.File
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
@@ -68,21 +84,38 @@ class CoordinateDetailFragment : Fragment() {
     private var onShowListClick: (() -> Unit)? = null
 
     // Card views
+    private var cardSummary: View? = null
+    private var textSummaryNote: TextView? = null
+    private var cardModel: View? = null
     private var cardLocation: View? = null
     private var cardProjection: View? = null
     private var cardGnss: View? = null
     private var cardCapture: View? = null
     private var cardAveraging: View? = null
-    private var cardNotes: View? = null
+    private var cardMotion: View? = null
     private var cardMap: View? = null
 
     // Card body containers (rows inflated into these)
+    private var cardSummaryRows: LinearLayout? = null
     private var cardLocationRows: LinearLayout? = null
     private var cardProjectionRows: LinearLayout? = null
     private var cardGnssRows: LinearLayout? = null
     private var cardCaptureRows: LinearLayout? = null
     private var cardAveragingRows: LinearLayout? = null
-    private var cardNotesRows: LinearLayout? = null
+    private var cardMotionRows: LinearLayout? = null
+
+    // Linked Model card
+    private var modelLinkedContainer: View? = null
+    private var modelEmptyContainer: View? = null
+    private var modelThumbnail: ShapeableImageView? = null
+    private var modelName: TextView? = null
+    private var modelMeta: TextView? = null
+    private var modelStatus: TextView? = null
+    private var btnViewModel: MaterialButton? = null
+    private var btnOpenInAr: MaterialButton? = null
+    private var btnChangeModel: MaterialButton? = null
+    private var btnRemoveLink: MaterialButton? = null
+    private var btnSelectModel: MaterialButton? = null
 
     // Map
     private var mapView: MapView? = null
@@ -90,6 +123,18 @@ class CoordinateDetailFragment : Fragment() {
     private var lastCoordinate: Coordinate? = null
 
     private var showAccuracyIndicators: Boolean = true
+
+    // Launches the model picker for Select / Change Model
+    private val modelPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data ?: return@registerForActivityResult
+            val id = data.getStringExtra(ModelPickerActivity.EXTRA_SELECTED_MODEL_ID)
+                ?: return@registerForActivityResult
+            onModelChosen(id)
+        }
+    }
 
     // ── Format helpers ─────────────────────────────────────────────────────────
 
@@ -121,20 +166,40 @@ class CoordinateDetailFragment : Fragment() {
         badgeAccuracy     = v.findViewById(R.id.badge_accuracy)
         textEmpty         = v.findViewById(R.id.text_empty)
 
+        cardSummary       = v.findViewById(R.id.card_summary)
+        textSummaryNote   = v.findViewById(R.id.text_summary_note)
+        cardModel         = v.findViewById(R.id.card_model)
         cardLocation      = v.findViewById(R.id.card_location)
         cardProjection    = v.findViewById(R.id.card_projection)
         cardGnss          = v.findViewById(R.id.card_gnss)
         cardCapture       = v.findViewById(R.id.card_capture)
         cardAveraging     = v.findViewById(R.id.card_averaging)
-        cardNotes         = v.findViewById(R.id.card_notes)
+        cardMotion        = v.findViewById(R.id.card_motion)
         cardMap           = v.findViewById(R.id.card_map)
 
+        modelLinkedContainer = v.findViewById(R.id.model_linked_container)
+        modelEmptyContainer  = v.findViewById(R.id.model_empty_container)
+        modelThumbnail       = v.findViewById(R.id.model_thumbnail)
+        modelName            = v.findViewById(R.id.model_name)
+        modelMeta            = v.findViewById(R.id.model_meta)
+        modelStatus          = v.findViewById(R.id.model_status)
+        btnViewModel         = v.findViewById(R.id.btn_view_model)
+        btnOpenInAr          = v.findViewById(R.id.btn_open_in_ar)
+        btnChangeModel       = v.findViewById(R.id.btn_change_model)
+        btnRemoveLink        = v.findViewById(R.id.btn_remove_link)
+        btnSelectModel       = v.findViewById(R.id.btn_select_model)
+
+        btnChangeModel?.setOnClickListener { launchModelPicker() }
+        btnSelectModel?.setOnClickListener { launchModelPicker() }
+        btnRemoveLink?.setOnClickListener { confirmRemoveLink() }
+
+        cardSummaryRows   = v.findViewById(R.id.card_summary_rows)
         cardLocationRows  = v.findViewById(R.id.card_location_rows)
         cardProjectionRows= v.findViewById(R.id.card_projection_rows)
         cardGnssRows      = v.findViewById(R.id.card_gnss_rows)
         cardCaptureRows   = v.findViewById(R.id.card_capture_rows)
         cardAveragingRows = v.findViewById(R.id.card_averaging_rows)
-        cardNotesRows     = v.findViewById(R.id.card_notes_rows)
+        cardMotionRows    = v.findViewById(R.id.card_motion_rows)
 
         mapView = v.findViewById(R.id.mapView)
         mapView?.onCreate(savedInstanceState)
@@ -261,8 +326,8 @@ class CoordinateDetailFragment : Fragment() {
         textName?.text = "—"
         textEmpty?.visibility = View.VISIBLE
         rowBadges?.visibility = View.GONE
-        listOf(cardLocation, cardProjection, cardGnss, cardCapture,
-               cardAveraging, cardNotes, cardMap).forEach { it?.visibility = View.GONE }
+        listOf(cardSummary, cardModel, cardLocation, cardProjection, cardGnss, cardCapture,
+               cardAveraging, cardMotion, cardMap).forEach { it?.visibility = View.GONE }
     }
 
     // ── State: bound ───────────────────────────────────────────────────────────
@@ -273,18 +338,42 @@ class CoordinateDetailFragment : Fragment() {
         textName?.text = c.name.ifBlank { "—" }
 
         // Clear all dynamic containers before re-populating
-        listOf(cardLocationRows, cardProjectionRows, cardGnssRows,
-               cardCaptureRows, cardAveragingRows, cardNotesRows)
+        listOf(cardSummaryRows, cardLocationRows, cardProjectionRows, cardGnssRows,
+               cardCaptureRows, cardAveragingRows, cardMotionRows)
             .forEach { it?.removeAllViews() }
 
+        bindSummaryCard(c)
+        bindModelCard(c)
         bindLocationCard(c)
         bindProjectionCard(c)
         bindGnssCard(c)
         bindCaptureCard(c)
         bindAveragingCard(c)
-        bindNotesCard(c)
+        bindMotionCard(c)
         bindMapCard(c)
         bindBadges(c)
+    }
+
+    private fun captureMethodLabel(m: String?): String? = when (m?.lowercase(Locale.US)) {
+        "internal_gps"   -> "Internal GPS"
+        "external_gnss"  -> "External GNSS"
+        "rtk_receiver"   -> "RTK Receiver"
+        "model_embedded" -> "Model embedded location"
+        "map_tap"        -> "Map tap"
+        "manual"         -> "Manual entry"
+        "imported"       -> "Imported"
+        "averaged"       -> "Averaged"
+        null, ""         -> null
+        else             -> m
+    }
+
+    private fun bindSummaryCard(c: Coordinate) {
+        // Note shown as flowing text; point code/type as compact rows
+        val note = c.note?.takeIf { it.isNotBlank() }
+        textSummaryNote?.visibility = if (note != null) View.VISIBLE else View.GONE
+        textSummaryNote?.text = note ?: ""
+
+        cardSummary?.visibility = if (note != null) View.VISIBLE else View.GONE
     }
 
     private fun bindLocationCard(c: Coordinate) {
@@ -335,17 +424,18 @@ class CoordinateDetailFragment : Fragment() {
         c.multipathIndex?.let {
             addDetailRow(cardGnssRows, "Multipath index", fmtDop(it))
         }
-        c.speedMps?.let  { addDetailRow(cardGnssRows, "Speed",   String.format(Locale.US, "%.2f m/s", it)) }
-        c.courseDeg?.let { addDetailRow(cardGnssRows, "Course",  String.format(Locale.US, "%.1f°", it)) }
         if (cardGnssRows?.childCount ?: 0 > 0) cardGnss?.visibility = View.VISIBLE
         else cardGnss?.visibility = View.GONE
     }
 
     private fun bindCaptureCard(c: Coordinate) {
+        captureMethodLabel(c.captureMethod)?.let { addDetailRow(cardCaptureRows, "Capture method", it) }
         val dateObj = Date(c.timestamp)
         addDetailRow(cardCaptureRows, "Date", SimpleDateFormat("MM/dd/yyyy", Locale.US).format(dateObj))
         addDetailRow(cardCaptureRows, "Time", SimpleDateFormat("h:mm:ss a", Locale.US).format(dateObj).lowercase(Locale.US))
         c.timestampSource?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Time source", it) }
+        c.sourceDevice?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Source device", it) }
+        c.appVersion?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "App version", it) }
         cardCapture?.visibility = View.VISIBLE
     }
 
@@ -366,18 +456,249 @@ class CoordinateDetailFragment : Fragment() {
         cardAveraging?.visibility = View.VISIBLE
     }
 
-    private fun bindNotesCard(c: Coordinate) {
-        val hasData = !c.note.isNullOrBlank() || !c.sourceDevice.isNullOrBlank() || !c.appVersion.isNullOrBlank()
-        if (!hasData) { cardNotes?.visibility = View.GONE; return }
-        c.note?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardNotesRows, "Note", it) }
-        c.sourceDevice?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardNotesRows, "Device", it) }
-        c.appVersion?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardNotesRows, "App version", it) }
-        cardNotes?.visibility = View.VISIBLE
+    private fun bindMotionCard(c: Coordinate) {
+        val hasData = c.speedMps != null || c.courseDeg != null
+        if (!hasData) { cardMotion?.visibility = View.GONE; return }
+        c.speedMps?.let  { addDetailRow(cardMotionRows, "Speed",  String.format(Locale.US, "%.2f m/s", it)) }
+        c.courseDeg?.let { addDetailRow(cardMotionRows, "Course", String.format(Locale.US, "%.1f°", it)) }
+        cardMotion?.visibility = View.VISIBLE
     }
 
     private fun bindMapCard(c: Coordinate) {
         cardMap?.visibility = View.VISIBLE
         updateMapMarker(c)
+    }
+
+    // ── Linked Model card ────────────────────────────────────────────────────────
+
+    private fun bindModelCard(c: Coordinate) {
+        cardModel?.visibility = View.VISIBLE
+        val iconKey = c.icon
+        if (!iconKey.startsWith("model:")) {
+            showModelEmptyState()
+            return
+        }
+        val modelId = iconKey.removePrefix("model:")
+        // Resolve model + file existence off the main thread, then render.
+        viewLifecycleOwner.lifecycleScope.launch {
+            val model = withContext(Dispatchers.IO) {
+                try {
+                    ModelRepositoryImpl(AppDatabase.getDatabase(requireContext()).modelDao())
+                        .getModelById(modelId)
+                } catch (e: Exception) {
+                    Log.w("CoordinateDetailFragment", "Failed to load linked model $modelId", e)
+                    null
+                }
+            }
+            if (!isAdded || lastCoordinate?.icon != iconKey) return@launch
+            val fileExists = model != null && withContext(Dispatchers.IO) {
+                try { model.filePath.isNotBlank() && File(model.filePath).exists() } catch (_: Exception) { false }
+            }
+            showModelLinkedState(model, fileExists)
+        }
+    }
+
+    private fun showModelEmptyState() {
+        modelLinkedContainer?.visibility = View.GONE
+        modelEmptyContainer?.visibility = View.VISIBLE
+    }
+
+    private fun showModelLinkedState(model: Model?, fileExists: Boolean) {
+        modelEmptyContainer?.visibility = View.GONE
+        modelLinkedContainer?.visibility = View.VISIBLE
+
+        modelName?.text = model?.name ?: "Model unavailable"
+        modelMeta?.text = model?.let { buildModelMeta(it) } ?: ""
+        modelMeta?.visibility = if (model == null) View.GONE else View.VISIBLE
+
+        val missing = model == null || !fileExists
+        modelStatus?.visibility = if (missing) View.VISIBLE else View.GONE
+        if (missing) modelStatus?.text = getString(R.string.model_file_missing)
+
+        // Thumbnail (or default model icon)
+        loadModelThumbnail(model, fileExists)
+
+        // View Model only when the file is actually present
+        btnViewModel?.visibility = if (model != null && fileExists) View.VISIBLE else View.GONE
+        btnViewModel?.setOnClickListener { if (model != null) openModelViewer(model) }
+        btnOpenInAr?.setOnClickListener { openInAr() }
+    }
+
+    private fun buildModelMeta(model: Model): String {
+        val parts = mutableListOf<String>()
+        model.getFileExtension().takeIf { it.isNotBlank() }?.let { parts += it.uppercase(Locale.US) }
+        if (model.fileSize > 0) parts += model.getFormattedSize()
+        parts += "Added ${model.getFormattedDateAdded()}"
+        return parts.joinToString("  ·  ")
+    }
+
+    private fun loadModelThumbnail(model: Model?, fileExists: Boolean) {
+        val iv = modelThumbnail ?: return
+        val thumbPath = model?.thumbnailFilePath
+        if (model == null || thumbPath.isNullOrBlank()) { setDefaultThumbnail(iv); return }
+        viewLifecycleOwner.lifecycleScope.launch {
+            val bmp = withContext(Dispatchers.IO) {
+                try {
+                    val f = File(thumbPath)
+                    if (f.exists()) BitmapFactory.decodeFile(thumbPath) else null
+                } catch (_: Exception) { null }
+            }
+            if (!isAdded) return@launch
+            if (bmp != null) {
+                androidx.core.widget.ImageViewCompat.setImageTintList(iv, null)
+                iv.setImageBitmap(bmp)
+            } else {
+                setDefaultThumbnail(iv)
+            }
+        }
+    }
+
+    private fun setDefaultThumbnail(iv: ImageView) {
+        iv.setImageResource(R.drawable.ic_models_24)
+        val tint = com.google.android.material.color.MaterialColors.getColor(
+            iv, com.google.android.material.R.attr.colorOnSurfaceVariant, android.graphics.Color.GRAY
+        )
+        androidx.core.widget.ImageViewCompat.setImageTintList(
+            iv, android.content.res.ColorStateList.valueOf(tint)
+        )
+    }
+
+    // ── Model actions ─────────────────────────────────────────────────────────
+
+    private fun launchModelPicker() {
+        modelPickerLauncher.launch(ModelPickerActivity.newIntent(requireContext(), "Choose a Model"))
+    }
+
+    /** Handles a model chosen from the picker: detect embedded location, then link. */
+    private fun onModelChosen(modelId: String) {
+        if (lastCoordinate == null) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            val model = withContext(Dispatchers.IO) {
+                try {
+                    ModelRepositoryImpl(AppDatabase.getDatabase(requireContext()).modelDao())
+                        .getModelById(modelId)
+                } catch (_: Exception) { null }
+            }
+            // Prefer the origin captured at import (reprojection erases the in-file signal);
+            // fall back to detection for models imported before it was stored.
+            val embedded = if (model?.embeddedLatitude != null && model.embeddedLongitude != null) {
+                EmbeddedModelLocation(
+                    latitude = model.embeddedLatitude,
+                    longitude = model.embeddedLongitude,
+                    altitudeMeters = model.embeddedAltitudeM,
+                    confidence = ModelLocationConfidence.HIGH,
+                    source = "GLB_POSITION_WGS_LIKE"
+                )
+            } else withContext(Dispatchers.IO) {
+                val fp = model?.filePath
+                if (!fp.isNullOrBlank()) GlbGeoreferenceDetector.detect(File(fp)) else null
+            }
+            if (!isAdded) return@launch
+            if (embedded != null) showModelLocationDialog(embedded, modelId)
+            else linkModel(modelId, embedded = null, useModelLocation = false)
+        }
+    }
+
+    private fun showModelLocationDialog(embedded: EmbeddedModelLocation, modelId: String) {
+        val altStr = embedded.altitudeMeters?.let { String.format(Locale.US, "%.2f m", it) } ?: "—"
+        val confidenceNote = when (embedded.confidence) {
+            ModelLocationConfidence.HIGH   -> ""
+            ModelLocationConfidence.MEDIUM -> "\n(Confidence: medium)"
+            ModelLocationConfidence.LOW    -> "\n(Confidence: low)"
+        }
+        val message = String.format(
+            Locale.US,
+            "This model appears to contain an embedded location:\n\n" +
+                "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
+                "How would you like to place it?",
+            embedded.latitude, embedded.longitude, altStr, confidenceNote
+        )
+        if (!isAdded || activity == null) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Model Location Detected")
+            .setMessage(message)
+            .setPositiveButton("Use Model Location") { _, _ ->
+                linkModel(modelId, embedded, useModelLocation = true)
+            }
+            .setNegativeButton("Use Current Coordinate") { _, _ ->
+                linkModel(modelId, embedded, useModelLocation = false)
+            }
+            .setNeutralButton("Cancel", null)
+            .show()
+    }
+
+    private fun linkModel(modelId: String, embedded: EmbeddedModelLocation?, useModelLocation: Boolean) {
+        val coord = lastCoordinate ?: return
+        val updated = if (useModelLocation && embedded != null) {
+            val lat = embedded.latitude
+            val lon = embedded.longitude
+            val alt = embedded.altitudeMeters ?: coord.altitude
+            val utm = try { UtmConverter.latLonToUtm(lat, lon) } catch (_: Exception) { null }
+            // Position now comes from the model file, so mark provenance accordingly.
+            coord.copy(
+                icon = "model:$modelId",
+                latitude = lat, longitude = lon, altitude = alt,
+                provider = "model",
+                captureMethod = "model_embedded",
+                easting = utm?.easting, northing = utm?.northing, utmZone = utm?.utmZone
+            )
+        } else {
+            coord.copy(icon = "model:$modelId")
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.updateCoordinate(updated)
+            lastCoordinate = updated
+            bindCoordinate(updated)
+            showSnackbar(if (useModelLocation) "Model linked · coordinate moved to model location" else "Model linked")
+        }
+    }
+
+    private fun confirmRemoveLink() {
+        val coord = lastCoordinate ?: return
+        if (!coord.icon.startsWith("model:")) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Remove linked model?")
+            .setMessage("This unlinks the model from this coordinate. The model file is not deleted.")
+            .setPositiveButton("Remove Link") { _, _ -> removeLink() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun removeLink() {
+        val coord = lastCoordinate ?: return
+        val updated = coord.copy(icon = "")
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.updateCoordinate(updated)
+            lastCoordinate = updated
+            bindCoordinate(updated)
+            showSnackbar("Model link removed")
+        }
+    }
+
+    private fun openModelViewer(model: Model) {
+        try {
+            startActivity(ModelViewerActivity.newIntent(requireContext(), model.filePath, model.name))
+        } catch (e: Exception) {
+            Log.w("CoordinateDetailFragment", "openModelViewer failed", e)
+            showSnackbar("Unable to open model")
+        }
+    }
+
+    private fun openInAr() {
+        try {
+            val navHost = requireActivity().supportFragmentManager
+                .findFragmentById(R.id.nav_host_fragment_content_main) as? NavHostFragment
+            val nav = navHost?.navController
+            if (nav != null) nav.navigate(R.id.nav_open_in_ar)
+            else showSnackbar("Open the AR tab to view models")
+        } catch (e: Exception) {
+            Log.w("CoordinateDetailFragment", "openInAr failed", e)
+            showSnackbar("Unable to open AR")
+        }
+    }
+
+    private fun showSnackbar(msg: String) {
+        view?.let { Snackbar.make(it, msg, Snackbar.LENGTH_SHORT).show() }
     }
 
     // ── Badges ─────────────────────────────────────────────────────────────────
