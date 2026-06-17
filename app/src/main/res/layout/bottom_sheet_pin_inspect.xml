@@ -18,16 +18,16 @@
             android:layout_height="4dp"
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="16dp"
-            android:background="#FFBDBDBD" />
+            android:background="?attr/colorSurfaceVariant" />
 
         <!-- Coordinate name -->
         <TextView
             android:id="@+id/pinName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="20sp"
+            android:textAppearance="?attr/textAppearanceTitleLarge"
             android:textStyle="bold"
-            android:textColor="?android:attr/textColorPrimary"
+            android:textColor="?attr/colorOnSurface"
             android:paddingBottom="4dp" />
 
         <!-- Timestamp -->
@@ -35,15 +35,15 @@
             android:id="@+id/pinTimestamp"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="?android:attr/textColorSecondary"
+            android:textAppearance="@style/TextAppearance.App.Supporting"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:paddingBottom="12dp" />
 
         <!-- Divider -->
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:background="?android:attr/listDivider"
+            android:background="?attr/colorOutlineVariant"
             android:layout_marginBottom="12dp" />
 
         <!-- Lat / Lon -->
@@ -52,7 +52,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:paddingBottom="6dp" />
 
         <!-- Altitude -->
@@ -60,7 +60,7 @@
             android:id="@+id/pinAlt"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:paddingBottom="6dp" />
 
         <!-- Horizontal accuracy -->
@@ -68,7 +68,7 @@
             android:id="@+id/pinAccuracy"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:paddingBottom="6dp" />
 
         <!-- RTK status (hidden when null) -->
@@ -76,7 +76,7 @@
             android:id="@+id/pinRtk"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:textStyle="bold"
             android:paddingBottom="6dp"
             android:visibility="gone" />
@@ -86,7 +86,7 @@
             android:id="@+id/pinProvider"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
             android:paddingBottom="6dp" />
 
         <!-- Model assignment (hidden when null) -->
@@ -94,8 +94,8 @@
             android:id="@+id/pinModel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:textColor="#FF00E5FF"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
+            android:textColor="?attr/colorSecondary"
             android:paddingBottom="6dp"
             android:visibility="gone" />
 

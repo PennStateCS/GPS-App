@@ -1,30 +1,158 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         M3 TONAL PALETTE
+         Hue sources:
+           Primary   – Blue       hue ~215
+           Secondary – Teal       hue ~170
+           Tertiary  – Amber      hue ~40  (warning / caution)
+           Error     – Red        hue ~5
+           Neutral   – Blue-gray  (slightly chromatic for a technical feel)
+         Tone notation: T10 = dark, T40 = key light, T80 = key dark, T99 = near-white
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!-- Primary – Deep Blue ─────────────────────────────────────────────── -->
+    <color name="md_primary_10">#001B44</color>
+    <color name="md_primary_20">#002F65</color>
+    <color name="md_primary_30">#004688</color>
+    <color name="md_primary_40">#1A56A4</color>
+    <color name="md_primary_80">#ADC8FF</color>
+    <color name="md_primary_90">#D6E4FF</color>
+    <color name="md_primary_100">#FFFFFF</color>
+
+    <!-- Secondary – Teal ────────────────────────────────────────────────── -->
+    <color name="md_secondary_10">#002019</color>
+    <color name="md_secondary_20">#003731</color>
+    <color name="md_secondary_30">#005049</color>
+    <color name="md_secondary_40">#006A5B</color>
+    <color name="md_secondary_80">#79D8C8</color>
+    <color name="md_secondary_90">#BCEDE4</color>
+    <color name="md_secondary_100">#FFFFFF</color>
+
+    <!-- Tertiary – Amber (warning / caution) ────────────────────────────── -->
+    <color name="md_tertiary_10">#271900</color>
+    <color name="md_tertiary_20">#422C00</color>
+    <color name="md_tertiary_30">#5D4100</color>
+    <color name="md_tertiary_40">#7C5800</color>
+    <color name="md_tertiary_80">#FBBE4D</color>
+    <color name="md_tertiary_90">#FFDEA8</color>
+    <color name="md_tertiary_100">#FFFFFF</color>
+
+    <!-- Error – Red ─────────────────────────────────────────────────────── -->
+    <color name="md_error_10">#410002</color>
+    <color name="md_error_20">#690005</color>
+    <color name="md_error_30">#93000A</color>
+    <color name="md_error_40">#BA1A1A</color>
+    <color name="md_error_80">#FFB4AB</color>
+    <color name="md_error_90">#FFDAD6</color>
+    <color name="md_error_100">#FFFFFF</color>
+
+    <!-- Neutral – Blue-gray ─────────────────────────────────────────────── -->
+    <color name="md_neutral_4">#0F1114</color>
+    <color name="md_neutral_6">#121416</color>
+    <color name="md_neutral_10">#1A1C1E</color>
+    <color name="md_neutral_20">#2F3134</color>
+    <color name="md_neutral_90">#E2E4E7</color>
+    <color name="md_neutral_95">#F3F5F8</color>
+    <color name="md_neutral_99">#FAFBFC</color>
+
+    <!-- Neutral Variant – slightly more chroma than neutral ─────────────── -->
+    <color name="md_neutral_var_20">#3D4349</color>
+    <color name="md_neutral_var_30">#41484D</color>
+    <color name="md_neutral_var_50">#71787E</color>
+    <color name="md_neutral_var_60">#8B9198</color>
+    <color name="md_neutral_var_80">#C1C8CE</color>
+    <color name="md_neutral_var_90">#DDE3EA</color>
+
+    <!-- Surface Container family (light) – neutral blue-gray, overrides M3 purple defaults -->
+    <!-- Steps from near-white (lowest) to lightest visible container (highest).            -->
+    <!-- Used by dropdowns, dialogs, nav drawer, bottom sheets, and other M3 surfaces.      -->
+    <color name="md_surface_container_lowest">#FFFFFF</color>  <!-- pure white elevated card -->
+    <color name="md_surface_container_low">#F5F7FB</color>     <!-- barely-there blue-gray   -->
+    <color name="md_surface_container">#EFF2F6</color>         <!-- standard container        -->
+    <color name="md_surface_container_high">#E9EDF2</color>    <!-- dropdown / menu surface   -->
+    <color name="md_surface_container_highest">#E3E7ED</color> <!-- chips / pressed state     -->
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         APP SEMANTIC COLORS  (light)
+         Named app_* so they can be overridden in values-night/colors.xml and
+         referenced from themes.xml with no hard-coded hex values in themes.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!-- Top app bar – deep navy brand bar -->
+    <color name="app_top_app_bar">#0B1F33</color>
+    <color name="app_on_top_app_bar">#FFFFFF</color>
+
+    <!-- GNSS/source status strip – connected-but-distinct navy band -->
+    <color name="app_status_strip">#0E2A44</color>
+    <color name="app_on_status_strip">#B8D0E8</color>
+
+    <!-- Primary – professional blue (#155DA8) -->
+    <color name="app_primary">#155DA8</color>
+    <color name="app_on_primary">#FFFFFF</color>
+    <color name="app_primary_container">#D7E8FF</color>
+    <color name="app_on_primary_container">#001B44</color>
+
+    <!-- Secondary – GNSS/success teal (#00796B) -->
+    <color name="app_secondary">#00796B</color>
+    <color name="app_on_secondary">#FFFFFF</color>
+    <color name="app_secondary_container">#BFEDE6</color>
+    <color name="app_on_secondary_container">#002019</color>
+
+    <!-- Background – soft neutral blue-gray -->
+    <color name="app_background">#F4F7FA</color>
+    <color name="app_on_background">#1A1C1E</color>
+
+    <!-- Surface / cards -->
+    <color name="app_surface">#FFFFFF</color>
+    <color name="app_on_surface">#1A1C1E</color>
+    <color name="app_surface_variant">#EAF0F6</color>
+    <color name="app_on_surface_variant">#41484D</color>
+
+    <!-- Surface containers (dropdowns, nav drawer, stat tiles) -->
+    <color name="app_surface_container">#EAF0F6</color>
+    <color name="app_surface_container_high">#DFE7F0</color>
+    <color name="app_surface_container_highest">#D4DCE8</color>
+
+    <!-- Outline -->
+    <color name="app_outline">#71787E</color>
+    <color name="app_outline_variant">#C5CED8</color>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         APP-SPECIFIC SEMANTIC COLORS
+         These are referenced by name from layouts, adapters, or Kotlin code.
+         Hardcoded page/layout colors will migrate to ?attr/* in a later pass.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <!-- Launcher icon background -->
     <color name="ic_launcher_background">#020B1A</color>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
+
+    <!-- Always-on neutrals (for things that genuinely need black/white) -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <!-- Added for alternating rows -->
+
+    <!-- Coordinate list / card ───────────────────────────────────────────── -->
     <color name="coordinate_row_even">#FFFFFFFF</color>
     <color name="coordinate_row_odd">#FFF5F5F5</color>
+    <!-- Normal outline uses a 20 % black scrim; selected uses new primary -->
     <color name="coordinate_card_stroke_normal">#33000000</color>
-    <color name="coordinate_card_stroke_selected">#FF6200EE</color>
+    <color name="coordinate_card_stroke_selected">@color/md_primary_40</color>
     <color name="coordinate_list_bg">#FFF4F4F6</color>
     <color name="coordinate_divider">#33000000</color>
-    <!-- Developer panel colors -->
+
+    <!-- Developer panel ─────────────────────────────────────────────────── -->
     <color name="dev_panel_bg">#F5F5F5</color>
-    <color name="dev_category_selected_bg">#E0E0E0</color>
-    <color name="dev_category_selected_accent">#FF6200EE</color>
+    <color name="dev_category_selected_bg">@color/md_primary_90</color>
+    <!-- Accent now follows the new primary blue instead of M2 purple -->
+    <color name="dev_category_selected_accent">@color/md_primary_40</color>
     <color name="dev_category_ripple_mask">#33000000</color>
     <color name="dev_info_label">#212121</color>
     <color name="dev_info_value">#000000</color>
     <color name="dev_info_section_bg">#FFFFFFFF</color>
     <color name="dev_info_row_alt">#FFF7F7F7</color>
-    <!-- Permissions table colors -->
+
+    <!-- Permissions table ───────────────────────────────────────────────── -->
     <color name="dev_perm_header_bg">#263238</color>
     <color name="dev_perm_header_text">#FFFFFFFF</color>
     <color name="dev_perm_row_even">#FFFFFFFF</color>
@@ -32,26 +160,47 @@
     <color name="dev_perm_row_divider">#1F000000</color>
     <color name="dev_perm_status_granted">#1B5E20</color>
     <color name="dev_perm_status_denied">#B71C1C</color>
-    <!-- RTK status colors -->
-    <color name="status_fix">#4CAF50</color>
-    <color name="status_float">#FFA000</color>
-    <color name="status_dgps">#1976D2</color>
-    <color name="status_single">#B0BEC5</color>
-    <color name="status_no_fix">#E53935</color>
 
-    <!-- Home-specific colors -->
-    <color name="home_right_column_bg">#E0E0E0</color>
+    <!-- RTK / GNSS status chips ─────────────────────────────────────────── -->
+    <color name="status_fix">#2E7D32</color>
+    <color name="status_float">#E65100</color>
+    <color name="status_dgps">@color/md_primary_40</color>
+    <color name="status_single">#546E7A</color>
+    <color name="status_no_fix">#C62828</color>
 
-    <!-- Card outline for modern Material look -->
-    <color name="card_stroke_light">#E0E0E0</color>
+    <!-- Home screen ─────────────────────────────────────────────────────── -->
+    <color name="home_right_column_bg">@color/md_neutral_var_90</color>
 
-    <!-- Quick Action chip colors -->
-    <color name="chip_map_bg">#1976D2</color>        <!-- Blue 700 -->
-    <color name="chip_ar_bg">#00796B</color>         <!-- Teal 700 -->
-    <color name="chip_settings_bg">#6200EE</color>   <!-- App primary -->
+    <!-- Card outlines ───────────────────────────────────────────────────── -->
+    <color name="card_stroke_light">@color/md_neutral_var_80</color>
+
+    <!-- Navigation drawer selected pill ───────────────────────────────────── -->
+    <!-- Night override in values-night/colors.xml                             -->
+    <color name="nav_selected_bg">@color/md_primary_90</color>
+
+    <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) ──────── -->
+    <!-- Night overrides are in values-night/colors.xml -->
+    <color name="stat_card_bg">#FFFFFF</color>
+    <color name="stat_card_stroke">#D0D0D0</color>
+
+    <!-- Quick-action chip backgrounds ───────────────────────────────────── -->
+    <!-- Map and AR chips keep their distinct brand colors; Settings now uses primary -->
+    <color name="chip_map_bg">@color/md_primary_40</color>
+    <color name="chip_ar_bg">@color/md_secondary_40</color>
+    <color name="chip_settings_bg">@color/md_primary_40</color>
     <color name="chip_ripple_overlay">#40FFFFFF</color>
 
-    <!-- Chart colors (RS2+ Satellite charts) -->
+    <!-- AR / Map camera overlay backgrounds ────────────────────────────── -->
+    <!-- These are intentional non-theme values used over a camera preview.  -->
+    <color name="ar_overlay_bg_dark">#CC000000</color>    <!-- 80 % black – AR toolbar card -->
+    <color name="ar_overlay_bg_medium">#66000000</color>  <!-- 40 % black – status strip -->
+    <color name="ar_overlay_bg_heavy">#BB000000</color>   <!-- 73 % black – alert strip -->
+    <color name="ar_overlay_divider">#33FFFFFF</color>    <!-- 20 % white – separator line -->
+    <color name="ar_overlay_text">#FFFFFFFF</color>       <!-- pure white – primary text -->
+    <color name="ar_overlay_alert">#FFFFC107</color>      <!-- amber – alert/debug text -->
+    <color name="map_overlay_bg">#AAFFFFFF</color>        <!-- 67 % white – map panel -->
+
+    <!-- GNSS / satellite chart ──────────────────────────────────────────── -->
     <color name="chart_axis">#BDBDBD</color>
     <color name="chart_grid">#E0E0E0</color>
     <color name="chart_text">#424242</color>
@@ -60,4 +209,5 @@
     <color name="chart_bar_medium">@color/status_float</color>
     <color name="chart_bar_weak">@color/status_no_fix</color>
     <color name="chart_bar_unused">#9E9E9E</color>
+
 </resources>

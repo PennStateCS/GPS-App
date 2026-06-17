@@ -10,17 +10,35 @@ import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.util.GeoProjection
+import com.example.surveyingapp.gnss.bus.FixSwitchboard
+import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
+import com.example.surveyingapp.util.UtmConverter
 import dagger.hilt.android.HiltAndroidApp
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import androidx.appcompat.app.AppCompatDelegate
+import com.example.surveyingapp.gnss.settings.AppThemeMode
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.osmdroid.config.Configuration
+
+/** Hilt entry point for accessing Hilt singletons from non-injected Application code. */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface SurveyingAppEntryPoint {
+    fun fixSwitchboard(): FixSwitchboard
+}
 
 @HiltAndroidApp
 class SurveyingApp : Application() {
     companion object {
-        // Global settings repository (initialized in Application.onCreate)
         lateinit var settingsRepo: SettingsRepository
-        private lateinit var appScope: CoroutineScope // Supervisor scope for long‑lived background jobs
+            private set
+        lateinit var mockLocationPublisher: AndroidMockLocationPublisher
+            private set
+        private lateinit var appScope: CoroutineScope
     }
 
     override fun onCreate() {
@@ -50,10 +68,10 @@ class SurveyingApp : Application() {
         }
         Log.d("SurveyingApp","Application started; global crash handler & osmdroid config done")
 
-        setupSettings() // Initialize settings repository
-        createNotificationChannel() // Required for foreground service notifications on O+
-
-        // One-time lightweight backfill: populate UTM fields if missing
+        setupSettings()
+        applyThemeFromSettings()
+        createNotificationChannel()
+        startMockLocationPublisher()
         runUtmBackfill()
     }
 
@@ -67,11 +85,11 @@ class SurveyingApp : Application() {
                 list.forEach { e ->
                     if (e.easting == null || e.northing == null || e.utmZone == null) {
                         try {
-                            val utm = GeoProjection.wgs84ToUtm(e.latitude, e.longitude)
+                            val utm = UtmConverter.latLonToUtm(e.latitude, e.longitude)
                             val copy = e.copy(
                                 easting = utm.easting,
                                 northing = utm.northing,
-                                utmZone = utm.zoneString
+                                utmZone = utm.utmZone
                             )
                             dao.update(copy)
                             updated++
@@ -86,11 +104,35 @@ class SurveyingApp : Application() {
     }
 
     private fun setupSettings() {
-        // Dedicated supervisor scope for background operations
         appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
         val localDs = SettingsLocalDataSource(this)
         settingsRepo = SettingsRepositoryImpl(localDs)
+    }
+
+    private fun applyThemeFromSettings() {
+        try {
+            val themeMode = runBlocking { settingsRepo.appearanceSettings.first().themeMode }
+            AppCompatDelegate.setDefaultNightMode(
+                when (themeMode) {
+                    AppThemeMode.LIGHT  -> AppCompatDelegate.MODE_NIGHT_NO
+                    AppThemeMode.DARK   -> AppCompatDelegate.MODE_NIGHT_YES
+                    AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                }
+            )
+        } catch (e: Exception) {
+            Log.w("SurveyingApp", "Failed to apply theme from settings: ${e.message}")
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        }
+    }
+
+    private fun startMockLocationPublisher() {
+        try {
+            val entryPoint = EntryPointAccessors.fromApplication(this, SurveyingAppEntryPoint::class.java)
+            mockLocationPublisher = AndroidMockLocationPublisher(this, entryPoint.fixSwitchboard(), settingsRepo)
+            mockLocationPublisher.start(appScope)
+        } catch (e: Exception) {
+            Log.e("SurveyingApp", "Failed to start mock location publisher", e)
+        }
     }
 
     private fun createNotificationChannel() {

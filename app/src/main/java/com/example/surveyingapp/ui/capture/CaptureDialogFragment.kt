@@ -11,7 +11,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
-import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -47,16 +46,7 @@ class CaptureDialogFragment : DialogFragment() {
         val btnCancel = view.findViewById<Button>(R.id.btn_cancel)
 
         btnStart.setOnClickListener {
-            vm.start(
-                AveragingPolicy(
-                    minDurationSec = 60,
-                    maxDurationSec = 120,
-                    minSamples = 150,
-                    requiredMinStatus = com.example.surveyingapp.gnss.model.RtkStatus.FLOAT,
-                    maxFixAgeSec = 3,
-                    maxDiffAgeSec = 10
-                )
-            )
+            vm.startWithSavedPolicy()
         }
 
         viewLifecycleOwner.lifecycleScope.launch {

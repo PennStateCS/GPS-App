@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 3-D box / package icon for the Models drawer entry.
+     fillColor is white so NavigationView's itemIconTint controls the visible color. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Front-left face -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 L2,7 L2,17 L12,22 L12,2Z" />
+    <!-- Front-right face -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 L22,7 L22,17 L12,22 L12,2Z" />
+    <!-- Top face -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 L2,7 L12,12 L22,7 L12,2Z" />
+
+</vector>

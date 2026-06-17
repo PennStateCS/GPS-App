@@ -12,7 +12,9 @@ import com.example.surveyingapp.data.local.entity.ModelEntity
 
 @Database(
     entities = [CoordinateEntity::class, ModelEntity::class],
-    version = 5,
+    // v7: the v6 schema was revised during development (pointCode/pointType removed).
+    // v8: models table gained embedded-location columns.
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -30,7 +32,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, Migration4To5())
+                    .addMigrations(MIGRATION_2_3, Migration4To5(), MIGRATION_5_6, MIGRATION_7_8)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build().also { INSTANCE = it }
             }

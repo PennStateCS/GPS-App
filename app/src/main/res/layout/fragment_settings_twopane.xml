@@ -14,8 +14,7 @@
         android:layout_height="match_parent"
         android:layout_weight="1"
         android:orientation="vertical"
-        android:background="@color/dev_panel_bg"
-        android:elevation="2dp"
+        android:background="?attr/colorSurfaceVariant"
         android:padding="0dp">
 
         <androidx.recyclerview.widget.RecyclerView
@@ -30,7 +29,7 @@
     <View
         android:layout_width="1dp"
         android:layout_height="match_parent"
-        android:background="@android:color/darker_gray" />
+        android:background="?attr/colorOutlineVariant" />
 
     <!-- Right pane: Content -->
     <ScrollView
@@ -51,9 +50,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:textStyle="bold"
-                android:textSize="20sp"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
                 android:paddingBottom="12dp"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 android:visibility="gone" />
 
             <!-- Placeholder until a category is selected -->
@@ -62,7 +61,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Select a category to view settings"
-                android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:gravity="center"
                 android:layout_marginTop="32dp" />
 

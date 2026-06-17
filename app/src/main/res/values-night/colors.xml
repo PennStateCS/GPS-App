@@ -1,13 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Night theme overrides for chart colors -->
-    <color name="chart_axis">#888888</color>
-    <color name="chart_grid">#555555</color>
-    <color name="chart_text">#EEEEEE</color>
-    <color name="chart_title">#FFFFFFFF</color>
-    <color name="chart_bar_strong">@color/status_fix</color>
-    <color name="chart_bar_medium">@color/status_float</color>
-    <color name="chart_bar_weak">@color/status_no_fix</color>
-    <color name="chart_bar_unused">#90A4AE</color>
-</resources>
 
+    <!--
+        Night-mode overrides for app-specific semantic colors.
+        M3 theme role colors (colorPrimary, colorSurface, etc.) are overridden
+        in values-night/themes.xml and do not need to appear here.
+    -->
+
+    <!-- App semantic colors – dark overrides -->
+    <color name="app_top_app_bar">#07121E</color>
+    <color name="app_on_top_app_bar">#FFFFFF</color>
+    <color name="app_status_strip">#0A1B2B</color>
+    <color name="app_on_status_strip">#7DA8C8</color>
+    <color name="app_primary">#8FC5FF</color>
+    <color name="app_on_primary">#0F3A63</color>
+    <color name="app_primary_container">#0F3A63</color>
+    <color name="app_on_primary_container">#D7E8FF</color>
+    <color name="app_secondary">#79D7C9</color>
+    <color name="app_on_secondary">#003731</color>
+    <color name="app_secondary_container">#00534A</color>
+    <color name="app_on_secondary_container">#BCEDE4</color>
+    <color name="app_background">#0B1117</color>
+    <color name="app_on_background">#E2E4E7</color>
+    <color name="app_surface">#101820</color>
+    <color name="app_on_surface">#E2E4E7</color>
+    <color name="app_surface_variant">#1D2A36</color>
+    <color name="app_on_surface_variant">#C1C8CE</color>
+    <color name="app_surface_container">#16212B</color>
+    <color name="app_surface_container_high">#1D2A36</color>
+    <color name="app_surface_container_highest">#243042</color>
+    <color name="app_outline">#8B9198</color>
+    <color name="app_outline_variant">#334454</color>
+
+    <!-- Coordinate list / card – darker stripe for night -->
+    <color name="coordinate_row_even">#FF1E2024</color>
+    <color name="coordinate_row_odd">#FF252A2E</color>
+    <color name="coordinate_list_bg">#FF1A1C1E</color>
+
+    <!-- Developer panel – night versions -->
+    <color name="dev_panel_bg">#FF1E2124</color>
+    <color name="dev_category_selected_bg">@color/md_primary_30</color>
+    <color name="dev_info_label">#FFCACFD4</color>
+    <color name="dev_info_value">#FFE2E4E7</color>
+    <color name="dev_info_section_bg">#FF1E2124</color>
+    <color name="dev_info_row_alt">#FF232729</color>
+
+    <!-- Permissions table – night -->
+    <color name="dev_perm_row_even">#FF1E2124</color>
+    <color name="dev_perm_row_odd">#FF252B30</color>
+
+    <!-- Home screen right column – night -->
+    <color name="home_right_column_bg">#FF252B30</color>
+
+    <!-- GNSS / satellite chart – night -->
+    <color name="chart_axis">#FF8B9198</color>
+    <color name="chart_grid">#FF41484D</color>
+    <color name="chart_text">#FFE2E4E7</color>
+    <color name="chart_title">#FFFFFFFF</color>
+    <color name="chart_bar_unused">#FF8B9198</color>
+
+    <!-- Stat card backgrounds (bg_rounded_card / bg_rounded_light) – night -->
+    <color name="stat_card_bg">@color/md_surface_container_high</color>
+    <color name="stat_card_stroke">#3D4349</color>
+
+    <!-- Navigation drawer selected pill – dark blue tone for night -->
+    <color name="nav_selected_bg">@color/md_primary_30</color>
+
+    <!-- Surface Container family (dark) – deep blue-gray, overrides M3 purple defaults -->
+    <color name="md_surface_container_lowest">#0B1017</color>  <!-- below background         -->
+    <color name="md_surface_container_low">#111920</color>     <!-- standard dark surface    -->
+    <color name="md_surface_container">#162029</color>         <!-- modal / sheet base       -->
+    <color name="md_surface_container_high">#1D2836</color>    <!-- dropdown / menu surface  -->
+    <color name="md_surface_container_highest">#243042</color> <!-- chips / pressed state    -->
+
+</resources>

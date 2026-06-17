@@ -36,7 +36,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.databinding.FragmentCoordinatesBinding
-import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.google.android.material.snackbar.Snackbar
 import com.example.surveyingapp.SurveyingApp
 import kotlinx.coroutines.flow.first
@@ -56,6 +55,9 @@ class CoordinatesFragment : Fragment() {
 
     // Track whether we've already added the vertical divider decoration
     private var dividerAdded = false
+
+    // Tablet: whether the left list pane is currently visible
+    private var listPaneVisible = true
 
     // View binding (valid between onCreateView and onDestroyView)
     private var _binding: FragmentCoordinatesBinding? = null
@@ -252,8 +254,20 @@ class CoordinatesFragment : Fragment() {
             }
         }
 
-        // Preferences for UI display toggles
-        prefs = requireContext().getSharedPreferences(SettingsFragment.PREFS_NAME, Context.MODE_PRIVATE)
+        // Tablet two-pane: wire collapsible list pane controls.
+        // The "show list" entry point when collapsed lives in the detail header
+        // (CoordinateDetailFragment), so it never floats over the title.
+        val btnCollapse = root.findViewById<View>(R.id.btn_collapse_list)
+        if (btnCollapse != null && root.findViewById<View>(R.id.list_pane_container) != null) {
+            applyListPaneVisibility()
+            btnCollapse.setOnClickListener {
+                listPaneVisible = false
+                applyListPaneVisibility()
+            }
+        }
+
+        // Preferences for UI-only display toggles (not app settings)
+        prefs = requireContext().getSharedPreferences("CoordinatesFragmentPrefs", Context.MODE_PRIVATE)
 
         // Observe models so the list can show model thumbnails for coordinates that use a model icon
         viewLifecycleOwner.lifecycleScope.launch {
@@ -286,7 +300,7 @@ class CoordinatesFragment : Fragment() {
             }
 
             try {
-                val highAcc = prefs?.getBoolean(SettingsFragment.PREF_HIGH_ACCURACY, true) ?: true
+                val highAcc = runCatching { SurveyingApp.settingsRepo.gnssReceiverSettings.first().highAccuracy }.getOrDefault(true)
                 val dialog = AddCoordinateDialogFragment(
                     highAccuracy = highAcc,
                     dbModels = models
@@ -390,11 +404,13 @@ class CoordinatesFragment : Fragment() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         currentSelectionId = savedInstanceState?.getString("coord_selected_id")
+        listPaneVisible = savedInstanceState?.getBoolean("list_pane_visible", true) ?: true
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         currentSelectionId?.let { outState.putString("coord_selected_id", it) }
+        outState.putBoolean("list_pane_visible", listPaneVisible)
     }
 
     // Grid spacing decoration
@@ -433,13 +449,43 @@ class CoordinatesFragment : Fragment() {
             val existing = childFragmentManager.findFragmentById(R.id.coord_detail_container) as? CoordinateDetailFragment
             if (existing != null) {
                 existing.updateId(id)
+                applyShowListControlToDetail()
             } else {
                 childFragmentManager.beginTransaction()
                     .replace(R.id.coord_detail_container, CoordinateDetailFragment.newInstance(id))
                     .commit()
+                // New fragment pulls its initial state via onDetailViewReady() once its view exists.
             }
         } catch (e: Exception) {
             Log.e("CoordinatesFragment", "showEmbeddedDetail failed: ${e.message}")
+        }
+    }
+
+    /** Apply the current collapse state to the list pane and the detail header's show-list control. */
+    private fun applyListPaneVisibility() {
+        val root = _binding?.root ?: return
+        val vis = if (listPaneVisible) View.VISIBLE else View.GONE
+        root.findViewById<View>(R.id.list_pane_container)?.visibility = vis
+        root.findViewById<View>(R.id.list_pane_divider)?.visibility = vis
+        applyShowListControlToDetail()
+    }
+
+    /** Push the show-list button state into the embedded detail fragment (if present). */
+    private fun applyShowListControlToDetail() {
+        val detail = childFragmentManager.findFragmentById(R.id.coord_detail_container)
+            as? CoordinateDetailFragment ?: return
+        bindDetailShowList(detail)
+    }
+
+    /** Called by the embedded detail fragment when its view is ready, to receive its initial state. */
+    fun onDetailViewReady(detail: CoordinateDetailFragment) {
+        bindDetailShowList(detail)
+    }
+
+    private fun bindDetailShowList(detail: CoordinateDetailFragment) {
+        detail.setShowListControl(visible = !listPaneVisible) {
+            listPaneVisible = true
+            applyListPaneVisibility()
         }
     }
 }

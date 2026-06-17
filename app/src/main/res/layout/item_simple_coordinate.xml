@@ -1,60 +1,60 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Coordinate list row. Edit and delete are surfaced via the overflow (three-dot) button
+     so the row body has space to show the name and position clearly.
+     The adapter sets coordinate_row_body background to colorPrimaryContainer when selected. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:minHeight="56dp"
-    android:gravity="center_vertical"
-    android:clipToOutline="false">
+    android:minHeight="60dp"
+    android:gravity="center_vertical">
 
+    <!-- Selection accent bar: 4dp, colorPrimary, shown when item is selected -->
     <View
         android:id="@+id/selection_accent"
-        android:layout_width="8dp"
+        android:layout_width="4dp"
         android:layout_height="match_parent"
-        android:background="@color/dev_category_selected_accent"
-        android:outlineProvider="none"
+        android:background="?attr/colorPrimary"
         android:visibility="invisible" />
 
+    <!-- Main row body: icon + name/coords, tap = select -->
     <LinearLayout
         android:id="@+id/coordinate_row_body"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingEnd="12dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="4dp"
         android:paddingTop="12dp"
         android:paddingBottom="12dp"
         android:gravity="center_vertical"
-        android:background="@drawable/coordinate_item_bg"
-        android:foreground="?attr/selectableItemBackground"
+        android:background="?attr/selectableItemBackground"
         android:clickable="true"
-        android:focusable="true"
-        android:clipToOutline="false">
+        android:focusable="true">
 
         <ImageView
             android:id="@+id/image_icon"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:layout_marginEnd="12dp"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginEnd="14dp"
             android:contentDescription="@string/icon_content_desc"
-            android:src="@drawable/ic_menu_camera" />
+            android:src="@drawable/ic_pin" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:orientation="vertical"
-            android:clipToOutline="false">
+            android:orientation="vertical">
 
             <TextView
                 android:id="@+id/text_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="16sp"
-                android:textColor="@android:color/black"
-                android:maxLines="2"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:textColor="?attr/colorOnSurface"
+                android:maxLines="1"
                 android:ellipsize="end" />
 
             <TextView
@@ -62,32 +62,36 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
         </LinearLayout>
+
     </LinearLayout>
 
-    <!-- Edit button -->
-    <ImageButton
-        android:id="@+id/button_edit"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:padding="8dp"
-        android:layout_marginEnd="2dp"
-        android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="@string/edit_coordinate"
-        android:src="@drawable/ic_edit_blue"
-        app:tint="#0D47A1" />
+    <!-- Trailing indicator: shown when this coordinate has a linked 3D model -->
+    <ImageView
+        android:id="@+id/image_model_link"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="4dp"
+        android:src="@drawable/ic_models_24"
+        android:contentDescription="@string/model_linked_desc"
+        app:tint="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
 
-    <!-- Delete (trash) button -->
+    <!-- Single overflow button — tap shows PopupMenu with Edit / Delete / Copy -->
     <ImageButton
-        android:id="@+id/button_delete"
+        android:id="@+id/btn_overflow"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:padding="8dp"
         android:layout_marginEnd="4dp"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:contentDescription="@string/delete_coordinate"
-        android:src="@drawable/ic_delete_red"
-        app:tint="#B71C1C" />
+        android:contentDescription="More options"
+        android:src="@drawable/ic_more_vert_24"
+        app:tint="?attr/colorOnSurfaceVariant" />
+
 </LinearLayout>

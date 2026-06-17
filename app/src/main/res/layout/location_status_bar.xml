@@ -5,7 +5,7 @@
     android:id="@+id/location_status_bar"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@color/purple_700"
+    android:background="@color/app_status_strip"
     android:paddingStart="10dp"
     android:paddingEnd="10dp"
     android:paddingTop="6dp"

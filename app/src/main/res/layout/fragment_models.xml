@@ -15,9 +15,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="3D Models"
-            android:textSize="24sp"
+            android:textAppearance="@style/TextAppearance.App.PageTitle"
             android:textStyle="bold"
-            android:textColor="@android:color/black"
+            android:textColor="?attr/colorOnSurface"
             android:paddingBottom="16dp" />
 
         <!-- Status Message -->
@@ -27,8 +27,9 @@
             android:layout_height="wrap_content"
             android:visibility="gone"
             android:padding="12dp"
-            android:background="#E8F5E8"
-            android:textColor="#2E7D32"
+            android:background="?attr/colorSecondaryContainer"
+            android:textColor="?attr/colorOnSecondaryContainer"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
             android:layout_marginBottom="8dp" />
 
         <!-- Loading Indicator -->
@@ -67,26 +68,27 @@
             android:visibility="gone">
 
             <ImageView
-                android:layout_width="96dp"
-                android:layout_height="96dp"
-                android:src="@android:drawable/ic_menu_gallery"
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/ic_menu_gallery"
                 android:alpha="0.3"
-                android:layout_marginBottom="16dp" />
+                android:layout_marginBottom="16dp"
+                app:tint="?attr/colorOnSurface" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="No 3D models added yet"
-                android:textSize="18sp"
-                android:textColor="@android:color/darker_gray"
+                android:textAppearance="@style/TextAppearance.App.SectionTitle"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginBottom="8dp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Tap the + button to add your first .glb model"
-                android:textSize="14sp"
-                android:textColor="@android:color/darker_gray"
+                android:textAppearance="@style/TextAppearance.App.BodySecondary"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:gravity="center" />
 
         </LinearLayout>

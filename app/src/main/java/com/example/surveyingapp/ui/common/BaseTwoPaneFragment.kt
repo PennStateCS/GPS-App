@@ -19,6 +19,10 @@ import com.example.surveyingapp.ui.settings.SettingsCategoryAdapter
  */
 abstract class BaseTwoPaneFragment : Fragment() {
 
+    companion object {
+        private const val KEY_SELECTED_CAT_ID = "twopane_selected_cat_id"
+    }
+
     private lateinit var categoriesRecycler: RecyclerView
     private lateinit var internalContentContainer: LinearLayout
     private lateinit var headerView: TextView
@@ -40,19 +44,31 @@ abstract class BaseTwoPaneFragment : Fragment() {
 
         onRootCreated(root)
 
-        val cats = provideCategories() // avoid multiple calls
+        val cats = provideCategories()
         adapter = com.example.surveyingapp.ui.settings.SettingsCategoryAdapter(cats) { cat -> showCategory(cat) }
         categoriesRecycler.layoutManager = LinearLayoutManager(requireContext())
         categoriesRecycler.adapter = adapter
 
-        val initialIdx = initialCategoryIndex().coerceIn(0, (cats.size - 1).coerceAtLeast(0))
-        if (cats.isNotEmpty()) {
-            val initialCat = cats[initialIdx]
+        val savedCatId = savedInstanceState?.getInt(KEY_SELECTED_CAT_ID, -1)?.takeIf { it >= 0 }
+        val startCat = if (savedCatId != null) {
+            cats.firstOrNull { it.id == savedCatId }
+        } else null
+        val initialCat = startCat ?: cats.getOrElse(
+            initialCategoryIndex().coerceIn(0, (cats.size - 1).coerceAtLeast(0))
+        ) { cats.firstOrNull() }
+
+        if (initialCat != null) {
             showCategory(initialCat)
-            // Sync adapter selection if initial index not default first (or even if it is for clarity)
             adapter.setSelectedCategoryId(initialCat.id)
         }
         return root
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::adapter.isInitialized) {
+            adapter.getSelectedCategoryId()?.let { outState.putInt(KEY_SELECTED_CAT_ID, it) }
+        }
     }
 
     /** Override to perform initialization before first category content is selected. */
@@ -74,10 +90,7 @@ abstract class BaseTwoPaneFragment : Fragment() {
         }
         val view = buildCategoryContent(category, layoutInflater) ?: return
         currentContentView = view
-        headerView.apply {
-            text = category.title
-            visibility = View.VISIBLE
-        }
+        headerView.visibility = View.GONE
         placeholderView.visibility = View.GONE
         internalContentContainer.addView(view)
     }

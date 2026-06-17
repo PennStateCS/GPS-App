@@ -16,10 +16,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Location Settings"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:paddingBottom="8dp" />
 
         <androidx.appcompat.widget.SwitchCompat
@@ -41,8 +40,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="When enabled the app keeps recording location (foreground notification) after you leave the app. Turn off to stop logging when in background to save battery."
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
-            android:textColor="@android:color/darker_gray"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:layout_marginBottom="16dp" />
 
         <!-- New Location Source selection -->
@@ -142,7 +141,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text=""
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:textAppearance="?attr/textAppearanceBodySmall"
                 android:padding="4dp"
                 android:background="#08000000" />
         </LinearLayout>
@@ -151,10 +150,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Display Settings"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -176,10 +174,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Data Management"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -221,7 +218,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="Import progress"
-                android:textAppearance="@style/TextAppearance.AppCompat.Small"
+                android:textAppearance="?attr/textAppearanceBodySmall"
                 android:paddingTop="4dp"
                 android:layout_marginBottom="8dp" />
 
@@ -236,10 +233,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Developer"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -255,10 +251,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Satellite Signal Strength"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -282,10 +277,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="About"
-            android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold"
             android:textAllCaps="true"
-            android:textSize="18sp"
             android:layout_marginTop="12dp"
             android:paddingBottom="8dp" />
 
@@ -293,8 +287,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
-            android:textColor="@android:color/darker_gray" />
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
     </LinearLayout>
 </ScrollView>

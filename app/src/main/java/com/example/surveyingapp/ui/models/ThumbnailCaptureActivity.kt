@@ -21,6 +21,8 @@ import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.google.android.filament.Camera
+import com.google.android.filament.EntityManager
+import com.google.android.filament.LightManager
 import com.google.android.filament.Skybox
 import com.google.android.filament.utils.KTX1Loader
 import com.google.android.filament.utils.Manipulator
@@ -76,6 +78,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
     private var modelViewer: ModelViewer? = null
     private var choreographer: Choreographer? = null
     private var frameCallback: Choreographer.FrameCallback? = null
+    private var keyLight: Int = 0   // directional key-light entity (0 = none)
 
     private var modelPath = ""
     private var modelName = ""
@@ -168,6 +171,12 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             viewer.scene.skybox = null
             viewer.view.blendMode = com.google.android.filament.View.BlendMode.TRANSLUCENT
 
+            // Clean, deterministic thumbnail: temporal dithering sprays low-amplitude noise
+            // across the transparent frame (visible as speckles over the white card), and bloom
+            // fireflies off the bright IBL. Disable both for a crisp capture.
+            viewer.view.dithering = com.google.android.filament.View.Dithering.NONE
+            viewer.view.bloomOptions = viewer.view.bloomOptions.apply { enabled = false }
+
             val opts = viewer.renderer.clearOptions
             opts.clearColor[0] = 0f
             opts.clearColor[1] = 0f
@@ -208,6 +217,22 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 viewer.scene.indirectLight = il.indirectLight
             } catch (e: Exception) {
                 Log.w(TAG, "Could not load indirect light: ${e.message}")
+            }
+
+            // IBL alone leaves dark/rough materials (e.g. the wooden crate) almost black.
+            // Add a directional key light so every model's faces are actually lit.
+            try {
+                val light = EntityManager.get().create()
+                LightManager.Builder(LightManager.Type.DIRECTIONAL)
+                    .color(1f, 1f, 1f)
+                    .intensity(80_000f)              // lux
+                    .direction(0.4f, -1f, -0.5f)     // angled down from upper-front
+                    .castShadows(false)
+                    .build(viewer.engine, light)
+                viewer.scene.addEntity(light)
+                keyLight = light
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not add directional light: ${e.message}")
             }
 
             lifecycleScope.launch(Dispatchers.IO) {
@@ -561,6 +586,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
     private fun finishWithCleanup() {
         frameCallback?.let { choreographer?.removeFrameCallback(it) }
         frameCallback = null
+        destroyKeyLight()
         try { modelViewer?.destroyModel() } catch (e: Exception) { }
         modelViewer = null
         // No animation on finish.
@@ -570,7 +596,21 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         frameCallback?.let { choreographer?.removeFrameCallback(it) }
+        destroyKeyLight()
         try { modelViewer?.destroyModel() } catch (e: Exception) { }
         super.onDestroy()
+    }
+
+    private fun destroyKeyLight() {
+        if (keyLight != 0) {
+            try {
+                modelViewer?.engine?.let { engine ->
+                    engine.lightManager.destroy(keyLight)
+                    engine.destroyEntity(keyLight)
+                }
+                EntityManager.get().destroy(keyLight)
+            } catch (_: Exception) { }
+            keyLight = 0
+        }
     }
 }

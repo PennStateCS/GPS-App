@@ -1,16 +1,95 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.SurveyingApp" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_200</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/black</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_200</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+<resources>
+    <!--
+        Night/dark overrides for Theme.SurveyingApp.
+        M3 dark theme convention: primary uses T80 (light on dark surface),
+        containers use T30 (dark enough to contrast with T80 content).
+    -->
+    <style name="Theme.SurveyingApp" parent="Theme.Material3.DayNight.NoActionBar">
+
+        <!-- ── Primary: Blue (dark) ───────────────────────────────────────── -->
+        <item name="colorPrimary">@color/app_primary</item>
+        <item name="colorOnPrimary">@color/app_on_primary</item>
+        <item name="colorPrimaryContainer">@color/app_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/app_on_primary_container</item>
+        <item name="colorPrimaryInverse">@color/md_primary_40</item>
+
+        <!-- ── Secondary: Teal (dark) ─────────────────────────────────────── -->
+        <item name="colorSecondary">@color/app_secondary</item>
+        <item name="colorOnSecondary">@color/app_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/app_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/app_on_secondary_container</item>
+
+        <!-- ── Tertiary: Amber (dark) ─────────────────────────────────────── -->
+        <item name="colorTertiary">@color/md_tertiary_80</item>
+        <item name="colorOnTertiary">@color/md_tertiary_20</item>
+        <item name="colorTertiaryContainer">@color/md_tertiary_30</item>
+        <item name="colorOnTertiaryContainer">@color/md_tertiary_90</item>
+
+        <!-- ── Error (dark) ───────────────────────────────────────────────── -->
+        <item name="colorError">@color/md_error_80</item>
+        <item name="colorOnError">@color/md_error_20</item>
+        <item name="colorErrorContainer">@color/md_error_30</item>
+        <item name="colorOnErrorContainer">@color/md_error_90</item>
+
+        <!-- ── Surfaces (dark) ────────────────────────────────────────────── -->
+        <item name="colorSurface">@color/app_surface</item>
+        <item name="colorOnSurface">@color/app_on_surface</item>
+        <item name="colorSurfaceVariant">@color/app_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
+        <item name="colorSurfaceInverse">@color/md_neutral_90</item>
+        <item name="colorOnSurfaceInverse">@color/md_neutral_20</item>
+
+        <!-- ── Surface Containers (dark) ─────────────────────────────────── -->
+        <!-- Explicitly defined to prevent fallback to M3's default purple palette. -->
+        <item name="colorSurfaceContainerLowest">@color/md_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/md_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/app_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
+
+        <!-- ── Background (dark) ──────────────────────────────────────────── -->
+        <item name="android:colorBackground">@color/app_background</item>
+        <item name="colorOnBackground">@color/app_on_background</item>
+
+        <!-- ── Outline (dark) ─────────────────────────────────────────────── -->
+        <item name="colorOutline">@color/app_outline</item>
+        <item name="colorOutlineVariant">@color/app_outline_variant</item>
+
+        <!-- ── System bars (dark) ─────────────────────────────────────────── -->
+        <item name="android:statusBarColor">@color/app_top_app_bar</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+
+        <!-- ── Overflow / popup menu (dark) ──────────────────────────────── -->
+        <item name="actionOverflowMenuStyle">@style/Widget.App.OverflowMenu</item>
+        <item name="popupMenuStyle">@style/Widget.App.OverflowMenu</item>
+
     </style>
+
+    <!--
+        Dark-mode popup overlay.  Parent is ThemeOverlay.Material3.Dark so the
+        M3 base values (error, tertiary, etc.) are dark-appropriate.  Explicit
+        @color/app_* overrides resolve to their values-night variants
+        automatically, giving a dark blue-gray popup surface in dark mode.
+    -->
+    <style name="Theme.SurveyingApp.PopupOverlay" parent="ThemeOverlay.Material3.Dark">
+        <item name="colorPrimary">@color/app_primary</item>
+        <item name="colorOnPrimary">@color/app_on_primary</item>
+        <item name="colorPrimaryContainer">@color/app_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/app_on_primary_container</item>
+        <item name="colorSecondary">@color/app_secondary</item>
+        <item name="colorSecondaryContainer">@color/app_primary_container</item>
+        <item name="colorSurface">@color/app_surface</item>
+        <item name="colorOnSurface">@color/app_on_surface</item>
+        <item name="colorSurfaceVariant">@color/app_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/app_on_surface_variant</item>
+        <item name="colorSurfaceContainer">@color/app_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/app_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/app_surface_container_highest</item>
+        <item name="android:colorBackground">@color/app_surface_container_high</item>
+        <item name="colorControlHighlight">#1A8FC5FF</item>
+        <item name="android:textColorPrimary">@color/app_on_surface</item>
+        <item name="android:textColorSecondary">@color/app_on_surface_variant</item>
+    </style>
+
 </resources>

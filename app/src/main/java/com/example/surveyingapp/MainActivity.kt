@@ -1,7 +1,6 @@
 package com.example.surveyingapp
 
 import android.content.Intent
-import android.content.SharedPreferences
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -29,8 +28,8 @@ import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter
 import com.example.surveyingapp.databinding.ActivityMainBinding
+import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.service.LocationService
-import com.example.surveyingapp.ui.settings.SettingsFragment
 import com.example.surveyingapp.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
 import kotlinx.coroutines.Dispatchers
@@ -61,12 +60,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navController: NavController
 
 
-    private lateinit var prefs: SharedPreferences
-    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == SettingsFragment.PREF_DEV_TOOLS) {
-            updateDevToolsVisibility()
-        }
-    }
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     private var batteryJob: Job? = null
 
@@ -151,10 +145,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Preferences first
-        prefs = getSharedPreferences(SettingsFragment.PREFS_NAME, MODE_PRIVATE)
-        prefs.registerOnSharedPreferenceChangeListener(prefListener)
-
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -196,8 +186,6 @@ class MainActivity : AppCompatActivity() {
         val drawerLayout: DrawerLayout = binding.drawerLayout
         val navView: NavigationView = binding.navView
 
-        val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
-
         // Fixed NavController initialization
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment_content_main) as NavHostFragment
@@ -211,12 +199,17 @@ class MainActivity : AppCompatActivity() {
             R.id.nav_open_in_ar,
             R.id.nav_settings
         )
-        if (devEnabled) initialTopLevel.add(R.id.nav_development)
         appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
         navView.setupWithNavController(navController)
-        updateDevToolsVisibility()
 
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepository.developerSettings.collect { devSettings ->
+                    updateDevToolsVisibility(devSettings.developerToolsEnabled)
+                }
+            }
+        }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             if (destination.id == R.id.nav_open_in_ar) {
@@ -312,7 +305,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
         batteryJob?.cancel()
         replayController?.stop()
     }
@@ -760,8 +752,7 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    private fun updateDevToolsVisibility() {
-        val devEnabled = prefs.getBoolean(SettingsFragment.PREF_DEV_TOOLS, false)
+    private fun updateDevToolsVisibility(devEnabled: Boolean) {
         val navView: NavigationView = binding.navView
         val menu = navView.menu
         val devMenuItem = menu.findItem(R.id.nav_development)
@@ -896,11 +887,7 @@ class MainActivity : AppCompatActivity() {
                 showNmeaFileSelectionDialog()
                 true
             }
-            R.id.action_diagnostics -> {
-                navController.navigate(R.id.nav_diagnostics)
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
+else -> super.onOptionsItemSelected(item)
         }
     }
 

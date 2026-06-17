@@ -1,31 +1,87 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:paddingTop="24dp"
+    android:paddingBottom="24dp"
+    android:paddingStart="@dimen/settings_content_padding_h"
+    android:paddingEnd="@dimen/settings_content_padding_h">
 
-    <!-- Refresh bar container - will be populated programmatically -->
+    <!-- Page title -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/dev_page_title_permissions"
+        android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+
+    <!-- Page subtitle -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="20dp"
+        android:alpha="0.7"
+        android:text="@string/dev_page_subtitle_permissions"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+    <!-- Refresh bar container - populated programmatically -->
     <LinearLayout
         android:id="@+id/refreshBarContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal" />
 
-    <!-- Permissions table container - will be populated programmatically -->
+    <!-- Permissions card container - populated programmatically -->
     <LinearLayout
         android:id="@+id/permissionsTableContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical" />
 
-    <!-- Request Core Permissions Button -->
-    <androidx.appcompat.widget.AppCompatButton
-        android:id="@+id/btnRequestCorePermissions"
+    <!-- Actions card -->
+    <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:padding="12dp"
-        android:text="@string/dev_request_core_permissions" />
+        android:layout_marginTop="4dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="16dp"
+                android:paddingBottom="8dp"
+                android:text="@string/dev_section_actions"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                android:textColor="?attr/colorPrimary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="16dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRequestCorePermissions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/dev_request_core_permissions" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </com.google.android.material.card.MaterialCardView>
 
 </LinearLayout>

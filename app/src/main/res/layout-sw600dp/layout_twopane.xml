@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tablet variant: left pane 20%, right pane 80% -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal">
+
+    <!-- Left pane: Categories (20%) -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:background="?attr/colorSurfaceVariant">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/categoriesRecycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="?attr/colorOutlineVariant" />
+
+    <!-- Right pane: Content (80%) -->
+    <ScrollView
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="4">
+
+        <LinearLayout
+            android:id="@+id/twopane_content_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/twopane_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textStyle="bold"
+                android:textAppearance="?attr/textAppearanceTitleLarge"
+                android:paddingBottom="12dp"
+                android:textColor="?attr/colorOnSurface"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/twopane_placeholder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/twopane_placeholder_select"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:gravity="center"
+                android:padding="24dp"
+                android:layout_marginTop="32dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

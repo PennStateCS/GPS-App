@@ -3,20 +3,23 @@ package com.example.surveyingapp.ui.capture
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.SurveyingApp
+import com.example.surveyingapp.domain.model.CoordinateFactory
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.settings.toAveragingPolicy
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.capture.ObservationSession
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.gnss.settings.CaptureSettings
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import java.time.Duration
+import java.util.UUID
 
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
@@ -26,8 +29,10 @@ class CaptureViewModel @Inject constructor(
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
-    private lateinit var _state: StateFlow<ObservationSession.State>
-    val state: StateFlow<ObservationSession.State> get() = _state
+    private var sessionForwardJob: Job? = null
+
+    private val _state = MutableStateFlow<ObservationSession.State>(ObservationSession.State.Idle)
+    val state: StateFlow<ObservationSession.State> = _state.asStateFlow()
 
     // Track when fixes start satisfying capture settings
     private var satisfyingStartTime: Long? = null
@@ -70,48 +75,60 @@ class CaptureViewModel @Inject constructor(
 
     private fun checkFixSatisfiesSettings(fix: Fix): Boolean = captureSettings.accepts(fix)
 
+    /**
+     * Loads the saved GNSS Capture settings and starts an averaging session with that policy.
+     * Falls back to safe defaults if settings cannot be read.
+     */
+    fun startWithSavedPolicy() {
+        viewModelScope.launch {
+            val policy = runCatching {
+                SurveyingApp.settingsRepo.gnssCaptureSettings.first().toAveragingPolicy()
+            }.getOrDefault(AveragingPolicy())
+            start(policy)
+        }
+    }
+
     fun start(policy: AveragingPolicy) {
         val s = ObservationSession(viewModelScope, fixSwitchboard.fixes, policy)
-        _state = s.state
         session = s
+        sessionForwardJob?.cancel()
+        sessionForwardJob = viewModelScope.launch {
+            s.state.collect { _state.value = it }
+        }
         s.start()
     }
 
     fun cancel() {
         session?.cancel()
         session = null
+        sessionForwardJob?.cancel()
+        sessionForwardJob = null
+        _state.value = ObservationSession.State.Idle
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        sessionForwardJob?.cancel()
     }
 
     suspend fun save(name: String, note: String?, color: Int, iconId: String) {
         val finished = (state.value as? ObservationSession.State.Complete)?.result ?: return
 
         val src = SurveyingApp.settingsRepo.locationSource.first()
-        val providerEnum = when (src) {
-            LocationSourceType.INTERNAL -> Provider.INTERNAL
-            LocationSourceType.EXTERNAL -> Provider.RS2_EXTERNAL
+        val provider = when (src) {
+            LocationSourceType.INTERNAL  -> Provider.INTERNAL
+            LocationSourceType.EXTERNAL  -> Provider.RS2_EXTERNAL
             LocationSourceType.SIMULATOR -> Provider.OTHER
         }
 
-        // Create coordinate from capture result including quality metadata
-        val coordinate = com.example.surveyingapp.domain.model.Coordinate(
-            id = java.util.UUID.randomUUID().toString(),
-            name = name,
-            latitude = finished.latDeg,
-            longitude = finished.lonDeg,
-            altitude = finished.altEllipsoidalM, // non-null in CaptureResult
-            timestamp = System.currentTimeMillis(),
-            icon = iconId,
-            color = color,
-            provider = providerEnum.name,
-            rtkStatus = finished.rtkStatus?.name,
-            satsUsed = finished.satsUsed,
-            hdop = finished.hdop,
-            horizontalAccuracyM = finished.hAccM,
-            verticalAccuracyM = finished.vAccM,
-            correctionAgeS = finished.diffAgeS,
-            averagedSamples = finished.samples,
-            averageDurationMs = Duration.between(finished.startedAt, finished.endedAt).toMillis(),
-            note = note
+        val coordinate = CoordinateFactory.fromCaptureResult(
+            id       = UUID.randomUUID().toString(),
+            name     = name,
+            note     = note,
+            color    = color,
+            iconId   = iconId,
+            provider = provider,
+            result   = finished
         )
 
         coordinateRepository.insert(coordinate)

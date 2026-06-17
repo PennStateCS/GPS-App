@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Background for the GNSS status chip. Semi-opaque dark fill; color is
+     overridden at runtime by updateGnssStatusChip() via setBackgroundColor(). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#CC424242" />
+    <corners android:radius="20dp" />
+</shape>
