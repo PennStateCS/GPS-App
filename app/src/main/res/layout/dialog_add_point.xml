@@ -42,14 +42,6 @@
             app:strokeColor="?attr/colorOutlineVariant"
             app:rippleColor="?attr/colorControlHighlight" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Choose Color:" />
-        <Spinner
-            android:id="@+id/spinner_color"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
     </LinearLayout>
 </ScrollView>
 

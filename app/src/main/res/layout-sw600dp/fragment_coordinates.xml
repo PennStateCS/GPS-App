@@ -22,7 +22,8 @@
             android:id="@+id/list_pane_container"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3">
+            android:layout_weight="3"
+            android:background="?attr/colorSurfaceContainer">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -37,8 +38,8 @@
                     android:gravity="center_vertical"
                     android:paddingStart="16dp"
                     android:paddingEnd="4dp"
-                    android:background="?attr/colorSurface"
-                    android:elevation="2dp">
+                    android:background="?attr/colorSurfaceContainerHigh"
+                    android:elevation="0dp">
 
                     <TextView
                         android:layout_width="0dp"
@@ -144,28 +145,14 @@
             android:background="?attr/colorOutlineVariant" />
 
         <!-- ── RIGHT: Detail pane ────────────────────────────────────────── -->
+        <!-- The "show list" control when collapsed lives in the detail header
+             (CoordinateDetailFragment), so it never overlaps the title. -->
         <FrameLayout
             android:id="@+id/coord_detail_container"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="7"
-            android:background="?android:attr/colorBackground">
-
-            <!-- Mini FAB shown only when list pane is collapsed -->
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/btn_expand_list"
-                style="@style/Widget.Material3.FloatingActionButton.Small.Secondary"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="top|start"
-                android:layout_margin="12dp"
-                android:contentDescription="Show coordinate list"
-                android:src="@drawable/ic_list_coordinates"
-                android:visibility="gone"
-                app:backgroundTint="?attr/colorSurfaceContainerHigh"
-                app:tint="?attr/colorOnSurface" />
-
-        </FrameLayout>
+            android:background="?android:attr/colorBackground" />
 
     </LinearLayout>
 

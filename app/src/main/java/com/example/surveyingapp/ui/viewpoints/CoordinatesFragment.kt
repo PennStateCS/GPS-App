@@ -254,25 +254,14 @@ class CoordinatesFragment : Fragment() {
             }
         }
 
-        // Tablet two-pane: wire collapsible list pane controls
-        val listPane = root.findViewById<View>(R.id.list_pane_container)
-        val divider = root.findViewById<View>(R.id.list_pane_divider)
+        // Tablet two-pane: wire collapsible list pane controls.
+        // The "show list" entry point when collapsed lives in the detail header
+        // (CoordinateDetailFragment), so it never floats over the title.
         val btnCollapse = root.findViewById<View>(R.id.btn_collapse_list)
-        val btnExpand = root.findViewById<View>(R.id.btn_expand_list)
-        if (listPane != null && divider != null && btnCollapse != null && btnExpand != null) {
-            fun applyListPaneVisibility() {
-                val vis = if (listPaneVisible) View.VISIBLE else View.GONE
-                listPane.visibility = vis
-                divider.visibility = vis
-                btnExpand.visibility = if (listPaneVisible) View.GONE else View.VISIBLE
-            }
+        if (btnCollapse != null && root.findViewById<View>(R.id.list_pane_container) != null) {
             applyListPaneVisibility()
             btnCollapse.setOnClickListener {
                 listPaneVisible = false
-                applyListPaneVisibility()
-            }
-            btnExpand.setOnClickListener {
-                listPaneVisible = true
                 applyListPaneVisibility()
             }
         }
@@ -460,13 +449,43 @@ class CoordinatesFragment : Fragment() {
             val existing = childFragmentManager.findFragmentById(R.id.coord_detail_container) as? CoordinateDetailFragment
             if (existing != null) {
                 existing.updateId(id)
+                applyShowListControlToDetail()
             } else {
                 childFragmentManager.beginTransaction()
                     .replace(R.id.coord_detail_container, CoordinateDetailFragment.newInstance(id))
                     .commit()
+                // New fragment pulls its initial state via onDetailViewReady() once its view exists.
             }
         } catch (e: Exception) {
             Log.e("CoordinatesFragment", "showEmbeddedDetail failed: ${e.message}")
+        }
+    }
+
+    /** Apply the current collapse state to the list pane and the detail header's show-list control. */
+    private fun applyListPaneVisibility() {
+        val root = _binding?.root ?: return
+        val vis = if (listPaneVisible) View.VISIBLE else View.GONE
+        root.findViewById<View>(R.id.list_pane_container)?.visibility = vis
+        root.findViewById<View>(R.id.list_pane_divider)?.visibility = vis
+        applyShowListControlToDetail()
+    }
+
+    /** Push the show-list button state into the embedded detail fragment (if present). */
+    private fun applyShowListControlToDetail() {
+        val detail = childFragmentManager.findFragmentById(R.id.coord_detail_container)
+            as? CoordinateDetailFragment ?: return
+        bindDetailShowList(detail)
+    }
+
+    /** Called by the embedded detail fragment when its view is ready, to receive its initial state. */
+    fun onDetailViewReady(detail: CoordinateDetailFragment) {
+        bindDetailShowList(detail)
+    }
+
+    private fun bindDetailShowList(detail: CoordinateDetailFragment) {
+        detail.setShowListControl(visible = !listPaneVisible) {
+            listPaneVisible = true
+            applyListPaneVisibility()
         }
     }
 }

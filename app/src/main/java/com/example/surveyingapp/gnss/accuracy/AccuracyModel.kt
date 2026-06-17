@@ -40,7 +40,8 @@ data class UereTable(
             Provider.RS2_EXTERNAL -> rs2[mode] ?: RS2_FALLBACK_UERE_M
             Provider.RS2_BT -> rs2[mode] ?: RS2_FALLBACK_UERE_M
             Provider.RS2_TCP -> rs2[mode] ?: RS2_FALLBACK_UERE_M
-            Provider.OTHER -> internal[mode] ?: INTERNAL_FALLBACK_UERE_M
+            Provider.OTHER,
+            Provider.MODEL -> internal[mode] ?: INTERNAL_FALLBACK_UERE_M
         }
 
     private companion object {

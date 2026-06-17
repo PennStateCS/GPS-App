@@ -88,7 +88,7 @@
         the M3 popup rendering path ignores colorSurfaceContainerHigh.
     -->
     <style name="Widget.App.OverflowMenu" parent="Widget.Material3.PopupMenu">
-        <item name="android:popupBackground">@color/app_surface_container_high</item>
+        <item name="android:popupBackground">@drawable/bg_popup_menu</item>
     </style>
 
     <!--

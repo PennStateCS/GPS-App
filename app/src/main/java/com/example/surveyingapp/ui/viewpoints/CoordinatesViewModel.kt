@@ -91,9 +91,8 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
             val metersPerDegLat = 111_320.0  // Meters per degree latitude (constant)
             val metersPerDegLon = 111_320.0 * kotlin.math.cos(Math.toRadians(baseLat))  // Varies by latitude
 
-            // Colors and icons for variety in the fake data
-            val colors = listOf(0xFFE57373.toInt(),0xFF64B5F6.toInt(),0xFF81C784.toInt(),0xFFFFB74D.toInt(),0xFFBA68C8.toInt())
             val icons = listOf("ic_pin","ic_home","ic_star","ic_circle","ic_square","ic_triangle","ic_diamond")
+            val defaultColor = 0xFF155DA8.toInt()
             val now = System.currentTimeMillis()
             val random = kotlin.random.Random(System.currentTimeMillis())
 
@@ -118,7 +117,7 @@ class CoordinatesViewModel(application: Application) : AndroidViewModel(applicat
                     altitude = 10.0 + (i % 4),
                     timestamp = now - i * 1_000L,  // Spread timestamps for variety
                     icon = icons[i % icons.size],
-                    color = colors[i % colors.size]
+                    color = defaultColor
                 )
             }
             repository.insertAll(coords)

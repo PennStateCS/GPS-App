@@ -1,315 +1,559 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+    Map workspace. All panels overlay the full-screen MapView.
+    Key ID contracts (referenced by RenderMapFragment.kt):
+      mapView, text_render_map, text_gnss_status
+      left_panel, panel_handle (GONE compat), btn_collapse_panel, btn_expand_panel
+      left_panel_subtitle, left_panel_placeholder
+      coordinate_toggle_list, btn_show_all, btn_hide_all
+      fab_toggle_sat (Layers), btn_compass, fab_zoom_in, fab_zoom_out
+      fab_recenter (My Location), btn_fit_visible, fab_toggle_grid (GONE compat)
+      card_selected_coordinate, img_selected_icon, txt_selected_name,
+        txt_selected_subtitle, btn_selected_close, btn_selected_center, btn_selected_stakeout
+      stakeout_panel, txt_stakeout_target, txt_stakeout_distance, txt_stakeout_bearing,
+        btn_clear_stakeout, btn_toggle_stakeout (GONE compat)
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="horizontal">
+    android:layout_height="match_parent">
 
-    <!-- Left column panel -->
-    <LinearLayout
+    <!-- ── Full-screen map ─────────────────────────────────────────────── -->
+    <com.google.android.gms.maps.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Placeholder when no map loaded (normally gone) -->
+    <TextView
+        android:id="@+id/text_render_map"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_ar_chip"
+        android:padding="12dp"
+        android:text="@string/render_map_placeholder"
+        android:textColor="@color/ar_overlay_text"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <!-- ── Hidden compatibility stubs ──────────────────────────────────── -->
+    <View
+        android:id="@+id/panel_handle"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab_toggle_grid"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="Toggle grid"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/btn_toggle_stakeout"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Start Stakeout"
+        android:visibility="gone" />
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         LEFT: Floating coordinate panel
+    ══════════════════════════════════════════════════════════════════ -->
+    <com.google.android.material.card.MaterialCardView
         android:id="@+id/left_panel"
-        android:layout_width="260dp"
-        android:layout_height="match_parent"
-        android:background="?attr/colorSurface"
-        android:orientation="vertical"
-        android:padding="12dp">
+        style="@style/Widget.App.Card.Outlined"
+        android:layout_width="272dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        app:cardElevation="6dp"
+        app:cardCornerRadius="20dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/left_panel_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:paddingBottom="8dp"
-                android:text="Coordinates"
-                android:textAppearance="@style/TextAppearance.App.SectionTitle"
-                android:textStyle="bold" />
-
-            <ImageButton
-                android:id="@+id/btn_collapse_panel"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="@android:color/transparent"
-                android:contentDescription="Collapse"
-                android:src="@android:drawable/ic_menu_close_clear_cancel" />
-        </LinearLayout>
-
-        <!-- Show/Hide All Controls -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="horizontal"
+            android:orientation="vertical"
+            android:paddingTop="4dp"
             android:paddingBottom="8dp">
 
-            <Button
-                android:id="@+id/btn_show_all"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
-                android:text="Show All"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="12sp"
-                android:paddingTop="4dp"
-                android:paddingBottom="4dp" />
-
-            <Button
-                android:id="@+id/btn_hide_all"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="4dp"
-                android:layout_weight="1"
-                android:background="?attr/selectableItemBackground"
-                android:text="Hide All"
-                android:textColor="?attr/colorError"
-                android:textSize="12sp"
-                android:paddingTop="4dp"
-                android:paddingBottom="4dp" />
-        </LinearLayout>
-
-        <!-- Stakeout Panel -->
-        <LinearLayout
-            android:id="@+id/stakeout_panel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:background="?attr/colorSurfaceVariant"
-            android:orientation="vertical"
-            android:padding="8dp"
-            android:visibility="gone">
-
+            <!-- Panel header: title + collapse button -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:paddingStart="16dp"
+                android:paddingEnd="4dp"
+                android:paddingTop="8dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Coordinates"
+                    android:textAppearance="?attr/textAppearanceTitleMedium"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <ImageButton
+                    android:id="@+id/btn_collapse_panel"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:padding="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Hide coordinates panel"
+                    android:src="@drawable/ic_chevron_right"
+                    android:rotation="180"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+            </LinearLayout>
+
+            <!-- Visible-count subtitle -->
+            <TextView
+                android:id="@+id/left_panel_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:text="Loading…"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <!-- Show All / Hide All row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="4dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_show_all"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Show All"
+                    android:contentDescription="Show all coordinates" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_hide_all"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Hide All"
+                    android:contentDescription="Hide all coordinates" />
+
+            </LinearLayout>
+
+            <!-- Subtle divider -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="?attr/colorOutlineVariant"
+                android:alpha="0.6" />
+
+            <!-- Scrollable coordinate list -->
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/coordinate_toggle_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxHeight="340dp"
+                android:nestedScrollingEnabled="true"
+                android:overScrollMode="ifContentScrolls"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+            <!-- Empty state -->
+            <TextView
+                android:id="@+id/left_panel_placeholder"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:text="No coordinates saved"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textStyle="italic"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:gravity="center"
+                android:visibility="gone" />
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Panel expand button: appears when panel is collapsed -->
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/btn_expand_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="12dp"
+        android:text="Coordinates"
+        android:contentDescription="Show coordinates panel"
+        app:icon="@drawable/ic_list_coordinates"
+        android:visibility="gone" />
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         TOP-CENTER: GNSS status chip
+    ══════════════════════════════════════════════════════════════════ -->
+    <TextView
+        android:id="@+id/text_gnss_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_gnss_chip"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:text="GNSS: —"
+        android:textAppearance="?attr/textAppearanceLabelMedium"
+        android:textColor="@android:color/white"
+        android:fontFamily="monospace" />
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         RIGHT: Map control stack
+    ══════════════════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/fab_toggle_sat"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="@drawable/bg_map_control"
+            android:contentDescription="Map layers"
+            android:src="@drawable/ic_layers_24"
+            app:tint="?attr/colorOnSurface"
+            android:elevation="4dp" />
+
+        <ImageButton
+            android:id="@+id/btn_compass"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="@drawable/bg_map_control"
+            android:contentDescription="Reset map orientation"
+            android:src="@drawable/ic_compass_24"
+            app:tint="?attr/colorOnSurface"
+            android:elevation="4dp"
+            android:layout_marginTop="6dp" />
+
+        <ImageButton
+            android:id="@+id/fab_zoom_in"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="@drawable/bg_map_control"
+            android:contentDescription="Zoom in"
+            android:src="@drawable/ic_zoom_in"
+            app:tint="?attr/colorOnSurface"
+            android:elevation="4dp"
+            android:layout_marginTop="6dp" />
+
+        <ImageButton
+            android:id="@+id/fab_zoom_out"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="@drawable/bg_map_control"
+            android:contentDescription="Zoom out"
+            android:src="@drawable/ic_zoom_out"
+            app:tint="?attr/colorOnSurface"
+            android:elevation="4dp"
+            android:layout_marginTop="6dp" />
+
+        <ImageButton
+            android:id="@+id/fab_recenter"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="@drawable/bg_map_control"
+            android:contentDescription="Center on my location"
+            android:src="@drawable/ic_my_location_24"
+            app:tint="?attr/colorOnSurface"
+            android:elevation="4dp"
+            android:layout_marginTop="6dp" />
+
+        <ImageButton
+            android:id="@+id/btn_fit_visible"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="@drawable/bg_map_control"
+            android:contentDescription="Fit visible coordinates"
+            android:src="@drawable/ic_fit_screen_24"
+            app:tint="?attr/colorOnSurface"
+            android:elevation="4dp"
+            android:layout_marginTop="6dp" />
+
+    </LinearLayout>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         BOTTOM-START: Selected coordinate card
+    ══════════════════════════════════════════════════════════════════ -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/card_selected_coordinate"
+        style="@style/Widget.App.Card.Outlined"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="72dp"
+        android:layout_marginBottom="12dp"
+        app:cardElevation="8dp"
+        app:cardCornerRadius="20dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="12dp"
+            android:paddingBottom="4dp">
+
+            <!-- Icon + name + subtitle + close -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="4dp"
+                android:paddingBottom="4dp">
+
+                <ImageView
+                    android:id="@+id/img_selected_icon"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="12dp"
+                    android:contentDescription="Coordinate icon"
+                    android:src="@drawable/ic_pin" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/txt_selected_name"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:textColor="?attr/colorOnSurface"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+
+                    <TextView
+                        android:id="@+id/txt_selected_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="—"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:maxLines="1"
+                        android:ellipsize="end" />
+
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/btn_selected_close"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:padding="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Close selected coordinate card"
+                    android:src="@drawable/ic_arrow_back"
+                    android:rotation="90"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+
+            </LinearLayout>
+
+            <!-- Action buttons -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="4dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_selected_center"
+                    style="@style/Widget.Material3.Button.TextButton.Icon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Center"
+                    android:contentDescription="Center map on this coordinate"
+                    app:icon="@drawable/ic_my_location_24" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_selected_stakeout"
+                    style="@style/Widget.Material3.Button.TextButton.Icon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Stakeout"
+                    android:contentDescription="Start stakeout"
+                    app:icon="@drawable/ic_stakeout_24" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         BOTTOM-CENTER: Stakeout mode panel (shown when stakeout active)
+    ══════════════════════════════════════════════════════════════════ -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/stakeout_panel"
+        style="@style/Widget.App.Card.Outlined"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginStart="72dp"
+        android:layout_marginEnd="72dp"
+        android:layout_marginBottom="12dp"
+        app:cardElevation="8dp"
+        app:cardCornerRadius="20dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- Title row: "Stakeout" label + Stop button -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingBottom="4dp">
+
+                <ImageView
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginEnd="8dp"
+                    android:src="@drawable/ic_stakeout_24"
+                    app:tint="?attr/colorPrimary"
+                    android:contentDescription="Stakeout active" />
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="Stakeout"
-                    android:textAppearance="@style/TextAppearance.App.BodyPrimary"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary"
                     android:textStyle="bold" />
 
-                <Button
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_clear_stakeout"
+                    style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="28dp"
-                    android:background="?attr/selectableItemBackground"
-                    android:paddingHorizontal="8dp"
-                    android:text="Clear"
-                    android:textColor="?attr/colorError"
-                    android:textSize="10sp" />
+                    android:layout_height="wrap_content"
+                    android:text="Stop"
+                    android:contentDescription="Stop stakeout"
+                    android:textColor="?attr/colorError" />
+
             </LinearLayout>
 
+            <!-- Target name -->
             <TextView
                 android:id="@+id/txt_stakeout_target"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingTop="4dp"
-                android:text="Target: Tap map to set"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textAppearance="@style/TextAppearance.App.Supporting" />
+                android:text="—"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface"
+                android:paddingBottom="12dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
+            <!-- Distance + Bearing -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:paddingTop="8dp">
+                android:orientation="horizontal">
 
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:gravity="center"
-                    android:orientation="vertical">
+                    android:orientation="vertical"
+                    android:gravity="center">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Distance"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:textSize="10sp" />
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
                         android:id="@+id/txt_stakeout_distance"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="--"
-                        android:textAppearance="@style/TextAppearance.App.BodyPrimary"
-                        android:textStyle="bold" />
+                        android:text="—"
+                        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface" />
+
                 </LinearLayout>
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="32dp"
+                    android:layout_gravity="center_vertical"
+                    android:background="?attr/colorOutlineVariant"
+                    android:alpha="0.5" />
 
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:gravity="center"
-                    android:orientation="vertical">
+                    android:orientation="vertical"
+                    android:gravity="center">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Bearing"
-                        android:textColor="?attr/colorOnSurfaceVariant"
-                        android:textSize="10sp" />
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
                         android:id="@+id/txt_stakeout_bearing"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="--"
-                        android:textAppearance="@style/TextAppearance.App.BodyPrimary"
-                        android:textStyle="bold" />
+                        android:text="—"
+                        android:textAppearance="?attr/textAppearanceHeadlineSmall"
+                        android:textStyle="bold"
+                        android:textColor="?attr/colorOnSurface" />
+
                 </LinearLayout>
 
             </LinearLayout>
+
         </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
-        <!-- Stakeout Toggle Button -->
-        <Button
-            android:id="@+id/btn_toggle_stakeout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:background="?attr/selectableItemBackground"
-            android:text="Enable Stakeout"
-            android:textColor="?attr/colorSecondary"
-            android:textAppearance="@style/TextAppearance.App.Supporting" />
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/coordinate_toggle_list"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <TextView
-            android:id="@+id/left_panel_placeholder"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="No coordinates"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:textAppearance="@style/TextAppearance.App.BodySecondary"
-            android:visibility="gone" />
-    </LinearLayout>
-
-    <!-- Slim drag handle (4dp) -->
-    <View
-        android:id="@+id/panel_handle"
-        android:layout_width="4dp"
-        android:layout_height="match_parent"
-        android:background="@drawable/panel_handle_grip"
-        android:contentDescription="Drag handle" />
-
-    <!-- Right side map container -->
-    <FrameLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1">
-
-        <com.google.android.gms.maps.MapView
-            android:id="@+id/mapView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
-
-        <!-- GNSS source / RTK status chip – top-left of map -->
-        <TextView
-            android:id="@+id/text_gnss_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|start"
-            android:layout_margin="10dp"
-            android:background="@drawable/bg_ar_chip"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:paddingTop="5dp"
-            android:paddingBottom="5dp"
-            android:text="GNSS: --"
-            android:textAppearance="@style/TextAppearance.App.AR.Overlay"
-            android:fontFamily="monospace"
-            android:visibility="visible" />
-
-        <TextView
-            android:id="@+id/text_render_map"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:background="@drawable/bg_ar_chip"
-            android:padding="12dp"
-            android:text="@string/render_map_placeholder"
-            android:textColor="@color/ar_overlay_text"
-            android:textSize="18sp"
-            android:visibility="gone" />
-
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_toggle_sat"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
-            android:layout_margin="16dp"
-            android:contentDescription="Toggle satellite"
-            android:src="@android:drawable/ic_menu_gallery" />
-
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_recenter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_margin="16dp"
-            android:contentDescription="Recenter map"
-            android:src="@android:drawable/ic_menu_mylocation" />
-
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_zoom_in"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="88dp"
-            android:contentDescription="Zoom in"
-            android:src="@drawable/ic_zoom_in" />
-
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_zoom_out"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="144dp"
-            android:contentDescription="Zoom out"
-            android:src="@drawable/ic_zoom_out" />
-
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-            android:id="@+id/fab_toggle_grid"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|end"
-            android:layout_marginEnd="16dp"
-            android:layout_marginBottom="200dp"
-            android:contentDescription="Toggle coordinate grid"
-            android:src="@android:drawable/ic_menu_view" />
-
-        <!-- Expand button appears when panel collapsed -->
-        <ImageButton
-            android:id="@+id/btn_expand_panel"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_gravity="center_vertical|start"
-            android:layout_margin="8dp"
-            android:background="@drawable/bg_map_overlay_btn"
-            android:contentDescription="Expand panel"
-            android:elevation="4dp"
-            android:src="@android:drawable/ic_media_play"
-            android:tint="?attr/colorControlNormal"
-            android:visibility="gone" />
-
-    </FrameLayout>
-
-</LinearLayout>
+</FrameLayout>

@@ -42,6 +42,8 @@
     <string name="dev_section_app_info">App Info</string>
     <string name="dev_section_device_info">Device Info</string>
     <string name="edit_coordinate">Edit Coordinate</string>
+    <string name="show_coordinate_list">Show coordinate list</string>
+    <string name="copy_coordinates">Copy Coordinates</string>
     <string name="empty_coordinates_text">No coordinates available</string>
     <string name="capture_coordinates">Capture Coordinates</string>
     <string name="dev_category_placeholder">Development tools</string>
