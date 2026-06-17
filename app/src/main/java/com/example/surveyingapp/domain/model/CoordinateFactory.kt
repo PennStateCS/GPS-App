@@ -1,7 +1,10 @@
 package com.example.surveyingapp.domain.model
 
 import com.example.surveyingapp.gnss.accumulator.FixSnapshot
+import com.example.surveyingapp.gnss.capture.CaptureResult
+import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.util.UtmConverter
+import java.time.Duration
 
 /**
  * Factory + helpers for constructing Coordinate domain models.
@@ -87,6 +90,54 @@ object CoordinateFactory {
             stdAltM = fix.stdAltM,
             sourceDevice = sourceDevice,
             appVersion = appVersion
+        )
+    }
+
+    /**
+     * Builds a [Coordinate] from a completed [CaptureResult].
+     *
+     * All [CaptureResult] quality fields are mapped to their [Coordinate] counterparts.
+     * UTM easting, northing, and zone are computed from the averaged lat/lon.
+     *
+     * @param provider The GNSS source active during capture.
+     */
+    fun fromCaptureResult(
+        id: String,
+        name: String,
+        note: String?,
+        color: Int,
+        iconId: String,
+        provider: Provider,
+        result: CaptureResult
+    ): Coordinate {
+        val utm = runCatching { UtmConverter.latLonToUtm(result.latDeg, result.lonDeg) }.getOrNull()
+        return Coordinate(
+            id                  = id,
+            name                = name,
+            latitude            = result.latDeg,
+            longitude           = result.lonDeg,
+            altitude            = result.altEllipsoidalM,
+            timestamp           = result.endedAt.toEpochMilli(),
+            icon                = iconId,
+            color               = color,
+            provider            = provider.name,
+            rtkStatus           = result.rtkStatus?.name,
+            satsUsed            = result.satsUsed,
+            satsVisible         = result.satsVisible,
+            hdop                = result.hdop,
+            vDop                = result.vDop,
+            pDop                = result.pDop,
+            horizontalAccuracyM = result.hAccM,
+            verticalAccuracyM   = result.vAccM,
+            correctionAgeS      = result.diffAgeS,
+            correctionStationId = result.correctionStationId,
+            crsEpsg             = 4326,
+            easting             = utm?.easting,
+            northing            = utm?.northing,
+            utmZone             = utm?.utmZone,
+            averagedSamples     = result.samples,
+            averageDurationMs   = Duration.between(result.startedAt, result.endedAt).toMillis(),
+            note                = note
         )
     }
 

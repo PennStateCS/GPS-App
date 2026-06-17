@@ -10,6 +10,26 @@
     <string name="lighting_off">Enable Light</string>
 
 
+    <!-- Developer Tools page titles and subtitles -->
+    <string name="dev_page_title_system_info">System Info</string>
+    <string name="dev_page_subtitle_system_info">App, device, and runtime information useful for debugging.</string>
+    <string name="dev_page_title_permissions">Permissions</string>
+    <string name="dev_page_subtitle_permissions">Current permission status for location, camera, storage, and system features.</string>
+    <string name="dev_page_title_ar_debug">AR Debug</string>
+    <string name="dev_page_subtitle_ar_debug">ARCore, geospatial, anchors, and rendering diagnostics.</string>
+    <string name="dev_page_title_maps_debug">Maps Debug</string>
+    <string name="dev_page_subtitle_maps_debug">Map provider, Play Services, and location display diagnostics.</string>
+    <string name="dev_page_title_coordinates">Coordinates</string>
+    <string name="dev_page_subtitle_coordinates">Stored coordinate and model-link debugging tools.</string>
+    <string name="dev_page_title_gnss">GNSS</string>
+    <string name="dev_page_subtitle_gnss">Receiver state, NMEA flow, fix quality, and satellite diagnostics.</string>
+    <string name="dev_section_actions">Actions</string>
+    <string name="dev_section_api_key">API Key</string>
+    <string name="dev_section_ar_diagnostics">AR Diagnostics</string>
+    <string name="dev_section_maps_diagnostics">Maps Diagnostics</string>
+    <string name="dev_section_permission_status">Permission Status</string>
+    <string name="dev_perm_open_settings">Open App Settings</string>
+
     <!-- Strings required by layouts -->
     <string name="icon_content_desc">Icon</string>
     <string name="dev_coord_generate">Generate Coordinates</string>
@@ -22,25 +42,35 @@
     <string name="dev_section_app_info">App Info</string>
     <string name="dev_section_device_info">Device Info</string>
     <string name="edit_coordinate">Edit Coordinate</string>
+    <string name="show_coordinate_list">Show coordinate list</string>
+    <string name="linked_model_thumbnail_desc">Linked model thumbnail</string>
+    <string name="view_model">View Model</string>
+    <string name="open_in_ar">Open in AR</string>
+    <string name="change_model">Change Model</string>
+    <string name="remove_link">Remove Link</string>
+    <string name="select_model">Select Model</string>
+    <string name="no_model_linked">No model linked to this coordinate.</string>
+    <string name="model_file_missing">Model file missing</string>
+    <string name="model_linked_desc">Has linked model</string>
+    <string name="copy_coordinates">Copy Coordinates</string>
     <string name="empty_coordinates_text">No coordinates available</string>
     <string name="capture_coordinates">Capture Coordinates</string>
     <string name="dev_category_placeholder">Development tools</string>
     <string name="render_map_placeholder">No render available</string>
-    <string name="menu_view_coordinates">View Coordinates</string>
+    <string name="menu_view_coordinates">Coordinates</string>
     <string name="delete_coordinate">Delete Coordinate</string>
     <string name="dev_category_icon_desc">Category icon</string>
     <string name="twopane_placeholder_select">Select an item from the list</string>
     <string name="nav_header_desc">Navigation header image</string>
     <string name="nav_header_title">SurReal AR</string>
-    <string name="nav_header_subtitle">Welcome</string>
+    <string name="nav_header_subtitle">Surveying · GNSS · AR</string>
     <string name="menu_home">Home</string>
-    <string name="menu_render_map">Render Map</string>
-    <string name="menu_open_in_ar">Open in AR</string>
+    <string name="menu_render_map">Map</string>
+    <string name="menu_open_in_ar">AR View</string>
     <string name="menu_models">Models</string>
     <string name="menu_development">Developer Tools</string>
     <string name="action_settings">Settings</string>
     <string name="action_replay">Replay NMEA</string>
-    <string name="action_diagnostics">GNSS Diagnostics</string>
     <string name="title_coordinate_detail">Coordinate Detail</string>
     <string name="menu_rs2">RS2+</string>
 

@@ -1,22 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.App.Card.Outlined"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
-    app:cardElevation="2dp"
-    app:cardCornerRadius="8dp">
+    android:layout_marginHorizontal="8dp"
+    android:layout_marginVertical="4dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="12dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
             <TextView
                 android:id="@+id/timestamp_text"
@@ -25,15 +28,15 @@
                 android:layout_weight="1"
                 android:text="12:34:56"
                 android:textStyle="bold"
-                android:textSize="16sp" />
+                android:textAppearance="@style/TextAppearance.App.BodyPrimary" />
 
             <TextView
                 android:id="@+id/rtk_status_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="RTK: FIX"
-                android:textSize="12sp"
-                android:textColor="@android:color/holo_green_dark" />
+                android:textAppearance="@style/TextAppearance.App.Supporting"
+                android:textColor="@color/status_fix" />
 
         </LinearLayout>
 
@@ -42,7 +45,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="40.12345678, -74.12345678"
-            android:textSize="14sp"
+            android:textAppearance="@style/TextAppearance.App.DataValue"
             android:fontFamily="monospace"
             android:layout_marginTop="4dp" />
 
@@ -58,19 +61,19 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:text="H: 0.05m V: 0.08m"
-                android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:textAppearance="@style/TextAppearance.App.Supporting"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <TextView
                 android:id="@+id/provider_text"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Provider: RS2_EXTERNAL"
-                android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:textAppearance="@style/TextAppearance.App.Supporting"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
         </LinearLayout>
 
     </LinearLayout>
 
-</androidx.cardview.widget.CardView>
+</com.google.android.material.card.MaterialCardView>

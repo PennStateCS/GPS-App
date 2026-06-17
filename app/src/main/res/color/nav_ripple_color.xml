@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ripple color for nav drawer items.
+     Selected: 12% primary blue layered over the selection pill.
+     Unselected: 8% on-surface-variant for a subtle press effect. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="#1E155DA8" />
+    <item android:color="#1441484D" />
+</selector>

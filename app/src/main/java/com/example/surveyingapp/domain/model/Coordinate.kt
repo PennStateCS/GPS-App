@@ -16,6 +16,8 @@ data class Coordinate(
     val altitude: Double,
     val timestamp: Long,
     val icon: String,
+    // Marker color (ARGB). No longer user-selectable — auto-assigned a default (app primary).
+    // Retained because map/list/AR marker rendering still reads it; existing rows keep their value.
     val color: Int,
     val provider: String = "fused",
     val rtkStatus: String? = null,
@@ -40,6 +42,8 @@ data class Coordinate(
     val northing: Double? = null,
     val utmZone: String? = null,
     val note: String? = null,
+    // How the position was acquired (auto-set): internal_gps | external_gnss | model_embedded | map_tap | manual | imported | averaged
+    val captureMethod: String? = null,
     val averagedSamples: Int? = null,
     val averageDurationMs: Long? = null,
     val stdLatM: Double? = null,

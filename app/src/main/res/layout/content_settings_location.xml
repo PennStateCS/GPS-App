@@ -1,370 +1,584 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:fillViewport="false">
 
-    <!-- Location Source Selection (Radio Buttons) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp"
-        android:layout_marginBottom="8dp">
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp"
+        android:paddingStart="@dimen/settings_content_padding_h"
+        android:paddingEnd="@dimen/settings_content_padding_h">
 
-        <RadioGroup
-            android:id="@+id/radio_location_source"
+        <!-- Page title -->
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
-            <RadioButton
-                android:id="@+id/radio_internal"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Internal GPS"
-                android:layout_marginBottom="8dp" />
-            <RadioButton
-                android:id="@+id/radio_es2_tcp"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Emlid Reach RS2+ (TCP)"
-                android:layout_marginBottom="8dp" />
-        </RadioGroup>
+            android:text="GNSS Receiver"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
-        <!-- Options for Emlid Reach RS2+ (TCP): inline manual entry -->
-        <LinearLayout
-            android:id="@+id/layout_rs2_options"
+        <!-- Page description -->
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginTop="8dp">
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="20dp"
+            android:alpha="0.7"
+            android:text="Configure the active GNSS location source and TCP connection settings. The selected source determines which fixes are used for GNSS capture and AR positioning."
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <!-- ── Section 1: Location Source ── -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:orientation="vertical">
 
-                <EditText
-                    android:id="@+id/edit_host"
-                    android:layout_width="0dp"
+                <TextView
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:inputType="textUri"
-                    android:hint="@string/hint_host"
-                    android:imeOptions="actionNext"
-                    android:singleLine="true"
-                    android:layout_marginEnd="8dp" />
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="Location Source"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
 
-                <EditText
-                    android:id="@+id/edit_port"
-                    android:layout_width="96dp"
-                    android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:hint="@string/hint_port"
-                    android:imeOptions="actionDone"
-                    android:singleLine="true"
-                    android:layout_marginEnd="8dp" />
-
-                <Button
-                    android:id="@+id/btn_connect"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/connect" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- Selected Device Container (enhanced with device information) -->
-        <LinearLayout
-            android:id="@+id/container_selected_device"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginTop="8dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_device_box">
-
-            <!-- Device Header with Status and Disconnect Button -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="8dp">
-
-                <!-- Status and Disconnect Button Row -->
+                <!-- Radio buttons -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
 
-                    <TextView
-                        android:id="@+id/text_device_status"
-                        android:layout_width="0dp"
+                    <RadioGroup
+                        android:id="@+id/radio_location_source"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/disconnected"
-                        android:textSize="15sp"
-                        android:textStyle="bold"
-                        android:textColor="@android:color/darker_gray"
-                        android:gravity="start" />
+                        android:orientation="vertical">
 
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="horizontal">
-
-                        <ImageView
-                            android:id="@+id/icon_device_status"
-                            android:layout_width="200dp"
-                            android:layout_height="73dp"
-                            android:src="@drawable/ic_device_status"
-                            android:scaleType="centerInside"
-                            android:contentDescription="Device status icon" />
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:gravity="end"
-                        android:orientation="horizontal">
-
-                        <Button
-                            android:id="@+id/btn_disconnect_device"
+                        <RadioButton
+                            android:id="@+id/radio_internal"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Disconnect"
-                            android:backgroundTint="@android:color/holo_red_dark"
-                            android:textColor="@android:color/white" />
+                            android:layout_marginBottom="8dp"
+                            android:text="Internal GPS"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <RadioButton
+                            android:id="@+id/radio_es2_tcp"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Emlid Reach RS2+ (TCP)"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                    </RadioGroup>
+                </LinearLayout>
+
+                <!-- TCP entry — shown when external source selected -->
+                <LinearLayout
+                    android:id="@+id/layout_rs2_options"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="20dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingHorizontal="20dp"
+                        android:paddingVertical="14dp">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="8dp"
+                            android:hint="@string/hint_host">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_host"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textUri"
+                                android:imeOptions="actionNext"
+                                android:singleLine="true" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="100dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"
+                            android:hint="@string/hint_port">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_port"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:imeOptions="actionDone"
+                                android:singleLine="true" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_connect"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/connect" />
 
                     </LinearLayout>
-
                 </LinearLayout>
-            </LinearLayout>
 
-            <!-- Device Information Panel -->
-            <LinearLayout
-                android:id="@+id/device_info_panel"
+                <!-- Connected device — shown when a device is selected -->
+                <LinearLayout
+                    android:id="@+id/container_selected_device"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="20dp"
+                        android:background="?attr/colorOutlineVariant" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="20dp"
+                        android:paddingVertical="16dp">
+
+                        <!-- Status + icon + disconnect row -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:id="@+id/text_device_status"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/disconnected"
+                                android:textAppearance="?attr/textAppearanceBodyLarge"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:id="@+id/icon_device_status"
+                                android:layout_width="180dp"
+                                android:layout_height="60dp"
+                                android:src="@drawable/ic_device_status"
+                                android:scaleType="centerInside"
+                                android:contentDescription="Device status icon" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_disconnect_device"
+                                style="@style/Widget.Material3.Button.TonalButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="12dp"
+                                android:text="Disconnect"
+                                app:backgroundTint="?attr/colorErrorContainer"
+                                android:textColor="?attr/colorOnErrorContainer" />
+
+                        </LinearLayout>
+
+                        <!-- Device info panel — shown when info is available -->
+                        <LinearLayout
+                            android:id="@+id/device_info_panel"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone"
+                            android:layout_marginTop="12dp">
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="1dp"
+                                android:layout_marginBottom="12dp"
+                                android:background="?attr/colorOutlineVariant" />
+
+                            <!-- Name / IP and Model / Firmware columns -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:layout_marginBottom="8dp">
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical"
+                                    android:layout_marginEnd="12dp">
+
+                                    <LinearLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:orientation="horizontal"
+                                        android:layout_marginBottom="4dp">
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="Name: "
+                                            android:textAppearance="?attr/textAppearanceBodySmall"
+                                            android:textStyle="bold" />
+                                        <TextView
+                                            android:id="@+id/text_device_name"
+                                            android:layout_width="0dp"
+                                            android:layout_height="wrap_content"
+                                            android:layout_weight="1"
+                                            android:text="--"
+                                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                                    </LinearLayout>
+
+                                    <LinearLayout
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:orientation="horizontal">
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="IP: "
+                                            android:textAppearance="?attr/textAppearanceBodySmall"
+                                            android:textStyle="bold" />
+                                        <TextView
+                                            android:id="@+id/text_device_ip"
+                                            android:layout_width="0dp"
+                                            android:layout_height="wrap_content"
+                                            android:layout_weight="1"
+                                            android:text="--"
+                                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                                    </LinearLayout>
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <LinearLayout
+                                        android:id="@+id/layout_device_model"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:orientation="horizontal"
+                                        android:layout_marginBottom="4dp"
+                                        android:visibility="gone">
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="Model: "
+                                            android:textAppearance="?attr/textAppearanceBodySmall"
+                                            android:textStyle="bold" />
+                                        <TextView
+                                            android:id="@+id/text_device_model"
+                                            android:layout_width="0dp"
+                                            android:layout_height="wrap_content"
+                                            android:layout_weight="1"
+                                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                                    </LinearLayout>
+
+                                    <LinearLayout
+                                        android:id="@+id/layout_device_firmware"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:orientation="horizontal"
+                                        android:visibility="gone">
+                                        <TextView
+                                            android:layout_width="wrap_content"
+                                            android:layout_height="wrap_content"
+                                            android:text="Firmware: "
+                                            android:textAppearance="?attr/textAppearanceBodySmall"
+                                            android:textStyle="bold" />
+                                        <TextView
+                                            android:id="@+id/text_device_firmware"
+                                            android:layout_width="0dp"
+                                            android:layout_height="wrap_content"
+                                            android:layout_weight="1"
+                                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                                    </LinearLayout>
+                                </LinearLayout>
+                            </LinearLayout>
+
+                            <!-- Self Tests -->
+                            <LinearLayout
+                                android:id="@+id/layout_self_tests"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:visibility="gone"
+                                android:layout_marginTop="8dp">
+
+                                <LinearLayout
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="horizontal"
+                                    android:layout_marginBottom="8dp">
+                                    <TextView
+                                        android:layout_width="0dp"
+                                        android:layout_height="wrap_content"
+                                        android:layout_weight="1"
+                                        android:text="System Self Tests"
+                                        android:textAppearance="?attr/textAppearanceBodySmall"
+                                        android:textStyle="bold" />
+                                    <TextView
+                                        android:id="@+id/text_self_tests_summary"
+                                        android:layout_width="wrap_content"
+                                        android:layout_height="wrap_content"
+                                        android:textAppearance="?attr/textAppearanceBodySmall"
+                                        android:textStyle="bold"
+                                        android:textColor="@color/status_fix" />
+                                </LinearLayout>
+
+                                <LinearLayout
+                                    android:id="@+id/layout_self_tests_grid"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:orientation="vertical" />
+                            </LinearLayout>
+
+                            <!-- Refresh button -->
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_refresh_device_info"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="Refresh Device Information" />
+
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Section 2: Internal GPS (shown when internal source selected) ── -->
+        <LinearLayout
+            android:id="@+id/group_internal_gps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone">
+
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone"
-                android:background="@drawable/bg_rounded_light"
-                android:padding="12dp"
-                android:layout_marginTop="8dp">
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
 
-                <!-- Basic Device Info Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="20dp"
+                        android:paddingTop="16dp"
+                        android:paddingBottom="8dp"
+                        android:text="Internal GPS"
+                        android:textAppearance="?attr/textAppearanceLabelLarge"
+                        android:textColor="?attr/colorPrimary" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:minHeight="64dp"
+                        android:paddingHorizontal="20dp"
+                        android:paddingVertical="14dp">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:paddingEnd="16dp">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="High Accuracy Location"
+                                android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:alpha="0.7"
+                                android:text="Use the device's most precise location mode combining GPS and other sensors. May increase battery usage."
+                                android:textAppearance="?attr/textAppearanceBodySmall" />
+                        </LinearLayout>
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/switch_high_accuracy"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" />
+
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <!-- ── Section 3: Advanced ── -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="Advanced"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <!-- Publish Mock Location row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:layout_marginBottom="12dp">
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="14dp">
 
-                    <!-- Left Column: Device Name and IP Address -->
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:orientation="vertical"
-                        android:layout_marginEnd="12dp">
+                        android:paddingEnd="16dp">
 
-                        <LinearLayout
+                        <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:layout_marginBottom="4dp">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Name: "
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@android:color/black" />
-                            <TextView
-                                android:id="@+id/text_device_name"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="--"
-                                android:textSize="12sp"
-                                android:textColor="@android:color/black" />
-                        </LinearLayout>
+                            android:text="Publish External GNSS as Mock Location"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
 
-                        <LinearLayout
+                        <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="IP: "
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@android:color/black" />
-                            <TextView
-                                android:id="@+id/text_device_ip"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:text="--"
-                                android:textSize="12sp"
-                                android:textColor="@android:color/black" />
-                        </LinearLayout>
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Publishes the active external GNSS fix to Android as a mock GPS location so other apps can use the external receiver position. Requires enabling this app in Developer Options. ARCore may still use its own sensor fusion."
+                            android:textAppearance="?attr/textAppearanceBodySmall" />
                     </LinearLayout>
 
-                    <!-- Right Column: Model & Firmware -->
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <LinearLayout
-                            android:id="@+id/layout_device_model"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:layout_marginBottom="4dp"
-                            android:visibility="gone">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Model: "
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@android:color/black" />
-                            <TextView
-                                android:id="@+id/text_device_model"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:textSize="12sp"
-                                android:textColor="@android:color/black" />
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/layout_device_firmware"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:visibility="gone">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="Firmware: "
-                                android:textSize="12sp"
-                                android:textStyle="bold"
-                                android:textColor="@android:color/black" />
-                            <TextView
-                                android:id="@+id/text_device_firmware"
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_weight="1"
-                                android:textSize="12sp"
-                                android:textColor="@android:color/black" />
-                        </LinearLayout>
-                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_publish_mock_location"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
-                <!-- Self Tests Section -->
+                <!-- Error banner — shown when mock location permission is denied -->
                 <LinearLayout
-                    android:id="@+id/layout_self_tests"
+                    android:id="@+id/layout_mock_location_error"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:visibility="gone"
-                    android:background="@drawable/bg_rounded_card"
-                    android:padding="8dp">
+                    android:paddingHorizontal="16dp"
+                    android:paddingBottom="16dp">
 
-                    <!-- Self Tests Header -->
-                    <LinearLayout
+                    <com.google.android.material.card.MaterialCardView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:layout_marginBottom="8dp">
+                        app:cardCornerRadius="12dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="?attr/colorError"
+                        app:strokeWidth="1dp">
 
-                        <TextView
-                            android:layout_width="0dp"
+                        <LinearLayout
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="System Self Tests"
-                            android:textSize="13sp"
-                            android:textStyle="bold"
-                            android:textColor="@android:color/black" />
+                            android:orientation="horizontal"
+                            android:padding="16dp"
+                            android:gravity="start">
 
-                        <TextView
-                            android:id="@+id/text_self_tests_summary"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textSize="12sp"
-                            android:textStyle="bold"
-                            android:textColor="@android:color/holo_green_dark" />
-                    </LinearLayout>
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="12dp"
+                                android:layout_marginTop="2dp"
+                                android:text="⚠"
+                                android:textAppearance="@style/TextAppearance.App.SectionTitle"
+                                android:textColor="?attr/colorError" />
 
-                    <!-- Self Tests Grid Container -->
-                    <LinearLayout
-                        android:id="@+id/layout_self_tests_grid"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical">
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
 
-                        <!-- Tests will be added dynamically in columns -->
+                                <TextView
+                                    android:id="@+id/text_mock_location_error"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginBottom="8dp"
+                                    android:text="Mock location is not enabled for this app. Open Developer Options and select this app as the mock location app."
+                                    android:textAppearance="?attr/textAppearanceBodySmall" />
 
-                    </LinearLayout>
+                                <com.google.android.material.button.MaterialButton
+                                    android:id="@+id/btn_open_developer_options"
+                                    style="@style/Widget.Material3.Button.OutlinedButton"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="Open Developer Options" />
 
+                            </LinearLayout>
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
 
-                <!-- Single Action Button (Refresh Only) -->
-                <Button
-                    android:id="@+id/btn_refresh_device_info"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Refresh Device Information"
-                    android:textSize="12sp"
-                    android:layout_marginTop="8dp" />
-
             </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- RS2+ diagnostic tools have been moved to Development > RS2+ -->
+        </com.google.android.material.card.MaterialCardView>
 
     </LinearLayout>
-
-    <!-- Internal GPS Settings -->
-    <LinearLayout
-        android:id="@+id/group_internal_gps"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:visibility="gone"
-        android:layout_marginBottom="16dp"
-        android:paddingHorizontal="16dp">
-
-        <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/switch_high_accuracy"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="High Accuracy Location"
-            android:textSize="16sp"
-            android:padding="12dp" />
-
-        <TextView
-            android:id="@+id/text_high_accuracy_explanation"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Enable this to use the device's most precise location mode, which may use GPS and other sensors. May increase battery usage."
-            android:textSize="13sp"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:layout_marginBottom="8dp"
-            android:textColor="@android:color/darker_gray" />
-
-    </LinearLayout>
-
-</LinearLayout>
+</ScrollView>

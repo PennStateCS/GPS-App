@@ -68,10 +68,7 @@ class InternalAdapter(
              */
             nmea.parsedFixes()
                 .conflate()
-                .collect { fix ->
-                    android.util.Log.v(TAG, "Fix: lat=${fix.latDeg}, lon=${fix.lonDeg}")
-                    _fixes.emit(fix)
-                }
+                .collect { fix -> _fixes.emit(fix) }
         }
 
         skyJob = scope.launch {

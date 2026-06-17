@@ -18,6 +18,7 @@ private fun providerEnumToDomainString(p: Provider): String = when (p) {
     Provider.RS2_BT       -> DbConstants.PROVIDER_RS2_BT  // "rs2-bt"
     Provider.RS2_TCP      -> DbConstants.PROVIDER_RS2_TCP // "rs2-tcp"
     Provider.OTHER        -> "other"
+    Provider.MODEL        -> "model"
 }
 
 private fun providerDomainStringToEnum(s: String?): Provider = when (s?.lowercase(Locale.US)) {
@@ -25,6 +26,7 @@ private fun providerDomainStringToEnum(s: String?): Provider = when (s?.lowercas
     DbConstants.PROVIDER_RS2_BT, "rs2-bt"          -> Provider.RS2_BT
     DbConstants.PROVIDER_RS2_TCP, "rs2-tcp"        -> Provider.RS2_TCP
     "rs2-external"                                  -> Provider.RS2_EXTERNAL
+    "model"                                         -> Provider.MODEL
     else                                            -> Provider.OTHER
 }
 
@@ -146,6 +148,7 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     utmZone = utmZone,
 
     note = note,
+    captureMethod = captureMethod,
     averagedSamples = averagedSamples,
     averageDurationMs = averageDurationMs,
     stdLatM = stdLatM,
@@ -194,6 +197,7 @@ fun Coordinate.toEntity(): CoordinateEntity =
         utmZone = utmZone,
 
         note = note,
+        captureMethod = captureMethod,
         averagedSamples = averagedSamples,
         averageDurationMs = averageDurationMs,
         stdLatM = stdLatM,

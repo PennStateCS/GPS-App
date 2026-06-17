@@ -17,7 +17,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.example.surveyingapp.databinding.FragmentModelsBinding
 import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.util.GlbGeoreferenceReprojector
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLDecoder
@@ -274,16 +277,27 @@ class ModelsFragment : Fragment() {
                     return
                 }
 
-            // If fileSize still unknown, use the copied file's size
-            if (fileSize == 0L) fileSize = targetFile.length()
+            // Georeferenced GLBs (WGS84 coordinates baked into vertex positions) are
+            // unrenderable as-is — a sub-pixel sliver parked far from the origin. Reproject
+            // to a local metric frame off the main thread so the thumbnail, 3D viewer, and AR
+            // can all display the model. Ordinary models are detected as non-georeferenced and
+            // left untouched.
+            viewLifecycleOwner.lifecycleScope.launch {
+                val embedded = withContext(Dispatchers.IO) {
+                    runCatching { GlbGeoreferenceReprojector.reprojectIfGeoreferenced(targetFile) }.getOrNull()
+                }
+                // File may have been rewritten by reprojection; use its current size.
+                val finalSize = targetFile.length()
 
-            // Prompt user for name/description
-            showAddModelDialog(
-                fileName.substringBeforeLast("."),
-                targetFile.name,
-                targetFile.absolutePath,
-                fileSize
-            )
+                // Prompt user for name/description
+                showAddModelDialog(
+                    fileName.substringBeforeLast("."),
+                    targetFile.name,
+                    targetFile.absolutePath,
+                    finalSize,
+                    embedded
+                )
+            }
 
         } catch (e: Exception) {
             Log.e("ModelsFragment", "Failed to import model", e)
@@ -393,9 +407,20 @@ class ModelsFragment : Fragment() {
         }
     }
 
-    private fun showAddModelDialog(defaultName: String, fileName: String, filePath: String, fileSize: Long) {
+    private fun showAddModelDialog(
+        defaultName: String,
+        fileName: String,
+        filePath: String,
+        fileSize: Long,
+        embedded: com.example.surveyingapp.domain.model.EmbeddedModelLocation? = null
+    ) {
         val dialog = AddModelDialogFragment.newInstance(defaultName, fileName, filePath, fileSize) { name, description ->
-            viewModel.addModel(name, fileName, filePath, fileSize, description) { _ ->
+            viewModel.addModel(
+                name, fileName, filePath, fileSize, description,
+                embeddedLatitude = embedded?.latitude,
+                embeddedLongitude = embedded?.longitude,
+                embeddedAltitudeM = embedded?.altitudeMeters
+            ) { _ ->
                 // Open the viewer so the user can rotate the model and tap "Capture Thumbnail"
                 //val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
                 //startActivity(intent)

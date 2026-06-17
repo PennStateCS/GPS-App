@@ -11,14 +11,14 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
+        android:theme="@style/Theme.SurveyingApp.AppBarOverlay">
 
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorPrimary"
-            app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+            app:popupTheme="@style/Theme.SurveyingApp.PopupOverlay"
             app:title="Model Viewer" />
 
     </com.google.android.material.appbar.AppBarLayout>
@@ -61,8 +61,8 @@
             android:layout_margin="16dp"
             android:gravity="center"
             android:text="@string/failed_load_model"
-            android:textColor="@android:color/holo_red_dark"
-            android:textSize="16sp"
+            android:textColor="?attr/colorError"
+            android:textAppearance="@style/TextAppearance.App.BodyPrimary"
             android:visibility="gone"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
@@ -88,9 +88,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:textSize="24sp"
+                android:textAppearance="@style/TextAppearance.App.PageTitle"
                 android:textStyle="bold"
-                android:textColor="@android:color/black"
+                android:textColor="?attr/colorOnSurface"
                 tools:text="Model Name" />
 
             <TextView
@@ -98,7 +98,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:textSize="16sp"
+                android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                 android:textStyle="bold"
                 tools:text="Model Filename" />
         </LinearLayout>

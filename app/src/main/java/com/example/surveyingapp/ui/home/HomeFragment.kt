@@ -475,12 +475,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // Map lifecycle methods
     override fun onStart() {
         super.onStart()
-        mapView.onStart()
+        if (::mapView.isInitialized) mapView.onStart()
     }
 
     override fun onResume() {
         super.onResume()
-        mapView.onResume()
+        if (::mapView.isInitialized) mapView.onResume()
 
         // Reset camera centering flag when fragment resumes
         // This ensures the map will center on GPS location when user returns to home
@@ -493,17 +493,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     override fun onPause() {
         super.onPause()
-        mapView.onPause()
+        if (::mapView.isInitialized) mapView.onPause()
     }
 
     override fun onStop() {
         super.onStop()
-        mapView.onStop()
+        if (::mapView.isInitialized) mapView.onStop()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        mapView.onSaveInstanceState(outState)
+        if (::mapView.isInitialized) mapView.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
@@ -511,12 +511,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Clear custom LocationSource references to avoid leaks
         onLocationChangedListener = null
         mapLocationSource = null
-        mapView.onDestroy()
+        if (::mapView.isInitialized) mapView.onDestroy()
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        mapView.onLowMemory()
+        if (::mapView.isInitialized) mapView.onLowMemory()
     }
 
     /**

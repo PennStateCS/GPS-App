@@ -117,17 +117,12 @@ class NmeaFuser(
         val now = System.currentTimeMillis()
         if (now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
             gsaUsedSatIds.clear()
-            android.util.Log.d("NmeaFuser", "GSA epoch timeout: cleared accumulated SatIds")
         }
         lastGsaUpdateMs = now
 
         // Add SVIDs from this constellation's GSA to the combined set
-        if (gsa.usedSvids.isNotEmpty()) {
-            val sizeBefore = gsaUsedSatIds.size
-            gsa.usedSvids.forEach { svid ->
-                gsaUsedSatIds.add(SatId(gsa.talker, svid))
-            }
-            android.util.Log.d("NmeaFuser", "GSA (${gsa.talker}): added ${gsa.usedSvids.size} satellites → total ${gsaUsedSatIds.size} (was $sizeBefore)")
+        gsa.usedSvids.forEach { svid ->
+            gsaUsedSatIds.add(SatId(gsa.talker, svid))
         }
     }
 
@@ -144,11 +139,9 @@ class NmeaFuser(
             // First message of a new sequence — reset the accumulator for this talker
             pending.totalMessages = total
             pending.satellites.clear()
-            android.util.Log.w("NmeaFuser", "⭐ GSV EPOCH START: Talker=$talker, TotalMsgs=$total, TotalSats=${gsv.totalSatellites}")
         }
 
         pending.satellites.addAll(gsv.satellites)
-        android.util.Log.d("NmeaFuser", "GSV msg ${num}/${total} ($talker): ${gsv.satellites.size} sats, accumulated ${pending.satellites.size} sats, Details: ${gsv.satellites.joinToString { "SVID=${it.svid} SNR=${it.snrDb}dB EL=${it.elevationDeg}° AZ=${it.azimuthDeg}°" }}")
 
         if (num >= total) {
             // Last message in the sequence — build the final entries list
@@ -180,8 +173,6 @@ class NmeaFuser(
             gsvVisibleByTalker[talker] = visibleCount
 
             val label = if (entries.isEmpty()) "UNKNOWN" else talker
-            val totalVisible = gsvVisibleByTalker.values.sum()
-            android.util.Log.d("NmeaFuser", "GSV epoch complete: $label, ${entries.size} entries, ${entries.count { it.usedInFix }} used | Total visible across all constellations: $totalVisible")
             onGsv(GsvMessage(label, entries))
 
             pendingGsvByTalker.remove(talker)
@@ -203,7 +194,6 @@ class NmeaFuser(
         // Epoch deduplication: skip if we already emitted a fix at this timestamp recently
         val lastEmitted = lastEmittedGgaTimeUtc
         if (lastEmitted != null && kotlin.math.abs(epochMs - lastEmitted) < EPOCH_DEDUP_WINDOW_MS) {
-            android.util.Log.v("NmeaFuser", "Duplicate epoch skipped: ${epochMs}ms (within ${EPOCH_DEDUP_WINDOW_MS}ms of last)")
             return
         }
         lastEmittedGgaTimeUtc = epochMs

@@ -15,6 +15,15 @@
             android:layout_height="wrap_content"
             android:hint="Point Name" />
 
+        <EditText
+            android:id="@+id/edit_point_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="3"
+            android:hint="Note / description (optional)" />
+
         <TextView
             android:id="@+id/text_location"
             android:layout_width="match_parent"
@@ -38,18 +47,10 @@
             app:iconSize="24dp"
             app:iconGravity="textStart"
             app:iconPadding="12dp"
-            android:textColor="#424242"
-            app:strokeColor="#9E9E9E"
-            app:rippleColor="#BDBDBD" />
+            android:textColor="?attr/colorOnSurface"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:rippleColor="?attr/colorControlHighlight" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Choose Color:" />
-        <Spinner
-            android:id="@+id/spinner_color"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
     </LinearLayout>
 </ScrollView>
 

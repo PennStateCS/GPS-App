@@ -1,6 +1,9 @@
 package com.example.surveyingapp.ui.settings
 
-import android.content.*
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
@@ -8,10 +11,16 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.*
+import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
+import com.example.surveyingapp.gnss.settings.ArDisplaySettings
+import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
+import com.example.surveyingapp.gnss.settings.DeveloperSettings
+import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
+import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
@@ -31,6 +40,9 @@ import com.example.surveyingapp.domain.model.TestStatus
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.domain.repository.ReachDeviceRepository
 import com.example.surveyingapp.service.LocationService
+import androidx.appcompat.app.AppCompatDelegate
+import com.example.surveyingapp.gnss.settings.AppThemeMode
+import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import com.example.surveyingapp.util.ReachNameResolver
 import kotlinx.coroutines.*
@@ -45,6 +57,7 @@ import java.net.Socket
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import kotlin.math.min
+import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -63,7 +76,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // lateinit var settingsViewModel: SettingsViewModel
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
-    private lateinit var preferences: SharedPreferences
     private lateinit var repository: CoordinateRepositoryImpl
     private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
 
@@ -139,15 +151,16 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     companion object {
-        // Preference keys (public for external access e.g., MainActivity)
-        const val PREFS_NAME = "SurveyingAppPrefs"
-        const val PREF_HIGH_ACCURACY = "high_accuracy"
-        const val PREF_DEV_TOOLS = "dev_tools"
         // Category IDs (internal)
-        private const val CAT_ID_LOCATION = 1
-        private const val CAT_ID_DATA = 2
-        private const val CAT_ID_DEV = 3
-        private const val CAT_ID_ABOUT = 4
+        private const val CAT_ID_LOCATION           = 1
+        private const val CAT_ID_GNSS_CAPTURE       = 2
+        private const val CAT_ID_AR_DISPLAY         = 3
+        private const val CAT_ID_COORDINATE_DISPLAY = 4
+        private const val CAT_ID_DATA               = 5
+        private const val CAT_ID_DIAGNOSTICS        = 6
+        private const val CAT_ID_DEV                = 7
+        private const val CAT_ID_ABOUT              = 8
+        private const val CAT_ID_APPEARANCE         = 9
         // Connection status timing thresholds (ms)
         const val FRESH_FIX_MAX_AGE_MS = 5_000L
         const val STALE_FIX_MAX_AGE_MS = 15_000L
@@ -156,7 +169,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
     override fun onRootCreated(root: View) {
         try {
-            preferences = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             repository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
         } catch (e: Exception) {
             Log.e("SettingsFragment", "onRootCreated failed", e)
@@ -166,10 +178,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
 
     private fun baseCategories(): List<SettingsCategory> = listOf(
-        SettingsCategory(CAT_ID_LOCATION, "Location", R.drawable.ic_section_location),
-        SettingsCategory(CAT_ID_DATA, "Data", R.drawable.ic_section_data),
-        SettingsCategory(CAT_ID_DEV, "Developer Tools", R.drawable.ic_dev_tools),
-        SettingsCategory(CAT_ID_ABOUT, "About", R.drawable.ic_home)
+        SettingsCategory(CAT_ID_APPEARANCE,         "Appearance",              R.drawable.ic_appearance_24),
+        SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_section_ar),
+        SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinate Display",      R.drawable.ic_list_coordinates),
+        SettingsCategory(CAT_ID_DATA,               "Data Import / Export",    R.drawable.ic_file),
+        SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
+        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_section_diagnostics),
+        SettingsCategory(CAT_ID_GNSS_CAPTURE,       "GNSS Capture",            R.drawable.ic_satellite_24),
+        SettingsCategory(CAT_ID_LOCATION,           "GNSS Receiver",           R.drawable.ic_section_location),
+        SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info)
     )
 
     private fun refreshCategoriesForSource(@Suppress("UNUSED_PARAMETER") source: LocationSourceType) {
@@ -180,10 +197,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
         try {
             when (category.id) {
-                CAT_ID_LOCATION -> setupLocationContent(inflater)
-                CAT_ID_DATA -> setupDataContent(inflater)
-                CAT_ID_DEV -> setupDeveloperContent(inflater)
-                CAT_ID_ABOUT -> setupAboutContent(inflater)
+                CAT_ID_LOCATION           -> setupLocationContent(inflater)
+                CAT_ID_GNSS_CAPTURE       -> setupGnssCaptureContent(inflater)
+                CAT_ID_AR_DISPLAY         -> setupARDisplayContent(inflater)
+                CAT_ID_COORDINATE_DISPLAY -> setupCoordinateDisplayContent(inflater)
+                CAT_ID_DATA               -> setupDataContent(inflater)
+                CAT_ID_DIAGNOSTICS        -> setupDiagnosticsContent(inflater)
+                CAT_ID_DEV                -> setupDeveloperContent(inflater)
+                CAT_ID_ABOUT              -> setupAboutContent(inflater)
+                CAT_ID_APPEARANCE         -> setupAppearanceContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -193,6 +215,57 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
 
     // ───────────────────────────── Category builders ───────────────────────────
+
+    private fun setupAppearanceContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_appearance, contentContainer, false)
+        try {
+            val spinner = view.findViewById<AutoCompleteTextView>(R.id.spinner_theme_mode)
+
+            val options = listOf(
+                "System Default" to AppThemeMode.SYSTEM,
+                "Light"          to AppThemeMode.LIGHT,
+                "Dark"           to AppThemeMode.DARK
+            )
+
+            spinner?.setAdapter(
+                ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, options.map { it.first })
+            )
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val current = settingsRepo.appearanceSettings.first().themeMode
+                    val label = options.firstOrNull { it.second == current }?.first ?: options.first().first
+                    spinner?.setText(label, false)
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load appearance settings", e)
+                }
+            }
+
+            spinner?.setOnItemClickListener { _, _, position, _ ->
+                val selected = options.getOrNull(position) ?: return@setOnItemClickListener
+                val ctx = context ?: return@setOnItemClickListener
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        settingsRepo.setAppearanceSettings(AppearanceSettings(themeMode = selected.second))
+                        AppCompatDelegate.setDefaultNightMode(
+                            when (selected.second) {
+                                AppThemeMode.LIGHT  -> AppCompatDelegate.MODE_NIGHT_NO
+                                AppThemeMode.DARK   -> AppCompatDelegate.MODE_NIGHT_YES
+                                AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                            }
+                        )
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save appearance settings", e)
+                        showSettingsMessage("Failed to save theme.")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupAppearanceContent failed", e)
+        }
+        return view
+    }
+
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
         try { setupLocationSourceUi(view) } catch (e: Exception) { Log.e("SettingsFragment", "setupLocationSourceUi failed", e) }
@@ -214,12 +287,24 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupDeveloperContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
         try {
-            view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_dev_tools)?.apply {
-                isChecked = preferences.getBoolean(PREF_DEV_TOOLS, false)
-                setOnCheckedChangeListener { _, v ->
+            val switchDevTools = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_dev_tools)
+            if (switchDevTools != null) {
+                lifecycleScope.launch {
                     try {
-                        preferences.edit { putBoolean(PREF_DEV_TOOLS, v) }
-                        Toast.makeText(requireContext(), getString(R.string.dev_toggle_developer_tools_toast), Toast.LENGTH_SHORT).show()
+                        switchDevTools.isChecked = settingsRepo.developerSettings.first().developerToolsEnabled
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "dev tools initial load error", e)
+                    }
+                }
+                switchDevTools.setOnCheckedChangeListener { _, v ->
+                    try {
+                        lifecycleScope.launch {
+                            try {
+                                settingsRepo.setDeveloperSettings(DeveloperSettings(developerToolsEnabled = v))
+                            } catch (e: Exception) {
+                                Log.e("SettingsFragment", "dev tools save error", e)
+                            }
+                        }
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "dev tools switch error", e)
                     }
@@ -231,14 +316,292 @@ class SettingsFragment : BaseTwoPaneFragment() {
         return view
     }
 
+    private fun setupARDisplayContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_ar_display, contentContainer, false)
+        try {
+            val spinnerAltitude = view.findViewById<AutoCompleteTextView>(R.id.spinner_altitude_mode)
+            val spinnerFilter   = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter)
+            val switchLabels    = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_labels)
+            val switchArrows    = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_offscreen_arrows)
+            val switchDebug     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_overlay)
+            val editScale       = view.findViewById<EditText>(R.id.edit_ar_model_scale)
+            view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
+
+            val altitudeModes   = listOf("Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
+            val distanceOptions = listOf("All distances" to -1, "50 m" to 0, "100 m" to 1, "500 m" to 2)
+            val tilScale = editScale?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
+
+            spinnerAltitude?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, altitudeModes.map { it.first }))
+            spinnerFilter?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, distanceOptions.map { it.first }))
+
+            fun saveAll(altitudeMode: String? = null, distanceIdx: Int? = null) {
+                val scale = editScale?.text?.toString()?.toFloatOrNull()
+                if (scale == null || scale !in 0.1f..10.0f) {
+                    tilScale?.error = "Must be 0.1 – 10.0"
+                    return
+                }
+                tilScale?.error = null
+                val settings = ArDisplaySettings(
+                    altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "STORED"),
+                    distanceFilterIndex = distanceIdx ?: distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
+                    showDebugOverlay    = switchDebug?.isChecked ?: false,
+                    showLabels          = switchLabels?.isChecked ?: true,
+                    showOffscreenArrows = switchArrows?.isChecked ?: true,
+                    modelScale          = scale
+                )
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        settingsRepo.setArDisplaySettings(settings)
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save AR display settings", e)
+                    }
+                }
+            }
+
+            var isBinding = false
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.arDisplaySettings.first()
+                    isBinding = true
+                    spinnerAltitude?.setText(altitudeModes.getOrElse(altitudeModes.indexOfFirst { it.second == s.altitudeMode }.coerceAtLeast(0)) { altitudeModes.first() }.first, false)
+                    spinnerFilter?.setText(distanceOptions.getOrElse(s.distanceFilterIndex.coerceIn(0, distanceOptions.lastIndex)) { distanceOptions.first() }.first, false)
+                    switchLabels?.isChecked = s.showLabels
+                    switchArrows?.isChecked = s.showOffscreenArrows
+                    switchDebug?.isChecked  = s.showDebugOverlay
+                    editScale?.setText(s.modelScale.toString())
+                    isBinding = false
+                } catch (e: Exception) {
+                    isBinding = false
+                    Log.e("SettingsFragment", "Failed to load AR display settings", e)
+                }
+            }
+
+            spinnerAltitude?.setOnItemClickListener { _, _, pos, _ ->
+                saveAll(altitudeMode = altitudeModes.getOrNull(pos)?.second)
+            }
+            spinnerFilter?.setOnItemClickListener { _, _, pos, _ ->
+                saveAll(distanceIdx = pos)
+            }
+            switchLabels?.setOnCheckedChangeListener  { _, _ -> if (!isBinding) saveAll() }
+            switchArrows?.setOnCheckedChangeListener  { _, _ -> if (!isBinding) saveAll() }
+            switchDebug?.setOnCheckedChangeListener   { _, _ -> if (!isBinding) saveAll() }
+            editScale?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
+            editScale?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupARDisplayContent failed", e)
+        }
+        return view
+    }
+
+    private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
+        try {
+            val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
+            val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
+            val switchAutoInc   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_increment_names)
+            view.findViewById<Button>(R.id.btn_save_coordinate_display)?.visibility = View.GONE
+
+            val tilPrefix = editPrefix?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
+
+            fun savePrefix() {
+                val prefix = editPrefix?.text?.toString()?.trim().orEmpty()
+                if (prefix.length > 20) {
+                    tilPrefix?.error = "Max 20 characters"
+                    return
+                }
+                tilPrefix?.error = null
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val s = settingsRepo.coordinateDisplaySettings.first()
+                        settingsRepo.setCoordinateDisplaySettings(s.copy(
+                            defaultNamePrefix = prefix.ifEmpty { "Point" }
+                        ))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save coordinate name prefix", e)
+                    }
+                }
+            }
+
+            fun saveSwitch(accuracy: Boolean, autoInc: Boolean) {
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val s = settingsRepo.coordinateDisplaySettings.first()
+                        settingsRepo.setCoordinateDisplaySettings(s.copy(
+                            showAccuracyIndicators = accuracy,
+                            autoIncrementNames     = autoInc
+                        ))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save coordinate display settings", e)
+                    }
+                }
+            }
+
+            var isBinding = false
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.coordinateDisplaySettings.first()
+                    isBinding = true
+                    switchAccuracy?.isChecked = s.showAccuracyIndicators
+                    editPrefix?.setText(s.defaultNamePrefix)
+                    switchAutoInc?.isChecked  = s.autoIncrementNames
+                    isBinding = false
+                } catch (e: Exception) {
+                    isBinding = false
+                    Log.e("SettingsFragment", "Failed to load coordinate display settings", e)
+                }
+            }
+
+            switchAccuracy?.setOnCheckedChangeListener { _, v ->
+                if (!isBinding) saveSwitch(v, switchAutoInc?.isChecked ?: true)
+            }
+            switchAutoInc?.setOnCheckedChangeListener { _, v ->
+                if (!isBinding) saveSwitch(switchAccuracy?.isChecked ?: true, v)
+            }
+            editPrefix?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) savePrefix() }
+            editPrefix?.setOnEditorActionListener { _, _, _ -> savePrefix(); false }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupCoordinateDisplayContent failed", e)
+        }
+        return view
+    }
+
+    private fun setupDiagnosticsContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_diagnostics, contentContainer, false)
+        try {
+            val switchShowRaw  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_raw_nmea)
+            val switchShowSat  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_satellite_diagnostics)
+            view.findViewById<Button>(R.id.btn_save_diagnostics)?.visibility = View.GONE
+
+            fun save() {
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        settingsRepo.setDiagnosticsSettings(DiagnosticsSettings(
+                            showRawNmea              = switchShowRaw?.isChecked ?: false,
+                            showSatelliteDiagnostics = switchShowSat?.isChecked ?: true
+                        ))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save diagnostics settings", e)
+                    }
+                }
+            }
+
+            var isBinding = false
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.diagnosticsSettings.first()
+                    isBinding = true
+                    switchShowRaw?.isChecked = s.showRawNmea
+                    switchShowSat?.isChecked = s.showSatelliteDiagnostics
+                    isBinding = false
+                } catch (e: Exception) {
+                    isBinding = false
+                    Log.e("SettingsFragment", "Failed to load diagnostics settings", e)
+                }
+            }
+
+            switchShowRaw?.setOnCheckedChangeListener { _, _ -> if (!isBinding) save() }
+            switchShowSat?.setOnCheckedChangeListener { _, _ -> if (!isBinding) save() }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupDiagnosticsContent failed", e)
+        }
+        return view
+    }
+
     private fun setupAboutContent(inflater: LayoutInflater): View =
         inflater.inflate(R.layout.content_settings_about, contentContainer, false)
+
+    // ───────────────────────────── GNSS Capture Settings ──────────────────────
+    private fun setupGnssCaptureContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_gnss_capture, contentContainer, false)
+        try {
+            val spinner     = view.findViewById<AutoCompleteTextView>(R.id.spinner_rtk_status)
+            val editMinDur  = view.findViewById<EditText>(R.id.edit_min_duration)
+            val editMaxDur  = view.findViewById<EditText>(R.id.edit_max_duration)
+            val editSamples = view.findViewById<EditText>(R.id.edit_min_samples)
+            val editFixAge  = view.findViewById<EditText>(R.id.edit_max_fix_age)
+            val editDiffAge = view.findViewById<EditText>(R.id.edit_max_diff_age)
+            view.findViewById<Button>(R.id.btn_save_gnss_capture)?.visibility = View.GONE
+
+            val tilMinDur  = editMinDur?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
+            val tilMaxDur  = editMaxDur?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
+            val tilSamples = editSamples?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
+            val tilFixAge  = editFixAge?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
+            val tilDiffAge = editDiffAge?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
+
+            val rtkOptions = listOf(
+                "RTK FIX only"         to RtkStatus.FIX,
+                "RTK FLOAT or better"  to RtkStatus.FLOAT,
+                "DGPS or better"       to RtkStatus.DGPS,
+                "Single GPS or better" to RtkStatus.SINGLE
+            )
+            spinner?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, rtkOptions.map { it.first }))
+
+            fun trySave() {
+                val minDur  = editMinDur?.text?.toString()?.toIntOrNull()
+                val maxDur  = editMaxDur?.text?.toString()?.toIntOrNull()
+                val samples = editSamples?.text?.toString()?.toIntOrNull()
+                val fixAge  = editFixAge?.text?.toString()?.toIntOrNull()
+                val diffAge = editDiffAge?.text?.toString()?.toIntOrNull()
+
+                tilMinDur?.error  = if (minDur == null || minDur !in 1..600) "1–600 s" else null
+                tilMaxDur?.error  = if (maxDur == null || maxDur !in 1..600) "1–600 s" else if (minDur != null && maxDur < minDur) "Must be ≥ min" else null
+                tilSamples?.error = if (samples == null || samples < 1) "≥ 1" else null
+                tilFixAge?.error  = if (fixAge == null || fixAge < 1) "≥ 1 s" else null
+                tilDiffAge?.error = if (diffAge == null || diffAge < 1) "≥ 1 s" else null
+
+                if (minDur == null || minDur !in 1..600) return
+                if (maxDur == null || maxDur !in 1..600 || maxDur < minDur) return
+                if (samples == null || samples < 1) return
+                if (fixAge == null || fixAge < 1) return
+                if (diffAge == null || diffAge < 1) return
+
+                val settings = GnssCaptureSettings(
+                    requiredMinStatus = rtkOptions.firstOrNull { it.first == spinner?.text?.toString() }?.second ?: RtkStatus.FIX,
+                    minDurationSec    = minDur,
+                    maxDurationSec    = maxDur,
+                    minSamples        = samples,
+                    maxFixAgeSec      = fixAge,
+                    maxDiffAgeSec     = diffAge
+                )
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        settingsRepo.setGnssCaptureSettings(settings)
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save GNSS capture settings", e)
+                    }
+                }
+            }
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val saved = settingsRepo.gnssCaptureSettings.first()
+                    spinner?.setText(rtkOptions.getOrElse(rtkOptions.indexOfFirst { it.second == saved.requiredMinStatus }.coerceAtLeast(0)) { rtkOptions.first() }.first, false)
+                    editMinDur?.setText(saved.minDurationSec.toString())
+                    editMaxDur?.setText(saved.maxDurationSec.toString())
+                    editSamples?.setText(saved.minSamples.toString())
+                    editFixAge?.setText(saved.maxFixAgeSec.toString())
+                    editDiffAge?.setText(saved.maxDiffAgeSec.toString())
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load GNSS capture settings", e)
+                }
+            }
+
+            spinner?.setOnItemClickListener { _, _, _, _ -> trySave() }
+            listOf(editMinDur, editMaxDur, editSamples, editFixAge, editDiffAge).forEach { edit ->
+                edit?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) trySave() }
+                edit?.setOnEditorActionListener { _, _, _ -> trySave(); false }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupGnssCaptureContent failed", e)
+        }
+        return view
+    }
 
     // ───────────────────────────── Location Source UI ─────────────────────────
     private fun setupLocationSourceUi(view: View) {
         val radioGroup = view.findViewById<RadioGroup>(R.id.radio_location_source)
         val internalGpsGroup = view.findViewById<LinearLayout>(R.id.group_internal_gps)
-        val switchHighAccuracy = view.findViewById<androidx.appcompat.widget.SwitchCompat>(R.id.switch_high_accuracy)
+        val switchHighAccuracy = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_high_accuracy)
         val rs2OptionsLayout = view.findViewById<LinearLayout>(R.id.layout_rs2_options)
         val editHost = view.findViewById<EditText>(R.id.edit_host)
         val editPort = view.findViewById<EditText>(R.id.edit_port)
@@ -257,7 +620,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 currentDeviceInfo = convertToEmlidDeviceInfo(currentInfo)
                 updateDeviceInfoDisplay()
             } else {
-                Toast.makeText(requireContext(), "Device info not available. Ensure external connection is active.", Toast.LENGTH_SHORT).show()
+                showSettingsMessage("Device info not available. Ensure external connection is active.")
             }
         }
 
@@ -327,7 +690,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         try { connectViaTcpFlow(host, port) } catch (e: Exception) { Log.e("SettingsFragment", "connectViaTcpFlow failed", e) }
                     }
                 } else {
-                    Toast.makeText(requireContext(), getString(R.string.host_required), Toast.LENGTH_SHORT).show()
+                    showSettingsMessage(getString(R.string.host_required))
                 }
             } catch (e: Exception) {
                 Log.e("SettingsFragment", "attemptConnectFromInline failed", e)
@@ -502,10 +865,78 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
 
         switchHighAccuracy?.apply {
-            isChecked = preferences.getBoolean(PREF_HIGH_ACCURACY, true)
+            lifecycleScope.launch {
+                try {
+                    isChecked = settingsRepo.gnssReceiverSettings.first().highAccuracy
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "high accuracy initial load error", e)
+                }
+            }
             setOnCheckedChangeListener { _, v ->
-                preferences.edit { putBoolean(PREF_HIGH_ACCURACY, v) }
-                Toast.makeText(requireContext(), "High accuracy: $v", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch {
+                    try {
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        settingsRepo.setGnssReceiverSettings(current.copy(highAccuracy = v))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "high accuracy save error", e)
+                    }
+                }
+            }
+        }
+
+        // ── Advanced: mock location publishing ──
+        val switchMock   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
+        val errorBanner  = view.findViewById<LinearLayout>(R.id.layout_mock_location_error)
+        val btnDevOpts   = view.findViewById<Button>(R.id.btn_open_developer_options)
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                switchMock?.isChecked = settingsRepo.mockLocationEnabled.first()
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "Failed to load mock location setting", e)
+            }
+        }
+
+        switchMock?.setOnCheckedChangeListener { _, checked ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    settingsRepo.setMockLocationEnabled(checked)
+                    if (!checked) errorBanner?.visibility = View.GONE
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to save mock location setting", e)
+                }
+            }
+        }
+
+        btnDevOpts?.setOnClickListener {
+            try {
+                startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            } catch (e: Exception) {
+                try {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+                } catch (ex: Exception) {
+                    Log.w("SettingsFragment", "Could not open developer settings", ex)
+                }
+            }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                try {
+                    SurveyingApp.mockLocationPublisher.errorEvents.collect { error ->
+                        val msg = when (error) {
+                            AndroidMockLocationPublisher.MockLocationError.NOT_PERMITTED ->
+                                "Mock location is not enabled for this app. Open Developer Options and select this app as the mock location app."
+                            AndroidMockLocationPublisher.MockLocationError.PROVIDER_ERROR ->
+                                "Mock location provider error. See Logcat for details."
+                        }
+                        errorBanner?.visibility = View.VISIBLE
+                        view.findViewById<TextView>(R.id.text_mock_location_error)?.text = msg
+                        showSettingsMessage(msg, Snackbar.LENGTH_LONG)
+                    }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "mock location error observer failed", e)
+                }
             }
         }
 
@@ -649,11 +1080,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
             if (!gotData) {
                 Log.w("TCP", "No NMEA data received from $host:$port within timeout")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.no_nmea_hint),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    showSettingsMessage(getString(R.string.no_nmea_hint), Snackbar.LENGTH_LONG)
                 }
             }
             // Consider connection successful even if no NMEA yet (device may stream RTCM or be slow to start)
@@ -688,7 +1115,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         Log.w("SettingsFragment", "connectViaTcpFlow: source switched to INTERNAL during connection, aborting")
                         return@launch
                     }
-                    Toast.makeText(requireContext(), "TCP connection successful", Toast.LENGTH_SHORT).show()
                     settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                     settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                     settingsRepo.setExternalTcp(host, port)
@@ -888,10 +1314,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 }
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(requireContext(), "JSON exported successfully: $fileName", Toast.LENGTH_LONG).show()
+                    showSettingsMessage("JSON exported successfully: $fileName", Snackbar.LENGTH_LONG)
                 }
             }.onFailure { e ->
-                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
     }
@@ -941,10 +1367,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 }
 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(requireContext(), "CSV exported successfully: $fileName", Toast.LENGTH_LONG).show()
+                    showSettingsMessage("CSV exported successfully: $fileName", Snackbar.LENGTH_LONG)
                 }
             }.onFailure { e ->
-                Toast.makeText(requireContext(), "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
     }
@@ -995,13 +1421,13 @@ class SettingsFragment : BaseTwoPaneFragment() {
             list.size to replace
         }.onSuccess { (count, replaced) ->
             showImportProgress(false, 100, "Completed")
-            Toast.makeText(requireContext(), "Imported $count ${if (isCsv) "CSV" else "JSON"} (${if (replaced) "replaced" else "merged"})", Toast.LENGTH_LONG).show()
+            showSettingsMessage("Imported $count ${if (isCsv) "CSV" else "JSON"} (${if (replaced) "replaced" else "merged"})", Snackbar.LENGTH_LONG)
         }.onFailure { e ->
             if (e is CancellationException) {
                 showImportProgress(false, 0, "Canceled")
             } else {
                 showImportProgress(false, 0, "Error")
-                Toast.makeText(requireContext(), "Import failed: ${e.message}", Toast.LENGTH_LONG).show()
+                showSettingsMessage("Import failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
         coordinatesImportJob = null
@@ -1096,10 +1522,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
         }
     }
 
+    private fun showSettingsMessage(message: String, duration: Int = Snackbar.LENGTH_SHORT) {
+        val v = view ?: return
+        Snackbar.make(v, message, duration).show()
+    }
+
     private fun cancelActiveImport() {
         try {
             coordinatesImportJob?.takeIf { it.isActive }?.cancel()?.also {
-                Toast.makeText(requireContext(), R.string.import_cancel, Toast.LENGTH_SHORT).show()
+                showSettingsMessage(getString(R.string.import_cancel))
             }
         } catch (e: Exception) {
             Log.w("SettingsFragment", "cancelActiveImport failed", e)
@@ -1234,7 +1665,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 val clip = ClipData.newPlainText("Emlid Device Info", message.trim())
                 clipboard.setPrimaryClip(clip)
-                Toast.makeText(requireContext(), "Device info copied to clipboard", Toast.LENGTH_SHORT).show()
+                showSettingsMessage("Device info copied to clipboard")
             }
             .show()
     }

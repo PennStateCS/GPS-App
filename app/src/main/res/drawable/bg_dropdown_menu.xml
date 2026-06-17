@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Neutral popup background for exposed dropdown menus.
+    Applied via android:popupBackground on AutoCompleteTextView when the theme's
+    colorSurfaceContainerHigh alone is insufficient to override the default M3 popup.
+    Color resolves from the theme so it works correctly in both light and dark modes.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="?attr/colorSurfaceContainerHigh" />
+    <corners android:radius="4dp" />
+</shape>

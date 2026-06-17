@@ -21,5 +21,8 @@ enum class Provider {
     RS2_TCP,
 
     /** Any external receiver that does not fall into the RS2 categories. */
-    OTHER
+    OTHER,
+
+    /** Coordinate position was sourced from embedded geometry in a linked 3D model file. */
+    MODEL
 }

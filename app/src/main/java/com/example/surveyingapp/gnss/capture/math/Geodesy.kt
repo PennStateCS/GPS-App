@@ -36,7 +36,16 @@ object Geodesy {
         val lon = atan2(y, x)                         // Longitude (straightforward from ECEF X,Y)
         val lat = atan2(z + ep2 * B * sin(th).pow(3), p - e2 * A * cos(th).pow(3))  // Geodetic latitude (Bowring's formula)
         val N = A / sqrt(1 - e2 * sin(lat) * sin(lat))  // Radius of curvature in prime vertical
-        val h = p / cos(lat) - N                      // Ellipsoidal height above reference ellipsoid
+
+        // p / cos(lat) - N is the standard height formula but becomes unstable as cos(lat) → 0
+        // near the poles. Above 45° absolute latitude, use z / sin(lat) - N*(1-e²) instead.
+        // In the southern hemisphere z and sin(lat) are both negative, so the ratio stays valid
+        // without any sign correction.
+        val h = if (abs(lat) < PI / 4.0) {
+            p / cos(lat) - N
+        } else {
+            z / sin(lat) - N * (1.0 - e2)
+        }
         return Triple(Math.toDegrees(lat), Math.toDegrees(lon), h)  // Convert radians back to degrees
     }
 }

@@ -14,7 +14,7 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:background="?attr/colorPrimary"
-            app:titleTextColor="@android:color/white"
+            app:titleTextColor="?attr/colorOnPrimary"
             app:navigationIcon="?attr/homeAsUpIndicator" />
 
     </com.google.android.material.appbar.AppBarLayout>
@@ -25,9 +25,9 @@
         android:layout_height="wrap_content"
         android:padding="16dp"
         android:text="/storage/emulated/0"
-        android:textSize="14sp"
-        android:textColor="@android:color/darker_gray"
-        android:background="#F5F5F5"
+        android:textAppearance="@style/TextAppearance.App.BodySecondary"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:background="?attr/colorSurfaceVariant"
         android:ellipsize="start"
         android:singleLine="true" />
 
@@ -38,7 +38,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:text="Select This Folder"
-        android:textColor="@android:color/white"
+        android:textColor="?attr/colorOnPrimary"
         android:background="?attr/colorPrimary"
         android:visibility="gone" />
 
@@ -55,8 +55,8 @@
         android:layout_weight="1"
         android:gravity="center"
         android:text="No files found"
-        android:textSize="16sp"
-        android:textColor="@android:color/darker_gray"
+        android:textAppearance="@style/TextAppearance.App.BodyPrimary"
+        android:textColor="?attr/colorOnSurfaceVariant"
         android:visibility="gone" />
 
 </LinearLayout>

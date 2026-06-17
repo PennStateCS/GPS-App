@@ -5,7 +5,7 @@
     android:orientation="horizontal"
     android:padding="16dp"
     android:gravity="center_vertical"
-    android:background="?android:attr/selectableItemBackground">
+    android:background="?attr/selectableItemBackground">
 
     <ImageView
         android:id="@+id/icon_file"
@@ -26,8 +26,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="File Name"
-            android:textSize="16sp"
-            android:textColor="@android:color/black"
+            android:textAppearance="@style/TextAppearance.App.BodyPrimary"
+            android:textColor="?attr/colorOnSurface"
             android:maxLines="1"
             android:ellipsize="end" />
 
@@ -36,8 +36,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="File info"
-            android:textSize="14sp"
-            android:textColor="@android:color/darker_gray"
+            android:textAppearance="@style/TextAppearance.App.BodySecondary"
+            android:textColor="?attr/colorOnSurfaceVariant"
             android:layout_marginTop="2dp" />
 
     </LinearLayout>
