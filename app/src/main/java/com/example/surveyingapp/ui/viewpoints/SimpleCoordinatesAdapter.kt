@@ -150,8 +150,11 @@ class SimpleCoordinatesAdapter(
         holder.coords.visibility = View.VISIBLE
         holder.coords.text = String.format(Locale.US, "%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
 
-        // Icon: handle both built-in drawables and model thumbnails
+        // Trailing indicator when a 3D model is linked to this coordinate
         val iconKey = p.icon ?: ""
+        holder.modelLink.visibility = if (iconKey.startsWith("model:")) View.VISIBLE else View.GONE
+
+        // Icon: handle both built-in drawables and model thumbnails
         when {
             iconKey.startsWith("model:") -> {
                 // DB model icon — load thumbnail from disk if available
@@ -322,6 +325,7 @@ class SimpleCoordinatesAdapter(
         val icon: ImageView = v.findViewById(R.id.image_icon)        // The coordinate point icon
         val name: TextView = v.findViewById(R.id.text_name)          // The coordinate point name
         val coords: TextView = v.findViewById(R.id.text_coords)      // The coordinate values (lat/lon)
+        val modelLink: ImageView = v.findViewById(R.id.image_model_link) // Linked-model indicator
     }
 
     // ── Selection ─────────────────────────────────────────────────────────────

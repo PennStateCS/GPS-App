@@ -148,6 +148,7 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     utmZone = utmZone,
 
     note = note,
+    captureMethod = captureMethod,
     averagedSamples = averagedSamples,
     averageDurationMs = averageDurationMs,
     stdLatM = stdLatM,
@@ -196,6 +197,7 @@ fun Coordinate.toEntity(): CoordinateEntity =
         utmZone = utmZone,
 
         note = note,
+        captureMethod = captureMethod,
         averagedSamples = averagedSamples,
         averageDurationMs = averageDurationMs,
         stdLatM = stdLatM,

@@ -68,6 +68,9 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
         filePath: String,
         fileSize: Long,
         description: String? = null,
+        embeddedLatitude: Double? = null,
+        embeddedLongitude: Double? = null,
+        embeddedAltitudeM: Double? = null,
         onModelId: ((String) -> Unit)? = null
     ) {
         viewModelScope.launch {
@@ -82,7 +85,10 @@ class ModelsViewModel(application: Application) : AndroidViewModel(application) 
                     fileSize = fileSize,
                     dateAdded = System.currentTimeMillis(),
                     description = description,
-                    fileType = FileType.OTHER   // repository re-derives this on read
+                    fileType = FileType.OTHER,  // repository re-derives this on read
+                    embeddedLatitude = embeddedLatitude,
+                    embeddedLongitude = embeddedLongitude,
+                    embeddedAltitudeM = embeddedAltitudeM
                 )
                 repository.insertModel(model)
                 // Mark thumbnail as generating BEFORE notifying caller so the UI

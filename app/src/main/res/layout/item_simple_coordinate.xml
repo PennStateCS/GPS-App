@@ -71,6 +71,17 @@
 
     </LinearLayout>
 
+    <!-- Trailing indicator: shown when this coordinate has a linked 3D model -->
+    <ImageView
+        android:id="@+id/image_model_link"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_marginEnd="4dp"
+        android:src="@drawable/ic_models_24"
+        android:contentDescription="@string/model_linked_desc"
+        app:tint="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
+
     <!-- Single overflow button — tap shows PopupMenu with Edit / Delete / Copy -->
     <ImageButton
         android:id="@+id/btn_overflow"

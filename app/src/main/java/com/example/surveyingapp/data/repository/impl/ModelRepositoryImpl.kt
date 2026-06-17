@@ -37,7 +37,10 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 description = entity.description,
                 fileType = getFileTypeFromExtension(entity.fileName),
                 thumbnailFileName = entity.thumbnailFileName,
-                thumbnailFilePath = entity.thumbnailFilePath
+                thumbnailFilePath = entity.thumbnailFilePath,
+                embeddedLatitude = entity.embeddedLatitude,
+                embeddedLongitude = entity.embeddedLongitude,
+                embeddedAltitudeM = entity.embeddedAltitudeM
             )
         }
     }
@@ -54,7 +57,10 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 description = entity.description,
                 fileType = getFileTypeFromExtension(entity.fileName),
                 thumbnailFileName = entity.thumbnailFileName,
-                thumbnailFilePath = entity.thumbnailFilePath
+                thumbnailFilePath = entity.thumbnailFilePath,
+                embeddedLatitude = entity.embeddedLatitude,
+                embeddedLongitude = entity.embeddedLongitude,
+                embeddedAltitudeM = entity.embeddedAltitudeM
             )
         }
     }
@@ -71,7 +77,10 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
                 description = entity.description,
                 fileType = getFileTypeFromExtension(entity.fileName),
                 thumbnailFileName = entity.thumbnailFileName,
-                thumbnailFilePath = entity.thumbnailFilePath
+                thumbnailFilePath = entity.thumbnailFilePath,
+                embeddedLatitude = entity.embeddedLatitude,
+                embeddedLongitude = entity.embeddedLongitude,
+                embeddedAltitudeM = entity.embeddedAltitudeM
             )
         }
     }
@@ -86,7 +95,10 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
             dateAdded = model.dateAdded,
             description = model.description,
             thumbnailFileName = model.thumbnailFileName,
-            thumbnailFilePath = model.thumbnailFilePath
+            thumbnailFilePath = model.thumbnailFilePath,
+            embeddedLatitude = model.embeddedLatitude,
+            embeddedLongitude = model.embeddedLongitude,
+            embeddedAltitudeM = model.embeddedAltitudeM
         )
         modelDao.insertModel(entity)
     }
@@ -101,7 +113,10 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
             dateAdded = model.dateAdded,
             description = model.description,
             thumbnailFileName = model.thumbnailFileName,
-            thumbnailFilePath = model.thumbnailFilePath
+            thumbnailFilePath = model.thumbnailFilePath,
+            embeddedLatitude = model.embeddedLatitude,
+            embeddedLongitude = model.embeddedLongitude,
+            embeddedAltitudeM = model.embeddedAltitudeM
         )
         modelDao.updateModel(entity)
     }
@@ -119,7 +134,10 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
             dateAdded = model.dateAdded,
             description = model.description,
             thumbnailFileName = model.thumbnailFileName,
-            thumbnailFilePath = model.thumbnailFilePath
+            thumbnailFilePath = model.thumbnailFilePath,
+            embeddedLatitude = model.embeddedLatitude,
+            embeddedLongitude = model.embeddedLongitude,
+            embeddedAltitudeM = model.embeddedAltitudeM
         )
         modelDao.deleteModel(entity)
     }

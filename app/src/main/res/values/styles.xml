@@ -38,6 +38,12 @@
         <item name="cardBackgroundColor">?attr/colorSurface</item>
     </style>
 
+    <!-- Rounded corners for model thumbnails (ShapeableImageView). -->
+    <style name="ShapeAppearanceOverlay.App.Thumbnail" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">8dp</item>
+    </style>
+
     <!--
         Slightly elevated card for emphasis (dialogs, FAB-adjacent panels).
         Use for: the "Add Coordinate" dialog body, pinned coordinate cards.
