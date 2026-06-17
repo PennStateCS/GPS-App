@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Popup / overflow menu background.
+     4dp radius matches Material 3 menu shape spec.
+     @color/app_surface_container_high resolves to the dark blue-gray variant
+     in night mode via values-night/colors.xml — no separate night drawable needed. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="4dp" />
+    <solid android:color="@color/app_surface_container_high" />
+</shape>

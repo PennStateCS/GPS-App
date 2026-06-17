@@ -6,27 +6,39 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
-import android.widget.Switch
+import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
+import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
-data class CoordinateToggleItem(val id: String, val name: String, val checked: Boolean, val icon: String, val color: Int)
+data class CoordinateToggleItem(
+    val id: String,
+    val name: String,
+    val checked: Boolean,
+    val icon: String,
+    val color: Int,
+    val lat: Double = 0.0,
+    val lon: Double = 0.0
+)
 
 class CoordinateToggleAdapter(
-    private val onToggle: (id: String, checked: Boolean) -> Unit
+    private val onToggle: (id: String, checked: Boolean) -> Unit,
+    private val onRowClick: (id: String) -> Unit = {}
 ) : RecyclerView.Adapter<CoordinateToggleAdapter.Holder>() {
 
     private var items: List<CoordinateToggleItem> = emptyList()
+    private var selectedId: String? = null
     private val scope = CoroutineScope(Dispatchers.Main)
 
     fun submit(newItems: List<CoordinateToggleItem>) {
@@ -35,10 +47,19 @@ class CoordinateToggleAdapter(
             override fun getOldListSize() = old.size
             override fun getNewListSize() = newItems.size
             override fun areItemsTheSame(o: Int, n: Int) = old[o].id == newItems[n].id
-            override fun areContentsTheSame(o: Int, n: Int) = old[o] == newItems[n]
+            override fun areContentsTheSame(o: Int, n: Int) = old[o] == newItems[n] &&
+                old[o].id != selectedId  // force rebind if selected id changed
         })
         items = newItems
         diff.dispatchUpdatesTo(this)
+    }
+
+    fun setSelectedId(id: String?) {
+        val old = selectedId
+        if (old == id) return
+        selectedId = id
+        old?.let { oldId -> items.indexOfFirst { it.id == oldId }.takeIf { it >= 0 }?.let { notifyItemChanged(it) } }
+        id?.let { newId -> items.indexOfFirst { it.id == newId }.takeIf { it >= 0 }?.let { notifyItemChanged(it) } }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -49,20 +70,20 @@ class CoordinateToggleAdapter(
     override fun getItemCount() = items.size
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
-        val item = items[position]
-        holder.bind(item, scope, onToggle)
+        holder.bind(items[position], selectedId, scope, onToggle, onRowClick)
     }
 
-    // Cancel any in-flight icon load when a view is recycled.
     override fun onViewRecycled(holder: Holder) {
         super.onViewRecycled(holder)
         holder.cancelIconLoad()
     }
 
     class Holder(v: View) : RecyclerView.ViewHolder(v) {
-        val switch: Switch = v.findViewById(R.id.switch_visible)
+        val switch: MaterialSwitch = v.findViewById(R.id.switch_visible)
         val icon: ImageView = v.findViewById(R.id.image_icon)
         val name: TextView = v.findViewById(R.id.text_name)
+        val subtitle: TextView = v.findViewById(R.id.text_subtitle)
+        val rowBody: View = v.findViewById(R.id.coord_row_body)
 
         private var iconJob: Job? = null
 
@@ -71,18 +92,40 @@ class CoordinateToggleAdapter(
             iconJob = null
         }
 
-        fun bind(item: CoordinateToggleItem, scope: CoroutineScope, onToggle: (String, Boolean) -> Unit) {
+        fun bind(
+            item: CoordinateToggleItem,
+            selectedId: String?,
+            scope: CoroutineScope,
+            onToggle: (String, Boolean) -> Unit,
+            onRowClick: (String) -> Unit
+        ) {
             name.text = item.name
 
-            // Reset icon to default while loading
+            // Subtitle: lat/lon
+            if (item.lat != 0.0 || item.lon != 0.0) {
+                subtitle.text = String.format(Locale.US, "%.5f, %.5f", item.lat, item.lon)
+                subtitle.visibility = View.VISIBLE
+            } else {
+                subtitle.visibility = View.GONE
+            }
+
+            // Selection highlight on the row body
+            val selectedBg = MaterialColors.getColor(
+                itemView,
+                com.google.android.material.R.attr.colorPrimaryContainer,
+                android.graphics.Color.TRANSPARENT
+            )
+            rowBody.setBackgroundColor(
+                if (item.id == selectedId) selectedBg else android.graphics.Color.TRANSPARENT
+            )
+
+            // Icon
             icon.clearColorFilter()
             icon.setImageResource(R.drawable.ic_section_location)
             icon.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-
             cancelIconLoad()
 
             when {
-                // ── Model thumbnail icon ───────────────────────────────────
                 item.icon.startsWith("model:") -> {
                     val modelId = item.icon.removePrefix("model:")
                     iconJob = scope.launch {
@@ -98,15 +141,12 @@ class CoordinateToggleAdapter(
                         }
                         if (bmp != null) {
                             icon.clearColorFilter()
-                            // White background so transparent PNG is visible
                             icon.setBackgroundColor(android.graphics.Color.WHITE)
                             icon.setImageBitmap(bmp)
                         }
-                        // else: leave the default icon in place
                     }
                 }
 
-                // ── Built-in drawable icon ─────────────────────────────────
                 item.icon.isNotBlank() -> {
                     @Suppress("DiscouragedApi")
                     val resId = itemView.context.resources.getIdentifier(
@@ -121,22 +161,18 @@ class CoordinateToggleAdapter(
                     }
                 }
 
-                // ── No icon key ────────────────────────────────────────────
                 else -> {
                     icon.setImageResource(R.drawable.ic_section_location)
                     icon.setColorFilter(item.color, PorterDuff.Mode.SRC_IN)
                 }
             }
 
+            // Row body click → select coordinate (center map)
+            rowBody.setOnClickListener { onRowClick(item.id) }
+
+            // Switch → toggle visibility independently
             switch.setOnCheckedChangeListener(null)
             switch.isChecked = item.checked
-            val clickListener = View.OnClickListener {
-                val newChecked = !switch.isChecked
-                switch.isChecked = newChecked
-                onToggle(item.id, newChecked)
-            }
-            itemView.setOnClickListener(clickListener)
-            name.setOnClickListener(clickListener)
             switch.setOnCheckedChangeListener { _, isChecked -> onToggle(item.id, isChecked) }
         }
     }

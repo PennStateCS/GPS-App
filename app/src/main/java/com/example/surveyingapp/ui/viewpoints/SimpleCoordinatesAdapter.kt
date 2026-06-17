@@ -7,11 +7,13 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.util.Log
 import android.util.LruCache
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.scale
@@ -19,6 +21,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
+import com.google.android.material.color.MaterialColors
 import java.io.File
 import java.util.Locale
 
@@ -183,41 +186,58 @@ class SimpleCoordinatesAdapter(
             }
         }
 
-        // Set up click listeners for the action buttons
-        holder.itemView.setOnClickListener {
-            Log.d("SimpleCoordinatesAdapter", "Item view clicked for coordinate: ${p.id}")
-            onClick(p)
-        }
+        // Row body tap = select
+        holder.itemView.setOnClickListener { onClick(p) }
+        holder.itemView.findViewById<View>(R.id.coordinate_row_body)?.setOnClickListener { onClick(p) }
 
-        holder.itemView.findViewById<View>(R.id.coordinate_row_body)?.setOnClickListener {
-            Log.d("SimpleCoordinatesAdapter", "Row body clicked for coordinate: ${p.id}")
-            onClick(p)
-        }
-        // Edit button
-        val editBtn = holder.itemView.findViewById<ImageButton>(R.id.button_edit)
-        if (editBtn != null) {
-            editBtn.setOnClickListener {
-                Log.d("SimpleCoordinatesAdapter", "Edit clicked for coordinate: ${p.id}")
-                onEdit(p)
+        // Overflow three-dot menu → Edit / Delete
+        holder.itemView.findViewById<ImageButton>(R.id.btn_overflow)?.setOnClickListener { anchor ->
+            PopupMenu(anchor.context, anchor).apply {
+                menuInflater.inflate(R.menu.menu_coordinate_overflow, menu)
+                setOnMenuItemClickListener { item ->
+                    when (item.itemId) {
+                        R.id.action_edit_coordinate   -> { onEdit(p); true }
+                        R.id.action_delete_coordinate -> { onDelete(p); true }
+                        else -> false
+                    }
+                }
+                show()
             }
-        }
-
-        // Delete button
-        val deleteBtn = holder.itemView.findViewById<ImageButton>(R.id.button_delete)
-        if (deleteBtn != null) {
-            deleteBtn.setOnClickListener {
-                Log.d("SimpleCoordinatesAdapter", "Delete clicked for coordinate: ${p.id}")
-                onDelete(p)
-            }
-        } else {
-            Log.w("SimpleCoordinatesAdapter", "Delete button not found in layout (pos=$position id=${p.id})")
         }
 
         val accent = holder.itemView.findViewById<View>(R.id.selection_accent)
+        val rowBody = holder.itemView.findViewById<View>(R.id.coordinate_row_body)
         val selected = p.id == selectedId
-        if (accent != null) {
-            accent.visibility = if (selected) View.VISIBLE else View.INVISIBLE
-        } else {
+
+        // Accent bar
+        accent?.visibility = if (selected) View.VISIBLE else View.INVISIBLE
+
+        // Row body: colorPrimaryContainer bg + colorOnPrimaryContainer text when selected;
+        // ripple + default text when not selected
+        if (rowBody != null) {
+            if (selected) {
+                val bg = MaterialColors.getColor(rowBody,
+                    com.google.android.material.R.attr.colorPrimaryContainer, Color.TRANSPARENT)
+                rowBody.setBackgroundColor(bg)
+                val fg = MaterialColors.getColor(rowBody,
+                    com.google.android.material.R.attr.colorOnPrimaryContainer, Color.BLACK)
+                holder.name.setTextColor(fg)
+                holder.coords.setTextColor(fg and 0x00FFFFFF or (0xB2 shl 24))
+            } else {
+                val tv = TypedValue()
+                rowBody.context.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                if (tv.resourceId != 0) rowBody.setBackgroundResource(tv.resourceId)
+                else rowBody.setBackgroundColor(Color.TRANSPARENT)
+                val onSurface = MaterialColors.getColor(rowBody,
+                    com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
+                val onSurfaceVar = MaterialColors.getColor(rowBody,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY)
+                holder.name.setTextColor(onSurface)
+                holder.coords.setTextColor(onSurfaceVar)
+            }
+        }
+
+        if (accent == null) {
             Log.w("SimpleCoordinatesAdapter", "Accent view still missing after injection attempt")
         }
     }

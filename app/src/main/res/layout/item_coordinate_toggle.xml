@@ -1,38 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Coordinate visibility row for the floating panel.
+    coord_row_body (left, weight=1) is tappable for row selection (centers map).
+    MaterialSwitch (right) independently toggles marker visibility.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:minHeight="56dp"
     android:orientation="horizontal"
+    android:gravity="center_vertical"
     android:paddingStart="4dp"
     android:paddingEnd="4dp"
-    android:paddingTop="12dp"
-    android:paddingBottom="12dp"
-    android:gravity="center_vertical">
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
 
-    <ImageView
-        android:id="@+id/image_icon"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:layout_marginEnd="8dp"
-        android:scaleType="centerCrop"
-        android:contentDescription="Coordinate icon" />
-
-    <TextView
-        android:id="@+id/text_name"
+    <!-- Tappable body: icon + name + subtitle -->
+    <LinearLayout
+        android:id="@+id/coord_row_body"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:textColor="?attr/colorOnSurface"
-        android:textAppearance="@style/TextAppearance.App.BodyPrimary"
-        android:maxLines="1"
-        android:ellipsize="end" />
+        android:minHeight="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="8dp"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
 
-    <Switch
+        <ImageView
+            android:id="@+id/image_icon"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_marginEnd="10dp"
+            android:scaleType="centerCrop"
+            android:contentDescription="Coordinate icon" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/text_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/text_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Visibility toggle — tapping only changes visibility, does NOT select row -->
+    <com.google.android.material.materialswitch.MaterialSwitch
         android:id="@+id/switch_visible"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="10dp"
-        android:focusable="false"
-        android:focusableInTouchMode="false" />
+        android:layout_marginStart="4dp" />
 
 </LinearLayout>
