@@ -32,6 +32,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import com.example.surveyingapp.R
 import com.example.surveyingapp.databinding.FragmentOpenInArBinding
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -270,6 +271,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var arModelScale: Float = 2f
     @Volatile private var arShowLabels: Boolean = true
     @Volatile private var arShowOffscreenArrows: Boolean = true
+    @Volatile private var arDebugToolsEnabled: Boolean = false
+    @Volatile private var arShowPlanes: Boolean = false
+    @Volatile private var arShowPointCloud: Boolean = false
 
     /**
      * Edge margin in pixels for off-screen arrow indicators.
@@ -280,6 +284,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Drives Filament rendering at display refresh rate on the main thread.
     private var choreographerInstance: android.view.Choreographer? = null
     private var choreographerFrameCount = 0L
+    // True if the previous Choreographer tick had at least one model pose.
+    // Used to ensure one transparent "clear" frame is rendered after models are removed
+    // so the Filament TextureView does not retain a stale image of the last rendered pins.
+    private var choreoPrevHadModels = false
     private val filamentFrameCallback = object : android.view.Choreographer.FrameCallback {
         override fun doFrame(frameTimeNs: Long) {
             choreographerInstance?.postFrameCallback(this)
@@ -287,9 +295,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Always pump asset loading / scene management so models load as soon as
             // preload() is called — even before ARCore anchors start tracking or the
             // Filament TextureView surface has been fully created.
-            filamentRenderer?.tickAndApplyLoads(modelPoses)
-            // Skip GPU rendering when there are no GLB models to draw this frame.
-            if (modelPoses.isEmpty()) {
+            val currentPoses = modelPoses
+            filamentRenderer?.tickAndApplyLoads(currentPoses)
+            val hasModels = currentPoses.isNotEmpty()
+            // Skip GPU rendering when no models are present and none were present last frame.
+            // When models are just cleared (choreoPrevHadModels=true, hasModels=false), we
+            // fall through and render one transparent frame so Filament clears the TextureView.
+            if (!hasModels && !choreoPrevHadModels) {
                 if ((choreographerFrameCount % 300L) == 0L)
                     android.util.Log.d(ArFilamentRenderer.DIAG,
                         "Choreographer#$choreographerFrameCount — modelPoses empty (no anchors tracking or no models)")
@@ -298,6 +310,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val vm = arViewMatrix ?: return
             val pm = arProjMatrix ?: return
             filamentRenderer?.renderFrame(frameTimeNs, vm, pm)
+            // Update only after a successful render so we retry the clear frame if
+            // camera matrices were unavailable this tick.
+            choreoPrevHadModels = hasModels
         }
     }
 
@@ -366,6 +381,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         checkAvailabilityAndInstall()
 
+        // Back button — always visible, exits AR and returns to previous destination.
+        binding.btnArBack.setOnClickListener {
+            findNavController().popBackStack()
+        }
+
         // Toolbar toggle — show/hide with a slide-in animation from the right edge.
         binding.btnToolbarToggle.setOnClickListener {
             if (toolbarVisible) hideToolbar() else showToolbar()
@@ -386,6 +406,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         binding.btnToggleDebugOverlay.setOnClickListener {
             viewModel.toggleDebug()
+        }
+
+        binding.btnTogglePlanes.setOnClickListener {
+            viewModel.togglePlanes()
+        }
+
+        binding.btnTogglePointCloud.setOnClickListener {
+            viewModel.togglePointCloud()
         }
 
         binding.btnReanchor.setOnClickListener {
@@ -417,6 +445,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 fixSwitchboard.fixes.collect { fix ->
                     currentGnssFix = fix
+                    updateArGnssChip(fix)
                     // Only log when the provider changes — fixes arrive at up to 10Hz
                     // and logging every one would flood logcat.
                     if (fix.provider != lastLoggedProvider) {
@@ -455,6 +484,30 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // Sync planes toggle from ViewModel.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.showPlanes.collect { on ->
+                    arShowPlanes = on
+                    val tint = if (on) requireContext().getColor(R.color.app_info)
+                               else    requireContext().getColor(android.R.color.white)
+                    binding.iconTogglePlanes.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
+                }
+            }
+        }
+
+        // Sync point cloud toggle from ViewModel.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.showPointCloud.collect { on ->
+                    arShowPointCloud = on
+                    val tint = if (on) requireContext().getColor(R.color.app_info)
+                               else    requireContext().getColor(android.R.color.white)
+                    binding.iconTogglePointCloud.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
+                }
+            }
+        }
+
         // React to high-accuracy GPS preference changes from the ViewModel.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -483,6 +536,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     arModelScale = ar.modelScale
                     arShowLabels = ar.showLabels
                     arShowOffscreenArrows = ar.showOffscreenArrows
+                    arDebugToolsEnabled = ar.showArDebugTools
+                    _binding?.arDebugToolsGroup?.visibility =
+                        if (ar.showArDebugTools) View.VISIBLE else View.GONE
+                    if (!ar.showArDebugTools) {
+                        // Force debug visuals off when the master switch is disabled
+                        arShowPlanes = false
+                        arShowPointCloud = false
+                    }
                 }
             }
         }
@@ -671,6 +732,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         super.onDestroyView()
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
+        choreoPrevHadModels = false
         filamentRenderer?.destroy()
         filamentRenderer = null
         arViewMatrix  = null
@@ -1033,8 +1095,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 arViewMatrix = view.copyOf()
                 arProjMatrix = proj.copyOf()
 
-                pointCount = pointCloudRenderer?.draw(frame, vp) ?: 0
-                planeCount = planeVisualizer?.drawAllPlanes(s, vp) ?: 0
+                pointCount = if (arDebugToolsEnabled && arShowPointCloud) pointCloudRenderer?.draw(frame, vp) ?: 0 else 0
+                planeCount = if (arDebugToolsEnabled && arShowPlanes) planeVisualizer?.drawAllPlanes(s, vp) ?: 0 else 0
 
                 drawFloorMarker(vp)
 
@@ -1474,6 +1536,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             "setCoordinates: ${geoItems.size} items " +
                 "(${geoItems.count { it.modelFilePath != null }} with models)"
         )
+    }
+
+    /** Updates the compact AR GNSS status chip with live source, solution, and accuracy. */
+    private fun updateArGnssChip(fix: Fix) {
+        val b = _binding ?: return
+        val src = when (fix.provider) {
+            com.example.surveyingapp.gnss.model.Provider.RS2_EXTERNAL -> "RS2+"
+            com.example.surveyingapp.gnss.model.Provider.INTERNAL     -> "Phone GPS"
+            else -> fix.provider.name
+        }
+        val (solLabel, solColor) = when (fix.rtkStatus) {
+            com.example.surveyingapp.gnss.model.RtkStatus.FIX    -> "RTK Fixed"  to requireContext().getColor(R.color.app_success)
+            com.example.surveyingapp.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.app_warning)
+            com.example.surveyingapp.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.app_info)
+            com.example.surveyingapp.gnss.model.RtkStatus.SINGLE -> "GPS"        to requireContext().getColor(android.R.color.white)
+            else                                                  -> "No Fix"     to requireContext().getColor(R.color.app_error)
+        }
+        val acc = fix.hAccM?.let { " · H ±${"%.2f".format(it)} m" } ?: ""
+        b.chipArGnssStatus.text = "$src · $solLabel$acc"
+        b.chipArGnssStatus.setTextColor(solColor)
     }
 
     /** Configure GL surface view and queue taps for processing on GL thread. */

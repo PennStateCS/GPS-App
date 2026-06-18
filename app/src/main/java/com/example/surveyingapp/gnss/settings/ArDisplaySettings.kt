@@ -32,5 +32,9 @@ data class ArDisplaySettings(
     val showOffscreenArrows: Boolean = true,
 
     /** Uniform scale applied to all 3D models. Clamped to 0.1–10.0 at runtime. */
-    val modelScale: Float = 2.0f
+    val modelScale: Float = 2.0f,
+
+    /** Whether the AR Debug Tools section is available on the floating toolbar.
+     *  When false, point cloud and plane rendering are suppressed entirely. */
+    val showArDebugTools: Boolean = false
 )

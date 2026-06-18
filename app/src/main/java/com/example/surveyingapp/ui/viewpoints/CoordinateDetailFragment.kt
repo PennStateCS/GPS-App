@@ -395,10 +395,17 @@ class CoordinateDetailFragment : Fragment() {
         cardProjection?.visibility = View.VISIBLE
     }
 
+    private fun providerLabel(p: String?): String? = when (p?.lowercase(Locale.US)) {
+        "fused"      -> "Internal GPS (fused)"
+        "rs2-tcp"    -> "External GNSS (TCP)"
+        "rs2-bt"     -> "External GNSS (Bluetooth)"
+        "model"      -> "Model"
+        null, "", "other" -> null
+        else         -> p
+    }
+
     private fun bindGnssCard(c: Coordinate) {
-        c.provider.takeIf { it.isNotBlank() }?.let {
-            addDetailRow(cardGnssRows, "Provider", it)
-        }
+        // Provider moved to capture card; only GNSS quality fields here
         c.rtkStatus?.takeIf { it.isNotBlank() }?.let {
             addDetailRow(cardGnssRows, "RTK status", rtkLabel(it))
         }
@@ -409,11 +416,18 @@ class CoordinateDetailFragment : Fragment() {
             c.horizontalAccuracyM?.let { addDetailRow(cardGnssRows, "Horiz. accuracy", fmtM3(it)) }
             c.verticalAccuracyM?.let   { addDetailRow(cardGnssRows, "Vert. accuracy",  fmtM3(it)) }
         }
-        val satsLine = buildString {
-            c.satsUsed?.let    { append("$it used") }
-            c.satsVisible?.let { if (isNotEmpty()) append(" / "); append("$it visible") }
+        val used = c.satsUsed
+        val visible = c.satsVisible
+        when {
+            used != null && visible != null && used <= visible ->
+                addDetailRow(cardGnssRows, "Satellites", "$used used / $visible visible")
+            used != null && visible != null -> {
+                addDetailRow(cardGnssRows, "Satellites used", "$used")
+                addDetailRow(cardGnssRows, "Satellites visible", "$visible")
+            }
+            used != null    -> addDetailRow(cardGnssRows, "Satellites used", "$used")
+            visible != null -> addDetailRow(cardGnssRows, "Satellites visible", "$visible")
         }
-        if (satsLine.isNotBlank()) addDetailRow(cardGnssRows, "Satellites", satsLine)
         c.correctionSource?.takeIf { it.isNotBlank() }?.let {
             val age = c.correctionAgeS?.let { s -> String.format(Locale.US, " (%.1f s old)", s) } ?: ""
             addDetailRow(cardGnssRows, "Correction", it + age)
@@ -429,12 +443,15 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     private fun bindCaptureCard(c: Coordinate) {
+        // Source device and capture method first (most user-relevant)
+        c.sourceDevice?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Source device", it) }
         captureMethodLabel(c.captureMethod)?.let { addDetailRow(cardCaptureRows, "Capture method", it) }
+        // Provider only when informative (not "other")
+        providerLabel(c.provider)?.let { addDetailRow(cardCaptureRows, "Provider", it) }
         val dateObj = Date(c.timestamp)
         addDetailRow(cardCaptureRows, "Date", SimpleDateFormat("MM/dd/yyyy", Locale.US).format(dateObj))
         addDetailRow(cardCaptureRows, "Time", SimpleDateFormat("h:mm:ss a", Locale.US).format(dateObj).lowercase(Locale.US))
         c.timestampSource?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Time source", it) }
-        c.sourceDevice?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Source device", it) }
         c.appVersion?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "App version", it) }
         cardCapture?.visibility = View.VISIBLE
     }
@@ -704,43 +721,97 @@ class CoordinateDetailFragment : Fragment() {
     // ── Badges ─────────────────────────────────────────────────────────────────
 
     private fun bindBadges(c: Coordinate) {
-        applyRtkBadge(c)
+        applyFixBadge(c)
         if (showAccuracyIndicators) applyAccuracyBadge(c) else badgeAccuracy?.visibility = View.GONE
         val anyVisible = (badgeRtk?.visibility == View.VISIBLE) || (badgeAccuracy?.visibility == View.VISIBLE)
         rowBadges?.visibility = if (anyVisible) View.VISIBLE else View.GONE
     }
 
-    private fun applyRtkBadge(c: Coordinate) {
-        val tv = badgeRtk ?: return
-        val status = c.rtkStatus
-        if (status.isNullOrBlank()) { tv.visibility = View.GONE; return }
-        tv.text = status
-        val color = when (status.uppercase(Locale.US)) {
-            "FIX"    -> 0xFF2E7D32.toInt()
-            "FLOAT"  -> 0xFFEF6C00.toInt()
-            "DGPS"   -> 0xFF1976D2.toInt()
-            "SINGLE" -> 0xFF607D8B.toInt()
-            else     -> 0xFFC62828.toInt()
+    /**
+     * Returns (label, backgroundColorInt) for the fix/status badge, or null to hide it.
+     *
+     * Priority:
+     *  1. captureMethod/provider source badges (MODEL, IMPORTED, MANUAL) – override rtkStatus
+     *     because those coordinates were never acquired via live GNSS.
+     *  2. rtkStatus for live-GNSS captures (FIX, FLOAT, DGPS, GPS, NO FIX).
+     *  3. captureMethod fallback for averaged/external captures with no rtkStatus.
+     */
+    private fun fixBadgeData(c: Coordinate): Pair<String, Int>? {
+        val cm = c.captureMethod?.trim()?.lowercase(Locale.US)
+        val prov = c.provider.trim().lowercase(Locale.US)
+
+        // Non-GNSS sources get their own clear label.
+        if (cm == "model_embedded" || prov == "model")
+            return "MODEL"    to 0xFF1565C0.toInt()
+        if (cm == "imported")
+            return "IMPORTED" to 0xFF455A64.toInt()
+        if (cm == "manual" || cm == "map_tap")
+            return "MANUAL"   to 0xFF455A64.toInt()
+
+        // GNSS sources: rtkStatus is the authority.
+        val rtk = c.rtkStatus?.trim()?.uppercase(Locale.US)
+        if (!rtk.isNullOrBlank()) {
+            return when (rtk) {
+                "FIX", "FIXED"            -> "FIX"    to 0xFF2E7D32.toInt()
+                "FLOAT"                   -> "FLOAT"  to 0xFFE65100.toInt()
+                "DGPS"                    -> "DGPS"   to 0xFF1565C0.toInt()
+                "SINGLE", "GPS", "AUTONOMOUS" -> "GPS" to 0xFF1565C0.toInt()
+                "NO FIX", "NOFIX", "NONE" -> "NO FIX" to 0xFFC62828.toInt()
+                else                      -> "UNKNOWN" to 0xFF607D8B.toInt()
+            }
         }
+
+        // Fall back to captureMethod for averaged / external captures.
+        return when (cm) {
+            "internal_gps"  -> "GPS"  to 0xFF1565C0.toInt()
+            "external_gnss" -> "GNSS" to 0xFF1565C0.toInt()
+            "averaged"      -> "GPS"  to 0xFF455A64.toInt()
+            else            -> null
+        }
+    }
+
+    private fun applyFixBadge(c: Coordinate) {
+        val tv = badgeRtk ?: return
+        val data = fixBadgeData(c)
+        if (data == null) { tv.visibility = View.GONE; return }
+        val (label, color) = data
+        tv.text = label
         tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
+        tv.contentDescription = when (label) {
+            "FIX"      -> "RTK fixed solution"
+            "FLOAT"    -> "RTK float solution"
+            "GPS"      -> "Standard GPS"
+            "GNSS"     -> "External GNSS"
+            "DGPS"     -> "Differential GPS"
+            "MANUAL"   -> "Manually entered coordinate"
+            "IMPORTED" -> "Imported coordinate"
+            "MODEL"    -> "Coordinate from embedded model location"
+            "NO FIX"   -> "No GNSS fix"
+            else       -> "Fix quality unknown"
+        }
         tv.visibility = View.VISIBLE
     }
 
     private fun applyAccuracyBadge(c: Coordinate) {
         val tv = badgeAccuracy ?: return
-        val hAcc = c.horizontalAccuracyM ?: c.hdop?.let { it * 0.6 }
+        // Only use measured accuracy — do not estimate from HDOP (misleading as a badge).
+        val hAcc = c.horizontalAccuracyM
         if (hAcc == null) { tv.visibility = View.GONE; return }
-        val textVal = if (hAcc < 10) String.format(Locale.US, "%.2fm", hAcc)
-                      else           String.format(Locale.US, "%.0fm", hAcc)
-        val (color, label) = when {
-            hAcc <= 0.05 -> 0xFF2E7D32.toInt() to "HP"
-            hAcc <= 0.10 -> 0xFF00897B.toInt() to "HQ"
-            hAcc <= 0.30 -> 0xFFF9A825.toInt() to "MD"
-            hAcc <= 1.0  -> 0xFFEF6C00.toInt() to "LO"
-            else         -> 0xFFC62828.toInt() to "PO"
+        val formatted = when {
+            hAcc < 1.0  -> String.format(Locale.US, "H ±%.2f m", hAcc)
+            hAcc < 10.0 -> String.format(Locale.US, "H ±%.1f m", hAcc)
+            else        -> String.format(Locale.US, "H ±%.0f m", hAcc)
         }
-        tv.text = "$label $textVal"
+        val color = when {
+            hAcc <= 0.05 -> 0xFF2E7D32.toInt()   // green  – survey-grade RTK
+            hAcc <= 0.30 -> 0xFFF9A825.toInt()   // amber  – sub-metre
+            else         -> 0xFFEF6C00.toInt()   // orange – degraded / single-point
+        }
+        tv.text = formatted
         tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
+        tv.contentDescription = String.format(
+            Locale.US, "Horizontal accuracy plus or minus %.2f meters", hAcc
+        )
         tv.visibility = View.VISIBLE
     }
 

@@ -6,7 +6,6 @@ import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
@@ -37,10 +36,6 @@ interface SettingsRepository {
     // Coordinate display
     val coordinateDisplaySettings: Flow<CoordinateDisplaySettings>
     suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings)
-
-    // Diagnostics
-    val diagnosticsSettings: Flow<DiagnosticsSettings>
-    suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings)
 
     // Mock location publishing
     val mockLocationEnabled: Flow<Boolean>

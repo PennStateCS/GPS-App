@@ -128,15 +128,22 @@ class AndroidMockLocationPublisher(
             longitude = fix.lonDeg
 
             fix.altEllipsoidalM?.let { altitude = it }
-            fix.hAccM?.let          { accuracy = it.toFloat() }
             fix.speedMps?.let       { speed = it.toFloat() }
             fix.courseDeg?.let      { bearing = it.toFloat() }
+
+            // accuracy is mandatory — setTestProviderLocation throws IllegalArgumentException
+            // if it is unset (0f). Fall back to a conservative 5 m estimate when GST-derived
+            // hAccM is absent so the location object is always valid.
+            accuracy = fix.hAccM?.toFloat()?.takeIf { it > 0f } ?: 5.0f
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 fix.vAccM?.let { verticalAccuracyMeters = it.toFloat() }
             }
 
-            time = fix.timeUtc.toEpochMilli()
+            // time must be a real wall-clock millisecond value; elapsedRealtimeNanos must
+            // also be set. Both are required fields on modern Android.
+            val epochMs = fix.timeUtc.toEpochMilli()
+            time = if (epochMs > 0L) epochMs else System.currentTimeMillis()
             elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
         }
 

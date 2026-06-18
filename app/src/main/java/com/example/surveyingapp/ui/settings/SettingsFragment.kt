@@ -15,7 +15,6 @@ import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
@@ -137,14 +136,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
             }
             optionsLayout?.visibility = View.GONE
             box?.visibility = View.VISIBLE
-            statusTv?.let {
-                if (it.visibility != View.VISIBLE) {
-                    it.visibility = View.VISIBLE
-                    it.text = getString(R.string.disconnected)
-                } else if (it.text.isNullOrBlank()) {
-                    it.text = getString(R.string.disconnected)
-                }
-            }
+            statusTv?.visibility = View.VISIBLE
         } catch (e: Exception) {
             Log.e("SettingsFragment", "updateDeviceBox failed", e)
         }
@@ -157,8 +149,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         private const val CAT_ID_AR_DISPLAY         = 3
         private const val CAT_ID_COORDINATE_DISPLAY = 4
         private const val CAT_ID_DATA               = 5
-        private const val CAT_ID_DIAGNOSTICS        = 6
-        private const val CAT_ID_DEV                = 7
+private const val CAT_ID_DEV                = 7
         private const val CAT_ID_ABOUT              = 8
         private const val CAT_ID_APPEARANCE         = 9
         // Connection status timing thresholds (ms)
@@ -180,12 +171,11 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun baseCategories(): List<SettingsCategory> = listOf(
         SettingsCategory(CAT_ID_APPEARANCE,         "Appearance",              R.drawable.ic_appearance_24),
         SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_section_ar),
-        SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinate Display",      R.drawable.ic_list_coordinates),
-        SettingsCategory(CAT_ID_DATA,               "Data Import / Export",    R.drawable.ic_file),
+        SettingsCategory(CAT_ID_GNSS_CAPTURE,       "Capture",                 R.drawable.ic_satellite_24),
+        SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinates",             R.drawable.ic_list_coordinates),
+        SettingsCategory(CAT_ID_DATA,               "Data",                    R.drawable.ic_file),
         SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
-        SettingsCategory(CAT_ID_DIAGNOSTICS,        "Diagnostics & Logging",   R.drawable.ic_section_diagnostics),
-        SettingsCategory(CAT_ID_GNSS_CAPTURE,       "GNSS Capture",            R.drawable.ic_satellite_24),
-        SettingsCategory(CAT_ID_LOCATION,           "GNSS Receiver",           R.drawable.ic_section_location),
+SettingsCategory(CAT_ID_LOCATION,           "Receiver",                R.drawable.ic_section_location),
         SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info)
     )
 
@@ -202,8 +192,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
                 CAT_ID_AR_DISPLAY         -> setupARDisplayContent(inflater)
                 CAT_ID_COORDINATE_DISPLAY -> setupCoordinateDisplayContent(inflater)
                 CAT_ID_DATA               -> setupDataContent(inflater)
-                CAT_ID_DIAGNOSTICS        -> setupDiagnosticsContent(inflater)
-                CAT_ID_DEV                -> setupDeveloperContent(inflater)
+CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 CAT_ID_ABOUT              -> setupAboutContent(inflater)
                 CAT_ID_APPEARANCE         -> setupAppearanceContent(inflater)
                 else -> null
@@ -219,7 +208,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private fun setupAppearanceContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_appearance, contentContainer, false)
         try {
-            val spinner = view.findViewById<AutoCompleteTextView>(R.id.spinner_theme_mode)
+            val spinner           = view.findViewById<AutoCompleteTextView>(R.id.spinner_theme_mode)
+            val switchGnssBar     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_gnss_status_bar)
+            val switchKeepAwake   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_keep_screen_awake)
+            val switchMaxBright   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_max_brightness)
 
             val options = listOf(
                 "System Default" to AppThemeMode.SYSTEM,
@@ -233,9 +225,12 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
-                    val current = settingsRepo.appearanceSettings.first().themeMode
-                    val label = options.firstOrNull { it.second == current }?.first ?: options.first().first
+                    val current = settingsRepo.appearanceSettings.first()
+                    val label = options.firstOrNull { it.second == current.themeMode }?.first ?: options.first().first
                     spinner?.setText(label, false)
+                    switchGnssBar?.isChecked   = current.showLiveGnssStatusBar
+                    switchKeepAwake?.isChecked = current.keepScreenAwake
+                    switchMaxBright?.isChecked = current.maxBrightnessWhileOpen
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "Failed to load appearance settings", e)
                 }
@@ -243,10 +238,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
             spinner?.setOnItemClickListener { _, _, position, _ ->
                 val selected = options.getOrNull(position) ?: return@setOnItemClickListener
-                val ctx = context ?: return@setOnItemClickListener
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
-                        settingsRepo.setAppearanceSettings(AppearanceSettings(themeMode = selected.second))
+                        val current = settingsRepo.appearanceSettings.first()
+                        settingsRepo.setAppearanceSettings(current.copy(themeMode = selected.second))
                         AppCompatDelegate.setDefaultNightMode(
                             when (selected.second) {
                                 AppThemeMode.LIGHT  -> AppCompatDelegate.MODE_NIGHT_NO
@@ -257,6 +252,39 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "Failed to save appearance settings", e)
                         showSettingsMessage("Failed to save theme.")
+                    }
+                }
+            }
+
+            switchGnssBar?.setOnCheckedChangeListener { _, isChecked ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val current = settingsRepo.appearanceSettings.first()
+                        settingsRepo.setAppearanceSettings(current.copy(showLiveGnssStatusBar = isChecked))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save GNSS status bar setting", e)
+                    }
+                }
+            }
+
+            switchKeepAwake?.setOnCheckedChangeListener { _, isChecked ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val current = settingsRepo.appearanceSettings.first()
+                        settingsRepo.setAppearanceSettings(current.copy(keepScreenAwake = isChecked))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save keep screen awake setting", e)
+                    }
+                }
+            }
+
+            switchMaxBright?.setOnCheckedChangeListener { _, isChecked ->
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val current = settingsRepo.appearanceSettings.first()
+                        settingsRepo.setAppearanceSettings(current.copy(maxBrightnessWhileOpen = isChecked))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "Failed to save max brightness setting", e)
                     }
                 }
             }
@@ -321,10 +349,11 @@ class SettingsFragment : BaseTwoPaneFragment() {
         try {
             val spinnerAltitude = view.findViewById<AutoCompleteTextView>(R.id.spinner_altitude_mode)
             val spinnerFilter   = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter)
-            val switchLabels    = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_labels)
-            val switchArrows    = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_offscreen_arrows)
-            val switchDebug     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_overlay)
-            val editScale       = view.findViewById<EditText>(R.id.edit_ar_model_scale)
+            val switchLabels     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_labels)
+            val switchArrows     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_show_offscreen_arrows)
+            val switchDebug      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_overlay)
+            val switchDebugTools = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_tools)
+            val editScale        = view.findViewById<EditText>(R.id.edit_ar_model_scale)
             view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
 
             val altitudeModes   = listOf("Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
@@ -347,7 +376,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     showDebugOverlay    = switchDebug?.isChecked ?: false,
                     showLabels          = switchLabels?.isChecked ?: true,
                     showOffscreenArrows = switchArrows?.isChecked ?: true,
-                    modelScale          = scale
+                    modelScale          = scale,
+                    showArDebugTools    = switchDebugTools?.isChecked ?: false
                 )
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
@@ -367,7 +397,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
                     spinnerFilter?.setText(distanceOptions.getOrElse(s.distanceFilterIndex.coerceIn(0, distanceOptions.lastIndex)) { distanceOptions.first() }.first, false)
                     switchLabels?.isChecked = s.showLabels
                     switchArrows?.isChecked = s.showOffscreenArrows
-                    switchDebug?.isChecked  = s.showDebugOverlay
+                    switchDebug?.isChecked      = s.showDebugOverlay
+                    switchDebugTools?.isChecked = s.showArDebugTools
                     editScale?.setText(s.modelScale.toString())
                     isBinding = false
                 } catch (e: Exception) {
@@ -384,7 +415,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
             }
             switchLabels?.setOnCheckedChangeListener  { _, _ -> if (!isBinding) saveAll() }
             switchArrows?.setOnCheckedChangeListener  { _, _ -> if (!isBinding) saveAll() }
-            switchDebug?.setOnCheckedChangeListener   { _, _ -> if (!isBinding) saveAll() }
+            switchDebug?.setOnCheckedChangeListener      { _, _ -> if (!isBinding) saveAll() }
+            switchDebugTools?.setOnCheckedChangeListener { _, _ -> if (!isBinding) saveAll() }
             editScale?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
             editScale?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
         } catch (e: Exception) {
@@ -399,7 +431,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
             val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
             val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
             val switchAutoInc   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_auto_increment_names)
-            view.findViewById<Button>(R.id.btn_save_coordinate_display)?.visibility = View.GONE
+
 
             val tilPrefix = editPrefix?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
 
@@ -465,48 +497,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
         return view
     }
 
-    private fun setupDiagnosticsContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.content_settings_diagnostics, contentContainer, false)
-        try {
-            val switchShowRaw  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_raw_nmea)
-            val switchShowSat  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_satellite_diagnostics)
-            view.findViewById<Button>(R.id.btn_save_diagnostics)?.visibility = View.GONE
-
-            fun save() {
-                viewLifecycleOwner.lifecycleScope.launch {
-                    try {
-                        settingsRepo.setDiagnosticsSettings(DiagnosticsSettings(
-                            showRawNmea              = switchShowRaw?.isChecked ?: false,
-                            showSatelliteDiagnostics = switchShowSat?.isChecked ?: true
-                        ))
-                    } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save diagnostics settings", e)
-                    }
-                }
-            }
-
-            var isBinding = false
-            viewLifecycleOwner.lifecycleScope.launch {
-                try {
-                    val s = settingsRepo.diagnosticsSettings.first()
-                    isBinding = true
-                    switchShowRaw?.isChecked = s.showRawNmea
-                    switchShowSat?.isChecked = s.showSatelliteDiagnostics
-                    isBinding = false
-                } catch (e: Exception) {
-                    isBinding = false
-                    Log.e("SettingsFragment", "Failed to load diagnostics settings", e)
-                }
-            }
-
-            switchShowRaw?.setOnCheckedChangeListener { _, _ -> if (!isBinding) save() }
-            switchShowSat?.setOnCheckedChangeListener { _, _ -> if (!isBinding) save() }
-        } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupDiagnosticsContent failed", e)
-        }
-        return view
-    }
-
     private fun setupAboutContent(inflater: LayoutInflater): View =
         inflater.inflate(R.layout.content_settings_about, contentContainer, false)
 
@@ -520,7 +510,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
             val editSamples = view.findViewById<EditText>(R.id.edit_min_samples)
             val editFixAge  = view.findViewById<EditText>(R.id.edit_max_fix_age)
             val editDiffAge = view.findViewById<EditText>(R.id.edit_max_diff_age)
-            view.findViewById<Button>(R.id.btn_save_gnss_capture)?.visibility = View.GONE
+
 
             val tilMinDur  = editMinDur?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
             val tilMaxDur  = editMaxDur?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
@@ -923,6 +913,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
+                    var lastShownError: AndroidMockLocationPublisher.MockLocationError? = null
                     SurveyingApp.mockLocationPublisher.errorEvents.collect { error ->
                         val msg = when (error) {
                             AndroidMockLocationPublisher.MockLocationError.NOT_PERMITTED ->
@@ -932,7 +923,10 @@ class SettingsFragment : BaseTwoPaneFragment() {
                         }
                         errorBanner?.visibility = View.VISIBLE
                         view.findViewById<TextView>(R.id.text_mock_location_error)?.text = msg
-                        showSettingsMessage(msg, Snackbar.LENGTH_LONG)
+                        if (error != lastShownError) {
+                            lastShownError = error
+                            showSettingsMessage(msg, Snackbar.LENGTH_LONG)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "mock location error observer failed", e)

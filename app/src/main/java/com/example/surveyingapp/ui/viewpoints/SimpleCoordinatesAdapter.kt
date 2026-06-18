@@ -209,35 +209,40 @@ class SimpleCoordinatesAdapter(
         }
 
         val accent = holder.itemView.findViewById<View>(R.id.selection_accent)
+        val rowRoot = holder.itemView.findViewById<View>(R.id.coordinate_row_root)
         val rowBody = holder.itemView.findViewById<View>(R.id.coordinate_row_body)
         val selected = p.id == selectedId
 
         // Accent bar
         accent?.visibility = if (selected) View.VISIBLE else View.INVISIBLE
 
-        // Row body: colorPrimaryContainer bg + colorOnPrimaryContainer text when selected;
-        // ripple + default text when not selected
-        if (rowBody != null) {
-            if (selected) {
-                val bg = MaterialColors.getColor(rowBody,
-                    com.google.android.material.R.attr.colorPrimaryContainer, Color.TRANSPARENT)
-                rowBody.setBackgroundColor(bg)
-                val fg = MaterialColors.getColor(rowBody,
-                    com.google.android.material.R.attr.colorOnPrimaryContainer, Color.BLACK)
-                holder.name.setTextColor(fg)
-                holder.coords.setTextColor(fg and 0x00FFFFFF or (0xB2 shl 24))
-            } else {
-                val tv = TypedValue()
-                rowBody.context.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+        // Full row: colorPrimaryContainer bg when selected so the highlight extends
+        // across the model-link icon and overflow button too.
+        val ctx = rowBody?.context ?: holder.itemView.context
+        if (selected) {
+            val bg = MaterialColors.getColor(ctx,
+                com.google.android.material.R.attr.colorPrimaryContainer, Color.TRANSPARENT)
+            rowRoot?.setBackgroundColor(bg)
+            // Remove ripple from body so it doesn't overdraw the selection colour.
+            rowBody?.setBackgroundColor(Color.TRANSPARENT)
+            val fg = MaterialColors.getColor(ctx,
+                com.google.android.material.R.attr.colorOnPrimaryContainer, Color.BLACK)
+            holder.name.setTextColor(fg)
+            holder.coords.setTextColor(fg and 0x00FFFFFF or (0xB2 shl 24))
+        } else {
+            rowRoot?.setBackgroundColor(Color.TRANSPARENT)
+            val tv = TypedValue()
+            ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            if (rowBody != null) {
                 if (tv.resourceId != 0) rowBody.setBackgroundResource(tv.resourceId)
                 else rowBody.setBackgroundColor(Color.TRANSPARENT)
-                val onSurface = MaterialColors.getColor(rowBody,
-                    com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
-                val onSurfaceVar = MaterialColors.getColor(rowBody,
-                    com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY)
-                holder.name.setTextColor(onSurface)
-                holder.coords.setTextColor(onSurfaceVar)
             }
+            val onSurface = MaterialColors.getColor(ctx,
+                com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
+            val onSurfaceVar = MaterialColors.getColor(ctx,
+                com.google.android.material.R.attr.colorOnSurfaceVariant, Color.GRAY)
+            holder.name.setTextColor(onSurface)
+            holder.coords.setTextColor(onSurfaceVar)
         }
 
         if (accent == null) {

@@ -121,14 +121,32 @@ class CaptureViewModel @Inject constructor(
             LocationSourceType.SIMULATOR -> Provider.OTHER
         }
 
+        val captureMethod = when (src) {
+            LocationSourceType.INTERNAL  -> "internal_gps"
+            LocationSourceType.EXTERNAL  -> "external_gnss"
+            LocationSourceType.SIMULATOR -> "averaged"
+        }
+
+        val sourceDevice = when (src) {
+            LocationSourceType.EXTERNAL -> {
+                val deviceName = SurveyingApp.settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }
+                val host = SurveyingApp.settingsRepo.externalTcpHost.first()
+                deviceName ?: host ?: "External GNSS"
+            }
+            LocationSourceType.INTERNAL  -> "Internal GPS"
+            LocationSourceType.SIMULATOR -> null
+        }
+
         val coordinate = CoordinateFactory.fromCaptureResult(
-            id       = UUID.randomUUID().toString(),
-            name     = name,
-            note     = note,
-            color    = color,
-            iconId   = iconId,
-            provider = provider,
-            result   = finished
+            id            = UUID.randomUUID().toString(),
+            name          = name,
+            note          = note,
+            color         = color,
+            iconId        = iconId,
+            provider      = provider,
+            result        = finished,
+            captureMethod = captureMethod,
+            sourceDevice  = sourceDevice
         )
 
         coordinateRepository.insert(coordinate)
