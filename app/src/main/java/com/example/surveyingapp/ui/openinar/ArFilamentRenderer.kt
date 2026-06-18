@@ -390,26 +390,32 @@ class ArFilamentRenderer {
                 // Center: pull models whose geometry is far from their local origin back
                 // to the anchor.  Small offsets (< BB_CENTER_THRESHOLD_M) are left alone
                 // so models intentionally pivoted at their base remain ground-level.
-                val needsCenter = !pose.key.startsWith(TEST_GRID_KEY_PREFIX) && (
-                    Math.abs(bbc[0]) > BB_CENTER_THRESHOLD_M ||
+                val needsCenter = Math.abs(bbc[0]) > BB_CENTER_THRESHOLD_M ||
                     Math.abs(bbc[1]) > BB_CENTER_THRESHOLD_M ||
-                    Math.abs(bbc[2]) > BB_CENTER_THRESHOLD_M)
-                if (needsCenter || ns != 1.0f) {
-                    // Combined S(ns) * T(-bbCenter): scales geometry and translates so
-                    // the bounding-box centre maps to the anchor world position.
-                    val cm = FloatArray(16)
-                    Matrix.setIdentityM(cm, 0)
-                    cm[0]  = ns;  cm[5]  = ns;  cm[10] = ns
-                    cm[12] = -bbc[0] * ns
-                    cm[13] = -bbc[1] * ns
-                    cm[14] = -bbc[2] * ns
+                    Math.abs(bbc[2]) > BB_CENTER_THRESHOLD_M
+                val isTestKey = pose.key.startsWith(TEST_GRID_KEY_PREFIX)
+                if (!isTestKey) {
+                    // R(180°Y) · S(ns) · T(-bbc): always applied to user models.
+                    //
+                    // R(180°Y) rotates the model so its GLTF +Z axis (the face shown in
+                    // standard viewers) points toward geodetic North in ARCore's EUS frame
+                    // (EUS: X=East, Y=Up, Z=South → 180° around Y makes +Z face North).
+                    //
+                    // Combined column-major matrix = diag(-ns, ns, -ns, 1) with translation
+                    // column = R(180°Y)·S(ns)·(-bbc) = (ns·bbc.x, -ns·bbc.y, ns·bbc.z, 1).
+                    val cm = FloatArray(16)   // zero-initialised
+                    cm[0]  = -ns;  cm[5]  = ns;  cm[10] = -ns;  cm[15] = 1.0f
+                    cm[12] = ns * bbc[0]
+                    cm[13] = -ns * bbc[1]
+                    cm[14] = ns * bbc[2]
                     cached.correctionMatrix = cm
                 }
                 Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)" +
                     "  entities=${cached.asset.entities.size}" +
                     "  bbCenter=(%.2f,%.2f,%.2f)  halfExtent=(%.2f,%.2f,%.2f)" +
-                    "  normalizeScale=%.6f  center=%b".format(
-                        bbc[0], bbc[1], bbc[2], bbh[0], bbh[1], bbh[2], ns, needsCenter))
+                    "  ns=%.6f  center=%b  northFacing=%b".format(
+                        bbc[0], bbc[1], bbc[2], bbh[0], bbh[1], bbh[2],
+                        ns, needsCenter, !isTestKey))
             }
             // Asset is in scene — update its world transform every frame.
             val tm = engine.transformManager

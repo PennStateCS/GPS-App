@@ -117,8 +117,8 @@ dependencies {
     implementation("org.jmdns:jmdns:3.5.8")
 
     // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts)
-    // Excludes the bundled okhttp so it uses the version already on the classpath.
-    implementation("io.socket:socket.io-client:2.1.0") {
+    // RS2+ firmware runs socket.io v2 (EIO=3); client 2.x uses EIO=4 and is incompatible.
+    implementation("io.socket:socket.io-client:1.0.1") {
         exclude(group = "org.json", module = "json")
     }
 
