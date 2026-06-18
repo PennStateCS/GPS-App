@@ -21,6 +21,7 @@ import com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -35,6 +36,15 @@ class ModelsAdapter(
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
 
+    fun cleanup() { coroutineScope.cancel() }
+
+    /** Evict cached thumbnails for all current items, then notify so they reload from disk. */
+    fun evictAndRefreshThumbnails() {
+        currentList.forEach { model ->
+            model.thumbnailFilePath?.let { SimpleCoordinatesAdapter.evictThumbnail(it) }
+        }
+        notifyItemRangeChanged(0, itemCount)
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ModelViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.item_model, parent, false)
@@ -99,9 +109,14 @@ class ModelsAdapter(
             imageModelPlaceholder.visibility = View.VISIBLE
             progressPreview.visibility = View.GONE
 
+            // Tag the view so we can detect a stale bind after the IO hop
+            imageModelPreview.tag = model.id
+
             previewJob = coroutineScope.launch {
                 try {
                     val preview = withContext(Dispatchers.IO) { resolvePreview(model) }
+                    // Skip if the ViewHolder was rebound to a different model while loading
+                    if (imageModelPreview.tag != model.id) return@launch
                     if (preview != null) {
                         imageModelPreview.setImageBitmap(preview)
                         imageModelPreview.visibility = View.VISIBLE
@@ -126,12 +141,12 @@ class ModelsAdapter(
             if (thumbPath.isNullOrBlank()) return null
 
             val cacheKey = "thumb:$thumbPath"
+            SimpleCoordinatesAdapter.peekCache(cacheKey)?.let { return it }
+
             val file = File(thumbPath)
             if (!file.exists()) return null
 
             return try {
-                // Evict stale entry so we always read the latest version from disk
-                SimpleCoordinatesAdapter.evictThumbnail(thumbPath)
                 val bmp = BitmapFactory.decodeFile(thumbPath)
                 if (bmp != null) SimpleCoordinatesAdapter.putCache(cacheKey, bmp)
                 bmp

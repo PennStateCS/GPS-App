@@ -16,7 +16,10 @@ import com.example.surveyingapp.gnss.model.RtkStatus
     indices = [
         Index("timestamp"),                      // common query
         Index("provider"),                       // quick filter by source
-        Index(value = ["latitude","longitude"])  // lightweight spatial filter
+        Index(value = ["latitude","longitude"]), // lightweight spatial filter
+        Index("rtkStatus"),                      // filter by fix quality
+        Index("icon"),                           // count/filter by model icon
+        Index("horizontalAccuracyM")             // accuracy threshold queries
     ]
 )
 data class CoordinateEntity(

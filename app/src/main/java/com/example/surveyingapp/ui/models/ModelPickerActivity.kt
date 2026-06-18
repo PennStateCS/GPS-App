@@ -111,4 +111,9 @@ class ModelPickerActivity : AppCompatActivity() {
         val availableWidthDp = (dm.widthPixels / dm.density).toInt() - 32 // 16dp padding each side
         return maxOf(2, availableWidthDp / cardCellWidthDp)
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::adapter.isInitialized) adapter.cleanup()
+    }
 }

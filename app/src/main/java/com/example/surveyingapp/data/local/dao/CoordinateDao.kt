@@ -89,6 +89,18 @@ interface CoordinateDao {
     /** Returns the number of coordinates that use [modelId] as their icon ("model:<id>"). */
     @Query("SELECT COUNT(*) FROM coordinates WHERE icon = 'model:' || :modelId")
     suspend fun countByModelId(modelId: String): Int
+
+    @Query("SELECT * FROM coordinates WHERE name LIKE '%' || :query || '%' ORDER BY timestamp DESC")
+    suspend fun searchByName(query: String): List<CoordinateEntity>
+
+    @Query("SELECT * FROM coordinates WHERE horizontalAccuracyM IS NOT NULL AND horizontalAccuracyM <= :maxAccuracyM ORDER BY timestamp DESC")
+    suspend fun getWithMaxAccuracy(maxAccuracyM: Double): List<CoordinateEntity>
+
+    @Update
+    suspend fun updateAll(coordinates: List<CoordinateEntity>)
+
+    @Query("DELETE FROM coordinates WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
 }
 
 data class RtkStatusCount(
