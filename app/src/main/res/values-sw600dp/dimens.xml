@@ -6,5 +6,8 @@
     <dimen name="coord_horizontal_padding">24dp</dimen>
     <dimen name="settings_content_padding_h">24dp</dimen>
     <dimen name="page_content_padding">20dp</dimen>
+    <!-- Tighter row padding on tablet for a denser, more professional feel -->
+    <dimen name="settings_row_padding_v">11dp</dimen>
+    <dimen name="settings_content_row_padding_v">10dp</dimen>
 </resources>
 

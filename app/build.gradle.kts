@@ -116,6 +116,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jmdns:jmdns:3.5.8")
 
+    // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts)
+    // RS2+ firmware runs socket.io v2 (EIO=3); client 2.x uses EIO=4 and is incompatible.
+    implementation("io.socket:socket.io-client:1.0.1") {
+        exclude(group = "org.json", module = "json")
+    }
+
     // Desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 

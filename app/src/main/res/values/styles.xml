@@ -202,8 +202,7 @@
         Primary action – filled, full-width save / confirm buttons.
         Use for: all "Save" buttons at the bottom of settings pages,
                  "Add" / "Confirm" primary CTAs.
-        Current layouts: btn_save_ar_display, btn_save_diagnostics,
-                         btn_save_coordinate_display, btn_save_gnss_capture.
+        Current layouts: btn_save_ar_display.
     -->
     <style name="Widget.App.Button.Primary" parent="Widget.Material3.Button">
         <item name="android:layout_width">match_parent</item>
@@ -300,8 +299,10 @@
 
     <!--
         Supporting text in a settings row (the option description).
+        Uses BodyMedium (14 sp) rather than BodySmall (12 sp) so descriptions
+        stay readable and don't create a jarring size contrast with 16 sp titles.
     -->
-    <style name="TextAppearance.App.Settings.RowSupporting" parent="TextAppearance.App.Supporting" />
+    <style name="TextAppearance.App.Settings.RowSupporting" parent="TextAppearance.App.BodySecondary" />
 
 
     <!-- ══════════════════════════════════════════════════════════════════════

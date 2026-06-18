@@ -123,6 +123,17 @@ class OpenInARViewModel @Inject constructor(
     /** Toggle debug overlay on/off. */
     fun toggleDebug() { _debugVisible.update { !it } }
 
+    // ── AR debug visual toggles (runtime, reset each session) ─────────────────
+
+    private val _showPlanes     = MutableStateFlow(false)
+    private val _showPointCloud = MutableStateFlow(false)
+
+    val showPlanes:     StateFlow<Boolean> = _showPlanes.asStateFlow()
+    val showPointCloud: StateFlow<Boolean> = _showPointCloud.asStateFlow()
+
+    fun togglePlanes()     { _showPlanes.update { !it } }
+    fun togglePointCloud() { _showPointCloud.update { !it } }
+
     // ── High-accuracy GPS preference ──────────────────────────────────────────
 
     /**

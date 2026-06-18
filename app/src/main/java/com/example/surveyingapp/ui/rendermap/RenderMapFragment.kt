@@ -114,9 +114,8 @@ class RenderMapFragment : Fragment() {
     private val visibilityMap = mutableMapOf<String, Boolean>()
     private val coordinateMap = mutableMapOf<String, Coordinate>()
 
-    // Show/Hide All buttons (MaterialButton extends Button, cast is safe)
-    private var showAllBtn: Button? = null
-    private var hideAllBtn: Button? = null
+    // Visibility menu button in panel header
+    private var visibilityMenuBtn: ImageButton? = null
 
     // Map controls (now ImageButton not FAB, but we only need View methods)
     private var toggleSatBtn: ImageButton? = null
@@ -179,8 +178,7 @@ class RenderMapFragment : Fragment() {
         toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
         toggleSatBtn = root.findViewById(R.id.fab_toggle_sat)
         gridBtn = root.findViewById(R.id.fab_toggle_grid)
-        showAllBtn = root.findViewById(R.id.btn_show_all)
-        hideAllBtn = root.findViewById(R.id.btn_hide_all)
+        visibilityMenuBtn = root.findViewById(R.id.btn_visibility_menu)
         leftPanelSubtitle = root.findViewById(R.id.left_panel_subtitle)
 
         // Selected coord card
@@ -240,8 +238,7 @@ class RenderMapFragment : Fragment() {
 
         // Control button wiring
         toggleSatBtn?.setOnClickListener { showLayersMenu(it) }
-        showAllBtn?.setOnClickListener { showAllCoordinates() }
-        hideAllBtn?.setOnClickListener { hideAllCoordinates() }
+        visibilityMenuBtn?.setOnClickListener { showVisibilityMenu(it) }
         root.findViewById<View>(R.id.fab_recenter)?.setOnClickListener { recenterMap() }
         root.findViewById<View>(R.id.fab_zoom_in)?.setOnClickListener {
             googleMap?.animateCamera(CameraUpdateFactory.zoomIn())
@@ -699,6 +696,36 @@ class RenderMapFragment : Fragment() {
 
     // ── Coordinate visibility ──────────────────────────────────────────────────
 
+    private fun showVisibilityMenu(anchor: View) {
+        if (coordinateMap.isEmpty()) return
+        val popup = android.widget.PopupMenu(requireContext(), anchor)
+        popup.menu.add(0, 1, 0, "Show all")
+        popup.menu.add(0, 2, 1, "Hide all")
+        selectedCoordinateId?.let { popup.menu.add(0, 3, 2, "Show selected only") }
+        popup.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> showAllCoordinates()
+                2 -> hideAllCoordinates()
+                3 -> showSelectedOnly()
+            }
+            true
+        }
+        popup.show()
+    }
+
+    private fun showSelectedOnly() {
+        val selId = selectedCoordinateId ?: return
+        try {
+            coordinateMap.keys.forEach { id ->
+                val visible = id == selId
+                visibilityMap[id] = visible
+                try { markerMap[id]?.isVisible = visible } catch (_: Exception) {}
+            }
+            refreshToggleList()
+            updateVisibleCount()
+        } catch (e: Exception) { Log.w(TAG, "showSelectedOnly error", e) }
+    }
+
     private fun showAllCoordinates() {
         try {
             coordinateMap.keys.forEach { id ->
@@ -740,10 +767,10 @@ class RenderMapFragment : Fragment() {
         val visible = visibilityMap.values.count { it }
         val total = coordinateMap.size
         leftPanelSubtitle?.text = when {
-            total == 0    -> "No coordinates"
+            total == 0       -> "No coordinates"
             visible == total -> "All visible"
-            visible == 0  -> "All hidden"
-            else          -> "$visible of $total visible"
+            visible == 0     -> "None visible"
+            else             -> "$visible visible"
         }
     }
 

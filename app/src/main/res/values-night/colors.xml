@@ -12,6 +12,14 @@
     <color name="app_on_top_app_bar">#FFFFFF</color>
     <color name="app_status_strip">#0A1B2B</color>
     <color name="app_on_status_strip">#7DA8C8</color>
+    <color name="app_on_status_strip_variant">#5A8AB0</color>
+    <color name="app_status_separator">#55FFFFFF</color>
+
+    <!-- Semantic status colors – night (slightly lighter for dark bg contrast) -->
+    <color name="app_success">#43A047</color>
+    <color name="app_warning">#EF6C00</color>
+    <color name="app_error">#D32F2F</color>
+    <color name="app_info">#1976D2</color>
     <color name="app_primary">#8FC5FF</color>
     <color name="app_on_primary">#0F3A63</color>
     <color name="app_primary_container">#0F3A63</color>

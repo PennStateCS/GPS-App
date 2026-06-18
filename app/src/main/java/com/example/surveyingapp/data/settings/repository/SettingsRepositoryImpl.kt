@@ -9,7 +9,6 @@ import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.AppThemeMode
 import com.example.surveyingapp.gnss.settings.AppearanceSettings
@@ -101,15 +100,16 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.arDistanceFilterIndex,
         local.arShowDebugOverlay,
         local.arShowLabels,
-        combine(local.arShowOffscreenArrows, local.arModelScale) { arrows, scale -> arrows to scale }
-    ) { altitude, filterIdx, debug, labels, (arrows, scale) ->
+        combine(local.arShowOffscreenArrows, local.arModelScale, local.arDebugToolsEnabled) { arrows, scale, debug -> Triple(arrows, scale, debug) }
+    ) { altitude, filterIdx, debug, labels, (arrows, scale, debugTools) ->
         ArDisplaySettings(
             altitudeMode         = altitude,
             distanceFilterIndex  = filterIdx.coerceIn(0, 3),
             showDebugOverlay     = debug,
             showLabels           = labels,
             showOffscreenArrows  = arrows,
-            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: 2.0f
+            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: 2.0f,
+            showArDebugTools     = debugTools
         )
     }
 
@@ -120,6 +120,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setArShowLabels(settings.showLabels)
         local.setArShowOffscreenArrows(settings.showOffscreenArrows)
         local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
+        local.setArDebugToolsEnabled(settings.showArDebugTools)
     }
 
     // Coordinate display
@@ -139,22 +140,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setShowAccuracyIndicators(settings.showAccuracyIndicators)
         local.setDefaultCoordinateNamePrefix(settings.defaultNamePrefix)
         local.setAutoIncrementCoordinateNames(settings.autoIncrementNames)
-    }
-
-    // Diagnostics
-    override val diagnosticsSettings: Flow<DiagnosticsSettings> = combine(
-        local.diagShowRawNmea,
-        local.diagShowSatelliteDiag
-    ) { showRaw, showSat ->
-        DiagnosticsSettings(
-            showRawNmea              = showRaw,
-            showSatelliteDiagnostics = showSat
-        )
-    }
-
-    override suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings) {
-        local.setDiagShowRawNmea(settings.showRawNmea)
-        local.setDiagShowSatelliteDiag(settings.showSatelliteDiagnostics)
     }
 
     // Mock location publishing
@@ -179,10 +164,25 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     // Appearance
     override val appearanceSettings: Flow<AppearanceSettings> =
-        local.appThemeModeRaw.map { AppearanceSettings(themeMode = it.toAppThemeMode()) }
+        combine(
+            local.appThemeModeRaw,
+            local.showLiveGnssStatusBar,
+            local.keepScreenAwake,
+            local.maxBrightnessWhileOpen
+        ) { theme, showStrip, keepAwake, maxBright ->
+            AppearanceSettings(
+                themeMode              = theme.toAppThemeMode(),
+                showLiveGnssStatusBar  = showStrip,
+                keepScreenAwake        = keepAwake,
+                maxBrightnessWhileOpen = maxBright
+            )
+        }
 
     override suspend fun setAppearanceSettings(settings: AppearanceSettings) {
         local.setAppThemeModeString(settings.themeMode.name)
+        local.setShowLiveGnssStatusBar(settings.showLiveGnssStatusBar)
+        local.setKeepScreenAwake(settings.keepScreenAwake)
+        local.setMaxBrightnessWhileOpen(settings.maxBrightnessWhileOpen)
     }
 
     private fun String.toAppThemeMode(): AppThemeMode = when (this) {

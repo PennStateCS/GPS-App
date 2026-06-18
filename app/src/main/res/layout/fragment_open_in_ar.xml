@@ -43,6 +43,57 @@
 
     <!-- ── Floating toolbar ───────────────────────────────────────────────── -->
 
+    <!-- Back button — top-left, always visible, exits AR -->
+    <LinearLayout
+        android:id="@+id/btnArBack"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="12dp"
+        android:layout_marginStart="12dp"
+        android:background="@drawable/bg_ar_chip"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="10dp"
+        android:paddingEnd="14dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="Exit AR">
+        <ImageView
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:src="@drawable/ic_arrow_back"
+            android:tint="@color/ar_overlay_text"
+            android:importantForAccessibility="no" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:text="Back"
+            android:textColor="@color/ar_overlay_text"
+            android:textSize="13sp"
+            android:fontFamily="sans-serif-medium"
+            android:importantForAccessibility="no" />
+    </LinearLayout>
+
+    <!-- AR GNSS status chip — top-left, below Back button -->
+    <TextView
+        android:id="@+id/chipArGnssStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="68dp"
+        android:layout_marginStart="12dp"
+        android:text="Acquiring…"
+        android:textColor="@color/ar_overlay_text"
+        android:textSize="11sp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="5dp"
+        android:background="@drawable/bg_ar_chip"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
     <!--
         Toggle button — always visible in the top-right corner.
         Tapping shows or hides the full toolbar card below it.
@@ -223,35 +274,109 @@
                     android:gravity="center" />
             </LinearLayout>
 
-            <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
-
-            <!-- Debug Overlay -->
+            <!-- Debug tools group: hidden unless AR Debug Tools setting is on -->
             <LinearLayout
-                android:id="@+id/btnToggleDebugOverlay"
+                android:id="@+id/arDebugToolsGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:gravity="center"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                android:background="@drawable/ripple_ar_toolbar_btn"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Toggle debug overlay">
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_ar_debug"
-                    android:importantForAccessibility="no" />
-                <TextView
-                    android:id="@+id/txtDebugOverlay"
-                    android:layout_width="wrap_content"
+                android:visibility="gone">
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+                <!-- Planes toggle -->
+                <LinearLayout
+                    android:id="@+id/btnTogglePlanes"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="Debug"
-                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
-                    android:gravity="center" />
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:background="@drawable/ripple_ar_toolbar_btn"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Show detected planes">
+                    <ImageView
+                        android:id="@+id/iconTogglePlanes"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_ar_menu"
+                        android:importantForAccessibility="no" />
+                    <TextView
+                        android:id="@+id/txtTogglePlanes"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="Planes"
+                        android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:gravity="center" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+                <!-- Point cloud toggle -->
+                <LinearLayout
+                    android:id="@+id/btnTogglePointCloud"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:background="@drawable/ripple_ar_toolbar_btn"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Show AR point cloud">
+                    <ImageView
+                        android:id="@+id/iconTogglePointCloud"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_satellite_24"
+                        android:importantForAccessibility="no" />
+                    <TextView
+                        android:id="@+id/txtTogglePointCloud"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="Points"
+                        android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:gravity="center" />
+                </LinearLayout>
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+                <!-- Debug Overlay toggle -->
+                <LinearLayout
+                    android:id="@+id/btnToggleDebugOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:background="@drawable/ripple_ar_toolbar_btn"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Show AR debug overlay">
+                    <ImageView
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_ar_debug"
+                        android:importantForAccessibility="no" />
+                    <TextView
+                        android:id="@+id/txtDebugOverlay"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="Debug"
+                        android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:gravity="center" />
+                </LinearLayout>
+
             </LinearLayout>
 
         </LinearLayout>

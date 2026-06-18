@@ -28,6 +28,9 @@
     <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Required so this app appears in Developer Options → Select mock location app -->
+    <uses-permission android:name="android.permission.ACCESS_MOCK_LOCATION" />
+
     <!-- Network (for map tiles, TCP GNSS, etc.) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
