@@ -67,6 +67,9 @@ interface CoordinateDao {
     @Query("SELECT COUNT(*) FROM coordinates")
     suspend fun count(): Int
 
+    @Query("SELECT COUNT(*) FROM coordinates")
+    fun observeCoordinateCount(): Flow<Int>
+
     @Query("DELETE FROM coordinates WHERE timestamp < :olderThanMs")
     suspend fun deleteOlderThan(olderThanMs: Long)
 

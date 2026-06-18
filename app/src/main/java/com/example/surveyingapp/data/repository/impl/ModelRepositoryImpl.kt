@@ -25,6 +25,8 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         }
     }
 
+    fun observeModelCount(): kotlinx.coroutines.flow.Flow<Int> = modelDao.observeModelCount()
+
     fun getAllModels(): Flow<List<Model>> = modelDao.getAllModels().map { entities ->
         entities.map { entity ->
             Model(
