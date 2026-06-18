@@ -15,4 +15,8 @@
     <dimen name="settings_content_padding_h">24dp</dimen>
     <!-- Responsive padding for general page content -->
     <dimen name="page_content_padding">16dp</dimen>
+    <!-- Vertical padding for setting rows (item_settings_row). Tablet override: 11dp -->
+    <dimen name="settings_row_padding_v">16dp</dimen>
+    <!-- Vertical padding for inline rows inside content_settings pages. Tablet override: 10dp -->
+    <dimen name="settings_content_row_padding_v">14dp</dimen>
 </resources>

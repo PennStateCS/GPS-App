@@ -101,15 +101,16 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.arDistanceFilterIndex,
         local.arShowDebugOverlay,
         local.arShowLabels,
-        combine(local.arShowOffscreenArrows, local.arModelScale) { arrows, scale -> arrows to scale }
-    ) { altitude, filterIdx, debug, labels, (arrows, scale) ->
+        combine(local.arShowOffscreenArrows, local.arModelScale, local.arDebugToolsEnabled) { arrows, scale, debug -> Triple(arrows, scale, debug) }
+    ) { altitude, filterIdx, debug, labels, (arrows, scale, debugTools) ->
         ArDisplaySettings(
             altitudeMode         = altitude,
             distanceFilterIndex  = filterIdx.coerceIn(0, 3),
             showDebugOverlay     = debug,
             showLabels           = labels,
             showOffscreenArrows  = arrows,
-            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: 2.0f
+            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: 2.0f,
+            showArDebugTools     = debugTools
         )
     }
 
@@ -120,6 +121,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setArShowLabels(settings.showLabels)
         local.setArShowOffscreenArrows(settings.showOffscreenArrows)
         local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
+        local.setArDebugToolsEnabled(settings.showArDebugTools)
     }
 
     // Coordinate display
@@ -179,10 +181,25 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     // Appearance
     override val appearanceSettings: Flow<AppearanceSettings> =
-        local.appThemeModeRaw.map { AppearanceSettings(themeMode = it.toAppThemeMode()) }
+        combine(
+            local.appThemeModeRaw,
+            local.showLiveGnssStatusBar,
+            local.keepScreenAwake,
+            local.maxBrightnessWhileOpen
+        ) { theme, showStrip, keepAwake, maxBright ->
+            AppearanceSettings(
+                themeMode              = theme.toAppThemeMode(),
+                showLiveGnssStatusBar  = showStrip,
+                keepScreenAwake        = keepAwake,
+                maxBrightnessWhileOpen = maxBright
+            )
+        }
 
     override suspend fun setAppearanceSettings(settings: AppearanceSettings) {
         local.setAppThemeModeString(settings.themeMode.name)
+        local.setShowLiveGnssStatusBar(settings.showLiveGnssStatusBar)
+        local.setKeepScreenAwake(settings.keepScreenAwake)
+        local.setMaxBrightnessWhileOpen(settings.maxBrightnessWhileOpen)
     }
 
     private fun String.toAppThemeMode(): AppThemeMode = when (this) {

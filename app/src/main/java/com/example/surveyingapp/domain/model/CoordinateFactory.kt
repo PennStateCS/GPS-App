@@ -108,8 +108,18 @@ object CoordinateFactory {
         color: Int,
         iconId: String,
         provider: Provider,
-        result: CaptureResult
+        result: CaptureResult,
+        captureMethod: String? = null,
+        sourceDevice: String? = null
     ): Coordinate {
+        val providerStr = when (provider) {
+            Provider.INTERNAL     -> "fused"
+            Provider.RS2_EXTERNAL -> "rs2-tcp"
+            Provider.RS2_TCP      -> "rs2-tcp"
+            Provider.RS2_BT       -> "rs2-bt"
+            Provider.MODEL        -> "model"
+            Provider.OTHER        -> "other"
+        }
         val utm = runCatching { UtmConverter.latLonToUtm(result.latDeg, result.lonDeg) }.getOrNull()
         return Coordinate(
             id                  = id,
@@ -120,7 +130,7 @@ object CoordinateFactory {
             timestamp           = result.endedAt.toEpochMilli(),
             icon                = iconId,
             color               = color,
-            provider            = provider.name,
+            provider            = providerStr,
             rtkStatus           = result.rtkStatus?.name,
             satsUsed            = result.satsUsed,
             satsVisible         = result.satsVisible,
@@ -137,7 +147,9 @@ object CoordinateFactory {
             utmZone             = utm?.utmZone,
             averagedSamples     = result.samples,
             averageDurationMs   = Duration.between(result.startedAt, result.endedAt).toMillis(),
-            note                = note
+            note                = note,
+            captureMethod       = captureMethod,
+            sourceDevice        = sourceDevice
         )
     }
 

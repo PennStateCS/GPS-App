@@ -65,7 +65,7 @@
                     android:minHeight="64dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
-                    android:paddingVertical="14dp">
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -88,7 +88,7 @@
                     android:minHeight="64dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
-                    android:paddingVertical="14dp">
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
 
                     <TextView
                         android:layout_width="match_parent"
@@ -133,7 +133,7 @@
                     android:paddingBottom="16dp"
                     android:paddingTop="4dp"
                     android:text="RTK GNSS capture with averaging · AR pin placement via ARCore Geospatial API · 3D model import and placement · Map view with coordinate overlay · Mock location publishing for third-party apps"
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -169,7 +169,7 @@
                     android:paddingHorizontal="20dp"
                     android:paddingVertical="16dp"
                     android:text="This app uses ARCore (Google), osmdroid (OpenStreetMap), and other open-source components. See the licenses file for details."
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

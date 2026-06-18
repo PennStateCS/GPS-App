@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#666666"/>
-    <corners android:radius="12dp"/>
-    <padding android:left="4dp" android:top="2dp" android:right="4dp" android:bottom="2dp"/>
+<!-- Background shape for coordinate status badges.
+     Color is always overridden at runtime via backgroundTintList; the solid
+     color here is just a placeholder visible in the layout editor. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#607D8B" />
+    <corners android:radius="6dp" />
 </shape>
-

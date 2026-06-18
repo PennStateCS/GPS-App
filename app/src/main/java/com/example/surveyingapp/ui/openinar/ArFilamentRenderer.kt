@@ -90,7 +90,14 @@ class ArFilamentRenderer {
          * bypasses this: mesh buffers are uploaded synchronously inside asyncBeginLoad(), so
          * after a few vsync ticks the GPU data is resident and safe to render.
          */
-        var ticksSinceLoad: Int = 0
+        var ticksSinceLoad: Int = 0,
+        /**
+         * Combined centering + normalization matrix applied to the world transform each frame
+         * for imported models whose geometry is far from origin or whose units are non-metric.
+         * Null = no correction needed (model is well-formed or is a test-grid asset).
+         * Computed once when the asset is first added to the scene.
+         */
+        var correctionMatrix: FloatArray? = null
     )
 
     private lateinit var engine: Engine
@@ -372,12 +379,53 @@ class ArFilamentRenderer {
                 val reason = if (readyByProgress) "progress=1.0" else "ticks=${cached.ticksSinceLoad}"
                 cached.addedToScene = true
                 scene.addEntities(cached.asset.entities)
-                Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)  entities=${cached.asset.entities.size}")
+                val bb = cached.asset.boundingBox
+                val bbc = bb.center
+                val bbh = bb.halfExtent
+                val maxHalfExtent = maxOf(bbh[0], bbh[1], bbh[2])
+                // Normalize scale: compress models whose halfExtent implies non-metric units
+                // (e.g. exported in feet, cm, or with absolute coords baked in).
+                val ns = if (maxHalfExtent > BB_NORMALIZE_THRESHOLD_M)
+                    1.0f / (maxHalfExtent * 2f) else 1.0f
+                // Center: pull models whose geometry is far from their local origin back
+                // to the anchor.  Small offsets (< BB_CENTER_THRESHOLD_M) are left alone
+                // so models intentionally pivoted at their base remain ground-level.
+                val needsCenter = !pose.key.startsWith(TEST_GRID_KEY_PREFIX) && (
+                    Math.abs(bbc[0]) > BB_CENTER_THRESHOLD_M ||
+                    Math.abs(bbc[1]) > BB_CENTER_THRESHOLD_M ||
+                    Math.abs(bbc[2]) > BB_CENTER_THRESHOLD_M)
+                if (needsCenter || ns != 1.0f) {
+                    // Combined S(ns) * T(-bbCenter): scales geometry and translates so
+                    // the bounding-box centre maps to the anchor world position.
+                    val cm = FloatArray(16)
+                    Matrix.setIdentityM(cm, 0)
+                    cm[0]  = ns;  cm[5]  = ns;  cm[10] = ns
+                    cm[12] = -bbc[0] * ns
+                    cm[13] = -bbc[1] * ns
+                    cm[14] = -bbc[2] * ns
+                    cached.correctionMatrix = cm
+                }
+                Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)" +
+                    "  entities=${cached.asset.entities.size}" +
+                    "  bbCenter=(%.2f,%.2f,%.2f)  halfExtent=(%.2f,%.2f,%.2f)" +
+                    "  normalizeScale=%.6f  center=%b".format(
+                        bbc[0], bbc[1], bbc[2], bbh[0], bbh[1], bbh[2], ns, needsCenter))
             }
             // Asset is in scene — update its world transform every frame.
             val tm = engine.transformManager
             val ti = tm.getInstance(cached.asset.root)
-            tm.setTransform(ti, pose.worldMatrix)
+            if (ti == 0) {
+                Log.e(DIAG, "  pose ${pose.key} → root entity has NO transform component!")
+                continue
+            }
+            val cm = cached.correctionMatrix
+            if (cm != null) {
+                val corrected = FloatArray(16)
+                Matrix.multiplyMM(corrected, 0, pose.worldMatrix, 0, cm, 0)
+                tm.setTransform(ti, corrected)
+            } else {
+                tm.setTransform(ti, pose.worldMatrix)
+            }
         }
     }
 
@@ -516,5 +564,17 @@ class ArFilamentRenderer {
          * asyncBeginLoad() to drain through the Filament backend command queue.
          */
         private const val MIN_TICKS_BEFORE_SCENE_ADD = 5
+        /**
+         * Bounding-box half-extent threshold (metres) above which the model is assumed to be
+         * in non-metric units and is normalised to a 1-metre reference size.
+         * Models like survey pins exported in cm/feet/absolute-coords trigger this.
+         */
+        private const val BB_NORMALIZE_THRESHOLD_M = 50.0f
+        /**
+         * Bounding-box centre threshold (metres) above which the model's geometry is considered
+         * offset from its local origin and the centre is snapped to the anchor position.
+         * Models pivoted intentionally at their base (small offset) are left unchanged.
+         */
+        private const val BB_CENTER_THRESHOLD_M = 1.0f
     }
 }
