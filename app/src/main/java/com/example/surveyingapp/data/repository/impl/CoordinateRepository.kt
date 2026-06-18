@@ -30,6 +30,8 @@ class CoordinateRepositoryImpl(
     override val allCoordinatesFlow: Flow<List<Coordinate>> =
         coordinateDao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
+    val coordinateCountFlow: Flow<Int> = coordinateDao.observeCoordinateCount()
+
     // Basic CRUD operations
     override suspend fun insert(coordinate: Coordinate) {
         coordinateDao.insert(coordinate.toEntity())

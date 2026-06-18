@@ -51,6 +51,8 @@ import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+private const val LOG_GNSS_UI = false
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
@@ -553,7 +555,7 @@ class MainActivity : AppCompatActivity() {
                             LocationSourceType.EXTERNAL
                         }
 
-                        android.util.Log.d("MainActivity", "Updating status tokens: provider=$provider, source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
+                        if (LOG_GNSS_UI) android.util.Log.d("MainActivity", "Updating status tokens: provider=$provider, source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
 
                         withContext(Dispatchers.Main) {
                             updateStatusTokens(source, fix, sky)
