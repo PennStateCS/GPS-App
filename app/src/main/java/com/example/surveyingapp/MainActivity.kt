@@ -2,10 +2,9 @@ package com.example.surveyingapp
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -95,6 +94,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tokenSource: TokenViews
     private lateinit var tokenFix: TokenViews
     private lateinit var tokenSats: TokenViews
+    private lateinit var tokenAcc: TokenViews
     private lateinit var tokenCoord: TokenViews
     private lateinit var tokenAlt: TokenViews
     private lateinit var tokenBatt: TokenViews
@@ -102,6 +102,10 @@ class MainActivity : AppCompatActivity() {
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null
     private var batteryFillClip: ClipDrawable? = null
+
+    // AR mode: true while the AR fragment is the current destination
+    private var isArMode = false
+    private var gnssStripCachedShow = true
 
     // Prevent repeated essential permission dialogs while one is already showing
     private var showingEssentialRationale: Boolean = false
@@ -152,14 +156,16 @@ class MainActivity : AppCompatActivity() {
         tokenSource = findToken(R.id.token_source)
         tokenFix    = findToken(R.id.token_fix)
         tokenSats   = findToken(R.id.token_sats)
+        tokenAcc    = findToken(R.id.token_acc)
         tokenCoord  = findToken(R.id.token_coord)
         tokenAlt    = findToken(R.id.token_alt)
         tokenBatt   = findToken(R.id.token_batt)
 
         // Static labels
         tokenSource.label.setText(R.string.status_token_src)
-        tokenFix.label.setText(R.string.status_token_fix)
+        tokenFix.label.text = ""   // dynamic: "GPS" / "RTK Float" / etc.
         tokenSats.label.setText(R.string.status_token_sats)
+        tokenAcc.label.setText(R.string.status_token_hacc)
         tokenCoord.label.setText(R.string.status_token_ll)
         tokenAlt.label.setText(R.string.status_token_alt)
 
@@ -176,8 +182,9 @@ class MainActivity : AppCompatActivity() {
         moveBatteryIconToRight()
         tokenBatt.root.isVisible = false
 
-        // Trailing separators
+        // Trailing separators (managed dynamically in updateStatusTokens)
         tokenSats.separator?.isVisible = false
+        tokenAcc.separator?.isVisible = false
         tokenAlt.separator?.isVisible = false
         tokenBatt.separator?.isVisible = false
 
@@ -212,7 +219,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
-            if (destination.id == R.id.nav_open_in_ar) {
+            val isAr = destination.id == R.id.nav_open_in_ar
+            applyArModeChrome(isAr)
+            if (isAr) {
                 navHostFragment.childFragmentManager.executePendingTransactions()
             }
         }
@@ -230,24 +239,24 @@ class MainActivity : AppCompatActivity() {
             
             // Set initial source label
             tokenSource.value.text = srcLabel
-            tokenSource.separator?.isVisible = !isInternal
-            
-            // Set visibility based on source type
-            tokenFix.root.isVisible = !isInternal
-            if (!isInternal) {
-                tokenFix.value.text = "--"
-                tokenFix.value.setTextColor(0xFF9E9E9E.toInt())
-            }
-            
+            tokenSource.separator?.isVisible = true
+
+            // SOL token: show placeholder for both internal and external
+            tokenFix.root.isVisible = true
+            tokenFix.label.text = "SOL"
+            tokenFix.value.text = "--"
+            tokenFix.value.setTextColor(getColor(R.color.app_on_status_strip_variant))
+
             tokenSats.root.isVisible = false // Hidden until first fix with sat data
-            
+            tokenAcc.root.isVisible = false  // Hidden until first fix with accuracy data
+
             // Show coordinate placeholder
             tokenCoord.value.text = "--"
             tokenCoord.root.isVisible = true
-            
+
             // Hide altitude until first fix
             tokenAlt.root.isVisible = false
-            
+
             // Battery only for external
             tokenBatt.root.isVisible = false
             updateBatteryVisibility(!isInternal)
@@ -465,6 +474,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun applyArModeChrome(isAr: Boolean) {
+        isArMode = isAr
+        if (isAr) {
+            supportActionBar?.hide()
+            binding.drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
+            findViewById<View>(R.id.location_status_bar)?.visibility = View.GONE
+        } else {
+            supportActionBar?.show()
+            binding.drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED)
+            findViewById<View>(R.id.location_status_bar)?.visibility =
+                if (gnssStripCachedShow) View.VISIBLE else View.GONE
+        }
+    }
+
+    /**
+     * Applies window-level display behaviour from Appearance settings.
+     * Must be called on the main thread.
+     *
+     * keepScreenAwake   → FLAG_KEEP_SCREEN_ON add/clear (no system setting changed)
+     * maxBrightnessWhileOpen → window.attributes.screenBrightness 1.0f / BRIGHTNESS_OVERRIDE_NONE
+     *   Uses app-window brightness only — does not require WRITE_SETTINGS permission and
+     *   does not change the Android system brightness permanently.
+     */
+    private fun applyDisplayBehaviorSettings(settings: com.example.surveyingapp.gnss.settings.AppearanceSettings) {
+        if (settings.keepScreenAwake) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        val lp = window.attributes
+        lp.screenBrightness = if (settings.maxBrightnessWhileOpen) 1.0f
+                              else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        window.attributes = lp
+    }
+
     /** Status bar observers */
     private fun startStatusBarObservers() {
 
@@ -539,6 +583,34 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+            }
+        }
+
+        // Show/hide the entire status bar based on Appearance setting (suppressed while in AR)
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepository.appearanceSettings
+                    .map { it.showLiveGnssStatusBar }
+                    .distinctUntilChanged()
+                    .collect { show ->
+                        gnssStripCachedShow = show
+                        if (!isArMode) {
+                            findViewById<View>(R.id.location_status_bar)?.visibility =
+                                if (show) View.VISIBLE else View.GONE
+                        }
+                    }
+            }
+        }
+
+        // Apply Field Display settings (keep awake + max brightness) whenever they change.
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepository.appearanceSettings
+                    .distinctUntilChanged { a, b ->
+                        a.keepScreenAwake == b.keepScreenAwake &&
+                        a.maxBrightnessWhileOpen == b.maxBrightnessWhileOpen
+                    }
+                    .collect { settings -> applyDisplayBehaviorSettings(settings) }
             }
         }
     }
@@ -791,105 +863,91 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val srcLabel = if (source == LocationSourceType.INTERNAL) "Internal" else "RS2+"
-        tokenSource.value.text = srcLabel
-
         val isInternal = source == LocationSourceType.INTERNAL
-        tokenSource.separator?.isVisible = !isInternal
+        val srcLabel = if (isInternal) "Internal" else "RS2+"
+        tokenSource.value.text = srcLabel
+        tokenSource.separator?.isVisible = true
 
-        if (isInternal) {
-            // Internal GPS: Hide FIX/SATS tokens entirely
-            tokenFix.root.isVisible = false
-            tokenSats.root.isVisible = false
-            // Hide battery immediately when internal
-            updateBatteryVisibility(false)
-
-            // Coordinates with validation
-            val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
-            val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
-            tokenCoord.value.text = "$latStr, $lonStr"
-            tokenCoord.root.isVisible = true
-
-            // Altitude: prefer MSL if available, validate range
-            val altMsl = fix.altMslM
-            val altEllip = fix.altEllipsoidalM
-            when {
-                altMsl != null && altMsl in -500.0..10000.0 -> {
-                    tokenAlt.value.text = String.format(Locale.US, "%.2fm", altMsl)
-                    tokenAlt.root.isVisible = true
-                }
-                altEllip != null && altEllip in -500.0..10000.0 -> {
-                    tokenAlt.value.text = String.format(Locale.US, "%.2fm", altEllip)
-                    tokenAlt.root.isVisible = true
-                }
-                else -> tokenAlt.root.isVisible = false
-            }
-            return
-        }
-
-        // External (RS2+): Show FIX and SATS tokens
+        // --- FIX token (shown for both internal and external) ---
         tokenFix.root.isVisible = true
-        val (fixLabel, fixColor) = when (fix.rtkStatus) {
-            RtkStatus.NONE    -> "--"      to 0xFF9E9E9E.toInt()
-            RtkStatus.SINGLE  -> "Single"  to 0xFFFF5722.toInt()
-            RtkStatus.DGPS    -> "DGPS"    to 0xFFFF9800.toInt()
-            RtkStatus.FLOAT   -> "Float"   to 0xFF2196F3.toInt()
-            RtkStatus.FIX     -> "Fixed"   to 0xFF4CAF50.toInt()
-            RtkStatus.DEAD_RECKONING -> "DR" to 0xFFFF9800.toInt()
-            RtkStatus.INVALID -> "Invalid" to 0xFFF44336.toInt()
+        val (fixLabel, fixColor) = if (isInternal) {
+            when (fix.rtkStatus) {
+                RtkStatus.NONE, RtkStatus.INVALID -> "No Fix" to getColor(R.color.app_error)
+                else -> "GPS" to getColor(R.color.app_success)
+            }
+        } else {
+            when (fix.rtkStatus) {
+                RtkStatus.NONE    -> "No Fix"     to getColor(R.color.app_error)
+                RtkStatus.SINGLE  -> "GPS"        to getColor(R.color.app_warning)
+                RtkStatus.DGPS    -> "DGPS"       to getColor(R.color.app_info)
+                RtkStatus.FLOAT   -> "RTK Float"  to getColor(R.color.app_warning)
+                RtkStatus.FIX     -> "RTK Fixed"  to getColor(R.color.app_success)
+                RtkStatus.DEAD_RECKONING -> "DR"  to getColor(R.color.app_warning)
+                RtkStatus.INVALID -> "No Fix"     to getColor(R.color.app_error)
+            }
         }
+        tokenFix.label.text = "SOL"
         tokenFix.value.text = fixLabel
         tokenFix.value.setTextColor(fixColor)
 
-        // Satellites: Use SkySnapshot data (GSV) for consistency with Developer Tools
-        // Fallback to Fix data (GGA) if SkySnapshot has no data yet
+        // --- SATS token ---
         val used = if (sky.totalUsed > 0) sky.totalUsed else fix.satsUsed.coerceIn(0, 100)
         val vis = if (sky.totalVisible > 0) sky.totalVisible else (fix.satsVisible ?: used).coerceIn(used, 100)
-
-        if (used > 0 || vis > 0) {
+        val satsVisible = used > 0 || vis > 0
+        if (satsVisible) {
             tokenSats.value.text = "$used/$vis"
             tokenSats.root.isVisible = true
         } else {
-            // Even for RS2+, hide sats if zero (waiting for first fix)
             tokenSats.root.isVisible = false
         }
 
-        // Coordinates with validation
+        // --- ACC token (horizontal accuracy) ---
+        val hAcc = fix.hAccM
+        val accVisible = hAcc != null && hAcc in 0.0..9999.0
+        if (accVisible && hAcc != null) {
+            tokenAcc.value.text = "±${String.format(Locale.US, "%.2f", hAcc)} m"
+            val accColor = when {
+                hAcc <= 0.05 -> getColor(R.color.app_success)
+                hAcc <= 0.30 -> getColor(R.color.app_success)
+                hAcc <= 1.0  -> getColor(R.color.app_warning)
+                else         -> getColor(R.color.app_error)
+            }
+            tokenAcc.value.setTextColor(accColor)
+            tokenAcc.root.isVisible = true
+        } else {
+            tokenAcc.root.isVisible = false
+        }
+
+        // Separator between SATS and ACC: visible only when both are shown
+        tokenSats.separator?.isVisible = satsVisible && accVisible
+        tokenAcc.separator?.isVisible = false
+
+        // --- Battery contentDescription ---
+        tokenBatt.icon.contentDescription = if (isInternal) "device battery" else "receiver battery"
+        if (isInternal) updateBatteryVisibility(false)
+
+        // --- Coordinates ---
         val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
         val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
         tokenCoord.value.text = "$latStr, $lonStr"
         tokenCoord.root.isVisible = true
 
-        // Altitude: prefer MSL, else ellipsoidal, validate range
+        // --- Altitude: prefer MSL, else ellipsoidal, validate range ---
         val altMsl = fix.altMslM
         val altEllip = fix.altEllipsoidalM
         when {
             altMsl != null && altMsl in -500.0..10000.0 -> {
-                tokenAlt.value.text = String.format(Locale.US, "%.2fm", altMsl)
+                tokenAlt.value.text = String.format(Locale.US, "%.2f m", altMsl)
                 tokenAlt.root.isVisible = true
             }
             altEllip != null && altEllip in -500.0..10000.0 -> {
-                tokenAlt.value.text = String.format(Locale.US, "%.2fm", altEllip)
+                tokenAlt.value.text = String.format(Locale.US, "%.2f m", altEllip)
                 tokenAlt.root.isVisible = true
             }
             else -> tokenAlt.root.isVisible = false
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_replay -> {
-                showNmeaFileSelectionDialog()
-                true
-            }
-else -> super.onOptionsItemSelected(item)
-        }
-    }
 
     /**
      * Shows a dialog to select available NMEA files from assets and start replay

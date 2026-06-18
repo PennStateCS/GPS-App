@@ -94,6 +94,7 @@ class ReachDeviceRepository @Inject constructor(
     private var isPolling = false
     private var reconnectAttempts = 0
     private val maxReconnectAttempts = 3
+    private var correctionsService: ReachCorrectionsService? = null
 
     init {
         scope.launch {
@@ -113,14 +114,38 @@ class ReachDeviceRepository @Inject constructor(
         isPolling = true
         scope.launch { pollBattery() }
         scope.launch { pollDevice() }
-        scope.launch { pollCorrections() }
+        startCorrectionsSocket()
     }
 
     private fun stopPolling() {
         isPolling = false
+        stopCorrectionsSocket()
         _batteryInfo.value = null
         _deviceInfo.value = null
         _correctionsInfo.value = null
+    }
+
+    private fun startCorrectionsSocket() {
+        scope.launch {
+            val ip = getReachIp() ?: return@launch
+
+            stopCorrectionsSocket()
+
+            val svc = ReachCorrectionsService(ip)
+            correctionsService = svc
+            svc.connect()
+
+            // Forward the service's StateFlow into the repository's own StateFlow so
+            // existing observers of correctionsInfo continue to work unchanged.
+            svc.correctionsInfo.collect { info ->
+                _correctionsInfo.value = info
+            }
+        }
+    }
+
+    private fun stopCorrectionsSocket() {
+        correctionsService?.disconnect()
+        correctionsService = null
     }
 
     private suspend fun pollBattery() {
@@ -215,20 +240,6 @@ class ReachDeviceRepository @Inject constructor(
             totalSeconds
         } catch (e: Exception) {
             null
-        }
-    }
-
-    private suspend fun pollCorrections() {
-        while (isPolling) {
-            val ip = getReachIp()
-            if (ip == null) {
-                _correctionsInfo.value = null
-            } else {
-                val client = ReachHttpClient(ip)
-                val service = ReachCorrectionsService(client)
-                _correctionsInfo.value = runCatching { service.read() }.getOrNull()
-            }
-            delay(5_000) // Poll corrections more frequently (every 5 seconds) since age/baseline changes often
         }
     }
 

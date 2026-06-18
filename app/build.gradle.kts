@@ -116,6 +116,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jmdns:jmdns:3.5.8")
 
+    // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts)
+    // Excludes the bundled okhttp so it uses the version already on the classpath.
+    implementation("io.socket:socket.io-client:2.1.0") {
+        exclude(group = "org.json", module = "json")
+    }
+
     // Desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 

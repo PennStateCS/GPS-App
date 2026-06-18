@@ -300,8 +300,10 @@
 
     <!--
         Supporting text in a settings row (the option description).
+        Uses BodyMedium (14 sp) rather than BodySmall (12 sp) so descriptions
+        stay readable and don't create a jarring size contrast with 16 sp titles.
     -->
-    <style name="TextAppearance.App.Settings.RowSupporting" parent="TextAppearance.App.Supporting" />
+    <style name="TextAppearance.App.Settings.RowSupporting" parent="TextAppearance.App.BodySecondary" />
 
 
     <!-- ══════════════════════════════════════════════════════════════════════

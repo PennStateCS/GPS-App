@@ -11,7 +11,7 @@
     android:paddingTop="6dp"
     android:paddingBottom="6dp">
 
-    <!-- LEFT GROUP: Source + Fix + Sats (left-aligned) -->
+    <!-- LEFT GROUP: Source + Status + Sats + Accuracy (left-aligned) -->
     <include
         android:id="@+id/token_source"
         layout="@layout/item_token" />
@@ -21,12 +21,15 @@
     <include
         android:id="@+id/token_sats"
         layout="@layout/item_token" />
+    <include
+        android:id="@+id/token_acc"
+        layout="@layout/item_token" />
 
     <androidx.constraintlayout.helper.widget.Flow
         android:id="@+id/flow_left"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        app:constraint_referenced_ids="token_source,token_fix,token_sats"
+        app:constraint_referenced_ids="token_source,token_fix,token_sats,token_acc"
         app:flow_wrapMode="chain"
         app:flow_horizontalGap="0dp"
         app:flow_horizontalStyle="packed"

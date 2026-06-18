@@ -66,7 +66,7 @@
     <string name="nav_header_subtitle">Surveying · GNSS · AR</string>
     <string name="menu_home">Home</string>
     <string name="menu_render_map">Map</string>
-    <string name="menu_open_in_ar">AR View</string>
+    <string name="menu_open_in_ar">Augmented Reality</string>
     <string name="menu_models">Models</string>
     <string name="menu_development">Developer Tools</string>
     <string name="action_settings">Settings</string>
@@ -179,14 +179,17 @@
 
     <!-- Status bar token labels -->
     <string name="status_token_src">SRC</string>
-    <string name="status_token_fix">FIX</string>
+    <string name="status_token_fix">SOL</string>
     <string name="status_token_sats">SATS</string>
     <string name="status_token_dop">DOP</string>
     <string name="status_token_acc">ACC</string>
+    <string name="status_token_hacc">H</string>
     <string name="status_token_ll">LL</string>
     <string name="status_token_alt">ALT</string>
     <string name="status_token_bl">BL</string>
     <string name="status_token_age">AGE</string>
+    <string name="status_bar_show_setting_label">Show live GNSS status bar</string>
+    <string name="status_bar_show_setting_desc">Displays live source, RTK status, accuracy, coordinates, altitude, and battery below the toolbar.</string>
     <string name="ar_placeholder_dev">Feature under development</string>
 
     <string name="capture_name_hint">Point name</string>

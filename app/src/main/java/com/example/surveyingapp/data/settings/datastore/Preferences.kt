@@ -41,6 +41,7 @@ object SettingsKeys {
     val AR_SHOW_LABELS                 = booleanPreferencesKey("ar_show_labels")
     val AR_SHOW_OFFSCREEN_ARROWS       = booleanPreferencesKey("ar_show_offscreen_arrows")
     val AR_MODEL_SCALE                 = stringPreferencesKey("ar_model_scale")
+    val AR_DEBUG_TOOLS_ENABLED         = booleanPreferencesKey("ar_debug_tools_enabled")
 
     // GNSS receiver
     val HIGH_ACCURACY = booleanPreferencesKey("high_accuracy")
@@ -57,6 +58,9 @@ object SettingsKeys {
 
     // Appearance
     val APP_THEME_MODE                 = stringPreferencesKey("app_theme_mode")
+    val SHOW_LIVE_GNSS_STATUS_BAR      = booleanPreferencesKey("show_live_gnss_status_bar")
+    val KEEP_SCREEN_AWAKE              = booleanPreferencesKey("keep_screen_awake")
+    val MAX_BRIGHTNESS_WHILE_OPEN      = booleanPreferencesKey("max_brightness_while_open")
 }
 
 /**
@@ -90,6 +94,7 @@ class SettingsLocalDataSource(private val context: Context) {
     val arShowLabels:             Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.AR_SHOW_LABELS]            ?: true    }
     val arShowOffscreenArrows:    Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  ?: true    }
     val arModelScale:             Flow<String>  = context.appDataStore.data.map { it[SettingsKeys.AR_MODEL_SCALE]            ?: "2.0"   }
+    val arDebugToolsEnabled:      Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.AR_DEBUG_TOOLS_ENABLED]   ?: false   }
 
     // GNSS receiver
     val highAccuracy: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.HIGH_ACCURACY] ?: true }
@@ -133,6 +138,7 @@ class SettingsLocalDataSource(private val context: Context) {
     suspend fun setArShowLabels(v: Boolean)             { context.appDataStore.edit { it[SettingsKeys.AR_SHOW_LABELS]            = v } }
     suspend fun setArShowOffscreenArrows(v: Boolean)    { context.appDataStore.edit { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  = v } }
     suspend fun setArModelScale(v: String)              { context.appDataStore.edit { it[SettingsKeys.AR_MODEL_SCALE]            = v } }
+    suspend fun setArDebugToolsEnabled(v: Boolean)      { context.appDataStore.edit { it[SettingsKeys.AR_DEBUG_TOOLS_ENABLED]   = v } }
 
     // GNSS receiver setter
     suspend fun setHighAccuracy(enabled: Boolean) { context.appDataStore.edit { it[SettingsKeys.HIGH_ACCURACY] = enabled } }
@@ -150,4 +156,13 @@ class SettingsLocalDataSource(private val context: Context) {
     // Appearance
     val appThemeModeRaw: Flow<String> = context.appDataStore.data.map { it[SettingsKeys.APP_THEME_MODE] ?: "SYSTEM" }
     suspend fun setAppThemeModeString(v: String) { context.appDataStore.edit { it[SettingsKeys.APP_THEME_MODE] = v } }
+
+    val showLiveGnssStatusBar: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.SHOW_LIVE_GNSS_STATUS_BAR] ?: true }
+    suspend fun setShowLiveGnssStatusBar(v: Boolean) { context.appDataStore.edit { it[SettingsKeys.SHOW_LIVE_GNSS_STATUS_BAR] = v } }
+
+    val keepScreenAwake: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.KEEP_SCREEN_AWAKE] ?: false }
+    suspend fun setKeepScreenAwake(v: Boolean) { context.appDataStore.edit { it[SettingsKeys.KEEP_SCREEN_AWAKE] = v } }
+
+    val maxBrightnessWhileOpen: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.MAX_BRIGHTNESS_WHILE_OPEN] ?: false }
+    suspend fun setMaxBrightnessWhileOpen(v: Boolean) { context.appDataStore.edit { it[SettingsKeys.MAX_BRIGHTNESS_WHILE_OPEN] = v } }
 }

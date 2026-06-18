@@ -22,12 +22,12 @@ private fun providerEnumToDomainString(p: Provider): String = when (p) {
 }
 
 private fun providerDomainStringToEnum(s: String?): Provider = when (s?.lowercase(Locale.US)) {
-    DbConstants.PROVIDER_FUSED, "internal", "fused" -> Provider.INTERNAL
-    DbConstants.PROVIDER_RS2_BT, "rs2-bt"          -> Provider.RS2_BT
-    DbConstants.PROVIDER_RS2_TCP, "rs2-tcp"        -> Provider.RS2_TCP
-    "rs2-external"                                  -> Provider.RS2_EXTERNAL
-    "model"                                         -> Provider.MODEL
-    else                                            -> Provider.OTHER
+    DbConstants.PROVIDER_FUSED, "internal", "fused", "internal_gps" -> Provider.INTERNAL
+    DbConstants.PROVIDER_RS2_BT, "rs2-bt", "rs2_bt"                -> Provider.RS2_BT
+    DbConstants.PROVIDER_RS2_TCP, "rs2-tcp", "rs2_tcp"             -> Provider.RS2_TCP
+    "rs2-external", "rs2_external"                                  -> Provider.RS2_EXTERNAL
+    "model"                                                         -> Provider.MODEL
+    else                                                            -> Provider.OTHER
 }
 
 private fun rtkEnumToDomainString(rtk: RtkStatus?): String? = rtk?.name

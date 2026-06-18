@@ -64,7 +64,7 @@
                     android:minHeight="64dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
-                    android:paddingVertical="14dp">
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -85,7 +85,7 @@
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
                             android:text="Export all saved coordinates as JSON or CSV"
-                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
@@ -131,7 +131,7 @@
                     android:minHeight="64dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
-                    android:paddingVertical="14dp">
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
 
                     <LinearLayout
                         android:layout_width="0dp"
@@ -152,7 +152,7 @@
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
                             android:text="Import coordinates from a JSON or CSV file"
-                            android:textAppearance="?attr/textAppearanceBodySmall" />
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
@@ -205,7 +205,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_cancel_import"
