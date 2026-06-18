@@ -52,10 +52,6 @@ object SettingsKeys {
     // Mock location publishing
     val MOCK_LOCATION_ENABLED          = booleanPreferencesKey("mock_location_enabled")
 
-    // Diagnostics panel visibility
-    val DIAG_SHOW_RAW_NMEA             = booleanPreferencesKey("diag_show_raw_nmea")
-    val DIAG_SHOW_SATELLITE_DIAG       = booleanPreferencesKey("diag_show_satellite_diagnostics")
-
     // Appearance
     val APP_THEME_MODE                 = stringPreferencesKey("app_theme_mode")
     val SHOW_LIVE_GNSS_STATUS_BAR      = booleanPreferencesKey("show_live_gnss_status_bar")
@@ -105,10 +101,6 @@ class SettingsLocalDataSource(private val context: Context) {
     // Mock location
     val mockLocationEnabled: Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.MOCK_LOCATION_ENABLED] ?: false }
 
-    // Diagnostics panel visibility
-    val diagShowRawNmea:          Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_SHOW_RAW_NMEA]       ?: false }
-    val diagShowSatelliteDiag:    Flow<Boolean> = context.appDataStore.data.map { it[SettingsKeys.DIAG_SHOW_SATELLITE_DIAG] ?: true  }
-
     suspend fun setLocationSourceString(v: String) { context.appDataStore.edit { it[SettingsKeys.LOCATION_SOURCE] = v } }
     suspend fun setExternalConnTypeString(v: String) { context.appDataStore.edit { it[SettingsKeys.EXTERNAL_CONN_TYPE] = v } }
     suspend fun setExternalTcp(host: String, port: Int) { context.appDataStore.edit { prefs ->
@@ -148,10 +140,6 @@ class SettingsLocalDataSource(private val context: Context) {
 
     // Mock location setter
     suspend fun setMockLocationEnabled(v: Boolean) { context.appDataStore.edit { it[SettingsKeys.MOCK_LOCATION_ENABLED] = v } }
-
-    // Diagnostics setters
-    suspend fun setDiagShowRawNmea(v: Boolean)          { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_RAW_NMEA]       = v } }
-    suspend fun setDiagShowSatelliteDiag(v: Boolean)    { context.appDataStore.edit { it[SettingsKeys.DIAG_SHOW_SATELLITE_DIAG] = v } }
 
     // Appearance
     val appThemeModeRaw: Flow<String> = context.appDataStore.data.map { it[SettingsKeys.APP_THEME_MODE] ?: "SYSTEM" }

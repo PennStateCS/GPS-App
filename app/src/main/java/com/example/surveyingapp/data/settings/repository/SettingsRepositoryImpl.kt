@@ -9,7 +9,6 @@ import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.DiagnosticsSettings
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.AppThemeMode
 import com.example.surveyingapp.gnss.settings.AppearanceSettings
@@ -141,22 +140,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setShowAccuracyIndicators(settings.showAccuracyIndicators)
         local.setDefaultCoordinateNamePrefix(settings.defaultNamePrefix)
         local.setAutoIncrementCoordinateNames(settings.autoIncrementNames)
-    }
-
-    // Diagnostics
-    override val diagnosticsSettings: Flow<DiagnosticsSettings> = combine(
-        local.diagShowRawNmea,
-        local.diagShowSatelliteDiag
-    ) { showRaw, showSat ->
-        DiagnosticsSettings(
-            showRawNmea              = showRaw,
-            showSatelliteDiagnostics = showSat
-        )
-    }
-
-    override suspend fun setDiagnosticsSettings(settings: DiagnosticsSettings) {
-        local.setDiagShowRawNmea(settings.showRawNmea)
-        local.setDiagShowSatelliteDiag(settings.showSatelliteDiagnostics)
     }
 
     // Mock location publishing

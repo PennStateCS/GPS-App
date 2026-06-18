@@ -69,9 +69,9 @@ class ReachCorrectionsService(private val host: String) {
         }
         try {
             val options = IO.Options().apply {
-                transports = arrayOf("polling")   // Reach RS2+ supports polling transport
+                transports = arrayOf("polling")   // RS2+ supports polling; skip websocket upgrade
                 reconnection = true
-                reconnectionAttempts = Int.MAX_VALUE
+                reconnectionAttempts = 5
                 reconnectionDelay = 2_000
                 reconnectionDelayMax = 15_000
             }
@@ -83,7 +83,10 @@ class ReachCorrectionsService(private val host: String) {
             }
             s.on(Socket.EVENT_CONNECT_ERROR) { args ->
                 val msg = args.firstOrNull()?.toString() ?: "unknown"
-                Log.e(TAG, "socket.io connect error: $msg")
+                Log.w(TAG, "socket.io connect error (will retry): $msg")
+            }
+            s.on("reconnect_failed") {
+                Log.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
             }
             s.on(Socket.EVENT_DISCONNECT) { args ->
                 val reason = args.firstOrNull()?.toString() ?: "unknown"
