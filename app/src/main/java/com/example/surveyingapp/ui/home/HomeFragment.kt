@@ -363,6 +363,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}")
 
             if (fix != null && googleMap != null) {
+                if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
                 val locationForDot = fixToLocation(fix)
                 onLocationChangedListener?.onLocationChanged(locationForDot)
 

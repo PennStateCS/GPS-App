@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.example.surveyingapp.BuildConfig
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
@@ -14,7 +15,8 @@ import com.example.surveyingapp.data.local.entity.ModelEntity
     entities = [CoordinateEntity::class, ModelEntity::class],
     // v7: the v6 schema was revised during development (pointCode/pointType removed).
     // v8: models table gained embedded-location columns.
-    version = 8,
+    // v9: added indices on rtkStatus, icon, horizontalAccuracyM for faster filtering.
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -32,8 +34,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    .addMigrations(MIGRATION_2_3, Migration4To5(), MIGRATION_5_6, MIGRATION_7_8)
-                    .fallbackToDestructiveMigration(dropAllTables = true)
+                    .addMigrations(MIGRATION_2_3, Migration4To5(), MIGRATION_5_6, MIGRATION_7_8, MIGRATION_8_9)
+                    .also { if (BuildConfig.DEBUG) it.fallbackToDestructiveMigration(dropAllTables = true) }
                     .build().also { INSTANCE = it }
             }
         private const val DATABASE_NAME = "surveying_app.db"

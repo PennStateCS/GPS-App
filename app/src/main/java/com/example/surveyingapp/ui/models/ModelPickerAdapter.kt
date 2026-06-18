@@ -12,9 +12,11 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Model
+import com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,6 +27,8 @@ import java.util.Locale
 class ModelPickerAdapter(private val onModelClick: (Model) -> Unit) : ListAdapter<Model, ModelPickerAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
+
+    fun cleanup() { coroutineScope.cancel() }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ModelViewHolder {
         val view = LayoutInflater.from(parent.context)
@@ -64,9 +68,11 @@ class ModelPickerAdapter(private val onModelClick: (Model) -> Unit) : ListAdapte
             previewJob?.cancel()
             imageModelPreview.visibility = View.GONE
             imageModelPlaceholder.visibility = View.VISIBLE
+            imageModelPreview.tag = model.id
 
             previewJob = coroutineScope.launch {
                 val bmp = withContext(Dispatchers.IO) { decodeThumbnail(model.thumbnailFilePath) }
+                if (imageModelPreview.tag != model.id) return@launch
                 if (bmp != null) {
                     imageModelPreview.setImageBitmap(bmp)
                     imageModelPreview.visibility = View.VISIBLE
@@ -78,11 +84,15 @@ class ModelPickerAdapter(private val onModelClick: (Model) -> Unit) : ListAdapte
         }
 
         private fun decodeThumbnail(path: String?): Bitmap? {
-            // This might be worse in general instead of using SimpleCoordiatesAdapter cache?
             if (path.isNullOrBlank()) return null
+            val cacheKey = "thumb:$path"
+            SimpleCoordinatesAdapter.peekCache(cacheKey)?.let { return it }
             return try {
                 val file = File(path)
-                if (file.exists()) BitmapFactory.decodeFile(path) else null
+                if (!file.exists()) return null
+                val bmp = BitmapFactory.decodeFile(path) ?: return null
+                SimpleCoordinatesAdapter.putCache(cacheKey, bmp)
+                bmp
             } catch (e: Exception) {
                 null
             }
