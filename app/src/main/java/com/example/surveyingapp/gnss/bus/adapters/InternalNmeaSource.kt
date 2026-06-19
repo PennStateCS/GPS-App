@@ -48,9 +48,14 @@ class InternalNmeaSource(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
+    // Internal source does not expose raw NMEA to external status observers.
+    private val _emptyRawNmea = MutableSharedFlow<Unit>()
+
     override fun parsedFixes(): SharedFlow<Fix> = _fixes
 
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv
+
+    override fun rawNmeaEvents(): SharedFlow<Unit> = _emptyRawNmea
 
     private val fuser = NmeaFuser(
         provider = Provider.INTERNAL,

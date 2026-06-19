@@ -7,6 +7,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
+import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.model.Fix
@@ -75,10 +76,16 @@ class AndroidMockLocationPublisher(
     fun start(scope: CoroutineScope) {
         if (publishJob?.isActive == true) return
         publishJob = scope.launch {
-            combine(settingsRepo.mockLocationEnabled, fixSwitchboard.fixes) { enabled, fix ->
-                enabled to fix
-            }.collect { (enabled, fix) ->
-                if (!enabled) {
+            combine(
+                settingsRepo.mockLocationEnabled,
+                settingsRepo.locationSource,
+                fixSwitchboard.fixes
+            ) { mockEnabled, locationSource, fix -> Triple(mockEnabled, locationSource, fix) }
+            .collect { (mockEnabled, locationSource, fix) ->
+                if (!mockEnabled || locationSource != LocationSourceType.EXTERNAL) {
+                    if (providerAdded) {
+                        Log.i(TAG, "Stopping mock publishing — source=$locationSource mockEnabled=$mockEnabled")
+                    }
                     teardownProvider()
                     return@collect
                 }
@@ -180,7 +187,7 @@ class AndroidMockLocationPublisher(
             )
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
             providerAdded = true
-            Log.d(TAG, "GPS test provider added and enabled")
+            Log.i(TAG, "Mock publishing started — GPS test provider added and enabled")
         } catch (e: SecurityException) {
             // Propagated to caller, which handles it uniformly
             throw e
@@ -199,7 +206,7 @@ class AndroidMockLocationPublisher(
             locationManager.removeTestProvider(LocationManager.GPS_PROVIDER)
             Log.d(TAG, "GPS test provider removed")
         } catch (e: Exception) {
-            Log.w(TAG, "Could not remove test provider (already gone?): ${e.message}")
+            Log.w(TAG, "Teardown failed (provider already gone?): ${e.message}")
         } finally {
             providerAdded = false
         }
