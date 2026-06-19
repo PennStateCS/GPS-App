@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.GravityCompat
 import androidx.core.view.isVisible
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.lifecycle.Lifecycle
@@ -108,6 +109,12 @@ class MainActivity : AppCompatActivity() {
     // AR mode: true while the AR fragment is the current destination
     private var isArMode = false
     private var gnssStripCachedShow = true
+
+    // Drawer navigation: ID of the destination being navigated to after the drawer closes
+    private var pendingDrawerDestinationId: Int? = null
+
+    // Dev tools: last value applied to avoid redundant app-bar rebuilds
+    private var lastDevToolsEnabled: Boolean? = null
 
     // Prevent repeated essential permission dialogs while one is already showing
     private var showingEssentialRationale: Boolean = false
@@ -210,7 +217,47 @@ class MainActivity : AppCompatActivity() {
         )
         appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
+
+        // Keep checked-state sync via NavController listener; handle item taps ourselves
+        // so we can close the drawer smoothly before navigating.
         navView.setupWithNavController(navController)
+        navView.setNavigationItemSelectedListener { menuItem ->
+            val destId = menuItem.itemId
+            val currentId = navController.currentDestination?.id
+
+            // Drop tap if a drawer navigation is already in flight
+            if (pendingDrawerDestinationId != null) return@setNavigationItemSelectedListener true
+
+            // Give immediate visual checked feedback
+            menuItem.isChecked = true
+
+            if (destId == currentId) {
+                // Already here — just close the drawer
+                drawerLayout.closeDrawer(GravityCompat.START)
+                return@setNavigationItemSelectedListener true
+            }
+
+            pendingDrawerDestinationId = destId
+
+            if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
+                    override fun onDrawerClosed(drawerView: View) {
+                        drawerLayout.removeDrawerListener(this)
+                        val pending = pendingDrawerDestinationId ?: return
+                        pendingDrawerDestinationId = null
+                        if (isFinishing || isDestroyed) return
+                        if (navController.currentDestination?.id == pending) return
+                        navController.navigate(pending)
+                    }
+                })
+                drawerLayout.closeDrawer(GravityCompat.START)
+            } else {
+                pendingDrawerDestinationId = null
+                navController.navigate(destId)
+            }
+
+            true
+        }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -480,6 +527,9 @@ class MainActivity : AppCompatActivity() {
         isArMode = isAr
         if (isAr) {
             supportActionBar?.hide()
+            if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                binding.drawerLayout.closeDrawer(GravityCompat.START)
+            }
             binding.drawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
             findViewById<View>(R.id.location_status_bar)?.visibility = View.GONE
         } else {
@@ -827,10 +877,11 @@ class MainActivity : AppCompatActivity() {
 
 
     private fun updateDevToolsVisibility(devEnabled: Boolean) {
-        val navView: NavigationView = binding.navView
-        val menu = navView.menu
-        val devMenuItem = menu.findItem(R.id.nav_development)
-        devMenuItem?.isVisible = devEnabled
+        if (devEnabled == lastDevToolsEnabled) return
+        lastDevToolsEnabled = devEnabled
+
+        val menu = binding.navView.menu
+        menu.findItem(R.id.nav_development)?.isVisible = devEnabled
 
         val topLevel = mutableSetOf(
             R.id.nav_home,
@@ -842,11 +893,8 @@ class MainActivity : AppCompatActivity() {
         )
         if (devEnabled) topLevel.add(R.id.nav_development)
 
-        lifecycleScope.launch {
-            val src = try { SurveyingApp.settingsRepo.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
-            appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
-            setupActionBarWithNavController(navController, appBarConfiguration)
-        }
+        appBarConfiguration = AppBarConfiguration(topLevel, binding.drawerLayout)
+        setupActionBarWithNavController(navController, appBarConfiguration)
     }
 
     private fun updateStatusTokens(
