@@ -1188,9 +1188,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     Log.d("SettingsFragment", "Radio switched to EXTERNAL_TCP")
                     // Re-enable mock switch (user must still turn it on explicitly)
                     switchMock?.isEnabled = true
-                    // Update switchboard provider to external
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
-                    Log.d("SettingsFragment", "Called setActiveProvider(EXTERNAL_TCP)")
                     // Update categories immediately when switching to external (show RS2+)
                     refreshCategoriesForSource(LocationSourceType.EXTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)
