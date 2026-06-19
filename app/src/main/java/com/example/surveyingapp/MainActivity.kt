@@ -110,8 +110,8 @@ class MainActivity : AppCompatActivity() {
     private var isArMode = false
     private var gnssStripCachedShow = true
 
-    // Drawer navigation: ID of the destination being navigated to after the drawer closes
-    private var pendingDrawerDestinationId: Int? = null
+    // Drawer navigation: true while a navigation is in progress, to drop rapid duplicate taps
+    private var drawerNavigationInProgress = false
 
     // Dev tools: last value applied to avoid redundant app-bar rebuilds
     private var lastDevToolsEnabled: Boolean? = null
@@ -218,45 +218,34 @@ class MainActivity : AppCompatActivity() {
         appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
 
-        // Keep checked-state sync via NavController listener; handle item taps ourselves
-        // so we can close the drawer smoothly before navigating.
+        // Keep checked-state sync; handle item taps ourselves for immediate navigation.
         navView.setupWithNavController(navController)
         navView.setNavigationItemSelectedListener { menuItem ->
             val destId = menuItem.itemId
             val currentId = navController.currentDestination?.id
 
-            // Drop tap if a drawer navigation is already in flight
-            if (pendingDrawerDestinationId != null) return@setNavigationItemSelectedListener true
-
-            // Give immediate visual checked feedback
-            menuItem.isChecked = true
-
             if (destId == currentId) {
-                // Already here — just close the drawer
                 drawerLayout.closeDrawer(GravityCompat.START)
                 return@setNavigationItemSelectedListener true
             }
 
-            pendingDrawerDestinationId = destId
+            if (drawerNavigationInProgress) return@setNavigationItemSelectedListener true
 
-            if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                drawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
-                    override fun onDrawerClosed(drawerView: View) {
-                        drawerLayout.removeDrawerListener(this)
-                        val pending = pendingDrawerDestinationId ?: return
-                        pendingDrawerDestinationId = null
-                        if (isFinishing || isDestroyed) return
-                        if (navController.currentDestination?.id == pending) return
-                        navController.navigate(pending)
-                    }
-                })
-                drawerLayout.closeDrawer(GravityCompat.START)
-            } else {
-                pendingDrawerDestinationId = null
+            drawerNavigationInProgress = true
+            menuItem.isChecked = true
+
+            val handled = try {
                 navController.navigate(destId)
+                true
+            } catch (e: IllegalArgumentException) {
+                android.util.Log.w("MainActivity", "Drawer destination not found: $destId", e)
+                false
+            } finally {
+                drawerLayout.closeDrawer(GravityCompat.START)
+                drawerLayout.postDelayed({ drawerNavigationInProgress = false }, 300)
             }
 
-            true
+            handled
         }
 
         lifecycleScope.launch {

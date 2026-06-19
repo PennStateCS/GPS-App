@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
@@ -693,6 +694,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         fun attemptConnectFromInline() {
             try {
+                val focusedView = activity?.currentFocus
+                if (focusedView != null) {
+                    val imm = requireContext().getSystemService(InputMethodManager::class.java)
+                    imm.hideSoftInputFromWindow(focusedView.windowToken, 0)
+                    focusedView.clearFocus()
+                }
                 val host = editHost?.text?.toString()?.trim().orEmpty()
                 val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
                 if (host.isNotEmpty()) {
