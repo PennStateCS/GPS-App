@@ -1151,6 +1151,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             refreshCategoriesForSource(source)
             // Now that radio is set, update device box with possibly restored device
             updateDeviceBox()
+            // Sync runtime provider with persisted source. The radio listener is skipped
+            // while initializing=true, so we must do this explicitly. For EXTERNAL the
+            // active provider stays INTERNAL until the receiver is confirmed reachable
+            // (connectViaTcpFlow sets it inside the receiverPresent block).
+            if (source != LocationSourceType.EXTERNAL) {
+                sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+            }
             // Attempt single auto reconnect if external source active and we have stored device
             if (source == LocationSourceType.EXTERNAL && storedHost != null && storedPort != null && !autoReconnectAttempted) {
                 autoReconnectAttempted = true
@@ -1176,10 +1183,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
                     rs2OptionsLayout?.visibility = View.GONE
-                    // Reflect immediate disconnect from RS2+
-                    selectedDevice = null
-                    selectedDeviceLabel = null
-                    selectedDeviceName = null
                     provisionalConnectedUntil = 0L
                     updateDeviceBox()
                     // Immediately disable mock publishing and update its switch UI

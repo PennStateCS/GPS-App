@@ -34,6 +34,7 @@ import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.ui.components.FixBadgeView
+import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
@@ -271,7 +272,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Map type cycler
         binding.chipMapType.setOnClickListener {
             try {
-                googleMap?.let { map -> map.mapType = nextMapType(map.mapType) }
+                googleMap?.let { map ->
+                map.mapType = nextMapType(map.mapType)
+                context?.let { MapThemeHelper.applyTheme(it, map, map.mapType) }
+            }
             } catch (e: Exception) {
                 android.util.Log.e("HomeFragment", "Error changing map type", e)
             }
@@ -429,6 +433,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
+            MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
             // Set default camera position (will be overridden when fix arrives)
             // Start at a reasonable default location (e.g., San Francisco)

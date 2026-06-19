@@ -34,6 +34,7 @@ import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
@@ -82,6 +83,9 @@ class RenderMapFragment : Fragment() {
 
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
+
+    @Inject
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
 
     // Map
     private var mapView: MapView? = null
@@ -217,6 +221,7 @@ class RenderMapFragment : Fragment() {
         mapView?.getMapAsync { map ->
             googleMap = map
             map.mapType = currentMapType
+            MapThemeHelper.applyTheme(requireContext(), map, currentMapType)
             map.setMaxZoomPreference(22f)
             map.setMinZoomPreference(2f)
 
@@ -297,6 +302,7 @@ class RenderMapFragment : Fragment() {
         if (panelWidthPx == 0) panelWidthPx = dpToPx(272f)
         applyPanelState()
         setupPanelInteractions()
+        startProviderObservation()
     }
 
     // ── Lifecycle pass-throughs ────────────────────────────────────────────────
@@ -324,6 +330,26 @@ class RenderMapFragment : Fragment() {
     }
 
     // ── GNSS fix collection ────────────────────────────────────────────────────
+
+    private fun startProviderObservation() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                sourceSettings.activeProvider.collect { provider ->
+                    if (previousProvider != null && previousProvider != provider) {
+                        clearLiveTrail()
+                        clearAccuracyCircle()
+                        currentMarker?.remove(); currentMarker = null
+                        lastFixLatLng = null
+                        currentFix = null
+                        gnssStatusChip?.text = ""
+                        lastCurrentMarkerHue = null
+                    }
+                    previousProvider = provider
+                }
+            }
+        }
+    }
 
     private fun startFixCollection() {
         viewLifecycleOwner.lifecycleScope.launch {
@@ -754,6 +780,7 @@ class RenderMapFragment : Fragment() {
                 else                    -> GoogleMap.MAP_TYPE_NORMAL
             }
             googleMap?.mapType = currentMapType
+            googleMap?.let { MapThemeHelper.applyTheme(requireContext(), it, currentMapType) }
             isSatellite = currentMapType == GoogleMap.MAP_TYPE_HYBRID || currentMapType == GoogleMap.MAP_TYPE_SATELLITE
             true
         }

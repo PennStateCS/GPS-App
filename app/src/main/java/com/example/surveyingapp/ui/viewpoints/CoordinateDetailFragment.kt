@@ -35,6 +35,7 @@ import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.EmbeddedModelLocation
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.domain.model.ModelLocationConfidence
+import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.models.ModelPickerActivity
 import com.example.surveyingapp.ui.models.ModelViewerActivity
 import com.example.surveyingapp.util.GlbGeoreferenceDetector
@@ -209,6 +210,7 @@ class CoordinateDetailFragment : Fragment() {
                 isMapToolbarEnabled = false
                 isZoomControlsEnabled = false
             }
+            MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
             lastCoordinate?.let { updateMapMarker(it) }
         }
 

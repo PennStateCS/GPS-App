@@ -553,6 +553,22 @@ class MainActivity : AppCompatActivity() {
     /** Status bar observers */
     private fun startStatusBarObservers() {
 
+        // Immediate source label + battery update whenever the active provider changes.
+        // The combine() observer below only fires when a new fix arrives, so without this
+        // the toolbar would lag behind until the next GNSS event.
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                sourceSettings.activeProvider
+                    .collect { provider ->
+                        if (previousProvider == null || previousProvider != provider) {
+                            resetStatusTokensForProvider(provider)
+                        }
+                        previousProvider = provider
+                    }
+            }
+        }
+
         // Single consolidated observer for all status bar updates
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -585,6 +601,12 @@ class MainActivity : AppCompatActivity() {
                     }
                     .collectLatest { (fix, sky, provider) ->
                         consecutiveErrors = 0 // Reset error counter on success
+
+                        // Drop fixes emitted by the old source after a provider switch.
+                        // FixSwitchboard clears _sky immediately, but _fixes has replay=1 and
+                        // can deliver one stale fix before the new provider starts emitting.
+                        if (!fixMatchesActiveProvider(provider, fix)) return@collectLatest
+
                         lastDataUpdateTime = System.currentTimeMillis() // Update the shared timestamp
                         latestSkySnapshot = sky // Store latest sky snapshot
 
@@ -656,6 +678,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun fixMatchesActiveProvider(
+        provider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice,
+        fix: com.example.surveyingapp.gnss.model.Fix
+    ): Boolean {
+        val isInternal = provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+        return if (isInternal) {
+            fix.provider == com.example.surveyingapp.gnss.model.Provider.INTERNAL
+        } else {
+            fix.provider != com.example.surveyingapp.gnss.model.Provider.INTERNAL
+        }
+    }
+
+    private fun resetStatusTokensForProvider(
+        provider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice
+    ) {
+        val isInternal = provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+        tokenSource.value.text = if (isInternal) "Internal" else "RS2+"
+        tokenSource.separator?.isVisible = true
+        tokenSource.value.alpha = 1.0f
+        tokenCoord.value.text = "--"
+        tokenFix.value.text = "--"
+        tokenFix.value.setTextColor(getColor(android.R.color.darker_gray))
+        tokenSats.root.isVisible = false
+        tokenAcc.root.isVisible = false
+        tokenAlt.root.isVisible = false
+        updateBatteryVisibility(!isInternal)
+        // Discard stale sky so the old source's satellite counts don't linger.
+        latestSkySnapshot = null
+        // Reset stale-data timer so the dim indicator doesn't fire immediately after a switch.
+        lastDataUpdateTime = System.currentTimeMillis()
+    }
+
     private fun updateBatteryVisibility(shouldShow: Boolean) {
         if (shouldShow) {
             tokenAlt.separator?.isVisible = true
@@ -665,6 +719,8 @@ class MainActivity : AppCompatActivity() {
                 tokenBatt.value.text = "--"
                 tokenBatt.root.isVisible = true
             }
+            // Compact/portrait mode: show percentage text only; hide the graphical icon.
+            tokenBatt.icon.isVisible = !isCompact
             if (batteryJob == null) startBatteryPolling()
         } else {
             tokenAlt.separator?.isVisible = false
@@ -687,6 +743,10 @@ class MainActivity : AppCompatActivity() {
         }
         tokenBatt.root.isVisible = true
         tokenBatt.value.text = "${percentage.coerceIn(0, 100)}%"
+
+        // Compact/portrait: percentage text is sufficient; skip the graphical icon.
+        tokenBatt.icon.isVisible = !isCompact
+        if (isCompact) return
 
         if (batteryLayer == null) {
             val base = tokenBatt.icon.drawable ?: return
@@ -756,6 +816,12 @@ class MainActivity : AppCompatActivity() {
             var client: ReachHttpClient? = null
             var service: ReachBatteryService? = null
 
+            // Counts how many consecutive iterations returned a blank IP.
+            // setActiveProvider(EXTERNAL_TCP) fires before settingsRepo.setExternalTcp()
+            // completes its DataStore write, so the first few reads can return null.
+            // Retry quickly until the write propagates, then back off to 60 s.
+            var blankIpCount = 0
+
             android.util.Log.d("MainActivity", "Battery polling started")
 
             while (true) {
@@ -774,16 +840,22 @@ class MainActivity : AppCompatActivity() {
                             hideStartTime = SystemClock.elapsedRealtime()
                             consecutiveFailures = 0
                         }
-                        delay(60_000)
+                        // Retry quickly on the first few misses to handle the race where
+                        // setActiveProvider fires before externalTcpHost is persisted.
+                        delay(if (blankIpCount++ < 5) 1_000L else 60_000L)
                         continue
                     }
+                    blankIpCount = 0
 
                     // IP changed - reinitialize client
                     if (ip != lastIp) {
                         android.util.Log.d("MainActivity", "Battery IP changed to: $ip")
 
                         try {
-                            client = ReachHttpClient(ip)
+                            // Short timeouts: /battery may not exist on all firmware versions.
+                            // A 1.5 s timeout means the fallback to /status costs at most 3 s
+                            // instead of the default 8 s, so battery appears quickly on connect.
+                            client = ReachHttpClient(ip, connectTimeoutMs = 1500, readTimeoutMs = 1500)
                             service = ReachBatteryService(client)
                             lastIp = ip
                             consecutiveFailures = 0 // Reset failures on new IP
@@ -843,11 +915,12 @@ class MainActivity : AppCompatActivity() {
                             hideStartTime = SystemClock.elapsedRealtime()
                         }
 
-                        // Progressive backoff delay
+                        // Progressive backoff: retry quickly on first miss (receiver may
+                        // not have served the HTTP API yet), then slow down.
                         val delayMs = when (consecutiveFailures) {
-                            1 -> 15_000L
-                            2 -> 30_000L
-                            else -> 45_000L
+                            1 -> 5_000L
+                            2 -> 15_000L
+                            else -> 30_000L
                         }
                         delay(delayMs)
                     }
@@ -886,6 +959,10 @@ class MainActivity : AppCompatActivity() {
         setupActionBarWithNavController(navController, appBarConfiguration)
     }
 
+    /** True when the available toolbar width is too narrow for the full battery icon. */
+    private val isCompact: Boolean
+        get() = resources.configuration.screenWidthDp < 700
+
     private fun updateStatusTokens(
         source: LocationSourceType,
         fix: Fix,
@@ -916,13 +993,13 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             when (fix.rtkStatus) {
-                RtkStatus.NONE    -> "No Fix"     to getColor(R.color.app_error)
-                RtkStatus.SINGLE  -> "GPS"        to getColor(R.color.app_warning)
-                RtkStatus.DGPS    -> "DGPS"       to getColor(R.color.app_info)
-                RtkStatus.FLOAT   -> "RTK Float"  to getColor(R.color.app_warning)
-                RtkStatus.FIX     -> "RTK Fixed"  to getColor(R.color.app_success)
-                RtkStatus.DEAD_RECKONING -> "DR"  to getColor(R.color.app_warning)
-                RtkStatus.INVALID -> "No Fix"     to getColor(R.color.app_error)
+                RtkStatus.NONE           -> "No Fix" to getColor(R.color.app_error)
+                RtkStatus.SINGLE         -> "Single" to getColor(R.color.app_warning)
+                RtkStatus.DGPS           -> "DGPS"   to getColor(R.color.app_info)
+                RtkStatus.FLOAT          -> "Float"  to getColor(R.color.app_warning)
+                RtkStatus.FIX            -> "Fixed"  to getColor(R.color.app_success)
+                RtkStatus.DEAD_RECKONING -> "DR"     to getColor(R.color.app_warning)
+                RtkStatus.INVALID        -> "No Fix" to getColor(R.color.app_error)
             }
         }
         tokenFix.label.text = "SOL"
