@@ -130,8 +130,9 @@ class FixSwitchboard(
         (currentAdapter as? Startable)?.stop()
         currentAdapter = next
 
+        _sky.value = EmptySky
+
         if (next == null) {
-            _sky.value = EmptySky
             return
         }
 

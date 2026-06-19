@@ -1,6 +1,7 @@
 package com.example.surveyingapp.gnss.bus.adapters
 
 import android.content.Context
+import android.location.LocationListener
 import android.location.LocationManager
 import android.location.OnNmeaMessageListener
 import android.os.Handler
@@ -75,10 +76,37 @@ class InternalNmeaSource(
     private var started = false
     private var nmeaListener: OnNmeaMessageListener? = null
 
+    /*
+     * Dummy LocationListener whose sole purpose is to keep the GPS hardware active.
+     * Android may not deliver NMEA sentences unless there is at least one active
+     * location request on the GPS provider; addNmeaListener() alone is insufficient
+     * on some devices and OS versions.
+     */
+    private val gpsActivationListener = LocationListener { /* position arrives via NMEA listener */ }
+
     override fun start() {
         if (started) return
 
         android.util.Log.d(TAG, "Starting internal GNSS NMEA listener")
+
+        /*
+         * Request GPS location updates to ensure the hardware stays active. The actual
+         * position data is consumed through the NMEA listener below; this listener is
+         * a no-op that exists only to keep the provider running.
+         */
+        try {
+            lm.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                1_000L,
+                0f,
+                gpsActivationListener,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            android.util.Log.e(TAG, "Missing location permission for GPS activation", e)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Could not request GPS updates: ${e.message}")
+        }
 
         val listener = OnNmeaMessageListener { message, _ ->
             /*
@@ -106,6 +134,11 @@ class InternalNmeaSource(
             android.util.Log.e(TAG, "Missing location permission for internal NMEA listener", e)
 
             /*
+             * Roll back the GPS activation request since we can't receive NMEA anyway.
+             */
+            runCatching { lm.removeUpdates(gpsActivationListener) }
+
+            /*
              * Leave started=false and clear the listener reference. The adapter can call
              * start() again after location permission is granted.
              */
@@ -119,6 +152,8 @@ class InternalNmeaSource(
                 lm.removeNmeaListener(listener)
             }
         }
+
+        runCatching { lm.removeUpdates(gpsActivationListener) }
 
         nmeaListener = null
         started = false
