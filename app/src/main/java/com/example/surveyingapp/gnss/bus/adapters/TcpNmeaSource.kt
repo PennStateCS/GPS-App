@@ -65,9 +65,13 @@ class TcpNmeaSource(
     private val _gsv = MutableSharedFlow<GsvMessage>(
         replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
+    private val _rawNmea = MutableSharedFlow<Unit>(
+        replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
 
     override fun parsedFixes(): SharedFlow<Fix> = _fixes.asSharedFlow()
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv.asSharedFlow()
+    override fun rawNmeaEvents(): SharedFlow<Unit> = _rawNmea.asSharedFlow()
 
     private val fuser = NmeaFuser(
         provider = provider,
@@ -140,6 +144,7 @@ class TcpNmeaSource(
                     val clean = line.trim()
                     if (clean.isNotEmpty() && clean[0] == '$') {
                         diagnostics?.recordLine(clean)
+                        _rawNmea.tryEmit(Unit)
                         fuser.accept(clean)
                     }
                 } catch (_: SocketTimeoutException) {

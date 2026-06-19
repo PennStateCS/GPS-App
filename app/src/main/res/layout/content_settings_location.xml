@@ -210,6 +210,132 @@
 
                         </LinearLayout>
 
+                        <!-- Receiver status rows — shown when external source is connected -->
+                        <LinearLayout
+                            android:id="@+id/layout_receiver_status_rows"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:layout_marginTop="8dp">
+
+                            <View
+                                android:layout_width="match_parent"
+                                android:layout_height="1dp"
+                                android:layout_marginBottom="6dp"
+                                android:background="?attr/colorOutlineVariant" />
+
+                            <!-- Data Stream -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingVertical="3dp">
+                                <TextView
+                                    android:layout_width="104dp"
+                                    android:layout_height="wrap_content"
+                                    android:text="Data Stream"
+                                    android:textAppearance="?attr/textAppearanceBodySmall"
+                                    android:alpha="0.6" />
+                                <TextView
+                                    android:id="@+id/text_status_data_stream"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="—"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                            <!-- Position Fix -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingVertical="3dp">
+                                <TextView
+                                    android:layout_width="104dp"
+                                    android:layout_height="wrap_content"
+                                    android:text="Position Fix"
+                                    android:textAppearance="?attr/textAppearanceBodySmall"
+                                    android:alpha="0.6" />
+                                <TextView
+                                    android:id="@+id/text_status_position_fix"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="—"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                            <!-- Satellites -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingVertical="3dp">
+                                <TextView
+                                    android:layout_width="104dp"
+                                    android:layout_height="wrap_content"
+                                    android:text="Satellites"
+                                    android:textAppearance="?attr/textAppearanceBodySmall"
+                                    android:alpha="0.6" />
+                                <TextView
+                                    android:id="@+id/text_status_satellites"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="—"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                            <!-- Corrections -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingVertical="3dp">
+                                <TextView
+                                    android:layout_width="104dp"
+                                    android:layout_height="wrap_content"
+                                    android:text="Corrections"
+                                    android:textAppearance="?attr/textAppearanceBodySmall"
+                                    android:alpha="0.6" />
+                                <TextView
+                                    android:id="@+id/text_status_corrections"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="—"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                            <!-- Battery -->
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal"
+                                android:gravity="center_vertical"
+                                android:paddingVertical="3dp">
+                                <TextView
+                                    android:layout_width="104dp"
+                                    android:layout_height="wrap_content"
+                                    android:text="Battery"
+                                    android:textAppearance="?attr/textAppearanceBodySmall"
+                                    android:alpha="0.6" />
+                                <TextView
+                                    android:id="@+id/text_status_battery"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="—"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                            </LinearLayout>
+
+                        </LinearLayout>
+
                         <!-- Device info panel — shown when info is available -->
                         <LinearLayout
                             android:id="@+id/device_info_panel"

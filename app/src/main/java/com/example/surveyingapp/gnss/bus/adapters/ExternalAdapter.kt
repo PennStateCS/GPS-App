@@ -43,7 +43,7 @@ class ExternalAdapter(
     private val scope: CoroutineScope,
     private val nmea: NmeaSource,
     private val inv: SatelliteInventory
-) : SourceAdapter, SkyProvider, Startable {
+) : SourceAdapter, SkyProvider, Startable, RawNmeaProvider {
 
     companion object {
         private const val TAG = "ExternalAdapter"
@@ -65,6 +65,9 @@ class ExternalAdapter(
     private val _sky = MutableStateFlow(SkySnapshot())
     override val sky: StateFlow<SkySnapshot> = _sky.asStateFlow()
 
+    private val _rawNmea = MutableSharedFlow<Unit>(extraBufferCapacity = 32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    override val rawNmea: SharedFlow<Unit> = _rawNmea.asSharedFlow()
+
     enum class ConnectionState { DISCONNECTED, CONNECTING, RECONNECTING, CONNECTED, ERROR, CANCELLED }
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -75,6 +78,7 @@ class ExternalAdapter(
     private var reconnectJob: Job? = null
     private var fixesJob: Job? = null
     private var gsvJob: Job? = null
+    private var rawNmeaJob: Job? = null
 
     // ---- health/data tracking ----
     @Volatile private var firstDataArrived = false
@@ -166,6 +170,14 @@ class ExternalAdapter(
                 }
                 .collect { gsv -> _sky.value = inv.consume(gsv) }
         }
+
+        rawNmeaJob = scope.launch {
+            nmea.rawNmeaEvents().collect {
+                firstDataArrived = true
+                lastDataTimeMs = System.currentTimeMillis()
+                _rawNmea.emit(Unit)
+            }
+        }
     }
 
     private suspend fun waitForFirstDataOrTimeout() {
@@ -190,8 +202,9 @@ class ExternalAdapter(
     }
 
     private fun stopInternalJobs() {
-        fixesJob?.cancel(); fixesJob = null
-        gsvJob?.cancel();   gsvJob = null
+        fixesJob?.cancel();    fixesJob = null
+        gsvJob?.cancel();      gsvJob = null
+        rawNmeaJob?.cancel();  rawNmeaJob = null
     }
 
     private fun calculateBackoffDelay(attempt: Int): Long {
@@ -218,6 +231,17 @@ class ExternalAdapter(
 interface NmeaSource : Startable {
     fun parsedFixes(): SharedFlow<Fix>
     fun gsvStream(): SharedFlow<GsvMessage>
+    /** Emits once for every raw NMEA sentence received, before parsing. */
+    fun rawNmeaEvents(): SharedFlow<Unit>
+}
+
+/**
+ * Optional interface for adapters that expose a raw-NMEA activity stream.
+ * [FixSwitchboard] forwards it so observers can distinguish "socket connected
+ * but no parsed fix" from "no NMEA data flowing at all."
+ */
+interface RawNmeaProvider {
+    val rawNmea: SharedFlow<Unit>
 }
 
 /** Satellite data entry from a single GSV sentence, normalised for [SatelliteInventory]. */
