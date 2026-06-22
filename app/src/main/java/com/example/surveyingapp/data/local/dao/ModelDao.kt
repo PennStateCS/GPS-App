@@ -33,4 +33,7 @@ interface ModelDao {
 
     @Query("SELECT COUNT(*) FROM models")
     suspend fun getModelCount(): Int
+
+    @Query("SELECT COUNT(*) FROM models")
+    fun observeModelCount(): Flow<Int>
 }

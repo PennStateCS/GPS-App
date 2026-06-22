@@ -19,7 +19,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="GNSS Capture"
+            android:text="Capture"
             android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
         <!-- Page description -->
@@ -152,7 +152,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Min Duration"
+                            android:text="Minimum Sampling Time"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -160,7 +160,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Minimum time before capture can finish. Range: 1–600 s"
+                            android:text="Minimum time the app must collect accepted GNSS fixes before a capture can finish."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -205,7 +205,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Max Duration"
+                            android:text="Maximum Sampling Time"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -213,7 +213,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Hard time limit. Must be ≥ minimum. Range: 1–600 s"
+                            android:text="Hard time limit. Capture stops or times out if requirements are not met before this time."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -259,6 +259,16 @@
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary" />
 
+                <!-- Explains that completion depends on BOTH time and fixes -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:alpha="0.7"
+                    android:text="Capture finishes only after both the minimum sampling time and minimum accepted fixes are met. Maximum sampling time is a safety limit — if the requirements are not met before this time, the capture stops and reports why."
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+
                 <!-- Min Accepted Samples row -->
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -279,7 +289,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Min Accepted Samples"
+                            android:text="Minimum Accepted Fixes"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -287,7 +297,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Minimum accepted fixes required before capture finishes. Must be ≥ 1"
+                            android:text="Minimum number of accepted GNSS fixes required before a capture can finish."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -295,7 +305,7 @@
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="160dp"
                         android:layout_height="wrap_content"
-                        app:suffixText="samples">
+                        app:suffixText="fixes">
 
                         <com.google.android.material.textfield.TextInputEditText
                             android:id="@+id/edit_min_samples"

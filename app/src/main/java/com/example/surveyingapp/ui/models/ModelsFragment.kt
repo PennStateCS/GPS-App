@@ -13,7 +13,9 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import com.example.surveyingapp.databinding.FragmentModelsBinding
 import com.example.surveyingapp.domain.model.Model
@@ -183,28 +185,28 @@ class ModelsFragment : Fragment() {
         }
 
 
-        // Observe loading state
-        lifecycleScope.launch {
-            viewModel.isLoading.collect { isLoading ->
-                binding.progressLoading.visibility = if (isLoading) View.VISIBLE else View.GONE
-            }
-        }
+        // Observe loading state and status messages scoped to the view's lifecycle
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    viewModel.isLoading.collect { isLoading ->
+                        binding.progressLoading.visibility = if (isLoading) View.VISIBLE else View.GONE
+                    }
+                }
+                launch {
+                    viewModel.statusMessage.collect { message ->
+                        if (message != null) {
+                            binding.textStatusMessage.text = message
+                            binding.textStatusMessage.visibility = View.VISIBLE
 
-        // Observe status messages
-        lifecycleScope.launch {
-            viewModel.statusMessage.collect { message ->
-                if (message != null) {
-                    binding.textStatusMessage.text = message
-                    binding.textStatusMessage.visibility = View.VISIBLE
-
-                    // Hide status message after 3 seconds.
-                    // Guard against running after onDestroyView (binding would be null).
-                    binding.textStatusMessage.postDelayed({
-                        if (_binding != null) {
-                            binding.textStatusMessage.visibility = View.GONE
-                            viewModel.clearStatusMessage()
+                            binding.textStatusMessage.postDelayed({
+                                if (_binding != null) {
+                                    binding.textStatusMessage.visibility = View.GONE
+                                    viewModel.clearStatusMessage()
+                                }
+                            }, 3000)
                         }
-                    }, 3000)
+                    }
                 }
             }
         }
@@ -271,18 +273,20 @@ class ModelsFragment : Fragment() {
                 }
             }
 
-            val targetFile = copyModelToInternalStorage(uri, fileName, inputStream)
-                ?: run {
+            viewLifecycleOwner.lifecycleScope.launch {
+                val targetFile = withContext(Dispatchers.IO) {
+                    copyModelToInternalStorage(uri, fileName, inputStream)
+                }
+                if (targetFile == null) {
                     Toast.makeText(requireContext(), "Failed to import model file", Toast.LENGTH_LONG).show()
-                    return
+                    return@launch
                 }
 
-            // Georeferenced GLBs (WGS84 coordinates baked into vertex positions) are
-            // unrenderable as-is — a sub-pixel sliver parked far from the origin. Reproject
-            // to a local metric frame off the main thread so the thumbnail, 3D viewer, and AR
-            // can all display the model. Ordinary models are detected as non-georeferenced and
-            // left untouched.
-            viewLifecycleOwner.lifecycleScope.launch {
+                // Georeferenced GLBs (WGS84 coordinates baked into vertex positions) are
+                // unrenderable as-is — a sub-pixel sliver parked far from the origin. Reproject
+                // to a local metric frame off the main thread so the thumbnail, 3D viewer, and AR
+                // can all display the model. Ordinary models are detected as non-georeferenced and
+                // left untouched.
                 val embedded = withContext(Dispatchers.IO) {
                     runCatching { GlbGeoreferenceReprojector.reprojectIfGeoreferenced(targetFile) }.getOrNull()
                 }
@@ -440,17 +444,16 @@ class ModelsFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        // DiffUtil only detects field-value changes in Model — it cannot see that
-        // a thumbnail file was overwritten at the same path (thumbnailFilePath unchanged).
-        // Force every visible item to rebind so resolvePreview() evicts the LRU cache
-        // entry and decodes the updated file from disk.
+        // DiffUtil cannot detect that a thumbnail file was overwritten at the same path.
+        // Evict cached thumbnails on resume so the next bind picks up any updated files.
         if (::adapter.isInitialized && adapter.itemCount > 0) {
-            adapter.notifyItemRangeChanged(0, adapter.itemCount)
+            adapter.evictAndRefreshThumbnails()
         }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        if (::adapter.isInitialized) adapter.cleanup()
         _binding = null
     }
 }

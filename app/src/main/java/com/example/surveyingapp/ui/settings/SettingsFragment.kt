@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
@@ -29,6 +30,7 @@ import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.ExternalConnectionType
@@ -38,6 +40,7 @@ import com.example.surveyingapp.domain.model.SelfTest
 import com.example.surveyingapp.domain.model.TestStatus
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.domain.repository.ReachDeviceRepository
+import com.example.surveyingapp.gnss.reach.ReachHttpClient
 import com.example.surveyingapp.service.LocationService
 import androidx.appcompat.app.AppCompatDelegate
 import com.example.surveyingapp.gnss.settings.AppThemeMode
@@ -96,6 +99,16 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private var importProcessed: Int = 0
     private var importTotal: Int = 0
     private var deviceStatusJob: Job? = null
+    private var tcpConnectJob: Job? = null
+    private var tcpConnectAttemptId = 0
+    /** True when the receiver's HTTP /info or /status endpoint responded successfully. */
+    @Volatile private var receiverHttpReachable = false
+    /** Epoch ms of last external fix accepted for status; 0 means none yet. */
+    @Volatile private var lastExternalFixTimeMs: Long = 0L
+    /** RTK status of the last accepted external fix. */
+    @Volatile private var lastExternalFixRtkStatus: RtkStatus? = null
+    /** Epoch ms of last raw NMEA sentence from the external adapter; 0 means none. */
+    @Volatile private var lastExternalRawNmeaTimeMs: Long = 0L
 
     // Activity result launcher for file picker
     private val customFilePickerLauncher = registerForActivityResult(
@@ -111,7 +124,16 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
 
     // UI status for external connection
-    private enum class ConnectionUiStatus { CONNECTING, STREAMING, STALE, DISCONNECTED }
+    private enum class ConnectionUiStatus { CONNECTING, REACHABLE, STREAMING, STALE, DISCONNECTED }
+
+    /** Clears all external-receiver transient state. Call when switching to internal or disconnecting. */
+    private fun resetExternalReceiverStatus() {
+        receiverHttpReachable = false
+        provisionalConnectedUntil = 0L
+        lastExternalFixTimeMs = 0L
+        lastExternalFixRtkStatus = null
+        lastExternalRawNmeaTimeMs = 0L
+    }
 
     private fun updateDeviceBox() {
         try {
@@ -533,11 +555,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val fixAge  = editFixAge?.text?.toString()?.toIntOrNull()
                 val diffAge = editDiffAge?.text?.toString()?.toIntOrNull()
 
-                tilMinDur?.error  = if (minDur == null || minDur !in 1..600) "1–600 s" else null
-                tilMaxDur?.error  = if (maxDur == null || maxDur !in 1..600) "1–600 s" else if (minDur != null && maxDur < minDur) "Must be ≥ min" else null
-                tilSamples?.error = if (samples == null || samples < 1) "≥ 1" else null
-                tilFixAge?.error  = if (fixAge == null || fixAge < 1) "≥ 1 s" else null
-                tilDiffAge?.error = if (diffAge == null || diffAge < 1) "≥ 1 s" else null
+                tilMinDur?.error  = if (minDur == null || minDur !in 1..600)
+                    "Minimum Sampling Time must be between 1 and 600 seconds." else null
+                tilMaxDur?.error  = if (maxDur == null || maxDur !in 1..600)
+                    "Maximum Sampling Time must be between 1 and 600 seconds."
+                    else if (minDur != null && maxDur < minDur)
+                        "Maximum Sampling Time must be greater than or equal to Minimum Sampling Time." else null
+                tilSamples?.error = if (samples == null || samples < 1)
+                    "Minimum Accepted Fixes must be at least 1." else null
+                tilFixAge?.error  = if (fixAge == null || fixAge < 1)
+                    "Max Fix Age must be at least 1 second." else null
+                tilDiffAge?.error = if (diffAge == null || diffAge < 1)
+                    "Max Correction Age must be at least 1 second." else null
 
                 if (minDur == null || minDur !in 1..600) return
                 if (maxDur == null || maxDur !in 1..600 || maxDur < minDur) return
@@ -598,6 +627,19 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val btnConnect = view.findViewById<Button>(R.id.btn_connect)
         val btnDisconnect = view.findViewById<Button>(R.id.btn_disconnect_device)
         val textDeviceStatus = view.findViewById<TextView>(R.id.text_device_status)
+        val tvDataStream     = view.findViewById<TextView>(R.id.text_status_data_stream)
+        val tvPositionFix    = view.findViewById<TextView>(R.id.text_status_position_fix)
+        val tvSatellites     = view.findViewById<TextView>(R.id.text_status_satellites)
+        val tvCorrections    = view.findViewById<TextView>(R.id.text_status_corrections)
+        val tvBattery        = view.findViewById<TextView>(R.id.text_status_battery)
+        val tvStatusSub      = view.findViewById<TextView>(R.id.text_device_status_sub)
+        val chipSource       = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_source)
+        val chipFix          = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_fix)
+        val chipSats         = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_sats)
+        val chipDataStream   = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_data_stream)
+        val chipBattery      = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_battery)
+        val defaultChipBg    = chipSource?.chipBackgroundColor
+        val defaultChipTextColor = chipFix?.textColors
 
         // Wire up device info button handlers - now observes the repository's StateFlow
         val btnRefreshDeviceInfo = view.findViewById<Button>(R.id.btn_refresh_device_info)
@@ -667,6 +709,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         fun attemptConnectFromInline() {
             try {
+                val focusedView = activity?.currentFocus
+                if (focusedView != null) {
+                    val imm = requireContext().getSystemService(InputMethodManager::class.java)
+                    imm.hideSoftInputFromWindow(focusedView.windowToken, 0)
+                    focusedView.clearFocus()
+                }
                 val host = editHost?.text?.toString()?.trim().orEmpty()
                 val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
                 if (host.isNotEmpty()) {
@@ -676,9 +724,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                     updateDeviceBox()
                     runDiagnostic(host, port)
-                    lifecycleScope.launch {
-                        try { connectViaTcpFlow(host, port) } catch (e: Exception) { Log.e("SettingsFragment", "connectViaTcpFlow failed", e) }
-                    }
+                    connectViaTcpFlow(host, port)
                 } else {
                     showSettingsMessage(getString(R.string.host_required))
                 }
@@ -693,13 +739,29 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         btnDisconnect?.setOnClickListener {
+            // Cancel any in-flight connect attempt before touching settings.
+            ++tcpConnectAttemptId
+            tcpConnectJob?.cancel()
+            tcpConnectJob = null
+            resetExternalReceiverStatus()
+            // Switch back to internal in the switchboard immediately (synchronous).
+            sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+            // Clear selected device so the UI shows the TCP entry form again.
+            selectedDevice = null
+            selectedDeviceLabel = null
+            selectedDeviceName = null
+            currentDeviceInfo = null
+            // Update radio + visibility to Internal.
+            radioGroup?.check(R.id.radio_internal)
+            updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
+            updateDeviceBox()
+            view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
+                ?.let { it.isChecked = false; it.isEnabled = false }
             lifecycleScope.launch {
                 try {
+                    settingsRepo.setMockLocationEnabled(false)
+                    settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
                     settingsRepo.clearExternalTcp()
-                    selectedDevice = null
-                    selectedDeviceLabel = null
-                    selectedDeviceName = null
-                    updateDeviceBox()
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "disconnect failed", e)
                 }
@@ -786,7 +848,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         deviceStatusJob?.cancel()
         deviceStatusJob = viewLifecycleOwner.lifecycleScope.launch {
-            var lastFixTimeMs: Long = 0L
+            // lastExternalFixTimeMs, lastExternalFixRtkStatus, lastExternalRawNmeaTimeMs are
+            // fragment-scope fields so resetExternalReceiverStatus() can clear them from any path.
             var lastUiStatus: ConnectionUiStatus = ConnectionUiStatus.DISCONNECTED
 
             fun currentExternalActive(): Boolean = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
@@ -794,25 +857,31 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             fun deriveStatus(now: Long): ConnectionUiStatus {
                 if (!currentExternalActive()) return ConnectionUiStatus.DISCONNECTED
                 if (provisionalConnectedUntil > now && selectedDevice != null) return ConnectionUiStatus.CONNECTING
-                if (lastFixTimeMs == 0L) return ConnectionUiStatus.CONNECTING // still waiting on first data
-                val age = now - lastFixTimeMs
+                val age = if (lastExternalFixTimeMs > 0L) now - lastExternalFixTimeMs else Long.MAX_VALUE
                 return when {
                     age <= FRESH_FIX_MAX_AGE_MS -> ConnectionUiStatus.STREAMING
                     age <= STALE_FIX_MAX_AGE_MS -> ConnectionUiStatus.STALE
+                    receiverHttpReachable -> ConnectionUiStatus.REACHABLE
+                    lastExternalFixTimeMs == 0L -> ConnectionUiStatus.CONNECTING
                     else -> ConnectionUiStatus.DISCONNECTED
                 }
             }
 
-            fun statusLine(status: ConnectionUiStatus): String = when (status) {
-                ConnectionUiStatus.CONNECTING -> "Connecting…"
-                ConnectionUiStatus.STREAMING -> "Connected"
-                ConnectionUiStatus.STALE -> "Stale"
-                ConnectionUiStatus.DISCONNECTED -> getString(R.string.disconnected)
+            fun statusLines(status: ConnectionUiStatus): Pair<String, String> = when (status) {
+                ConnectionUiStatus.CONNECTING   -> "Connecting…" to ""
+                ConnectionUiStatus.REACHABLE    -> "Receiver reachable" to "Waiting for GNSS data"
+                ConnectionUiStatus.STREAMING    -> "Receiver connected" to when (lastExternalFixRtkStatus?.qualityRank() ?: 0) {
+                    0    -> "No position fix yet"
+                    else -> "GNSS fix active"
+                }
+                ConnectionUiStatus.STALE        -> "Receiver reachable" to "GNSS data stale"
+                ConnectionUiStatus.DISCONNECTED -> "Receiver unavailable" to "Check IP or Wi-Fi"
             }
 
             fun applyColor(tv: TextView?, status: ConnectionUiStatus, external: Boolean) {
                 val colorRes = if (!external) android.R.color.darker_gray else when (status) {
                     ConnectionUiStatus.CONNECTING -> android.R.color.holo_orange_dark
+                    ConnectionUiStatus.REACHABLE -> android.R.color.holo_orange_light
                     ConnectionUiStatus.STREAMING -> android.R.color.holo_green_dark
                     ConnectionUiStatus.STALE -> android.R.color.holo_orange_light
                     ConnectionUiStatus.DISCONNECTED -> android.R.color.darker_gray
@@ -823,25 +892,225 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             fun refresh(now: Long) {
                 val newStatus = deriveStatus(now)
                 if (newStatus != lastUiStatus) lastUiStatus = newStatus
+                val extActive = currentExternalActive()
+                val (mainStatus, subStatus) = statusLines(lastUiStatus)
                 textDeviceStatus?.let { tv ->
                     tv.visibility = View.VISIBLE
-                    tv.text = statusLine(lastUiStatus)
-                    applyColor(tv, lastUiStatus, currentExternalActive())
+                    tv.text = mainStatus
+                    applyColor(tv, lastUiStatus, extActive)
                 }
+                tvStatusSub?.let { tv ->
+                    if (subStatus.isNotEmpty() && extActive) {
+                        tv.text = subStatus
+                        tv.visibility = View.VISIBLE
+                    } else {
+                        tv.visibility = View.GONE
+                    }
+                }
+
+                if (!extActive) {
+                    tvDataStream?.text  = "—"
+                    tvPositionFix?.text = "—"
+                    tvSatellites?.text  = "—"
+                    tvCorrections?.text = "—"
+                    tvBattery?.text     = "—"
+                    listOf(chipFix, chipSats, chipDataStream, chipBattery).forEach { chip ->
+                        chip?.text = "—"
+                        defaultChipBg?.let { chip?.chipBackgroundColor = it }
+                        defaultChipTextColor?.let { chip?.setTextColor(it) }
+                    }
+                    updateDeviceBox()
+                    return
+                }
+
+                val ctx = context ?: run { updateDeviceBox(); return }
+                fun clr(res: Int) = ContextCompat.getColor(ctx, res)
+                fun chipClr(res: Int) = android.content.res.ColorStateList.valueOf(clr(res))
+
+                val nmeaAge = if (lastExternalRawNmeaTimeMs > 0L) now - lastExternalRawNmeaTimeMs else Long.MAX_VALUE
+                val fixAge  = if (lastExternalFixTimeMs > 0L)     now - lastExternalFixTimeMs     else Long.MAX_VALUE
+                val sky = fixSwitchboard.sky.value
+                val bat = reachDeviceRepository.batteryInfo.value
+
+                // Data Stream row + chip
+                tvDataStream?.let { tv ->
+                    when {
+                        nmeaAge <= 8_000L -> {
+                            tv.text = "Receiving NMEA"
+                            tv.setTextColor(clr(android.R.color.holo_green_dark))
+                        }
+                        lastExternalRawNmeaTimeMs > 0L && nmeaAge <= 30_000L -> {
+                            tv.text = "Stale (${nmeaAge / 1000}s ago)"
+                            tv.setTextColor(clr(android.R.color.holo_orange_light))
+                        }
+                        lastExternalRawNmeaTimeMs == 0L -> {
+                            tv.text = "Waiting…"
+                            tv.setTextColor(clr(android.R.color.darker_gray))
+                        }
+                        else -> {
+                            tv.text = "No data"
+                            tv.setTextColor(clr(android.R.color.holo_red_dark))
+                        }
+                    }
+                }
+                chipDataStream?.let { chip ->
+                    when {
+                        nmeaAge <= 8_000L -> { chip.text = "NMEA"; chip.chipBackgroundColor = chipClr(R.color.app_success); chip.setTextColor(android.graphics.Color.WHITE) }
+                        lastExternalRawNmeaTimeMs > 0L && nmeaAge <= 30_000L -> { chip.text = "Stale"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
+                        lastExternalRawNmeaTimeMs == 0L -> { chip.text = "Waiting"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
+                        else -> { chip.text = "No Data"; chip.chipBackgroundColor = chipClr(R.color.app_error); chip.setTextColor(android.graphics.Color.WHITE) }
+                    }
+                }
+
+                // Position Fix row + chip
+                tvPositionFix?.let { tv ->
+                    when {
+                        fixAge <= FRESH_FIX_MAX_AGE_MS -> {
+                            val (label, colorRes) = when (lastExternalFixRtkStatus) {
+                                RtkStatus.FIX            -> "RTK Fixed"       to android.R.color.holo_green_dark
+                                RtkStatus.FLOAT          -> "RTK Float"       to android.R.color.holo_orange_light
+                                RtkStatus.DGPS           -> "DGPS"            to android.R.color.holo_orange_light
+                                RtkStatus.SINGLE         -> "Single"          to android.R.color.holo_orange_dark
+                                RtkStatus.DEAD_RECKONING -> "Dead Reckoning"  to android.R.color.darker_gray
+                                else                     -> "No fix"          to android.R.color.darker_gray
+                            }
+                            tv.text = label
+                            tv.setTextColor(clr(colorRes))
+                        }
+                        fixAge <= STALE_FIX_MAX_AGE_MS -> {
+                            tv.text = "Stale fix"
+                            tv.setTextColor(clr(android.R.color.holo_orange_light))
+                        }
+                        lastExternalFixTimeMs == 0L -> {
+                            tv.text = "No fix yet"
+                            tv.setTextColor(clr(android.R.color.darker_gray))
+                        }
+                        else -> {
+                            tv.text = "No fix"
+                            tv.setTextColor(clr(android.R.color.darker_gray))
+                        }
+                    }
+                }
+                chipFix?.let { chip ->
+                    when {
+                        fixAge <= FRESH_FIX_MAX_AGE_MS -> {
+                            val (label, colorRes) = when (lastExternalFixRtkStatus) {
+                                RtkStatus.FIX            -> "Fixed"  to R.color.app_success
+                                RtkStatus.FLOAT          -> "Float"  to R.color.app_warning
+                                RtkStatus.DGPS           -> "DGPS"   to R.color.app_info
+                                RtkStatus.SINGLE         -> "Single" to R.color.app_warning
+                                RtkStatus.DEAD_RECKONING -> "DR"     to R.color.app_warning
+                                else                     -> "No Fix" to R.color.app_error
+                            }
+                            chip.text = label; chip.chipBackgroundColor = chipClr(colorRes); chip.setTextColor(android.graphics.Color.WHITE)
+                        }
+                        fixAge <= STALE_FIX_MAX_AGE_MS -> { chip.text = "Stale"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
+                        else -> { chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
+                    }
+                }
+
+                // Satellites row + chip
+                tvSatellites?.let { tv ->
+                    when {
+                        sky.totalVisible > 0 -> {
+                            tv.text = "${sky.totalUsed} used / ${sky.totalVisible} visible"
+                            tv.setTextColor(clr(android.R.color.darker_gray))
+                        }
+                        nmeaAge <= 8_000L -> {
+                            tv.text = "No satellites in view"
+                            tv.setTextColor(clr(android.R.color.holo_orange_light))
+                        }
+                        else -> {
+                            tv.text = "—"
+                            tv.setTextColor(clr(android.R.color.darker_gray))
+                        }
+                    }
+                }
+                chipSats?.let { chip ->
+                    when {
+                        sky.totalVisible > 0 -> { chip.text = "${sky.totalUsed}/${sky.totalVisible} Sats"; chip.chipBackgroundColor = chipClr(R.color.app_success); chip.setTextColor(android.graphics.Color.WHITE) }
+                        nmeaAge <= 8_000L    -> { chip.text = "0 Sats"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
+                        else                 -> { chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
+                    }
+                }
+
+                // Corrections row (unchanged)
+                tvCorrections?.let { tv ->
+                    val info = reachDeviceRepository.correctionsInfo.value
+                    if (info == null) {
+                        tv.text = "—"
+                        tv.setTextColor(clr(android.R.color.darker_gray))
+                    } else if (info.isReceiving) {
+                        val ch = info.channel ?: "Connected"
+                        val age = info.ageSeconds?.let { " (${it.toInt()}s)" } ?: ""
+                        tv.text = "$ch$age"
+                        tv.setTextColor(clr(android.R.color.holo_green_dark))
+                    } else {
+                        tv.text = "Not connected"
+                        tv.setTextColor(clr(android.R.color.darker_gray))
+                    }
+                }
+
+                // Battery row + chip
+                tvBattery?.let { tv ->
+                    if (bat == null) {
+                        tv.text = "—"
+                        tv.setTextColor(clr(android.R.color.darker_gray))
+                    } else {
+                        val chargeSuffix = bat.chargerStatus?.let { s ->
+                            if (s.lowercase().let { it.contains("charging") && !it.contains("not") }) " ⚡" else ""
+                        } ?: ""
+                        tv.text = "${bat.percent}%$chargeSuffix"
+                        tv.setTextColor(clr(when {
+                            bat.percent < 20 -> android.R.color.holo_red_dark
+                            bat.percent < 40 -> android.R.color.holo_orange_light
+                            else             -> android.R.color.darker_gray
+                        }))
+                    }
+                }
+                chipBattery?.let { chip ->
+                    if (bat == null) {
+                        chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) }
+                    } else {
+                        val chargeSuffix = bat.chargerStatus?.let { s ->
+                            if (s.lowercase().let { it.contains("charging") && !it.contains("not") }) "⚡" else ""
+                        } ?: ""
+                        chip.text = "${bat.percent}%$chargeSuffix"
+                        chip.chipBackgroundColor = chipClr(when {
+                            bat.percent < 20 -> R.color.app_error
+                            bat.percent < 40 -> R.color.app_warning
+                            else             -> R.color.app_success
+                        })
+                        chip.setTextColor(android.graphics.Color.WHITE)
+                    }
+                }
+
                 updateDeviceBox()
             }
 
-            // Collect fixes to update recency
+            // Collect external fixes only — internal GPS fixes must never affect external status.
             viewLifecycleOwner.lifecycleScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     try {
-                        fixSwitchboard.fixes.collect { _ ->
-                            lastFixTimeMs = System.currentTimeMillis()
+                        fixSwitchboard.fixes.collect { fix ->
+                            if (fix.provider == Provider.INTERNAL) return@collect
+                            if (!currentExternalActive()) return@collect
+                            lastExternalFixTimeMs = System.currentTimeMillis()
+                            lastExternalFixRtkStatus = fix.rtkStatus
                             provisionalConnectedUntil = 0L
-                            try { refresh(lastFixTimeMs) } catch (e: Exception) { Log.w("SettingsFragment", "status refresh error", e) }
+                            try { refresh(lastExternalFixTimeMs) } catch (e: Exception) { Log.w("SettingsFragment", "status refresh error", e) }
                         }
                     } catch (e: Exception) {
                         Log.w("SettingsFragment", "fix collect error in status job", e)
+                    }
+                }
+            }
+
+            // Track raw NMEA activity (external adapter only) to distinguish "no data" from "no fix".
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    fixSwitchboard.rawNmea.collect {
+                        if (currentExternalActive()) lastExternalRawNmeaTimeMs = System.currentTimeMillis()
                     }
                 }
             }
@@ -955,10 +1224,30 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val sel = if (source == LocationSourceType.EXTERNAL) R.id.radio_es2_tcp else R.id.radio_internal
             radioGroup?.check(sel)
             updateLocationSourceVisibility(source, internalGpsGroup)
+            // Mock switch is only usable when external source is active
+            switchMock?.isEnabled = source == LocationSourceType.EXTERNAL
             // Update categories based on current source
             refreshCategoriesForSource(source)
             // Now that radio is set, update device box with possibly restored device
             updateDeviceBox()
+            // Restore device info panel immediately if the repository has cached data.
+            // The collect observer may fire before currentContentView is set, causing
+            // updateDeviceInfoDisplay() to return early — so we re-check here explicitly.
+            if (currentDeviceInfo == null) {
+                reachDeviceRepository.deviceInfo.value?.let { cached ->
+                    currentDeviceInfo = convertToEmlidDeviceInfo(cached)
+                }
+            }
+            if (currentDeviceInfo != null) {
+                updateDeviceInfoDisplay()
+            }
+            // Sync runtime provider with persisted source. The radio listener is skipped
+            // while initializing=true, so we must do this explicitly. For EXTERNAL the
+            // active provider stays INTERNAL until the receiver is confirmed reachable
+            // (connectViaTcpFlow sets it inside the receiverPresent block).
+            if (source != LocationSourceType.EXTERNAL) {
+                sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+            }
             // Attempt single auto reconnect if external source active and we have stored device
             if (source == LocationSourceType.EXTERNAL && storedHost != null && storedPort != null && !autoReconnectAttempted) {
                 autoReconnectAttempted = true
@@ -972,6 +1261,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             when (checkedId) {
                 R.id.radio_internal -> {
                     Log.d("SettingsFragment", "Radio switched to INTERNAL")
+                    // Invalidate and cancel any in-progress TCP connection attempt
+                    ++tcpConnectAttemptId
+                    tcpConnectJob?.cancel()
+                    tcpConnectJob = null
+                    resetExternalReceiverStatus()
                     // Update switchboard provider to internal
                     sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
                     Log.d("SettingsFragment", "Called setActiveProvider(INTERNAL)")
@@ -979,39 +1273,40 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
                     rs2OptionsLayout?.visibility = View.GONE
-                    // Reflect immediate disconnect from RS2+
-                    selectedDevice = null
-                    selectedDeviceLabel = null
-                    selectedDeviceName = null
                     provisionalConnectedUntil = 0L
                     updateDeviceBox()
-                    lifecycleScope.launch { settingsRepo.setLocationSource(LocationSourceType.INTERNAL) }
+                    // Immediately disable mock publishing and update its switch UI
+                    switchMock?.isChecked = false
+                    switchMock?.isEnabled = false
+                    lifecycleScope.launch {
+                        settingsRepo.setMockLocationEnabled(false)
+                        settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
+                    }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
                 R.id.radio_es2_tcp -> {
                     Log.d("SettingsFragment", "Radio switched to EXTERNAL_TCP")
-                    // Update switchboard provider to external
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
-                    Log.d("SettingsFragment", "Called setActiveProvider(EXTERNAL_TCP)")
+                    // Re-enable mock switch (user must still turn it on explicitly)
+                    switchMock?.isEnabled = true
                     // Update categories immediately when switching to external (show RS2+)
                     refreshCategoriesForSource(LocationSourceType.EXTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)
                     // Show either the device box (if already selected) or options
                     updateDeviceBox()
+                    // Persist source selection asynchronously — does not need to complete
+                    // before the connect attempt starts.
                     lifecycleScope.launch {
                         settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                         settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
-                        // Try to reconnect if we have a saved TCP host/port from last time
-                        val host = settingsRepo.externalTcpHost.first()
-                        val port = settingsRepo.externalTcpPort.first()
-                        if (!host.isNullOrBlank() && port != null) {
-                            // Keep UI device selection in sync
-                            selectedDevice = host to port
-                            selectedDeviceLabel = getString(R.string.host_port, host, port)
-                            selectedDeviceName = selectedDeviceName ?: host
-                            updateDeviceBox()
-                            connectViaTcpFlow(host, port)
-                        }
+                    }
+                    // Reconnect using the device already loaded from stored settings.
+                    // Calling connectViaTcpFlow directly (not inside a separate launch) ensures
+                    // the attempt ID is incremented synchronously so radio_internal can cancel it.
+                    val dev = selectedDevice
+                    if (dev != null) {
+                        selectedDeviceName = selectedDeviceName ?: dev.first
+                        updateDeviceBox()
+                        connectViaTcpFlow(dev.first, dev.second)
                     }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
@@ -1025,124 +1320,147 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     }
 
     // ─────────────────────────── TCP connect + read ────────────────────────────
-    private suspend fun connectAndReadTcpNmea(host: String, port: Int): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun connectAndReadTcpNmea(host: String, port: Int): TcpTestResult = withContext(Dispatchers.IO) {
         var socket: Socket? = null
         var reader: BufferedReader? = null
-        var gotData = false
         try {
-            Log.d("TCP", "Attempting to connect to $host:$port")
-            socket = Socket().apply {
-                tcpNoDelay = true
-                keepAlive = true
-            }
-
-            // More detailed connection error handling
+            socket = Socket().apply { tcpNoDelay = true; keepAlive = true }
             try {
                 socket.connect(InetSocketAddress(host, port), 4000)
-                Log.d("TCP", "Successfully connected to $host:$port")
-            } catch (e: java.net.ConnectException) {
-                Log.e("TCP", "Connection refused to $host:$port - device may be offline or port closed", e)
-                return@withContext false
-            } catch (e: java.net.SocketTimeoutException) {
-                Log.e("TCP", "Connection timeout to $host:$port - device may be unreachable", e)
-                return@withContext false
-            } catch (e: java.net.UnknownHostException) {
-                Log.e("TCP", "Unknown host $host - check IP address", e)
-                return@withContext false
-            } catch (e: java.net.NoRouteToHostException) {
-                Log.e("TCP", "No route to host $host - check network connectivity", e)
-                return@withContext false
             } catch (e: Exception) {
-                Log.e("TCP", "Unexpected connection error to $host:$port", e)
-                return@withContext false
+                Log.d("TCP", "Connect failed to $host:$port: ${e.javaClass.simpleName}")
+                return@withContext TcpTestResult.CONNECT_FAILED
             }
 
             runCatching { socket.soTimeout = 3000 }
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
-            val start = System.currentTimeMillis()
-            Log.d("TCP", "Reading data from $host:$port for up to 5 seconds")
-            while (System.currentTimeMillis() - start < 5000L) {
+            val deadline = System.currentTimeMillis() + 5000L
+            var sawNonNmea = false
+            while (System.currentTimeMillis() < deadline) {
                 val line = withTimeoutOrNull(1000L) { runCatching { reader.readLine() }.getOrNull() }
-                if (line == null) continue
-                Log.d("TCP", "Received line: $line")
-                if (line.startsWith("$")) {
-                    gotData = true
-                    Log.d("TCP", "NMEA sentence detected")
-                    break
-                }
+                    ?: continue
+                if (line.startsWith("$")) return@withContext TcpTestResult.RECEIVING_NMEA
+                if (line.isNotEmpty()) sawNonNmea = true
             }
-            if (!gotData) {
-                Log.w("TCP", "No NMEA data received from $host:$port within timeout")
-                withContext(Dispatchers.Main) {
-                    showSettingsMessage(getString(R.string.no_nmea_hint), Snackbar.LENGTH_LONG)
-                }
-            }
-            // Consider connection successful even if no NMEA yet (device may stream RTCM or be slow to start)
-            Log.d("TCP", "Connection test completed successfully for $host:$port")
-            true
+            if (sawNonNmea) TcpTestResult.RECEIVING_RTCM_OR_BIN else TcpTestResult.CONNECTED_NO_DATA
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e("TCP", "Unexpected error during TCP connection test to $host:$port", e)
-            false
+            Log.d("TCP", "TCP probe error for $host:$port: ${e.javaClass.simpleName}")
+            TcpTestResult.CONNECT_FAILED
         } finally {
             runCatching { reader?.close() }
             runCatching { socket?.close() }
-            Log.d("TCP", "Cleaned up connection resources for $host:$port")
+        }
+    }
+
+    /**
+     * Checks whether the receiver's HTTP API is reachable. A 200-range response on /info or
+     * /status is sufficient — the receiver is present even if no GNSS fix is available yet.
+     */
+    private suspend fun probeHttpReachable(host: String): Boolean = withContext(Dispatchers.IO) {
+        val client = ReachHttpClient(host, connectTimeoutMs = 3000, readTimeoutMs = 3000)
+        try { client.get("/info"); true }
+        catch (_: Exception) {
+            try { client.get("/status"); true }
+            catch (_: Exception) { false }
         }
     }
 
     private fun connectViaTcpFlow(host: String, port: Int) {
-        lifecycleScope.launch {
+        val attemptId = ++tcpConnectAttemptId
+        tcpConnectJob?.cancel()
+        tcpConnectJob = viewLifecycleOwner.lifecycleScope.launch {
             try {
-                Log.d("SettingsFragment", "connectViaTcpFlow: attempting connection to $host:$port")
                 provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                 view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                     tv.visibility = View.VISIBLE
-                    tv.text = getString(R.string.diag_testing).replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+                    tv.text = "Connecting…"
                     tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
                 }
-                val success = connectAndReadTcpNmea(host, port)
-                Log.d("SettingsFragment", "connectViaTcpFlow: connection result=$success")
-                if (success) {
+                view?.findViewById<TextView>(R.id.text_device_status_sub)?.visibility = View.GONE
+
+                // Run TCP/NMEA and HTTP probes in parallel.
+                val (tcpResult, httpReachable) = coroutineScope {
+                    val tcp  = async { connectAndReadTcpNmea(host, port) }
+                    val http = async { probeHttpReachable(host) }
+                    tcp.await() to http.await()
+                }
+
+                // Stale-attempt guards — drop results from superseded or invalidated attempts.
+                if (attemptId != tcpConnectAttemptId) return@launch
+                if (!isAdded || view == null) return@launch
+                if (settingsRepo.locationSource.first() != LocationSourceType.EXTERNAL) return@launch
+
+                receiverHttpReachable = httpReachable
+
+                val tcpConnected = tcpResult != TcpTestResult.CONNECT_FAILED
+                val receiverPresent = tcpConnected || httpReachable
+
+                if (receiverPresent) {
                     sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
-                    val currentSource = settingsRepo.locationSource.first()
-                    if (currentSource != LocationSourceType.EXTERNAL) {
-                        Log.w("SettingsFragment", "connectViaTcpFlow: source switched to INTERNAL during connection, aborting")
-                        return@launch
-                    }
                     settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                     settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                     settingsRepo.setExternalTcp(host, port)
                     provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                     updateDeviceBox()
+
+                    val (statusText, statusSubText, statusColor) = when (tcpResult) {
+                        TcpTestResult.RECEIVING_NMEA ->
+                            Triple("Receiver connected", "Receiving NMEA", android.R.color.holo_green_dark)
+                        TcpTestResult.RECEIVING_RTCM_OR_BIN ->
+                            Triple("Receiver connected", "Stream is not NMEA", android.R.color.holo_orange_dark)
+                        TcpTestResult.CONNECTED_NO_DATA ->
+                            Triple("Receiver reachable", "Waiting for GNSS data", android.R.color.holo_orange_light)
+                        TcpTestResult.CONNECT_FAILED ->
+                            // TCP failed but HTTP succeeded — receiver is present but NMEA port unavailable.
+                            Triple("Receiver reachable", "NMEA stream unavailable", android.R.color.holo_orange_light)
+                    }
                     view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
-                        tv.text = "Connected"
-                        tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+                        tv.text = statusText
+                        tv.setTextColor(ContextCompat.getColor(requireContext(), statusColor))
                     }
+                    view?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
+                        tv.text = statusSubText
+                        tv.visibility = View.VISIBLE
+                    }
+
                     if (selectedDeviceName == null || selectedDeviceName == host) {
                         launch {
                             try {
                                 val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
+                                if (attemptId != tcpConnectAttemptId) return@launch
                                 if (!resolved.isNullOrBlank() && isAdded && currentDeviceInfo == null) {
                                     selectedDeviceName = resolved
                                     settingsRepo.setExternalTcp(host, port, resolved)
                                     updateDeviceBox()
                                 }
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
-                                Log.w("SettingsFragment", "resolveReachName in connectViaTcpFlow failed", e)
+                                Log.w("SettingsFragment", "resolveReachName failed", e)
                             }
                         }
                     }
                 } else {
-                    Log.w("SettingsFragment", "connectViaTcpFlow: connection to $host:$port failed")
+                    // Both TCP and HTTP failed — receiver unreachable.
                     view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
-                        tv.text = "Connection failed"
+                        tv.text = "Receiver unavailable"
                         tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
                     }
+                    view?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
+                        tv.text = "Check IP or Wi-Fi"
+                        tv.visibility = View.VISIBLE
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e("SettingsFragment", "connectViaTcpFlow error", e)
+                if (attemptId == tcpConnectAttemptId) {
+                    Log.e("SettingsFragment", "connectViaTcpFlow[$attemptId] error", e)
+                }
             }
         }
     }
@@ -1542,10 +1860,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             "RS2+ TCP $dev"
         } else "Internal GPS"
         val connPart = when (uiStatus) {
-            ConnectionUiStatus.CONNECTING -> "Connecting"
-            ConnectionUiStatus.STREAMING -> "Connected"
-            ConnectionUiStatus.STALE -> "Stale"
-            ConnectionUiStatus.DISCONNECTED -> if (isExternal) "Disconnected" else "Idle"
+            ConnectionUiStatus.CONNECTING    -> "Connecting"
+            ConnectionUiStatus.REACHABLE     -> "Reachable"
+            ConnectionUiStatus.STREAMING     -> "Connected"
+            ConnectionUiStatus.STALE         -> "Stale"
+            ConnectionUiStatus.DISCONNECTED  -> if (isExternal) "Disconnected" else "Idle"
         }
         val fixPart = if (!isExternal) {
             if (fix != null) "Fused" else "Fused (pending)"
@@ -1683,7 +2002,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
             deviceInfoPanel?.visibility = View.VISIBLE
             textDeviceName?.text = deviceInfo.deviceName
-            textDeviceIp?.text = deviceInfo.ipAddress
+            val port = selectedDevice?.second
+            textDeviceIp?.text = if (port != null) "${deviceInfo.ipAddress}:$port" else deviceInfo.ipAddress
 
             if (deviceInfo.model != null) {
                 layoutDeviceModel?.visibility = View.VISIBLE

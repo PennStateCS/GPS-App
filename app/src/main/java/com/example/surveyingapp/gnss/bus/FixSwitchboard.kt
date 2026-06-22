@@ -1,5 +1,6 @@
 package com.example.surveyingapp.gnss.bus
 
+import com.example.surveyingapp.gnss.bus.adapters.RawNmeaProvider
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.SkySnapshot
 import com.example.surveyingapp.gnss.settings.SourceSettings
@@ -49,9 +50,17 @@ class FixSwitchboard(
     private val _sky = MutableStateFlow(EmptySky)
     override val sky: StateFlow<SkySnapshot> = _sky.asStateFlow()
 
+    /** Emits once for every raw NMEA sentence from the active external adapter. */
+    private val _rawNmea = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val rawNmea: SharedFlow<Unit> = _rawNmea.asSharedFlow()
+
     private var providerCollectJob: Job? = null
     private var currentFixCollector: Job? = null
     private var skyJob: Job? = null
+    private var rawNmeaJob: Job? = null
     private var currentAdapter: SourceAdapter? = null
 
     /**
@@ -115,11 +124,15 @@ class FixSwitchboard(
         skyJob?.cancel()
         skyJob = null
 
+        rawNmeaJob?.cancel()
+        rawNmeaJob = null
+
         (currentAdapter as? Startable)?.stop()
         currentAdapter = next
 
+        _sky.value = EmptySky
+
         if (next == null) {
-            _sky.value = EmptySky
             return
         }
 
@@ -145,6 +158,10 @@ class FixSwitchboard(
         } else {
             _sky.value = EmptySky
             null
+        }
+
+        rawNmeaJob = (next as? RawNmeaProvider)?.let { provider ->
+            scope.launch { provider.rawNmea.collect { _rawNmea.emit(Unit) } }
         }
     }
 }

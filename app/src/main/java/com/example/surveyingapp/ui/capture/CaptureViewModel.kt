@@ -25,7 +25,8 @@ import java.util.UUID
 class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val coordinateRepository: CoordinateRepository,
-    private val captureSettings: CaptureSettings
+    private val captureSettings: CaptureSettings,
+    private val sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
@@ -45,6 +46,17 @@ class CaptureViewModel @Inject constructor(
         viewModelScope.launch {
             fixSwitchboard.fixes.collect { fix ->
                 updateOkToCapture(fix)
+            }
+        }
+        // Cancel any in-progress averaging session when the provider switches.
+        // A session collecting RS2+ fixes must not continue under Internal GPS and vice versa.
+        viewModelScope.launch {
+            var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+            sourceSettings.activeProvider.collect { provider ->
+                if (previousProvider != null && previousProvider != provider) {
+                    if (session != null) cancel()
+                }
+                previousProvider = provider
             }
         }
     }
