@@ -1,35 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Neutral reusable two-pane layout: left categories list, right scrollable content -->
+<!-- Narrow single-column layout: category dropdown at top, content below -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal">
+    android:orientation="vertical">
 
-    <!-- Left pane: Categories (~25% on phones, ~20% on tablets via sw600dp layout) -->
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:background="?attr/colorSurfaceVariant">
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/layout_category_dropdown"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="4dp"
+        android:hint="Category">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/categoriesRecycler"
+        <AutoCompleteTextView
+            android:id="@+id/category_dropdown"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false" />
-    </LinearLayout>
+            android:layout_height="wrap_content"
+            android:inputType="none"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
+    </com.google.android.material.textfield.TextInputLayout>
 
     <View
-        android:layout_width="1dp"
-        android:layout_height="match_parent"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="8dp"
         android:background="?attr/colorOutlineVariant" />
 
-    <!-- Right pane: Content (75% on phones, 80% on tablets) -->
     <ScrollView
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="3">
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
         <LinearLayout
             android:id="@+id/twopane_content_container"

@@ -10,7 +10,9 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
@@ -73,12 +75,12 @@ class ViewCoordinatesFragment : Fragment() {
     }
 
     private fun observeCoordinates() {
-        lifecycleScope.launch {
-            fixSwitchboard.fixes.collect { fix ->
-                // For simplicity, we'll collect fixes in a list
-                // In a real app, you might want to use a database or repository
-                currentFixes = currentFixes + fix
-                coordinatesAdapter?.updateFixes(currentFixes.takeLast(100)) // Keep last 100 for performance
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fixSwitchboard.fixes.collect { fix ->
+                    currentFixes = currentFixes + fix
+                    coordinatesAdapter?.updateFixes(currentFixes.takeLast(100))
+                }
             }
         }
     }

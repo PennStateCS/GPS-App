@@ -10,6 +10,8 @@ import com.example.surveyingapp.domain.repository.AccuracyStats
 import com.example.surveyingapp.domain.repository.ValidationResult
 import com.example.surveyingapp.domain.repository.ExportFormat
 import com.example.surveyingapp.domain.repository.BoundingBox
+import com.example.surveyingapp.gnss.model.Provider
+import com.example.surveyingapp.gnss.model.RtkStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlin.math.*
@@ -29,6 +31,8 @@ class CoordinateRepositoryImpl(
     // Flow stream (preferred for coroutines/Compose)
     override val allCoordinatesFlow: Flow<List<Coordinate>> =
         coordinateDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    val coordinateCountFlow: Flow<Int> = coordinateDao.observeCoordinateCount()
 
     // Basic CRUD operations
     override suspend fun insert(coordinate: Coordinate) {
@@ -66,9 +70,7 @@ class CoordinateRepositoryImpl(
 
     // Spatial queries
     override suspend fun getCoordinatesInBounds(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double): List<Coordinate> {
-        return getAllCoordinatesList().filter { coord ->
-            coord.latitude in minLat..maxLat && coord.longitude in minLon..maxLon
-        }
+        return coordinateDao.getWithinBBox(minLat, minLon, maxLat, maxLon).map { it.toDomain() }
     }
 
     override suspend fun getCoordinatesNear(lat: Double, lon: Double, radiusMeters: Double): List<Coordinate> {
@@ -86,30 +88,27 @@ class CoordinateRepositoryImpl(
 
     // Filter and search operations
     override suspend fun getCoordinatesByProvider(provider: String): List<Coordinate> {
-        return getAllCoordinatesList().filter { it.provider == provider }
+        val providerEnum = runCatching { Provider.valueOf(provider.uppercase()) }.getOrNull()
+            ?: return getAllCoordinatesList().filter { it.provider == provider }
+        return coordinateDao.getByProvider(providerEnum).map { it.toDomain() }
     }
 
     override suspend fun getCoordinatesByRtkStatus(rtkStatus: String): List<Coordinate> {
-        return getAllCoordinatesList().filter { it.rtkStatus == rtkStatus }
+        val rtkEnum = runCatching { RtkStatus.valueOf(rtkStatus.uppercase()) }.getOrNull()
+            ?: return getAllCoordinatesList().filter { it.rtkStatus == rtkStatus }
+        return coordinateDao.getByRtkStatus(rtkEnum).map { it.toDomain() }
     }
 
     override suspend fun getCoordinatesWithMinAccuracy(maxHorizontalAccuracyM: Double): List<Coordinate> {
-        return getAllCoordinatesList().filter { coordinate ->
-            val accuracy = coordinate.horizontalAccuracyM
-            accuracy != null && accuracy <= maxHorizontalAccuracyM
-        }
+        return coordinateDao.getWithMaxAccuracy(maxHorizontalAccuracyM).map { it.toDomain() }
     }
 
     override suspend fun searchCoordinatesByName(nameQuery: String): List<Coordinate> {
-        return getAllCoordinatesList().filter {
-            it.name.contains(nameQuery, ignoreCase = true)
-        }
+        return coordinateDao.searchByName(nameQuery).map { it.toDomain() }
     }
 
     override suspend fun getCoordinatesByDateRange(startEpochMs: Long, endEpochMs: Long): List<Coordinate> {
-        return getAllCoordinatesList().filter {
-            it.timestamp in startEpochMs..endEpochMs
-        }
+        return coordinateDao.getBetween(startEpochMs, endEpochMs).map { it.toDomain() }
     }
 
     // Statistics and analysis
@@ -175,21 +174,21 @@ class CoordinateRepositoryImpl(
 
     // Batch operations
     override suspend fun updateMultiple(coordinates: List<Coordinate>) {
-        coordinates.forEach { update(it) }
+        coordinateDao.updateAll(coordinates.map { it.toEntity() })
     }
 
     override suspend fun deleteMultiple(ids: List<String>) {
-        ids.forEach { deleteById(it) }
+        coordinateDao.deleteByIds(ids)
     }
 
     override suspend fun deleteByProvider(provider: String) {
-        val coordinatesToDelete = getCoordinatesByProvider(provider)
-        coordinatesToDelete.forEach { deleteById(it.id) }
+        val ids = getCoordinatesByProvider(provider).map { it.id }
+        if (ids.isNotEmpty()) coordinateDao.deleteByIds(ids)
     }
 
     override suspend fun deleteByDateRange(startEpochMs: Long, endEpochMs: Long) {
-        val coordinatesToDelete = getCoordinatesByDateRange(startEpochMs, endEpochMs)
-        coordinatesToDelete.forEach { deleteById(it.id) }
+        val ids = getCoordinatesByDateRange(startEpochMs, endEpochMs).map { it.id }
+        if (ids.isNotEmpty()) coordinateDao.deleteByIds(ids)
     }
 
     // Export and backup

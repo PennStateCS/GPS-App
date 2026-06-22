@@ -30,17 +30,17 @@
 
             <!-- Shown only when the left list pane is collapsed (tablet two-pane).
                  Restores the list; GONE otherwise so the title sits flush at the start. -->
-            <ImageButton
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_show_list"
-                android:layout_width="48dp"
+                style="@style/Widget.Material3.Button.TextButton.Icon"
+                android:layout_width="wrap_content"
                 android:layout_height="48dp"
-                android:padding="12dp"
                 android:layout_marginEnd="4dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:text="List"
                 android:contentDescription="@string/show_coordinate_list"
-                android:src="@drawable/ic_list_coordinates"
                 android:visibility="gone"
-                app:tint="?attr/colorOnSurfaceVariant" />
+                app:icon="@drawable/ic_list_coordinates"
+                app:iconTint="?attr/colorOnSurfaceVariant" />
 
             <TextView
                 android:id="@+id/text_name"
@@ -74,7 +74,24 @@
             android:layout_marginBottom="14dp"
             android:visibility="gone">
 
-            <!-- Fix / RTK status: FIX · FLOAT · GPS · DGPS · MODEL · IMPORTED · MANUAL · NO FIX -->
+            <!-- Source badge: Internal GPS / RS2+ / Model / Imported / Manual -->
+            <TextView
+                android:id="@+id/badge_source"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textStyle="bold"
+                android:textColor="@android:color/white"
+                android:textAllCaps="true"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/badge_bg"
+                android:visibility="gone" />
+
+            <!-- Fix / RTK quality: FIXED · FLOAT · DGPS · SINGLE · NO FIX -->
             <TextView
                 android:id="@+id/badge_rtk"
                 android:layout_width="wrap_content"
@@ -94,6 +111,22 @@
             <!-- Horizontal accuracy: "H ±0.42 m" -->
             <TextView
                 android:id="@+id/badge_accuracy"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textStyle="bold"
+                android:textColor="@android:color/white"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/badge_bg"
+                android:visibility="gone" />
+
+            <!-- Extra badge: Averaged / Model linked -->
+            <TextView
+                android:id="@+id/badge_extra"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:paddingStart="9dp"
@@ -163,6 +196,348 @@
 
                 <LinearLayout
                     android:id="@+id/card_summary_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="4dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             CARD: LOCATION   (populated by CoordinateDetailFragment)
+        ══════════════════════════════════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_location"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="6dp"
+                    android:text="Location"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <!-- Dynamic rows: Latitude, Longitude, Altitude, MSL, Geoid -->
+                <LinearLayout
+                    android:id="@+id/card_location_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <!-- Distance from current live GNSS position -->
+                <LinearLayout
+                    android:id="@+id/row_distance"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="20dp"
+                        android:layout_marginEnd="20dp"
+                        android:background="?attr/colorOutlineVariant"
+                        android:alpha="0.5" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="44dp"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Distance"
+                            android:textAppearance="?attr/textAppearanceLabelMedium"
+                            android:textColor="?attr/colorOnSurface" />
+                        <TextView
+                            android:id="@+id/text_distance"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1.5"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Action row: toggle CRS details and copy lat/lon -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="4dp">
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_toggle_crs"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Show CRS / UTM"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+                    <Space
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_copy_latlng"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Copy Lat/Lon"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- Collapsible CRS / UTM section (default collapsed) -->
+                <LinearLayout
+                    android:id="@+id/crs_section_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="20dp"
+                        android:layout_marginEnd="20dp"
+                        android:background="?attr/colorOutlineVariant"
+                        android:alpha="0.5" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"
+                        android:paddingTop="10dp"
+                        android:paddingBottom="2dp"
+                        android:text="Projection / CRS"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorPrimary" />
+                    <LinearLayout
+                        android:id="@+id/card_crs_rows"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_copy_utm"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:text="Copy UTM"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             CARD: PROJECTION / CRS   (content now embedded in Location card above)
+        ══════════════════════════════════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_projection"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="6dp"
+                    android:text="Projection / CRS"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <LinearLayout
+                    android:id="@+id/card_projection_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="4dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             CARD: CAPTURED
+        ══════════════════════════════════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_capture"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="6dp"
+                    android:text="Capture Source"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <LinearLayout
+                    android:id="@+id/card_capture_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <TextView
+                    android:id="@+id/text_capture_quality_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="12dp"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             CARD: SURVEY / GNSS
+        ══════════════════════════════════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_gnss"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="6dp"
+                    android:text="Survey / GNSS"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <LinearLayout
+                    android:id="@+id/card_gnss_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="4dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             CARD: AVERAGING & PRECISION   (hidden if no averaging data)
+        ══════════════════════════════════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_averaging"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="6dp"
+                    android:text="Averaging &amp; Precision"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <LinearLayout
+                    android:id="@+id/card_averaging_rows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="4dp" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             CARD: MOTION   (hidden unless speed/course present)
+        ══════════════════════════════════════════════════════════════════ -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_motion"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="20dp"
+                    android:paddingEnd="20dp"
+                    android:paddingTop="14dp"
+                    android:paddingBottom="6dp"
+                    android:text="Motion"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <LinearLayout
+                    android:id="@+id/card_motion_rows"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
@@ -254,6 +629,15 @@
                                 android:textColor="?attr/colorOnSurfaceVariant"
                                 android:maxLines="2"
                                 android:ellipsize="end" />
+
+                            <TextView
+                                android:id="@+id/text_model_placement"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:textAppearance="?attr/textAppearanceLabelSmall"
+                                android:textColor="?attr/colorOnSurfaceVariant"
+                                android:visibility="gone" />
 
                             <TextView
                                 android:id="@+id/model_status"
@@ -351,230 +735,6 @@
                         android:text="@string/select_model" />
 
                 </LinearLayout>
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ══════════════════════════════════════════════════════════════════
-             CARD: LOCATION   (populated by CoordinateDetailFragment)
-        ══════════════════════════════════════════════════════════════════ -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_location"
-            style="@style/Widget.App.Card.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="6dp"
-                    android:text="Location"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <!-- Dynamic rows inserted here -->
-                <LinearLayout
-                    android:id="@+id/card_location_rows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="4dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ══════════════════════════════════════════════════════════════════
-             CARD: PROJECTION / CRS   (hidden if no projection data)
-        ══════════════════════════════════════════════════════════════════ -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_projection"
-            style="@style/Widget.App.Card.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="6dp"
-                    android:text="Projection / CRS"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <LinearLayout
-                    android:id="@+id/card_projection_rows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="4dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ══════════════════════════════════════════════════════════════════
-             CARD: SURVEY / GNSS
-        ══════════════════════════════════════════════════════════════════ -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_gnss"
-            style="@style/Widget.App.Card.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="6dp"
-                    android:text="Survey / GNSS"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <LinearLayout
-                    android:id="@+id/card_gnss_rows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="4dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ══════════════════════════════════════════════════════════════════
-             CARD: CAPTURED
-        ══════════════════════════════════════════════════════════════════ -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_capture"
-            style="@style/Widget.App.Card.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="6dp"
-                    android:text="Capture Source"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <LinearLayout
-                    android:id="@+id/card_capture_rows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="4dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ══════════════════════════════════════════════════════════════════
-             CARD: AVERAGING & PRECISION   (hidden if no averaging data)
-        ══════════════════════════════════════════════════════════════════ -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_averaging"
-            style="@style/Widget.App.Card.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="6dp"
-                    android:text="Averaging &amp; Precision"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <LinearLayout
-                    android:id="@+id/card_averaging_rows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="4dp" />
-
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- ══════════════════════════════════════════════════════════════════
-             CARD: MOTION   (hidden unless speed/course present)
-        ══════════════════════════════════════════════════════════════════ -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_motion"
-            style="@style/Widget.App.Card.Outlined"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:visibility="gone">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingStart="20dp"
-                    android:paddingEnd="20dp"
-                    android:paddingTop="14dp"
-                    android:paddingBottom="6dp"
-                    android:text="Motion"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
-
-                <LinearLayout
-                    android:id="@+id/card_motion_rows"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingBottom="4dp" />
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

@@ -269,13 +269,15 @@ class CoordinatesFragment : Fragment() {
         // Preferences for UI-only display toggles (not app settings)
         prefs = requireContext().getSharedPreferences("CoordinatesFragmentPrefs", Context.MODE_PRIVATE)
 
-        // Observe models so the list can show model thumbnails for coordinates that use a model icon
+        // Observe models so the list can show model thumbnails and names
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val db = AppDatabase.getDatabase(requireContext())
                 ModelRepositoryImpl(db.modelDao()).getAllModels().collect { models ->
-                    val map = models.associate { it.id to it.thumbnailFilePath }
-                    adapter.setThumbnailMap(map)
+                    val thumbMap = models.associate { it.id to it.thumbnailFilePath }
+                    val nameMap  = models.associate { it.id to it.name }
+                    adapter.setModelNameMap(nameMap)
+                    adapter.setThumbnailMap(thumbMap)
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e

@@ -34,6 +34,7 @@ import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.ui.components.FixBadgeView
+import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
@@ -44,8 +45,12 @@ import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val LOG_GNSS_UI = false
 
 @AndroidEntryPoint
 class HomeFragment : Fragment(), OnMapReadyCallback {
@@ -68,6 +73,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @Volatile private var onLocationChangedListener: LocationSource.OnLocationChangedListener? = null
     private var hasCenteredCamera = false // Always starts false
     private val desiredFollowZoom = 18f
+    private var lastCameraMoveMs = 0L
+    private var lastCameraLocation: LatLng? = null
 
     // Fix Badge component
     private lateinit var fixBadge: FixBadgeView
@@ -88,7 +95,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        android.util.Log.d("HomeFragment", "onCreateView called, hasCenteredCamera=$hasCenteredCamera")
+        if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onCreateView called, hasCenteredCamera=$hasCenteredCamera")
 
         // Inflate the layout using view binding
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
@@ -96,7 +103,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
         // Force reset of camera flag on view creation
         hasCenteredCamera = false
-        android.util.Log.d("HomeFragment", "onCreateView: hasCenteredCamera reset to false")
+        if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onCreateView: hasCenteredCamera reset to false")
 
         // Initialise repositories — guard against DB creation failure
         try {
@@ -165,9 +172,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    android.util.Log.d("HomeFragment", "Started collecting fixes from switchboard")
-                    fixSwitchboard.fixes.collect { fix: Fix ->
-                        android.util.Log.d("HomeFragment", "Received fix: lat=${fix.latDeg}, lon=${fix.lonDeg}, provider=${fix.provider}")
+                    fixSwitchboard.fixes
+                        .conflate()
+                        .sample(500)
+                        .collect { fix: Fix ->
                         updateMapLocation(fix)
                         updateStatusDisplay(fix)
                     }
@@ -264,7 +272,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Map type cycler
         binding.chipMapType.setOnClickListener {
             try {
-                googleMap?.let { map -> map.mapType = nextMapType(map.mapType) }
+                googleMap?.let { map ->
+                map.mapType = nextMapType(map.mapType)
+                context?.let { MapThemeHelper.applyTheme(it, map, map.mapType) }
+            }
             } catch (e: Exception) {
                 android.util.Log.e("HomeFragment", "Error changing map type", e)
             }
@@ -317,8 +328,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    coordinateRepository?.allCoordinatesFlow?.collectLatest { coordinates ->
-                        _binding?.textCoordinatesCount?.text = coordinates.size.toString()
+                    coordinateRepository?.coordinateCountFlow?.collectLatest { count ->
+                        _binding?.textCoordinatesCount?.text = count.toString()
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -330,8 +341,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    modelRepository?.getAllModels()?.collectLatest { models ->
-                        _binding?.textModelsCount?.text = models.size.toString()
+                    modelRepository?.observeModelCount()?.collectLatest { count ->
+                        _binding?.textModelsCount?.text = count.toString()
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -342,40 +353,48 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     }
 
 
+    private fun shouldMoveHomeCamera(newLocation: LatLng): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastCameraMoveMs < 2_000) return false
+        val prev = lastCameraLocation ?: return true
+        val result = FloatArray(1)
+        android.location.Location.distanceBetween(prev.latitude, prev.longitude, newLocation.latitude, newLocation.longitude, result)
+        return result[0] >= 5f
+    }
+
     private fun updateMapLocation(fix: Fix?) {
         try {
-            android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}, googleMap=${googleMap != null}, hasCenteredCamera=$hasCenteredCamera")
+            if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}")
 
             if (fix != null && googleMap != null) {
-                // Update the My Location dot
+                if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
                 val locationForDot = fixToLocation(fix)
                 onLocationChangedListener?.onLocationChanged(locationForDot)
-                android.util.Log.d("HomeFragment", "Updated My Location dot")
 
                 val location = LatLng(fix.latDeg, fix.lonDeg)
                 val map = googleMap
                 if (map != null) {
                     if (!hasCenteredCamera) {
-                        android.util.Log.d("HomeFragment", "First fix - centering camera at $location")
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                         hasCenteredCamera = true
-                    } else {
+                        lastCameraMoveMs = System.currentTimeMillis()
+                        lastCameraLocation = location
+                    } else if (shouldMoveHomeCamera(location)) {
                         val currentZoom = map.cameraPosition.zoom
                         val update = if (currentZoom < desiredFollowZoom)
                             CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom)
                         else
                             CameraUpdateFactory.newLatLng(location)
                         map.animateCamera(update)
+                        lastCameraMoveMs = System.currentTimeMillis()
+                        lastCameraLocation = location
                     }
                 }
 
-                // Hide placeholder, show map
                 binding.layoutMapPlaceholder.visibility = View.GONE
                 binding.mapViewMini.visibility = View.VISIBLE
             } else if (googleMap != null) {
-
                 binding.layoutMapPlaceholder.visibility = View.VISIBLE
-                android.util.Log.d("HomeFragment", "Showing placeholder (map ready but no fix)")
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "updateMapLocation failed", e)
@@ -409,11 +428,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @SuppressLint("MissingPermission")
     override fun onMapReady(map: GoogleMap) {
         try {
-            android.util.Log.d("HomeFragment", "onMapReady called, hasCenteredCamera was: $hasCenteredCamera")
+            if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onMapReady called, hasCenteredCamera was: $hasCenteredCamera")
             googleMap = map
 
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
+            MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
             // Set default camera position (will be overridden when fix arrives)
             // Start at a reasonable default location (e.g., San Francisco)
@@ -423,11 +443,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
             mapLocationSource = object : LocationSource {
                 override fun activate(listener: LocationSource.OnLocationChangedListener) {
-                    android.util.Log.d("HomeFragment", "LocationSource activated")
+                    if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "LocationSource activated")
                     onLocationChangedListener = listener
                 }
                 override fun deactivate() {
-                    android.util.Log.d("HomeFragment", "LocationSource deactivated")
+                    if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "LocationSource deactivated")
                     onLocationChangedListener = null
                 }
             }
@@ -458,7 +478,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
                 // Reset camera centering flag - will center on first GPS fix
                 hasCenteredCamera = false
-                android.util.Log.d("HomeFragment", "Map configured: hasCenteredCamera reset to false")
+                if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "Map configured: hasCenteredCamera reset to false")
             } else {
                 _binding?.let {
                     it.layoutMapPlaceholder.visibility = View.VISIBLE
@@ -485,7 +505,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Reset camera centering flag when fragment resumes
         // This ensures the map will center on GPS location when user returns to home
         hasCenteredCamera = false
-        android.util.Log.d("HomeFragment", "onResume: hasCenteredCamera reset to false")
+        if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onResume: hasCenteredCamera reset to false")
 
         // Note: loadStatistics() is set up once in onCreateView via viewLifecycleOwner.lifecycleScope
         // with repeatOnLifecycle(STARTED) - no need to call it again here.

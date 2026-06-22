@@ -34,6 +34,7 @@ import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
@@ -54,6 +55,8 @@ import com.google.android.gms.maps.model.PolylineOptions
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -80,6 +83,9 @@ class RenderMapFragment : Fragment() {
 
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
+
+    @Inject
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
 
     // Map
     private var mapView: MapView? = null
@@ -136,6 +142,11 @@ class RenderMapFragment : Fragment() {
     private var lastTrailFix: Fix? = null
     private var gnssStatusChip: TextView? = null
     private var currentFix: Fix? = null
+    private var lastCurrentMarkerHue: Float? = null
+    private var lastStakeoutMarkerHue: Float? = null
+
+    // Marker descriptor cache — keyed by "icon:$name:$color" or "model:$id:$path"
+    private val markerDescriptorCache = mutableMapOf<String, BitmapDescriptor>()
 
     // Stakeout
     private var isStakeoutMode = false
@@ -210,6 +221,7 @@ class RenderMapFragment : Fragment() {
         mapView?.getMapAsync { map ->
             googleMap = map
             map.mapType = currentMapType
+            MapThemeHelper.applyTheme(requireContext(), map, currentMapType)
             map.setMaxZoomPreference(22f)
             map.setMinZoomPreference(2f)
 
@@ -290,6 +302,7 @@ class RenderMapFragment : Fragment() {
         if (panelWidthPx == 0) panelWidthPx = dpToPx(272f)
         applyPanelState()
         setupPanelInteractions()
+        startProviderObservation()
     }
 
     // ── Lifecycle pass-throughs ────────────────────────────────────────────────
@@ -309,17 +322,43 @@ class RenderMapFragment : Fragment() {
             currentMarker?.remove(); currentMarker = null
             stakeoutLine?.remove(); stakeoutLine = null
         } catch (e: Exception) { Log.e(TAG, "onDestroyView cleanup", e) }
+        markerDescriptorCache.clear()
+        lastCurrentMarkerHue = null
+        lastStakeoutMarkerHue = null
         mapView = null; placeholder = null
         super.onDestroyView()
     }
 
     // ── GNSS fix collection ────────────────────────────────────────────────────
 
+    private fun startProviderObservation() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                sourceSettings.activeProvider.collect { provider ->
+                    if (previousProvider != null && previousProvider != provider) {
+                        clearLiveTrail()
+                        clearAccuracyCircle()
+                        currentMarker?.remove(); currentMarker = null
+                        lastFixLatLng = null
+                        currentFix = null
+                        gnssStatusChip?.text = ""
+                        lastCurrentMarkerHue = null
+                    }
+                    previousProvider = provider
+                }
+            }
+        }
+    }
+
     private fun startFixCollection() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    fixSwitchboard.fixes.collect { fix: Fix -> updateLiveTracking(fix) }
+                    fixSwitchboard.fixes
+                        .conflate()
+                        .sample(250)
+                        .collect { fix: Fix -> updateLiveTracking(fix) }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error collecting fixes", e)
                 }
@@ -329,6 +368,7 @@ class RenderMapFragment : Fragment() {
 
     private fun updateLiveTracking(fix: Fix) {
         try {
+            if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
             val pos = LatLng(fix.latDeg, fix.lonDeg)
             currentFix = fix
             try { updateCurrentMarker(fix.latDeg, fix.lonDeg, fix.rtkStatus) } catch (e: Exception) { Log.w(TAG, "updateCurrentMarker", e) }
@@ -406,19 +446,22 @@ class RenderMapFragment : Fragment() {
             distance < STAKEOUT_AMBER_THRESHOLD -> BitmapDescriptorFactory.HUE_ORANGE
             else                                -> BitmapDescriptorFactory.HUE_RED
         }
-        stakeoutMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
+        if (hue != lastStakeoutMarkerHue) {
+            stakeoutMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
+            lastStakeoutMarkerHue = hue
+        }
     }
 
     private fun updateStakeoutLine(from: LatLng, to: LatLng) {
         val map = googleMap ?: return
-        try { stakeoutLine?.remove() } catch (_: Exception) {}
+        val existing = stakeoutLine
+        if (existing != null) {
+            try { existing.points = listOf(from, to); return }
+            catch (e: Exception) { Log.w(TAG, "stakeoutLine update failed, recreating", e); try { existing.remove() } catch (_: Exception) {}; stakeoutLine = null }
+        }
         stakeoutLine = try {
             map.addPolyline(
-                PolylineOptions()
-                    .add(from, to)
-                    .color(0xCCFF5722.toInt())
-                    .width(4f)
-                    .geodesic(true)
+                PolylineOptions().add(from, to).color(0xCCFF5722.toInt()).width(4f).geodesic(true)
             )
         } catch (_: Exception) { null }
     }
@@ -442,9 +485,15 @@ class RenderMapFragment : Fragment() {
                 MarkerOptions().position(pos).title("Current Position")
                     .icon(BitmapDescriptorFactory.defaultMarker(hue))
             )
+            lastCurrentMarkerHue = hue
         } else {
-            try { currentMarker?.position = pos; currentMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue)) }
-            catch (e: Exception) { Log.w(TAG, "Update current marker position failed", e) }
+            try {
+                currentMarker?.position = pos
+                if (hue != lastCurrentMarkerHue) {
+                    currentMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
+                    lastCurrentMarkerHue = hue
+                }
+            } catch (e: Exception) { Log.w(TAG, "Update current marker position failed", e) }
         }
     }
 
@@ -452,16 +501,22 @@ class RenderMapFragment : Fragment() {
 
     private fun updateAccuracyCircle(position: LatLng, hAccM: Double?) {
         val map = googleMap ?: return
-        try { accuracyCircle?.remove() } catch (_: Exception) {}
-        accuracyCircle = null
-        hAccM?.takeIf { it > 0 && it < 1000 }?.let { accuracy ->
-            try {
-                accuracyCircle = map.addCircle(
-                    CircleOptions().center(position).radius(accuracy)
-                        .strokeColor(0x880000FF.toInt()).fillColor(0x220000FF.toInt()).strokeWidth(2f)
-                )
-            } catch (e: Exception) { Log.w(TAG, "Failed to add accuracy circle", e) }
+        val accuracy = hAccM?.takeIf { it > 0 && it < 1000 }
+        if (accuracy == null) {
+            accuracyCircle?.remove(); accuracyCircle = null
+            return
         }
+        val existing = accuracyCircle
+        if (existing != null) {
+            try { existing.center = position; existing.radius = accuracy; return }
+            catch (e: Exception) { Log.w(TAG, "accuracyCircle update failed, recreating", e); existing.remove(); accuracyCircle = null }
+        }
+        try {
+            accuracyCircle = map.addCircle(
+                CircleOptions().center(position).radius(accuracy)
+                    .strokeColor(0x880000FF.toInt()).fillColor(0x220000FF.toInt()).strokeWidth(2f)
+            )
+        } catch (e: Exception) { Log.w(TAG, "Failed to add accuracy circle", e) }
     }
 
     private fun clearAccuracyCircle() { accuracyCircle?.remove(); accuracyCircle = null }
@@ -474,13 +529,15 @@ class RenderMapFragment : Fragment() {
         try {
             trailPoints.add(currentPos); lastTrailFix = fix
             if (trailPoints.size > MAX_TRAIL_POINTS) trailPoints.removeAt(0)
-            try { liveTrail?.remove() } catch (_: Exception) {}
-            liveTrail = null
-            if (trailPoints.size >= 2) {
-                liveTrail = map.addPolyline(
-                    PolylineOptions().addAll(trailPoints).color(0xFFFF6B35.toInt()).width(4f).geodesic(true)
-                )
+            if (trailPoints.size < 2) return
+            val existing = liveTrail
+            if (existing != null) {
+                try { existing.points = trailPoints; return }
+                catch (e: Exception) { Log.w(TAG, "liveTrail update failed, recreating", e); existing.remove(); liveTrail = null }
             }
+            liveTrail = map.addPolyline(
+                PolylineOptions().addAll(trailPoints).color(0xFFFF6B35.toInt()).width(4f).geodesic(true)
+            )
         } catch (e: Exception) { Log.w(TAG, "updateLiveTrail error", e) }
     }
 
@@ -505,9 +562,10 @@ class RenderMapFragment : Fragment() {
         vm.allCoordinates.observe(viewLifecycleOwner) { points ->
             if (googleMap == null) return@observe
             try {
-                markerMap.values.forEach { it.remove() }
-                markerMap.clear()
                 if (points.isEmpty()) {
+                    markerMap.values.forEach { it.remove() }
+                    markerMap.clear()
+                    coordinateMap.clear()
                     placeholder?.visibility = View.VISIBLE
                     lastLatLngs = emptyList()
                     toggleAdapter.submit(emptyList())
@@ -515,31 +573,58 @@ class RenderMapFragment : Fragment() {
                     return@observe
                 }
                 placeholder?.visibility = View.GONE
+
+                // Remove markers for coordinates that were deleted
+                val newIds = points.map { it.id }.toHashSet()
+                val removedIds = markerMap.keys.filter { it !in newIds }
+                removedIds.forEach { id -> markerMap.remove(id)?.remove(); coordinateMap.remove(id) }
+
                 val latLngsVisible = ArrayList<LatLng>()
                 val toggleItems = mutableListOf<CoordinateToggleItem>()
+
                 points.forEach { p ->
                     val ll = LatLng(p.latitude, p.longitude)
-                    val visible = visibilityMap[p.id] ?: true
-                    visibilityMap.putIfAbsent(p.id, visible)
-                    val opts = MarkerOptions().position(ll).title(p.name)
-                    val marker = googleMap!!.addMarker(opts)
-                    if (marker != null) {
-                        marker.isVisible = visible
-                        marker.tag = p.id
-                        markerMap[p.id] = marker
-                        if (visible) latLngsVisible.add(ll)
-                        viewLifecycleOwner.lifecycleScope.launch {
-                            val descriptor = buildMarkerDescriptor(p.icon, p.color)
-                            if (descriptor != null) marker.setIcon(descriptor)
+                    val visible = visibilityMap.getOrPut(p.id) { true }
+                    val prev = coordinateMap[p.id]
+                    val existingMarker = markerMap[p.id]
+
+                    if (existingMarker != null) {
+                        // Update position/title only when changed
+                        if (prev == null || prev.latitude != p.latitude || prev.longitude != p.longitude) {
+                            try { existingMarker.position = ll } catch (_: Exception) {}
+                        }
+                        if (prev == null || prev.name != p.name) {
+                            try { existingMarker.title = p.name } catch (_: Exception) {}
+                        }
+                        // Rebuild icon only when icon or color changed
+                        if (prev == null || prev.icon != p.icon || prev.color != p.color) {
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                                if (descriptor != null) existingMarker.setIcon(descriptor)
+                            }
+                        }
+                    } else {
+                        val marker = (googleMap ?: return@forEach).addMarker(MarkerOptions().position(ll).title(p.name))
+                        if (marker != null) {
+                            marker.isVisible = visible
+                            marker.tag = p.id
+                            markerMap[p.id] = marker
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                                if (descriptor != null) marker.setIcon(descriptor)
+                            }
                         }
                     }
+
+                    coordinateMap[p.id] = p
+                    if (visible) latLngsVisible.add(ll)
                     toggleItems += CoordinateToggleItem(
                         id = p.id, name = p.name, checked = visible,
                         icon = p.icon ?: "", color = p.color,
                         lat = p.latitude, lon = p.longitude
                     )
-                    coordinateMap[p.id] = p
                 }
+
                 lastLatLngs = latLngsVisible
                 toggleAdapter.submit(toggleItems)
                 updateVisibleCount()
@@ -562,13 +647,18 @@ class RenderMapFragment : Fragment() {
                     val db = AppDatabase.getDatabase(ctx)
                     val repo = ModelRepositoryImpl(db.modelDao())
                     val model = repo.getModelById(modelId) ?: return@withContext null
-                    val thumbPath = model.thumbnailFilePath
-                    if (thumbPath.isNullOrBlank()) return@withContext null
+                    val thumbPath = model.thumbnailFilePath ?: return@withContext null
+                    val cacheKey = "model:$modelId:$thumbPath"
+                    markerDescriptorCache[cacheKey]?.let { return@withContext it }
                     val thumbBmp = BitmapFactory.decodeFile(thumbPath) ?: return@withContext null
-                    withContext(Dispatchers.Main) { buildModelMarkerBitmap(thumbBmp) }
+                    val descriptor = withContext(Dispatchers.Main) { buildModelMarkerBitmap(thumbBmp) }
+                    markerDescriptorCache[cacheKey] = descriptor
+                    descriptor
                 } catch (e: Exception) { Log.w(TAG, "Failed to load model thumbnail for marker", e); null }
             }
         }
+        val cacheKey = "icon:$iconName:$colorInt"
+        markerDescriptorCache[cacheKey]?.let { return it }
         @Suppress("DiscouragedApi")
         val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
         if (resId == 0) return null
@@ -579,7 +669,9 @@ class RenderMapFragment : Fragment() {
         d.setBounds(0, 0, size, size)
         try { @Suppress("DEPRECATION") d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_ATOP) } catch (_: Exception) {}
         d.draw(canvas)
-        return BitmapDescriptorFactory.fromBitmap(bmp)
+        val descriptor = BitmapDescriptorFactory.fromBitmap(bmp)
+        markerDescriptorCache[cacheKey] = descriptor
+        return descriptor
     }
 
     private fun buildModelMarkerBitmap(thumb: Bitmap): BitmapDescriptor {
@@ -688,6 +780,7 @@ class RenderMapFragment : Fragment() {
                 else                    -> GoogleMap.MAP_TYPE_NORMAL
             }
             googleMap?.mapType = currentMapType
+            googleMap?.let { MapThemeHelper.applyTheme(requireContext(), it, currentMapType) }
             isSatellite = currentMapType == GoogleMap.MAP_TYPE_HYBRID || currentMapType == GoogleMap.MAP_TYPE_SATELLITE
             true
         }
@@ -852,12 +945,14 @@ class RenderMapFragment : Fragment() {
         txtStakeoutBearing?.text = "—"
 
         stakeoutMarker?.remove()
+        lastStakeoutMarkerHue = null
         stakeoutMarker = googleMap?.addMarker(
             MarkerOptions()
                 .position(latLng)
                 .title("Stakeout: ${coord.name}")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
         )
+        lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
 
         lastFixLatLng?.let { updateStakeoutDistanceAndBearing(latLng) }
         showSnackbar("Stakeout started: ${coord.name}")
@@ -870,7 +965,7 @@ class RenderMapFragment : Fragment() {
         stakeoutPanel?.visibility = View.GONE
         stakeoutTarget = null
         txtStakeoutTarget?.text = "—"
-        stakeoutMarker?.remove(); stakeoutMarker = null
+        stakeoutMarker?.remove(); stakeoutMarker = null; lastStakeoutMarkerHue = null
         stakeoutLine?.remove(); stakeoutLine = null
         showSnackbar("Stakeout stopped")
     }

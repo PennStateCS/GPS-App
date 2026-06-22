@@ -69,12 +69,18 @@ class SimpleCoordinatesAdapter(
     private var items: List<Coordinate> = emptyList()
     private var selectedId: String? = null
 
-    /** Maps model DB id → absolute thumbnail file path (null if no thumbnail). Updated externally. */
+    /** Maps model DB id → thumbnail file path (null if no thumbnail). */
     private var thumbnailMap: Map<String, String?> = emptyMap()
+    /** Maps model DB id → model display name. */
+    private var modelNameMap: Map<String, String> = emptyMap()
 
     fun setThumbnailMap(map: Map<String, String?>) {
         thumbnailMap = map
         notifyItemRangeChanged(0, items.size)
+    }
+
+    fun setModelNameMap(nameMap: Map<String, String>) {
+        modelNameMap = nameMap
     }
 
     /**
@@ -146,12 +152,12 @@ class SimpleCoordinatesAdapter(
         // Set the name text
         holder.name.text = p.name
 
-        // Always show coords with altitude
+        // Subtitle: context-aware (model name, source, RTK quality, lat/lon)
         holder.coords.visibility = View.VISIBLE
-        holder.coords.text = String.format(Locale.US, "%.6f, %.6f, %.2fm", p.latitude, p.longitude, p.altitude)
+        holder.coords.text = buildSubtitle(p)
 
         // Trailing indicator when a 3D model is linked to this coordinate
-        val iconKey = p.icon ?: ""
+        val iconKey = p.icon
         holder.modelLink.visibility = if (iconKey.startsWith("model:")) View.VISIBLE else View.GONE
 
         // Icon: handle both built-in drawables and model thumbnails
@@ -247,6 +253,45 @@ class SimpleCoordinatesAdapter(
 
         if (accent == null) {
             Log.w("SimpleCoordinatesAdapter", "Accent view still missing after injection attempt")
+        }
+    }
+
+    // ── Subtitle builder ──────────────────────────────────────────────────────
+
+    private fun buildSubtitle(p: Coordinate): String {
+        val latLon = String.format(Locale.US, "%.6f, %.6f", p.latitude, p.longitude)
+        val iconKey = p.icon
+        return when {
+            iconKey.startsWith("model:") -> {
+                val modelId = iconKey.removePrefix("model:")
+                val name = modelNameMap[modelId]?.takeIf { it.isNotBlank() } ?: "Model linked"
+                "$name · $latLon"
+            }
+            p.provider.lowercase(Locale.US).contains("rs2") ||
+            p.captureMethod?.lowercase(Locale.US) == "external_gnss" ||
+            p.captureMethod?.lowercase(Locale.US) == "rtk_receiver" -> {
+                val src = p.sourceDevice?.takeIf { it.isNotBlank() } ?: "RS2+"
+                val quality = when (p.rtkStatus?.uppercase(Locale.US)) {
+                    "FIX", "FIXED" -> "Fixed"
+                    "FLOAT"        -> "Float"
+                    "DGPS"         -> "DGPS"
+                    "SINGLE", "GPS", "AUTONOMOUS" -> "Single"
+                    else           -> null
+                }
+                if (quality != null) "$src · $quality · $latLon" else "$src · $latLon"
+            }
+            else -> {
+                val src = when (p.captureMethod?.lowercase(Locale.US)) {
+                    "internal_gps" -> "Internal GPS"
+                    "averaged"     -> "Averaged"
+                    "manual"       -> "Manual"
+                    "imported"     -> "Imported"
+                    "map_tap"      -> "Map tap"
+                    "model_embedded" -> "Model"
+                    else           -> null
+                }
+                if (src != null) "$src · $latLon" else latLon
+            }
         }
     }
 

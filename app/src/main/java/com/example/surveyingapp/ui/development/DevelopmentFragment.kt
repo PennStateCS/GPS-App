@@ -19,6 +19,7 @@ import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
+import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.settings.SettingsCategory
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.google.ar.core.ArCoreApk
@@ -602,6 +603,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             miniMapView.getMapAsync { gMap ->
                 completed = true
                 updateRuntimeStatus("MAP_READY", MapsStatus.OK)
+                MapThemeHelper.applyTheme(requireContext(), gMap, gMap.mapType)
                 gMap.moveCamera(com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(LatLng(0.0,0.0), 1f))
             }
             handler.postDelayed({ if(!completed) updateRuntimeStatus("TIMEOUT", MapsStatus.ERROR) }, 5000)
