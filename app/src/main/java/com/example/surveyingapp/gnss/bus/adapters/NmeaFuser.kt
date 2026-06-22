@@ -211,8 +211,12 @@ class NmeaFuser(
         // Prefer the accumulated constellation-aware count; fall back to GGA's field
         val satsUsed = if (gsaUsedSatIds.isNotEmpty()) gsaUsedSatIds.size else (gga.satsUsed ?: 0)
 
-        // Sum visible satellites across all constellations seen this epoch
-        val satsVisible = gsvVisibleByTalker.values.sum().takeIf { it > 0 }
+        // Sum visible satellites across all constellations seen this epoch.
+        // Guard: if the sum is less than satsUsed the GSV data is from a prior epoch
+        // (GSV sentences for some constellations had not yet arrived when GGA triggered
+        // this fix). Treat the count as absent rather than storing an impossible value.
+        val rawVisible = gsvVisibleByTalker.values.sum().takeIf { it > 0 }
+        val satsVisible = rawVisible?.takeIf { it >= satsUsed }
 
         // DRMS horizontal accuracy from GST error ellipse axes (see drmsAccuracy below)
         val hAccM = drmsAccuracy(lastGst?.stdDevMajor, lastGst?.stdDevMinor)

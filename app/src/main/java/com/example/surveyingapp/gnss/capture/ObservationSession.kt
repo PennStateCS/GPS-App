@@ -61,8 +61,18 @@ class ObservationSession(
             val vAccM: Double?
         ) : State
 
-        /** Capture finished and produced an averaged result. */
-        data class Complete(val result: CaptureResult) : State
+        /**
+         * Capture finished and produced an averaged result.
+         *
+         * [requirementsMet] is true when both the minimum sampling time and the
+         * minimum accepted-fix count were satisfied. It is false when the session
+         * finished only because the maximum sampling time was reached first — the
+         * averaged result is still valid but under-sampled, and the UI should say so.
+         */
+        data class Complete(
+            val result: CaptureResult,
+            val requirementsMet: Boolean
+        ) : State
 
         /** Capture could not continue because the stream failed or became invalid. */
         data class Paused(val reason: String) : State
@@ -165,10 +175,13 @@ class ObservationSession(
                     /*
                      * Finish when both minimum quality gates are satisfied, or when the
                      * maximum duration is reached. The maximum duration prevents a session
-                     * from running indefinitely if the sample count is slow.
+                     * from running indefinitely if the sample count is slow. When the cap
+                     * forces the finish without meeting the minimums, requirementsMet is
+                     * false so the UI can flag the capture as a timeout.
                      */
-                    if ((reachedDuration && reachedSamples) || capDuration) {
-                        finalize(start, xs, ys, zs, samples)
+                    val requirementsMet = reachedDuration && reachedSamples
+                    if (requirementsMet || capDuration) {
+                        finalize(start, xs, ys, zs, samples, requirementsMet)
                     }
                 }
                 .catch { e -> _state.value = State.Paused("error: ${e.message}") }
@@ -190,7 +203,8 @@ class ObservationSession(
 
     private fun finalize(
         start: Instant,
-        xs: RunningStats, ys: RunningStats, zs: RunningStats, samples: Int
+        xs: RunningStats, ys: RunningStats, zs: RunningStats, samples: Int,
+        requirementsMet: Boolean
     ) {
         /*
          * Convert the averaged ECEF coordinate back to latitude, longitude, and
@@ -224,6 +238,6 @@ class ObservationSession(
          */
         job?.cancel()
         job = null
-        _state.value = State.Complete(result)
+        _state.value = State.Complete(result, requirementsMet)
     }
 }

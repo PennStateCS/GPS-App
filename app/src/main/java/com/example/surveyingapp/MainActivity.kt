@@ -54,6 +54,14 @@ import javax.inject.Inject
 
 private const val LOG_GNSS_UI = false
 
+/**
+ * Max age of a fix (vs. its UTC timestamp) for it to populate the live toolbar. The fixes flow
+ * has replay=1, so right after selecting a source the last fix from a PREVIOUS session replays
+ * immediately. Without this gate that stale fix would overwrite the placeholders — e.g. showing a
+ * "Fixed" RS2+ solution with old coordinates before the receiver has actually reconnected.
+ */
+private const val TOOLBAR_FIX_MAX_AGE_MS = 15_000L
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
@@ -105,6 +113,10 @@ class MainActivity : AppCompatActivity() {
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null
     private var batteryFillClip: ClipDrawable? = null
+    // Last battery reading, cached so the token can be re-rendered on orientation change
+    // (MainActivity handles configChanges itself, so it is not recreated on rotation).
+    private var lastBatteryPercent: Int? = null
+    private var lastBatteryCharging: Boolean? = null
 
     // AR mode: true while the AR fragment is the current destination
     private var isArMode = false
@@ -196,6 +208,9 @@ class MainActivity : AppCompatActivity() {
         tokenAcc.separator?.isVisible = false
         tokenAlt.separator?.isVisible = false
         tokenBatt.separator?.isVisible = false
+
+        // Hide the SRC label in portrait to save horizontal space.
+        applyStatusBarOrientationLayout()
 
         setSupportActionBar(binding.appBarMain.toolbar)
 
@@ -292,8 +307,9 @@ class MainActivity : AppCompatActivity() {
             tokenCoord.value.text = "--"
             tokenCoord.root.isVisible = true
 
-            // Hide altitude until first fix
-            tokenAlt.root.isVisible = false
+            // Show altitude placeholder (label + --) like the LL token
+            tokenAlt.value.text = "--"
+            tokenAlt.root.isVisible = true
 
             // Battery only for external
             tokenBatt.root.isVisible = false
@@ -553,18 +569,20 @@ class MainActivity : AppCompatActivity() {
     /** Status bar observers */
     private fun startStatusBarObservers() {
 
-        // Immediate source label + battery update whenever the active provider changes.
-        // The combine() observer below only fires when a new fix arrives, so without this
-        // the toolbar would lag behind until the next GNSS event.
+        // Immediate source label + battery update whenever the SELECTED source changes.
+        // We key off the persisted locationSource (set the instant the user taps a radio),
+        // NOT activeProvider — activeProvider only flips to EXTERNAL_TCP after the TCP/HTTP
+        // probe in connectViaTcpFlow succeeds, which can take several seconds. Keying off the
+        // selection makes the toolbar flip to placeholders immediately in both directions.
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
-                sourceSettings.activeProvider
-                    .collect { provider ->
-                        if (previousProvider == null || previousProvider != provider) {
-                            resetStatusTokensForProvider(provider)
+                var previousSource: LocationSourceType? = null
+                settingsRepository.locationSource
+                    .collect { source ->
+                        if (previousSource == null || previousSource != source) {
+                            resetStatusTokensForSource(source)
                         }
-                        previousProvider = provider
+                        previousSource = source
                     }
             }
         }
@@ -577,9 +595,9 @@ class MainActivity : AppCompatActivity() {
                 combine(
                     switchboard.fixes,
                     switchboard.sky,
-                    sourceSettings.activeProvider
-                ) { fix, sky, provider ->
-                    Triple(fix, sky, provider)
+                    settingsRepository.locationSource
+                ) { fix, sky, source ->
+                    Triple(fix, sky, source)
                 }
                     .catch { e ->
                         android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
@@ -599,24 +617,27 @@ class MainActivity : AppCompatActivity() {
                         delay(5000)
                         emitAll(flowOf())
                     }
-                    .collectLatest { (fix, sky, provider) ->
+                    .collectLatest { (fix, sky, source) ->
                         consecutiveErrors = 0 // Reset error counter on success
 
-                        // Drop fixes emitted by the old source after a provider switch.
-                        // FixSwitchboard clears _sky immediately, but _fixes has replay=1 and
-                        // can deliver one stale fix before the new provider starts emitting.
-                        if (!fixMatchesActiveProvider(provider, fix)) return@collectLatest
+                        // Only apply fixes whose provider matches the SELECTED source. This drops:
+                        //  - stale replay=1 fixes from the previous source right after a switch, and
+                        //  - internal fixes that keep flowing while the user has selected RS2+ but the
+                        //    external receiver hasn't connected yet (activeProvider still INTERNAL).
+                        // In those windows the toolbar keeps the placeholders set by the reset observer
+                        // until a matching fix arrives, instead of flickering to the wrong source.
+                        if (!fixMatchesSource(source, fix)) return@collectLatest
+
+                        // Reject stale fixes (e.g. the replay=1 buffered fix from a previous session
+                        // that matches the now-selected source). Without this, re-selecting RS2+ before
+                        // reconnecting would show that old fix's coordinates/SOL instead of placeholders.
+                        val fixAgeMs = java.time.Duration.between(fix.timeUtc, java.time.Instant.now()).toMillis()
+                        if (fixAgeMs > TOOLBAR_FIX_MAX_AGE_MS) return@collectLatest
 
                         lastDataUpdateTime = System.currentTimeMillis() // Update the shared timestamp
                         latestSkySnapshot = sky // Store latest sky snapshot
 
-                        val source = if (provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) {
-                            LocationSourceType.INTERNAL
-                        } else {
-                            LocationSourceType.EXTERNAL
-                        }
-
-                        if (LOG_GNSS_UI) android.util.Log.d("MainActivity", "Updating status tokens: provider=$provider, source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
+                        if (LOG_GNSS_UI) android.util.Log.d("MainActivity", "Updating status tokens: source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
 
                         withContext(Dispatchers.Main) {
                             updateStatusTokens(source, fix, sky)
@@ -678,11 +699,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun fixMatchesActiveProvider(
-        provider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice,
+    private fun fixMatchesSource(
+        source: LocationSourceType,
         fix: com.example.surveyingapp.gnss.model.Fix
     ): Boolean {
-        val isInternal = provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+        val isInternal = source == LocationSourceType.INTERNAL
         return if (isInternal) {
             fix.provider == com.example.surveyingapp.gnss.model.Provider.INTERNAL
         } else {
@@ -690,10 +711,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun resetStatusTokensForProvider(
-        provider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice
+    private fun resetStatusTokensForSource(
+        source: LocationSourceType
     ) {
-        val isInternal = provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+        val isInternal = source == LocationSourceType.INTERNAL
         tokenSource.value.text = if (isInternal) "Internal" else "RS2+"
         tokenSource.separator?.isVisible = true
         tokenSource.value.alpha = 1.0f
@@ -702,7 +723,9 @@ class MainActivity : AppCompatActivity() {
         tokenFix.value.setTextColor(getColor(android.R.color.darker_gray))
         tokenSats.root.isVisible = false
         tokenAcc.root.isVisible = false
-        tokenAlt.root.isVisible = false
+        // Altitude shows a label + "--" placeholder like LL, instead of hiding.
+        tokenAlt.value.text = "--"
+        tokenAlt.root.isVisible = true
         updateBatteryVisibility(!isInternal)
         // Discard stale sky so the old source's satellite counts don't linger.
         latestSkySnapshot = null
@@ -712,41 +735,50 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBatteryVisibility(shouldShow: Boolean) {
         if (shouldShow) {
-            tokenAlt.separator?.isVisible = true
-            // Show token immediately with placeholder so the user knows it's present
-            // while the HTTP poll is in flight; the icon / value are filled once data arrives.
-            if (!tokenBatt.root.isVisible) {
-                tokenBatt.value.text = "--"
-                tokenBatt.root.isVisible = true
-            }
-            // Compact/portrait mode: show percentage text only; hide the graphical icon.
-            tokenBatt.icon.isVisible = !isCompact
+            // External source: poll the receiver for battery. The token stays hidden until real
+            // battery data arrives — updateBatteryIcon() reveals it (and its separator) once we
+            // have a percentage, and hides it again if the data is lost.
             if (batteryJob == null) startBatteryPolling()
         } else {
+            // Internal source (or no receiver): hide the token + its separator and stop polling.
             tokenAlt.separator?.isVisible = false
             tokenBatt.root.isVisible = false
             batteryJob?.cancel(); batteryJob = null
         }
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // MainActivity handles configChanges itself, so it is not recreated on rotation. Re-apply
+        // orientation-dependent status-bar tweaks immediately:
+        //  - show/hide the SRC label (hidden in portrait to save horizontal space), and
+        //  - re-render the battery token so its graphical icon is shown (landscape) or hidden
+        //    (portrait, percentage text only) to match the new orientation.
+        applyStatusBarOrientationLayout()
+        if (lastBatteryPercent != null) {
+            updateBatteryIcon(lastBatteryPercent, lastBatteryCharging)
+        }
+    }
+
     private fun updateBatteryIcon(percentage: Int?, charging: Boolean? = null) {
-        // No data: show "--" placeholder if token is already visible (external mode),
-        // otherwise keep it hidden.
+        // Cache the latest reading so onConfigurationChanged() can re-render for the new orientation.
+        lastBatteryPercent = percentage
+        lastBatteryCharging = charging
+
+        // No data: hide the token entirely (along with its separator) instead of showing "--".
         if (percentage == null) {
-            if (tokenBatt.root.isVisible) {
-                tokenBatt.value.text = "--"
-                // Reset the fill so the bar looks empty
-                batteryFillClip?.level = 0
-                try { batteryLayer?.findDrawableByLayerId(R.id.battery_bolt)?.alpha = 0x00 } catch (_: Exception) {}
-            }
+            tokenBatt.root.isVisible = false
+            tokenAlt.separator?.isVisible = false
             return
         }
+        // Data available: reveal the token and the separator that precedes it.
         tokenBatt.root.isVisible = true
+        tokenAlt.separator?.isVisible = true
         tokenBatt.value.text = "${percentage.coerceIn(0, 100)}%"
 
-        // Compact/portrait: percentage text is sufficient; skip the graphical icon.
-        tokenBatt.icon.isVisible = !isCompact
-        if (isCompact) return
+        // Narrow width or portrait: percentage text is sufficient; skip the graphical icon.
+        tokenBatt.icon.isVisible = !batteryTextOnly
+        if (batteryTextOnly) return
 
         if (batteryLayer == null) {
             val base = tokenBatt.icon.drawable ?: return
@@ -963,6 +995,22 @@ class MainActivity : AppCompatActivity() {
     private val isCompact: Boolean
         get() = resources.configuration.screenWidthDp < 700
 
+    /** True in portrait orientation, where we drop the battery graphic to save horizontal space. */
+    private val isPortrait: Boolean
+        get() = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+
+    /** When true, the battery token shows the percentage text only (no graphical icon). */
+    private val batteryTextOnly: Boolean
+        get() = isCompact || isPortrait
+
+    /**
+     * Hides the "SRC" label in portrait to save horizontal space so the status strip fits on one
+     * line; the source value (e.g. "RS2+") and all other token labels stay visible.
+     */
+    private fun applyStatusBarOrientationLayout() {
+        tokenSource.label.isVisible = !isPortrait
+    }
+
     private fun updateStatusTokens(
         source: LocationSourceType,
         fix: Fix,
@@ -1060,7 +1108,11 @@ class MainActivity : AppCompatActivity() {
                 tokenAlt.value.text = String.format(Locale.US, "%.2f m", altEllip)
                 tokenAlt.root.isVisible = true
             }
-            else -> tokenAlt.root.isVisible = false
+            // No valid altitude: keep the token visible with a "--" placeholder like LL.
+            else -> {
+                tokenAlt.value.text = "--"
+                tokenAlt.root.isVisible = true
+            }
         }
     }
 
