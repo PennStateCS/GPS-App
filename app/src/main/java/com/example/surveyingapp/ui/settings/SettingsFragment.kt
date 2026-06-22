@@ -555,11 +555,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val fixAge  = editFixAge?.text?.toString()?.toIntOrNull()
                 val diffAge = editDiffAge?.text?.toString()?.toIntOrNull()
 
-                tilMinDur?.error  = if (minDur == null || minDur !in 1..600) "1–600 s" else null
-                tilMaxDur?.error  = if (maxDur == null || maxDur !in 1..600) "1–600 s" else if (minDur != null && maxDur < minDur) "Must be ≥ min" else null
-                tilSamples?.error = if (samples == null || samples < 1) "≥ 1" else null
-                tilFixAge?.error  = if (fixAge == null || fixAge < 1) "≥ 1 s" else null
-                tilDiffAge?.error = if (diffAge == null || diffAge < 1) "≥ 1 s" else null
+                tilMinDur?.error  = if (minDur == null || minDur !in 1..600)
+                    "Minimum Sampling Time must be between 1 and 600 seconds." else null
+                tilMaxDur?.error  = if (maxDur == null || maxDur !in 1..600)
+                    "Maximum Sampling Time must be between 1 and 600 seconds."
+                    else if (minDur != null && maxDur < minDur)
+                        "Maximum Sampling Time must be greater than or equal to Minimum Sampling Time." else null
+                tilSamples?.error = if (samples == null || samples < 1)
+                    "Minimum Accepted Fixes must be at least 1." else null
+                tilFixAge?.error  = if (fixAge == null || fixAge < 1)
+                    "Max Fix Age must be at least 1 second." else null
+                tilDiffAge?.error = if (diffAge == null || diffAge < 1)
+                    "Max Correction Age must be at least 1 second." else null
 
                 if (minDur == null || minDur !in 1..600) return
                 if (maxDur == null || maxDur !in 1..600 || maxDur < minDur) return
@@ -625,6 +632,14 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val tvSatellites     = view.findViewById<TextView>(R.id.text_status_satellites)
         val tvCorrections    = view.findViewById<TextView>(R.id.text_status_corrections)
         val tvBattery        = view.findViewById<TextView>(R.id.text_status_battery)
+        val tvStatusSub      = view.findViewById<TextView>(R.id.text_device_status_sub)
+        val chipSource       = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_source)
+        val chipFix          = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_fix)
+        val chipSats         = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_sats)
+        val chipDataStream   = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_data_stream)
+        val chipBattery      = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_battery)
+        val defaultChipBg    = chipSource?.chipBackgroundColor
+        val defaultChipTextColor = chipFix?.textColors
 
         // Wire up device info button handlers - now observes the repository's StateFlow
         val btnRefreshDeviceInfo = view.findViewById<Button>(R.id.btn_refresh_device_info)
@@ -852,15 +867,15 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
 
-            fun statusLine(status: ConnectionUiStatus): String = when (status) {
-                ConnectionUiStatus.CONNECTING -> "Connecting…"
-                ConnectionUiStatus.REACHABLE -> "Receiver reachable. Waiting for GNSS data."
-                ConnectionUiStatus.STREAMING -> when (lastExternalFixRtkStatus?.qualityRank() ?: 0) {
-                    0    -> "Receiver connected. No position fix yet."
-                    else -> "Receiver connected. GNSS fix active."
+            fun statusLines(status: ConnectionUiStatus): Pair<String, String> = when (status) {
+                ConnectionUiStatus.CONNECTING   -> "Connecting…" to ""
+                ConnectionUiStatus.REACHABLE    -> "Receiver reachable" to "Waiting for GNSS data"
+                ConnectionUiStatus.STREAMING    -> "Receiver connected" to when (lastExternalFixRtkStatus?.qualityRank() ?: 0) {
+                    0    -> "No position fix yet"
+                    else -> "GNSS fix active"
                 }
-                ConnectionUiStatus.STALE -> "Receiver reachable. GNSS data stale."
-                ConnectionUiStatus.DISCONNECTED -> "Receiver unavailable. Check IP or Wi-Fi."
+                ConnectionUiStatus.STALE        -> "Receiver reachable" to "GNSS data stale"
+                ConnectionUiStatus.DISCONNECTED -> "Receiver unavailable" to "Check IP or Wi-Fi"
             }
 
             fun applyColor(tv: TextView?, status: ConnectionUiStatus, external: Boolean) {
@@ -878,10 +893,19 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val newStatus = deriveStatus(now)
                 if (newStatus != lastUiStatus) lastUiStatus = newStatus
                 val extActive = currentExternalActive()
+                val (mainStatus, subStatus) = statusLines(lastUiStatus)
                 textDeviceStatus?.let { tv ->
                     tv.visibility = View.VISIBLE
-                    tv.text = statusLine(lastUiStatus)
+                    tv.text = mainStatus
                     applyColor(tv, lastUiStatus, extActive)
+                }
+                tvStatusSub?.let { tv ->
+                    if (subStatus.isNotEmpty() && extActive) {
+                        tv.text = subStatus
+                        tv.visibility = View.VISIBLE
+                    } else {
+                        tv.visibility = View.GONE
+                    }
                 }
 
                 if (!extActive) {
@@ -890,15 +914,25 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tvSatellites?.text  = "—"
                     tvCorrections?.text = "—"
                     tvBattery?.text     = "—"
+                    listOf(chipFix, chipSats, chipDataStream, chipBattery).forEach { chip ->
+                        chip?.text = "—"
+                        defaultChipBg?.let { chip?.chipBackgroundColor = it }
+                        defaultChipTextColor?.let { chip?.setTextColor(it) }
+                    }
                     updateDeviceBox()
                     return
                 }
 
                 val ctx = context ?: run { updateDeviceBox(); return }
                 fun clr(res: Int) = ContextCompat.getColor(ctx, res)
+                fun chipClr(res: Int) = android.content.res.ColorStateList.valueOf(clr(res))
 
-                // Data Stream row
                 val nmeaAge = if (lastExternalRawNmeaTimeMs > 0L) now - lastExternalRawNmeaTimeMs else Long.MAX_VALUE
+                val fixAge  = if (lastExternalFixTimeMs > 0L)     now - lastExternalFixTimeMs     else Long.MAX_VALUE
+                val sky = fixSwitchboard.sky.value
+                val bat = reachDeviceRepository.batteryInfo.value
+
+                // Data Stream row + chip
                 tvDataStream?.let { tv ->
                     when {
                         nmeaAge <= 8_000L -> {
@@ -919,9 +953,16 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         }
                     }
                 }
+                chipDataStream?.let { chip ->
+                    when {
+                        nmeaAge <= 8_000L -> { chip.text = "NMEA"; chip.chipBackgroundColor = chipClr(R.color.app_success); chip.setTextColor(android.graphics.Color.WHITE) }
+                        lastExternalRawNmeaTimeMs > 0L && nmeaAge <= 30_000L -> { chip.text = "Stale"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
+                        lastExternalRawNmeaTimeMs == 0L -> { chip.text = "Waiting"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
+                        else -> { chip.text = "No Data"; chip.chipBackgroundColor = chipClr(R.color.app_error); chip.setTextColor(android.graphics.Color.WHITE) }
+                    }
+                }
 
-                // Position Fix row
-                val fixAge = if (lastExternalFixTimeMs > 0L) now - lastExternalFixTimeMs else Long.MAX_VALUE
+                // Position Fix row + chip
                 tvPositionFix?.let { tv ->
                     when {
                         fixAge <= FRESH_FIX_MAX_AGE_MS -> {
@@ -950,10 +991,26 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         }
                     }
                 }
+                chipFix?.let { chip ->
+                    when {
+                        fixAge <= FRESH_FIX_MAX_AGE_MS -> {
+                            val (label, colorRes) = when (lastExternalFixRtkStatus) {
+                                RtkStatus.FIX            -> "Fixed"  to R.color.app_success
+                                RtkStatus.FLOAT          -> "Float"  to R.color.app_warning
+                                RtkStatus.DGPS           -> "DGPS"   to R.color.app_info
+                                RtkStatus.SINGLE         -> "Single" to R.color.app_warning
+                                RtkStatus.DEAD_RECKONING -> "DR"     to R.color.app_warning
+                                else                     -> "No Fix" to R.color.app_error
+                            }
+                            chip.text = label; chip.chipBackgroundColor = chipClr(colorRes); chip.setTextColor(android.graphics.Color.WHITE)
+                        }
+                        fixAge <= STALE_FIX_MAX_AGE_MS -> { chip.text = "Stale"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
+                        else -> { chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
+                    }
+                }
 
-                // Satellites row
+                // Satellites row + chip
                 tvSatellites?.let { tv ->
-                    val sky = fixSwitchboard.sky.value
                     when {
                         sky.totalVisible > 0 -> {
                             tv.text = "${sky.totalUsed} used / ${sky.totalVisible} visible"
@@ -969,8 +1026,15 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         }
                     }
                 }
+                chipSats?.let { chip ->
+                    when {
+                        sky.totalVisible > 0 -> { chip.text = "${sky.totalUsed}/${sky.totalVisible} Sats"; chip.chipBackgroundColor = chipClr(R.color.app_success); chip.setTextColor(android.graphics.Color.WHITE) }
+                        nmeaAge <= 8_000L    -> { chip.text = "0 Sats"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
+                        else                 -> { chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
+                    }
+                }
 
-                // Corrections row
+                // Corrections row (unchanged)
                 tvCorrections?.let { tv ->
                     val info = reachDeviceRepository.correctionsInfo.value
                     if (info == null) {
@@ -987,9 +1051,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                 }
 
-                // Battery row
+                // Battery row + chip
                 tvBattery?.let { tv ->
-                    val bat = reachDeviceRepository.batteryInfo.value
                     if (bat == null) {
                         tv.text = "—"
                         tv.setTextColor(clr(android.R.color.darker_gray))
@@ -1003,6 +1066,22 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             bat.percent < 40 -> android.R.color.holo_orange_light
                             else             -> android.R.color.darker_gray
                         }))
+                    }
+                }
+                chipBattery?.let { chip ->
+                    if (bat == null) {
+                        chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) }
+                    } else {
+                        val chargeSuffix = bat.chargerStatus?.let { s ->
+                            if (s.lowercase().let { it.contains("charging") && !it.contains("not") }) "⚡" else ""
+                        } ?: ""
+                        chip.text = "${bat.percent}%$chargeSuffix"
+                        chip.chipBackgroundColor = chipClr(when {
+                            bat.percent < 20 -> R.color.app_error
+                            bat.percent < 40 -> R.color.app_warning
+                            else             -> R.color.app_success
+                        })
+                        chip.setTextColor(android.graphics.Color.WHITE)
                     }
                 }
 
@@ -1151,6 +1230,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             refreshCategoriesForSource(source)
             // Now that radio is set, update device box with possibly restored device
             updateDeviceBox()
+            // Restore device info panel immediately if the repository has cached data.
+            // The collect observer may fire before currentContentView is set, causing
+            // updateDeviceInfoDisplay() to return early — so we re-check here explicitly.
+            if (currentDeviceInfo == null) {
+                reachDeviceRepository.deviceInfo.value?.let { cached ->
+                    currentDeviceInfo = convertToEmlidDeviceInfo(cached)
+                }
+            }
+            if (currentDeviceInfo != null) {
+                updateDeviceInfoDisplay()
+            }
             // Sync runtime provider with persisted source. The radio listener is skipped
             // while initializing=true, so we must do this explicitly. For EXTERNAL the
             // active provider stays INTERNAL until the receiver is confirmed reachable
@@ -1288,6 +1378,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tv.text = "Connecting…"
                     tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_orange_dark))
                 }
+                view?.findViewById<TextView>(R.id.text_device_status_sub)?.visibility = View.GONE
 
                 // Run TCP/NMEA and HTTP probes in parallel.
                 val (tcpResult, httpReachable) = coroutineScope {
@@ -1314,21 +1405,25 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                     updateDeviceBox()
 
-                    val (statusText, statusColor) = when (tcpResult) {
+                    val (statusText, statusSubText, statusColor) = when (tcpResult) {
                         TcpTestResult.RECEIVING_NMEA ->
-                            "Receiver connected. Receiving NMEA." to android.R.color.holo_green_dark
+                            Triple("Receiver connected", "Receiving NMEA", android.R.color.holo_green_dark)
                         TcpTestResult.RECEIVING_RTCM_OR_BIN ->
-                            "Receiver connected. Stream is not NMEA." to android.R.color.holo_orange_dark
+                            Triple("Receiver connected", "Stream is not NMEA", android.R.color.holo_orange_dark)
                         TcpTestResult.CONNECTED_NO_DATA ->
-                            "Receiver reachable. Waiting for GNSS data." to android.R.color.holo_orange_light
+                            Triple("Receiver reachable", "Waiting for GNSS data", android.R.color.holo_orange_light)
                         TcpTestResult.CONNECT_FAILED ->
                             // TCP failed but HTTP succeeded — receiver is present but NMEA port unavailable.
-                            "Receiver reachable. NMEA stream unavailable." to android.R.color.holo_orange_light
+                            Triple("Receiver reachable", "NMEA stream unavailable", android.R.color.holo_orange_light)
                     }
                     view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
                         tv.text = statusText
                         tv.setTextColor(ContextCompat.getColor(requireContext(), statusColor))
+                    }
+                    view?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
+                        tv.text = statusSubText
+                        tv.visibility = View.VISIBLE
                     }
 
                     if (selectedDeviceName == null || selectedDeviceName == host) {
@@ -1352,8 +1447,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     // Both TCP and HTTP failed — receiver unreachable.
                     view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
-                        tv.text = "Receiver unavailable. Check IP or Wi-Fi."
+                        tv.text = "Receiver unavailable"
                         tv.setTextColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
+                    }
+                    view?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
+                        tv.text = "Check IP or Wi-Fi"
+                        tv.visibility = View.VISIBLE
                     }
                 }
             } catch (e: CancellationException) {
@@ -1903,7 +2002,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
             deviceInfoPanel?.visibility = View.VISIBLE
             textDeviceName?.text = deviceInfo.deviceName
-            textDeviceIp?.text = deviceInfo.ipAddress
+            val port = selectedDevice?.second
+            textDeviceIp?.text = if (port != null) "${deviceInfo.ipAddress}:$port" else deviceInfo.ipAddress
 
             if (deviceInfo.model != null) {
                 layoutDeviceModel?.visibility = View.VISIBLE

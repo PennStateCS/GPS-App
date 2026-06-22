@@ -19,7 +19,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="GNSS Receiver"
+            android:text="Receiver"
             android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
         <!-- Page description -->
@@ -29,7 +29,7 @@
             android:layout_marginTop="4dp"
             android:layout_marginBottom="20dp"
             android:alpha="0.7"
-            android:text="Configure the active GNSS location source and TCP connection settings. The selected source determines which fixes are used for GNSS capture and AR positioning."
+            android:text="Select the GNSS location source."
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         <!-- ── Section 1: Location Source ── -->
@@ -167,341 +167,406 @@
                         android:layout_marginStart="20dp"
                         android:background="?attr/colorOutlineVariant" />
 
+                    <!-- Status header: primary text + sub text + disconnect -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
                         android:paddingHorizontal="20dp"
-                        android:paddingVertical="16dp">
+                        android:paddingTop="14dp"
+                        android:paddingBottom="8dp">
 
-                        <!-- Status + icon + disconnect row -->
                         <LinearLayout
-                            android:layout_width="match_parent"
+                            android:layout_width="0dp"
                             android:layout_height="wrap_content"
-                            android:orientation="horizontal"
-                            android:gravity="center_vertical">
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:paddingEnd="12dp">
 
                             <TextView
                                 android:id="@+id/text_device_status"
-                                android:layout_width="0dp"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_weight="1"
                                 android:text=""
                                 android:textAppearance="?attr/textAppearanceBodyLarge"
                                 android:textStyle="bold" />
 
-                            <ImageView
-                                android:id="@+id/icon_device_status"
-                                android:layout_width="180dp"
-                                android:layout_height="60dp"
-                                android:src="@drawable/ic_device_status"
-                                android:scaleType="centerInside"
-                                android:contentDescription="Device status icon" />
-
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_disconnect_device"
-                                style="@style/Widget.Material3.Button.TonalButton"
-                                android:layout_width="wrap_content"
+                            <TextView
+                                android:id="@+id/text_device_status_sub"
+                                android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginStart="12dp"
-                                android:text="Disconnect"
-                                app:backgroundTint="?attr/colorErrorContainer"
-                                android:textColor="?attr/colorOnErrorContainer" />
+                                android:layout_marginTop="2dp"
+                                android:text=""
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
+                                android:visibility="gone" />
 
                         </LinearLayout>
 
-                        <!-- Receiver status rows — shown when external source is connected -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_disconnect_device"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Disconnect"
+                            app:backgroundTint="?attr/colorErrorContainer"
+                            android:textColor="?attr/colorOnErrorContainer" />
+
+                    </LinearLayout>
+
+                    <!-- Status chips -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chip_group_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="10dp">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_source"
+                            style="@style/Widget.Material3.Chip.Suggestion"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checkable="false"
+                            android:text="RS2+" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_fix"
+                            style="@style/Widget.Material3.Chip.Suggestion"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checkable="false"
+                            android:text="—" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_sats"
+                            style="@style/Widget.Material3.Chip.Suggestion"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checkable="false"
+                            android:text="—" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_data_stream"
+                            style="@style/Widget.Material3.Chip.Suggestion"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checkable="false"
+                            android:text="—" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/chip_battery"
+                            style="@style/Widget.Material3.Chip.Suggestion"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checkable="false"
+                            android:text="—" />
+
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <!-- Receiver status detail rows -->
+                    <LinearLayout
+                        android:id="@+id/layout_receiver_status_rows"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:paddingHorizontal="20dp"
+                        android:paddingBottom="12dp">
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginBottom="6dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- Data Stream -->
                         <LinearLayout
-                            android:id="@+id/layout_receiver_status_rows"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:orientation="vertical"
-                            android:layout_marginTop="8dp">
-
-                            <View
-                                android:layout_width="match_parent"
-                                android:layout_height="1dp"
-                                android:layout_marginBottom="6dp"
-                                android:background="?attr/colorOutlineVariant" />
-
-                            <!-- Data Stream -->
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="104dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:gravity="center_vertical"
-                                android:paddingVertical="3dp">
-                                <TextView
-                                    android:layout_width="104dp"
-                                    android:layout_height="wrap_content"
-                                    android:text="Data Stream"
-                                    android:textAppearance="?attr/textAppearanceBodySmall"
-                                    android:alpha="0.6" />
-                                <TextView
-                                    android:id="@+id/text_status_data_stream"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="—"
-                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-                            </LinearLayout>
-
-                            <!-- Position Fix -->
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                                android:text="Data Stream"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_status_data_stream"
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:gravity="center_vertical"
-                                android:paddingVertical="3dp">
-                                <TextView
-                                    android:layout_width="104dp"
-                                    android:layout_height="wrap_content"
-                                    android:text="Position Fix"
-                                    android:textAppearance="?attr/textAppearanceBodySmall"
-                                    android:alpha="0.6" />
-                                <TextView
-                                    android:id="@+id/text_status_position_fix"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="—"
-                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-                            </LinearLayout>
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
 
-                            <!-- Satellites -->
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                        <!-- Position Fix -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="104dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:gravity="center_vertical"
-                                android:paddingVertical="3dp">
-                                <TextView
-                                    android:layout_width="104dp"
-                                    android:layout_height="wrap_content"
-                                    android:text="Satellites"
-                                    android:textAppearance="?attr/textAppearanceBodySmall"
-                                    android:alpha="0.6" />
-                                <TextView
-                                    android:id="@+id/text_status_satellites"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="—"
-                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-                            </LinearLayout>
+                                android:text="Position Fix"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_status_position_fix"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
 
-                            <!-- Corrections -->
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                        <!-- Satellites -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="104dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:gravity="center_vertical"
-                                android:paddingVertical="3dp">
-                                <TextView
-                                    android:layout_width="104dp"
-                                    android:layout_height="wrap_content"
-                                    android:text="Corrections"
-                                    android:textAppearance="?attr/textAppearanceBodySmall"
-                                    android:alpha="0.6" />
-                                <TextView
-                                    android:id="@+id/text_status_corrections"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="—"
-                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-                            </LinearLayout>
+                                android:text="Satellites"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_status_satellites"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
 
-                            <!-- Battery -->
-                            <LinearLayout
-                                android:layout_width="match_parent"
+                        <!-- Corrections -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="104dp"
                                 android:layout_height="wrap_content"
-                                android:orientation="horizontal"
-                                android:gravity="center_vertical"
-                                android:paddingVertical="3dp">
-                                <TextView
-                                    android:layout_width="104dp"
-                                    android:layout_height="wrap_content"
-                                    android:text="Battery"
-                                    android:textAppearance="?attr/textAppearanceBodySmall"
-                                    android:alpha="0.6" />
-                                <TextView
-                                    android:id="@+id/text_status_battery"
-                                    android:layout_width="0dp"
-                                    android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:text="—"
-                                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-                            </LinearLayout>
+                                android:text="Corrections"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_status_corrections"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
+
+                        <!-- Battery -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="104dp"
+                                android:layout_height="wrap_content"
+                                android:text="Battery"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_status_battery"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="—"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <!-- Device info panel — shown when info is available -->
+                    <LinearLayout
+                        android:id="@+id/device_info_panel"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone"
+                        android:paddingHorizontal="20dp"
+                        android:paddingBottom="16dp">
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="1dp"
+                            android:layout_marginBottom="10dp"
+                            android:background="?attr/colorOutlineVariant" />
+
+                        <!-- Device heading + inline Refresh -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:layout_marginBottom="8dp">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Device"
+                                android:textAppearance="?attr/textAppearanceLabelLarge"
+                                android:textColor="?attr/colorPrimary" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_refresh_device_info"
+                                style="@style/Widget.Material3.Button.OutlinedButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:minHeight="0dp"
+                                android:paddingVertical="4dp"
+                                android:paddingHorizontal="12dp"
+                                android:text="Refresh" />
 
                         </LinearLayout>
 
-                        <!-- Device info panel — shown when info is available -->
+                        <!-- Name -->
                         <LinearLayout
-                            android:id="@+id/device_info_panel"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="80dp"
+                                android:layout_height="wrap_content"
+                                android:text="Name"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_device_name"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="--"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
+
+                        <!-- Address (IP:Port) -->
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp">
+                            <TextView
+                                android:layout_width="80dp"
+                                android:layout_height="wrap_content"
+                                android:text="Address"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_device_ip"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="--"
+                                android:textAppearance="?attr/textAppearanceBodyMedium"
+                                android:fontFamily="monospace" />
+                        </LinearLayout>
+
+                        <!-- Model -->
+                        <LinearLayout
+                            android:id="@+id/layout_device_model"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp"
+                            android:visibility="gone">
+                            <TextView
+                                android:layout_width="80dp"
+                                android:layout_height="wrap_content"
+                                android:text="Model"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_device_model"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
+
+                        <!-- Firmware -->
+                        <LinearLayout
+                            android:id="@+id/layout_device_firmware"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical"
+                            android:paddingVertical="3dp"
+                            android:visibility="gone">
+                            <TextView
+                                android:layout_width="80dp"
+                                android:layout_height="wrap_content"
+                                android:text="Firmware"
+                                android:textAppearance="?attr/textAppearanceBodySmall"
+                                android:alpha="0.6" />
+                            <TextView
+                                android:id="@+id/text_device_firmware"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        </LinearLayout>
+
+                        <!-- Self Tests -->
+                        <LinearLayout
+                            android:id="@+id/layout_self_tests"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:visibility="gone"
-                            android:layout_marginTop="12dp">
+                            android:layout_marginTop="8dp">
 
-                            <View
-                                android:layout_width="match_parent"
-                                android:layout_height="1dp"
-                                android:layout_marginBottom="12dp"
-                                android:background="?attr/colorOutlineVariant" />
-
-                            <!-- Name / IP and Model / Firmware columns -->
                             <LinearLayout
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:orientation="horizontal"
                                 android:layout_marginBottom="8dp">
-
-                                <LinearLayout
+                                <TextView
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
-                                    android:orientation="vertical"
-                                    android:layout_marginEnd="12dp">
-
-                                    <LinearLayout
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:orientation="horizontal"
-                                        android:layout_marginBottom="4dp">
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:text="Name: "
-                                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                                            android:textStyle="bold" />
-                                        <TextView
-                                            android:id="@+id/text_device_name"
-                                            android:layout_width="0dp"
-                                            android:layout_height="wrap_content"
-                                            android:layout_weight="1"
-                                            android:text="--"
-                                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                                    </LinearLayout>
-
-                                    <LinearLayout
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:orientation="horizontal">
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:text="IP: "
-                                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                                            android:textStyle="bold" />
-                                        <TextView
-                                            android:id="@+id/text_device_ip"
-                                            android:layout_width="0dp"
-                                            android:layout_height="wrap_content"
-                                            android:layout_weight="1"
-                                            android:text="--"
-                                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                                    </LinearLayout>
-                                </LinearLayout>
-
-                                <LinearLayout
-                                    android:layout_width="0dp"
+                                    android:text="System Self Tests"
+                                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                                    android:textStyle="bold" />
+                                <TextView
+                                    android:id="@+id/text_self_tests_summary"
+                                    android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
-                                    android:layout_weight="1"
-                                    android:orientation="vertical">
-
-                                    <LinearLayout
-                                        android:id="@+id/layout_device_model"
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:orientation="horizontal"
-                                        android:layout_marginBottom="4dp"
-                                        android:visibility="gone">
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:text="Model: "
-                                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                                            android:textStyle="bold" />
-                                        <TextView
-                                            android:id="@+id/text_device_model"
-                                            android:layout_width="0dp"
-                                            android:layout_height="wrap_content"
-                                            android:layout_weight="1"
-                                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                                    </LinearLayout>
-
-                                    <LinearLayout
-                                        android:id="@+id/layout_device_firmware"
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:orientation="horizontal"
-                                        android:visibility="gone">
-                                        <TextView
-                                            android:layout_width="wrap_content"
-                                            android:layout_height="wrap_content"
-                                            android:text="Firmware: "
-                                            android:textAppearance="?attr/textAppearanceBodyMedium"
-                                            android:textStyle="bold" />
-                                        <TextView
-                                            android:id="@+id/text_device_firmware"
-                                            android:layout_width="0dp"
-                                            android:layout_height="wrap_content"
-                                            android:layout_weight="1"
-                                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                                    </LinearLayout>
-                                </LinearLayout>
+                                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                                    android:textStyle="bold"
+                                    android:textColor="@color/status_fix" />
                             </LinearLayout>
 
-                            <!-- Self Tests -->
                             <LinearLayout
-                                android:id="@+id/layout_self_tests"
+                                android:id="@+id/layout_self_tests_grid"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:orientation="vertical"
-                                android:visibility="gone"
-                                android:layout_marginTop="8dp">
-
-                                <LinearLayout
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:orientation="horizontal"
-                                    android:layout_marginBottom="8dp">
-                                    <TextView
-                                        android:layout_width="0dp"
-                                        android:layout_height="wrap_content"
-                                        android:layout_weight="1"
-                                        android:text="System Self Tests"
-                                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                                        android:textStyle="bold" />
-                                    <TextView
-                                        android:id="@+id/text_self_tests_summary"
-                                        android:layout_width="wrap_content"
-                                        android:layout_height="wrap_content"
-                                        android:textAppearance="?attr/textAppearanceBodyMedium"
-                                        android:textStyle="bold"
-                                        android:textColor="@color/status_fix" />
-                                </LinearLayout>
-
-                                <LinearLayout
-                                    android:id="@+id/layout_self_tests_grid"
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:orientation="vertical" />
-                            </LinearLayout>
-
-                            <!-- Refresh button -->
-                            <com.google.android.material.button.MaterialButton
-                                android:id="@+id/btn_refresh_device_info"
-                                style="@style/Widget.Material3.Button.OutlinedButton"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="12dp"
-                                android:text="Refresh Device Information" />
+                                android:orientation="vertical" />
 
                         </LinearLayout>
+
                     </LinearLayout>
+
                 </LinearLayout>
 
             </LinearLayout>
@@ -633,7 +698,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Publishes the active external GNSS fix to Android as a mock GPS location so other apps can use the external receiver position. Requires enabling this app in Developer Options. ARCore may still use its own sensor fusion."
+                            android:text="Publishes the active external GNSS fix to Android as a mock GPS location so other apps can use the external receiver position. Requires enabling this app in Developer Options."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 

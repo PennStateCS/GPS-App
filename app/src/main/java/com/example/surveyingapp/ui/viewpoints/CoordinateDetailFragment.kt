@@ -52,7 +52,11 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
+import com.example.surveyingapp.SurveyingAppEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,6 +128,27 @@ class CoordinateDetailFragment : Fragment() {
     private var lastCoordinate: Coordinate? = null
 
     private var showAccuracyIndicators: Boolean = true
+
+    // Additional badge views
+    private var badgeSource: TextView? = null
+    private var badgeExtra: TextView? = null
+
+    // Location card additions
+    private var rowDistance: View? = null
+    private var textDistance: TextView? = null
+    private var crsSectionContainer: View? = null
+    private var btnToggleCrs: View? = null
+    private var btnCopyLatLng: View? = null
+    private var btnCopyUtm: View? = null
+    private var cardCrsRows: LinearLayout? = null
+    private var crsExpanded = false
+    private var distanceJob: Job? = null
+
+    // Capture quality note
+    private var textCaptureQualityNote: TextView? = null
+
+    // Model placement note
+    private var textModelPlacement: TextView? = null
 
     // Launches the model picker for Select / Change Model
     private val modelPickerLauncher = registerForActivityResult(
@@ -201,6 +226,44 @@ class CoordinateDetailFragment : Fragment() {
         cardCaptureRows   = v.findViewById(R.id.card_capture_rows)
         cardAveragingRows = v.findViewById(R.id.card_averaging_rows)
         cardMotionRows    = v.findViewById(R.id.card_motion_rows)
+
+        badgeSource            = v.findViewById(R.id.badge_source)
+        badgeExtra             = v.findViewById(R.id.badge_extra)
+        rowDistance            = v.findViewById(R.id.row_distance)
+        textDistance           = v.findViewById(R.id.text_distance)
+        crsSectionContainer    = v.findViewById(R.id.crs_section_container)
+        btnToggleCrs           = v.findViewById(R.id.btn_toggle_crs)
+        btnCopyLatLng          = v.findViewById(R.id.btn_copy_latlng)
+        btnCopyUtm             = v.findViewById(R.id.btn_copy_utm)
+        cardCrsRows            = v.findViewById(R.id.card_crs_rows)
+        textCaptureQualityNote = v.findViewById(R.id.text_capture_quality_note)
+        textModelPlacement     = v.findViewById(R.id.text_model_placement)
+
+        btnCopyLatLng?.setOnClickListener {
+            lastCoordinate?.let { c ->
+                val text = "${fmt6(c.latitude)}, ${fmt6(c.longitude)}"
+                val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("Lat/Lon", text))
+                Toast.makeText(requireContext(), "Coordinates copied", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnCopyUtm?.setOnClickListener {
+            lastCoordinate?.let { c ->
+                val zone = c.utmZone ?: return@let
+                val e = c.easting ?: return@let
+                val n = c.northing ?: return@let
+                val text = "$zone ${String.format(Locale.US, "%.3f", e)} ${String.format(Locale.US, "%.3f", n)}"
+                val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("UTM", text))
+                Toast.makeText(requireContext(), "UTM coordinates copied", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        btnToggleCrs?.setOnClickListener {
+            crsExpanded = !crsExpanded
+            applyCrsExpansion()
+        }
 
         mapView = v.findViewById(R.id.mapView)
         mapView?.onCreate(savedInstanceState)
@@ -325,6 +388,8 @@ class CoordinateDetailFragment : Fragment() {
     // ── State: empty ───────────────────────────────────────────────────────────
 
     private fun showEmpty() {
+        distanceJob?.cancel(); distanceJob = null
+        rowDistance?.visibility = View.GONE
         textName?.text = "—"
         textEmpty?.visibility = View.VISIBLE
         rowBadges?.visibility = View.GONE
@@ -335,13 +400,16 @@ class CoordinateDetailFragment : Fragment() {
     // ── State: bound ───────────────────────────────────────────────────────────
 
     private fun bindCoordinate(c: Coordinate) {
+        distanceJob?.cancel(); distanceJob = null
+        rowDistance?.visibility = View.GONE
+
         lastCoordinate = c
         textEmpty?.visibility = View.GONE
         textName?.text = c.name.ifBlank { "—" }
 
         // Clear all dynamic containers before re-populating
         listOf(cardSummaryRows, cardLocationRows, cardProjectionRows, cardGnssRows,
-               cardCaptureRows, cardAveragingRows, cardMotionRows)
+               cardCaptureRows, cardAveragingRows, cardMotionRows, cardCrsRows)
             .forEach { it?.removeAllViews() }
 
         bindSummaryCard(c)
@@ -354,6 +422,7 @@ class CoordinateDetailFragment : Fragment() {
         bindMotionCard(c)
         bindMapCard(c)
         bindBadges(c)
+        startDistanceBearing(c)
     }
 
     private fun captureMethodLabel(m: String?): String? = when (m?.lowercase(Locale.US)) {
@@ -379,22 +448,39 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     private fun bindLocationCard(c: Coordinate) {
-        addDetailRow(cardLocationRows, "Latitude",  fmt6(c.latitude)  + "°")
-        addDetailRow(cardLocationRows, "Longitude", fmt6(c.longitude) + "°")
-        c.altitude.let  { addDetailRow(cardLocationRows, "Altitude (ellipsoidal)", fmtM2(it)) }
+        addDetailRow(cardLocationRows, "Latitude",  "${fmt6(c.latitude)}°")
+        addDetailRow(cardLocationRows, "Longitude", "${fmt6(c.longitude)}°")
+        addDetailRow(cardLocationRows, "Altitude (ellipsoidal)", fmtM2(c.altitude))
         c.altitudeMsl?.let { addDetailRow(cardLocationRows, "Altitude (MSL)", fmtM2(it)) }
         c.geoidSeparationM?.let { addDetailRow(cardLocationRows, "Geoid separation", fmtM3(it)) }
+
+        // CRS rows go into the collapsible section inside the same card
+        val hasCrs = c.easting != null || c.northing != null || c.utmZone != null || c.crsEpsg != null
+        if (hasCrs) {
+            c.easting?.let  { addDetailRow(cardCrsRows, "Easting",  String.format(Locale.US, "%.3f m", it)) }
+            c.northing?.let { addDetailRow(cardCrsRows, "Northing", String.format(Locale.US, "%.3f m", it)) }
+            c.utmZone?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCrsRows, "UTM zone", it) }
+            c.crsEpsg?.let { addDetailRow(cardCrsRows, "CRS (EPSG)", it.toString()) }
+            val hasUtm = c.easting != null && c.northing != null && c.utmZone != null
+            btnCopyUtm?.visibility = if (hasUtm) View.VISIBLE else View.GONE
+        } else {
+            btnCopyUtm?.visibility = View.GONE
+        }
+        btnToggleCrs?.visibility = if (hasCrs) View.VISIBLE else View.GONE
+        if (hasCrs) applyCrsExpansion() else crsSectionContainer?.visibility = View.GONE
+
         cardLocation?.visibility = View.VISIBLE
     }
 
+    private fun applyCrsExpansion() {
+        crsSectionContainer?.visibility = if (crsExpanded) View.VISIBLE else View.GONE
+        (btnToggleCrs as? com.google.android.material.button.MaterialButton)?.text =
+            if (crsExpanded) "Hide CRS / UTM" else "Show CRS / UTM"
+    }
+
     private fun bindProjectionCard(c: Coordinate) {
-        val hasProj = c.easting != null || c.northing != null || c.utmZone != null || c.crsEpsg != null
-        if (!hasProj) { cardProjection?.visibility = View.GONE; return }
-        c.easting?.let  { addDetailRow(cardProjectionRows, "Easting",  String.format(Locale.US, "%.3f m", it)) }
-        c.northing?.let { addDetailRow(cardProjectionRows, "Northing", String.format(Locale.US, "%.3f m", it)) }
-        c.utmZone?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardProjectionRows, "UTM zone", it) }
-        c.crsEpsg?.let { addDetailRow(cardProjectionRows, "CRS (EPSG)", it.toString()) }
-        cardProjection?.visibility = View.VISIBLE
+        // CRS/projection content is now embedded in the Location card's collapsible section.
+        cardProjection?.visibility = View.GONE
     }
 
     private fun providerLabel(p: String?): String? = when (p?.lowercase(Locale.US)) {
@@ -455,6 +541,20 @@ class CoordinateDetailFragment : Fragment() {
         addDetailRow(cardCaptureRows, "Time", SimpleDateFormat("h:mm:ss a", Locale.US).format(dateObj).lowercase(Locale.US))
         c.timestampSource?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Time source", it) }
         c.appVersion?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "App version", it) }
+
+        // Quality/accuracy context note
+        val note = when (c.captureMethod?.lowercase(Locale.US)) {
+            "internal_gps", "averaged" ->
+                "Captured with Internal GPS. Accuracy may be lower than with an external GNSS receiver."
+            else -> null
+        }
+        if (note != null) {
+            textCaptureQualityNote?.text = note
+            textCaptureQualityNote?.visibility = View.VISIBLE
+        } else {
+            textCaptureQualityNote?.visibility = View.GONE
+        }
+
         cardCapture?.visibility = View.VISIBLE
     }
 
@@ -529,6 +629,14 @@ class CoordinateDetailFragment : Fragment() {
         modelName?.text = model?.name ?: "Model unavailable"
         modelMeta?.text = model?.let { buildModelMeta(it) } ?: ""
         modelMeta?.visibility = if (model == null) View.GONE else View.VISIBLE
+
+        // Placement note
+        val placementNote = when (lastCoordinate?.captureMethod?.lowercase(Locale.US)) {
+            "model_embedded" -> "Placement: Model embedded location"
+            else             -> "Placement: Uses saved coordinate"
+        }
+        textModelPlacement?.text = placementNote
+        textModelPlacement?.visibility = View.VISIBLE
 
         val missing = model == null || !fileExists
         modelStatus?.visibility = if (missing) View.VISIBLE else View.GONE
@@ -723,75 +831,77 @@ class CoordinateDetailFragment : Fragment() {
     // ── Badges ─────────────────────────────────────────────────────────────────
 
     private fun bindBadges(c: Coordinate) {
+        applySourceBadge(c)
         applyFixBadge(c)
+        applyExtraBadge(c)
         if (showAccuracyIndicators) applyAccuracyBadge(c) else badgeAccuracy?.visibility = View.GONE
-        val anyVisible = (badgeRtk?.visibility == View.VISIBLE) || (badgeAccuracy?.visibility == View.VISIBLE)
+        val anyVisible = listOf(badgeSource, badgeRtk, badgeExtra, badgeAccuracy)
+            .any { it?.visibility == View.VISIBLE }
         rowBadges?.visibility = if (anyVisible) View.VISIBLE else View.GONE
     }
 
-    /**
-     * Returns (label, backgroundColorInt) for the fix/status badge, or null to hide it.
-     *
-     * Priority:
-     *  1. captureMethod/provider source badges (MODEL, IMPORTED, MANUAL) – override rtkStatus
-     *     because those coordinates were never acquired via live GNSS.
-     *  2. rtkStatus for live-GNSS captures (FIX, FLOAT, DGPS, GPS, NO FIX).
-     *  3. captureMethod fallback for averaged/external captures with no rtkStatus.
-     */
-    private fun fixBadgeData(c: Coordinate): Pair<String, Int>? {
+    private fun applySourceBadge(c: Coordinate) {
+        val tv = badgeSource ?: return
         val cm = c.captureMethod?.trim()?.lowercase(Locale.US)
         val prov = c.provider.trim().lowercase(Locale.US)
-
-        // Non-GNSS sources get their own clear label.
-        if (cm == "model_embedded" || prov == "model")
-            return "MODEL"    to 0xFF1565C0.toInt()
-        if (cm == "imported")
-            return "IMPORTED" to 0xFF455A64.toInt()
-        if (cm == "manual" || cm == "map_tap")
-            return "MANUAL"   to 0xFF455A64.toInt()
-
-        // GNSS sources: rtkStatus is the authority.
-        val rtk = c.rtkStatus?.trim()?.uppercase(Locale.US)
-        if (!rtk.isNullOrBlank()) {
-            return when (rtk) {
-                "FIX", "FIXED"            -> "FIX"    to 0xFF2E7D32.toInt()
-                "FLOAT"                   -> "FLOAT"  to 0xFFE65100.toInt()
-                "DGPS"                    -> "DGPS"   to 0xFF1565C0.toInt()
-                "SINGLE", "GPS", "AUTONOMOUS" -> "GPS" to 0xFF1565C0.toInt()
-                "NO FIX", "NOFIX", "NONE" -> "NO FIX" to 0xFFC62828.toInt()
-                else                      -> "UNKNOWN" to 0xFF607D8B.toInt()
-            }
+        val (label, color) = when {
+            cm == "model_embedded" || prov == "model"        -> "MODEL EMBEDDED LOCATION" to 0xFF1565C0.toInt()
+            cm == "imported"                                 -> "IMPORTED"     to 0xFF455A64.toInt()
+            cm == "manual" || cm == "map_tap"                -> "MANUAL"       to 0xFF455A64.toInt()
+            prov.contains("rs2") || cm == "external_gnss" ||
+                cm == "rtk_receiver"                         -> "RS2+"         to 0xFF1565C0.toInt()
+            else                                             -> "INTERNAL GPS" to 0xFF1565C0.toInt()
         }
-
-        // Fall back to captureMethod for averaged / external captures.
-        return when (cm) {
-            "internal_gps"  -> "GPS"  to 0xFF1565C0.toInt()
-            "external_gnss" -> "GNSS" to 0xFF1565C0.toInt()
-            "averaged"      -> "GPS"  to 0xFF455A64.toInt()
-            else            -> null
-        }
+        tv.text = label
+        tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
+        tv.visibility = View.VISIBLE
     }
 
     private fun applyFixBadge(c: Coordinate) {
         val tv = badgeRtk ?: return
-        val data = fixBadgeData(c)
-        if (data == null) { tv.visibility = View.GONE; return }
-        val (label, color) = data
+        val cm = c.captureMethod?.trim()?.lowercase(Locale.US)
+        // Non-GNSS sources: quality badge is not applicable
+        if (cm == "model_embedded" || cm == "imported" || cm == "manual" || cm == "map_tap") {
+            tv.visibility = View.GONE; return
+        }
+        val rtk = c.rtkStatus?.trim()?.uppercase(Locale.US)
+        if (rtk.isNullOrBlank()) { tv.visibility = View.GONE; return }
+        val (label, color) = when (rtk) {
+            "FIX", "FIXED"                -> "FIXED"  to 0xFF2E7D32.toInt()
+            "FLOAT"                       -> "FLOAT"  to 0xFFE65100.toInt()
+            "DGPS"                        -> "DGPS"   to 0xFF1565C0.toInt()
+            "SINGLE", "GPS", "AUTONOMOUS" -> "SINGLE" to 0xFF1565C0.toInt()
+            "NO FIX", "NOFIX", "NONE"     -> "NO FIX" to 0xFFC62828.toInt()
+            else                          -> "UNKNOWN" to 0xFF607D8B.toInt()
+        }
         tv.text = label
         tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
         tv.contentDescription = when (label) {
-            "FIX"      -> "RTK fixed solution"
-            "FLOAT"    -> "RTK float solution"
-            "GPS"      -> "Standard GPS"
-            "GNSS"     -> "External GNSS"
-            "DGPS"     -> "Differential GPS"
-            "MANUAL"   -> "Manually entered coordinate"
-            "IMPORTED" -> "Imported coordinate"
-            "MODEL"    -> "Coordinate from embedded model location"
-            "NO FIX"   -> "No GNSS fix"
-            else       -> "Fix quality unknown"
+            "FIXED"  -> "RTK fixed solution"
+            "FLOAT"  -> "RTK float solution"
+            "SINGLE" -> "Standard GPS"
+            "DGPS"   -> "Differential GPS"
+            "NO FIX" -> "No GNSS fix"
+            else     -> "Fix quality unknown"
         }
         tv.visibility = View.VISIBLE
+    }
+
+    private fun applyExtraBadge(c: Coordinate) {
+        val tv = badgeExtra ?: return
+        when {
+            (c.averagedSamples ?: 0) > 0 -> {
+                tv.text = "AVERAGED"
+                tv.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF455A64.toInt())
+                tv.visibility = View.VISIBLE
+            }
+            c.icon.startsWith("model:") -> {
+                tv.text = "MODEL LINKED"
+                tv.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1565C0.toInt())
+                tv.visibility = View.VISIBLE
+            }
+            else -> tv.visibility = View.GONE
+        }
     }
 
     private fun applyAccuracyBadge(c: Coordinate) {
@@ -882,6 +992,61 @@ class CoordinateDetailFragment : Fragment() {
         canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, strokePaint)
         thumb.recycle()
         return BitmapDescriptorFactory.fromBitmap(out)
+    }
+
+    // ── Distance / bearing from live GNSS fix ─────────────────────────────────
+
+    private fun haversineDistanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6_371_000.0
+        val phi1 = Math.toRadians(lat1); val phi2 = Math.toRadians(lat2)
+        val dPhi = Math.toRadians(lat2 - lat1); val dL = Math.toRadians(lon2 - lon1)
+        val sinDPhi = Math.sin(dPhi / 2); val sinDL = Math.sin(dL / 2)
+        val a = sinDPhi * sinDPhi + Math.cos(phi1) * Math.cos(phi2) * sinDL * sinDL
+        return r * 2 * Math.asin(Math.sqrt(a))
+    }
+
+    private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val phi1 = Math.toRadians(lat1); val phi2 = Math.toRadians(lat2)
+        val dL = Math.toRadians(lon2 - lon1)
+        val y = Math.sin(dL) * Math.cos(phi2)
+        val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dL)
+        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360
+    }
+
+    private fun cardinalDir(deg: Double) = when {
+        deg < 22.5 || deg >= 337.5 -> "N"
+        deg < 67.5  -> "NE"
+        deg < 112.5 -> "E"
+        deg < 157.5 -> "SE"
+        deg < 202.5 -> "S"
+        deg < 247.5 -> "SW"
+        deg < 292.5 -> "W"
+        else        -> "NW"
+    }
+
+    private fun fmtDistance(m: Double) = when {
+        m < 1000.0 -> String.format(Locale.US, "%.1f m", m)
+        else       -> String.format(Locale.US, "%.2f km", m / 1000.0)
+    }
+
+    private fun startDistanceBearing(c: Coordinate) {
+        val switchboard = try {
+            EntryPointAccessors.fromApplication(
+                requireContext().applicationContext,
+                SurveyingAppEntryPoint::class.java
+            ).fixSwitchboard()
+        } catch (_: Exception) { return }
+
+        distanceJob = viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                switchboard.fixes.collectLatest { fix ->
+                    val dist = haversineDistanceM(c.latitude, c.longitude, fix.latDeg, fix.lonDeg)
+                    val bearing = bearingDeg(c.latitude, c.longitude, fix.latDeg, fix.lonDeg)
+                    rowDistance?.visibility = View.VISIBLE
+                    textDistance?.text = "${fmtDistance(dist)} ${cardinalDir(bearing)}"
+                }
+            }
+        }
     }
 
     // ── Edit dialog ────────────────────────────────────────────────────────────
