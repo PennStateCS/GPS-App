@@ -40,15 +40,22 @@ class SurveyingApp : Application() {
         lateinit var mockLocationPublisher: AndroidMockLocationPublisher
             private set
         private lateinit var appScope: CoroutineScope
+
+        // Switch to true to force the legacy renderer for one build cycle.
+        // Useful for testing whether a blank-map issue is renderer-specific.
+        // Must be false in production.
+        private const val USE_LEGACY_MAPS_RENDERER_FOR_DEBUG = false
     }
 
     override fun onCreate() {
         super.onCreate()
-        // Explicitly select the latest Maps renderer before any MapView is created.
+        // Explicitly select the Maps renderer before any MapView is created.
         // Without this, preferredRenderer is null and the SDK auto-selects — which
         // causes gray/blank tiles on some tablets when it chooses the legacy renderer.
-        MapsInitializer.initialize(this, MapsInitializer.Renderer.LATEST) { renderer ->
-            Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name}")
+        val preferredRenderer = if (USE_LEGACY_MAPS_RENDERER_FOR_DEBUG)
+            MapsInitializer.Renderer.LEGACY else MapsInitializer.Renderer.LATEST
+        MapsInitializer.initialize(this, preferredRenderer) { renderer ->
+            Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
         // Basic crash guard: logs uncaught exceptions (consider forwarding to crash reporting service)
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
