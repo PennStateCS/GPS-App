@@ -2,6 +2,7 @@ package com.example.surveyingapp.gnss.bus.adapters
 
 import android.util.Log
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.util.DiagnosticsLogger
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
@@ -82,6 +83,7 @@ class TcpNmeaSource(
 
     private var connectionJob: Job? = null
     @Volatile private var started = false
+    @Volatile private var firstDataLogged = false
 
     /**
      * Reads host/port from [SettingsRepository] and initiates a single TCP connection attempt.
@@ -98,17 +100,21 @@ class TcpNmeaSource(
 
                 if (host.isNullOrBlank() || port == null) {
                     Log.w(TAG, "No TCP host/port configured")
+                    DiagnosticsLogger.w("Receiver", "TCP NMEA: no host/port configured")
                     return@launch
                 }
 
                 started = true
+                firstDataLogged = false
                 Log.d(TAG, "Connecting to $host:$port")
+                DiagnosticsLogger.i("Receiver", "Connecting to $host:$port")
                 connectAndRead(host, port)
 
             } catch (ce: CancellationException) {
                 throw ce
             } catch (e: Exception) {
                 Log.e(TAG, "Connection error: ${e.message}")
+                DiagnosticsLogger.e("Receiver", "TCP connection error: ${e.message}")
                 started = false
                 // Let ExternalAdapter's reconnect loop handle the retry
             }
@@ -118,6 +124,7 @@ class TcpNmeaSource(
     override fun stop() {
         Log.d(TAG, "Stopping TCP NMEA source")
         started = false
+        firstDataLogged = false
         connectionJob?.cancel()
         connectionJob = null
         fuser.reset()
@@ -132,6 +139,7 @@ class TcpNmeaSource(
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
             Log.d(TAG, "Connected to $host:$port")
+            DiagnosticsLogger.i("Receiver", "TCP socket connected to $host:$port")
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8), 1024)
 
             while (coroutineContext.isActive) {
@@ -139,10 +147,15 @@ class TcpNmeaSource(
                     val line = reader.readLine()
                     if (line == null) {
                         Log.w(TAG, "Connection closed by remote")
+                        DiagnosticsLogger.w("Receiver", "TCP connection closed by remote ($host:$port)")
                         break
                     }
                     val clean = line.trim()
                     if (clean.isNotEmpty() && clean[0] == '$') {
+                        if (!firstDataLogged) {
+                            firstDataLogged = true
+                            DiagnosticsLogger.i("Receiver", "First NMEA sentence received from $host:$port")
+                        }
                         diagnostics?.recordLine(clean)
                         _rawNmea.tryEmit(Unit)
                         fuser.accept(clean)
@@ -157,6 +170,7 @@ class TcpNmeaSource(
                 runCatching { socket?.close() }
             }
             Log.d(TAG, "Disconnected from $host:$port")
+            DiagnosticsLogger.i("Receiver", "TCP disconnected from $host:$port")
         }
     }
 }

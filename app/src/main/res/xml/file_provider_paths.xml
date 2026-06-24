@@ -4,5 +4,7 @@
     <external-path name="external_documents" path="Documents/SurveyingApp/" />
     <!-- External storage root -->
     <external-path name="external_storage" path="." />
+    <!-- Internal cache directory for diagnostic report ZIPs -->
+    <cache-path name="diagnostic_exports" path="diagnostic_exports/" />
 </paths>
 

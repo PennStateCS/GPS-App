@@ -2,6 +2,7 @@ package com.example.surveyingapp.gnss.bus.adapters
 
 import android.util.Log
 import com.example.surveyingapp.gnss.bus.SourceAdapter
+import com.example.surveyingapp.util.DiagnosticsLogger
 import com.example.surveyingapp.gnss.bus.SkyProvider
 import com.example.surveyingapp.gnss.bus.Startable
 import com.example.surveyingapp.gnss.model.Fix
@@ -95,6 +96,7 @@ class ExternalAdapter(
 
     override fun stop() {
         Log.d(TAG, "stop()")
+        DiagnosticsLogger.i("Receiver", "External adapter stopped")
         reconnectJob?.cancel(); reconnectJob = null
         stopInternalJobs()
         runCatching { nmea.stop() }
@@ -114,11 +116,13 @@ class ExternalAdapter(
                 attempts++
                 _attemptCount.value = attempts
                 _connectionState.value = if (attempts == 1) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
+                if (attempts > 1) DiagnosticsLogger.w("Receiver", "Reconnecting external receiver attempt #$attempts")
 
                 startInternalConnection()
 
                 waitForFirstDataOrTimeout()
                 _connectionState.value = ConnectionState.CONNECTED
+                DiagnosticsLogger.i("Receiver", "External receiver connected (attempt #$attempts)")
                 attempts = 0 // reset after a successful connect
 
                 monitorConnectionHealth()
@@ -127,6 +131,7 @@ class ExternalAdapter(
                 throw ce
             } catch (e: Exception) {
                 Log.w(TAG, "connection attempt #$attempts failed: ${e.message}", e)
+                DiagnosticsLogger.w("Receiver", "Connection attempt #$attempts failed: ${e.message}")
                 _connectionState.value = ConnectionState.ERROR
                 stopInternalJobs()
                 if (!coroutineContext.isActive) break
@@ -186,6 +191,7 @@ class ExternalAdapter(
             if (firstDataArrived) return
             delay(250)
         }
+        DiagnosticsLogger.w("Receiver", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry")
         throw IllegalStateException("Timeout: no data within ${CONNECT_TIMEOUT_MS} ms")
     }
 
@@ -196,6 +202,7 @@ class ExternalAdapter(
             if (last == 0L) continue
             val staleFor = System.currentTimeMillis() - last
             if (staleFor > HEALTH_DATA_TIMEOUT_MS) {
+                DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
                 throw IllegalStateException("No data for ${HEALTH_DATA_TIMEOUT_MS} ms")
             }
         }

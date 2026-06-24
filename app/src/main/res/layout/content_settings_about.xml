@@ -317,6 +317,24 @@
             android:layout_marginBottom="8dp"
             android:text="Copy Build Info" />
 
+        <!-- Export Diagnostic Report button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_export_diagnostic"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="Export Diagnostic Report" />
+
+        <!-- Privacy note -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:alpha="0.6"
+            android:text="The report includes recent app logs, build details, device info, and map/GNSS status. It does not include API keys, saved coordinates, or model files."
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
         <!-- Section 3: Supported Workflows -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"

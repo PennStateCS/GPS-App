@@ -20,6 +20,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import androidx.appcompat.app.AppCompatDelegate
 import com.example.surveyingapp.gnss.settings.AppThemeMode
+import com.example.surveyingapp.util.DiagnosticsLogger
 import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -53,6 +54,17 @@ class SurveyingApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // Init diagnostic file logger before anything else so startup events are captured.
+        DiagnosticsLogger.init(this)
+        DiagnosticsLogger.i("App", "Started version=${BuildConfig.VERSION_NAME}" +
+            " build=${BuildConfig.BUILD_NUMBER}" +
+            " commit=${BuildConfig.BUILD_GIT_HASH}${if (BuildConfig.BUILD_GIT_DIRTY) "-dirty" else ""}" +
+            " branch=${BuildConfig.BUILD_GIT_BRANCH}" +
+            " device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" +
+            " android=${android.os.Build.VERSION.RELEASE}(API ${android.os.Build.VERSION.SDK_INT})" +
+            " debug=${BuildConfig.DEBUG}")
+
         // Explicitly select the Maps renderer before any MapView is created.
         // Without this, preferredRenderer is null and the SDK auto-selects — which
         // causes gray/blank tiles on some tablets when it chooses the legacy renderer.
@@ -61,6 +73,7 @@ class SurveyingApp : Application() {
         MapsInitializer.initialize(this, preferredRenderer) { renderer ->
             activeMapsRenderer = renderer.name
             Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
+            DiagnosticsLogger.i("App", "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
         // Basic crash guard: logs uncaught exceptions (consider forwarding to crash reporting service)
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
