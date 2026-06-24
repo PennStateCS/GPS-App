@@ -178,7 +178,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         .sample(500)
                         .collect { fix: Fix ->
                         updateMapLocation(fix)
-                        updateStatusDisplay(fix)
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -187,19 +186,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             }
         }
 
-        // Observe location source (still needed for RS2 summary / visibility logic)
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                try {
-                    settingsRepo.locationSource.collectLatest { source ->
-                        updateLocationSourceDisplay(source)
-                    }
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting location source", e)
-                }
-            }
-        }
     }
 
     private fun setupFixBadgeObservers() {
@@ -319,12 +305,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    private fun loadStatistics() {
-        // Statistics flows are collected inline in onCreateView alongside the other
-        // viewLifecycleOwner-scoped observers (see setupLocationStatusObservers etc.)
-        // This function is intentionally empty – see collectStatisticsFlows() called from onCreateView.
-    }
-
     private fun collectStatisticsFlows() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -402,10 +382,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    private fun updateStatusDisplay(_fix: Fix?) { /* no-op */ }
-
-    private fun updateLocationSourceDisplay(_source: LocationSourceType) { /* no-op */ }
-
     private fun fixToLocation(fix: Fix): Location {
         return try {
             val loc = Location("LocationManagerFix")
@@ -472,17 +448,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 map.uiSettings.isCompassEnabled = true
                 map.isBuildingsEnabled = true
 
-                // Apply 3D state based on chip
-                apply3D(enable = binding.chipToggle3d.isChecked, animate = false)
-
-                // Permission is granted — hide the placeholder so the map tiles show
-                // immediately while we wait for the first GPS fix.
-                binding.layoutMapPlaceholder.visibility = View.GONE
-                binding.mapViewMini.visibility = View.VISIBLE
-
-                // Reset camera centering flag - will center on first GPS fix
-                hasCenteredCamera = false
-                if (LOG_GNSS_UI) android.util.Log.d(TAG, "onMapReady: hasCenteredCamera reset to false")
+                _binding?.let {
+                    apply3D(enable = it.chipToggle3d.isChecked, animate = false)
+                    it.layoutMapPlaceholder.visibility = View.GONE
+                    it.mapViewMini.visibility = View.VISIBLE
+                }
             } else {
                 _binding?.let {
                     it.layoutMapPlaceholder.visibility = View.VISIBLE
@@ -506,14 +476,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     override fun onResume() {
         super.onResume()
         if (::mapView.isInitialized) mapView.onResume()
-
-        // Reset camera centering flag when fragment resumes
-        // This ensures the map will center on GPS location when user returns to home
-        hasCenteredCamera = false
-        if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onResume: hasCenteredCamera reset to false")
-
-        // Note: loadStatistics() is set up once in onCreateView via viewLifecycleOwner.lifecycleScope
-        // with repeatOnLifecycle(STARTED) - no need to call it again here.
     }
 
     override fun onPause() {
@@ -533,9 +495,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clear custom LocationSource references to avoid leaks
-        onLocationChangedListener = null
-        mapLocationSource = null
         if (::mapView.isInitialized) mapView.onDestroy()
     }
 
@@ -549,7 +508,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
      * IMPORTANT: Always set binding to null to prevent memory leaks!
      */
     override fun onDestroyView() {
+        googleMap?.setLocationSource(null)
+        googleMap = null
+        onLocationChangedListener = null
+        mapLocationSource = null
         super.onDestroyView()
-        _binding = null  // Prevents memory leaks by releasing view references
+        _binding = null
     }
 }
