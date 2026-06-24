@@ -223,6 +223,7 @@ class RenderMapFragment : Fragment() {
             googleMap = map
             map.mapType = currentMapType
             MapThemeHelper.applyTheme(requireContext(), map, currentMapType)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(40.7963, -77.8570), 15f))
             map.setMaxZoomPreference(22f)
             map.setMinZoomPreference(2f)
 
@@ -361,6 +362,7 @@ class RenderMapFragment : Fragment() {
                         .sample(250)
                         .collect { fix: Fix -> updateLiveTracking(fix) }
                 } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     Log.w(TAG, "Error collecting fixes", e)
                 }
             }
