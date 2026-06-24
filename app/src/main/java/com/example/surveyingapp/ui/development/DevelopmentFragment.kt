@@ -501,24 +501,35 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val locationPerm = ctx.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val internetPerm = ctx.checkSelfPermission(android.Manifest.permission.INTERNET) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val cameraPerm = ctx.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val networkStatus = runCatching {
+        // Network capability info — computed eagerly so rows can be added inline
+        data class NetInfo(
+            val internetVal: String, val internetStatus: MapsStatus,
+            val validatedVal: String, val validatedStatus: MapsStatus,
+            val transportVal: String, val transportStatus: MapsStatus,
+            val warningVal: String?
+        )
+        val netInfo = runCatching {
             val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
             val active = cm.activeNetwork
-            val caps = cm.getNetworkCapabilities(active)
-            when {
-                active == null -> "NO_ACTIVE_NETWORK" to MapsStatus.ERROR
-                caps == null -> "NO_CAPS" to MapsStatus.WARN
-                caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) -> {
-                    val tag = when {
-                        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "INTERNET_WIFI"
-                        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "INTERNET_CELL"
-                        else -> "INTERNET"
-                    }
-                    tag to MapsStatus.OK
-                }
-                else -> "NO_INTERNET_CAP" to MapsStatus.ERROR
-            }
-        }.getOrElse { it.javaClass.simpleName to MapsStatus.WARN }
+            val caps = active?.let { cm.getNetworkCapabilities(it) }
+            val hasInternet = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            val hasValidated = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+            val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+            val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+            val isVpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+            NetInfo(
+                internetVal = if (active == null) "no active network" else hasInternet.toString(),
+                internetStatus = if (active == null) MapsStatus.ERROR else if (hasInternet) MapsStatus.OK else MapsStatus.ERROR,
+                validatedVal = if (active == null) "no active network" else hasValidated.toString(),
+                validatedStatus = when { active == null -> MapsStatus.ERROR; hasValidated -> MapsStatus.OK; hasInternet -> MapsStatus.WARN; else -> MapsStatus.ERROR },
+                transportVal = when { active == null -> "None"; caps == null -> "Unknown"; isVpn -> "VPN"; isWifi -> "Wi-Fi"; isCellular -> "Cellular"; else -> "Other" },
+                transportStatus = if (active == null) MapsStatus.ERROR else if (isVpn) MapsStatus.WARN else MapsStatus.OK,
+                warningVal = if (active != null && hasInternet && !hasValidated)
+                    "Connected but not validated — map tiles may not load" else null
+            )
+        }.getOrElse {
+            NetInfo("error", MapsStatus.ERROR, "error", MapsStatus.ERROR, "error", MapsStatus.ERROR, it.message)
+        }
         val mapsLibPresent = runCatching { Class.forName("com.google.android.gms.maps.GoogleMap"); true }.getOrDefault(false)
         val fusedLocPresent = runCatching { Class.forName("com.google.android.gms.location.FusedLocationProviderClient"); true }.getOrDefault(false)
 
@@ -534,7 +545,10 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         addRow("Location Permission", locationPerm.toString(), if (locationPerm) MapsStatus.OK else MapsStatus.WARN)
         addRow("Internet Permission", internetPerm.toString(), if (internetPerm) MapsStatus.OK else MapsStatus.ERROR)
         addRow("Camera Permission", cameraPerm.toString(), if (cameraPerm) MapsStatus.OK else MapsStatus.WARN)
-        addRow("Network Status", networkStatus.first, networkStatus.second)
+        addRow("Network: Internet", netInfo.internetVal, netInfo.internetStatus)
+        addRow("Network: Validated", netInfo.validatedVal, netInfo.validatedStatus)
+        addRow("Network: Transport", netInfo.transportVal, netInfo.transportStatus)
+        if (netInfo.warningVal != null) addRow("Network: Warning", netInfo.warningVal, MapsStatus.WARN)
 
         // Placeholder for runtime MapView test (async result inserted below)
         addRow("Runtime MapView Test", "PENDING", MapsStatus.WARN)
@@ -602,17 +616,26 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         try {
             miniMapView.getMapAsync { gMap ->
                 completed = true
-                updateRuntimeStatus("MAP_READY", MapsStatus.OK)
+                updateRuntimeStatus("MAP_READY — waiting for tiles", MapsStatus.WARN)
                 MapThemeHelper.applyTheme(requireContext(), gMap, gMap.mapType)
                 gMap.moveCamera(com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(LatLng(0.0,0.0), 1f))
+                gMap.setOnMapLoadedCallback {
+                    updateRuntimeStatus("MAP_LOADED", MapsStatus.OK)
+                }
+                // If MAP_LOADED hasn't fired after 10 s, tiles likely failed to load
+                handler.postDelayed({
+                    if (runtimeValueHolder?.text?.startsWith("MAP_READY") == true)
+                        updateRuntimeStatus("MAP_READY — MAP_LOADED did not fire", MapsStatus.WARN)
+                }, 10_000)
             }
-            handler.postDelayed({ if(!completed) updateRuntimeStatus("TIMEOUT", MapsStatus.ERROR) }, 5000)
+            handler.postDelayed({ if (!completed) updateRuntimeStatus("TIMEOUT", MapsStatus.ERROR) }, 5000)
         } catch (e: Exception) {
             updateRuntimeStatus("ERROR: ${e.message}", MapsStatus.ERROR)
         }
 
-        // Manage mini MapView lifecycle via fragment callbacks
-        lifecycle.addObserver(object: androidx.lifecycle.DefaultLifecycleObserver {
+        // Manage mini MapView lifecycle tied to the view lifecycle, not the fragment lifecycle,
+        // so onDestroy is called when the view is torn down (e.g. back-stack navigation).
+        viewLifecycleOwner.lifecycle.addObserver(object: androidx.lifecycle.DefaultLifecycleObserver {
             override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onResume() }
             override fun onPause(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onPause() }
             override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onDestroy() }

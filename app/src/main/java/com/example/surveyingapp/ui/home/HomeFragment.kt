@@ -260,9 +260,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         binding.chipMapType.setOnClickListener {
             try {
                 googleMap?.let { map ->
-                map.mapType = nextMapType(map.mapType)
-                context?.let { MapThemeHelper.applyTheme(it, map, map.mapType) }
-            }
+                    map.mapType = nextMapType(map.mapType)
+                    context?.let { MapThemeHelper.applyTheme(it, map, map.mapType) }
+                    binding.chipMapType.text = mapTypeName(map.mapType)
+                }
             } catch (e: Exception) {
                 android.util.Log.e("HomeFragment", "Error changing map type", e)
             }
@@ -280,11 +281,18 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             GoogleMap.MAP_TYPE_NORMAL,
             GoogleMap.MAP_TYPE_SATELLITE,
             GoogleMap.MAP_TYPE_TERRAIN,
-            GoogleMap.MAP_TYPE_HYBRID,
-            GoogleMap.MAP_TYPE_NONE
+            GoogleMap.MAP_TYPE_HYBRID
         )
         val i = order.indexOf(current)
         return if (i == -1 || i == order.lastIndex) order.first() else order[i + 1]
+    }
+
+    private fun mapTypeName(mapType: Int): String = when (mapType) {
+        GoogleMap.MAP_TYPE_NORMAL    -> "Normal"
+        GoogleMap.MAP_TYPE_SATELLITE -> "Satellite"
+        GoogleMap.MAP_TYPE_TERRAIN   -> "Terrain"
+        GoogleMap.MAP_TYPE_HYBRID    -> "Hybrid"
+        else -> "Map"
     }
 
     private fun apply3D(enable: Boolean, animate: Boolean) {
@@ -414,6 +422,23 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             } catch (_: Exception) { "unavailable" }
             android.util.Log.d(TAG, "onMapReady: Play Services version=$playServicesVersion")
 
+            // Log network connectivity state — internet-without-validation means tiles won't load
+            // (e.g. device is on a receiver Wi-Fi network with no real internet access)
+            run {
+                val cm = requireContext().getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                val active = cm.activeNetwork
+                val caps = active?.let { cm.getNetworkCapabilities(it) }
+                val hasInternet = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                val hasValidated = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+                val isVpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+                val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                val transport = when { active == null -> "none"; isVpn -> "VPN"; isWifi -> "WiFi"; isCellular -> "cellular"; else -> "other" }
+                android.util.Log.d(TAG, "onMapReady: network transport=$transport internet=$hasInternet validated=$hasValidated")
+                if (hasInternet && !hasValidated)
+                    android.util.Log.w(TAG, "onMapReady: network not validated — likely receiver WiFi; map tiles may not load")
+            }
+
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
             val nightMode = (requireContext().resources.configuration.uiMode and
@@ -470,6 +495,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     apply3D(enable = it.chipToggle3d.isChecked, animate = false)
                     it.layoutMapPlaceholder.visibility = View.GONE
                     it.mapViewMini.visibility = View.VISIBLE
+                    it.chipMapType.text = mapTypeName(map.mapType)
                 }
             } else {
                 _binding?.let {
@@ -511,25 +537,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         if (::mapView.isInitialized) mapView.onSaveInstanceState(outState)
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        if (::mapView.isInitialized) mapView.onDestroy()
-    }
-
     override fun onLowMemory() {
         super.onLowMemory()
         if (::mapView.isInitialized) mapView.onLowMemory()
     }
 
-    /**
-     * Called when the view hierarchy is being destroyed.
-     * IMPORTANT: Always set binding to null to prevent memory leaks!
-     */
     override fun onDestroyView() {
         googleMap?.setLocationSource(null)
         googleMap = null
         onLocationChangedListener = null
         mapLocationSource = null
+        if (::mapView.isInitialized) mapView.onDestroy()
         super.onDestroyView()
         _binding = null
     }
