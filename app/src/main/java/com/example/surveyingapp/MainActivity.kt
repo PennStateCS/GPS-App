@@ -587,13 +587,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Single consolidated observer for all status bar updates
+        // Single consolidated observer for all status bar live data.
+        //
+        // Live values are driven by switchboard.currentFix — the nullable, current-provider-only
+        // fix state. Unlike the replay=1 `fixes` SharedFlow it can never replay the previous
+        // provider's last fix: FixSwitchboard sets it to null the instant a provider switch begins
+        // and only repopulates it from the newly-bound provider. So `fix == null` here means
+        // "no live fix from the current provider yet" → show the waiting/blank state.
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 var consecutiveErrors = 0
 
                 combine(
-                    switchboard.fixes,
+                    switchboard.currentFix,
                     switchboard.sky,
                     settingsRepository.locationSource
                 ) { fix, sky, source ->
@@ -620,19 +626,35 @@ class MainActivity : AppCompatActivity() {
                     .collectLatest { (fix, sky, source) ->
                         consecutiveErrors = 0 // Reset error counter on success
 
-                        // Only apply fixes whose provider matches the SELECTED source. This drops:
-                        //  - stale replay=1 fixes from the previous source right after a switch, and
-                        //  - internal fixes that keep flowing while the user has selected RS2+ but the
-                        //    external receiver hasn't connected yet (activeProvider still INTERNAL).
-                        // In those windows the toolbar keeps the placeholders set by the reset observer
-                        // until a matching fix arrives, instead of flickering to the wrong source.
-                        if (!fixMatchesSource(source, fix)) return@collectLatest
+                        // No live fix from the current provider (just switched, or not acquired
+                        // yet) → blank the live data and keep the source label. Never carry the
+                        // previous provider's coordinates.
+                        if (fix == null) {
+                            withContext(Dispatchers.Main) { resetStatusTokensForSource(source) }
+                            return@collectLatest
+                        }
 
-                        // Reject stale fixes (e.g. the replay=1 buffered fix from a previous session
-                        // that matches the now-selected source). Without this, re-selecting RS2+ before
-                        // reconnecting would show that old fix's coordinates/SOL instead of placeholders.
+                        // Guard 1 — provider match. currentFix is already current-provider-only,
+                        // but during the External-connecting window the live provider is still
+                        // INTERNAL while the user has selected RS2+; drop the internal fix so the
+                        // toolbar shows "waiting for RS2+" instead of internal coordinates.
+                        if (!fixMatchesSource(source, fix)) {
+                            logToolbarIgnore("wrong-provider")
+                            return@collectLatest
+                        }
+
+                        // Guard 2 — staleness.
                         val fixAgeMs = java.time.Duration.between(fix.timeUtc, java.time.Instant.now()).toMillis()
-                        if (fixAgeMs > TOOLBAR_FIX_MAX_AGE_MS) return@collectLatest
+                        if (fixAgeMs > TOOLBAR_FIX_MAX_AGE_MS) {
+                            logToolbarIgnore("stale")
+                            return@collectLatest
+                        }
+
+                        // Guard 3 — valid coordinates.
+                        if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
+                            logToolbarIgnore("invalid-coords")
+                            return@collectLatest
+                        }
 
                         lastDataUpdateTime = System.currentTimeMillis() // Update the shared timestamp
                         latestSkySnapshot = sky // Store latest sky snapshot
@@ -646,6 +668,27 @@ class MainActivity : AppCompatActivity() {
                             tokenSource.value.alpha = 1.0f
                         }
                     }
+            }
+        }
+
+        // Immediate reset whenever the LIVE provider actually changes (the switchboard rebinds).
+        // This complements the locationSource reset above: that one fires on the user's selection,
+        // this one fires when routing actually flips (e.g. External finishing its connect), so the
+        // previous provider's fix/sats/correction/battery clear right away.
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                sourceSettings.activeProvider.collect { provider ->
+                    if (previousProvider != null && previousProvider != provider) {
+                        val isExternalLive =
+                            provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP
+                        com.example.surveyingapp.util.DiagnosticsLogger.i(
+                            "Toolbar", "Reset due to provider switch $previousProvider -> $provider"
+                        )
+                        withContext(Dispatchers.Main) { resetLiveDataTokens(isExternalLive) }
+                    }
+                    previousProvider = provider
+                }
             }
         }
 
@@ -715,9 +758,20 @@ class MainActivity : AppCompatActivity() {
         source: LocationSourceType
     ) {
         val isInternal = source == LocationSourceType.INTERNAL
+        // Source label reflects the user's SELECTED source (preference), shown immediately.
         tokenSource.value.text = if (isInternal) "Internal" else "RS2+"
         tokenSource.separator?.isVisible = true
         tokenSource.value.alpha = 1.0f
+        resetLiveDataTokens(isExternalLive = !isInternal)
+    }
+
+    /**
+     * Blanks all live-data tokens (coordinates, fix/SOL, sats, accuracy, altitude) and discards
+     * cached sky, WITHOUT touching the source label. Battery visibility follows whether the live
+     * provider is external (hidden + polling stopped for internal). Called on every provider
+     * switch so the previous provider's values never linger in the toolbar.
+     */
+    private fun resetLiveDataTokens(isExternalLive: Boolean) {
         tokenCoord.value.text = "--"
         tokenFix.value.text = "--"
         tokenFix.value.setTextColor(getColor(android.R.color.darker_gray))
@@ -726,11 +780,24 @@ class MainActivity : AppCompatActivity() {
         // Altitude shows a label + "--" placeholder like LL, instead of hiding.
         tokenAlt.value.text = "--"
         tokenAlt.root.isVisible = true
-        updateBatteryVisibility(!isInternal)
+        updateBatteryVisibility(isExternalLive)
         // Discard stale sky so the old source's satellite counts don't linger.
         latestSkySnapshot = null
         // Reset stale-data timer so the dim indicator doesn't fire immediately after a switch.
         lastDataUpdateTime = System.currentTimeMillis()
+    }
+
+    // Throttle for wrong-provider/stale/invalid-fix diagnostics so a steady stream of dropped
+    // fixes (e.g. internal fixes during the External-connecting window) can't flood the log.
+    private var lastToolbarIgnoreLogMs = 0L
+    private var lastToolbarIgnoreReason: String? = null
+    private fun logToolbarIgnore(reason: String) {
+        val now = System.currentTimeMillis()
+        if (reason != lastToolbarIgnoreReason || now - lastToolbarIgnoreLogMs >= 10_000L) {
+            lastToolbarIgnoreLogMs = now
+            lastToolbarIgnoreReason = reason
+            com.example.surveyingapp.util.DiagnosticsLogger.w("Toolbar", "Ignored $reason fix for live display")
+        }
     }
 
     private fun updateBatteryVisibility(shouldShow: Boolean) {

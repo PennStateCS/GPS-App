@@ -31,6 +31,7 @@ import org.osmdroid.config.Configuration
 @InstallIn(SingletonComponent::class)
 interface SurveyingAppEntryPoint {
     fun fixSwitchboard(): FixSwitchboard
+    fun sourceSettings(): com.example.surveyingapp.gnss.settings.SourceSettings
 }
 
 @HiltAndroidApp
@@ -50,6 +51,13 @@ class SurveyingApp : Application() {
         // Set by the MapsInitializer callback below; readable from any screen (e.g. Maps Debug).
         var activeMapsRenderer: String = "not initialized"
             private set
+
+        // Latest Home-map tile-load status (MAP_READY / MAP_LOADED / timeout), surfaced in the
+        // diagnostic report. Updated by HomeFragment via [reportMapLoadStatus].
+        var mapLoadStatus: String = "unknown"
+            private set
+
+        fun reportMapLoadStatus(status: String) { mapLoadStatus = status }
     }
 
     override fun onCreate() {

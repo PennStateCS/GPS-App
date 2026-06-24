@@ -32,7 +32,10 @@ import java.time.Instant
  */
 class ObservationSession(
     private val scope: CoroutineScope,
-    private val fixes: SharedFlow<Fix>,
+    // A plain Flow (not SharedFlow) so callers can pass a provider-filtered stream — e.g. an
+    // external capture passes only external-provider fixes. Only Flow operators are used below,
+    // so the averaging behavior is unchanged.
+    private val fixes: Flow<Fix>,
     private val policy: AveragingPolicy,
     private val uere: UereTable = UereTable()
 ) {

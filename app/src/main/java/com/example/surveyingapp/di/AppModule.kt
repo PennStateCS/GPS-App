@@ -22,6 +22,7 @@ import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
 import com.example.surveyingapp.gnss.settings.SourceSettings
 import com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice
 import com.example.surveyingapp.gnss.satellites.SatelliteInventory
+import com.example.surveyingapp.util.DiagnosticsLogger
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -95,17 +96,24 @@ object AppModule {
     @Provides
     @Singleton
     fun provideSourceSettings(settingsRepository: SettingsRepository): SourceSettings {
-        // Initialize provider synchronously from persisted settings so UI/components
-        // reading SourceSettings immediately (at app startup) see the correct choice.
-        val providerChoice = runBlocking {
-            val loc = try { settingsRepository.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
-            when (loc) {
-                LocationSourceType.EXTERNAL -> ProviderChoice.EXTERNAL_TCP
-                else -> ProviderChoice.INTERNAL
-            }
+        // Read the persisted selection for diagnostics, but ALWAYS start the live provider as
+        // Internal. Seeding EXTERNAL_TCP here would make the switchboard bind the external adapter
+        // on launch and route to a receiver that has not been re-validated this session — surfacing
+        // stale/blank TCP data before any reachability check. Promotion to External happens only
+        // through SettingsFragment's validated reconnect flow (connectViaTcpFlow), which confirms
+        // the receiver is present before calling setActiveProvider(EXTERNAL_TCP).
+        val persistedSource = runBlocking {
+            try { settingsRepository.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
         }
+        val startupProvider = ProviderChoice.INTERNAL
+        DiagnosticsLogger.i(
+            "GNSS",
+            "Startup: persistedSource=$persistedSource activeProvider=$startupProvider" +
+                if (persistedSource == LocationSourceType.EXTERNAL)
+                    " (External will reconnect after validation, not activated blindly)" else ""
+        )
         return SourceSettings(
-            _activeProvider    = MutableStateFlow(providerChoice),
+            _activeProvider    = MutableStateFlow(startupProvider),
             connectionProfiles = MutableStateFlow(emptyList()),
             activeProfileId    = MutableStateFlow(null)
         )

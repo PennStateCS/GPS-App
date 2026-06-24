@@ -55,7 +55,10 @@ class CaptureViewModel @Inject constructor(
             var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
             sourceSettings.activeProvider.collect { provider ->
                 if (previousProvider != null && previousProvider != provider) {
-                    if (session != null) cancel()
+                    if (session != null) {
+                        DiagnosticsLogger.i("Capture", "Capture canceled/reset due to provider switch $previousProvider -> $provider")
+                        cancel()
+                    }
                     // Reset readiness state so a stale fix from the old provider can't keep
                     // the "OK to capture" indicator green after the source changes. The new
                     // provider must satisfy the dwell window again from scratch.
@@ -107,26 +110,60 @@ class CaptureViewModel @Inject constructor(
     }
 
     fun start(policy: AveragingPolicy) {
+        // Cancel any existing session FIRST so a previous ObservationSession can't keep collecting
+        // fixes or emitting state into the UI after a new capture begins.
+        if (session != null) {
+            DiagnosticsLogger.i("Capture", "Previous capture session canceled before new start")
+        }
+        stopSession()
+        _state.value = ObservationSession.State.Idle
+
         val provider = sourceSettings.activeProvider.value
         DiagnosticsLogger.i("Capture", "Capture started source=$provider " +
             "minDur=${policy.minDurationSec}s maxDur=${policy.maxDurationSec}s " +
             "minFixes=${policy.minSamples} required=${policy.requiredMinStatus}")
-        val s = ObservationSession(viewModelScope, fixSwitchboard.fixes, policy)
+        // The averaging session is only used for EXTERNAL capture. Feed it ONLY external-provider
+        // fixes so internal GPS fixes can never be averaged into an external capture — even if the
+        // required quality is lowered to Single/DGPS, and even during the window where External is
+        // selected but the live provider is still Internal (reconnecting).
+        val externalFixes = fixSwitchboard.fixes.filter {
+            it.provider != com.example.surveyingapp.gnss.model.Provider.INTERNAL
+        }
+        val s = ObservationSession(viewModelScope, externalFixes, policy)
         session = s
-        sessionForwardJob?.cancel()
         sessionForwardJob = viewModelScope.launch {
-            s.state.collect { _state.value = it }
+            s.state.collect { st ->
+                _state.value = st
+                if (st is ObservationSession.State.Complete) {
+                    if (st.requirementsMet) {
+                        DiagnosticsLogger.i("Capture",
+                            "Capture ready (requirements met) acceptedFixes=${st.result.samples}")
+                    } else {
+                        DiagnosticsLogger.w("Capture",
+                            "Capture timed out before requirements met acceptedFixes=${st.result.samples}/${policy.minSamples}")
+                    }
+                }
+            }
         }
         s.start()
     }
 
     fun cancel() {
         if (session != null) DiagnosticsLogger.i("Capture", "Capture canceled")
-        session?.cancel()
-        session = null
+        stopSession()
+        _state.value = ObservationSession.State.Idle
+    }
+
+    /**
+     * Tears down the current session and its state-forwarding job WITHOUT touching the public
+     * state (callers set it). Forwarding is cancelled before the session so the old session's
+     * final Idle emission can't leak into [_state].
+     */
+    private fun stopSession() {
         sessionForwardJob?.cancel()
         sessionForwardJob = null
-        _state.value = ObservationSession.State.Idle
+        session?.cancel()
+        session = null
     }
 
     override fun onCleared() {
@@ -135,7 +172,14 @@ class CaptureViewModel @Inject constructor(
     }
 
     suspend fun save(name: String, note: String?, color: Int, iconId: String) {
-        val finished = (state.value as? ObservationSession.State.Complete)?.result ?: return
+        val completed = (state.value as? ObservationSession.State.Complete) ?: return
+        // Defense-in-depth: never persist a timed-out, under-sampled capture. The UI disables
+        // Save in that case; this guards the data path too.
+        if (!completed.requirementsMet) {
+            DiagnosticsLogger.w("Capture", "Save blocked: requirements not met (timed out)")
+            return
+        }
+        val finished = completed.result
 
         val src = SurveyingApp.settingsRepo.locationSource.first()
         val provider = when (src) {
