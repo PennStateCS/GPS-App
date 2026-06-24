@@ -45,6 +45,10 @@ class SurveyingApp : Application() {
         // Useful for testing whether a blank-map issue is renderer-specific.
         // Must be false in production.
         private const val USE_LEGACY_MAPS_RENDERER_FOR_DEBUG = false
+
+        // Set by the MapsInitializer callback below; readable from any screen (e.g. Maps Debug).
+        var activeMapsRenderer: String = "not initialized"
+            private set
     }
 
     override fun onCreate() {
@@ -55,6 +59,7 @@ class SurveyingApp : Application() {
         val preferredRenderer = if (USE_LEGACY_MAPS_RENDERER_FOR_DEBUG)
             MapsInitializer.Renderer.LEGACY else MapsInitializer.Renderer.LATEST
         MapsInitializer.initialize(this, preferredRenderer) { renderer ->
+            activeMapsRenderer = renderer.name
             Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
         // Basic crash guard: logs uncaught exceptions (consider forwarding to crash reporting service)
