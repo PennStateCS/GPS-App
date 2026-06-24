@@ -439,10 +439,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
             // Set default camera position (will be overridden when fix arrives)
-            // Start at a reasonable default location (e.g., San Francisco)
-            val defaultLocation = LatLng(37.7749, -122.4194)
-            map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 10f))
-            android.util.Log.d(TAG, "onMapReady: default camera set at SF zoom=10")
+            val defaultLocation = LatLng(40.7963, -77.8570)
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15f))
+            android.util.Log.d(TAG, "onMapReady: default camera set at Penn State zoom=15")
 
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
             mapLocationSource = object : LocationSource {
