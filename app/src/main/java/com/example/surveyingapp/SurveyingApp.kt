@@ -20,6 +20,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import androidx.appcompat.app.AppCompatDelegate
 import com.example.surveyingapp.gnss.settings.AppThemeMode
+import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.osmdroid.config.Configuration
@@ -43,6 +44,12 @@ class SurveyingApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Explicitly select the latest Maps renderer before any MapView is created.
+        // Without this, preferredRenderer is null and the SDK auto-selects — which
+        // causes gray/blank tiles on some tablets when it chooses the legacy renderer.
+        MapsInitializer.initialize(this, MapsInitializer.Renderer.LATEST) { renderer ->
+            Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name}")
+        }
         // Basic crash guard: logs uncaught exceptions (consider forwarding to crash reporting service)
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             Log.e("GlobalCrash", "Uncaught exception on thread ${thread.name}", throwable)
