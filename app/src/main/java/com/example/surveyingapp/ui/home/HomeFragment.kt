@@ -71,6 +71,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
 
+    // Active-provider state, used to reset the live map location when the source switches.
+    @Inject
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+
     // ViewModel injection using Hilt
     private val viewModel: HomeViewModel by viewModels()
 
@@ -88,6 +92,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private var lastCameraMoveMs = 0L
     private var lastCameraLocation: LatLng? = null
     private var lastRtkStatus: RtkStatus? = null
+    private var loggedFirstMapFix = false // logs the first current-source fix applied to the map
+    private var lastMapIgnoreLogMs = 0L   // throttle for ignored-fix diagnostics
 
     // Fix Badge component
     private lateinit var fixBadge: FixBadgeView
@@ -116,6 +122,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
         // Force reset of camera flag on view creation
         hasCenteredCamera = false
+        loggedFirstMapFix = false
         if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onCreateView: hasCenteredCamera reset to false")
 
         // Initialise repositories — guard against DB creation failure
@@ -181,23 +188,33 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun setupLocationStatusObservers() {
-        // Observe current location fix, paired with the SELECTED source so we can drop
-        // fixes that don't belong to the active provider (the same guards the toolbar uses
-        // in MainActivity). This prevents the map from jumping to a stale replay=1 fix from
-        // the previous provider right after a source switch, or to internal fixes while the
-        // user has selected RS2+ but the receiver hasn't connected yet.
+        // Drive the live map from switchboard.currentFix — the nullable, current-provider-only
+        // state. It is cleared to null the instant a provider switch begins and is generation-
+        // guarded at the source, so it can never carry the previous provider's last fix. A null
+        // value means "no live fix from the current provider yet" → leave the map where it is and
+        // wait. We still pair with the SELECTED source to drop internal fixes during the
+        // External-connecting window, and re-apply the stale/valid guards defensively.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     combine(
-                        fixSwitchboard.fixes,
+                        fixSwitchboard.currentFix,
                         settingsRepo.locationSource
                     ) { fix, source -> fix to source }
                         .conflate()
                         .sample(500)
                         .collect { (fix, source) ->
-                            if (!fixMatchesSource(source, fix)) return@collect
-                            if (isFixStale(fix)) return@collect
+                            if (fix == null) return@collect            // no current-source fix yet
+                            if (!fixMatchesSource(source, fix)) { logMapIgnore("wrong-provider"); return@collect }
+                            if (isFixStale(fix)) { logMapIgnore("stale"); return@collect }
+                            if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
+                                logMapIgnore("invalid-coords"); return@collect
+                            }
+                            if (!loggedFirstMapFix) {
+                                loggedFirstMapFix = true
+                                DiagnosticsLogger.i("HomeMap", "First current-source fix applied to map" +
+                                    " provider=${fix.provider} lat=%.6f lon=%.6f".format(fix.latDeg, fix.lonDeg))
+                            }
                             updateMapLocation(fix)
                         }
                 } catch (e: Exception) {
@@ -207,6 +224,42 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             }
         }
 
+        // Reset the live map location whenever the active provider actually changes, so the
+        // camera never animates from one provider's position toward another's, and re-centers
+        // on the first valid fix from the new source. Saved coordinate markers are untouched.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                sourceSettings.activeProvider.collect { provider ->
+                    if (previousProvider != null && previousProvider != provider) {
+                        DiagnosticsLogger.i("HomeMap", "Live location reset due to provider switch $previousProvider -> $provider")
+                        resetMapLiveLocation()
+                    }
+                    previousProvider = provider
+                }
+            }
+        }
+    }
+
+    /**
+     * Clears live-location tracking state so the next valid fix from the new provider re-centers
+     * the camera instead of the map animating across from the old provider's position. Does NOT
+     * remove saved coordinate markers.
+     */
+    private fun resetMapLiveLocation() {
+        hasCenteredCamera = false
+        lastRtkStatus = null
+        lastCameraLocation = null
+        loggedFirstMapFix = false
+    }
+
+    /** Throttled (≤ once / 10 s) diagnostic for fixes the map dropped. */
+    private fun logMapIgnore(reason: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastMapIgnoreLogMs >= 10_000L) {
+            lastMapIgnoreLogMs = now
+            DiagnosticsLogger.w("HomeMap", "Ignored $reason fix for live map")
+        }
     }
 
     /** True when [fix]'s provider matches the user-selected [source]. */
@@ -461,6 +514,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         try {
             android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${com.example.surveyingapp.SurveyingApp.activeMapsRenderer}")
             DiagnosticsLogger.i("HomeMap", "MAP_READY mapsRenderer=${SurveyingApp.activeMapsRenderer}")
+            SurveyingApp.reportMapLoadStatus("MAP_READY")
             googleMap = map
 
             val playServicesVersion = try {
@@ -512,11 +566,15 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 android.util.Log.d(TAG, "Map tiles loaded: ${elapsed}ms after onMapReady, " +
                     "zoom=${cam.zoom}, lat=${cam.target.latitude}, lon=${cam.target.longitude}")
                 DiagnosticsLogger.i("HomeMap", "MAP_LOADED elapsed=${elapsed}ms zoom=%.1f".format(cam.zoom))
+                SurveyingApp.reportMapLoadStatus("MAP_LOADED (${elapsed}ms)")
             }
             // Warn if tiles never load within 10 s (blank/gray map scenario)
             viewLifecycleOwner.lifecycleScope.launch {
                 delay(10_000)
-                if (!mapTilesLoaded) DiagnosticsLogger.w("HomeMap", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
+                if (!mapTilesLoaded) {
+                    DiagnosticsLogger.w("HomeMap", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
+                    SurveyingApp.reportMapLoadStatus("MAP_READY but MAP_LOADED did not fire (10s)")
+                }
             }
 
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
@@ -564,18 +622,22 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 android.util.Log.w(TAG, "onMapReady: location permission not granted — placeholder shown, map tiles visible but My Location disabled")
             }
 
-            // Apply any fix already sitting in the replay buffer right now, without waiting
-            // for the 500ms sample window. On an emulator (or any device with a fixed mock
-            // location), the GPS emits exactly ONE event per fresh subscription. If that event
-            // arrived before onMapReady, the sample(500) collector either hasn't fired yet or
-            // dropped the fix because googleMap was null. Reading replayCache here ensures the
-            // camera moves immediately on first load instead of requiring a provider toggle.
-            fixSwitchboard.fixes.replayCache.firstOrNull()?.let { fix ->
-                if (isFixStale(fix)) {
-                    android.util.Log.d(TAG, "onMapReady: replay fix is stale — ignoring")
-                } else {
-                    android.util.Log.d(TAG, "onMapReady: replay fix available lat=${fix.latDeg}, lon=${fix.lonDeg} — applying immediately")
-                    updateMapLocation(fix)
+            // Apply the current-provider fix right now (if one exists), without waiting for the
+            // 500ms sample window, so the camera centers immediately on first load. This reads
+            // switchboard.currentFix — NOT the replay=1 buffer — so it can only ever apply a fix
+            // from the active provider (it is null after a switch until the new source emits),
+            // never a stale previous-provider position.
+            fixSwitchboard.currentFix.value?.let { fix ->
+                val validCoords = fix.latDeg in -90.0..90.0 && fix.lonDeg in -180.0..180.0
+                when {
+                    isFixStale(fix) ->
+                        android.util.Log.d(TAG, "onMapReady: current fix is stale — ignoring")
+                    !validCoords ->
+                        android.util.Log.d(TAG, "onMapReady: current fix has invalid coords — ignoring")
+                    else -> {
+                        android.util.Log.d(TAG, "onMapReady: current fix available lat=${fix.latDeg}, lon=${fix.lonDeg} — applying immediately")
+                        updateMapLocation(fix)
+                    }
                 }
             }
         } catch (e: Exception) {

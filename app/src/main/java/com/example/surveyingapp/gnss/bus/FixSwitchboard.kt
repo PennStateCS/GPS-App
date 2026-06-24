@@ -51,6 +51,18 @@ class FixSwitchboard(
     private val _sky = MutableStateFlow(EmptySky)
     override val sky: StateFlow<SkySnapshot> = _sky.asStateFlow()
 
+    /*
+     * Nullable snapshot of the most recent fix from the CURRENTLY bound provider.
+     *
+     * Unlike [fixes] (a replay=1 SharedFlow that holds its last value until a new one
+     * arrives), this is reset to null the instant a provider switch begins. UI code that
+     * needs a guaranteed "current provider only, no stale carry-over" view of the live fix
+     * should read this instead of the replay buffer: after a switch it reads null until the
+     * new provider actually emits, so the toolbar/map/capture never show the old source's fix.
+     */
+    private val _currentFix = MutableStateFlow<Fix?>(null)
+    val currentFix: StateFlow<Fix?> = _currentFix.asStateFlow()
+
     /** Emits once for every raw NMEA sentence from the active external adapter. */
     private val _rawNmea = MutableSharedFlow<Unit>(
         extraBufferCapacity = 64,
@@ -64,6 +76,19 @@ class FixSwitchboard(
     private var rawNmeaJob: Job? = null
     private var currentAdapter: SourceAdapter? = null
 
+    /*
+     * Monotonic token bumped on every rebind. Each fix collector captures the generation it
+     * was launched under and drops any emission once the token has advanced. This is a
+     * belt-and-suspenders guard on top of job cancellation: coroutine cancellation is
+     * cooperative, so a just-stopped old-provider collector could otherwise slip one late
+     * emission into currentFix after the switch. The generation check makes that impossible.
+     */
+    @Volatile private var bindGeneration = 0
+
+    /** Wall-clock time of the most recent provider transition (0 = none yet). For diagnostics. */
+    @Volatile var lastProviderSwitchAtMs: Long = 0L
+        private set
+
     /**
      * Starts watching the selected provider and binds to the matching adapter.
      *
@@ -75,8 +100,17 @@ class FixSwitchboard(
 
         providerCollectJob?.cancel()
         providerCollectJob = scope.launch {
+            var previousChoice: ProviderChoice? = null
             sourceSettings.activeProvider.collect { choice ->
                 android.util.Log.d("FixSwitchboard", "Provider changed: $choice")
+                if (previousChoice != null && previousChoice != choice) {
+                    lastProviderSwitchAtMs = System.currentTimeMillis()
+                    DiagnosticsLogger.i(
+                        "GNSS",
+                        "Provider changed $previousChoice -> $choice; cleared current fix and sky"
+                    )
+                }
+                previousChoice = choice
 
                 val adapter = adapters[choice]
                 if (adapter == null) {
@@ -131,17 +165,20 @@ class FixSwitchboard(
         (currentAdapter as? Startable)?.stop()
         currentAdapter = next
 
+        // Advance the generation so any in-flight emission from the old provider's
+        // (now-cancelled) collector is dropped instead of updating currentFix/fixes.
+        val generation = ++bindGeneration
+
         /*
-         * Clear the replay=1 fix buffer and sky state from the OUTGOING provider.
-         * Without this, the previous source's last fix lingers in the replay cache and
-         * is re-delivered to every new collector (Home map, capture, late subscribers)
-         * until the new provider emits — showing the wrong location after a switch and,
-         * on first start, masking the fact that no live fix has arrived yet.
+         * Clear all live state from the OUTGOING provider:
+         *  - currentFix → null, so a guaranteed-current-only consumer reads "no fix yet"
+         *    until the new provider emits (never the previous source's coordinates).
+         *  - the replay=1 fix buffer, so late SharedFlow subscribers don't replay the old fix.
+         *  - sky → EmptySky, so satellite counts don't carry over.
          */
+        _currentFix.value = null
         _fixes.resetReplayCache()
         _sky.value = EmptySky
-
-        DiagnosticsLogger.i("GNSS", "Switchboard rebind -> ${next?.let { it::class.simpleName } ?: "none"} (stale fix/sky cleared)")
 
         if (next == null) {
             return
@@ -155,6 +192,9 @@ class FixSwitchboard(
              * collectors from building a backlog during high-rate GNSS updates.
              */
             next.fixes.conflate().collect { fix ->
+                // Drop emissions from a superseded binding (see bindGeneration).
+                if (generation != bindGeneration) return@collect
+                _currentFix.value = fix
                 _fixes.emit(fix)
             }
         }

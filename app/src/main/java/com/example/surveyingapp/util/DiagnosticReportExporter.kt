@@ -120,7 +120,31 @@ object DiagnosticReportExporter {
         try {
             val repo = SurveyingApp.settingsRepo
             val locSrc = runCatching { repo.locationSource.first() }.getOrNull()
-            sb.appendLine("Active source setting  : ${locSrc?.name ?: "unknown"}")
+            sb.appendLine("Selected source        : ${locSrc?.name ?: "unknown"}")
+
+            // Live routing state (active provider + current fix) read via the Hilt entry point.
+            runCatching {
+                val ep = dagger.hilt.android.EntryPointAccessors.fromApplication(
+                    context.applicationContext,
+                    com.example.surveyingapp.SurveyingAppEntryPoint::class.java
+                )
+                val activeProvider = ep.sourceSettings().activeProvider.value
+                sb.appendLine("Active provider        : $activeProvider")
+
+                val fix = ep.fixSwitchboard().currentFix.value
+                if (fix != null) {
+                    val ageS = java.time.Duration.between(fix.timeUtc, java.time.Instant.now()).seconds
+                    sb.appendLine("Current fix            : provider=${fix.provider} status=${fix.rtkStatus}" +
+                        " sats=${fix.satsUsed} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} age=${ageS}s")
+                } else {
+                    sb.appendLine("Current fix            : none (no live fix from active provider)")
+                }
+
+                val switchAt = ep.fixSwitchboard().lastProviderSwitchAtMs
+                sb.appendLine("Last provider switch   : " +
+                    if (switchAt == 0L) "none this session"
+                    else SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(switchAt)))
+            }.onFailure { sb.appendLine("Active provider        : (unavailable: ${it.message})") }
 
             val host = runCatching { repo.externalTcpHost.first() }.getOrNull()
             val port = runCatching { repo.externalTcpPort.first() }.getOrNull()
@@ -134,6 +158,7 @@ object DiagnosticReportExporter {
         sb.appendLine()
         sb.appendLine("--- Maps ---")
         sb.appendLine("Active renderer        : ${SurveyingApp.activeMapsRenderer}")
+        sb.appendLine("Map load status        : ${SurveyingApp.mapLoadStatus}")
         sb.appendLine()
         sb.appendLine("--- Network ---")
         try {

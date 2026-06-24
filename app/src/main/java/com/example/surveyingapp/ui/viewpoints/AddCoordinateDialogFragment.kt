@@ -37,8 +37,10 @@ import com.example.surveyingapp.gnss.capture.ObservationSession
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.settings.SourceSettings
 import com.example.surveyingapp.gnss.settings.toAveragingPolicy
 import com.example.surveyingapp.ui.capture.CaptureViewModel
+import com.example.surveyingapp.util.DiagnosticsLogger
 import com.example.surveyingapp.ui.models.ModelPickerActivity
 import com.example.surveyingapp.util.GlbGeoreferenceDetector
 import com.example.surveyingapp.util.UtmConverter
@@ -76,8 +78,12 @@ class AddCoordinateDialogFragment(
 
     @Inject lateinit var fixSwitchboard: FixSwitchboard
     @Inject lateinit var settingsRepo: SettingsRepository
+    @Inject lateinit var sourceSettings: SourceSettings
 
     private val captureVm: CaptureViewModel by viewModels()
+
+    // Throttle for wrong-provider live-preview diagnostics.
+    private var lastCaptureIgnoreLogMs = 0L
 
     // ── View refs ─────────────────────────────────────────────────────────────
     private var nameEdit: EditText? = null
@@ -215,17 +221,30 @@ class AddCoordinateDialogFragment(
 
         btnSave?.setOnClickListener { handleSave() }
 
-        // Determine source and show the appropriate section
+        // Determine source and show the appropriate section. Capture MODE follows the user's
+        // selected source (Internal = instant fused capture, External = averaged GNSS capture).
+        // Live data correctness is enforced separately by provider filtering (averaging input and
+        // live preview both reject non-external fixes), so an External capture started while the
+        // receiver is still reconnecting simply shows a waiting state instead of internal data.
         viewLifecycleOwner.lifecycleScope.launch {
             val sourceSetting = runCatching {
                 settingsRepo.locationSource.first()
             }.getOrDefault(LocationSourceType.INTERNAL)
+            val activeProvider = sourceSettings.activeProvider.value
 
             isExternalMode = sourceSetting != LocationSourceType.INTERNAL
+
+            DiagnosticsLogger.i("Capture",
+                "Capture opened selectedSource=$sourceSetting activeProvider=$activeProvider " +
+                    "mode=${if (isExternalMode) "EXTERNAL" else "INTERNAL"}")
 
             if (isExternalMode) {
                 sectionInternal?.visibility = View.GONE
                 sectionExternal?.visibility = View.VISIBLE
+                if (activeProvider != SourceSettings.ProviderChoice.EXTERNAL_TCP) {
+                    DiagnosticsLogger.i("Capture", "External capture waiting for external data (activeProvider=$activeProvider)")
+                    showExternalWaiting()
+                }
                 startExternalAveraging()
             } else {
                 sectionInternal?.visibility = View.VISIBLE
@@ -243,13 +262,45 @@ class AddCoordinateDialogFragment(
             }
         }
 
-        // Show live fix quality + waiting reasons during external mode
+        // Show live fix quality + waiting reasons during external mode.
+        //
+        // Driven by currentFix (current-provider-only, cleared on switch). For external capture we
+        // only display EXTERNAL-provider fixes — a null or internal fix means the receiver hasn't
+        // delivered data yet, so we show "Waiting for external GNSS data" instead of ever surfacing
+        // internal GPS coordinates as the external capture value.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                fixSwitchboard.fixes.collect { fix ->
-                    if (isExternalMode) updateLiveFix(fix)
+                fixSwitchboard.currentFix.collect { fix ->
+                    if (!isExternalMode) return@collect
+                    if (fix == null || fix.provider == Provider.INTERNAL) {
+                        if (fix?.provider == Provider.INTERNAL) logCaptureIgnore("wrong-provider")
+                        showExternalWaiting()
+                    } else {
+                        updateLiveFix(fix)
+                    }
                 }
             }
+        }
+    }
+
+    /**
+     * Shows the external-capture waiting state without overwriting a completed result. Used when
+     * External is selected but no external-provider fix is available yet (receiver reconnecting).
+     */
+    private fun showExternalWaiting() {
+        if (captureVm.state.value is ObservationSession.State.Complete) return
+        lastLiveFix = null
+        tvSamplingStatus?.text = "Waiting for external GNSS data"
+        tvFixStatus?.text = "--"
+        tvAccuracy?.text = "--"
+    }
+
+    /** Throttled (≤ once / 10 s) diagnostic for fixes the capture preview dropped. */
+    private fun logCaptureIgnore(reason: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastCaptureIgnoreLogMs >= 10_000L) {
+            lastCaptureIgnoreLogMs = now
+            DiagnosticsLogger.w("Capture", "Ignored $reason fix in live preview")
         }
     }
 
@@ -322,16 +373,21 @@ class AddCoordinateDialogFragment(
                 tvSamples?.text = "${result.samples} accepted"
                 tvFixStatus?.text = shortFix(result.rtkStatus?.name ?: "")
                 tvAccuracy?.text = formatAccuracy(result.hAccM)
-                tvSamplingStatus?.text = if (state.requirementsMet) {
-                    "Ready to save"
+                // Maximum sampling time is a safety timeout, not a "force complete". Save Point is
+                // enabled ONLY when both minimum sampling time and minimum accepted fixes were met.
+                // A timed-out, under-sampled capture shows the timeout message and keeps Save
+                // disabled — it is never silently saved.
+                if (state.requirementsMet) {
+                    tvSamplingStatus?.text = "Ready to save"
+                    btnSave?.isEnabled = true
                 } else {
-                    "Capture timed out before requirements were met. " +
-                        "Only ${result.samples} of ${policy.minSamples} accepted fixes collected. " +
-                        "Try lowering the required fix quality or minimum accepted fixes, " +
-                        "or wait for a better GNSS signal."
+                    tvSamplingStatus?.text =
+                        "Capture timed out before requirements were met. " +
+                            "Accepted fixes: ${result.samples} / ${policy.minSamples}. " +
+                            "Try lowering the required fix quality or minimum accepted fixes, " +
+                            "or wait for a better GNSS signal."
+                    btnSave?.isEnabled = false
                 }
-                // The averaged result is valid in both cases, so the point can be saved.
-                btnSave?.isEnabled = true
             }
             is ObservationSession.State.Paused -> {
                 tvSamplingStatus?.text = "Receiver error — check connection and try again."
@@ -510,6 +566,13 @@ class AddCoordinateDialogFragment(
 
         if (isExternalMode) {
             val completedState = captureVm.state.value as? ObservationSession.State.Complete ?: return
+            // Guard: never persist a timed-out, under-sampled capture (max sampling time reached
+            // before the minimums were met). The Save button is already disabled in that case;
+            // this is defense-in-depth so an incomplete capture can never be silently saved.
+            if (!completedState.requirementsMet) {
+                DiagnosticsLogger.w("Capture", "Save blocked: requirements not met (timed out)")
+                return
+            }
             viewLifecycleOwner.lifecycleScope.launch {
                 val sourceDevice = runCatching {
                     settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }

@@ -63,7 +63,15 @@ class CaptureDialogFragment : DialogFragment() {
                         }
                         is com.example.surveyingapp.gnss.capture.ObservationSession.State.Complete -> {
                             tvElapsed.text = getString(R.string.capture_done)
-                            btnSave.isEnabled = true
+                            // Save only when the minimum sampling time AND minimum accepted fixes
+                            // were met. Maximum sampling time is a safety timeout, not a "force
+                            // complete" — a timed-out, under-sampled capture cannot be saved here.
+                            if (st.requirementsMet) {
+                                btnSave.isEnabled = true
+                            } else {
+                                btnSave.isEnabled = false
+                                tvMode.text = "Timed out: ${st.result.samples} fixes"
+                            }
                         }
                         is com.example.surveyingapp.gnss.capture.ObservationSession.State.Paused -> {
                             tvMode.text = st.reason

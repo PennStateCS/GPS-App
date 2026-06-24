@@ -1338,6 +1338,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             when (checkedId) {
                 R.id.radio_internal -> {
                     Log.d("SettingsFragment", "Radio switched to INTERNAL")
+                    com.example.surveyingapp.util.DiagnosticsLogger.i(
+                        "GNSS", "Switched back to Internal — cancelling external connect attempt #$tcpConnectAttemptId"
+                    )
                     // Invalidate and cancel any in-progress TCP connection attempt
                     ++tcpConnectAttemptId
                     tcpConnectJob?.cancel()
@@ -1475,10 +1478,33 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val receiverPresent = tcpConnected || httpReachable
 
                 if (receiverPresent) {
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
-                    settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
+                    // Persist connection details BEFORE activating the external provider. The
+                    // external adapter reads host/port from SettingsRepository the moment the
+                    // switchboard rebinds to it, so activating first could let it come up against
+                    // stale or blank TCP settings. Order: conn type → host/port → selected source
+                    // → activate provider.
                     settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                     settingsRepo.setExternalTcp(host, port)
+                    settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
+                    com.example.surveyingapp.util.DiagnosticsLogger.i(
+                        "GNSS", "External TCP settings saved host=$host port=$port (attempt #$attemptId)"
+                    )
+
+                    // Final stale-attempt guard before flipping the live provider. If the user
+                    // switched back to Internal while the probe/persist was in flight, the attempt
+                    // id has advanced — abort so this old attempt can't activate External after the
+                    // user already returned to Internal.
+                    if (attemptId != tcpConnectAttemptId) {
+                        com.example.surveyingapp.util.DiagnosticsLogger.i(
+                            "GNSS", "Stale external connect attempt #$attemptId ignored before activation"
+                        )
+                        return@launch
+                    }
+
+                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
+                    com.example.surveyingapp.util.DiagnosticsLogger.i(
+                        "GNSS", "External provider activated host=$host port=$port (attempt #$attemptId)"
+                    )
                     provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                     updateDeviceBox()
 
