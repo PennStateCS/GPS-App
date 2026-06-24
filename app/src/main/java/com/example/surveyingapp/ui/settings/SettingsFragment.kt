@@ -12,6 +12,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
+import com.example.surveyingapp.BuildConfig
 import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
@@ -519,8 +520,43 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         return view
     }
 
-    private fun setupAboutContent(inflater: LayoutInflater): View =
-        inflater.inflate(R.layout.content_settings_about, contentContainer, false)
+    private fun setupAboutContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_about, contentContainer, false)
+        try {
+            val hash  = BuildConfig.BUILD_GIT_HASH
+            val dirty = BuildConfig.BUILD_GIT_DIRTY
+
+            view.findViewById<TextView>(R.id.text_about_version)?.text =
+                BuildConfig.VERSION_NAME
+            view.findViewById<TextView>(R.id.text_about_build_number)?.text =
+                BuildConfig.BUILD_NUMBER.toString()
+            view.findViewById<TextView>(R.id.text_about_commit)?.text =
+                if (dirty) "$hash-dirty" else hash
+            view.findViewById<TextView>(R.id.text_about_branch)?.text =
+                BuildConfig.BUILD_GIT_BRANCH
+            view.findViewById<TextView>(R.id.text_about_dirty)?.text =
+                if (dirty) "Yes" else "No"
+            view.findViewById<TextView>(R.id.text_about_built)?.text =
+                BuildConfig.BUILD_TIME
+
+            view.findViewById<View>(R.id.btn_copy_build_info)?.setOnClickListener {
+                val info = buildString {
+                    appendLine("App version: ${BuildConfig.VERSION_NAME}")
+                    appendLine("Build: ${BuildConfig.BUILD_NUMBER}")
+                    appendLine("Commit: $hash${if (dirty) "-dirty" else ""}")
+                    appendLine("Branch: ${BuildConfig.BUILD_GIT_BRANCH}")
+                    appendLine("Dirty: $dirty")
+                    append("Built: ${BuildConfig.BUILD_TIME}")
+                }
+                val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
+                clipboard.setPrimaryClip(ClipData.newPlainText("Build Info", info))
+                showSettingsMessage("Build info copied.")
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupAboutContent failed", e)
+        }
+        return view
+    }
 
     // ───────────────────────────── GNSS Capture Settings ──────────────────────
     private fun setupGnssCaptureContent(inflater: LayoutInflater): View {
