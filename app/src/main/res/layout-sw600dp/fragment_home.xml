@@ -83,7 +83,7 @@
                             android:layout_height="0dp"
                             android:layout_weight="1"
                             android:background="@drawable/bg_map_rounded"
-                            android:clipToOutline="true">
+                            android:clipToOutline="false">
 
                             <com.google.android.gms.maps.MapView
                                 android:id="@+id/map_view_mini"

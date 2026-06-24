@@ -327,6 +327,7 @@ class RenderMapFragment : Fragment() {
         markerDescriptorCache.clear()
         lastCurrentMarkerHue = null
         lastStakeoutMarkerHue = null
+        try { mapView?.onDestroy() } catch (e: Exception) { Log.e(TAG, "mapView.onDestroy", e) }
         mapView = null; placeholder = null
         super.onDestroyView()
     }
