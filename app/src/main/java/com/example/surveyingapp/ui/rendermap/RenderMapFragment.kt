@@ -219,6 +219,7 @@ class RenderMapFragment : Fragment() {
 
         mapView?.onCreate(savedInstanceState)
         mapView?.getMapAsync { map ->
+            Log.d(TAG, "onMapReady: map ready, mapType=$currentMapType")
             googleMap = map
             map.mapType = currentMapType
             MapThemeHelper.applyTheme(requireContext(), map, currentMapType)

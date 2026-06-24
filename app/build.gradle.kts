@@ -1,4 +1,6 @@
 // Module: app
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Properties
 
 plugins {
@@ -9,6 +11,30 @@ plugins {
 }
 
 kotlin { jvmToolchain(17) }
+
+// ── Git / build metadata ──────────────────────────────────────────────────────
+// Uses providers.exec{} — the configuration-cache-safe API for external processes.
+// Returns empty string on any failure so the build never breaks without Git.
+fun gitCommand(vararg args: String): String {
+    val cmd = if (System.getProperty("os.name").lowercase().contains("windows"))
+        listOf("cmd", "/c") + args.toList()
+    else
+        args.toList()
+    return try {
+        providers.exec {
+            commandLine(cmd)
+            workingDir = rootProject.projectDir
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim()
+    } catch (_: Exception) { "" }
+}
+
+val gitHash    = gitCommand("git", "rev-parse", "--short", "HEAD").ifEmpty { "no-git" }
+val gitBranch  = gitCommand("git", "rev-parse", "--abbrev-ref", "HEAD").ifEmpty { "unknown" }
+val gitDirty   = gitCommand("git", "status", "--porcelain").isNotEmpty()
+val buildTime  = SimpleDateFormat("yyyy-MM-dd HH:mm").format(Date())
+// Use git commit count as the local build number; fall back to 1 if git is absent.
+val buildNumber = gitCommand("git", "rev-list", "--count", "HEAD").toIntOrNull() ?: 1
 
 // Load local.properties (for Maps key etc.)
 val localProperties = Properties()
@@ -26,9 +52,17 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0-dev"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Local build metadata — stamped at compile time from the git working tree.
+        // Change versionName above manually for human-readable release tagging.
+        buildConfigField("String",  "BUILD_GIT_HASH",   "\"$gitHash\"")
+        buildConfigField("String",  "BUILD_GIT_BRANCH", "\"$gitBranch\"")
+        buildConfigField("boolean", "BUILD_GIT_DIRTY",  "$gitDirty")
+        buildConfigField("String",  "BUILD_TIME",       "\"$buildTime\"")
+        buildConfigField("int",     "BUILD_NUMBER",     "$buildNumber")
 
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] =
             localProperties.getProperty("GOOGLE_MAPS_API_KEY", "YOUR_API_KEY_HERE")
