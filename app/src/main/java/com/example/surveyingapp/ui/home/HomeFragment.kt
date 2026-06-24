@@ -414,7 +414,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @SuppressLint("MissingPermission")
     override fun onMapReady(map: GoogleMap) {
         try {
-            android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}")
+            android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${com.example.surveyingapp.SurveyingApp.activeMapsRenderer}")
             googleMap = map
 
             val playServicesVersion = try {
@@ -505,6 +505,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 }
                 // If you see this log and the map is blank: grant location permission and restart
                 android.util.Log.w(TAG, "onMapReady: location permission not granted — placeholder shown, map tiles visible but My Location disabled")
+            }
+
+            // Apply any fix already sitting in the replay buffer right now, without waiting
+            // for the 500ms sample window. On an emulator (or any device with a fixed mock
+            // location), the GPS emits exactly ONE event per fresh subscription. If that event
+            // arrived before onMapReady, the sample(500) collector either hasn't fired yet or
+            // dropped the fix because googleMap was null. Reading replayCache here ensures the
+            // camera moves immediately on first load instead of requiring a provider toggle.
+            fixSwitchboard.fixes.replayCache.firstOrNull()?.let { fix ->
+                android.util.Log.d(TAG, "onMapReady: replay fix available lat=${fix.latDeg}, lon=${fix.lonDeg} — applying immediately")
+                updateMapLocation(fix)
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "onMapReady failed", e)

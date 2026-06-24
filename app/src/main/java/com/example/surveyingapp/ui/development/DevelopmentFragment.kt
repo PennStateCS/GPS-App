@@ -540,6 +540,15 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         addRow("Maps Library Present", mapsLibPresent.toString(), if (mapsLibPresent) MapsStatus.OK else MapsStatus.ERROR)
         addRow("Fused Location Present", fusedLocPresent.toString(), if (fusedLocPresent) MapsStatus.OK else MapsStatus.WARN)
         addRow("Maps Initialize", mapsInitResult, mapsInitStatus)
+        val rendererName = com.example.surveyingapp.SurveyingApp.activeMapsRenderer
+        addRow("Maps Renderer", rendererName, when (rendererName) {
+            "LATEST" -> MapsStatus.OK
+            "LEGACY" -> MapsStatus.WARN
+            else -> MapsStatus.ERROR
+        })
+        val buildType = if (com.example.surveyingapp.BuildConfig.DEBUG) "DEBUG" else "RELEASE"
+        addRow("Build Type", buildType, if (com.example.surveyingapp.BuildConfig.DEBUG) MapsStatus.WARN else MapsStatus.OK)
+        addRow("Package Name", ctx.packageName, null)
         val apiKeyDisplay = if (apiKeyFull.length>12) apiKeyFull.take(8) + "…" + apiKeyFull.takeLast(4) else apiKeyFull
         addRow("API Key Meta", apiKeyDisplay, apiKeyStatus)
         addRow("Location Permission", locationPerm.toString(), if (locationPerm) MapsStatus.OK else MapsStatus.WARN)
@@ -633,11 +642,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             updateRuntimeStatus("ERROR: ${e.message}", MapsStatus.ERROR)
         }
 
-        // Manage mini MapView lifecycle tied to the view lifecycle, not the fragment lifecycle,
-        // so onDestroy is called when the view is torn down (e.g. back-stack navigation).
         viewLifecycleOwner.lifecycle.addObserver(object: androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onStart(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onStart() }
             override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onResume() }
             override fun onPause(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onPause() }
+            override fun onStop(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onStop() }
             override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onDestroy() }
         })
 
