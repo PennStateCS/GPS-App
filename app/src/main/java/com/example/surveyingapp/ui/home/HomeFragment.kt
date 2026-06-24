@@ -40,9 +40,12 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.LocationSource
+import com.example.surveyingapp.gnss.model.RtkStatus
+import com.example.surveyingapp.util.DiagnosticsLogger
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.conflate
@@ -76,6 +79,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private val desiredFollowZoom = 18f
     private var lastCameraMoveMs = 0L
     private var lastCameraLocation: LatLng? = null
+    private var lastRtkStatus: RtkStatus? = null
 
     // Fix Badge component
     private lateinit var fixBadge: FixBadgeView
@@ -360,11 +364,19 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val locationForDot = fixToLocation(fix)
                 onLocationChangedListener?.onLocationChanged(locationForDot)
 
+                // Log RTK status transitions (not every fix)
+                if (fix.rtkStatus != lastRtkStatus) {
+                    val prev = lastRtkStatus?.name ?: "NONE"
+                    DiagnosticsLogger.i("Fix", "Status $prev → ${fix.rtkStatus.name} sats=${fix.satsUsed} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "unknown"}")
+                    lastRtkStatus = fix.rtkStatus
+                }
+
                 val location = LatLng(fix.latDeg, fix.lonDeg)
                 val map = googleMap
                 if (map != null) {
                     if (!hasCenteredCamera) {
                         android.util.Log.d(TAG, "First fix to map: lat=${fix.latDeg}, lon=${fix.lonDeg}, hAcc=${fix.hAccM}")
+                        DiagnosticsLogger.i("HomeMap", "First fix lat=%.6f lon=%.6f hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${fix.rtkStatus}".format(fix.latDeg, fix.lonDeg))
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                         hasCenteredCamera = true
                         lastCameraMoveMs = System.currentTimeMillis()
@@ -415,6 +427,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     override fun onMapReady(map: GoogleMap) {
         try {
             android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${com.example.surveyingapp.SurveyingApp.activeMapsRenderer}")
+            DiagnosticsLogger.i("HomeMap", "MAP_READY mapsRenderer=${SurveyingApp.activeMapsRenderer}")
             googleMap = map
 
             val playServicesVersion = try {
@@ -435,8 +448,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
                 val transport = when { active == null -> "none"; isVpn -> "VPN"; isWifi -> "WiFi"; isCellular -> "cellular"; else -> "other" }
                 android.util.Log.d(TAG, "onMapReady: network transport=$transport internet=$hasInternet validated=$hasValidated")
-                if (hasInternet && !hasValidated)
+                if (hasInternet && !hasValidated) {
                     android.util.Log.w(TAG, "onMapReady: network not validated — likely receiver WiFi; map tiles may not load")
+                    DiagnosticsLogger.w("Network", "internet=true validated=false transport=$transport — tiles may not load (receiver WiFi?)")
+                }
+                DiagnosticsLogger.i("HomeMap", "Network transport=$transport internet=$hasInternet validated=$hasValidated")
             }
 
             // Set map type to Normal (shows streets/terrain instead of blank)
@@ -455,11 +471,19 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             // Log when tiles finish loading — a very short elapsed time (<100ms) means tiles
             // came back empty/gray rather than being fetched from the network.
             val mapReadyAt = System.currentTimeMillis()
+            var mapTilesLoaded = false
             map.setOnMapLoadedCallback {
+                mapTilesLoaded = true
                 val elapsed = System.currentTimeMillis() - mapReadyAt
                 val cam = map.cameraPosition
                 android.util.Log.d(TAG, "Map tiles loaded: ${elapsed}ms after onMapReady, " +
                     "zoom=${cam.zoom}, lat=${cam.target.latitude}, lon=${cam.target.longitude}")
+                DiagnosticsLogger.i("HomeMap", "MAP_LOADED elapsed=${elapsed}ms zoom=%.1f".format(cam.zoom))
+            }
+            // Warn if tiles never load within 10 s (blank/gray map scenario)
+            viewLifecycleOwner.lifecycleScope.launch {
+                delay(10_000)
+                if (!mapTilesLoaded) DiagnosticsLogger.w("HomeMap", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
             }
 
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
@@ -558,6 +582,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         googleMap = null
         onLocationChangedListener = null
         mapLocationSource = null
+        lastRtkStatus = null
         if (::mapView.isInitialized) mapView.onDestroy()
         super.onDestroyView()
         _binding = null

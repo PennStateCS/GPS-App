@@ -552,6 +552,47 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 clipboard.setPrimaryClip(ClipData.newPlainText("Build Info", info))
                 showSettingsMessage("Build info copied.")
             }
+
+            val btnExport = view.findViewById<com.google.android.material.button.MaterialButton>(
+                R.id.btn_export_diagnostic
+            )
+            btnExport?.setOnClickListener {
+                btnExport.isEnabled = false
+                btnExport.text = "Exporting…"
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val file = try {
+                        com.example.surveyingapp.util.DiagnosticReportExporter.buildReport(requireContext())
+                    } catch (ex: Exception) {
+                        com.example.surveyingapp.util.DiagnosticsLogger.e("DiagnosticExport", "Export error", ex)
+                        null
+                    }
+                    btnExport.isEnabled = true
+                    btnExport.text = "Export Diagnostic Report"
+                    if (file == null) {
+                        showSettingsMessage("Could not create diagnostic report.")
+                        return@launch
+                    }
+                    try {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            requireContext(),
+                            "${requireContext().packageName}.fileprovider",
+                            file
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/zip"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            putExtra(Intent.EXTRA_SUBJECT, "SurReal AR Diagnostic Report")
+                            putExtra(Intent.EXTRA_TEXT, "Diagnostic report attached.")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(shareIntent, "Share diagnostic report"))
+                        showSettingsMessage("Diagnostic report ready.")
+                    } catch (ex: Exception) {
+                        com.example.surveyingapp.util.DiagnosticsLogger.e("DiagnosticExport", "Share failed", ex)
+                        showSettingsMessage("Could not create diagnostic report.")
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupAboutContent failed", e)
         }

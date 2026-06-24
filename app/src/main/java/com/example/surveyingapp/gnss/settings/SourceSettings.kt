@@ -1,5 +1,6 @@
 package com.example.surveyingapp.gnss.settings
 
+import com.example.surveyingapp.util.DiagnosticsLogger
 import kotlinx.coroutines.flow.*
 
 /** Default NMEA/TCP port for many receivers. */
@@ -40,7 +41,9 @@ class SourceSettings(
     val activeProvider: StateFlow<ProviderChoice> get() = _activeProvider
 
     fun setActiveProvider(choice: ProviderChoice) {
-        android.util.Log.d("SourceSettings", "setActiveProvider: ${_activeProvider.value} → $choice")
+        val prev = _activeProvider.value
+        android.util.Log.d("SourceSettings", "setActiveProvider: $prev → $choice")
+        if (prev != choice) DiagnosticsLogger.i("GNSS", "Source changed $prev → $choice")
         _activeProvider.value = choice
     }
 

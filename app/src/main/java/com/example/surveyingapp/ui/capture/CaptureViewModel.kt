@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
+import com.example.surveyingapp.util.DiagnosticsLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import java.util.UUID
@@ -101,6 +102,10 @@ class CaptureViewModel @Inject constructor(
     }
 
     fun start(policy: AveragingPolicy) {
+        val provider = sourceSettings.activeProvider.value
+        DiagnosticsLogger.i("Capture", "Capture started source=$provider " +
+            "minDur=${policy.minDurationSec}s maxDur=${policy.maxDurationSec}s " +
+            "minFixes=${policy.minSamples} required=${policy.requiredMinStatus}")
         val s = ObservationSession(viewModelScope, fixSwitchboard.fixes, policy)
         session = s
         sessionForwardJob?.cancel()
@@ -111,6 +116,7 @@ class CaptureViewModel @Inject constructor(
     }
 
     fun cancel() {
+        if (session != null) DiagnosticsLogger.i("Capture", "Capture canceled")
         session?.cancel()
         session = null
         sessionForwardJob?.cancel()
@@ -161,6 +167,8 @@ class CaptureViewModel @Inject constructor(
             sourceDevice  = sourceDevice
         )
 
+        DiagnosticsLogger.i("Capture", "Coordinate saved name=\"$name\" source=${provider.name} " +
+            "samples=${finished.samples} hAcc=${finished.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${finished.rtkStatus}")
         coordinateRepository.insert(coordinate)
     }
 }
