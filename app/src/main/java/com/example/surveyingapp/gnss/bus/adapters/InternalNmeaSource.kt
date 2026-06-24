@@ -164,6 +164,14 @@ class InternalNmeaSource(
          */
         fuser.reset()
 
+        /*
+         * Drop the replay=1 buffered fix. Otherwise, when this source is restarted
+         * (e.g. after switching provider away and back), the adapter's fresh collector
+         * immediately receives the OLD fix from before the switch and republishes it as
+         * if it were live. Clearing here keeps a restart from resurrecting stale data.
+         */
+        _fixes.resetReplayCache()
+
         android.util.Log.d(TAG, "Internal NMEA listener removed")
     }
 }

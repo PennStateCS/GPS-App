@@ -31,6 +31,7 @@ import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.FragmentHomeBinding
 import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.ui.components.FixBadgeView
@@ -55,6 +56,13 @@ import javax.inject.Inject
 
 private const val LOG_GNSS_UI = false
 private const val TAG = "HomeFragment"
+
+/**
+ * Max age of a fix (vs. its UTC timestamp) before the Home map ignores it. The fixes flow
+ * has replay=1, so right after a source switch the previous provider's last fix can replay.
+ * This gate keeps the map from jumping to that stale position. Mirrors the toolbar's guard.
+ */
+private const val MAP_FIX_MAX_AGE_MS = 15_000L
 
 @AndroidEntryPoint
 class HomeFragment : Fragment(), OnMapReadyCallback {
@@ -173,16 +181,25 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun setupLocationStatusObservers() {
-        // Observe current location fix
+        // Observe current location fix, paired with the SELECTED source so we can drop
+        // fixes that don't belong to the active provider (the same guards the toolbar uses
+        // in MainActivity). This prevents the map from jumping to a stale replay=1 fix from
+        // the previous provider right after a source switch, or to internal fixes while the
+        // user has selected RS2+ but the receiver hasn't connected yet.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    fixSwitchboard.fixes
+                    combine(
+                        fixSwitchboard.fixes,
+                        settingsRepo.locationSource
+                    ) { fix, source -> fix to source }
                         .conflate()
                         .sample(500)
-                        .collect { fix: Fix ->
-                        updateMapLocation(fix)
-                    }
+                        .collect { (fix, source) ->
+                            if (!fixMatchesSource(source, fix)) return@collect
+                            if (isFixStale(fix)) return@collect
+                            updateMapLocation(fix)
+                        }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     android.util.Log.e("HomeFragment", "Error collecting GNSS fixes", e)
@@ -191,6 +208,22 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
 
     }
+
+    /** True when [fix]'s provider matches the user-selected [source]. */
+    private fun fixMatchesSource(source: LocationSourceType, fix: Fix): Boolean =
+        if (source == LocationSourceType.INTERNAL) {
+            fix.provider == Provider.INTERNAL
+        } else {
+            fix.provider != Provider.INTERNAL
+        }
+
+    /** True when [fix] is older than the live-display window (stale replay buffer guard). */
+    private fun isFixStale(fix: Fix): Boolean =
+        try {
+            java.time.Duration.between(fix.timeUtc, java.time.Instant.now()).toMillis() > MAP_FIX_MAX_AGE_MS
+        } catch (_: Exception) {
+            false
+        }
 
     private fun setupFixBadgeObservers() {
         // Observe fix snapshot for GNSS quality indicators
@@ -538,8 +571,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             // dropped the fix because googleMap was null. Reading replayCache here ensures the
             // camera moves immediately on first load instead of requiring a provider toggle.
             fixSwitchboard.fixes.replayCache.firstOrNull()?.let { fix ->
-                android.util.Log.d(TAG, "onMapReady: replay fix available lat=${fix.latDeg}, lon=${fix.lonDeg} — applying immediately")
-                updateMapLocation(fix)
+                if (isFixStale(fix)) {
+                    android.util.Log.d(TAG, "onMapReady: replay fix is stale — ignoring")
+                } else {
+                    android.util.Log.d(TAG, "onMapReady: replay fix available lat=${fix.latDeg}, lon=${fix.lonDeg} — applying immediately")
+                    updateMapLocation(fix)
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "onMapReady failed", e)

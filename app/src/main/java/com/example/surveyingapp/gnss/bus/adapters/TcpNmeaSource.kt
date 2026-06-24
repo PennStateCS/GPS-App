@@ -128,6 +128,11 @@ class TcpNmeaSource(
         connectionJob?.cancel()
         connectionJob = null
         fuser.reset()
+        /*
+         * Drop the replay=1 buffered fix so a later reconnect doesn't immediately
+         * re-deliver the last fix from the previous session to a fresh collector.
+         */
+        _fixes.resetReplayCache()
     }
 
     private suspend fun connectAndRead(host: String, port: Int) {

@@ -56,6 +56,11 @@ class CaptureViewModel @Inject constructor(
             sourceSettings.activeProvider.collect { provider ->
                 if (previousProvider != null && previousProvider != provider) {
                     if (session != null) cancel()
+                    // Reset readiness state so a stale fix from the old provider can't keep
+                    // the "OK to capture" indicator green after the source changes. The new
+                    // provider must satisfy the dwell window again from scratch.
+                    satisfyingStartTime = null
+                    _okToCapture.value = false
                 }
                 previousProvider = provider
             }
