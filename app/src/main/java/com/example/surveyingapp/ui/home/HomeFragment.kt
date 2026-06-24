@@ -356,6 +356,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val map = googleMap
                 if (map != null) {
                     if (!hasCenteredCamera) {
+                        android.util.Log.d(TAG, "First fix to map: lat=${fix.latDeg}, lon=${fix.lonDeg}, hAcc=${fix.hAccM}")
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                         hasCenteredCamera = true
                         lastCameraMoveMs = System.currentTimeMillis()
@@ -406,12 +407,19 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     override fun onMapReady(map: GoogleMap) {
         try {
             android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}")
-            if (LOG_GNSS_UI) android.util.Log.d(TAG, "onMapReady: hasCenteredCamera was $hasCenteredCamera")
             googleMap = map
+
+            val playServicesVersion = try {
+                requireContext().packageManager.getPackageInfo("com.google.android.gms", 0).versionName ?: "unknown"
+            } catch (_: Exception) { "unavailable" }
+            android.util.Log.d(TAG, "onMapReady: Play Services version=$playServicesVersion")
 
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
-            android.util.Log.d(TAG, "onMapReady: mapType set to NORMAL, applying theme")
+            val nightMode = (requireContext().resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            android.util.Log.d(TAG, "onMapReady: mapType=${map.mapType} nightMode=$nightMode, applying theme")
             MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
             // Set default camera position (will be overridden when fix arrives)
@@ -419,14 +427,24 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15f))
             android.util.Log.d(TAG, "onMapReady: default camera set at Penn State zoom=15")
 
+            // Log when tiles finish loading — a very short elapsed time (<100ms) means tiles
+            // came back empty/gray rather than being fetched from the network.
+            val mapReadyAt = System.currentTimeMillis()
+            map.setOnMapLoadedCallback {
+                val elapsed = System.currentTimeMillis() - mapReadyAt
+                val cam = map.cameraPosition
+                android.util.Log.d(TAG, "Map tiles loaded: ${elapsed}ms after onMapReady, " +
+                    "zoom=${cam.zoom}, lat=${cam.target.latitude}, lon=${cam.target.longitude}")
+            }
+
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
             mapLocationSource = object : LocationSource {
                 override fun activate(listener: LocationSource.OnLocationChangedListener) {
-                    if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "LocationSource activated")
+                    android.util.Log.d(TAG, "LocationSource activated — blue dot wired to GNSS stream")
                     onLocationChangedListener = listener
                 }
                 override fun deactivate() {
-                    if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "LocationSource deactivated")
+                    if (LOG_GNSS_UI) android.util.Log.d(TAG, "LocationSource deactivated")
                     onLocationChangedListener = null
                 }
             }
