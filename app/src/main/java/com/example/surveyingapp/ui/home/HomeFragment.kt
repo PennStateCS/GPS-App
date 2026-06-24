@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val LOG_GNSS_UI = false
+private const val TAG = "HomeFragment"
 
 @AndroidEntryPoint
 class HomeFragment : Fragment(), OnMapReadyCallback {
@@ -428,17 +429,20 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @SuppressLint("MissingPermission")
     override fun onMapReady(map: GoogleMap) {
         try {
-            if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onMapReady called, hasCenteredCamera was: $hasCenteredCamera")
+            android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}")
+            if (LOG_GNSS_UI) android.util.Log.d(TAG, "onMapReady: hasCenteredCamera was $hasCenteredCamera")
             googleMap = map
 
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
+            android.util.Log.d(TAG, "onMapReady: mapType set to NORMAL, applying theme")
             MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
             // Set default camera position (will be overridden when fix arrives)
             // Start at a reasonable default location (e.g., San Francisco)
             val defaultLocation = LatLng(37.7749, -122.4194)
             map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 10f))
+            android.util.Log.d(TAG, "onMapReady: default camera set at SF zoom=10")
 
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
             mapLocationSource = object : LocationSource {
@@ -459,6 +463,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
+                android.util.Log.d(TAG, "onMapReady: location permission granted — enabling My Location layer")
                 map.isMyLocationEnabled = true
                 map.uiSettings.isMyLocationButtonEnabled = false
                 map.uiSettings.isZoomControlsEnabled = false
@@ -478,14 +483,15 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
                 // Reset camera centering flag - will center on first GPS fix
                 hasCenteredCamera = false
-                if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "Map configured: hasCenteredCamera reset to false")
+                if (LOG_GNSS_UI) android.util.Log.d(TAG, "onMapReady: hasCenteredCamera reset to false")
             } else {
                 _binding?.let {
                     it.layoutMapPlaceholder.visibility = View.VISIBLE
                     it.root.findViewById<android.widget.TextView>(R.id.text_map_placeholder)
                         ?.text = "Location services required"
                 }
-                android.util.Log.w("HomeFragment", "Location permission not granted, map features limited")
+                // If you see this log and the map is blank: grant location permission and restart
+                android.util.Log.w(TAG, "onMapReady: location permission not granted — placeholder shown, map tiles visible but My Location disabled")
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "onMapReady failed", e)
