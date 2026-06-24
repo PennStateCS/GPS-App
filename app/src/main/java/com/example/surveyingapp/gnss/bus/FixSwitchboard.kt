@@ -5,6 +5,7 @@ import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.SkySnapshot
 import com.example.surveyingapp.gnss.settings.SourceSettings
 import com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice
+import com.example.surveyingapp.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -130,7 +131,17 @@ class FixSwitchboard(
         (currentAdapter as? Startable)?.stop()
         currentAdapter = next
 
+        /*
+         * Clear the replay=1 fix buffer and sky state from the OUTGOING provider.
+         * Without this, the previous source's last fix lingers in the replay cache and
+         * is re-delivered to every new collector (Home map, capture, late subscribers)
+         * until the new provider emits — showing the wrong location after a switch and,
+         * on first start, masking the fact that no live fix has arrived yet.
+         */
+        _fixes.resetReplayCache()
         _sky.value = EmptySky
+
+        DiagnosticsLogger.i("GNSS", "Switchboard rebind -> ${next?.let { it::class.simpleName } ?: "none"} (stale fix/sky cleared)")
 
         if (next == null) {
             return
