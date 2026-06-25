@@ -1,5 +1,7 @@
 package com.example.surveyingapp.gnss.settings
 
+import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
+import com.example.surveyingapp.gnss.capture.toAveragingPolicy
 import com.example.surveyingapp.gnss.model.RtkStatus
 import org.junit.Assert.*
 import org.junit.Test

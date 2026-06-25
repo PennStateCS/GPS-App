@@ -67,7 +67,7 @@ enum class ReachConnectionStatus {
     TIMEOUT
 }
 
-enum class DeviceCommand {
+enum class ReachDeviceCommand {
     REBOOT,
     SHUTDOWN,
     RESTART_GNSS,

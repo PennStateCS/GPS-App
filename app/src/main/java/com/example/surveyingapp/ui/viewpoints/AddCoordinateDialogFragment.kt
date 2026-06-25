@@ -475,15 +475,9 @@ class AddCoordinateDialogFragment(
         return null
     }
 
-    /** Short, toolbar-style fix quality label. */
-    private fun shortFix(status: String): String = when (status.uppercase(Locale.US)) {
-        "FIX"    -> "Fixed"
-        "FLOAT"  -> "Float"
-        "DGPS"   -> "DGPS"
-        "SINGLE" -> "Single"
-        "NONE"   -> "No Fix"
-        else     -> "Unknown"
-    }
+    /** Short, toolbar-style fix quality label (delegates to the shared formatter). */
+    private fun shortFix(status: String): String =
+        com.example.surveyingapp.gnss.format.GnssStatusFormatter.formatCaptureFixStatus(status)
 
     /** Formats horizontal accuracy, or "Not reported" when the receiver did not supply it. */
     private fun formatAccuracy(meters: Double?): String =
