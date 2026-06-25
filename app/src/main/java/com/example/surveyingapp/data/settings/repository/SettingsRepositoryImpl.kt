@@ -9,7 +9,7 @@ import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.AppThemeMode
 import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings

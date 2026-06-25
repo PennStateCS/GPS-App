@@ -17,7 +17,7 @@ import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -40,8 +40,8 @@ import com.example.surveyingapp.domain.model.EmlidDeviceInfo
 import com.example.surveyingapp.domain.model.SelfTest
 import com.example.surveyingapp.domain.model.TestStatus
 import com.example.surveyingapp.domain.repository.SettingsRepository
-import com.example.surveyingapp.domain.repository.ReachDeviceRepository
-import com.example.surveyingapp.gnss.reach.ReachHttpClient
+import com.example.surveyingapp.gnss.external.repository.ReachDeviceRepository
+import com.example.surveyingapp.gnss.external.ReachHttpClient
 import com.example.surveyingapp.service.LocationService
 import androidx.appcompat.app.AppCompatDelegate
 import com.example.surveyingapp.gnss.settings.AppThemeMode
@@ -70,7 +70,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
     @Inject
-    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
+    @Inject
+    lateinit var gnssSourceCoordinator: com.example.surveyingapp.gnss.source.GnssSourceCoordinator
     @Inject
     lateinit var reachDeviceRepository: ReachDeviceRepository
 
@@ -822,7 +824,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             tcpConnectJob = null
             resetExternalReceiverStatus()
             // Switch back to internal in the switchboard immediately (synchronous).
-            sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+            gnssSourceCoordinator.switchToInternal("settings")
             // Clear selected device so the UI shows the TCP entry form again.
             selectedDevice = null
             selectedDeviceLabel = null
@@ -1323,7 +1325,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             // active provider stays INTERNAL until the receiver is confirmed reachable
             // (connectViaTcpFlow sets it inside the receiverPresent block).
             if (source != LocationSourceType.EXTERNAL) {
-                sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+                gnssSourceCoordinator.switchToInternal("settings")
             }
             // Attempt single auto reconnect if external source active and we have stored device
             if (source == LocationSourceType.EXTERNAL && storedHost != null && storedPort != null && !autoReconnectAttempted) {
@@ -1347,7 +1349,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tcpConnectJob = null
                     resetExternalReceiverStatus()
                     // Update switchboard provider to internal
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL)
+                    gnssSourceCoordinator.switchToInternal("settings")
                     Log.d("SettingsFragment", "Called setActiveProvider(INTERNAL)")
                     // Update categories immediately when switching to internal (hide RS2+)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
@@ -1501,10 +1503,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         return@launch
                     }
 
-                    sourceSettings.setActiveProvider(com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP)
-                    com.example.surveyingapp.util.DiagnosticsLogger.i(
-                        "GNSS", "External provider activated host=$host port=$port (attempt #$attemptId)"
-                    )
+                    // Activate via the coordinator (the single entry point for source actions).
+                    // Persistence above already completed, so ordering is preserved.
+                    gnssSourceCoordinator.connectExternalTcp(host, port, reason = "settings-connect #$attemptId")
                     provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                     updateDeviceBox()
 
@@ -2237,7 +2238,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     }
 
     // ───────────────────────────── Model Conversion Helper ─────────────────────────────
-    private fun convertToEmlidDeviceInfo(reachInfo: com.example.surveyingapp.domain.repository.ReachDeviceInfo): EmlidDeviceInfo {
+    private fun convertToEmlidDeviceInfo(reachInfo: com.example.surveyingapp.gnss.external.model.ReachDeviceInfo): EmlidDeviceInfo {
         return EmlidDeviceInfo(
             deviceName = reachInfo.name ?: reachInfo.ip ?: "Unknown Device",
             ipAddress = reachInfo.ip ?: "Unknown IP",

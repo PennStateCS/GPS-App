@@ -1,13 +1,16 @@
-package com.example.surveyingapp.gnss.bus.adapters
+package com.example.surveyingapp.gnss.external
 
 import android.util.Log
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
+import com.example.surveyingapp.gnss.bus.adapters.NmeaFuser
+import com.example.surveyingapp.gnss.bus.adapters.NmeaSource
 import com.example.surveyingapp.util.DiagnosticsLogger
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
-import com.example.surveyingapp.gnss.settings.SourceSettings
+import com.example.surveyingapp.gnss.source.SourceSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.bus.adapters
+package com.example.surveyingapp.gnss.internal
 
 import android.content.Context
 import android.location.LocationListener
@@ -6,6 +6,9 @@ import android.location.LocationManager
 import android.location.OnNmeaMessageListener
 import android.os.Handler
 import android.os.Looper
+import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
+import com.example.surveyingapp.gnss.bus.adapters.NmeaFuser
+import com.example.surveyingapp.gnss.bus.adapters.NmeaSource
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider

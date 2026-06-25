@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.reach
+package com.example.surveyingapp.gnss.external
 
 import org.json.JSONObject
 

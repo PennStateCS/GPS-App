@@ -1071,7 +1071,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             correctionsSection.values["Correction Station ID"]?.text = fix.correctionStationId ?: "--"
         }
 
-        fun applyBattery(b: com.example.surveyingapp.domain.repository.ReachBatteryInfo?) {
+        fun applyBattery(b: com.example.surveyingapp.gnss.external.model.ReachBatteryInfo?) {
             batterySection.values["SoC"]?.text = b?.percent?.let { "$it%" } ?: "--"
             batterySection.values["Voltage"]?.text = b?.voltageV?.let { "%.2f V".format(it) } ?: "--"
             batterySection.values["Current"]?.text = b?.currentA?.let { "%.2f A".format(it) } ?: "--"
@@ -1086,7 +1086,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             }
         }
 
-        fun applyDevice(d: com.example.surveyingapp.domain.repository.ReachDeviceInfo?) {
+        fun applyDevice(d: com.example.surveyingapp.gnss.external.model.ReachDeviceInfo?) {
             deviceSection.values["IP"]?.text = d?.ip ?: "--"
             deviceSection.values["Hostname"]?.text = d?.hostname ?: "--"
             deviceSection.values["Name"]?.text = d?.name ?: "--"

@@ -31,8 +31,8 @@ import org.osmdroid.config.Configuration
 @InstallIn(SingletonComponent::class)
 interface SurveyingAppEntryPoint {
     fun fixSwitchboard(): FixSwitchboard
-    fun sourceSettings(): com.example.surveyingapp.gnss.settings.SourceSettings
-    fun gnssSourceCoordinator(): com.example.surveyingapp.gnss.service.GnssSourceCoordinator
+    fun sourceSettings(): com.example.surveyingapp.gnss.source.SourceSettings
+    fun gnssSourceCoordinator(): com.example.surveyingapp.gnss.source.GnssSourceCoordinator
 }
 
 @HiltAndroidApp

@@ -73,7 +73,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     // Active-provider state, used to reset the live map location when the source switches.
     @Inject
-    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
 
     // ViewModel injection using Hilt
     private val viewModel: HomeViewModel by viewModels()
@@ -229,7 +229,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // on the first valid fix from the new source. Saved coordinate markers are untouched.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                var previousProvider: com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice? = null
                 sourceSettings.activeProvider.collect { provider ->
                     if (previousProvider != null && previousProvider != provider) {
                         DiagnosticsLogger.i("HomeMap", "Live location reset due to provider switch $previousProvider -> $provider")

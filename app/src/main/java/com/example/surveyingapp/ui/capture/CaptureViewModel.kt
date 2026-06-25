@@ -6,7 +6,7 @@ import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.model.CoordinateFactory
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.model.Provider
-import com.example.surveyingapp.gnss.settings.toAveragingPolicy
+import com.example.surveyingapp.gnss.capture.toAveragingPolicy
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.capture.ObservationSession
@@ -27,7 +27,7 @@ class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val coordinateRepository: CoordinateRepository,
     private val captureSettings: CaptureSettings,
-    private val sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+    private val sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
@@ -52,7 +52,7 @@ class CaptureViewModel @Inject constructor(
         // Cancel any in-progress averaging session when the provider switches.
         // A session collecting RS2+ fixes must not continue under Internal GPS and vice versa.
         viewModelScope.launch {
-            var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+            var previousProvider: com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice? = null
             sourceSettings.activeProvider.collect { provider ->
                 if (previousProvider != null && previousProvider != provider) {
                     if (session != null) {

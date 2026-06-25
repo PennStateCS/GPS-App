@@ -1,12 +1,17 @@
-package com.example.surveyingapp.domain.repository
+package com.example.surveyingapp.gnss.external.repository
 
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.gnss.reach.ReachBatteryService
-import com.example.surveyingapp.gnss.reach.ReachCorrectionsInfo
-import com.example.surveyingapp.gnss.reach.ReachCorrectionsService
-import com.example.surveyingapp.gnss.reach.ReachDeviceService
-import com.example.surveyingapp.gnss.reach.ReachHttpClient
-import com.example.surveyingapp.gnss.settings.SourceSettings
+import com.example.surveyingapp.gnss.external.ReachBatteryService
+import com.example.surveyingapp.gnss.external.ReachCorrectionsService
+import com.example.surveyingapp.gnss.external.ReachDeviceService
+import com.example.surveyingapp.gnss.external.ReachHttpClient
+import com.example.surveyingapp.gnss.external.model.DeviceCommand
+import com.example.surveyingapp.gnss.external.model.ReachBatteryInfo
+import com.example.surveyingapp.gnss.external.model.ReachConnectionStatus
+import com.example.surveyingapp.gnss.external.model.ReachCorrectionsInfo
+import com.example.surveyingapp.gnss.external.model.ReachDeviceInfo
+import com.example.surveyingapp.gnss.external.model.ReachStorageInfo
+import com.example.surveyingapp.gnss.source.SourceSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,56 +20,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
-
-data class ReachBatteryInfo(
-    val percent: Int,
-    val voltageV: Double?,
-    val currentA: Double?,
-    val temperatureC: Double?,
-    val chargerStatus: String?,
-    val otg: Boolean? = null,
-    val usbChargerCurrentA: Double? = null,
-    val usbChargerVoltageV: Double? = null
-)
-
-data class ReachDeviceInfo(
-    val ip: String?,
-    val name: String?,
-    val model: String?,
-    val firmware: String?,
-    val serial: String?,
-    val uptimeSec: Long?,
-    val uptime: String? = null,               // Formatted uptime string
-    val gnssReceiverFirmware: String? = null, // GNSS receiver chip firmware (e.g. "HPG_1.50")
-    val hostname: String? = null,             // mDNS hostname e.g. "Reach6.local"
-    val rawResponse: String? = null,          // First 300 chars of HTTP response (diagnostics)
-    val storage: StorageInfo? = null          // Storage information
-)
-
-data class StorageInfo(
-    val totalMB: Long,
-    val usedMB: Long,
-    val availableMB: Long
-) {
-    val usagePercent: Int get() = ((usedMB.toDouble() / totalMB) * 100).toInt()
-}
-
-
-enum class DeviceConnectionStatus {
-    CONNECTED,
-    CONNECTING,
-    DISCONNECTED,
-    ERROR,
-    TIMEOUT
-}
-
-enum class DeviceCommand {
-    REBOOT,
-    SHUTDOWN,
-    RESTART_GNSS,
-    CLEAR_LOGS,
-    FACTORY_RESET
-}
 
 @Singleton
 class ReachDeviceRepository @Inject constructor(
@@ -82,8 +37,8 @@ class ReachDeviceRepository @Inject constructor(
     private val _correctionsInfo = MutableStateFlow<ReachCorrectionsInfo?>(null)
     val correctionsInfo: StateFlow<ReachCorrectionsInfo?> = _correctionsInfo.asStateFlow()
 
-    private val _connectionStatus = MutableStateFlow(DeviceConnectionStatus.DISCONNECTED)
-    val connectionStatus: StateFlow<DeviceConnectionStatus> = _connectionStatus.asStateFlow()
+    private val _connectionStatus = MutableStateFlow(ReachConnectionStatus.DISCONNECTED)
+    val connectionStatus: StateFlow<ReachConnectionStatus> = _connectionStatus.asStateFlow()
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
@@ -188,10 +143,10 @@ class ReachDeviceRepository @Inject constructor(
 
                 fun String?.blankToNull() = takeIf { !it.isNullOrBlank() }
 
-                val storageInfo: StorageInfo? = if (device?.storageTotalMb != null) {
+                val storageInfo: ReachStorageInfo? = if (device?.storageTotalMb != null) {
                     val total = device.storageTotalMb
                     val free  = device.storageFreeMb ?: 0L
-                    StorageInfo(totalMB = total, usedMB = total - free, availableMB = free)
+                    ReachStorageInfo(totalMB = total, usedMB = total - free, availableMB = free)
                 } else null
 
                 _deviceInfo.value = ReachDeviceInfo(
@@ -265,18 +220,18 @@ class ReachDeviceRepository @Inject constructor(
     }
 
     suspend fun connectToDevice(ip: String): Boolean {
-        _connectionStatus.value = DeviceConnectionStatus.CONNECTING
+        _connectionStatus.value = ReachConnectionStatus.CONNECTING
         return try {
             val client = ReachHttpClient(ip)
             val service = ReachDeviceService(client)
             val device = service.read()
 
-            _connectionStatus.value = DeviceConnectionStatus.CONNECTED
+            _connectionStatus.value = ReachConnectionStatus.CONNECTED
             _lastError.value = null
             reconnectAttempts = 0
             true
         } catch (e: Exception) {
-            _connectionStatus.value = DeviceConnectionStatus.ERROR
+            _connectionStatus.value = ReachConnectionStatus.ERROR
             _lastError.value = "Connection failed: ${e.message}"
             false
         }
@@ -284,7 +239,7 @@ class ReachDeviceRepository @Inject constructor(
 
     suspend fun disconnectDevice() {
         stopPolling()
-        _connectionStatus.value = DeviceConnectionStatus.DISCONNECTED
+        _connectionStatus.value = ReachConnectionStatus.DISCONNECTED
         _batteryInfo.value = null
         _deviceInfo.value = null
     }
@@ -351,7 +306,7 @@ class ReachDeviceRepository @Inject constructor(
         if (reconnectAttempts >= maxReconnectAttempts) return
 
         reconnectAttempts++
-        _connectionStatus.value = DeviceConnectionStatus.CONNECTING
+        _connectionStatus.value = ReachConnectionStatus.CONNECTING
 
         val ip = getReachIp()
         if (ip != null && connectToDevice(ip)) {
@@ -361,7 +316,7 @@ class ReachDeviceRepository @Inject constructor(
             if (reconnectAttempts < maxReconnectAttempts) {
                 attemptReconnection()
             } else {
-                _connectionStatus.value = DeviceConnectionStatus.ERROR
+                _connectionStatus.value = ReachConnectionStatus.ERROR
                 _lastError.value = "Failed to reconnect after $maxReconnectAttempts attempts"
             }
         }

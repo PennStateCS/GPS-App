@@ -1,9 +1,9 @@
-package com.example.surveyingapp.gnss.reach
+package com.example.surveyingapp.gnss.external
 
 import android.util.Log
 import org.json.JSONObject
 
-data class ReachDeviceInfo(
+data class ReachDeviceInfoDto(
     val name: String?,
     val model: String?,
     val firmware: String?,
@@ -27,10 +27,10 @@ private const val TAG = "ReachDeviceService"
  */
 class ReachDeviceService(private val client: ReachHttpClient) {
 
-    suspend fun read(): ReachDeviceInfo? =
+    suspend fun read(): ReachDeviceInfoDto? =
         tryEndpoint("/info") ?: tryEndpoint("/status")
 
-    private suspend fun tryEndpoint(path: String): ReachDeviceInfo? {
+    private suspend fun tryEndpoint(path: String): ReachDeviceInfoDto? {
         val text = runCatching { client.get(path) }
             .onFailure { Log.w(TAG, "GET $path failed: ${it.message}") }
             .getOrNull() ?: return null
@@ -114,7 +114,7 @@ class ReachDeviceService(private val client: ReachHttpClient) {
             return null
         }
 
-        return ReachDeviceInfo(
+        return ReachDeviceInfoDto(
             name                 = name,
             model                = model,
             firmware             = firmware,
