@@ -6,7 +6,12 @@ import com.example.surveyingapp.gnss.model.Constellation
 import com.example.surveyingapp.gnss.model.SkyGeometry
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class SatelliteSignalChartViewTest {
 
     @Test

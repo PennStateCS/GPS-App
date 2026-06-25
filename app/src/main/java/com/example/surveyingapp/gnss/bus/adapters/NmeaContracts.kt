@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.SharedFlow
  * The external adapter owns reconnection; the source itself makes a single attempt.
  *
  * To add support for a new transport (e.g. u-blox over Bluetooth), implement this
- * interface and pass the instance to a new external adapter registered in AppModule.
+ * interface and pass the instance to a new external adapter registered in GnssModule.
  */
 interface NmeaSource : Startable {
     fun parsedFixes(): SharedFlow<Fix>

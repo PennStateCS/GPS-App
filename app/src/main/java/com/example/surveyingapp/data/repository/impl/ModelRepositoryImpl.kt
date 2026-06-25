@@ -8,7 +8,7 @@ import com.example.surveyingapp.domain.repository.ModelRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class ModelRepositoryImpl(private val modelDao: ModelDao) : ModelRepository {
+class ModelRepositoryImpl @javax.inject.Inject constructor(private val modelDao: ModelDao) : ModelRepository {
 
     private fun getFileTypeFromExtension(fileName: String): FileType {
         val extension = fileName.substringAfterLast('.', "").lowercase()

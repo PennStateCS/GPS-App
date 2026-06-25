@@ -31,11 +31,12 @@ class UtmZoneTest {
     // ── Representative projections (zone + utmZone string) ───────────────────
 
     @Test
-    fun `latLonToUtm New York City is zone 18N`() {
+    fun `latLonToUtm New York City is zone 18 band T`() {
         val r = UtmConverter.latLonToUtm(40.7128, -74.0060)
         assertEquals(18, r.zone)
         assertEquals('N', r.hemisphere)
-        assertEquals("18N", r.utmZone)
+        // utmZone is zone + MGRS latitude-band letter ("$zone$zoneLetter"); 40.7°N is band T.
+        assertEquals("18T", r.utmZone)
     }
 
     @Test
@@ -62,9 +63,10 @@ class UtmZoneTest {
     }
 
     @Test
-    fun `latLonToUtm New York northing is near 4507523 m`() {
+    fun `latLonToUtm New York northing is near 4507351 m`() {
         val r = UtmConverter.latLonToUtm(40.7128, -74.0060)
-        assertEquals(4507523.0, r.northing, 1.0)
+        // Authoritative WGS84 UTM northing for 40.7128N, -74.0060 (zone 18) = 4507351.0 m.
+        assertEquals(4507351.0, r.northing, 1.0)
     }
 
     @Test
@@ -116,7 +118,8 @@ class UtmZoneTest {
         val r = UtmConverter.latLonToUtm(51.5074, -0.1278)
         assertEquals(30, r.zone)
         assertEquals('N', r.hemisphere)
-        assertEquals(5710156.0, r.northing, 1.0)   // ±1 m
+        // Authoritative WGS84 UTM northing for London 51.5074N, -0.1278 (zone 30) = 5710163.76 m.
+        assertEquals(5710163.76, r.northing, 1.0)   // ±1 m
     }
 
     @Test
@@ -124,10 +127,10 @@ class UtmZoneTest {
         // Cape Town — southern hemisphere, uses 10,000,000 m false northing
         val r = UtmConverter.latLonToUtm(-33.9249, 18.4241)
         assertEquals('S', r.hemisphere)
-        // Northing should be well above 9,000,000 m given false northing of 10,000,000
-        assert(r.northing > 9_000_000.0) {
-            "Expected southern-hemisphere northing > 9,000,000 m but got ${r.northing}"
-        }
+        // Southern hemisphere applies the 10,000,000 m false northing: northing = 10e6 - arc.
+        // At -33.9° the arc from the equator is ~3.76e6 m, so northing ≈ 6,243,182 m
+        // (authoritative WGS84). This confirms the false northing was applied (value < 10e6).
+        assertEquals(6243182.35, r.northing, 1.0)
     }
 
     @Test

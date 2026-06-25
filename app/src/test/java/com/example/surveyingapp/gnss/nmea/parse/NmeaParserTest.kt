@@ -23,7 +23,7 @@ class NmeaParserTest {
 
     @Test
     fun `when valid ZDA sentence is parsed, result is Success and fields are correct`() {
-        val zdaSentence = "\$GPZDA,123456.78,09,09,2025,00,00*5A"
+        val zdaSentence = "\$GPZDA,123456.78,09,09,2025,00,00*6B"
         val result = parser.parse(zdaSentence)
 
         assertTrue("Should successfully parse valid ZDA sentence", result is NmeaParser.ParseResult.Success)
@@ -40,7 +40,7 @@ class NmeaParserTest {
 
     @Test
     fun `when valid GGA sentence is parsed, result is Success and time fields are correct`() {
-        val ggaSentence = "\$GPGGA,123456.78,3751.65,S,14507.36,E,1,08,0.9,545.4,M,46.9,M,,*47"
+        val ggaSentence = "\$GPGGA,123456.78,3751.65,S,14507.36,E,1,08,0.9,545.4,M,46.9,M,,*72"
         val result = parser.parse(ggaSentence)
 
         assertTrue("Should successfully parse valid GGA sentence", result is NmeaParser.ParseResult.Success)
@@ -54,7 +54,7 @@ class NmeaParserTest {
 
     @Test
     fun `when valid RMC sentence is parsed, result is Success and time and date are correct`() {
-        val rmcSentence = "\$GPRMC,123456.78,A,3751.65,S,14507.36,E,000.0,360.0,090925,011.3,E*62"
+        val rmcSentence = "\$GPRMC,123456.78,A,3751.65,S,14507.36,E,000.0,360.0,090925,011.3,E*4D"
         val result = parser.parse(rmcSentence)
 
         assertTrue("Should successfully parse valid RMC sentence", result is NmeaParser.ParseResult.Success)
@@ -70,7 +70,7 @@ class NmeaParserTest {
 
     @Test
     fun `when valid GST sentence is parsed, result is Success and time is correct`() {
-        val gstSentence = "\$GPGST,123456.78,1.2,0.95,0.66,123.45,0.52,0.88,1.1*42"
+        val gstSentence = "\$GPGST,123456.78,1.2,0.95,0.66,123.45,0.52,0.88,1.1*66"
         val result = parser.parse(gstSentence)
 
         assertTrue("Should successfully parse valid GST sentence", result is NmeaParser.ParseResult.Success)

@@ -128,7 +128,12 @@ android {
         abi { enableSplit = true }
     }
 
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        // Pure-JVM unit tests touch production code that logs via android.util.Log. Return defaults
+        // (Log.w -> 0, etc.) for unmocked framework calls instead of throwing "not mocked".
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

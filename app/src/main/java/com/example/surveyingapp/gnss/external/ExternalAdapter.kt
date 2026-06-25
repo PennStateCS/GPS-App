@@ -41,7 +41,7 @@ import kotlin.coroutines.coroutineContext
  * automatically without user intervention.
  *
  * To add a new external provider (e.g., u-blox over Bluetooth), create a new [NmeaSource]
- * implementation and wrap it in a new [ExternalAdapter] instance registered in [AppModule].
+ * implementation and wrap it in a new [ExternalAdapter] instance registered in [GnssModule].
  */
 class ExternalAdapter(
     private val scope: CoroutineScope,
