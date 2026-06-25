@@ -22,7 +22,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
-import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.CoordinateFactory
@@ -194,7 +193,7 @@ class AddCoordinateDialogFragment(
 
         // Prefill point name from settings
         viewLifecycleOwner.lifecycleScope.launch {
-            val coordSettings = SurveyingApp.settingsRepo.coordinateDisplaySettings.first()
+            val coordSettings = settingsRepo.coordinateDisplaySettings.first()
             val prefix = coordSettings.defaultNamePrefix
             val proposedName = if (coordSettings.autoIncrementNames) {
                 val count = withContext(Dispatchers.IO) {
