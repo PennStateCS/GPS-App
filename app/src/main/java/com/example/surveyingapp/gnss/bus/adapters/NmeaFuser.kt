@@ -4,9 +4,13 @@ import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.model.TimestampSource
+import com.example.surveyingapp.gnss.nmea.parse.NmeaDateTimeUtils
 import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
 import com.example.surveyingapp.gnss.nmea.sentence.*
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
 
 /**
  * Stateful NMEA sentence fuser.
@@ -42,9 +46,14 @@ class NmeaFuser(
     private var lastZda: ZDA? = null
     private var lastGst: GST? = null   // GPS Error Statistics (accuracy ellipse)
 
-    // Epoch deduplication: skip if we already emitted a fix at this timestamp recently
+    // Epoch deduplication: the epoch (date + GGA time-of-day) of the most recently emitted fix.
     private var lastEmittedGgaTimeUtc: Long? = null
-    private val EPOCH_DEDUP_WINDOW_MS = 500L
+
+    /** Which clock supplied the date for the last emitted fix (diagnostics). */
+    private var lastTimestampSource: TimestampSource? = null
+
+    private val TWELVE_HOURS_MS = 12L * 60 * 60 * 1000
+    private val DAY_MS = 24L * 60 * 60 * 1000
 
     /*
      * Multi-constellation GSA accumulation.
@@ -84,11 +93,11 @@ class NmeaFuser(
 
     private fun handle(sentence: NmeaSentence) {
         when (sentence) {
-            is GGA -> { lastGga = sentence; maybeEmitFix() }
-            is RMC -> lastRmc = sentence  // Enrich with speed/course; do not trigger fix emission
+            is GGA -> { ggaCount++; lastGga = sentence; maybeEmitFix() }
+            is RMC -> { rmcCount++; lastRmc = sentence }  // Enrich speed/course; does not trigger a fix
             is GSA -> handleGsa(sentence)
             is GSV -> handleGsv(sentence)
-            is ZDA -> handleZda(sentence)
+            is ZDA -> { zdaCount++; handleZda(sentence) }
             is GST -> lastGst = sentence  // store accuracy ellipse; used in next fix emission
             is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
             is ETC -> { etcCount++; lastEtc = sentence }  // Emlid tilt — diagnostics only
@@ -113,6 +122,26 @@ class NmeaFuser(
     /** Read-only view of EBP/ETC activity seen by this fuser (diagnostics). */
     val nmeaCustomStats: NmeaCustomStats
         get() = NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc)
+
+    // ── Sentence/fix rate diagnostics (cumulative counts; consumers compute rates from deltas) ──
+    private var ggaCount = 0
+    private var rmcCount = 0
+    private var zdaCount = 0
+    private var emittedFixCount = 0
+
+    /** Cumulative sentence/fix counts + the clock used for the last fix's date (diagnostics). */
+    data class FuserTimingStats(
+        val ggaCount: Int,
+        val rmcCount: Int,
+        val zdaCount: Int,
+        val emittedFixCount: Int,
+        /** "GGA time + ZDA date", "GGA time + RMC date", "GGA time + device date", or device fallback. */
+        val lastTimestampSource: TimestampSource?,
+    )
+
+    /** Snapshot of GGA/RMC/ZDA + emitted-fix counts and the date source of the last fix. */
+    val timingStats: FuserTimingStats
+        get() = FuserTimingStats(ggaCount, rmcCount, zdaCount, emittedFixCount, lastTimestampSource)
 
     private fun handleZda(zda: ZDA) {
         val epochMs = zda.epochMillis
@@ -204,18 +233,16 @@ class NmeaFuser(
         val lat = gga.lat ?: return
         val lon = gga.lon ?: return
 
-        // Timestamp priority: ZDA (full date+time) → RMC (date+time) → device clock fallback
-        val (epochMs, tsSource) = when {
-            lastZda?.epochMillis != null -> lastZda!!.epochMillis!! to TimestampSource.NMEA_ZDA
-            lastRmc?.epochMillis != null -> lastRmc!!.epochMillis!! to TimestampSource.GNSS_PROVIDER
-            else                         -> System.currentTimeMillis() to TimestampSource.DEVICE
-        }
+        // Epoch time: the GGA UTC time-of-day is the authoritative (up to 5 Hz) clock; the date is
+        // supplied by the most recent ZDA/RMC (or the current UTC date as a fallback). This lets each
+        // GGA epoch emit a fresh fix even though RMC/ZDA only arrive at ~1 Hz. If the GGA has no usable
+        // time-of-day, the previous ZDA → RMC → device-clock behavior is preserved.
+        val (epochMs, tsSource) = computeEpochMs(gga)
+        lastTimestampSource = tsSource
 
-        // Epoch deduplication: skip if we already emitted a fix at this timestamp recently
-        val lastEmitted = lastEmittedGgaTimeUtc
-        if (lastEmitted != null && kotlin.math.abs(epochMs - lastEmitted) < EPOCH_DEDUP_WINDOW_MS) {
-            return
-        }
+        // Epoch deduplication: skip only an exact repeat of the same epoch (e.g. a duplicated GGA
+        // line). Distinct GGA epochs — including 200 ms-apart 5 Hz epochs — each emit a fresh fix.
+        if (epochMs == lastEmittedGgaTimeUtc) return
         lastEmittedGgaTimeUtc = epochMs
 
         val altEllipsoidal = sumIfFinite(gga.altMsl, gga.geoidSeparation)
@@ -245,6 +272,7 @@ class NmeaFuser(
         val stdDevNorthM = lastGst?.stdDevLat
         val stdDevUpM = lastGst?.stdDevAlt
 
+        emittedFixCount++
         onFix(
             Fix(
                 provider            = provider,
@@ -274,10 +302,46 @@ class NmeaFuser(
         )
     }
 
+    /**
+     * Computes the fix epoch and its date source. The time-of-day comes from the GGA (so 5 Hz GGA
+     * yields 5 Hz fixes); the date from the latest ZDA → RMC → current UTC. Falls back to the prior
+     * ZDA → RMC → device-clock epoch when the GGA has no parseable time-of-day.
+     */
+    private fun computeEpochMs(gga: GGA): Pair<Long, TimestampSource> {
+        val ggaTime = NmeaDateTimeUtils.parseNmeaTime(gga.timeRaw)
+        if (ggaTime != null) {
+            val zdaDate = lastZda?.let { z ->
+                if (z.year != null && z.month != null && z.day != null)
+                    runCatching { LocalDate.of(z.year, z.month, z.day) }.getOrNull() else null
+            }
+            val (date, dateSource) = when {
+                zdaDate != null       -> zdaDate to TimestampSource.NMEA_ZDA
+                lastRmc?.date != null -> lastRmc!!.date!! to TimestampSource.GNSS_PROVIDER
+                else                  -> LocalDate.now(ZoneOffset.UTC) to TimestampSource.DEVICE
+            }
+            var epoch = ZonedDateTime.of(date, ggaTime, ZoneOffset.UTC).toInstant().toEpochMilli()
+            // Midnight rollover: if the 1 Hz date source's own time was just before midnight while
+            // GGA has already wrapped past it, the naive combine lands ~24 h in the past. Detect via
+            // the reference ZDA/RMC epoch and advance one day.
+            val refEpoch = lastZda?.epochMillis ?: lastRmc?.epochMillis
+            if (refEpoch != null && epoch < refEpoch - TWELVE_HOURS_MS) {
+                epoch += DAY_MS
+            }
+            return epoch to dateSource
+        }
+        // No usable GGA time-of-day → preserve the previous ZDA → RMC → device behavior.
+        return when {
+            lastZda?.epochMillis != null -> lastZda!!.epochMillis!! to TimestampSource.NMEA_ZDA
+            lastRmc?.epochMillis != null -> lastRmc!!.epochMillis!! to TimestampSource.GNSS_PROVIDER
+            else                         -> System.currentTimeMillis() to TimestampSource.DEVICE
+        }
+    }
+
     /** Clears all accumulated sentence state. Call when the underlying GNSS source is stopped. */
     fun reset() {
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
-        lastEmittedGgaTimeUtc = null
+        lastEmittedGgaTimeUtc = null; lastTimestampSource = null
+        ggaCount = 0; rmcCount = 0; zdaCount = 0; emittedFixCount = 0
         gsaUsedSatIds.clear(); lastGsaUpdateMs = 0L
         pendingGsvByTalker.clear(); gsvVisibleByTalker.clear()
     }
