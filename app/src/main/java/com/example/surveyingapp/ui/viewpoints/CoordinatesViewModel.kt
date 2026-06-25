@@ -14,30 +14,23 @@
 
 package com.example.surveyingapp.ui.viewpoints
 
-import android.app.Application
 import android.util.Log
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.repository.CoordinateRepository
-import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class CoordinatesViewModel(application: Application) : AndroidViewModel(application) {
+@HiltViewModel
+class CoordinatesViewModel @Inject constructor(
     private val repository: CoordinateRepository
+) : ViewModel() {
 
     // LiveData automatically notifies observers (like UI) when data changes
-    val allCoordinates: LiveData<List<Coordinate>>
-
-    init {
-        // Initialize the database and repository
-        // This happens once when the ViewModel is created
-        val dao = AppDatabase.getDatabase(application).coordinateDao()
-        repository = CoordinateRepositoryImpl(dao)
-        allCoordinates = repository.allCoordinates
-    }
+    val allCoordinates: LiveData<List<Coordinate>> = repository.allCoordinates
 
     // Database operations wrapped in viewModelScope.launch for background execution
     // viewModelScope automatically cancels when ViewModel is destroyed

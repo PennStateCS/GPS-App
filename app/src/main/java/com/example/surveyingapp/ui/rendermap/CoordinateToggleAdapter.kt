@@ -11,8 +11,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
+import com.example.surveyingapp.domain.repository.ModelRepository
 import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +32,7 @@ data class CoordinateToggleItem(
 )
 
 class CoordinateToggleAdapter(
+    private val modelRepository: ModelRepository,
     private val onToggle: (id: String, checked: Boolean) -> Unit,
     private val onRowClick: (id: String) -> Unit = {}
 ) : RecyclerView.Adapter<CoordinateToggleAdapter.Holder>() {
@@ -70,7 +70,7 @@ class CoordinateToggleAdapter(
     override fun getItemCount() = items.size
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
-        holder.bind(items[position], selectedId, scope, onToggle, onRowClick)
+        holder.bind(items[position], selectedId, scope, modelRepository, onToggle, onRowClick)
     }
 
     override fun onViewRecycled(holder: Holder) {
@@ -96,6 +96,7 @@ class CoordinateToggleAdapter(
             item: CoordinateToggleItem,
             selectedId: String?,
             scope: CoroutineScope,
+            modelRepository: ModelRepository,
             onToggle: (String, Boolean) -> Unit,
             onRowClick: (String) -> Unit
         ) {
@@ -131,9 +132,7 @@ class CoordinateToggleAdapter(
                     iconJob = scope.launch {
                         val bmp = withContext(Dispatchers.IO) {
                             try {
-                                val db = AppDatabase.getDatabase(itemView.context)
-                                val repo = ModelRepositoryImpl(db.modelDao())
-                                val model = repo.getModelById(modelId) ?: return@withContext null
+                                val model = modelRepository.getModelById(modelId) ?: return@withContext null
                                 val path = model.thumbnailFilePath ?: return@withContext null
                                 if (!File(path).exists()) return@withContext null
                                 BitmapFactory.decodeFile(path)

@@ -18,8 +18,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
+import com.example.surveyingapp.domain.repository.ModelRepository
 import com.google.android.filament.Camera
 import com.google.android.filament.EntityManager
 import com.google.android.filament.LightManager
@@ -28,12 +27,14 @@ import com.google.android.filament.utils.KTX1Loader
 import com.google.android.filament.utils.Manipulator
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import javax.inject.Inject
 
 /**
  * An invisible activity that renders a GLB model off-screen, captures a thumbnail and finishes.
@@ -42,7 +43,10 @@ import java.nio.ByteBuffer
  * given a small fixed size (256×256) and positioned off-screen via layout params so it is
  * never visible even if translucency fails.
  */
+@AndroidEntryPoint
 class ThumbnailCaptureActivity : AppCompatActivity() {
+
+    @Inject lateinit var modelRepository: ModelRepository
 
     companion object {
         private const val TAG = "ThumbCaptureActivity"
@@ -557,8 +561,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 } catch (e: Exception) { /* best effort */ }
 
                 try {
-                    val db = AppDatabase.getDatabase(applicationContext)
-                    val repo = ModelRepositoryImpl(db.modelDao())
+                    val repo = modelRepository
                     val matched = repo.getModelByFileName(modelFileName)
                     if (matched != null) {
                         repo.updateModel(

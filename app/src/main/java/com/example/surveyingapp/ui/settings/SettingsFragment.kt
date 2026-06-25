@@ -27,8 +27,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
+import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
@@ -81,7 +80,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // lateinit var settingsViewModel: SettingsViewModel
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
-    private lateinit var repository: CoordinateRepositoryImpl
+    @Inject lateinit var repository: CoordinateRepository
     private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
 
     // Selected device for TCP connection (class scope)
@@ -183,13 +182,7 @@ private const val CAT_ID_DEV                = 7
     }
 
     // ────────────────��──────────── Lifecycle hooks ─────────────────────────────
-    override fun onRootCreated(root: View) {
-        try {
-            repository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
-        } catch (e: Exception) {
-            Log.e("SettingsFragment", "onRootCreated failed", e)
-        }
-    }
+    // repository is Hilt-injected (@Inject above); no manual init needed.
 
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
 

@@ -8,13 +8,15 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.ActivityModelPickerBinding
+import com.example.surveyingapp.domain.repository.ModelRepository
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import com.example.surveyingapp.domain.model.Model
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@AndroidEntryPoint
 class ModelPickerActivity : AppCompatActivity() {
 
     companion object {
@@ -32,9 +34,7 @@ class ModelPickerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityModelPickerBinding
     private lateinit var adapter: ModelPickerAdapter
 
-    private val repository by lazy {
-        ModelRepositoryImpl(AppDatabase.getDatabase(this).modelDao())
-    }
+    @Inject lateinit var repository: ModelRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
