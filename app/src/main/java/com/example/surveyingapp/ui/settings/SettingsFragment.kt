@@ -699,51 +699,43 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         // ── External receiver profile selector ──────────────────────────────────────
         // All profiles use the SAME External TCP NMEA pipeline; the profile only carries display
-        // labels + sensible defaults. Added programmatically to the top of the external options so
-        // no layout change is needed. Selecting a profile persists it and applies its default port.
+        // labels + sensible defaults. Uses the same Material ExposedDropdownMenu component as the
+        // capture/appearance dropdowns (defined in the layout). Selecting a profile persists it and
+        // applies its default port.
         run {
             val profiles = com.example.surveyingapp.settings.model.ExternalReceiverProfile.entries
-            val ctx = requireContext()
-            val profileLabel = TextView(ctx).apply {
-                text = "Receiver profile"
-                setPadding(0, dpToPx(8), 0, dpToPx(2))
+            val profileDropdown = view.findViewById<AutoCompleteTextView>(R.id.dropdown_receiver_profile)
+            val profileHint = view.findViewById<TextView>(R.id.text_receiver_profile_hint)
+
+            profileDropdown?.setAdapter(
+                ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, profiles.map { it.label })
+            )
+
+            fun applyHint(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile) {
+                val baseHelp = "Choose the receiver model so the app can use the right labels, " +
+                    "defaults, and diagnostics. Position data still comes from NMEA over TCP."
+                profileHint?.text = profile.hint?.let { "$baseHelp\n\n$it" } ?: baseHelp
             }
-            val profileSpinner = android.widget.Spinner(ctx).apply {
-                adapter = android.widget.ArrayAdapter(
-                    ctx, android.R.layout.simple_spinner_dropdown_item, profiles.map { it.label }
-                )
-            }
-            val profileHint = TextView(ctx).apply {
-                textSize = 12f
-                setPadding(0, dpToPx(2), 0, dpToPx(8))
-                visibility = View.GONE
-            }
-            rs2OptionsLayout?.addView(profileLabel, 0)
-            rs2OptionsLayout?.addView(profileSpinner, 1)
-            rs2OptionsLayout?.addView(profileHint, 2)
 
             viewLifecycleOwner.lifecycleScope.launch {
                 val current = runCatching { settingsRepo.externalReceiverProfile.first() }
                     .getOrDefault(com.example.surveyingapp.settings.model.ExternalReceiverProfile.DEFAULT)
-                profileSpinner.setSelection(profiles.indexOf(current))
+                profileDropdown?.setText(current.label, false)
+                applyHint(current)
             }
 
-            profileSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, position: Int, id: Long) {
-                    val profile = profiles[position]
-                    profileHint.text = profile.hint ?: ""
-                    profileHint.visibility = if (profile.hint != null) View.VISIBLE else View.GONE
-                    // Persist + apply default port only on a genuine change (not the initial selection).
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        val persisted = runCatching { settingsRepo.externalReceiverProfile.first() }
-                            .getOrDefault(com.example.surveyingapp.settings.model.ExternalReceiverProfile.DEFAULT)
-                        if (persisted != profile) {
-                            runCatching { settingsRepo.setExternalReceiverProfile(profile) }
-                            editPort?.setText(profile.defaultPort.toString())
-                        }
+            profileDropdown?.setOnItemClickListener { _, _, position, _ ->
+                val profile = profiles.getOrNull(position) ?: return@setOnItemClickListener
+                applyHint(profile)
+                // Persist + apply default port only on a genuine change.
+                viewLifecycleOwner.lifecycleScope.launch {
+                    val persisted = runCatching { settingsRepo.externalReceiverProfile.first() }
+                        .getOrDefault(com.example.surveyingapp.settings.model.ExternalReceiverProfile.DEFAULT)
+                    if (persisted != profile) {
+                        runCatching { settingsRepo.setExternalReceiverProfile(profile) }
+                        editPort?.setText(profile.defaultPort.toString())
                     }
                 }
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
             }
         }
 
