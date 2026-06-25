@@ -9,7 +9,7 @@ import androidx.core.content.ContextCompat
 import com.example.surveyingapp.R
 import com.example.surveyingapp.gnss.accumulator.FixSnapshot
 import com.example.surveyingapp.gnss.diagnostics.NmeaLogStats
-import com.example.surveyingapp.gnss.ui.formatTimestampWithCompactBadge
+import com.example.surveyingapp.ui.common.formatTimestampWithCompactBadge
 import java.util.Locale
 import kotlin.math.roundToInt
 

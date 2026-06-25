@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.source
+package com.example.surveyingapp.gnss.replay
 
 import android.content.Context
 import kotlinx.coroutines.delay
@@ -12,7 +12,7 @@ import java.io.InputStreamReader
 import kotlin.coroutines.coroutineContext
 
 /**
- * [GnssSource] that replays NMEA sentences from a bundled asset file.
+ * [NmeaLineSource] that replays NMEA sentences from a bundled asset file (demo/testing only).
  *
  * Useful for development and testing without a physical receiver. Each line is
  * emitted with a configurable delay so the output looks like a live feed. When
@@ -21,12 +21,12 @@ import kotlin.coroutines.coroutineContext
  * If the asset file cannot be opened, the source emits a single invalid GGA
  * sentence and stops, rather than crashing the pipeline.
  */
-class ReplaySource(
+class AssetNmeaReplaySource(
     private val context: Context,
     private val assetFileName: String = "sample.nmea",
     private val delayBetweenLines: Long = 1000L,
     override val name: String = "Replay ($assetFileName)"
-) : GnssSource {
+) : NmeaLineSource {
 
     override fun lines(): Flow<String> = flow {
         var reader: BufferedReader? = null

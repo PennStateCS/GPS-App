@@ -26,10 +26,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.navigation.fragment.findNavController
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.FragmentHomeBinding
+import com.example.surveyingapp.domain.repository.CoordinateRepository
+import com.example.surveyingapp.domain.repository.ModelRepository
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -98,9 +97,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // Fix Badge component
     private lateinit var fixBadge: FixBadgeView
 
-    // Repositories — nullable so a DB-init failure doesn't leave lateinit vars uninitialised
-    private var coordinateRepository: CoordinateRepositoryImpl? = null
-    private var modelRepository: ModelRepositoryImpl? = null
+    // Repositories — injected via Hilt (domain interfaces), no longer constructed from AppDatabase.
+    @Inject lateinit var coordinateRepository: CoordinateRepository
+    @Inject lateinit var modelRepository: ModelRepository
 
     // Settings repository reference (still needed for settings)
     private val settingsRepo by lazy { SurveyingApp.settingsRepo }
@@ -125,14 +124,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         loggedFirstMapFix = false
         if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onCreateView: hasCenteredCamera reset to false")
 
-        // Initialise repositories — guard against DB creation failure
-        try {
-            val database = AppDatabase.getDatabase(requireContext())
-            coordinateRepository = CoordinateRepositoryImpl(database.coordinateDao())
-            modelRepository = ModelRepositoryImpl(database.modelDao())
-        } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "Failed to initialise repositories", e)
-        }
 
         // Initialize UI components
         fixBadge = binding.fixBadge
@@ -407,7 +398,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    coordinateRepository?.coordinateCountFlow?.collectLatest { count ->
+                    coordinateRepository.coordinateCountFlow.collectLatest { count ->
                         _binding?.textCoordinatesCount?.text = count.toString()
                     }
                 } catch (e: Exception) {
@@ -420,7 +411,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    modelRepository?.observeModelCount()?.collectLatest { count ->
+                    modelRepository.observeModelCount().collectLatest { count ->
                         _binding?.textModelsCount?.text = count.toString()
                     }
                 } catch (e: Exception) {

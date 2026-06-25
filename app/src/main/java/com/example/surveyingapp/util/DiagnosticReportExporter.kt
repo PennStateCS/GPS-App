@@ -51,7 +51,14 @@ object DiagnosticReportExporter {
                 }
 
                 zos.addText("app-state-summary.txt", buildStateSummary(context))
-                zos.addText("settings-summary.txt", buildSettingsSummary())
+                zos.addText(
+                    "current-settings-snapshot.txt",
+                    com.example.surveyingapp.util.diagnostics.SettingsSnapshotCollector.collect(context)
+                )
+                zos.addText(
+                    "map-troubleshooting.txt",
+                    com.example.surveyingapp.util.diagnostics.MapDiagnosticCollector.collect(context)
+                )
             }
 
             zipFile
@@ -186,40 +193,8 @@ object DiagnosticReportExporter {
         return sb.toString()
     }
 
-    private suspend fun buildSettingsSummary(): String {
-        val sb = StringBuilder()
-        sb.appendLine("=== Settings Summary ===")
-        sb.appendLine("Non-sensitive settings only. No API keys, passwords, or credentials.")
-        sb.appendLine()
-        try {
-            val repo = SurveyingApp.settingsRepo
-            val locSrc = runCatching { repo.locationSource.first() }.getOrNull()
-            sb.appendLine("Location source        : ${locSrc?.name ?: "unknown"}")
-
-            val host = runCatching { repo.externalTcpHost.first() }.getOrNull()
-            val port = runCatching { repo.externalTcpPort.first() }.getOrNull()
-            sb.appendLine("Receiver host          : ${if (host.isNullOrBlank()) "not set" else host}")
-            sb.appendLine("Receiver port          : ${port ?: "not set"}")
-
-            val mock = runCatching { repo.mockLocationEnabled.first() }.getOrNull()
-            sb.appendLine("Mock location enabled  : $mock")
-
-            val cap = runCatching { repo.gnssCaptureSettings.first() }.getOrNull()
-            if (cap != null) {
-                sb.appendLine()
-                sb.appendLine("--- Capture Settings ---")
-                sb.appendLine("Required RTK status    : ${cap.requiredMinStatus}")
-                sb.appendLine("Min duration (s)       : ${cap.minDurationSec}")
-                sb.appendLine("Max duration (s)       : ${cap.maxDurationSec}")
-                sb.appendLine("Min accepted fixes     : ${cap.minSamples}")
-                sb.appendLine("Max fix age (s)        : ${cap.maxFixAgeSec}")
-                sb.appendLine("Max diff age (s)       : ${cap.maxDiffAgeSec}")
-            }
-        } catch (e: Exception) {
-            sb.appendLine("(settings read error: ${e.message})")
-        }
-        return sb.toString()
-    }
+    // Settings now live in `current-settings-snapshot.txt` (SettingsSnapshotCollector) — a more
+    // complete, sanitized snapshot that supersedes the old settings-summary section.
 
     // ── ZIP helpers ────────────────────────────────────────────────────────────
 

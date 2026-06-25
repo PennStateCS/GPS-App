@@ -35,7 +35,7 @@ object GnssModule {
 
     /**
      * Provides the shared [NmeaRegistry] used by both the live GNSS pipeline
-     * ([NmeaFuser] inside each [NmeaSource]) and the NMEA replay [GnssController].
+     * ([NmeaFuser] inside each [NmeaSource]) and the NMEA replay [NmeaReplayController].
      *
      * All sentence types supported by the app are registered here. To add a new sentence type:
      *  1. Create a data class implementing [NmeaSentence] in `gnss/nmea/sentence/`

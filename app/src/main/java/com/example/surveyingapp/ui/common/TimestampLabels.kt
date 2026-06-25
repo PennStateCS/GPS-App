@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.ui
+package com.example.surveyingapp.ui.common
 
 import com.example.surveyingapp.gnss.model.TimestampSource
 import java.text.SimpleDateFormat
