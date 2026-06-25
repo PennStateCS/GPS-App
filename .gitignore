@@ -3,6 +3,7 @@
 /build
 /captures
 app.zip
+app/src.zip
 
 # Gradle
 .gradle/

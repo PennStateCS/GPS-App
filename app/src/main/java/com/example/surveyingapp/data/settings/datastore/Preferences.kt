@@ -20,6 +20,7 @@ object SettingsKeys {
     val EXTERNAL_TCP_HOST = stringPreferencesKey("external_tcp_host")
     val EXTERNAL_TCP_PORT = intPreferencesKey("external_tcp_port")
     val EXTERNAL_TCP_NAME = stringPreferencesKey("external_tcp_name")
+    val EXTERNAL_RECEIVER_PROFILE = stringPreferencesKey("external_receiver_profile")
 
     // Coordinate display
     val DEFAULT_COORDINATE_NAME_PREFIX = stringPreferencesKey("default_coordinate_name_prefix")
@@ -69,6 +70,7 @@ class SettingsLocalDataSource(private val context: Context) {
     val externalTcpHost: Flow<String?> = context.appDataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_HOST] }
     val externalTcpPort: Flow<Int?> = context.appDataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_PORT] }
     val externalTcpName: Flow<String?> = context.appDataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_NAME] }
+    val externalReceiverProfileRaw: Flow<String?> = context.appDataStore.data.map { it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] }
 
     // Coordinate display
     val defaultCoordinateNamePrefix: Flow<String?> = context.appDataStore.data.map { it[SettingsKeys.DEFAULT_COORDINATE_NAME_PREFIX] }
@@ -106,6 +108,7 @@ class SettingsLocalDataSource(private val context: Context) {
     suspend fun setExternalTcp(host: String, port: Int) { context.appDataStore.edit { prefs ->
         prefs[SettingsKeys.EXTERNAL_TCP_HOST] = host; prefs[SettingsKeys.EXTERNAL_TCP_PORT] = port } }
     suspend fun setExternalTcpName(name: String) { context.appDataStore.edit { it[SettingsKeys.EXTERNAL_TCP_NAME] = name } }
+    suspend fun setExternalReceiverProfile(prefKey: String) { context.appDataStore.edit { it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] = prefKey } }
     suspend fun clearExternalTcp() { context.appDataStore.edit { prefs ->
         prefs.remove(SettingsKeys.EXTERNAL_TCP_HOST); prefs.remove(SettingsKeys.EXTERNAL_TCP_PORT); prefs.remove(SettingsKeys.EXTERNAL_TCP_NAME) } }
     suspend fun setExternalBtAddress(address: String) { context.appDataStore.edit { it[SettingsKeys.EXTERNAL_BT_ADDR] = address } }

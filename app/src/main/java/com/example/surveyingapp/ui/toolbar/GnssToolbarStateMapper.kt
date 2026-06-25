@@ -37,10 +37,10 @@ object GnssToolbarStateMapper {
         else fix.provider != Provider.INTERNAL
 
     /** Display state shown while there is no current-provider fix (just switched / acquiring). */
-    fun waiting(source: LocationSourceType): GnssToolbarState {
+    fun waiting(source: LocationSourceType, externalLabel: String = "RS2+"): GnssToolbarState {
         val isInternal = source == LocationSourceType.INTERNAL
         return GnssToolbarState(
-            sourceText = GnssStatusFormatter.formatSource(isInternal),
+            sourceText = GnssStatusFormatter.formatSource(isInternal, externalLabel),
             // External shows an explicit "Waiting" so RS2+ is never paired with an ambiguous blank.
             fixText = if (isInternal) "--" else "Waiting",
             fixLevel = GnssStatusLevel.NONE,
@@ -63,9 +63,10 @@ object GnssToolbarStateMapper {
         selectedSource: LocationSourceType,
         fix: Fix?,
         sky: SkySnapshot,
-        nowMs: Long
+        nowMs: Long,
+        externalLabel: String = "RS2+"
     ): ToolbarMapResult {
-        if (fix == null) return ToolbarMapResult.Render(waiting(selectedSource))
+        if (fix == null) return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
         val ageMs = try {
             Duration.between(fix.timeUtc, Instant.ofEpochMilli(nowMs)).toMillis()
@@ -134,7 +135,7 @@ object GnssToolbarStateMapper {
 
         return ToolbarMapResult.Render(
             GnssToolbarState(
-                sourceText = GnssStatusFormatter.formatSource(isInternal),
+                sourceText = GnssStatusFormatter.formatSource(isInternal, externalLabel),
                 fixText = fixText,
                 fixLevel = fixLevel,
                 satelliteText = satelliteText,

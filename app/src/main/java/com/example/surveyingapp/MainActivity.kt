@@ -100,6 +100,9 @@ class MainActivity : AppCompatActivity() {
     /** View-only renderer for the GNSS status toolbar (see [GnssToolbarRenderer]). */
     private lateinit var toolbarRenderer: GnssToolbarRenderer
 
+    /** Short label of the selected external receiver profile (e.g. "RS2+"/"RS4"); updated from settings. */
+    @Volatile private var externalReceiverLabel: String = "RS2+"
+
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null
     private var batteryFillClip: ClipDrawable? = null
@@ -286,8 +289,8 @@ class MainActivity : AppCompatActivity() {
             }
             
             val isInternal = initialProvider == com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL
-            val srcLabel = if (isInternal) "Internal" else "RS2+"
-            
+            val srcLabel = if (isInternal) "Internal" else externalReceiverLabel
+
             // Set initial source label
             tokenSource.value.text = srcLabel
             tokenSource.separator?.isVisible = true
@@ -568,6 +571,15 @@ class MainActivity : AppCompatActivity() {
     /** Status bar observers */
     private fun startStatusBarObservers() {
 
+        // Track the selected external receiver profile so the source token shows its label
+        // (e.g. "RS4") instead of always "RS2+". Profile changes rarely; the latest value is read
+        // when the toolbar state is rendered.
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepository.externalReceiverProfile.collect { externalReceiverLabel = it.shortLabel }
+            }
+        }
+
         // Immediate source label + battery update whenever the SELECTED source changes.
         // We key off the persisted locationSource (set the instant the user taps a radio),
         // NOT activeProvider — activeProvider only flips to EXTERNAL_TCP after the TCP/HTTP
@@ -627,7 +639,7 @@ class MainActivity : AppCompatActivity() {
 
                         // All display decisions live in the mapper. MainActivity only collects,
                         // maps, and renders — it no longer contains GNSS toolbar logic.
-                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, System.currentTimeMillis())) {
+                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, System.currentTimeMillis(), externalReceiverLabel)) {
                             is ToolbarMapResult.Ignore -> {
                                 // Wrong-provider / stale / invalid fix: keep the existing
                                 // placeholders untouched (throttled diagnostics only).
@@ -745,7 +757,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         latestSkySnapshot = null
         lastDataUpdateTime = System.currentTimeMillis()
-        toolbarRenderer.render(GnssToolbarStateMapper.waiting(source))
+        toolbarRenderer.render(GnssToolbarStateMapper.waiting(source, externalReceiverLabel))
         tokenSource.value.alpha = 1.0f
     }
 
@@ -893,7 +905,7 @@ class MainActivity : AppCompatActivity() {
                 try {
                     // Get configured IP from settings
                     val ip = runCatching {
-                        SurveyingApp.settingsRepo.externalTcpHost.first()
+                        settingsRepository.externalTcpHost.first()
                     }.getOrNull()
 
                     // No IP configured - hide battery and wait
@@ -1163,7 +1175,7 @@ class MainActivity : AppCompatActivity() {
             // Reset status display
             lifecycleScope.launch {
                 val prov = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL }
-                val srcLabel = if (prov == com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
+                val srcLabel = if (prov == com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL) "Internal" else externalReceiverLabel
                 tokenSource.value.text = srcLabel
             }
 

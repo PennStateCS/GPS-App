@@ -17,8 +17,10 @@ interface SettingsRepository {
     val externalTcpHost: Flow<String?>
     val externalTcpPort: Flow<Int?>
     val externalTcpName: Flow<String?>
+    val externalReceiverProfile: Flow<com.example.surveyingapp.settings.model.ExternalReceiverProfile>
 
     suspend fun setLocationSource(v: LocationSourceType)
+    suspend fun setExternalReceiverProfile(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile)
     suspend fun setExternalConnType(v: ExternalConnectionType)
     suspend fun setExternalTcp(host: String, port: Int, name: String = "")
     suspend fun clearExternalTcp()

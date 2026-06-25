@@ -22,7 +22,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.CoordinateFactory
 import com.example.surveyingapp.domain.model.EmbeddedModelLocation
@@ -78,6 +78,7 @@ class AddCoordinateDialogFragment(
     @Inject lateinit var fixSwitchboard: FixSwitchboard
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var sourceSettings: SourceSettings
+    @Inject lateinit var coordinateRepository: CoordinateRepository
 
     private val captureVm: CaptureViewModel by viewModels()
 
@@ -197,7 +198,7 @@ class AddCoordinateDialogFragment(
             val prefix = coordSettings.defaultNamePrefix
             val proposedName = if (coordSettings.autoIncrementNames) {
                 val count = withContext(Dispatchers.IO) {
-                    AppDatabase.getDatabase(requireContext()).coordinateDao().count()
+                    coordinateRepository.count()
                 }
                 "$prefix ${count + 1}"
             } else {

@@ -81,7 +81,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
     @Inject lateinit var repository: CoordinateRepository
-    private val settingsRepo: SettingsRepository by lazy { SurveyingApp.settingsRepo }
+    @Inject lateinit var settingsRepo: SettingsRepository
 
     // Selected device for TCP connection (class scope)
     private var selectedDevice: Pair<String, Int>? = null
@@ -696,6 +696,57 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val rs2OptionsLayout = view.findViewById<LinearLayout>(R.id.layout_rs2_options)
         val editHost = view.findViewById<EditText>(R.id.edit_host)
         val editPort = view.findViewById<EditText>(R.id.edit_port)
+
+        // ── External receiver profile selector ──────────────────────────────────────
+        // All profiles use the SAME External TCP NMEA pipeline; the profile only carries display
+        // labels + sensible defaults. Added programmatically to the top of the external options so
+        // no layout change is needed. Selecting a profile persists it and applies its default port.
+        run {
+            val profiles = com.example.surveyingapp.settings.model.ExternalReceiverProfile.entries
+            val ctx = requireContext()
+            val profileLabel = TextView(ctx).apply {
+                text = "Receiver profile"
+                setPadding(0, dpToPx(8), 0, dpToPx(2))
+            }
+            val profileSpinner = android.widget.Spinner(ctx).apply {
+                adapter = android.widget.ArrayAdapter(
+                    ctx, android.R.layout.simple_spinner_dropdown_item, profiles.map { it.label }
+                )
+            }
+            val profileHint = TextView(ctx).apply {
+                textSize = 12f
+                setPadding(0, dpToPx(2), 0, dpToPx(8))
+                visibility = View.GONE
+            }
+            rs2OptionsLayout?.addView(profileLabel, 0)
+            rs2OptionsLayout?.addView(profileSpinner, 1)
+            rs2OptionsLayout?.addView(profileHint, 2)
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                val current = runCatching { settingsRepo.externalReceiverProfile.first() }
+                    .getOrDefault(com.example.surveyingapp.settings.model.ExternalReceiverProfile.DEFAULT)
+                profileSpinner.setSelection(profiles.indexOf(current))
+            }
+
+            profileSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, v: View?, position: Int, id: Long) {
+                    val profile = profiles[position]
+                    profileHint.text = profile.hint ?: ""
+                    profileHint.visibility = if (profile.hint != null) View.VISIBLE else View.GONE
+                    // Persist + apply default port only on a genuine change (not the initial selection).
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val persisted = runCatching { settingsRepo.externalReceiverProfile.first() }
+                            .getOrDefault(com.example.surveyingapp.settings.model.ExternalReceiverProfile.DEFAULT)
+                        if (persisted != profile) {
+                            runCatching { settingsRepo.setExternalReceiverProfile(profile) }
+                            editPort?.setText(profile.defaultPort.toString())
+                        }
+                    }
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+        }
+
         val btnConnect = view.findViewById<Button>(R.id.btn_connect)
         val btnDisconnect = view.findViewById<Button>(R.id.btn_disconnect_device)
         val textDeviceStatus = view.findViewById<TextView>(R.id.text_device_status)
@@ -788,7 +839,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     focusedView.clearFocus()
                 }
                 val host = editHost?.text?.toString()?.trim().orEmpty()
-                val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9001
+                val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9000
                 if (host.isNotEmpty()) {
                     selectedDevice = host to port
                     selectedDeviceLabel = getString(R.string.host_port, host, port)
@@ -840,25 +891,15 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
         }
 
-        // Prefill inline inputs with last used values
+        // Prefill inline inputs with last used values. The host is left blank on first use (no
+        // hardcoded device address), and the port defaults to 9000 (the most common Reach/RS2+ TCP
+        // port). Nothing is persisted here — settings are only saved when the user connects.
         lifecycleScope.launch {
             val lastHost = settingsRepo.externalTcpHost.first()
             val lastPort = settingsRepo.externalTcpPort.first()
 
-            // Pre-populate with your GPS device if no previous settings
-            if (lastHost.isNullOrBlank()) {
-                editHost?.setText("192.168.2.174")
-                settingsRepo.setExternalTcp("192.168.2.174", 9001)
-            } else {
-                editHost?.setText(lastHost)
-            }
-
-            if (lastPort != null) {
-                editPort?.setText(lastPort.toString())
-            } else {
-                editPort?.setText("9001")
-                settingsRepo.setExternalTcp(lastHost ?: "192.168.2.174", 9001)
-            }
+            editHost?.setText(lastHost.orEmpty())
+            editPort?.setText(lastPort?.toString() ?: "9000")
         }
 
         // Observe stored TCP host/port and auto-diagnose on new device

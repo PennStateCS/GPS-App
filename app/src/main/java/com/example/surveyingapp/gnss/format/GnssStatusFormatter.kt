@@ -12,8 +12,13 @@ import java.util.Locale
  */
 object GnssStatusFormatter {
 
-    /** Source label as shown next to the live data ("Internal" / "RS2+"). */
-    fun formatSource(isInternal: Boolean): String = if (isInternal) "Internal" else "RS2+"
+    /**
+     * Source label shown next to the live data ("Internal" for internal GPS, otherwise the selected
+     * external receiver profile's short label). [externalLabel] defaults to "RS2+" so existing
+     * callers and tests keep their previous wording until a profile label is supplied.
+     */
+    fun formatSource(isInternal: Boolean, externalLabel: String = "RS2+"): String =
+        if (isInternal) "Internal" else externalLabel
 
     /**
      * Fix/SOL label. Internal GPS collapses to "GPS"/"No Fix"; external receivers expose the full

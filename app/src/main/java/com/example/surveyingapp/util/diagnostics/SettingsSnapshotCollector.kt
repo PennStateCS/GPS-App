@@ -70,6 +70,8 @@ object SettingsSnapshotCollector {
         val port = runCatching { repo.externalTcpPort.first() }.getOrNull()
         val name = runCatching { repo.externalTcpName.first() }.getOrNull()
         val connType = runCatching { repo.externalConnType.first() }.getOrNull()
+        val profile = runCatching { repo.externalReceiverProfile.first() }.getOrNull()
+        sb.appendLine("Receiver profile        : ${profile?.label ?: "unknown"}")
         sb.appendLine("Receiver label/name     : ${name?.takeIf { it.isNotBlank() } ?: "not set"}")
         sb.appendLine("Connection type         : ${connType?.name ?: "unknown"}")
         sb.appendLine("Host / IP               : ${host?.takeIf { it.isNotBlank() } ?: "not configured"}")
