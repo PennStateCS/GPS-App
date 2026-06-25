@@ -21,6 +21,9 @@ object DefaultNmeaRegistry {
             "GSV" to GsvParser(),
             "ZDA" to ZdaParser(),
             "GST" to GstParser(),
+            // Emlid Reach RS4 / RS4 Pro custom messages (diagnostics only; do not affect fixes).
+            "EBP" to EbpParser(),
+            "ETC" to EtcParser(),
         )
         return NmeaRegistry(map, verifyChecksum)
     }

@@ -90,9 +90,29 @@ class NmeaFuser(
             is GSV -> handleGsv(sentence)
             is ZDA -> handleZda(sentence)
             is GST -> lastGst = sentence  // store accuracy ellipse; used in next fix emission
+            is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
+            is ETC -> { etcCount++; lastEtc = sentence }  // Emlid tilt — diagnostics only
             else   -> Unit // unknown sentence type — fuser is tolerant by design
         }
     }
+
+    // ── RS4 custom-sentence diagnostics (do not affect fix generation) ──────────
+    private var ebpCount = 0
+    private var etcCount = 0
+    private var lastEtc: ETC? = null
+
+    /** Snapshot of Emlid custom-sentence activity, for diagnostics. */
+    data class NmeaCustomStats(
+        val ebpSeen: Boolean,
+        val etcSeen: Boolean,
+        val ebpCount: Int,
+        val etcCount: Int,
+        val latestEtc: ETC?,
+    )
+
+    /** Read-only view of EBP/ETC activity seen by this fuser (diagnostics). */
+    val nmeaCustomStats: NmeaCustomStats
+        get() = NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc)
 
     private fun handleZda(zda: ZDA) {
         val epochMs = zda.epochMillis
