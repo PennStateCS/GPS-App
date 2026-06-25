@@ -1,5 +1,6 @@
 package com.example.surveyingapp.data.repository.impl
 
+import com.example.surveyingapp.data.files.ModelFileCleaner
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.ModelEntity
 import com.example.surveyingapp.domain.model.Model
@@ -125,8 +126,9 @@ class ModelRepositoryImpl @javax.inject.Inject constructor(private val modelDao:
     }
 
     override suspend fun deleteModel(model: Model) {
-        // Delete thumbnail file from disk first (if it exists)
-        deleteThumbnailFile(model.thumbnailFilePath)
+        // Delete thumbnail file from disk first (if it exists). The imported model file is removed
+        // by the model-list UI; both delegate to ModelFileCleaner. See docs/data-architecture.md.
+        ModelFileCleaner.deleteThumbnailFile(model.thumbnailFilePath)
 
         val entity = ModelEntity(
             id = model.id,
@@ -145,35 +147,4 @@ class ModelRepositoryImpl @javax.inject.Inject constructor(private val modelDao:
         modelDao.deleteModel(entity)
     }
 
-    override suspend fun deleteModelById(id: String) {
-        // Fetch the model first so we can clean up its thumbnail file
-        val entity = modelDao.getModelById(id)
-        if (entity != null) {
-            deleteThumbnailFile(entity.thumbnailFilePath)
-        }
-        modelDao.deleteModelById(id)
-    }
-
-    /**
-     * Deletes the thumbnail file at [filePath] from disk.
-     * Silently ignores null/blank paths or files that don't exist.
-     */
-    private fun deleteThumbnailFile(filePath: String?) {
-        if (filePath.isNullOrBlank()) return
-        try {
-            val file = java.io.File(filePath)
-            if (file.exists() && file.isFile) {
-                val deleted = file.delete()
-                if (!deleted) {
-                    android.util.Log.w("ModelRepository", "Failed to delete thumbnail: $filePath")
-                } else {
-                    android.util.Log.d("ModelRepository", "Deleted thumbnail: $filePath")
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("ModelRepository", "Error deleting thumbnail file: $filePath", e)
-        }
-    }
-
-    override suspend fun getModelCount(): Int = modelDao.getModelCount()
 }

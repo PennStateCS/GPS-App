@@ -24,14 +24,15 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.example.surveyingapp.R
-import com.example.surveyingapp.SurveyingApp
 import android.app.Activity
 import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.fragment.NavHostFragment
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.repository.ModelRepository
+import com.example.surveyingapp.domain.repository.SettingsRepository
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import com.example.surveyingapp.domain.model.EmbeddedModelLocation
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.domain.model.ModelLocationConfidence
@@ -64,6 +65,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@AndroidEntryPoint
 class CoordinateDetailFragment : Fragment() {
 
     companion object {
@@ -72,6 +74,9 @@ class CoordinateDetailFragment : Fragment() {
             arguments = Bundle().apply { putString(ARG_ID, id) }
         }
     }
+
+    @Inject lateinit var modelRepository: ModelRepository
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     private lateinit var viewModel: CoordinatesViewModel
     private var currentId: String? = null
@@ -164,17 +169,13 @@ class CoordinateDetailFragment : Fragment() {
 
     // ── Format helpers ─────────────────────────────────────────────────────────
 
-    private fun fmt6(v: Double) = String.format(Locale.US, "%.6f", v)
-    private fun fmtM2(v: Double) = String.format(Locale.US, "%.2f m", v)
-    private fun fmtM3(v: Double) = String.format(Locale.US, "%.3f m", v)
-    private fun fmtDop(v: Double) = String.format(Locale.US, "%.1f", v)
-    private fun rtkLabel(s: String?) = when (s?.uppercase(Locale.US)) {
-        "FIX"    -> "Fixed (RTK)"
-        "FLOAT"  -> "Float (RTK)"
-        "DGPS"   -> "DGPS"
-        "SINGLE" -> "Single"
-        else     -> s ?: "--"
-    }
+    // Display formatting/labels live in CoordinateDetailFormatter (pure + unit-tested). These thin
+    // delegates keep the existing call sites unchanged.
+    private fun fmt6(v: Double) = CoordinateDetailFormatter.fmt6(v)
+    private fun fmtM2(v: Double) = CoordinateDetailFormatter.fmtM2(v)
+    private fun fmtM3(v: Double) = CoordinateDetailFormatter.fmtM3(v)
+    private fun fmtDop(v: Double) = CoordinateDetailFormatter.fmtDop(v)
+    private fun rtkLabel(s: String?) = CoordinateDetailFormatter.rtkLabel(s)
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -310,7 +311,7 @@ class CoordinateDetailFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                SurveyingApp.settingsRepo.coordinateDisplaySettings.collect { settings ->
+                settingsRepository.coordinateDisplaySettings.collect { settings ->
                     showAccuracyIndicators = settings.showAccuracyIndicators
                     lastCoordinate?.let { bindCoordinate(it) } ?: loadCurrentId()
                 }
@@ -425,18 +426,7 @@ class CoordinateDetailFragment : Fragment() {
         startDistanceBearing(c)
     }
 
-    private fun captureMethodLabel(m: String?): String? = when (m?.lowercase(Locale.US)) {
-        "internal_gps"   -> "Internal GPS"
-        "external_gnss"  -> "External GNSS"
-        "rtk_receiver"   -> "RTK Receiver"
-        "model_embedded" -> "Model embedded location"
-        "map_tap"        -> "Map tap"
-        "manual"         -> "Manual entry"
-        "imported"       -> "Imported"
-        "averaged"       -> "Averaged"
-        null, ""         -> null
-        else             -> m
-    }
+    private fun captureMethodLabel(m: String?): String? = CoordinateDetailFormatter.captureMethodLabel(m)
 
     private fun bindSummaryCard(c: Coordinate) {
         // Note shown as flowing text; point code/type as compact rows
@@ -483,14 +473,7 @@ class CoordinateDetailFragment : Fragment() {
         cardProjection?.visibility = View.GONE
     }
 
-    private fun providerLabel(p: String?): String? = when (p?.lowercase(Locale.US)) {
-        "fused"      -> "Internal GPS (fused)"
-        "rs2-tcp"    -> "External GNSS (TCP)"
-        "rs2-bt"     -> "External GNSS (Bluetooth)"
-        "model"      -> "Model"
-        null, "", "other" -> null
-        else         -> p
-    }
+    private fun providerLabel(p: String?): String? = CoordinateDetailFormatter.providerLabel(p)
 
     private fun bindGnssCard(c: Coordinate) {
         // Provider moved to capture card; only GNSS quality fields here
@@ -602,8 +585,7 @@ class CoordinateDetailFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val model = withContext(Dispatchers.IO) {
                 try {
-                    ModelRepositoryImpl(AppDatabase.getDatabase(requireContext()).modelDao())
-                        .getModelById(modelId)
+                    modelRepository.getModelById(modelId)
                 } catch (e: Exception) {
                     Log.w("CoordinateDetailFragment", "Failed to load linked model $modelId", e)
                     null
@@ -702,8 +684,7 @@ class CoordinateDetailFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             val model = withContext(Dispatchers.IO) {
                 try {
-                    ModelRepositoryImpl(AppDatabase.getDatabase(requireContext()).modelDao())
-                        .getModelById(modelId)
+                    modelRepository.getModelById(modelId)
                 } catch (_: Exception) { null }
             }
             // Prefer the origin captured at import (reprojection erases the in-file signal);
@@ -831,99 +812,25 @@ class CoordinateDetailFragment : Fragment() {
     // ── Badges ─────────────────────────────────────────────────────────────────
 
     private fun bindBadges(c: Coordinate) {
-        applySourceBadge(c)
-        applyFixBadge(c)
-        applyExtraBadge(c)
-        if (showAccuracyIndicators) applyAccuracyBadge(c) else badgeAccuracy?.visibility = View.GONE
-        val anyVisible = listOf(badgeSource, badgeRtk, badgeExtra, badgeAccuracy)
-            .any { it?.visibility == View.VISIBLE }
-        rowBadges?.visibility = if (anyVisible) View.VISIBLE else View.GONE
+        // Badge label/color/visibility decisions live in CoordinateDetailUiMapper (pure + tested);
+        // this method only applies the resulting state to the TextViews.
+        val badges = CoordinateDetailUiMapper.badges(c, showAccuracyIndicators)
+        applyBadge(badgeSource, badges.source)
+        applyBadge(badgeRtk, badges.fix)
+        applyBadge(badgeExtra, badges.extra)
+        applyBadge(badgeAccuracy, badges.accuracy)
+        rowBadges?.visibility = if (badges.anyVisible) View.VISIBLE else View.GONE
     }
 
-    private fun applySourceBadge(c: Coordinate) {
-        val tv = badgeSource ?: return
-        val cm = c.captureMethod?.trim()?.lowercase(Locale.US)
-        val prov = c.provider.trim().lowercase(Locale.US)
-        val (label, color) = when {
-            cm == "model_embedded" || prov == "model"        -> "MODEL EMBEDDED LOCATION" to 0xFF1565C0.toInt()
-            cm == "imported"                                 -> "IMPORTED"     to 0xFF455A64.toInt()
-            cm == "manual" || cm == "map_tap"                -> "MANUAL"       to 0xFF455A64.toInt()
-            prov.contains("rs2") || cm == "external_gnss" ||
-                cm == "rtk_receiver"                         -> "RS2+"         to 0xFF1565C0.toInt()
-            else                                             -> "INTERNAL GPS" to 0xFF1565C0.toInt()
-        }
-        tv.text = label
-        tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
-        tv.visibility = View.VISIBLE
-    }
-
-    private fun applyFixBadge(c: Coordinate) {
-        val tv = badgeRtk ?: return
-        val cm = c.captureMethod?.trim()?.lowercase(Locale.US)
-        // Non-GNSS sources: quality badge is not applicable
-        if (cm == "model_embedded" || cm == "imported" || cm == "manual" || cm == "map_tap") {
-            tv.visibility = View.GONE; return
-        }
-        val rtk = c.rtkStatus?.trim()?.uppercase(Locale.US)
-        if (rtk.isNullOrBlank()) { tv.visibility = View.GONE; return }
-        val (label, color) = when (rtk) {
-            "FIX", "FIXED"                -> "FIXED"  to 0xFF2E7D32.toInt()
-            "FLOAT"                       -> "FLOAT"  to 0xFFE65100.toInt()
-            "DGPS"                        -> "DGPS"   to 0xFF1565C0.toInt()
-            "SINGLE", "GPS", "AUTONOMOUS" -> "SINGLE" to 0xFF1565C0.toInt()
-            "NO FIX", "NOFIX", "NONE"     -> "NO FIX" to 0xFFC62828.toInt()
-            else                          -> "UNKNOWN" to 0xFF607D8B.toInt()
-        }
-        tv.text = label
-        tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
-        tv.contentDescription = when (label) {
-            "FIXED"  -> "RTK fixed solution"
-            "FLOAT"  -> "RTK float solution"
-            "SINGLE" -> "Standard GPS"
-            "DGPS"   -> "Differential GPS"
-            "NO FIX" -> "No GNSS fix"
-            else     -> "Fix quality unknown"
-        }
-        tv.visibility = View.VISIBLE
-    }
-
-    private fun applyExtraBadge(c: Coordinate) {
-        val tv = badgeExtra ?: return
-        when {
-            (c.averagedSamples ?: 0) > 0 -> {
-                tv.text = "AVERAGED"
-                tv.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF455A64.toInt())
-                tv.visibility = View.VISIBLE
-            }
-            c.icon.startsWith("model:") -> {
-                tv.text = "MODEL LINKED"
-                tv.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF1565C0.toInt())
-                tv.visibility = View.VISIBLE
-            }
-            else -> tv.visibility = View.GONE
-        }
-    }
-
-    private fun applyAccuracyBadge(c: Coordinate) {
-        val tv = badgeAccuracy ?: return
-        // Only use measured accuracy — do not estimate from HDOP (misleading as a badge).
-        val hAcc = c.horizontalAccuracyM
-        if (hAcc == null) { tv.visibility = View.GONE; return }
-        val formatted = when {
-            hAcc < 1.0  -> String.format(Locale.US, "H ±%.2f m", hAcc)
-            hAcc < 10.0 -> String.format(Locale.US, "H ±%.1f m", hAcc)
-            else        -> String.format(Locale.US, "H ±%.0f m", hAcc)
-        }
-        val color = when {
-            hAcc <= 0.05 -> 0xFF2E7D32.toInt()   // green  – survey-grade RTK
-            hAcc <= 0.30 -> 0xFFF9A825.toInt()   // amber  – sub-metre
-            else         -> 0xFFEF6C00.toInt()   // orange – degraded / single-point
-        }
-        tv.text = formatted
-        tv.backgroundTintList = android.content.res.ColorStateList.valueOf(color)
-        tv.contentDescription = String.format(
-            Locale.US, "Horizontal accuracy plus or minus %.2f meters", hAcc
-        )
+    /** Renders a single badge: applies [state] to [tv], or hides it when [state] is null. */
+    private fun applyBadge(tv: TextView?, state: BadgeUi?) {
+        tv ?: return
+        if (state == null) { tv.visibility = View.GONE; return }
+        tv.text = state.text
+        tv.backgroundTintList = android.content.res.ColorStateList.valueOf(state.colorArgb)
+        // Only the fix/accuracy badges carry an accessibility description; leave the others' as-is
+        // (matches the previous per-badge behavior — source/extra never set contentDescription).
+        state.contentDescription?.let { tv.contentDescription = it }
         tv.visibility = View.VISIBLE
     }
 
@@ -948,9 +855,7 @@ class CoordinateDetailFragment : Fragment() {
             val modelId = iconName.removePrefix("model:")
             return withContext(Dispatchers.IO) {
                 try {
-                    val db   = AppDatabase.getDatabase(ctx)
-                    val repo = ModelRepositoryImpl(db.modelDao())
-                    val model = repo.getModelById(modelId) ?: return@withContext null
+                    val model = modelRepository.getModelById(modelId) ?: return@withContext null
                     val thumbPath = model.thumbnailFilePath
                     if (thumbPath.isNullOrBlank()) return@withContext null
                     val thumbBmp = BitmapFactory.decodeFile(thumbPath) ?: return@withContext null
@@ -1013,21 +918,9 @@ class CoordinateDetailFragment : Fragment() {
         return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360
     }
 
-    private fun cardinalDir(deg: Double) = when {
-        deg < 22.5 || deg >= 337.5 -> "N"
-        deg < 67.5  -> "NE"
-        deg < 112.5 -> "E"
-        deg < 157.5 -> "SE"
-        deg < 202.5 -> "S"
-        deg < 247.5 -> "SW"
-        deg < 292.5 -> "W"
-        else        -> "NW"
-    }
+    private fun cardinalDir(deg: Double) = CoordinateDetailFormatter.cardinalDir(deg)
 
-    private fun fmtDistance(m: Double) = when {
-        m < 1000.0 -> String.format(Locale.US, "%.1f m", m)
-        else       -> String.format(Locale.US, "%.2f km", m / 1000.0)
-    }
+    private fun fmtDistance(m: Double) = CoordinateDetailFormatter.fmtDistance(m)
 
     private fun startDistanceBearing(c: Coordinate) {
         val switchboard = try {
@@ -1055,8 +948,7 @@ class CoordinateDetailFragment : Fragment() {
         val current = lastCoordinate ?: return
         viewLifecycleOwner.lifecycleScope.launch {
             val models = try {
-                val db = AppDatabase.getDatabase(requireContext())
-                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+                modelRepository.getAllModels().first()
             } catch (_: Exception) { emptyList() }
             EditCoordinateDialogFragment(current, models) { updated ->
                 viewLifecycleOwner.lifecycleScope.launch {

@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import com.example.surveyingapp.data.files.ModelFileCleaner
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -116,13 +117,10 @@ class ModelsFragment : Fragment() {
                                 .setTitle("Delete Model")
                                 .setMessage("Are you sure you want to delete '${model.name}'?")
                                 .setPositiveButton("Delete") { _, _ ->
+                                    // ViewModel deletes the DB row + thumbnail (via the repository);
+                                    // remove the imported model file here. Both go through ModelFileCleaner.
                                     viewModel.deleteModel(model)
-                                    // Delete the physical file
-                                    try {
-                                        File(model.filePath).delete()
-                                    } catch (e: Exception) {
-                                        Log.w("ModelsFragment", "File deletion failed for ${model.filePath}: ${e.message}")
-                                    }
+                                    ModelFileCleaner.deleteModelFile(model.filePath)
                                 }
                                 .setNegativeButton("Cancel", null)
                                 .show()

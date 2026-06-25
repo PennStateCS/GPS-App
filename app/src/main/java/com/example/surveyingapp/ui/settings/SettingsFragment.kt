@@ -2125,16 +2125,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
             if (deviceInfo.selfTests.isNotEmpty()) {
                 layoutSelfTests?.visibility = View.VISIBLE
-                val passedCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.PASSED }
-                val failedCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.FAILED }
-                val warningCount = deviceInfo.selfTests.count { it.status == com.example.surveyingapp.domain.model.TestStatus.WARNING }
-                val totalCount = deviceInfo.selfTests.size
-                val summaryColor = when {
-                    failedCount > 0 -> android.R.color.holo_red_dark
-                    warningCount > 0 -> android.R.color.holo_orange_dark
-                    else -> android.R.color.holo_green_dark
-                }
-                textSelfTestsSummary?.text = "$passedCount/$totalCount passed"
+                // Summary text + color decisions live in SelfTestDisplay (pure + unit-tested).
+                val summaryColor = SelfTestDisplay.summaryColorRes(deviceInfo.selfTests)
+                textSelfTestsSummary?.text = SelfTestDisplay.summaryText(deviceInfo.selfTests)
                 try { textSelfTestsSummary?.setTextColor(ContextCompat.getColor(requireContext(), summaryColor)) } catch (_: Exception) {}
                 layoutSelfTestsGrid?.removeAllViews()
                 try { populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests) } catch (e: Exception) { Log.w("SettingsFragment", "populateSelfTestsGrid failed", e) }
@@ -2193,12 +2186,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             try { background = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background) } catch (_: Exception) {}
             val statusIcon = TextView(context).apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { rightMargin = dpToPx(6) }
-                val (icon, color) = when (test.status) {
-                    TestStatus.PASSED -> "✓" to android.R.color.holo_green_dark
-                    TestStatus.FAILED -> "✗" to android.R.color.holo_red_dark
-                    TestStatus.WARNING -> "⚠" to android.R.color.holo_orange_dark
-                    TestStatus.UNKNOWN -> "?" to android.R.color.darker_gray
-                }
+                val icon = SelfTestDisplay.statusIcon(test.status)
+                val color = SelfTestDisplay.statusColorRes(test.status)
                 text = icon
                 textSize = 14f
                 try { setTextColor(ContextCompat.getColor(context, color)) } catch (_: Exception) {}

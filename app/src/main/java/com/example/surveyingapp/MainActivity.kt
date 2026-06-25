@@ -29,6 +29,8 @@ import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.ui.toolbar.GnssStatusLevel
 import com.example.surveyingapp.ui.toolbar.GnssToolbarState
+import com.example.surveyingapp.ui.toolbar.GnssToolbarRenderer
+import com.example.surveyingapp.ui.toolbar.ToolbarTokens
 import com.example.surveyingapp.ui.toolbar.GnssToolbarStateMapper
 import com.example.surveyingapp.ui.toolbar.ToolbarMapResult
 import com.example.surveyingapp.service.LocationService
@@ -86,22 +88,17 @@ class MainActivity : AppCompatActivity() {
     // Replay controller for NMEA playback
     private var replayController: NmeaReplayController? = null
 
-    // Token view holder for status bar
-    private data class TokenViews(
-        val root: View,
-        val label: TextView,
-        val value: TextView,
-        val icon: ImageView,
-        val separator: TextView? = null
-    )
+    // Token view holder for status bar (ToolbarTokens lives in ui.toolbar, shared with the renderer)
+    private lateinit var tokenSource: ToolbarTokens
+    private lateinit var tokenFix: ToolbarTokens
+    private lateinit var tokenSats: ToolbarTokens
+    private lateinit var tokenAcc: ToolbarTokens
+    private lateinit var tokenCoord: ToolbarTokens
+    private lateinit var tokenAlt: ToolbarTokens
+    private lateinit var tokenBatt: ToolbarTokens
 
-    private lateinit var tokenSource: TokenViews
-    private lateinit var tokenFix: TokenViews
-    private lateinit var tokenSats: TokenViews
-    private lateinit var tokenAcc: TokenViews
-    private lateinit var tokenCoord: TokenViews
-    private lateinit var tokenAlt: TokenViews
-    private lateinit var tokenBatt: TokenViews
+    /** View-only renderer for the GNSS status toolbar (see [GnssToolbarRenderer]). */
+    private lateinit var toolbarRenderer: GnssToolbarRenderer
 
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null
@@ -174,6 +171,14 @@ class MainActivity : AppCompatActivity() {
         tokenCoord  = findToken(R.id.token_coord)
         tokenAlt    = findToken(R.id.token_alt)
         tokenBatt   = findToken(R.id.token_batt)
+
+        // View-only toolbar renderer. Color resolution and battery-polling lifecycle stay here.
+        toolbarRenderer = GnssToolbarRenderer(
+            source = tokenSource, fix = tokenFix, sats = tokenSats, acc = tokenAcc,
+            coord = tokenCoord, alt = tokenAlt, batt = tokenBatt,
+            colorFor = ::levelColor,
+            onBatteryVisibilityChanged = ::updateBatteryVisibility
+        )
 
         // Static labels
         tokenSource.label.setText(R.string.status_token_src)
@@ -382,13 +387,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun findToken(id: Int): TokenViews {
+    private fun findToken(id: Int): ToolbarTokens {
         val root = findViewById<ViewGroup>(id)
         val label = root.findViewById<TextView>(R.id.label)
         val value = root.findViewById<TextView>(R.id.value)
         val icon = root.findViewById<ImageView>(R.id.icon)
         val sep = root.findViewById<TextView?>(R.id.separator)
-        return TokenViews(root, label, value, icon, sep)
+        return ToolbarTokens(root, label, value, icon, sep)
     }
 
     /** Permission flow */
@@ -648,7 +653,7 @@ class MainActivity : AppCompatActivity() {
                                 }
                                 lastDataUpdateTime = System.currentTimeMillis()
                                 withContext(Dispatchers.Main) {
-                                    renderGnssToolbarState(state)
+                                    toolbarRenderer.render(state)
                                     tokenSource.value.alpha = 1.0f
                                 }
                             }
@@ -740,7 +745,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         latestSkySnapshot = null
         lastDataUpdateTime = System.currentTimeMillis()
-        renderGnssToolbarState(GnssToolbarStateMapper.waiting(source))
+        toolbarRenderer.render(GnssToolbarStateMapper.waiting(source))
         tokenSource.value.alpha = 1.0f
     }
 
@@ -1048,56 +1053,7 @@ class MainActivity : AppCompatActivity() {
         GnssStatusLevel.NONE    -> getColor(android.R.color.darker_gray)
     }
 
-    /**
-     * Applies a [GnssToolbarState] to the toolbar tokens. Pure view updates — NO GNSS decision
-     * logic (that all lives in [GnssToolbarStateMapper]). A null text field hides its token.
-     */
-    private fun renderGnssToolbarState(state: GnssToolbarState) {
-        // Source label
-        tokenSource.value.text = state.sourceText
-        tokenSource.separator?.isVisible = true
-
-        // Fix / SOL (always shown)
-        tokenFix.root.isVisible = true
-        tokenFix.label.text = "SOL"
-        tokenFix.value.text = state.fixText
-        tokenFix.value.setTextColor(levelColor(state.fixLevel))
-
-        // Satellites
-        val satsVisible = state.satelliteText != null
-        if (satsVisible) {
-            tokenSats.value.text = state.satelliteText
-            tokenSats.root.isVisible = true
-        } else {
-            tokenSats.root.isVisible = false
-        }
-
-        // Accuracy
-        val accVisible = state.accuracyText != null
-        if (accVisible) {
-            tokenAcc.value.text = state.accuracyText
-            tokenAcc.value.setTextColor(levelColor(state.accuracyLevel))
-            tokenAcc.root.isVisible = true
-        } else {
-            tokenAcc.root.isVisible = false
-        }
-
-        // Separator between SATS and ACC: visible only when both are shown
-        tokenSats.separator?.isVisible = satsVisible && accVisible
-        tokenAcc.separator?.isVisible = false
-
-        // Battery
-        tokenBatt.icon.contentDescription = if (state.isExternal) "receiver battery" else "device battery"
-        updateBatteryVisibility(state.batteryVisible)
-
-        // Coordinates
-        tokenCoord.value.text = state.latLonText
-        tokenCoord.root.isVisible = true
-
-        // Altitude (always visible with a placeholder)
-        tokenAlt.value.text = state.altitudeText
-        tokenAlt.root.isVisible = true
-    }
+    // Toolbar rendering now lives in GnssToolbarRenderer (see toolbarRenderer); call render(state).
 
 
     /**
