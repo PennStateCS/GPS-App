@@ -2,7 +2,6 @@ package com.example.surveyingapp.ui.capture
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.model.CoordinateFactory
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.model.Provider
@@ -12,6 +11,7 @@ import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.capture.ObservationSession
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.repository.CoordinateRepository
+import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.gnss.capture.FixAcceptanceSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -27,7 +27,8 @@ class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val coordinateRepository: CoordinateRepository,
     private val fixAcceptance: FixAcceptanceSettings,
-    private val sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
+    private val sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings,
+    private val settingsRepository: SettingsRepository
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
@@ -103,7 +104,7 @@ class CaptureViewModel @Inject constructor(
     fun startWithSavedPolicy() {
         viewModelScope.launch {
             val policy = runCatching {
-                SurveyingApp.settingsRepo.gnssCaptureSettings.first().toAveragingPolicy()
+                settingsRepository.gnssCaptureSettings.first().toAveragingPolicy()
             }.getOrDefault(AveragingPolicy())
             start(policy)
         }
@@ -181,7 +182,7 @@ class CaptureViewModel @Inject constructor(
         }
         val finished = completed.result
 
-        val src = SurveyingApp.settingsRepo.locationSource.first()
+        val src = settingsRepository.locationSource.first()
         val provider = when (src) {
             LocationSourceType.INTERNAL  -> Provider.INTERNAL
             LocationSourceType.EXTERNAL  -> Provider.RS2_EXTERNAL
@@ -196,8 +197,8 @@ class CaptureViewModel @Inject constructor(
 
         val sourceDevice = when (src) {
             LocationSourceType.EXTERNAL -> {
-                val deviceName = SurveyingApp.settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }
-                val host = SurveyingApp.settingsRepo.externalTcpHost.first()
+                val deviceName = settingsRepository.externalTcpName.first()?.takeIf { it.isNotBlank() }
+                val host = settingsRepository.externalTcpHost.first()
                 deviceName ?: host ?: "External GNSS"
             }
             LocationSourceType.INTERNAL  -> "Internal GPS"

@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
-import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.settings.model.ArDisplaySettings
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -78,7 +77,7 @@ class OpenInARViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             runCatching {
-                val ar = SurveyingApp.settingsRepo.arDisplaySettings.first()
+                val ar = settingsRepository.arDisplaySettings.first()
                 _distanceFilterIndex.value = ar.distanceFilterIndex.coerceIn(0, DISTANCE_FILTER_STEPS.lastIndex)
                 _debugVisible.value = ar.showDebugOverlay
             }
