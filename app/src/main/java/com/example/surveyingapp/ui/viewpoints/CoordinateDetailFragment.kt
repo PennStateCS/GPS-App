@@ -297,10 +297,7 @@ class CoordinateDetailFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        viewModel = ViewModelProvider(
-            this,
-            ViewModelProvider.AndroidViewModelFactory(requireActivity().application)
-        ).get(CoordinatesViewModel::class.java)
+        viewModel = ViewModelProvider(this)[CoordinatesViewModel::class.java]
 
         view.findViewById<View>(R.id.btn_edit_coordinate)?.setOnClickListener { launchEditDialog() }
         currentId = arguments?.getString(ARG_ID)

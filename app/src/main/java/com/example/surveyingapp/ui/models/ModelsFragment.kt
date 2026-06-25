@@ -12,9 +12,10 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
 import com.example.surveyingapp.data.files.ModelFileCleaner
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.Lifecycle
+import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
@@ -29,12 +30,13 @@ import java.io.FileOutputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
+@AndroidEntryPoint
 class ModelsFragment : Fragment() {
 
     private var _binding: FragmentModelsBinding? = null
     private val binding get() = _binding!!
 
-    private lateinit var viewModel: ModelsViewModel
+    private val viewModel: ModelsViewModel by viewModels()
     private lateinit var adapter: ModelsAdapter
 
     // File picker for selecting .glb files
@@ -60,7 +62,6 @@ class ModelsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        viewModel = ViewModelProvider(this)[ModelsViewModel::class.java]
         setupRecyclerView()
         setupSwipeRefresh()
         setupFab()

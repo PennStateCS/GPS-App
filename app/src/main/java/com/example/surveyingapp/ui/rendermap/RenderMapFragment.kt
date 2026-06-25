@@ -27,8 +27,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.model.Fix
@@ -86,6 +84,9 @@ class RenderMapFragment : Fragment() {
 
     @Inject
     lateinit var sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
+
+    @Inject
+    lateinit var modelRepository: com.example.surveyingapp.domain.repository.ModelRepository
 
     // Map
     private var mapView: MapView? = null
@@ -206,6 +207,7 @@ class RenderMapFragment : Fragment() {
         btnFitVisible = root.findViewById(R.id.btn_fit_visible)
 
         toggleAdapter = CoordinateToggleAdapter(
+            modelRepository = modelRepository,
             onToggle = { id, checked ->
                 visibilityMap[id] = checked
                 markerMap[id]?.isVisible = checked
@@ -648,9 +650,7 @@ class RenderMapFragment : Fragment() {
             val modelId = iconName.removePrefix("model:")
             return withContext(Dispatchers.IO) {
                 try {
-                    val db = AppDatabase.getDatabase(ctx)
-                    val repo = ModelRepositoryImpl(db.modelDao())
-                    val model = repo.getModelById(modelId) ?: return@withContext null
+                    val model = modelRepository.getModelById(modelId) ?: return@withContext null
                     val thumbPath = model.thumbnailFilePath ?: return@withContext null
                     val cacheKey = "model:$modelId:$thumbPath"
                     markerDescriptorCache[cacheKey]?.let { return@withContext it }
@@ -910,9 +910,7 @@ class RenderMapFragment : Fragment() {
             viewLifecycleOwner.lifecycleScope.launch {
                 val bmp = withContext(Dispatchers.IO) {
                     try {
-                        val db = AppDatabase.getDatabase(requireContext())
-                        val repo = ModelRepositoryImpl(db.modelDao())
-                        val path = repo.getModelById(modelId)?.thumbnailFilePath ?: return@withContext null
+                        val path = modelRepository.getModelById(modelId)?.thumbnailFilePath ?: return@withContext null
                         BitmapFactory.decodeFile(path)
                     } catch (_: Exception) { null }
                 }
