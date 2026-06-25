@@ -73,6 +73,10 @@ class SurveyingApp : Application() {
             " device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" +
             " android=${android.os.Build.VERSION.RELEASE}(API ${android.os.Build.VERSION.SDK_INT})" +
             " debug=${BuildConfig.DEBUG}")
+        // Surfaced for tester support: in debug builds Room is allowed to wipe & recreate the
+        // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
+        // coordinates/models. Release builds keep data via real migrations.
+        DiagnosticsLogger.i("DB", "Destructive migration allowed: ${BuildConfig.DEBUG}")
 
         // Explicitly select the Maps renderer before any MapView is created.
         // Without this, preferredRenderer is null and the SDK auto-selects — which
@@ -84,9 +88,24 @@ class SurveyingApp : Application() {
             Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
             DiagnosticsLogger.i("App", "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
-        // Basic crash guard: logs uncaught exceptions (consider forwarding to crash reporting service)
+        // Global crash guard. Persists a SANITIZED crash record to DiagnosticsLogger so it lands in
+        // the exported diagnostic ZIP (timestamp + thread + exception type/message + stack trace +
+        // build info). It deliberately does NOT include raw API keys, tokens, NMEA, or live
+        // coordinates. The previous/default handler is preserved and invoked afterward so Android's
+        // normal crash behavior (process termination, Play Console reporting) still happens.
+        val previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                DiagnosticsLogger.e(
+                    "GlobalCrash",
+                    "Uncaught exception thread=${thread.name} type=${throwable.javaClass.name}" +
+                        " app=${BuildConfig.VERSION_NAME} build=${BuildConfig.BUILD_NUMBER}" +
+                        " debug=${BuildConfig.DEBUG}",
+                    throwable
+                )
+            } catch (_: Throwable) { /* never let crash logging mask the original crash */ }
             Log.e("GlobalCrash", "Uncaught exception on thread ${thread.name}", throwable)
+            previousCrashHandler?.uncaughtException(thread, throwable)
         }
         // Configure osmdroid user agent (improves tile server courtesy + analytics separation)
         try {

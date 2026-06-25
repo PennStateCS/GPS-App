@@ -29,6 +29,7 @@ import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.databinding.FragmentHomeBinding
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.repository.ModelRepository
+import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -100,9 +101,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // Repositories — injected via Hilt (domain interfaces), no longer constructed from AppDatabase.
     @Inject lateinit var coordinateRepository: CoordinateRepository
     @Inject lateinit var modelRepository: ModelRepository
+    @Inject lateinit var settingsRepo: SettingsRepository
 
     // Settings repository reference (still needed for settings)
-    private val settingsRepo by lazy { SurveyingApp.settingsRepo }
 
     /**
      * Called when the fragment needs to create its view hierarchy.
@@ -452,8 +453,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val map = googleMap
                 if (map != null) {
                     if (!hasCenteredCamera) {
-                        android.util.Log.d(TAG, "First fix to map: lat=${fix.latDeg}, lon=${fix.lonDeg}, hAcc=${fix.hAccM}")
-                        DiagnosticsLogger.i("HomeMap", "First fix lat=%.6f lon=%.6f hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${fix.rtkStatus}".format(fix.latDeg, fix.lonDeg))
+                        android.util.Log.d(TAG, "First fix to map: hAcc=${fix.hAccM} status=${fix.rtkStatus} sats=${fix.satsUsed}")
+                        // Privacy: do not log exact live coordinates to the persistent diagnostic ZIP.
+                        DiagnosticsLogger.i("HomeMap", "First fix applied to map status=${fix.rtkStatus} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} sats=${fix.satsUsed}")
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                         hasCenteredCamera = true
                         lastCameraMoveMs = System.currentTimeMillis()

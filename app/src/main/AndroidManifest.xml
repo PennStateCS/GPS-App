@@ -82,9 +82,11 @@
             android:name="com.google.ar.core"
             android:value="optional" />
 
+        <!-- Internal-only host for the coordinates list/detail (launched from within the app); not
+             a launcher/deep-link target, so it must not be exported. -->
         <activity
             android:name=".ui.viewpoints.CoordinatesActivity"
-            android:exported="true"
+            android:exported="false"
             android:theme="@style/Theme.SurveyingApp.NoActionBar" />
 
         <activity

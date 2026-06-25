@@ -29,9 +29,15 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val externalTcpHost = local.externalTcpHost
     override val externalTcpPort = local.externalTcpPort
     override val externalTcpName = local.externalTcpName
+    override val externalReceiverProfile =
+        local.externalReceiverProfileRaw.map { com.example.surveyingapp.settings.model.ExternalReceiverProfile.fromPrefKey(it) }
 
     override suspend fun setLocationSource(v: LocationSourceType) {
         local.setLocationSourceString(v.toPrefString())
+    }
+
+    override suspend fun setExternalReceiverProfile(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile) {
+        local.setExternalReceiverProfile(profile.prefKey)
     }
 
     override suspend fun setExternalConnType(v: ExternalConnectionType) {

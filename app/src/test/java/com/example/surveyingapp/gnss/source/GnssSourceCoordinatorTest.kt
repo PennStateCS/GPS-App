@@ -52,6 +52,7 @@ class GnssSourceCoordinatorTest {
         override val externalConnType: Flow<ExternalConnectionType> = emptyFlow()
         override val externalBtAddress: Flow<String?> = emptyFlow()
         override val externalTcpName: Flow<String?> = emptyFlow()
+        override val externalReceiverProfile: Flow<com.example.surveyingapp.settings.model.ExternalReceiverProfile> = emptyFlow()
         override val gnssCaptureSettings: Flow<GnssCaptureSettings> = emptyFlow()
         override val arDisplaySettings: Flow<ArDisplaySettings> = emptyFlow()
         override val coordinateDisplaySettings: Flow<CoordinateDisplaySettings> = emptyFlow()
@@ -60,6 +61,7 @@ class GnssSourceCoordinatorTest {
         override val developerSettings: Flow<DeveloperSettings> = emptyFlow()
         override val appearanceSettings: Flow<AppearanceSettings> = emptyFlow()
 
+        override suspend fun setExternalReceiverProfile(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile) {}
         override suspend fun setLocationSource(v: LocationSourceType) { setLocationSourceCalls++ }
         override suspend fun setExternalTcp(host: String, port: Int, name: String) { setExternalTcpCalls++ }
         override suspend fun setMockLocationEnabled(enabled: Boolean) { setMockLocationCalls++ }

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext traffic for all domains and IP addresses -->
+    <!--
+        Cleartext is permitted because external GNSS receivers (Emlid Reach / RS2+) are reached over
+        plain HTTP/TCP on the local network (e.g. 192.168.x.x / 10.x) and do not present TLS certs.
+        It is intentionally global because the receiver's local IP is user-configurable and not known
+        ahead of time, so it cannot be scoped to a fixed domain. No app traffic to public endpoints
+        relies on cleartext. (Hardening note for release: the `user` trust-anchor below is for dev
+        proxying and could be dropped from a store build.)
+    -->
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <!-- Trust system certificates -->
