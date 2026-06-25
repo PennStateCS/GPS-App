@@ -36,9 +36,9 @@ import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.capture.ObservationSession
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
-import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
-import com.example.surveyingapp.gnss.settings.SourceSettings
-import com.example.surveyingapp.gnss.settings.toAveragingPolicy
+import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
+import com.example.surveyingapp.gnss.source.SourceSettings
+import com.example.surveyingapp.gnss.capture.toAveragingPolicy
 import com.example.surveyingapp.ui.capture.CaptureViewModel
 import com.example.surveyingapp.util.DiagnosticsLogger
 import com.example.surveyingapp.ui.models.ModelPickerActivity
@@ -487,7 +487,8 @@ class AddCoordinateDialogFragment(
 
     /** Formats horizontal accuracy, or "Not reported" when the receiver did not supply it. */
     private fun formatAccuracy(meters: Double?): String =
-        meters?.let { "±${String.format(Locale.US, "%.2f", it)} m" } ?: "Not reported"
+        meters?.let { com.example.surveyingapp.gnss.format.GnssStatusFormatter.formatAccuracyMeters(it) }
+            ?: "Not reported"
 
     // ── Internal GPS instant capture ──────────────────────────────────────────
 

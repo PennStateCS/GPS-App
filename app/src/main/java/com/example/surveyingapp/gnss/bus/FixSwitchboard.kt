@@ -3,8 +3,8 @@ package com.example.surveyingapp.gnss.bus
 import com.example.surveyingapp.gnss.bus.adapters.RawNmeaProvider
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.SkySnapshot
-import com.example.surveyingapp.gnss.settings.SourceSettings
-import com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice
+import com.example.surveyingapp.gnss.source.SourceSettings
+import com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice
 import com.example.surveyingapp.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job

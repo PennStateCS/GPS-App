@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.logging
+package com.example.surveyingapp.gnss.diagnostics
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

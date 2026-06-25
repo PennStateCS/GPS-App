@@ -2,16 +2,16 @@ package com.example.surveyingapp.ui.development
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.surveyingapp.domain.repository.ReachDeviceRepository
-import com.example.surveyingapp.domain.repository.ReachBatteryInfo
-import com.example.surveyingapp.domain.repository.ReachDeviceInfo
+import com.example.surveyingapp.gnss.external.repository.ReachDeviceRepository
+import com.example.surveyingapp.gnss.external.model.ReachBatteryInfo
+import com.example.surveyingapp.gnss.external.model.ReachDeviceInfo
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.bus.SkyBus
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticData
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.SkySnapshot
-import com.example.surveyingapp.gnss.settings.SourceSettings
+import com.example.surveyingapp.gnss.source.SourceSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

@@ -6,7 +6,7 @@ import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.settings.ArDisplaySettings
 import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
 import com.example.surveyingapp.gnss.settings.DeveloperSettings
-import com.example.surveyingapp.gnss.settings.GnssCaptureSettings
+import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow

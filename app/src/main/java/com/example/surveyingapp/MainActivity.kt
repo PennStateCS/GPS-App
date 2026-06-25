@@ -22,13 +22,15 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
-import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.model.LocationSourceType
-import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
-import com.example.surveyingapp.gnss.bus.adapters.ExternalAdapter
+import com.example.surveyingapp.gnss.external.ExternalAdapter
 import com.example.surveyingapp.databinding.ActivityMainBinding
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.ui.toolbar.GnssStatusLevel
+import com.example.surveyingapp.ui.toolbar.GnssToolbarState
+import com.example.surveyingapp.ui.toolbar.GnssToolbarStateMapper
+import com.example.surveyingapp.ui.toolbar.ToolbarMapResult
 import com.example.surveyingapp.service.LocationService
 import com.example.surveyingapp.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
@@ -41,9 +43,8 @@ import kotlinx.coroutines.withContext
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.ClipDrawable
 import android.os.SystemClock
-import java.util.Locale
-import com.example.surveyingapp.gnss.reach.ReachBatteryService
-import com.example.surveyingapp.gnss.reach.ReachHttpClient
+import com.example.surveyingapp.gnss.external.ReachBatteryService
+import com.example.surveyingapp.gnss.external.ReachHttpClient
 import com.example.surveyingapp.gnss.service.GnssController
 import com.example.surveyingapp.gnss.source.ReplaySource
 import com.example.surveyingapp.gnss.accumulator.FixAccumulator
@@ -53,14 +54,6 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 private const val LOG_GNSS_UI = false
-
-/**
- * Max age of a fix (vs. its UTC timestamp) for it to populate the live toolbar. The fixes flow
- * has replay=1, so right after selecting a source the last fix from a PREVIOUS session replays
- * immediately. Without this gate that stale fix would overwrite the placeholders — e.g. showing a
- * "Fixed" RS2+ solution with old coordinates before the receiver has actually reconnected.
- */
-private const val TOOLBAR_FIX_MAX_AGE_MS = 15_000L
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -88,7 +81,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var nmeaRegistry: NmeaRegistry
     @Inject lateinit var fixAccumulator: FixAccumulator
     @Inject lateinit var diagnosticsService: DiagnosticsService
-    @Inject lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+    @Inject lateinit var sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
 
     // Replay controller for NMEA playback
     private var replayController: GnssController? = null
@@ -203,7 +196,7 @@ class MainActivity : AppCompatActivity() {
         moveBatteryIconToRight()
         tokenBatt.root.isVisible = false
 
-        // Trailing separators (managed dynamically in updateStatusTokens)
+        // Trailing separators (managed dynamically in renderGnssToolbarState)
         tokenSats.separator?.isVisible = false
         tokenAcc.separator?.isVisible = false
         tokenAlt.separator?.isVisible = false
@@ -284,10 +277,10 @@ class MainActivity : AppCompatActivity() {
             val initialProvider = try { 
                 sourceSettings.activeProvider.first() 
             } catch (_: Exception) { 
-                com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL 
+                com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL 
             }
             
-            val isInternal = initialProvider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL
+            val isInternal = initialProvider == com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL
             val srcLabel = if (isInternal) "Internal" else "RS2+"
             
             // Set initial source label
@@ -627,58 +620,38 @@ class MainActivity : AppCompatActivity() {
                     .collectLatest { (fix, sky, source) ->
                         consecutiveErrors = 0 // Reset error counter on success
 
-                        // No live fix from the current provider (just switched, or not acquired
-                        // yet) → blank the live data and keep the source label. Never carry the
-                        // previous provider's coordinates.
-                        if (fix == null) {
-                            if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
-                                loggedExternalWaiting = true
-                                com.example.surveyingapp.util.DiagnosticsLogger.i(
-                                    "Toolbar", "External selected, waiting for current fix")
+                        // All display decisions live in the mapper. MainActivity only collects,
+                        // maps, and renders — it no longer contains GNSS toolbar logic.
+                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, System.currentTimeMillis())) {
+                            is ToolbarMapResult.Ignore -> {
+                                // Wrong-provider / stale / invalid fix: keep the existing
+                                // placeholders untouched (throttled diagnostics only).
+                                logToolbarIgnore(result.reason)
                             }
-                            withContext(Dispatchers.Main) { resetStatusTokensForSource(source) }
-                            return@collectLatest
-                        }
-
-                        // Guard 1 — provider match. currentFix is already current-provider-only,
-                        // but during the External-connecting window the live provider is still
-                        // INTERNAL while the user has selected RS2+; drop the internal fix so the
-                        // toolbar shows "waiting for RS2+" instead of internal coordinates.
-                        if (!fixMatchesSource(source, fix)) {
-                            logToolbarIgnore("wrong-provider")
-                            return@collectLatest
-                        }
-
-                        // Guard 2 — staleness.
-                        val fixAgeMs = java.time.Duration.between(fix.timeUtc, java.time.Instant.now()).toMillis()
-                        if (fixAgeMs > TOOLBAR_FIX_MAX_AGE_MS) {
-                            logToolbarIgnore("stale")
-                            return@collectLatest
-                        }
-
-                        // Guard 3 — valid coordinates.
-                        if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
-                            logToolbarIgnore("invalid-coords")
-                            return@collectLatest
-                        }
-
-                        lastDataUpdateTime = System.currentTimeMillis() // Update the shared timestamp
-                        latestSkySnapshot = sky // Store latest sky snapshot
-
-                        if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
-                            loggedFirstExternalToolbarFix = true
-                            loggedExternalWaiting = false
-                            com.example.surveyingapp.util.DiagnosticsLogger.i(
-                                "Toolbar", "First current external fix displayed after startup")
-                        }
-
-                        if (LOG_GNSS_UI) android.util.Log.d("MainActivity", "Updating status tokens: source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
-
-                        withContext(Dispatchers.Main) {
-                            updateStatusTokens(source, fix, sky)
-                            updateBatteryVisibility(source == LocationSourceType.EXTERNAL)
-                            // Reset alpha when fresh data arrives
-                            tokenSource.value.alpha = 1.0f
+                            is ToolbarMapResult.Render -> {
+                                val state = result.state
+                                if (state.isWaiting) {
+                                    if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
+                                        loggedExternalWaiting = true
+                                        com.example.surveyingapp.util.DiagnosticsLogger.i(
+                                            "Toolbar", "External selected, waiting for current fix")
+                                    }
+                                    latestSkySnapshot = null
+                                } else {
+                                    latestSkySnapshot = sky
+                                    if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
+                                        loggedFirstExternalToolbarFix = true
+                                        loggedExternalWaiting = false
+                                        com.example.surveyingapp.util.DiagnosticsLogger.i(
+                                            "Toolbar", "First current external fix displayed after startup")
+                                    }
+                                }
+                                lastDataUpdateTime = System.currentTimeMillis()
+                                withContext(Dispatchers.Main) {
+                                    renderGnssToolbarState(state)
+                                    tokenSource.value.alpha = 1.0f
+                                }
+                            }
                         }
                     }
             }
@@ -690,15 +663,16 @@ class MainActivity : AppCompatActivity() {
         // previous provider's fix/sats/correction/battery clear right away.
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                var previousProvider: com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice? = null
                 sourceSettings.activeProvider.collect { provider ->
                     if (previousProvider != null && previousProvider != provider) {
                         val isExternalLive =
-                            provider == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.EXTERNAL_TCP
+                            provider == com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.EXTERNAL_TCP
                         com.example.surveyingapp.util.DiagnosticsLogger.i(
                             "Toolbar", "Reset due to provider switch $previousProvider -> $provider"
                         )
-                        withContext(Dispatchers.Main) { resetLiveDataTokens(isExternalLive) }
+                        val liveSource = if (isExternalLive) LocationSourceType.EXTERNAL else LocationSourceType.INTERNAL
+                        withContext(Dispatchers.Main) { resetStatusTokensForSource(liveSource) }
                     }
                     previousProvider = provider
                 }
@@ -755,51 +729,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun fixMatchesSource(
-        source: LocationSourceType,
-        fix: com.example.surveyingapp.gnss.model.Fix
-    ): Boolean {
-        val isInternal = source == LocationSourceType.INTERNAL
-        return if (isInternal) {
-            fix.provider == com.example.surveyingapp.gnss.model.Provider.INTERNAL
-        } else {
-            fix.provider != com.example.surveyingapp.gnss.model.Provider.INTERNAL
-        }
-    }
-
+    /**
+     * Resets the toolbar to the waiting/placeholder state for [source] (label + blank live fields).
+     * Delegates all presentation to the mapper + renderer; this method only does the bookkeeping
+     * (clear cached sky, reset the stale-dim timer). Called on provider switch so the previous
+     * provider's values never linger.
+     */
     private fun resetStatusTokensForSource(
         source: LocationSourceType
     ) {
-        val isInternal = source == LocationSourceType.INTERNAL
-        // Source label reflects the user's SELECTED source (preference), shown immediately.
-        tokenSource.value.text = if (isInternal) "Internal" else "RS2+"
-        tokenSource.separator?.isVisible = true
-        tokenSource.value.alpha = 1.0f
-        resetLiveDataTokens(isExternalLive = !isInternal)
-    }
-
-    /**
-     * Blanks all live-data tokens (coordinates, fix/SOL, sats, accuracy, altitude) and discards
-     * cached sky, WITHOUT touching the source label. Battery visibility follows whether the live
-     * provider is external (hidden + polling stopped for internal). Called on every provider
-     * switch so the previous provider's values never linger in the toolbar.
-     */
-    private fun resetLiveDataTokens(isExternalLive: Boolean) {
-        tokenCoord.value.text = "--"
-        // External shows an explicit waiting state instead of "--" so the RS2+ label is never
-        // shown next to an ambiguous blank fix status while the receiver connects/reconnects.
-        tokenFix.value.text = if (isExternalLive) "Waiting" else "--"
-        tokenFix.value.setTextColor(getColor(android.R.color.darker_gray))
-        tokenSats.root.isVisible = false
-        tokenAcc.root.isVisible = false
-        // Altitude shows a label + "--" placeholder like LL, instead of hiding.
-        tokenAlt.value.text = "--"
-        tokenAlt.root.isVisible = true
-        updateBatteryVisibility(isExternalLive)
-        // Discard stale sky so the old source's satellite counts don't linger.
         latestSkySnapshot = null
-        // Reset stale-data timer so the dim indicator doesn't fire immediately after a switch.
         lastDataUpdateTime = System.currentTimeMillis()
+        renderGnssToolbarState(GnssToolbarStateMapper.waiting(source))
+        tokenSource.value.alpha = 1.0f
     }
 
     // Throttle for wrong-provider/stale/invalid-fix diagnostics so a steady stream of dropped
@@ -1097,72 +1039,44 @@ class MainActivity : AppCompatActivity() {
         tokenSource.label.isVisible = !isPortrait
     }
 
-    private fun updateStatusTokens(
-        source: LocationSourceType,
-        fix: Fix,
-        sky: com.example.surveyingapp.gnss.model.SkySnapshot
-    ) {
-        // Validate coordinate ranges (WGS84 bounds)
-        val latValid = fix.latDeg in -90.0..90.0
-        val lonValid = fix.lonDeg in -180.0..180.0
+    /** Resolves a mapper [GnssStatusLevel] to the toolbar color. View concern only. */
+    private fun levelColor(level: GnssStatusLevel): Int = when (level) {
+        GnssStatusLevel.SUCCESS -> getColor(R.color.app_success)
+        GnssStatusLevel.WARNING -> getColor(R.color.app_warning)
+        GnssStatusLevel.INFO    -> getColor(R.color.app_info)
+        GnssStatusLevel.ERROR   -> getColor(R.color.app_error)
+        GnssStatusLevel.NONE    -> getColor(android.R.color.darker_gray)
+    }
 
-        if (!latValid || !lonValid) {
-            android.util.Log.w("MainActivity", "Invalid coordinates: lat=${fix.latDeg}, lon=${fix.lonDeg}")
-            tokenCoord.value.text = "Invalid"
-            tokenCoord.root.isVisible = true
-            return
-        }
-
-        val isInternal = source == LocationSourceType.INTERNAL
-        val srcLabel = if (isInternal) "Internal" else "RS2+"
-        tokenSource.value.text = srcLabel
+    /**
+     * Applies a [GnssToolbarState] to the toolbar tokens. Pure view updates — NO GNSS decision
+     * logic (that all lives in [GnssToolbarStateMapper]). A null text field hides its token.
+     */
+    private fun renderGnssToolbarState(state: GnssToolbarState) {
+        // Source label
+        tokenSource.value.text = state.sourceText
         tokenSource.separator?.isVisible = true
 
-        // --- FIX token (shown for both internal and external) ---
+        // Fix / SOL (always shown)
         tokenFix.root.isVisible = true
-        val (fixLabel, fixColor) = if (isInternal) {
-            when (fix.rtkStatus) {
-                RtkStatus.NONE, RtkStatus.INVALID -> "No Fix" to getColor(R.color.app_error)
-                else -> "GPS" to getColor(R.color.app_success)
-            }
-        } else {
-            when (fix.rtkStatus) {
-                RtkStatus.NONE           -> "No Fix" to getColor(R.color.app_error)
-                RtkStatus.SINGLE         -> "Single" to getColor(R.color.app_warning)
-                RtkStatus.DGPS           -> "DGPS"   to getColor(R.color.app_info)
-                RtkStatus.FLOAT          -> "Float"  to getColor(R.color.app_warning)
-                RtkStatus.FIX            -> "Fixed"  to getColor(R.color.app_success)
-                RtkStatus.DEAD_RECKONING -> "DR"     to getColor(R.color.app_warning)
-                RtkStatus.INVALID        -> "No Fix" to getColor(R.color.app_error)
-            }
-        }
         tokenFix.label.text = "SOL"
-        tokenFix.value.text = fixLabel
-        tokenFix.value.setTextColor(fixColor)
+        tokenFix.value.text = state.fixText
+        tokenFix.value.setTextColor(levelColor(state.fixLevel))
 
-        // --- SATS token ---
-        val used = if (sky.totalUsed > 0) sky.totalUsed else fix.satsUsed.coerceIn(0, 100)
-        val vis = if (sky.totalVisible > 0) sky.totalVisible else (fix.satsVisible ?: used).coerceIn(used, 100)
-        val satsVisible = used > 0 || vis > 0
+        // Satellites
+        val satsVisible = state.satelliteText != null
         if (satsVisible) {
-            tokenSats.value.text = "$used/$vis"
+            tokenSats.value.text = state.satelliteText
             tokenSats.root.isVisible = true
         } else {
             tokenSats.root.isVisible = false
         }
 
-        // --- ACC token (horizontal accuracy) ---
-        val hAcc = fix.hAccM
-        val accVisible = hAcc != null && hAcc in 0.0..9999.0
-        if (accVisible && hAcc != null) {
-            tokenAcc.value.text = "±${String.format(Locale.US, "%.2f", hAcc)} m"
-            val accColor = when {
-                hAcc <= 0.05 -> getColor(R.color.app_success)
-                hAcc <= 0.30 -> getColor(R.color.app_success)
-                hAcc <= 1.0  -> getColor(R.color.app_warning)
-                else         -> getColor(R.color.app_error)
-            }
-            tokenAcc.value.setTextColor(accColor)
+        // Accuracy
+        val accVisible = state.accuracyText != null
+        if (accVisible) {
+            tokenAcc.value.text = state.accuracyText
+            tokenAcc.value.setTextColor(levelColor(state.accuracyLevel))
             tokenAcc.root.isVisible = true
         } else {
             tokenAcc.root.isVisible = false
@@ -1172,34 +1086,17 @@ class MainActivity : AppCompatActivity() {
         tokenSats.separator?.isVisible = satsVisible && accVisible
         tokenAcc.separator?.isVisible = false
 
-        // --- Battery contentDescription ---
-        tokenBatt.icon.contentDescription = if (isInternal) "device battery" else "receiver battery"
-        if (isInternal) updateBatteryVisibility(false)
+        // Battery
+        tokenBatt.icon.contentDescription = if (state.isExternal) "receiver battery" else "device battery"
+        updateBatteryVisibility(state.batteryVisible)
 
-        // --- Coordinates ---
-        val latStr = String.format(Locale.US, "%.6f", fix.latDeg)
-        val lonStr = String.format(Locale.US, "%.6f", fix.lonDeg)
-        tokenCoord.value.text = "$latStr, $lonStr"
+        // Coordinates
+        tokenCoord.value.text = state.latLonText
         tokenCoord.root.isVisible = true
 
-        // --- Altitude: prefer MSL, else ellipsoidal, validate range ---
-        val altMsl = fix.altMslM
-        val altEllip = fix.altEllipsoidalM
-        when {
-            altMsl != null && altMsl in -500.0..10000.0 -> {
-                tokenAlt.value.text = String.format(Locale.US, "%.2f m", altMsl)
-                tokenAlt.root.isVisible = true
-            }
-            altEllip != null && altEllip in -500.0..10000.0 -> {
-                tokenAlt.value.text = String.format(Locale.US, "%.2f m", altEllip)
-                tokenAlt.root.isVisible = true
-            }
-            // No valid altitude: keep the token visible with a "--" placeholder like LL.
-            else -> {
-                tokenAlt.value.text = "--"
-                tokenAlt.root.isVisible = true
-            }
-        }
+        // Altitude (always visible with a placeholder)
+        tokenAlt.value.text = state.altitudeText
+        tokenAlt.root.isVisible = true
     }
 
 
@@ -1309,8 +1206,8 @@ class MainActivity : AppCompatActivity() {
 
             // Reset status display
             lifecycleScope.launch {
-                val prov = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL }
-                val srcLabel = if (prov == com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
+                val prov = try { sourceSettings.activeProvider.first() } catch (_: Exception) { com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL }
+                val srcLabel = if (prov == com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice.INTERNAL) "Internal" else "RS2+"
                 tokenSource.value.text = srcLabel
             }
 

@@ -1,6 +1,5 @@
-package com.example.surveyingapp.gnss.settings
+package com.example.surveyingapp.gnss.capture
 
-import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.model.RtkStatus
 
 /**

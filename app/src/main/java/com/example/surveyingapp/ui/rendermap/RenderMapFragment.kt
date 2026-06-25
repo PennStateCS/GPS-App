@@ -85,7 +85,7 @@ class RenderMapFragment : Fragment() {
     lateinit var fixSwitchboard: FixSwitchboard
 
     @Inject
-    lateinit var sourceSettings: com.example.surveyingapp.gnss.settings.SourceSettings
+    lateinit var sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
 
     // Map
     private var mapView: MapView? = null
@@ -337,7 +337,7 @@ class RenderMapFragment : Fragment() {
     private fun startProviderObservation() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var previousProvider: com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice? = null
+                var previousProvider: com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice? = null
                 sourceSettings.activeProvider.collect { provider ->
                     if (previousProvider != null && previousProvider != provider) {
                         clearLiveTrail()

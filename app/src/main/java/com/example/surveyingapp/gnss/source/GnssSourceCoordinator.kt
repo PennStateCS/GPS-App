@@ -1,9 +1,8 @@
-package com.example.surveyingapp.gnss.service
+package com.example.surveyingapp.gnss.source
 
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.repository.SettingsRepository
-import com.example.surveyingapp.gnss.settings.SourceSettings
-import com.example.surveyingapp.gnss.settings.SourceSettings.ProviderChoice
+import com.example.surveyingapp.gnss.source.SourceSettings.ProviderChoice
 import com.example.surveyingapp.util.DiagnosticsLogger
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
@@ -39,7 +38,7 @@ class GnssSourceCoordinator @Inject constructor(
 
         if (selected != LocationSourceType.EXTERNAL) {
             // Internal (or simulator): keep the safe default Internal provider.
-            switchToInternal()
+            switchToInternal(reason = "startup-restore-internal")
             return
         }
 
@@ -48,7 +47,7 @@ class GnssSourceCoordinator @Inject constructor(
         if (host.isNullOrBlank() || port == null) {
             DiagnosticsLogger.w("GNSS",
                 "Startup External restore: no saved host/port — staying Internal until configured")
-            switchToInternal()
+            switchToInternal(reason = "startup-restore-no-host")
             return
         }
 
@@ -67,8 +66,9 @@ class GnssSourceCoordinator @Inject constructor(
         connectExternalTcp(host, port, reason = "startup-restore")
     }
 
-    /** Makes Internal the live provider. */
-    fun switchToInternal() {
+    /** Makes Internal the live provider. [reason] is for diagnostics only. */
+    fun switchToInternal(reason: String) {
+        DiagnosticsLogger.i("GNSS", "switchToInternal ($reason)")
         sourceSettings.setActiveProvider(ProviderChoice.INTERNAL)
     }
 
@@ -79,13 +79,14 @@ class GnssSourceCoordinator @Inject constructor(
      * the waiting/no-data state rather than silently falling back to Internal.
      */
     fun connectExternalTcp(host: String, port: Int, reason: String) {
-        DiagnosticsLogger.i("Receiver", "Startup reconnect to $host:$port ($reason)")
+        DiagnosticsLogger.i("Receiver", "Connect external to $host:$port ($reason)")
         sourceSettings.setActiveProvider(ProviderChoice.EXTERNAL_TCP)
         DiagnosticsLogger.i("GNSS", "External provider activated from $reason; EXTERNAL_TCP set (validation delegated to external adapter)")
     }
 
     /** Reverts the live provider to Internal (e.g. user disconnects the receiver). */
-    fun disconnectExternal() {
+    fun disconnectExternal(reason: String) {
+        DiagnosticsLogger.i("GNSS", "disconnectExternal ($reason)")
         sourceSettings.setActiveProvider(ProviderChoice.INTERNAL)
     }
 }

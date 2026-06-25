@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.settings
+package com.example.surveyingapp.gnss.source
 
 import com.example.surveyingapp.util.DiagnosticsLogger
 import kotlinx.coroutines.flow.*

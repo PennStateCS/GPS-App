@@ -1,7 +1,10 @@
-package com.example.surveyingapp.gnss.bus.adapters
+package com.example.surveyingapp.gnss.external
 
 import android.util.Log
 import com.example.surveyingapp.gnss.bus.SourceAdapter
+import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
+import com.example.surveyingapp.gnss.bus.adapters.NmeaSource
+import com.example.surveyingapp.gnss.bus.adapters.RawNmeaProvider
 import com.example.surveyingapp.util.DiagnosticsLogger
 import com.example.surveyingapp.gnss.bus.SkyProvider
 import com.example.surveyingapp.gnss.bus.Startable
@@ -224,43 +227,3 @@ class ExternalAdapter(
     private fun emptySky(): SkySnapshot =
         SkySnapshot()
 }
-
-/**
- * Contract for an NMEA data pipeline that wraps a physical or virtual connection.
- *
- * Implementations are responsible for opening the connection, forwarding raw lines
- * through [NmeaFuser], and publishing the resulting [Fix] and [GsvMessage] streams.
- * The [ExternalAdapter] owns reconnection; the source itself makes a single attempt.
- *
- * To add support for a new transport (e.g. u-blox over Bluetooth), implement this
- * interface and pass the instance to a new [ExternalAdapter] registered in AppModule.
- */
-interface NmeaSource : Startable {
-    fun parsedFixes(): SharedFlow<Fix>
-    fun gsvStream(): SharedFlow<GsvMessage>
-    /** Emits once for every raw NMEA sentence received, before parsing. */
-    fun rawNmeaEvents(): SharedFlow<Unit>
-}
-
-/**
- * Optional interface for adapters that expose a raw-NMEA activity stream.
- * [FixSwitchboard] forwards it so observers can distinguish "socket connected
- * but no parsed fix" from "no NMEA data flowing at all."
- */
-interface RawNmeaProvider {
-    val rawNmea: SharedFlow<Unit>
-}
-
-/** Satellite data entry from a single GSV sentence, normalised for [SatelliteInventory]. */
-data class GsvMessage(
-    val constellation: String,
-    val entries: List<GsvEntry>
-)
-
-data class GsvEntry(
-    val svid: Int,
-    val elevationDeg: Int?,
-    val azimuthDeg: Int?,
-    val snrDbHz: Double?,
-    val usedInFix: Boolean
-)

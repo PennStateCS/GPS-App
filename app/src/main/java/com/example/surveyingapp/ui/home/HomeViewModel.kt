@@ -20,8 +20,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.gnss.accumulator.FixSnapshot
 import com.example.surveyingapp.gnss.model.TimestampSource
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
-import com.example.surveyingapp.gnss.logging.NmeaLogger
-import com.example.surveyingapp.gnss.logging.NmeaLogStats
+import com.example.surveyingapp.gnss.diagnostics.NmeaLogger
+import com.example.surveyingapp.gnss.diagnostics.NmeaLogStats
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel

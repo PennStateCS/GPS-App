@@ -1,6 +1,7 @@
-package com.example.surveyingapp.gnss.reach
+package com.example.surveyingapp.gnss.external
 
 import android.util.Log
+import com.example.surveyingapp.gnss.external.model.ReachCorrectionsInfo
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
@@ -12,28 +13,6 @@ import org.json.JSONObject
 import java.net.URI
 
 private const val TAG = "ReachCorrectionsService"
-
-/**
- * Correction status pushed from the RS2+ via socket.io "broadcast" events.
- *
- * Fields come from two broadcast names:
- *  - "navigation"    → aod, solution, satellites, baseline, base_position
- *  - "stream_status" → correctionInput (channel label, e.g. "NTRIP")
- *
- * All fields are nullable; the receiver may omit any of them depending on
- * firmware version or current fix state.
- */
-data class ReachCorrectionsInfo(
-    val isReceiving: Boolean,
-    val channel: String?,
-    val satellitesInView: Int?,
-    val ageSeconds: Double?,
-    val baselineKm: Double?,
-    val baseLatDeg: Double?,
-    val baseLonDeg: Double?,
-    val baseAltM: Double?,
-    val solution: String?
-)
 
 /**
  * Connects to the RS2+ socket.io endpoint and pushes live correction status

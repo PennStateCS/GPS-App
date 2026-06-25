@@ -1,5 +1,6 @@
-package com.example.surveyingapp.gnss.bus.adapters
+package com.example.surveyingapp.gnss.internal
 
+import com.example.surveyingapp.gnss.bus.adapters.NmeaSource
 import com.example.surveyingapp.gnss.bus.SourceAdapter
 import com.example.surveyingapp.gnss.bus.SkyProvider
 import com.example.surveyingapp.gnss.bus.Startable
