@@ -37,15 +37,20 @@ import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.databinding.FragmentCoordinatesBinding
 import com.google.android.material.snackbar.Snackbar
-import com.example.surveyingapp.SurveyingApp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import android.graphics.Rect
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.model.LocationSourceType
+import com.example.surveyingapp.domain.repository.ModelRepository
+import com.example.surveyingapp.domain.repository.SettingsRepository
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class CoordinatesFragment : Fragment() {
+
+    @Inject lateinit var modelRepository: ModelRepository
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     companion object {
         private const val PREF_LAST_OPENED_ID = "last_coord_opened_id"
@@ -235,7 +240,7 @@ class CoordinatesFragment : Fragment() {
         binding.fabAddCoordinate.setOnClickListener {
             viewLifecycleOwner.lifecycleScope.launch {
                 try {
-                    val source = runCatching { SurveyingApp.settingsRepo.locationSource.first() }
+                    val source = runCatching { settingsRepository.locationSource.first() }
                         .getOrDefault(LocationSourceType.INTERNAL)
                     val needsFine = source == LocationSourceType.INTERNAL
                     if (needsFine) {
@@ -272,8 +277,7 @@ class CoordinatesFragment : Fragment() {
         // Observe models so the list can show model thumbnails and names
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val db = AppDatabase.getDatabase(requireContext())
-                ModelRepositoryImpl(db.modelDao()).getAllModels().collect { models ->
+                modelRepository.getAllModels().collect { models ->
                     val thumbMap = models.associate { it.id to it.thumbnailFilePath }
                     val nameMap  = models.associate { it.id to it.name }
                     adapter.setModelNameMap(nameMap)
@@ -295,14 +299,13 @@ class CoordinatesFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             // Fetch the current model list so the icon spinner includes DB models
             val models = try {
-                val db = AppDatabase.getDatabase(requireContext())
-                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+                modelRepository.getAllModels().first()
             } catch (_: Exception) {
                 emptyList()
             }
 
             try {
-                val highAcc = runCatching { SurveyingApp.settingsRepo.gnssReceiverSettings.first().highAccuracy }.getOrDefault(true)
+                val highAcc = runCatching { settingsRepository.gnssReceiverSettings.first().highAccuracy }.getOrDefault(true)
                 val dialog = AddCoordinateDialogFragment(
                     highAccuracy = highAcc,
                     dbModels = models
@@ -331,8 +334,7 @@ class CoordinatesFragment : Fragment() {
     private fun showEditCoordinateDialog(coordinate: Coordinate, viewModel: CoordinatesViewModel) {
         viewLifecycleOwner.lifecycleScope.launch {
             val models = try {
-                val db = AppDatabase.getDatabase(requireContext())
-                ModelRepositoryImpl(db.modelDao()).getAllModels().first()
+                modelRepository.getAllModels().first()
             } catch (_: Exception) {
                 emptyList()
             }

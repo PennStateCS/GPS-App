@@ -63,3 +63,53 @@ suspend fun getAllCoordinatesList(): List<Coordinate>
 suspend fun getById(id): Coordinate?
 suspend fun count(): Int
 ```
+
+---
+
+# Model (3D import) data architecture
+
+How imported 3D models, their thumbnails, and their links to coordinates are stored and cleaned up.
+
+## Layers & responsibilities
+
+| Layer | Type | Responsibility |
+|-------|------|----------------|
+| **DAO** | `data/local/dao/ModelDao` | Room SQL for the `models` table. |
+| **Entity** | `data/local/entity/ModelEntity` | Room row. Schema — do not change without a migration. |
+| **Repository** | `domain/repository/ModelRepository` + `data/repository/impl/ModelRepositoryImpl` | **Metadata CRUD + observe only**: `getAllModels`, `observeModelCount`, `getModelById`, `getModelByFileName`, `insertModel`, `updateModel`, `deleteModel`. Maps entity ⇄ domain and re-derives `fileType` from the filename on read. |
+| **Domain model** | `domain/model/Model` | Pure model data object (+ pure `thumbnailFileExists()` in `domain/model/ModelExtensions.kt`). |
+| **File cleanup** | `data/files/ModelFileCleaner` | Path-based deletion of the imported model file and the thumbnail file. Graceful for null/blank/missing paths. **No DB access.** |
+| **Android URI helper** | `ui/models/ModelUiExtensions` (`getThumbnailUri`) | FileProvider/`Uri` resolution — UI layer, kept out of `domain`. |
+
+## Where files live
+
+- **Imported model files**: `filesDir/models/…` (copied in by `ModelsFragment` on import; filenames are de-duplicated). glTF bundles get their own subdirectory.
+- **Thumbnails**: `filesDir/thumbnails/…` (written by `ThumbnailCaptureActivity`; the absolute path is stored on the model row as `thumbnailFilePath`).
+
+## Coordinate ⇄ model links
+
+A coordinate references a model through its `icon` field, stored as `"model:<modelId>"`. There is no
+foreign key. Code that resolves a model for a coordinate (AR, render map, coordinate detail) must
+tolerate a missing/deleted model (null file path).
+
+## What happens when a model is deleted
+
+Deletion is **intentionally split**, and both file deletions go through `ModelFileCleaner`:
+
+1. The model list (`ModelsFragment`) first checks how many coordinates reference the model
+   (`icon = "model:<id>"`). **If any do, deletion is blocked** with a dialog — this prevents orphaned
+   coordinate→model references.
+2. If unreferenced: `ModelsViewModel.deleteModel` → `ModelRepository.deleteModel` removes the **Room
+   row + thumbnail file**; the UI then removes the **imported model file** via
+   `ModelFileCleaner.deleteModelFile`.
+
+Net result: row, thumbnail, and imported file are all removed; missing files are handled gracefully.
+
+## What new code should avoid
+
+- Don't put `Context`/`Uri`/`FileProvider` in `domain` — use `ui/models/ModelUiExtensions`.
+- Don't hand-roll model/thumbnail file deletion in UI — call `ModelFileCleaner`.
+- Don't add statistics/health/validation methods to `ModelRepository` (keep it metadata CRUD).
+- Prefer injecting `ModelRepository` over using `ModelDao` directly. Several legacy model screens
+  (picker/viewer/thumbnail-capture, render map, AR) still use `ModelDao` directly — a future pass
+  should route those through the repository.

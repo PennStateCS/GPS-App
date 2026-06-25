@@ -29,12 +29,12 @@ interface ModelRepository {
     /** Updates an existing model. */
     suspend fun updateModel(model: Model)
 
-    /** Deletes a model (and its thumbnail file from disk, if present). */
+    /**
+     * Deletes a model row and its **thumbnail** file from disk (if present).
+     *
+     * Note: this does NOT delete the imported model file — the model-list UI removes that (it also
+     * guards against deleting a model still linked to coordinates). Both file deletions go through
+     * [com.example.surveyingapp.data.files.ModelFileCleaner]. See docs/data-architecture.md.
+     */
     suspend fun deleteModel(model: Model)
-
-    /** Deletes a model by id (and its thumbnail file from disk, if present). */
-    suspend fun deleteModelById(id: String)
-
-    /** One-shot total model count. */
-    suspend fun getModelCount(): Int
 }
