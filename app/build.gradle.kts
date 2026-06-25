@@ -43,6 +43,11 @@ if (localPropertiesFile.exists()) {
     localProperties.load(localPropertiesFile.inputStream())
 }
 
+// Shared DEBUG keystore committed to the repo so every developer signs local debug builds with the
+// same SHA-1 (required for the Google Maps API key Android restriction). DEBUG ONLY — never used
+// for release signing. See docs/development-setup.md for generation instructions.
+val sharedDebugKeystore = rootProject.file("keystores/shared-debug.keystore")
+
 android {
     namespace = "com.example.surveyingapp"
     compileSdk = 35
@@ -79,8 +84,22 @@ android {
         }
     }
 
+    signingConfigs {
+        // Override the auto-generated per-developer debug key with the shared, committed one so
+        // all local debug builds have an identical SHA-1. storeFile is read lazily by AGP, so a
+        // missing file does not break configuration — the verifyDebugKeystore task below fails
+        // first with a clear message. RELEASE signing is intentionally NOT configured here.
+        getByName("debug") {
+            storeFile = sharedDebugKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
+            // Release uses the default/none signing config — NOT the shared debug keystore.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -89,6 +108,7 @@ android {
             ndk { debugSymbolLevel = "symbol_table" }
         }
         debug {
+            signingConfig = signingConfigs.getByName("debug")
             ndk { debugSymbolLevel = "symbol_table" }
         }
     }
@@ -181,5 +201,28 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
     arg("room.generateKotlin", "true")
     arg("room.incremental", "true")
+}
+
+// Fail debug builds with a clear, actionable message when the shared debug keystore is missing,
+// instead of a confusing keystore-not-found stack trace at signing time. Wired only to debug
+// builds (preDebugBuild), so release builds are unaffected. Config-cache safe.
+val verifyDebugKeystore = tasks.register("verifyDebugKeystore") {
+    val keystore = sharedDebugKeystore
+    val relativePath = keystore.relativeTo(rootProject.projectDir).path.replace('\\', '/')
+    doFirst {
+        if (!keystore.exists()) {
+            throw GradleException(
+                "Missing $relativePath. Generate it with the keytool command in " +
+                    "docs/development-setup.md (\"Shared Debug Keystore for Google Maps\")."
+            )
+        }
+    }
+}
+
+// Wire to the debug signing-validation task so the friendly error fires right before AGP would
+// otherwise throw a confusing keystore-not-found error — and only when actually producing a signed
+// debug build (assemble/install/Run). Compile-only and unit-test tasks don't require the keystore.
+tasks.matching { it.name == "validateSigningDebug" }.configureEach {
+    dependsOn(verifyDebugKeystore)
 }
 

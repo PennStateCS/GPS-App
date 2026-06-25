@@ -99,6 +99,11 @@ cd surveying-app
      - Select "Restrict key"
      - Choose only the APIs you enabled above
 
+   > 👥 **Team note:** This repo uses a **shared debug keystore** so every developer's local debug
+   > build has the *same* SHA-1. Run `gradlew signingReport` to get the debug SHA-1 and register it
+   > once. Full instructions: [`docs/development-setup.md`](docs/development-setup.md) →
+   > "Shared Debug Keystore for Google Maps". (Debug only — never used for release signing.)
+
 #### Step 3: Adding Additional API Keys
 
 As your surveying app grows, you may need additional API keys for enhanced functionality:
