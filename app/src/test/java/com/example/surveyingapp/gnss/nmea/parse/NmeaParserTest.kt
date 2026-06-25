@@ -65,7 +65,9 @@ class NmeaParserTest {
         assertNotNull("TimeRaw should not be null", rmc.timeRaw)
         assertNotNull("Date should not be null", rmc.date)
         assertEquals("TimeRaw should match", "123456.78", rmc.timeRaw)
-        assertEquals("Date should match", "090925", rmc.date)
+        // Raw NMEA date is ddmmyy; `date` is the parsed LocalDate (090925 -> 2025-09-09).
+        assertEquals("Raw date should match", "090925", rmc.dateRaw)
+        assertEquals("Parsed date should match", "2025-09-09", rmc.date.toString())
     }
 
     @Test
