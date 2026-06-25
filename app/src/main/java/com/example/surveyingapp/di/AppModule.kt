@@ -5,7 +5,9 @@ import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.domain.repository.CoordinateRepository
+import com.example.surveyingapp.domain.repository.ModelRepository
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.SurveyingApp
@@ -63,6 +65,11 @@ object AppModule {
     @Singleton
     fun provideCoordinateRepository(dao: CoordinateDao): CoordinateRepository =
         CoordinateRepositoryImpl(dao)
+
+    @Provides
+    @Singleton
+    fun provideModelRepository(dao: ModelDao): ModelRepository =
+        ModelRepositoryImpl(dao)
 
     // Provide SettingsRepository from the Application singleton until fully DI-managed
     @Provides

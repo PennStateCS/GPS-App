@@ -45,8 +45,8 @@ import android.graphics.drawable.ClipDrawable
 import android.os.SystemClock
 import com.example.surveyingapp.gnss.external.ReachBatteryService
 import com.example.surveyingapp.gnss.external.ReachHttpClient
-import com.example.surveyingapp.gnss.service.GnssController
-import com.example.surveyingapp.gnss.source.ReplaySource
+import com.example.surveyingapp.gnss.replay.NmeaReplayController
+import com.example.surveyingapp.gnss.replay.AssetNmeaReplaySource
 import com.example.surveyingapp.gnss.accumulator.FixAccumulator
 import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
 import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
 
     // Replay controller for NMEA playback
-    private var replayController: GnssController? = null
+    private var replayController: NmeaReplayController? = null
 
     // Token view holder for status bar
     private data class TokenViews(
@@ -1153,7 +1153,7 @@ class MainActivity : AppCompatActivity() {
             replayController?.stop()
 
             // Create new replay source
-            val replaySource = ReplaySource(
+            val replaySource = AssetNmeaReplaySource(
                 context = this,
                 assetFileName = fileName,
                 delayBetweenLines = 1000L, // 1 second between NMEA sentences
@@ -1161,7 +1161,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             // Create new controller with replay source
-            replayController = GnssController(
+            replayController = NmeaReplayController(
                 scope = lifecycleScope,
                 source = replaySource,
                 registry = nmeaRegistry,

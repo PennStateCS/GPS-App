@@ -25,8 +25,15 @@ The toolbar **label** follows the selected source (user intent, shown immediatel
   - `activateExternalTcpProvider(host, port, reason)` (host/port logged only; params read from
     settings by `TcpNmeaSource`)
   - `restoreSavedSourceOnStartup()` (the one orchestrating read-decide-activate method)
+  `gnss.source` is for **selected source / active-provider coordination** of the *live* system only —
+  it does not contain demo/replay code.
 - **`gnss.bus`** — `FixSwitchboard` (routes the active provider's fixes/sky, clears stale state on
   switch), `FixBus`/`SkyBus` interfaces, and the shared `NmeaSource`/`GsvMessage` contracts.
+- **`gnss.replay`** — asset/demo NMEA replay only: `NmeaLineSource` (raw-NMEA-line interface),
+  `AssetNmeaReplaySource` (replays a bundled `.nmea` asset), and `NmeaReplayController` (feeds those
+  lines through `NmeaRegistry` → `FixAccumulator`). This produces **raw NMEA lines for demo/testing**,
+  not live provider fixes — the live Internal/External GNSS path uses the adapters + `FixSwitchboard`
+  instead. (Renamed from the broad `GnssController`/`ReplaySource`/`GnssSource`.)
 - **`gnss.internal`** — `InternalAdapter` + `InternalNmeaSource` (Android device GPS via NMEA).
 - **`gnss.external`** — `ExternalAdapter`, `TcpNmeaSource`, the Reach services (`ReachDeviceService`,
   `ReachBatteryService`, `ReachCorrectionsService`, `ReachHttpClient`), `model/` (app-facing
@@ -57,7 +64,9 @@ General (non-GNSS) app settings live **outside** the GNSS tree:
   GNSS packages represent only GNSS-specific logic. Persistence is unchanged (field-by-field DataStore
   keys; enum value names preserved).
 
-UI may depend on `gnss.*`; `gnss.*` never depends on UI.
+GNSS **model** types stay in `gnss.model` (e.g. `TimestampSource`), but their **UI label/formatting**
+helpers live under UI packages — e.g. `ui.common.TimestampLabels` (`TimestampSource.label()/symbol()`,
+`formatTimestampWithSourceBadge`). UI may depend on `gnss.*`; `gnss.*` never depends on UI.
 
 ## Source-switching rules
 

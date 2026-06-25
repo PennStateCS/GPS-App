@@ -15,9 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.CoordinateRepositoryImpl
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.settings.SettingsCategory
@@ -78,7 +77,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         SettingsCategory(1, "System Info",  R.drawable.ic_section_info)
     )
 
-    private lateinit var coordinateRepository: CoordinateRepositoryImpl
+    @Inject lateinit var coordinateRepository: CoordinateRepository
 
     // Permission request launcher for core permissions
     private val corePermissionsLauncher = registerForActivityResult(
@@ -98,10 +97,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
     private var permissionsTableHolder: LinearLayout? = null
 
-    override fun onRootCreated(root: View) {
-        // Initialize repository for coordinates operations
-        coordinateRepository = CoordinateRepositoryImpl(AppDatabase.getDatabase(requireContext()).coordinateDao())
-    }
+    // coordinateRepository is now Hilt-injected (see @Inject field above); no manual init needed.
 
     override fun provideCategories(): List<SettingsCategory> = devCategories
 
@@ -549,8 +545,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val buildType = if (com.example.surveyingapp.BuildConfig.DEBUG) "DEBUG" else "RELEASE"
         addRow("Build Type", buildType, if (com.example.surveyingapp.BuildConfig.DEBUG) MapsStatus.WARN else MapsStatus.OK)
         addRow("Package Name", ctx.packageName, null)
-        val apiKeyDisplay = if (apiKeyFull.length>12) apiKeyFull.take(8) + "…" + apiKeyFull.takeLast(4) else apiKeyFull
-        addRow("API Key Meta", apiKeyDisplay, apiKeyStatus)
+        // Signing SHA-1 — the value that must be allowed in the Maps key Android restriction.
+        val sha1 = com.example.surveyingapp.util.diagnostics.AppSigningInfo.fingerprints(ctx)?.sha1
+        addRow("Signing SHA-1", sha1 ?: "unavailable", if (sha1 != null) MapsStatus.OK else MapsStatus.ERROR)
+        // API key presence only — never display the raw key (testers screenshot this screen).
+        addRow("API Key Meta", com.example.surveyingapp.util.diagnostics.MapDiagnosticCollector.redactApiKey(apiKeyFull), apiKeyStatus)
         addRow("Location Permission", locationPerm.toString(), if (locationPerm) MapsStatus.OK else MapsStatus.WARN)
         addRow("Internet Permission", internetPerm.toString(), if (internetPerm) MapsStatus.OK else MapsStatus.ERROR)
         addRow("Camera Permission", cameraPerm.toString(), if (cameraPerm) MapsStatus.OK else MapsStatus.WARN)

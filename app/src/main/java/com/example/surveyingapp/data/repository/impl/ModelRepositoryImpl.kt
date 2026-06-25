@@ -4,10 +4,11 @@ import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.ModelEntity
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.domain.model.FileType
+import com.example.surveyingapp.domain.repository.ModelRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-class ModelRepositoryImpl(private val modelDao: ModelDao) {
+class ModelRepositoryImpl(private val modelDao: ModelDao) : ModelRepository {
 
     private fun getFileTypeFromExtension(fileName: String): FileType {
         val extension = fileName.substringAfterLast('.', "").lowercase()
@@ -25,9 +26,9 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         }
     }
 
-    fun observeModelCount(): kotlinx.coroutines.flow.Flow<Int> = modelDao.observeModelCount()
+    override fun observeModelCount(): kotlinx.coroutines.flow.Flow<Int> = modelDao.observeModelCount()
 
-    fun getAllModels(): Flow<List<Model>> = modelDao.getAllModels().map { entities ->
+    override fun getAllModels(): Flow<List<Model>> = modelDao.getAllModels().map { entities ->
         entities.map { entity ->
             Model(
                 id = entity.id,
@@ -47,7 +48,7 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         }
     }
 
-    suspend fun getModelById(id: String): Model? {
+    override suspend fun getModelById(id: String): Model? {
         return modelDao.getModelById(id)?.let { entity ->
             Model(
                 id = entity.id,
@@ -67,7 +68,7 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         }
     }
 
-    suspend fun getModelByFileName(fileName: String): Model? {
+    override suspend fun getModelByFileName(fileName: String): Model? {
         return modelDao.getModelByFileName(fileName)?.let { entity ->
             Model(
                 id = entity.id,
@@ -87,7 +88,7 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         }
     }
 
-    suspend fun insertModel(model: Model) {
+    override suspend fun insertModel(model: Model) {
         val entity = ModelEntity(
             id = model.id,
             name = model.name,
@@ -105,7 +106,7 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         modelDao.insertModel(entity)
     }
 
-    suspend fun updateModel(model: Model) {
+    override suspend fun updateModel(model: Model) {
         val entity = ModelEntity(
             id = model.id,
             name = model.name,
@@ -123,7 +124,7 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         modelDao.updateModel(entity)
     }
 
-    suspend fun deleteModel(model: Model) {
+    override suspend fun deleteModel(model: Model) {
         // Delete thumbnail file from disk first (if it exists)
         deleteThumbnailFile(model.thumbnailFilePath)
 
@@ -144,7 +145,7 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         modelDao.deleteModel(entity)
     }
 
-    suspend fun deleteModelById(id: String) {
+    override suspend fun deleteModelById(id: String) {
         // Fetch the model first so we can clean up its thumbnail file
         val entity = modelDao.getModelById(id)
         if (entity != null) {
@@ -174,5 +175,5 @@ class ModelRepositoryImpl(private val modelDao: ModelDao) {
         }
     }
 
-    suspend fun getModelCount(): Int = modelDao.getModelCount()
+    override suspend fun getModelCount(): Int = modelDao.getModelCount()
 }

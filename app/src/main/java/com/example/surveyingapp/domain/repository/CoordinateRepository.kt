@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 interface CoordinateRepository {
     val allCoordinates: LiveData<List<Coordinate>>
     val allCoordinatesFlow: Flow<List<Coordinate>>
+    val coordinateCountFlow: Flow<Int>
 
     // Basic CRUD operations
     suspend fun insert(coordinate: Coordinate)

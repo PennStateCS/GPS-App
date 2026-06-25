@@ -1,12 +1,15 @@
-package com.example.surveyingapp.domain.model
+package com.example.surveyingapp.ui.models
 
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.example.surveyingapp.domain.model.Model
 import java.io.File
 
-// Extension to provide a Uri for thumbnail. Uses FileProvider if file is inside app-specific storage;
-// otherwise uses Uri.fromFile as a fallback. Adjust authority to match manifest FileProvider entry.
+// Android-specific UI helper for resolving a thumbnail Uri. Moved out of the domain model package
+// so domain stays free of Android platform dependencies. Uses FileProvider if the file is inside
+// app-specific storage; otherwise falls back to Uri.fromFile. Adjust authority to match the
+// manifest FileProvider entry.
 fun Model.getThumbnailUri(context: Context): Uri? {
     val path = this.thumbnailFilePath ?: return null
     val file = File(path)
@@ -24,15 +27,3 @@ fun Model.getThumbnailUri(context: Context): Uri? {
         Uri.fromFile(file)
     }
 }
-
-// Lightweight check to use in unit tests (no Android dependencies): checks path exists on JVM.
-fun Model.thumbnailFileExists(): Boolean {
-    val path = this.thumbnailFilePath ?: return false
-    return try {
-        val file = File(path)
-        file.exists() && file.isFile
-    } catch (e: Exception) {
-        false
-    }
-}
-

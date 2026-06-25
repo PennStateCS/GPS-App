@@ -6,6 +6,7 @@ import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
+import com.example.surveyingapp.domain.repository.ModelRepository
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.domain.model.FileType
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +17,9 @@ import java.util.UUID
 
 class ModelsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = ModelRepositoryImpl(AppDatabase.getDatabase(application).modelDao())
+    // Depends on the domain abstraction. Full Hilt injection is deferred until ModelsFragment is
+    // @AndroidEntryPoint (see remaining-cleanup notes) — for now the impl is still constructed here.
+    private val repository: ModelRepository = ModelRepositoryImpl(AppDatabase.getDatabase(application).modelDao())
     private val coordinateDao = AppDatabase.getDatabase(application).coordinateDao()
 
     val allModels = repository.getAllModels().asLiveData()

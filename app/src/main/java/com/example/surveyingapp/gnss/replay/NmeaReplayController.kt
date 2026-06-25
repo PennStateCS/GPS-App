@@ -1,9 +1,8 @@
-package com.example.surveyingapp.gnss.service
+package com.example.surveyingapp.gnss.replay
 
 import com.example.surveyingapp.gnss.accumulator.FixAccumulator
 import com.example.surveyingapp.gnss.nmea.parse.NmeaRegistry
 import com.example.surveyingapp.gnss.nmea.sentence.NmeaSentence
-import com.example.surveyingapp.gnss.source.GnssSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,7 +17,8 @@ import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 
 /**
- * Wires a [GnssSource] to a [FixAccumulator] through the [NmeaRegistry].
+ * Wires a replay [NmeaLineSource] to a [FixAccumulator] through the [NmeaRegistry] (demo/replay
+ * pipeline — NOT the live source-switching path, which goes through the adapters/`FixSwitchboard`).
  *
  * The pipeline is: source.lines() → checksum + registry.parse() → accumulator.accept()
  *
@@ -27,9 +27,9 @@ import kotlinx.coroutines.launch
  * [onError] callbacks let callers observe throughput or react to source-level failures
  * without coupling this class to any specific UI or logging framework.
  */
-class GnssController(
+class NmeaReplayController(
     private val scope: CoroutineScope,
-    private val source: GnssSource,
+    private val source: NmeaLineSource,
     private val registry: NmeaRegistry,
     private val accumulator: FixAccumulator,
     private val onStats: ((lines: Int, parsed: Int, dropped: Int) -> Unit)? = null,
