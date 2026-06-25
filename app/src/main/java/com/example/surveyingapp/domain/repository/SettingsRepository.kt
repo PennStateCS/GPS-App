@@ -3,11 +3,11 @@ package com.example.surveyingapp.domain.repository
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSettings
-import com.example.surveyingapp.gnss.settings.ArDisplaySettings
-import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
-import com.example.surveyingapp.gnss.settings.DeveloperSettings
+import com.example.surveyingapp.settings.model.ArDisplaySettings
+import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
+import com.example.surveyingapp.settings.model.DeveloperSettings
 import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
-import com.example.surveyingapp.gnss.settings.AppearanceSettings
+import com.example.surveyingapp.settings.model.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 

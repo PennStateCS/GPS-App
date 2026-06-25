@@ -1,6 +1,6 @@
 package com.example.surveyingapp.di
 
-import com.example.surveyingapp.gnss.settings.CaptureSettings
+import com.example.surveyingapp.gnss.capture.FixAcceptanceSettings
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -13,7 +13,7 @@ object SettingsModule {
 
     @Provides
     @Singleton
-    fun provideCaptureSettings(): CaptureSettings {
-        return CaptureSettings()
+    fun provideFixAcceptanceSettings(): FixAcceptanceSettings {
+        return FixAcceptanceSettings()
     }
 }

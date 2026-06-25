@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.settings
+package com.example.surveyingapp.settings.model
 
 import org.junit.Assert.*
 import org.junit.Test

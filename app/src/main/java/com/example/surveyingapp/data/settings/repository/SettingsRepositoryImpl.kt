@@ -6,12 +6,12 @@ import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
 import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.model.RtkStatus
-import com.example.surveyingapp.gnss.settings.ArDisplaySettings
-import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
-import com.example.surveyingapp.gnss.settings.DeveloperSettings
+import com.example.surveyingapp.settings.model.ArDisplaySettings
+import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
+import com.example.surveyingapp.settings.model.DeveloperSettings
 import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
-import com.example.surveyingapp.gnss.settings.AppThemeMode
-import com.example.surveyingapp.gnss.settings.AppearanceSettings
+import com.example.surveyingapp.settings.model.AppThemeMode
+import com.example.surveyingapp.settings.model.AppearanceSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine

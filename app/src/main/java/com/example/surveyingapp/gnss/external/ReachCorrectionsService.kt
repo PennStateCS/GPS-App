@@ -97,12 +97,14 @@ class ReachCorrectionsService(private val host: String) {
 
     private val broadcastListener = Emitter.Listener { args ->
         val payload = args.firstOrNull() as? JSONObject ?: run {
-            Log.w(TAG, "broadcast: unexpected args type — ${args.firstOrNull()?.javaClass?.simpleName}")
+            // Some socket.io broadcasts arrive as plain strings (handshake/other events) — expected.
+            Log.d(TAG, "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}")
             return@Listener
         }
         val name = payload.optString("name", "")
         val data = payload.optJSONObject("payload") ?: run {
-            Log.w(TAG, "broadcast '$name': missing payload object")
+            // Broadcasts we don't consume (e.g. time_marks) may omit a payload object — expected.
+            Log.d(TAG, "broadcast '$name': no payload object (ignored)")
             return@Listener
         }
 
@@ -157,14 +159,21 @@ class ReachCorrectionsService(private val host: String) {
         if (corrInput != null && corrInput.length() > 0) {
             val entry = corrInput.optJSONObject(0)
             if (entry != null) {
-                val connected = entry.optBoolean("connected", false)
+                // Emlid firmware reports correction-input liveness via "state" ("active" when RTCM
+                // is flowing), NOT a boolean "connected". Treat state == "active" as receiving;
+                // keep the legacy boolean as a fallback for any firmware that does send it.
+                val state     = entry.optString("state", "")
+                val connected = state.equals("active", ignoreCase = true) ||
+                                entry.optBoolean("connected", false)
                 val type      = entry.optString("type", "").takeIf { it.isNotBlank() }
                                ?: entry.optString("name", "").takeIf { it.isNotBlank() }
 
                 cachedIsReceiving = connected
-                cachedChannel     = type
+                // Friendlier label: prefer an explicit type/name; otherwise show "RTCM" while
+                // active (the input carries RTCM messages) instead of a bare "Connected".
+                cachedChannel     = type ?: if (connected) "RTCM" else null
 
-                Log.d(TAG, "stream_status parsed: connected=$connected channel=$type")
+                Log.d(TAG, "stream_status parsed: state=$state connected=$connected channel=${cachedChannel}")
             }
         }
 

@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.settings
+package com.example.surveyingapp.settings.model
 
 data class DeveloperSettings(
     val developerToolsEnabled: Boolean = false

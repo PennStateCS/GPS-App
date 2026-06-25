@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.settings
+package com.example.surveyingapp.settings.model
 
 /**
  * Persistent user preferences controlling how saved coordinates and 3D models are
