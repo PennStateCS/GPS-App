@@ -569,9 +569,12 @@ class AddCoordinateDialogFragment(
                 return
             }
             viewLifecycleOwner.lifecycleScope.launch {
+                // Prefer the user's device name; otherwise record the selected receiver profile
+                // (e.g. "Emlid Reach RS4") rather than a hardcoded "RS2+".
                 val sourceDevice = runCatching {
                     settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }
-                }.getOrNull() ?: "RS2+"
+                        ?: settingsRepo.externalReceiverProfile.first().label
+                }.getOrNull() ?: "External GNSS"
 
                 val coordinate = CoordinateFactory.fromCaptureResult(
                     id            = UUID.randomUUID().toString(),
