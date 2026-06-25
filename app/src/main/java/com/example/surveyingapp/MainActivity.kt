@@ -294,10 +294,11 @@ class MainActivity : AppCompatActivity() {
             tokenSource.value.text = srcLabel
             tokenSource.separator?.isVisible = true
 
-            // SOL token: show placeholder for both internal and external
+            // SOL token: Internal shows "--" (acquires quickly); External shows "Waiting" so the
+            // RS2+ label is never paired with a blank/ambiguous status while the receiver connects.
             tokenFix.root.isVisible = true
             tokenFix.label.text = "SOL"
-            tokenFix.value.text = "--"
+            tokenFix.value.text = if (isInternal) "--" else "Waiting"
             tokenFix.value.setTextColor(getColor(R.color.app_on_status_strip_variant))
 
             tokenSats.root.isVisible = false // Hidden until first fix with sat data
@@ -630,6 +631,11 @@ class MainActivity : AppCompatActivity() {
                         // yet) → blank the live data and keep the source label. Never carry the
                         // previous provider's coordinates.
                         if (fix == null) {
+                            if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
+                                loggedExternalWaiting = true
+                                com.example.surveyingapp.util.DiagnosticsLogger.i(
+                                    "Toolbar", "External selected, waiting for current fix")
+                            }
                             withContext(Dispatchers.Main) { resetStatusTokensForSource(source) }
                             return@collectLatest
                         }
@@ -658,6 +664,13 @@ class MainActivity : AppCompatActivity() {
 
                         lastDataUpdateTime = System.currentTimeMillis() // Update the shared timestamp
                         latestSkySnapshot = sky // Store latest sky snapshot
+
+                        if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
+                            loggedFirstExternalToolbarFix = true
+                            loggedExternalWaiting = false
+                            com.example.surveyingapp.util.DiagnosticsLogger.i(
+                                "Toolbar", "First current external fix displayed after startup")
+                        }
 
                         if (LOG_GNSS_UI) android.util.Log.d("MainActivity", "Updating status tokens: source=$source, RTK=${fix.rtkStatus}, fix_sats=${fix.satsUsed}, sky_sats=${sky.totalUsed}/${sky.totalVisible}")
 
@@ -773,7 +786,9 @@ class MainActivity : AppCompatActivity() {
      */
     private fun resetLiveDataTokens(isExternalLive: Boolean) {
         tokenCoord.value.text = "--"
-        tokenFix.value.text = "--"
+        // External shows an explicit waiting state instead of "--" so the RS2+ label is never
+        // shown next to an ambiguous blank fix status while the receiver connects/reconnects.
+        tokenFix.value.text = if (isExternalLive) "Waiting" else "--"
         tokenFix.value.setTextColor(getColor(android.R.color.darker_gray))
         tokenSats.root.isVisible = false
         tokenAcc.root.isVisible = false
@@ -791,6 +806,10 @@ class MainActivity : AppCompatActivity() {
     // fixes (e.g. internal fixes during the External-connecting window) can't flood the log.
     private var lastToolbarIgnoreLogMs = 0L
     private var lastToolbarIgnoreReason: String? = null
+
+    // One-shot transition logs for the External waiting → first-fix flow at startup.
+    private var loggedExternalWaiting = false
+    private var loggedFirstExternalToolbarFix = false
     private fun logToolbarIgnore(reason: String) {
         val now = System.currentTimeMillis()
         if (reason != lastToolbarIgnoreReason || now - lastToolbarIgnoreLogMs >= 10_000L) {

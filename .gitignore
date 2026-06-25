@@ -30,6 +30,10 @@ google-services.json
 .env
 .env.*
 !.env.example
+# Exception: the SHARED DEBUG keystore is intentionally committed so every developer
+# signs local debug builds with the same SHA-1 (required for the Google Maps API key
+# restriction). This is a debug-only key — never use it for release signing.
+!keystores/shared-debug.keystore
 
 # Release artifacts
 *.apk

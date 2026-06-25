@@ -32,6 +32,7 @@ import org.osmdroid.config.Configuration
 interface SurveyingAppEntryPoint {
     fun fixSwitchboard(): FixSwitchboard
     fun sourceSettings(): com.example.surveyingapp.gnss.settings.SourceSettings
+    fun gnssSourceCoordinator(): com.example.surveyingapp.gnss.service.GnssSourceCoordinator
 }
 
 @HiltAndroidApp
@@ -112,7 +113,26 @@ class SurveyingApp : Application() {
         applyThemeFromSettings()
         createNotificationChannel()
         startMockLocationPublisher()
+        restoreSavedGnssSource()
         runUtmBackfill()
+    }
+
+    /**
+     * Once-per-process restore of the live GNSS provider from the persisted selected source.
+     * Runs in Application.onCreate (not an Activity), so it is NOT re-triggered by rotation or
+     * Activity recreation — preventing duplicate external reconnects. For saved External this
+     * activates EXTERNAL_TCP so the receiver reconnects automatically without opening Settings.
+     */
+    private fun restoreSavedGnssSource() {
+        try {
+            val entryPoint = EntryPointAccessors.fromApplication(this, SurveyingAppEntryPoint::class.java)
+            appScope.launch {
+                runCatching { entryPoint.gnssSourceCoordinator().restoreSavedSourceOnStartup() }
+                    .onFailure { Log.e("SurveyingApp", "Startup GNSS source restore failed", it) }
+            }
+        } catch (e: Exception) {
+            Log.e("SurveyingApp", "Failed to launch GNSS source restore", e)
+        }
     }
 
     private fun runUtmBackfill() {
