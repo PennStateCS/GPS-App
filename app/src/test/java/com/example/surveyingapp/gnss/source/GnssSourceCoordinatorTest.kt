@@ -1,7 +1,6 @@
 package com.example.surveyingapp.gnss.source
 
 import com.example.surveyingapp.domain.model.ExternalConnectionType
-import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
@@ -53,7 +52,6 @@ class GnssSourceCoordinatorTest {
         override val externalConnType: Flow<ExternalConnectionType> = emptyFlow()
         override val externalBtAddress: Flow<String?> = emptyFlow()
         override val externalTcpName: Flow<String?> = emptyFlow()
-        override val locationSettings: Flow<LocationSettings> = emptyFlow()
         override val gnssCaptureSettings: Flow<GnssCaptureSettings> = emptyFlow()
         override val arDisplaySettings: Flow<ArDisplaySettings> = emptyFlow()
         override val coordinateDisplaySettings: Flow<CoordinateDisplaySettings> = emptyFlow()

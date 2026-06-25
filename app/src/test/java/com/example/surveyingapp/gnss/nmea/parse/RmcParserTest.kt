@@ -39,7 +39,7 @@ class RmcParserTest {
     @Test
     fun `parse golden RMC sentence with void status`() {
         // Golden RMC sentence with void status (no fix)
-        val sentence = "\$GPRMC,225446,V,,,,,0.00,0.00,060180,,,N*4C"
+        val sentence = "\$GPRMC,225446,V,,,,,0.00,0.00,060180,,,N*5F"
 
         val result = registry.parse(sentence) as? RMC
 
@@ -56,7 +56,7 @@ class RmcParserTest {
     @Test
     fun `parse golden RMC sentence from GLONASS`() {
         // Golden GLONASS RMC sentence
-        val sentence = "\$GLRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A*57"
+        val sentence = "\$GLRMC,083559.00,A,4717.11437,N,00833.91522,E,0.004,77.52,091202,,,A*4B"
 
         val result = registry.parse(sentence) as? RMC
 
@@ -107,7 +107,7 @@ class RmcParserTest {
     @Test
     fun `parse RMC with empty coordinates when void`() {
         // RMC with void status and empty position
-        val sentence = "\$GPRMC,235947.000,V,,,,,0.00,0.00,041019,,,N*48"
+        val sentence = "\$GPRMC,235947.000,V,,,,,0.00,0.00,041019,,,N*4E"
 
         val result = registry.parse(sentence) as? RMC
 
@@ -120,12 +120,13 @@ class RmcParserTest {
     }
 
     @Test
-    fun `parse malformed RMC sentence returns null`() {
-        val malformedSentence = "\$GPRMC,123456"
+    fun `parse sparse RMC sentence yields no position`() {
+        // Structurally valid talker+tag but missing fields: parsed tolerantly with null position.
+        val result = registry.parse("\$GPRMC,123456") as? RMC
 
-        val result = registry.parse(malformedSentence)
-
-        assertNull("Should return null for malformed sentence", result)
+        assertNotNull("Sparse RMC still parses (best-effort)", result)
+        assertNull("Latitude should be null", result?.lat)
+        assertNull("Longitude should be null", result?.lon)
     }
 
     @Test

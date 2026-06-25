@@ -15,6 +15,12 @@ Two distinct concepts — most past bugs came from conflating them:
 The toolbar **label** follows the selected source (user intent, shown immediately). The live data
 (coords/fix/sats/accuracy/battery) follows the **active provider** via `FixSwitchboard.currentFix`.
 
+> For the full map of where each settings/source/config model lives — and which models were
+> removed as duplicates — see [`settings-architecture.md`](settings-architecture.md). Note: the
+> dead `domain.model.LocationConfig` and the unused `domain.model.LocationSettings` aggregate were
+> deleted; the enums `LocationSourceType` / `ExternalConnectionType` now live in
+> `domain/model/LocationSourceType.kt` (their names are persisted DataStore values — do not rename).
+
 ## Packages
 
 - **`gnss.source`** — `SourceSettings` (+ `ProviderChoice`) and **`GnssSourceCoordinator`**, the single

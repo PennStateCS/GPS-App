@@ -19,7 +19,7 @@ class GsvParserTest {
     @Test
     fun `parse golden GSV sentence message 1 of 3`() {
         // Golden GSV sentence - first message of a 3-part sequence
-        val sentence = "\$GPGSV,3,1,12,01,40,083,46,02,17,308,41,12,07,344,39,14,22,228,45*75"
+        val sentence = "\$GPGSV,3,1,12,01,40,083,46,02,17,308,41,12,07,344,39,14,22,228,45*7F"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -54,7 +54,7 @@ class GsvParserTest {
     @Test
     fun `parse golden GSV sentence message 2 of 3`() {
         // Golden GSV sentence - second message with 4 more satellites
-        val sentence = "\$GPGSV,3,2,12,18,09,067,40,19,28,314,42,22,09,067,40,24,27,146,42*79"
+        val sentence = "\$GPGSV,3,2,12,18,09,067,40,19,28,314,42,22,09,067,40,24,27,146,42*76"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -74,7 +74,7 @@ class GsvParserTest {
     @Test
     fun `parse golden GSV sentence final message with partial satellites`() {
         // Golden GSV sentence - final message with only 4 satellites (12 total, so 4+4+4)
-        val sentence = "\$GPGSV,3,3,12,25,15,175,46,26,28,069,42,27,27,289,35,32,11,239,39*75"
+        val sentence = "\$GPGSV,3,3,12,25,15,175,46,26,28,069,42,27,27,289,35,32,11,239,39*79"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -88,7 +88,7 @@ class GsvParserTest {
     @Test
     fun `parse golden GLONASS GSV sentence`() {
         // Golden GLONASS GSV sentence
-        val sentence = "\$GLGSV,3,1,09,65,79,042,33,66,65,315,43,67,09,090,38,68,74,180,33*6F"
+        val sentence = "\$GLGSV,3,1,09,65,79,042,33,66,65,315,43,67,09,090,38,68,74,180,33*68"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -108,7 +108,7 @@ class GsvParserTest {
     @Test
     fun `parse golden Galileo GSV sentence`() {
         // Golden Galileo GSV sentence
-        val sentence = "\$GAGSV,2,1,07,01,45,132,42,02,17,312,40,03,07,344,39,07,22,228,45*77"
+        val sentence = "\$GAGSV,2,1,07,01,45,132,42,02,17,312,40,03,07,344,39,07,22,228,45*69"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -122,7 +122,7 @@ class GsvParserTest {
     @Test
     fun `parse GSV with satellites having no SNR`() {
         // GSV with some satellites not tracked (no SNR)
-        val sentence = "\$GPGSV,2,1,08,01,40,083,,02,17,308,41,12,07,344,,14,22,228,45*6B"
+        val sentence = "\$GPGSV,2,1,08,01,40,083,,02,17,308,41,12,07,344,,14,22,228,45*7D"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -143,7 +143,7 @@ class GsvParserTest {
     @Test
     fun `parse GSV single message with 3 satellites`() {
         // Single GSV message with only 3 satellites
-        val sentence = "\$GPGSV,1,1,03,23,13,238,45,24,25,047,42,32,11,239,39*4D"
+        val sentence = "\$GPGSV,1,1,03,23,13,238,45,24,25,047,42,32,11,239,39*46"
 
         val result = registry.parse(sentence) as? GSV
 
@@ -157,7 +157,7 @@ class GsvParserTest {
     @Test
     fun `parse GSV with high elevation satellites`() {
         // GSV with satellites at high elevation (near zenith)
-        val sentence = "\$GPGSV,1,1,04,01,89,000,45,02,85,090,42,03,82,180,40,04,87,270,44*7A"
+        val sentence = "\$GPGSV,1,1,04,01,89,000,45,02,85,090,42,03,82,180,40,04,87,270,44*76"
 
         val result = registry.parse(sentence) as? GSV
 

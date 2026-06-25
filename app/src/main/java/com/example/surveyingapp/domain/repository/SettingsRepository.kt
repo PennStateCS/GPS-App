@@ -2,7 +2,6 @@ package com.example.surveyingapp.domain.repository
 
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
-import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.settings.model.ArDisplaySettings
 import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
 import com.example.surveyingapp.settings.model.DeveloperSettings
@@ -18,7 +17,6 @@ interface SettingsRepository {
     val externalTcpHost: Flow<String?>
     val externalTcpPort: Flow<Int?>
     val externalTcpName: Flow<String?>
-    val locationSettings: Flow<LocationSettings>
 
     suspend fun setLocationSource(v: LocationSourceType)
     suspend fun setExternalConnType(v: ExternalConnectionType)

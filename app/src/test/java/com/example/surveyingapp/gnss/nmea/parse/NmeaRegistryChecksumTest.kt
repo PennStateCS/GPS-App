@@ -74,7 +74,7 @@ class NmeaRegistryChecksumTest {
         assertNotNull("Checksum validation should pass for known-good sentence", result)
 
         val gga = result as GGA
-        assertEquals("Latitude should be parsed correctly", 40.117300, gga.lat ?: -1.0, 0.000001)
+        assertEquals("Latitude should be parsed correctly", 48.117300, gga.lat ?: -1.0, 0.000001)
         assertEquals("Longitude should be parsed correctly", 11.516667, gga.lon ?: -1.0, 0.000001)
     }
 }

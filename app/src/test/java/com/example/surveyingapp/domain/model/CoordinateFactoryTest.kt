@@ -96,17 +96,19 @@ class CoordinateFactoryTest {
 
         assertNotNull("easting should not be null", coord.easting)
         assertNotNull("northing should not be null", coord.northing)
-        assertEquals("18N", coord.utmZone)
+        // utmZone is zone + MGRS latitude-band letter; 40.7°N falls in band T.
+        assertEquals("18T", coord.utmZone)
         assertEquals(4326, coord.crsEpsg)
     }
 
     @Test
-    fun `fromCaptureResult stores provider name`() {
+    fun `fromCaptureResult maps provider to its storage string`() {
         val coord = CoordinateFactory.fromCaptureResult(
             id = "p", name = "P", note = null, color = 0, iconId = "pin",
             provider = Provider.INTERNAL, result = captureResult()
         )
-        assertEquals(Provider.INTERNAL.name, coord.provider)
+        // fromCaptureResult normalizes the Provider enum to a storage string: INTERNAL -> "fused".
+        assertEquals("fused", coord.provider)
     }
 
     @Test

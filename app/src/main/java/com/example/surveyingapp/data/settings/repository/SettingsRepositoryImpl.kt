@@ -4,7 +4,6 @@ import com.example.surveyingapp.domain.repository.SettingsRepository
 import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.ExternalConnectionType
-import com.example.surveyingapp.domain.model.LocationSettings
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.settings.model.ArDisplaySettings
 import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
@@ -30,23 +29,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val externalTcpHost = local.externalTcpHost
     override val externalTcpPort = local.externalTcpPort
     override val externalTcpName = local.externalTcpName
-
-    override val locationSettings: Flow<LocationSettings>
-        get() = combine(
-            locationSource,
-            externalConnType,
-            externalBtAddress,
-            externalTcpHost,
-            externalTcpPort
-        ) { source, connType, btAddr, tcpHost, tcpPort ->
-            LocationSettings(
-                source = source,
-                connectionType = connType,
-                btDeviceAddress = btAddr,
-                tcpHost = tcpHost,
-                tcpPort = tcpPort
-            )
-        }
 
     override suspend fun setLocationSource(v: LocationSourceType) {
         local.setLocationSourceString(v.toPrefString())

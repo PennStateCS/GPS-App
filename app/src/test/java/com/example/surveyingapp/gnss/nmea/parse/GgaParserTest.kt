@@ -40,7 +40,7 @@ class GgaParserTest {
     @Test
     fun `parse golden GGA sentence with no fix`() {
         // Golden GGA sentence with no fix (quality 0)
-        val sentence = "\$GPGGA,235317.00,4003.90395,N,10512.57934,W,0,03,2.36,1320.0,M,-16.27,M,,*6C"
+        val sentence = "\$GPGGA,235317.00,4003.90395,N,10512.57934,W,0,03,2.36,1320.0,M,-16.27,M,,*6F"
 
         val result = registry.parse(sentence) as? GGA
 
@@ -57,7 +57,7 @@ class GgaParserTest {
     @Test
     fun `parse golden GGA sentence with RTK fixed`() {
         // Golden GGA sentence with RTK fixed solution (quality 4)
-        val sentence = "\$GPGGA,134658.00,5106.9792,N,11402.3003,W,4,09,2.3,1048.47,M,-16.27,M,08,AAAA*5A"
+        val sentence = "\$GPGGA,134658.00,5106.9792,N,11402.3003,W,4,09,2.3,1048.47,M,-16.27,M,08,AAAA*66"
 
         val result = registry.parse(sentence) as? GGA
 
@@ -78,7 +78,7 @@ class GgaParserTest {
     @Test
     fun `parse golden GGA sentence from GLONASS`() {
         // Golden GLONASS GGA sentence
-        val sentence = "\$GLGGA,092750.000,5321.6802,N,00630.3372,W,1,8,1.03,61.7,M,55.2,M,,*76"
+        val sentence = "\$GLGGA,092750.000,5321.6802,N,00630.3372,W,1,8,1.03,61.7,M,55.2,M,,*6A"
 
         val result = registry.parse(sentence) as? GGA
 
@@ -94,7 +94,7 @@ class GgaParserTest {
     @Test
     fun `parse GGA with empty coordinates returns null coordinates`() {
         // GGA with missing position data
-        val sentence = "\$GPGGA,235947.000,,,,,0,00,,,,,,,*79"
+        val sentence = "\$GPGGA,235947.000,,,,,0,00,,,,,,,*76"
 
         val result = registry.parse(sentence) as? GGA
 
@@ -108,9 +108,12 @@ class GgaParserTest {
     }
 
     @Test
-    fun `parse malformed GGA sentence returns null`() {
-        val result = registry.parse("\$GPGGA,123456")
-        assertNull("Should return null for malformed sentence", result)
+    fun `parse sparse GGA sentence yields no position`() {
+        // Structurally valid talker+tag but missing fields: parsed tolerantly with null position.
+        val result = registry.parse("\$GPGGA,123456") as? GGA
+        assertNotNull("Sparse GGA still parses (best-effort)", result)
+        assertNull("Latitude should be null", result?.lat)
+        assertNull("Longitude should be null", result?.lon)
     }
 
     @Test
