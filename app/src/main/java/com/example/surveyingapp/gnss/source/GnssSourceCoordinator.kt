@@ -9,16 +9,39 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Single, non-UI entry point for changing the live GNSS provider. Both app startup and Settings
- * can call this so the activation rules live in one place instead of being copied into fragments.
+ * Centralizes **live provider activation** for the GNSS subsystem.
  *
- * Design note on "validation": activating [ProviderChoice.EXTERNAL_TCP] makes [FixSwitchboard] bind
- * the external adapter, which opens the TCP NMEA connection, waits for first data, and retries with
- * backoff. That adapter IS the connection validator used by the live data pipeline, so this
- * coordinator does not duplicate SettingsFragment's probe logic — it just flips the provider and
- * lets the adapter connect. No stale or wrong-provider data can surface while it connects: the
- * internal adapter is not bound while External is active, and currentFix stays null until the
- * receiver actually streams, so the toolbar shows a clean waiting state.
+ * ### Selected source vs active provider
+ * - **Selected source** = the user's persisted choice (`SettingsRepository.locationSource`,
+ *   `LocationSourceType` Internal/External/Simulator). Owned by [SettingsRepository] / DataStore.
+ * - **Active provider** = what is actually streaming fixes right now
+ *   ([SourceSettings.activeProvider], `ProviderChoice` INTERNAL / EXTERNAL_TCP). The only mutator is
+ *   [SourceSettings.setActiveProvider]; this coordinator is the single place that calls it.
+ *
+ * ### What this coordinator owns
+ * Flipping the **active provider** (and emitting the diagnostic transition logs). When it activates
+ * EXTERNAL_TCP, `FixSwitchboard` binds the external adapter, which opens the TCP NMEA connection,
+ * waits for first data, and retries with backoff — that adapter is the connection validator, so the
+ * coordinator does not duplicate any probe. No stale/wrong-provider data can surface while it
+ * connects: the internal adapter is not bound while External is active and `currentFix` stays null
+ * until the receiver streams, so the toolbar shows a clean waiting state.
+ *
+ * ### What this coordinator does NOT do (yet)
+ * It does **not** persist the selected source, disable mock-location publishing, validate the
+ * receiver, or touch any UI state. Those remain in `SettingsFragment` (and DataStore). The
+ * `activate…Provider` method names reflect this: they ONLY change the active provider. Do not rename
+ * them back to full-switch verbs (`switchTo…`, `connect…`) unless they actually perform the full
+ * sequence below.
+ *
+ * ### External TCP activation order (must be preserved by callers)
+ * 1. save connection type (`setExternalConnType`)
+ * 2. save host/port (`setExternalTcp`)
+ * 3. save selected source = External (`setLocationSource`)
+ * 4. validate the receiver if required (probe / let the adapter connect)
+ * 5. **activate** the External TCP provider ([activateExternalTcpProvider]) — only after 1–4
+ *
+ * [restoreSavedSourceOnStartup] is the one method that orchestrates a small read-decide-activate
+ * flow; the `activate…Provider` methods are pure one-line provider flips.
  */
 @Singleton
 class GnssSourceCoordinator @Inject constructor(
@@ -27,8 +50,10 @@ class GnssSourceCoordinator @Inject constructor(
 ) {
 
     /**
-     * Called once per process at app launch. Restores the live provider from the persisted
-     * selected source WITHOUT requiring the user to open Settings or rotate the device.
+     * Called once per process at app launch. Restores the live provider from the persisted selected
+     * source WITHOUT requiring the user to open Settings or rotate the device. For saved External it
+     * re-activates EXTERNAL_TCP (the adapter reconnects); if there is no saved host/port, or the user
+     * switched away during the startup window, it stays/returns to Internal.
      */
     suspend fun restoreSavedSourceOnStartup() {
         val selected = runCatching { settingsRepository.locationSource.first() }
@@ -38,7 +63,7 @@ class GnssSourceCoordinator @Inject constructor(
 
         if (selected != LocationSourceType.EXTERNAL) {
             // Internal (or simulator): keep the safe default Internal provider.
-            switchToInternal(reason = "startup-restore-internal")
+            activateInternalProvider(reason = "startup-restore-internal")
             return
         }
 
@@ -47,7 +72,7 @@ class GnssSourceCoordinator @Inject constructor(
         if (host.isNullOrBlank() || port == null) {
             DiagnosticsLogger.w("GNSS",
                 "Startup External restore: no saved host/port — staying Internal until configured")
-            switchToInternal(reason = "startup-restore-no-host")
+            activateInternalProvider(reason = "startup-restore-no-host")
             return
         }
 
@@ -63,30 +88,28 @@ class GnssSourceCoordinator @Inject constructor(
             DiagnosticsLogger.i("GNSS", "Startup external restore aborted — source changed before activation")
             return
         }
-        connectExternalTcp(host, port, reason = "startup-restore")
+        activateExternalTcpProvider(host, port, reason = "startup-restore")
     }
 
-    /** Makes Internal the live provider. [reason] is for diagnostics only. */
-    fun switchToInternal(reason: String) {
-        DiagnosticsLogger.i("GNSS", "switchToInternal ($reason)")
+    /**
+     * Makes Internal the **active provider** (`setActiveProvider(INTERNAL)`) and logs the reason.
+     * Does NOT persist the selected source or disable mock publishing — callers own that.
+     */
+    fun activateInternalProvider(reason: String) {
+        DiagnosticsLogger.i("GNSS", "activateInternalProvider ($reason)")
         sourceSettings.setActiveProvider(ProviderChoice.INTERNAL)
     }
 
     /**
-     * Activates the external provider using the saved receiver settings. Connection validation and
-     * retry are handled by the external adapter the switchboard binds (see class note). The toolbar
-     * shows a waiting state until external fixes arrive; if the receiver is unreachable it stays in
-     * the waiting/no-data state rather than silently falling back to Internal.
+     * Makes External TCP the **active provider** (`setActiveProvider(EXTERNAL_TCP)`) and logs the
+     * reason. [host]/[port] are for diagnostics only — the actual connection params are read by
+     * `TcpNmeaSource` from [SettingsRepository], which the caller must have already persisted (see
+     * the External TCP activation order in the class KDoc). Connection validation/retry is delegated
+     * to the external adapter the switchboard binds.
      */
-    fun connectExternalTcp(host: String, port: Int, reason: String) {
-        DiagnosticsLogger.i("Receiver", "Connect external to $host:$port ($reason)")
+    fun activateExternalTcpProvider(host: String, port: Int, reason: String) {
+        DiagnosticsLogger.i("Receiver", "Activate external provider for $host:$port ($reason)")
         sourceSettings.setActiveProvider(ProviderChoice.EXTERNAL_TCP)
         DiagnosticsLogger.i("GNSS", "External provider activated from $reason; EXTERNAL_TCP set (validation delegated to external adapter)")
-    }
-
-    /** Reverts the live provider to Internal (e.g. user disconnects the receiver). */
-    fun disconnectExternal(reason: String) {
-        DiagnosticsLogger.i("GNSS", "disconnectExternal ($reason)")
-        sourceSettings.setActiveProvider(ProviderChoice.INTERNAL)
     }
 }

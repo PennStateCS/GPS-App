@@ -18,8 +18,13 @@ The toolbar **label** follows the selected source (user intent, shown immediatel
 ## Packages
 
 - **`gnss.source`** — `SourceSettings` (+ `ProviderChoice`) and **`GnssSourceCoordinator`**, the single
-  non-UI entry point for source actions (`switchToInternal`, `connectExternalTcp`,
-  `disconnectExternal`, `restoreSavedSourceOnStartup`).
+  place that flips the **active provider**. Its `activate…Provider` methods ONLY call
+  `setActiveProvider(...)` (they do not persist the selected source, disable mock, or validate the
+  receiver — see below):
+  - `activateInternalProvider(reason)`
+  - `activateExternalTcpProvider(host, port, reason)` (host/port logged only; params read from
+    settings by `TcpNmeaSource`)
+  - `restoreSavedSourceOnStartup()` (the one orchestrating read-decide-activate method)
 - **`gnss.bus`** — `FixSwitchboard` (routes the active provider's fixes/sky, clears stale state on
   switch), `FixBus`/`SkyBus` interfaces, and the shared `NmeaSource`/`GsvMessage` contracts.
 - **`gnss.internal`** — `InternalAdapter` + `InternalNmeaSource` (Android device GPS via NMEA).

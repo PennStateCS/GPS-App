@@ -38,6 +38,22 @@ object GnssStatusFormatter {
             }
         }
 
+    /**
+     * Capture-dialog fix label from a raw status name (e.g. a stored `rtkStatus` string). Differs
+     * from [formatFixStatus] in its fallback: any unrecognized value (including DEAD_RECKONING,
+     * INVALID, or null) maps to "Unknown" rather than "No Fix"/"DR". Matches the capture dialog's
+     * existing `shortFix` wording exactly.
+     */
+    fun formatCaptureFixStatus(rawStatusName: String?): String =
+        when (rawStatusName?.uppercase(Locale.US)) {
+            "FIX"    -> "Fixed"
+            "FLOAT"  -> "Float"
+            "DGPS"   -> "DGPS"
+            "SINGLE" -> "Single"
+            "NONE"   -> "No Fix"
+            else     -> "Unknown"
+        }
+
     /** Horizontal accuracy in meters, e.g. "±0.02 m". Caller decides the null/placeholder case. */
     fun formatAccuracyMeters(hAccM: Double): String =
         "±${String.format(Locale.US, "%.2f", hAccM)} m"

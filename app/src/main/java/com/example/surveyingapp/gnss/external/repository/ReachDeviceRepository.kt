@@ -5,7 +5,7 @@ import com.example.surveyingapp.gnss.external.ReachBatteryService
 import com.example.surveyingapp.gnss.external.ReachCorrectionsService
 import com.example.surveyingapp.gnss.external.ReachDeviceService
 import com.example.surveyingapp.gnss.external.ReachHttpClient
-import com.example.surveyingapp.gnss.external.model.DeviceCommand
+import com.example.surveyingapp.gnss.external.model.ReachDeviceCommand
 import com.example.surveyingapp.gnss.external.model.ReachBatteryInfo
 import com.example.surveyingapp.gnss.external.model.ReachConnectionStatus
 import com.example.surveyingapp.gnss.external.model.ReachCorrectionsInfo
@@ -245,28 +245,28 @@ class ReachDeviceRepository @Inject constructor(
     }
 
     // Device control commands
-    suspend fun sendCommand(command: DeviceCommand): Boolean {
+    suspend fun sendCommand(command: ReachDeviceCommand): Boolean {
         val ip = getReachIp() ?: return false
         return try {
             val client = ReachHttpClient(ip)
             when (command) {
-                DeviceCommand.REBOOT -> {
+                ReachDeviceCommand.REBOOT -> {
                     // Implementation for device reboot
                     true
                 }
-                DeviceCommand.SHUTDOWN -> {
+                ReachDeviceCommand.SHUTDOWN -> {
                     // Implementation for device shutdown
                     true
                 }
-                DeviceCommand.RESTART_GNSS -> {
+                ReachDeviceCommand.RESTART_GNSS -> {
                     // Implementation for GNSS restart
                     true
                 }
-                DeviceCommand.CLEAR_LOGS -> {
+                ReachDeviceCommand.CLEAR_LOGS -> {
                     // Implementation for clearing device logs
                     true
                 }
-                DeviceCommand.FACTORY_RESET -> {
+                ReachDeviceCommand.FACTORY_RESET -> {
                     // Implementation for factory reset
                     true
                 }

@@ -824,7 +824,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             tcpConnectJob = null
             resetExternalReceiverStatus()
             // Switch back to internal in the switchboard immediately (synchronous).
-            gnssSourceCoordinator.switchToInternal("settings")
+            gnssSourceCoordinator.activateInternalProvider("settings")
             // Clear selected device so the UI shows the TCP entry form again.
             selectedDevice = null
             selectedDeviceLabel = null
@@ -1325,7 +1325,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             // active provider stays INTERNAL until the receiver is confirmed reachable
             // (connectViaTcpFlow sets it inside the receiverPresent block).
             if (source != LocationSourceType.EXTERNAL) {
-                gnssSourceCoordinator.switchToInternal("settings")
+                gnssSourceCoordinator.activateInternalProvider("settings")
             }
             // Attempt single auto reconnect if external source active and we have stored device
             if (source == LocationSourceType.EXTERNAL && storedHost != null && storedPort != null && !autoReconnectAttempted) {
@@ -1349,8 +1349,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tcpConnectJob = null
                     resetExternalReceiverStatus()
                     // Update switchboard provider to internal
-                    gnssSourceCoordinator.switchToInternal("settings")
-                    Log.d("SettingsFragment", "Called setActiveProvider(INTERNAL)")
+                    gnssSourceCoordinator.activateInternalProvider("settings")
+                    Log.d("SettingsFragment", "Called activateInternalProvider(INTERNAL)")
                     // Update categories immediately when switching to internal (hide RS2+)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
@@ -1505,7 +1505,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
                     // Activate via the coordinator (the single entry point for source actions).
                     // Persistence above already completed, so ordering is preserved.
-                    gnssSourceCoordinator.connectExternalTcp(host, port, reason = "settings-connect #$attemptId")
+                    gnssSourceCoordinator.activateExternalTcpProvider(host, port, reason = "settings-connect #$attemptId")
                     provisionalConnectedUntil = System.currentTimeMillis() + 8000L
                     updateDeviceBox()
 
