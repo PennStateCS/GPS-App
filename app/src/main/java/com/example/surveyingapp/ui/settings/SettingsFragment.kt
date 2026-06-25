@@ -14,9 +14,9 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.*
 import com.example.surveyingapp.BuildConfig
 import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
-import com.example.surveyingapp.gnss.settings.ArDisplaySettings
-import com.example.surveyingapp.gnss.settings.CoordinateDisplaySettings
-import com.example.surveyingapp.gnss.settings.DeveloperSettings
+import com.example.surveyingapp.settings.model.ArDisplaySettings
+import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
+import com.example.surveyingapp.settings.model.DeveloperSettings
 import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
 import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,8 +44,8 @@ import com.example.surveyingapp.gnss.external.repository.ReachDeviceRepository
 import com.example.surveyingapp.gnss.external.ReachHttpClient
 import com.example.surveyingapp.service.LocationService
 import androidx.appcompat.app.AppCompatDelegate
-import com.example.surveyingapp.gnss.settings.AppThemeMode
-import com.example.surveyingapp.gnss.settings.AppearanceSettings
+import com.example.surveyingapp.settings.model.AppThemeMode
+import com.example.surveyingapp.settings.model.AppearanceSettings
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import com.example.surveyingapp.util.ReachNameResolver
 import kotlinx.coroutines.*

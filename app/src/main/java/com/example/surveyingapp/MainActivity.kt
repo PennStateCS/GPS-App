@@ -548,7 +548,7 @@ class MainActivity : AppCompatActivity() {
      *   Uses app-window brightness only — does not require WRITE_SETTINGS permission and
      *   does not change the Android system brightness permanently.
      */
-    private fun applyDisplayBehaviorSettings(settings: com.example.surveyingapp.gnss.settings.AppearanceSettings) {
+    private fun applyDisplayBehaviorSettings(settings: com.example.surveyingapp.settings.model.AppearanceSettings) {
         if (settings.keepScreenAwake) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {

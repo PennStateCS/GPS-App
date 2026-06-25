@@ -1,4 +1,4 @@
-package com.example.surveyingapp.gnss.settings
+package com.example.surveyingapp.settings.model
 
 enum class AppThemeMode { SYSTEM, LIGHT, DARK }
 

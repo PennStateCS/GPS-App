@@ -12,7 +12,7 @@ import com.example.surveyingapp.gnss.capture.AveragingPolicy
 import com.example.surveyingapp.gnss.capture.ObservationSession
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.domain.repository.CoordinateRepository
-import com.example.surveyingapp.gnss.settings.CaptureSettings
+import com.example.surveyingapp.gnss.capture.FixAcceptanceSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -26,7 +26,7 @@ import java.util.UUID
 class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val coordinateRepository: CoordinateRepository,
-    private val captureSettings: CaptureSettings,
+    private val fixAcceptance: FixAcceptanceSettings,
     private val sourceSettings: com.example.surveyingapp.gnss.source.SourceSettings
 ) : ViewModel() {
 
@@ -43,7 +43,7 @@ class CaptureViewModel @Inject constructor(
     val okToCapture: StateFlow<Boolean> = _okToCapture.asStateFlow()
 
     init {
-        // Monitor fixes and update okToCapture based on CaptureSettings
+        // Monitor fixes and update okToCapture based on FixAcceptanceSettings
         viewModelScope.launch {
             fixSwitchboard.fixes.collect { fix ->
                 updateOkToCapture(fix)
@@ -84,7 +84,7 @@ class CaptureViewModel @Inject constructor(
 
             // Required dwell in ms from Duration (minDwellSec -> minDwell)
             val dwellTimeMs = currentTime - (satisfyingStartTime ?: currentTime)
-            val requiredDwellMs = captureSettings.minDwell.inWholeMilliseconds
+            val requiredDwellMs = fixAcceptance.minDwell.inWholeMilliseconds
 
             _okToCapture.value = dwellTimeMs >= requiredDwellMs
         } else {
@@ -94,7 +94,7 @@ class CaptureViewModel @Inject constructor(
         }
     }
 
-    private fun checkFixSatisfiesSettings(fix: Fix): Boolean = captureSettings.accepts(fix)
+    private fun checkFixSatisfiesSettings(fix: Fix): Boolean = fixAcceptance.accepts(fix)
 
     /**
      * Loads the saved GNSS Capture settings and starts an averaging session with that policy.

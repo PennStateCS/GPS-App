@@ -33,11 +33,29 @@ The toolbar **label** follows the selected source (user intent, shown immediatel
   `ReachDeviceInfo`/`ReachBatteryInfo`/`ReachStorageInfo`/`ReachCorrectionsInfo`/…), and
   `repository/ReachDeviceRepository`. Service JSON DTOs (`ReachDeviceInfoDto`, `BatteryStatus`) stay
   private to their service files.
-- **`gnss.capture`** — `ObservationSession`, `AveragingPolicy`, `CaptureResult`,
-  `GnssCaptureSettings` (non-UI averaging logic). The capture *UI* lives in `ui.capture` /
-  `ui.viewpoints`.
+- **`gnss.capture`** — non-UI capture logic. Two distinct settings types here, no longer confusable:
+  - **`GnssCaptureSettings`** — the **persisted** user capture/averaging policy (min/max duration,
+    min samples, required RTK status, fix/correction age), stored via `SettingsRepository`/DataStore;
+    `toAveragingPolicy()` converts it to the runtime `AveragingPolicy`.
+  - **`AveragingPolicy`** — runtime averaging policy consumed by **`ObservationSession`** (which
+    collects observations and produces **`CaptureResult`**).
+  - **`FixAcceptanceSettings`** — **runtime-only** (DI default, not persisted) live-fix eligibility
+    thresholds (min sats, max PDOP, allowed RTK set, min dwell) for the "OK to capture" check.
+    (Renamed from the old `gnss.settings.CaptureSettings` to remove the name clash.)
+  The capture *UI* lives in `ui.capture` / `ui.viewpoints`.
+- **`gnss.accuracy`** — `UereTable` + `AccuracyEstimator` (DOP/UERE accuracy estimation). (The unused
+  legacy `AccuracySettings`/`UereOverrides` were removed.)
 - **`gnss.diagnostics`** — `DiagnosticsService`, `NmeaDiagnostics`, `NmeaLogger`.
 - **`gnss.format`** — `GnssStatusFormatter`, shared status/source/accuracy wording.
+- **`gnss.settings`** — only **GNSS-specific** settings: `CaptureSettings`/`AccuracySettings`/
+  `UereOverrides` and `GnssReceiverSettings`. (GNSS capture policy lives in `gnss.capture` as
+  `GnssCaptureSettings`.)
+
+General (non-GNSS) app settings live **outside** the GNSS tree:
+- **`settings.model`** — `AppearanceSettings` (+ `AppThemeMode`), `ArDisplaySettings`,
+  `CoordinateDisplaySettings`, `DeveloperSettings`. These were moved out of `gnss.settings` so the
+  GNSS packages represent only GNSS-specific logic. Persistence is unchanged (field-by-field DataStore
+  keys; enum value names preserved).
 
 UI may depend on `gnss.*`; `gnss.*` never depends on UI.
 

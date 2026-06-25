@@ -19,7 +19,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import androidx.appcompat.app.AppCompatDelegate
-import com.example.surveyingapp.gnss.settings.AppThemeMode
+import com.example.surveyingapp.settings.model.AppThemeMode
 import com.example.surveyingapp.util.DiagnosticsLogger
 import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
