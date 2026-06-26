@@ -6,5 +6,5 @@
     android:layout_marginStart="16dp"
     android:layout_marginEnd="16dp"
     android:text="|"
-    android:textColor="#66FFFFFF"
+    android:textColor="@color/app_status_separator"
     android:textSize="14sp"/>

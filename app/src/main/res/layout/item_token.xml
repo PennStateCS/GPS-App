@@ -25,7 +25,7 @@
         android:layout_height="wrap_content"
         android:text="Acc"
         android:textSize="12sp"
-        android:textColor="#B3FFFFFF"
+        android:textColor="@color/app_on_status_strip_variant"
         android:maxLines="1" />
 
     <TextView
@@ -36,7 +36,7 @@
         android:textSize="14sp"
         android:textStyle="bold"
         android:layout_marginStart="4dp"
-        android:textColor="@android:color/white"
+        android:textColor="@color/app_on_status_strip"
         android:maxLines="1"
         android:ellipsize="end"
         android:fontFeatureSettings="tnum" />
@@ -50,6 +50,6 @@
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
         android:text="|"
-        android:textColor="#66FFFFFF"
+        android:textColor="@color/app_status_separator"
         android:textSize="14sp" />
 </LinearLayout>

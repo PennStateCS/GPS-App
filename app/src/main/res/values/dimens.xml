@@ -19,4 +19,9 @@
     <dimen name="settings_row_padding_v">16dp</dimen>
     <!-- Vertical padding for inline rows inside content_settings pages. Tablet override: 10dp -->
     <dimen name="settings_content_row_padding_v">14dp</dimen>
+    <!-- Width of exposed-dropdown value selectors in settings rows. Wide enough that longer
+         options (e.g. "System Default") stay on one line; selected text is singleLine and
+         ellipsizes if an option is longer than this. Phone-safe here; widened on tablet
+         (values-sw600dp) where there is more horizontal room. -->
+    <dimen name="settings_dropdown_width">200dp</dimen>
 </resources>

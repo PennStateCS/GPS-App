@@ -9,5 +9,7 @@
     <!-- Tighter row padding on tablet for a denser, more professional feel -->
     <dimen name="settings_row_padding_v">11dp</dimen>
     <dimen name="settings_content_row_padding_v">10dp</dimen>
+    <!-- Wider dropdown selectors on tablet — uses the extra horizontal room -->
+    <dimen name="settings_dropdown_width">240dp</dimen>
 </resources>
 
