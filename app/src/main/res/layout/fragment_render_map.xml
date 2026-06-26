@@ -2,12 +2,13 @@
 <!--
     Map workspace. All panels overlay the full-screen MapView.
     Key ID contracts (referenced by RenderMapFragment.kt):
-      mapView, text_render_map, text_gnss_status
+      mapView, text_render_map
       left_panel, panel_handle (GONE compat), btn_collapse_panel, btn_expand_panel
       left_panel_subtitle, left_panel_placeholder
       coordinate_toggle_list, btn_show_all, btn_hide_all
-      fab_toggle_sat (Layers), btn_compass, fab_zoom_in, fab_zoom_out
-      fab_recenter (My Location), btn_fit_visible, fab_toggle_grid (GONE compat)
+      Map Tools overlay: btnMapToolsToggle, layoutMapTools, and rows
+        btnMapType, btnMapCenter, btnMapGrid, btnMapZoomIn, btnMapZoomOut,
+        btnMapCompass, btnMapFit
       card_selected_coordinate, img_selected_icon, txt_selected_name,
         txt_selected_subtitle, btn_selected_close, btn_selected_center, btn_selected_stakeout
       stakeout_panel, txt_stakeout_target, txt_stakeout_distance, txt_stakeout_bearing,
@@ -42,13 +43,6 @@
         android:id="@+id/panel_handle"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:visibility="gone" />
-
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab_toggle_grid"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:contentDescription="Toggle grid"
         android:visibility="gone" />
 
     <Button
@@ -98,7 +92,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Coordinates"
+                        android:text="Map Points"
                         android:textAppearance="?attr/textAppearanceTitleMedium"
                         android:textColor="?attr/colorOnSurface" />
 
@@ -155,21 +149,38 @@
                 android:paddingTop="4dp"
                 android:paddingBottom="4dp" />
 
-            <!-- Empty state -->
-            <TextView
-                android:id="@+id/left_panel_placeholder"
+            <!-- Empty state (shown in-panel when there are no saved points) -->
+            <LinearLayout
+                android:id="@+id/left_panel_empty"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
-                android:text="No coordinates saved"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textStyle="italic"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:gravity="center"
-                android:visibility="gone" />
+                android:paddingTop="16dp"
+                android:paddingBottom="16dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/left_panel_placeholder"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="No saved points to show"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurface"
+                    android:gravity="center" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Capture or import coordinates, then return to this map."
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:gravity="center" />
+
+            </LinearLayout>
 
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
@@ -187,106 +198,279 @@
         android:visibility="gone" />
 
     <!-- ══════════════════════════════════════════════════════════════════
-         TOP-CENTER: GNSS status chip
+         TOP-END: Map Tools toggle + collapsible overlay toolbar
+         (Modeled on the AR floating toolbar — reuses the same overlay
+         resources. The app-wide toolbar owns GNSS/source/fix/accuracy, so
+         the map no longer shows a GNSS status chip.)
     ══════════════════════════════════════════════════════════════════ -->
-    <TextView
-        android:id="@+id/text_gnss_status"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
+    <!-- Always-visible one-tap Recenter (Center also remains inside Map Tools). Sits just left of
+         the toggle so it stays clear of the toolbar panel when it slides out below the toggle. -->
+    <ImageButton
+        android:id="@+id/btnMapRecenter"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
         android:layout_marginTop="12dp"
-        android:background="@drawable/bg_gnss_chip"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
-        android:text="GNSS: —"
-        android:textAppearance="?attr/textAppearanceLabelMedium"
-        android:textColor="@android:color/white"
-        android:fontFamily="monospace" />
+        android:layout_marginEnd="66dp"
+        android:src="@drawable/ic_my_location_24"
+        android:background="@drawable/bg_ar_chip"
+        android:scaleType="center"
+        android:padding="12dp"
+        android:contentDescription="Recenter map"
+        android:elevation="4dp"
+        app:tint="@color/ar_overlay_text"
+        android:clickable="true"
+        android:focusable="true" />
 
-    <!-- ══════════════════════════════════════════════════════════════════
-         RIGHT: Map control stack
-    ══════════════════════════════════════════════════════════════════ -->
-    <LinearLayout
-        android:layout_width="wrap_content"
+    <ImageButton
+        android:id="@+id/btnMapToolsToggle"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="12dp"
+        android:src="@drawable/ic_ar_menu"
+        android:background="@drawable/bg_ar_chip"
+        android:scaleType="center"
+        android:padding="12dp"
+        android:contentDescription="Show map tools"
+        android:elevation="4dp"
+        android:clickable="true"
+        android:focusable="true" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/layoutMapTools"
+        android:layout_width="72dp"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
-        android:layout_margin="12dp"
-        android:orientation="vertical">
+        android:layout_marginTop="68dp"
+        android:layout_marginEnd="12dp"
+        android:visibility="gone"
+        style="@style/Widget.App.AR.Card">
 
-        <ImageButton
-            android:id="@+id/fab_toggle_sat"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_map_control"
-            android:contentDescription="Map layers"
-            android:src="@drawable/ic_layers_24"
-            app:tint="?attr/colorOnSurface"
-            android:elevation="4dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
 
-        <ImageButton
-            android:id="@+id/btn_compass"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_map_control"
-            android:contentDescription="Reset map orientation"
-            android:src="@drawable/ic_compass_24"
-            app:tint="?attr/colorOnSurface"
-            android:elevation="4dp"
-            android:layout_marginTop="6dp" />
+            <!-- Type (map type / layers) -->
+            <LinearLayout
+                android:id="@+id/btnMapType"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Change map type">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_layers_24"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Type"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/fab_zoom_in"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_map_control"
-            android:contentDescription="Zoom in"
-            android:src="@drawable/ic_zoom_in"
-            app:tint="?attr/colorOnSurface"
-            android:elevation="4dp"
-            android:layout_marginTop="6dp" />
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
-        <ImageButton
-            android:id="@+id/fab_zoom_out"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_map_control"
-            android:contentDescription="Zoom out"
-            android:src="@drawable/ic_zoom_out"
-            app:tint="?attr/colorOnSurface"
-            android:elevation="4dp"
-            android:layout_marginTop="6dp" />
+            <!-- Center (recenter on my location) -->
+            <LinearLayout
+                android:id="@+id/btnMapCenter"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Recenter map">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_my_location_24"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Center"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/fab_recenter"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_map_control"
-            android:contentDescription="Center on my location"
-            android:src="@drawable/ic_my_location_24"
-            app:tint="?attr/colorOnSurface"
-            android:elevation="4dp"
-            android:layout_marginTop="6dp" />
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
-        <ImageButton
-            android:id="@+id/btn_fit_visible"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_map_control"
-            android:contentDescription="Fit visible coordinates"
-            android:src="@drawable/ic_fit_screen_24"
-            app:tint="?attr/colorOnSurface"
-            android:elevation="4dp"
-            android:layout_marginTop="6dp" />
+            <!-- Grid (toggle coordinate grid) -->
+            <LinearLayout
+                android:id="@+id/btnMapGrid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Toggle coordinate grid">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_grid_24"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Grid"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
 
-    </LinearLayout>
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+            <!-- Zoom in -->
+            <LinearLayout
+                android:id="@+id/btnMapZoomIn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Zoom in">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_zoom_in"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="In"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+            <!-- Zoom out -->
+            <LinearLayout
+                android:id="@+id/btnMapZoomOut"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Zoom out">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_zoom_out"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Out"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+            <!-- Compass (reset map orientation) -->
+            <LinearLayout
+                android:id="@+id/btnMapCompass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Reset map orientation">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_compass_24"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="North"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+            <!-- Fit visible coordinates -->
+            <LinearLayout
+                android:id="@+id/btnMapFit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Fit visible coordinates">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_fit_screen_24"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Fit"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- ══════════════════════════════════════════════════════════════════
          BOTTOM-START: Selected coordinate card
@@ -444,7 +628,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Stakeout"
+                    android:text="Stakeout Target"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary"
                     android:textStyle="bold" />
@@ -454,8 +638,9 @@
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Stop"
-                    android:contentDescription="Stop stakeout"
+                    android:minWidth="0dp"
+                    android:text="Clear Target"
+                    android:contentDescription="Clear stakeout target"
                     android:textColor="?attr/colorError" />
 
             </LinearLayout>
@@ -471,6 +656,17 @@
                 android:paddingBottom="12dp"
                 android:maxLines="1"
                 android:ellipsize="end" />
+
+            <!-- Guidance arrow (rotates toward the target; visible only in guidance mode) -->
+            <ImageView
+                android:id="@+id/img_stakeout_arrow"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="8dp"
+                android:src="@drawable/ic_stakeout_arrow"
+                android:contentDescription="Direction to stakeout target"
+                android:visibility="gone" />
 
             <!-- Distance + Bearing -->
             <LinearLayout
@@ -536,6 +732,76 @@
                 </LinearLayout>
 
             </LinearLayout>
+
+            <!-- North/East deltas (display-only; metres) -->
+            <TextView
+                android:id="@+id/txt_stakeout_delta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="—"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:fontFamily="monospace"
+                android:gravity="center" />
+
+            <!-- Live state line: Waiting… / Move <direction> / Within tolerance -->
+            <TextView
+                android:id="@+id/txt_stakeout_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Waiting for live position…"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface"
+                android:gravity="center" />
+
+            <!-- Horizontal accuracy (the only GNSS detail shown here; turns to a warning when poor) -->
+            <TextView
+                android:id="@+id/txt_stakeout_accuracy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text=""
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:gravity="center"
+                android:visibility="gone" />
+
+            <!-- Tolerance (shown in guidance mode) -->
+            <TextView
+                android:id="@+id/txt_stakeout_tolerance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text=""
+                android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:gravity="center"
+                android:visibility="gone" />
+
+            <!-- Heading-unavailable note (shown when the arrow falls back to north-up) -->
+            <TextView
+                android:id="@+id/txt_stakeout_heading_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Arrow is north-up until heading is available."
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textStyle="italic"
+                android:gravity="center"
+                android:visibility="gone" />
+
+            <!-- Start / Stop guidance -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_stakeout_guidance"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Start Guidance"
+                android:contentDescription="Start stakeout guidance" />
 
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

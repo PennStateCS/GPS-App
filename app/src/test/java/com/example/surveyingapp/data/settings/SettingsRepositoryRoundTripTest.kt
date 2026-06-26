@@ -23,6 +23,7 @@ import com.example.surveyingapp.settings.model.ArDisplaySettings
 import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
 import com.example.surveyingapp.settings.model.ExternalReceiverProfile
 import com.example.surveyingapp.settings.model.ExternalReceiverSettings
+import com.example.surveyingapp.settings.model.StakeoutSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -255,6 +256,38 @@ class SettingsRepositoryRoundTripTest {
         )
         repo.setExternalReceiverSettings(s)
         assertEquals(s, repo.externalReceiverSettings.first())
+    }
+
+    // ── stakeout guidance settings ──────────────────────────────────────────────
+
+    @Test
+    fun `stakeout settings default matches SettingsDefaults`() = runBlocking {
+        assertEquals(SettingsDefaults.stakeout, repo.stakeoutSettings.first())
+    }
+
+    @Test
+    fun `stakeout settings round-trip`() = runBlocking {
+        val s = StakeoutSettings(
+            toleranceMeters = 0.05,
+            warningAccuracyMeters = 0.50,
+            enableHaptics = false,
+            enableAudio = true,
+            keepScreenOnDuringStakeout = false,
+            guidanceUsesCompassHeading = false,
+        )
+        repo.setStakeoutSettings(s)
+        assertEquals(s, repo.stakeoutSettings.first())
+    }
+
+    @Test
+    fun `stakeout settings sanitize an out-of-range tolerance and accuracy`() = runBlocking {
+        dataStore.edit {
+            it[SettingsKeys.STAKEOUT_TOLERANCE_M] = -5.0
+            it[SettingsKeys.STAKEOUT_WARNING_ACCURACY_M] = 100000.0
+        }
+        val s = repo.stakeoutSettings.first()
+        assertEquals(SettingsDefaults.stakeout.toleranceMeters, s.toleranceMeters, 1e-9)
+        assertEquals(SettingsDefaults.stakeout.warningAccuracyMeters, s.warningAccuracyMeters, 1e-9)
     }
 
     // ── focused interfaces share the one backing implementation ─────────────────

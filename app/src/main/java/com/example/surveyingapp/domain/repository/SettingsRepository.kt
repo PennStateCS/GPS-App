@@ -20,4 +20,5 @@ interface SettingsRepository :
     MockLocationSettingsRepository,
     GnssReceiverSettingsRepository,
     DeveloperSettingsRepository,
-    AppearanceSettingsRepository
+    AppearanceSettingsRepository,
+    StakeoutSettingsRepository

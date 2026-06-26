@@ -61,6 +61,7 @@ class GnssSourceCoordinatorTest {
         override val gnssReceiverSettings: Flow<GnssReceiverSettings> = emptyFlow()
         override val developerSettings: Flow<DeveloperSettings> = emptyFlow()
         override val appearanceSettings: Flow<AppearanceSettings> = emptyFlow()
+        override val stakeoutSettings: Flow<com.example.surveyingapp.settings.model.StakeoutSettings> = emptyFlow()
 
         override suspend fun setExternalReceiverProfile(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile) {}
         override suspend fun setExternalReceiverSettings(settings: com.example.surveyingapp.settings.model.ExternalReceiverSettings) {}
@@ -75,6 +76,7 @@ class GnssSourceCoordinatorTest {
         override suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings) {}
         override suspend fun setDeveloperSettings(settings: DeveloperSettings) {}
         override suspend fun setAppearanceSettings(settings: AppearanceSettings) {}
+        override suspend fun setStakeoutSettings(settings: com.example.surveyingapp.settings.model.StakeoutSettings) {}
     }
 
     private fun sourceSettings(initial: ProviderChoice) = SourceSettings(

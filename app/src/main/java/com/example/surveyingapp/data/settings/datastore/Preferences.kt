@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.surveyingapp.settings.SettingsDefaults
 import kotlinx.coroutines.flow.Flow
@@ -64,6 +65,14 @@ object SettingsKeys {
     val SHOW_LIVE_GNSS_STATUS_BAR      = booleanPreferencesKey("show_live_gnss_status_bar")
     val KEEP_SCREEN_AWAKE              = booleanPreferencesKey("keep_screen_awake")
     val MAX_BRIGHTNESS_WHILE_OPEN      = booleanPreferencesKey("max_brightness_while_open")
+
+    // Stakeout guidance
+    val STAKEOUT_TOLERANCE_M           = doublePreferencesKey("stakeout_tolerance_m")
+    val STAKEOUT_WARNING_ACCURACY_M    = doublePreferencesKey("stakeout_warning_accuracy_m")
+    val STAKEOUT_ENABLE_HAPTICS        = booleanPreferencesKey("stakeout_enable_haptics")
+    val STAKEOUT_ENABLE_AUDIO          = booleanPreferencesKey("stakeout_enable_audio")
+    val STAKEOUT_KEEP_SCREEN_ON        = booleanPreferencesKey("stakeout_keep_screen_on")
+    val STAKEOUT_COMPASS_HEADING       = booleanPreferencesKey("stakeout_compass_heading")
 }
 
 /**
@@ -114,6 +123,15 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     // Mock location
     val mockLocationEnabled: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.MOCK_LOCATION_ENABLED] ?: SettingsDefaults.mockLocationEnabled }
+
+    // Stakeout guidance (defaults centralized in SettingsDefaults.stakeout). Raw values; the
+    // repository sanitizes the numeric ones before exposing the typed model.
+    val stakeoutToleranceMRaw:        Flow<Double?>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_TOLERANCE_M] }
+    val stakeoutWarningAccuracyMRaw:  Flow<Double?>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_WARNING_ACCURACY_M] }
+    val stakeoutEnableHaptics:        Flow<Boolean>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_ENABLE_HAPTICS] ?: SettingsDefaults.stakeout.enableHaptics }
+    val stakeoutEnableAudio:          Flow<Boolean>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_ENABLE_AUDIO] ?: SettingsDefaults.stakeout.enableAudio }
+    val stakeoutKeepScreenOn:         Flow<Boolean>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_KEEP_SCREEN_ON] ?: SettingsDefaults.stakeout.keepScreenOnDuringStakeout }
+    val stakeoutCompassHeading:       Flow<Boolean>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_COMPASS_HEADING] ?: SettingsDefaults.stakeout.guidanceUsesCompassHeading }
 
     suspend fun setLocationSourceString(v: String) { dataStore.edit { it[SettingsKeys.LOCATION_SOURCE] = v } }
     suspend fun setExternalConnTypeString(v: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_CONN_TYPE] = v } }
@@ -168,4 +186,13 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     val maxBrightnessWhileOpen: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.MAX_BRIGHTNESS_WHILE_OPEN] ?: SettingsDefaults.appearance.maxBrightnessWhileOpen }
     suspend fun setMaxBrightnessWhileOpen(v: Boolean) { dataStore.edit { it[SettingsKeys.MAX_BRIGHTNESS_WHILE_OPEN] = v } }
+
+    // Stakeout guidance setters. Numeric values are stored as given; sanitization happens on read in
+    // the repository (mirrors how an out-of-range TCP port is tolerated but sanitized on read).
+    suspend fun setStakeoutToleranceM(v: Double)        { dataStore.edit { it[SettingsKeys.STAKEOUT_TOLERANCE_M] = v } }
+    suspend fun setStakeoutWarningAccuracyM(v: Double)  { dataStore.edit { it[SettingsKeys.STAKEOUT_WARNING_ACCURACY_M] = v } }
+    suspend fun setStakeoutEnableHaptics(v: Boolean)    { dataStore.edit { it[SettingsKeys.STAKEOUT_ENABLE_HAPTICS] = v } }
+    suspend fun setStakeoutEnableAudio(v: Boolean)      { dataStore.edit { it[SettingsKeys.STAKEOUT_ENABLE_AUDIO] = v } }
+    suspend fun setStakeoutKeepScreenOn(v: Boolean)     { dataStore.edit { it[SettingsKeys.STAKEOUT_KEEP_SCREEN_ON] = v } }
+    suspend fun setStakeoutCompassHeading(v: Boolean)   { dataStore.edit { it[SettingsKeys.STAKEOUT_COMPASS_HEADING] = v } }
 }
