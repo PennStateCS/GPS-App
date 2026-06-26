@@ -202,7 +202,7 @@ private const val CAT_ID_DEV                = 7
         SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinates",             R.drawable.ic_list_coordinates),
         SettingsCategory(CAT_ID_DATA,               "Data",                    R.drawable.ic_file),
         SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
-        SettingsCategory(CAT_ID_MAP,                "Map",                     R.drawable.ic_layers_24),
+        SettingsCategory(CAT_ID_MAP,                "Map",                     R.drawable.ic_map),
         SettingsCategory(CAT_ID_LOCATION,           "Receiver",                R.drawable.ic_section_location),
         SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info),
     )

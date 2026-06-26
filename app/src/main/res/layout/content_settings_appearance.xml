@@ -91,7 +91,7 @@
                     </LinearLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
-                        android:layout_width="160dp"
+                        android:layout_width="@dimen/settings_dropdown_width"
                         android:layout_height="wrap_content"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
 
@@ -103,6 +103,9 @@
                             android:focusable="false"
                             android:cursorVisible="false"
                             android:saveEnabled="false"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:ellipsize="end"
                             android:popupBackground="@drawable/bg_dropdown_menu" />
 
                     </com.google.android.material.textfield.TextInputLayout>

@@ -8,12 +8,15 @@
     -->
 
     <!-- App semantic colors – dark overrides -->
+    <!-- Top app bar stays the darkest layer; status strip is a lighter blue-navy band above it.
+         on-strip roles mirror light mode (value near-white, label soft blue-gray, subtle separator)
+         since the strip background is dark in both themes. -->
     <color name="app_top_app_bar">#07121E</color>
     <color name="app_on_top_app_bar">#FFFFFF</color>
-    <color name="app_status_strip">#0A1B2B</color>
-    <color name="app_on_status_strip">#7DA8C8</color>
-    <color name="app_on_status_strip_variant">#5A8AB0</color>
-    <color name="app_status_separator">#55FFFFFF</color>
+    <color name="app_status_strip">#0F3554</color>
+    <color name="app_on_status_strip">#F2F6FA</color>
+    <color name="app_on_status_strip_variant">#B8C7D6</color>
+    <color name="app_status_separator">#6F8598</color>
 
     <!-- Semantic status colors – night (slightly lighter for dark bg contrast) -->
     <color name="app_success">#43A047</color>
