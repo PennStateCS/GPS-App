@@ -60,6 +60,9 @@
     <!-- Home screen right column – night -->
     <color name="home_right_column_bg">#FF252B30</color>
 
+    <!-- Survey meter grid – night (lighter gray to read on dark/night-styled map tiles) -->
+    <color name="map_grid_line">#80BDBDBD</color>
+
     <!-- GNSS / satellite chart – night -->
     <color name="chart_axis">#FF8B9198</color>
     <color name="chart_grid">#FF41484D</color>

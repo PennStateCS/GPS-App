@@ -38,6 +38,61 @@
         <item name="cardBackgroundColor">?attr/colorSurface</item>
     </style>
 
+    <!-- Settings section/row helpers (match the existing Capture/Coordinate settings pages). -->
+    <style name="Widget.App.Card.Outlined.Settings" parent="Widget.App.Card.Outlined" />
+
+    <style name="TextAppearance.Settings.SectionHeader" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textAppearance">?attr/textAppearanceLabelLarge</item>
+        <item name="android:textColor">?attr/colorPrimary</item>
+    </style>
+
+    <style name="Settings.Row" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:paddingTop">@dimen/settings_content_row_padding_v</item>
+        <item name="android:paddingBottom">@dimen/settings_content_row_padding_v</item>
+    </style>
+
+    <style name="Settings.Row.Text" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:paddingEnd">16dp</item>
+    </style>
+
+    <style name="Settings.Row.Title" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textAppearance">?attr/textAppearanceBodyLarge</item>
+    </style>
+
+    <style name="Settings.Row.Subtitle" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:alpha">0.7</item>
+        <item name="android:textAppearance">?attr/textAppearanceBodyMedium</item>
+    </style>
+
+    <style name="Settings.Divider" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginStart">20dp</item>
+        <item name="android:background">?attr/colorOutlineVariant</item>
+    </style>
+
     <!-- Rounded corners for model thumbnails (ShapeableImageView). -->
     <style name="ShapeAppearanceOverlay.App.Thumbnail" parent="">
         <item name="cornerFamily">rounded</item>

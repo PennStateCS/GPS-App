@@ -66,6 +66,14 @@ object SettingsKeys {
     val KEEP_SCREEN_AWAKE              = booleanPreferencesKey("keep_screen_awake")
     val MAX_BRIGHTNESS_WHILE_OPEN      = booleanPreferencesKey("max_brightness_while_open")
 
+    // Map display defaults
+    val MAP_DEFAULT_TYPE               = stringPreferencesKey("map_default_type")
+    val MAP_DEFAULT_GRID_MODE          = stringPreferencesKey("map_default_grid_mode")
+    val MAP_DEFAULT_LABEL_MODE         = stringPreferencesKey("map_default_label_mode")
+    val MAP_SHOW_MY_LOCATION_DEFAULT   = booleanPreferencesKey("map_show_my_location_default")
+    val MAP_TOOLS_OPEN_DEFAULT         = booleanPreferencesKey("map_tools_open_default")
+    val MAP_DRAWER_EXPANDED_DEFAULT    = booleanPreferencesKey("map_drawer_expanded_default")
+
     // Stakeout guidance
     val STAKEOUT_TOLERANCE_M           = doublePreferencesKey("stakeout_tolerance_m")
     val STAKEOUT_WARNING_ACCURACY_M    = doublePreferencesKey("stakeout_warning_accuracy_m")
@@ -133,6 +141,14 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val stakeoutKeepScreenOn:         Flow<Boolean>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_KEEP_SCREEN_ON] ?: SettingsDefaults.stakeout.keepScreenOnDuringStakeout }
     val stakeoutCompassHeading:       Flow<Boolean>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_COMPASS_HEADING] ?: SettingsDefaults.stakeout.guidanceUsesCompassHeading }
 
+    // Map display defaults (raw tokens; repository resolves enums + map type).
+    val mapDefaultTypeRaw:        Flow<String?> = dataStore.data.map { it[SettingsKeys.MAP_DEFAULT_TYPE] }
+    val mapDefaultGridModeRaw:    Flow<String?> = dataStore.data.map { it[SettingsKeys.MAP_DEFAULT_GRID_MODE] }
+    val mapDefaultLabelModeRaw:   Flow<String?> = dataStore.data.map { it[SettingsKeys.MAP_DEFAULT_LABEL_MODE] }
+    val mapShowMyLocationDefault: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.MAP_SHOW_MY_LOCATION_DEFAULT] ?: SettingsDefaults.map.showMyLocationByDefault }
+    val mapToolsOpenDefault:      Flow<Boolean> = dataStore.data.map { it[SettingsKeys.MAP_TOOLS_OPEN_DEFAULT] ?: SettingsDefaults.map.keepMapToolsOpenByDefault }
+    val mapDrawerExpandedDefault: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.MAP_DRAWER_EXPANDED_DEFAULT] ?: SettingsDefaults.map.mapPointsDrawerExpandedByDefault }
+
     suspend fun setLocationSourceString(v: String) { dataStore.edit { it[SettingsKeys.LOCATION_SOURCE] = v } }
     suspend fun setExternalConnTypeString(v: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_CONN_TYPE] = v } }
     suspend fun setExternalTcp(host: String, port: Int) { dataStore.edit { prefs ->
@@ -195,4 +211,12 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     suspend fun setStakeoutEnableAudio(v: Boolean)      { dataStore.edit { it[SettingsKeys.STAKEOUT_ENABLE_AUDIO] = v } }
     suspend fun setStakeoutKeepScreenOn(v: Boolean)     { dataStore.edit { it[SettingsKeys.STAKEOUT_KEEP_SCREEN_ON] = v } }
     suspend fun setStakeoutCompassHeading(v: Boolean)   { dataStore.edit { it[SettingsKeys.STAKEOUT_COMPASS_HEADING] = v } }
+
+    // Map display defaults setters (enum-backed values stored as stable tokens, never enum.name).
+    suspend fun setMapDefaultType(token: String)        { dataStore.edit { it[SettingsKeys.MAP_DEFAULT_TYPE] = token } }
+    suspend fun setMapDefaultGridMode(token: String)    { dataStore.edit { it[SettingsKeys.MAP_DEFAULT_GRID_MODE] = token } }
+    suspend fun setMapDefaultLabelMode(token: String)   { dataStore.edit { it[SettingsKeys.MAP_DEFAULT_LABEL_MODE] = token } }
+    suspend fun setMapShowMyLocationDefault(v: Boolean) { dataStore.edit { it[SettingsKeys.MAP_SHOW_MY_LOCATION_DEFAULT] = v } }
+    suspend fun setMapToolsOpenDefault(v: Boolean)      { dataStore.edit { it[SettingsKeys.MAP_TOOLS_OPEN_DEFAULT] = v } }
+    suspend fun setMapDrawerExpandedDefault(v: Boolean) { dataStore.edit { it[SettingsKeys.MAP_DRAWER_EXPANDED_DEFAULT] = v } }
 }

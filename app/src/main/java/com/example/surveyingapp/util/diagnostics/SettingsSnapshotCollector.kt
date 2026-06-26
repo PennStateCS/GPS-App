@@ -113,6 +113,18 @@ object SettingsSnapshotCollector {
         }
         sb.appendLine()
 
+        // ── Map display defaults (non-sensitive — modes/booleans only) ──────────────
+        sb.appendLine("--- Map display defaults ---")
+        runCatching { repo.mapSettings.first() }.getOrNull()?.let { m ->
+            sb.appendLine("Default map type        : ${com.example.surveyingapp.ui.rendermap.MapTypeTokens.label(m.defaultMapType)}")
+            sb.appendLine("Default grid mode       : ${m.defaultGridMode.label}")
+            sb.appendLine("Default point labels    : ${m.defaultPointLabelMode.label}")
+            sb.appendLine("Show my location default: ${m.showMyLocationByDefault}")
+            sb.appendLine("Map Tools open default  : ${m.keepMapToolsOpenByDefault}")
+            sb.appendLine("Points drawer expanded  : ${m.mapPointsDrawerExpandedByDefault}")
+        }
+        sb.appendLine()
+
         // ── Stakeout guidance (non-sensitive only — no target/live coordinates) ─────
         sb.appendLine("--- Stakeout guidance ---")
         runCatching { repo.stakeoutSettings.first() }.getOrNull()?.let { st ->

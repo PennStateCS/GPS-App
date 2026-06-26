@@ -7,8 +7,8 @@
       left_panel_subtitle, left_panel_placeholder
       coordinate_toggle_list, btn_show_all, btn_hide_all
       Map Tools overlay: btnMapToolsToggle, layoutMapTools, and rows
-        btnMapType, btnMapCenter, btnMapGrid, btnMapZoomIn, btnMapZoomOut,
-        btnMapCompass, btnMapFit
+        btnMapType, btnMapMyLocation, btnMapGrid, btnMapFit
+      Lower zoom controls (separate from Map Tools): btnMapZoomIn, btnMapZoomOut
       card_selected_coordinate, img_selected_icon, txt_selected_name,
         txt_selected_subtitle, btn_selected_close, btn_selected_center, btn_selected_stakeout
       stakeout_panel, txt_stakeout_target, txt_stakeout_distance, txt_stakeout_bearing,
@@ -53,35 +53,41 @@
         android:visibility="gone" />
 
     <!-- ══════════════════════════════════════════════════════════════════
-         LEFT: Floating coordinate panel
+         LEFT: Map Points side drawer.
+         Overlay drawer (the full-screen MapView is NOT resized — see
+         RenderMapFragment notes; resizing the Google Map is left for later).
+         Dark header matches the app toolbar; body is a themed Material surface
+         with a scrolling list that scales to many points. A bottom margin
+         keeps the drawer clear of the Google Maps logo and bottom cards.
     ══════════════════════════════════════════════════════════════════ -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/left_panel"
-        style="@style/Widget.App.Card.Outlined"
-        android:layout_width="272dp"
-        android:layout_height="wrap_content"
+        android:layout_width="288dp"
+        android:layout_height="match_parent"
         android:layout_gravity="top|start"
-        android:layout_margin="12dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="120dp"
+        app:cardBackgroundColor="?attr/colorSurface"
         app:cardElevation="6dp"
-        app:cardCornerRadius="20dp">
+        app:cardCornerRadius="16dp">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingTop="4dp"
-            android:paddingBottom="8dp">
+            android:layout_height="match_parent"
+            android:orientation="vertical">
 
-            <!-- Panel header: title + visibility menu + collapse button -->
+            <!-- Dark header bar — matches the app toolbar -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
+                android:background="@color/app_top_app_bar"
+                android:minHeight="56dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="4dp"
-                android:paddingTop="4dp"
-                android:paddingBottom="2dp">
+                android:paddingVertical="6dp">
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -94,7 +100,7 @@
                         android:layout_height="wrap_content"
                         android:text="Map Points"
                         android:textAppearance="?attr/textAppearanceTitleMedium"
-                        android:textColor="?attr/colorOnSurface" />
+                        android:textColor="@color/app_on_top_app_bar" />
 
                     <TextView
                         android:id="@+id/left_panel_subtitle"
@@ -102,126 +108,213 @@
                         android:layout_height="wrap_content"
                         android:text="Loading…"
                         android:textAppearance="?attr/textAppearanceLabelSmall"
-                        android:textColor="?attr/colorOnSurfaceVariant" />
+                        android:textColor="@color/app_on_top_app_bar"
+                        android:alpha="0.75" />
 
                 </LinearLayout>
 
                 <ImageButton
                     android:id="@+id/btn_visibility_menu"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:padding="8dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="10dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Coordinate visibility options"
-                    android:src="@drawable/ic_visibility_24"
-                    app:tint="?attr/colorOnSurfaceVariant" />
+                    android:contentDescription="More point options"
+                    android:src="@drawable/ic_more_vert_24"
+                    app:tint="@color/app_on_top_app_bar" />
 
                 <ImageButton
                     android:id="@+id/btn_collapse_panel"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:padding="8dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:padding="10dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Hide coordinates panel"
+                    android:contentDescription="Collapse map points panel"
                     android:src="@drawable/ic_chevron_right"
                     android:rotation="180"
-                    app:tint="?attr/colorOnSurfaceVariant" />
+                    app:tint="@color/app_on_top_app_bar" />
 
             </LinearLayout>
 
-            <!-- Subtle divider -->
+            <!-- Compact bulk-visibility actions: "Visible X / Y   Show all   Hide all" -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp">
+
+                <TextView
+                    android:id="@+id/text_visible_count"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Visible 0 / 0"
+                    android:textAppearance="?attr/textAppearanceLabelMedium"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_show_all"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="0dp"
+                    android:minHeight="40dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="Show all"
+                    android:contentDescription="Show all points" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_hide_all"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="0dp"
+                    android:minHeight="40dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="Hide all"
+                    android:contentDescription="Hide all points" />
+
+            </LinearLayout>
+
+            <!-- Search/filter (filters the drawer list by name; does NOT change marker visibility) -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/layout_point_search"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:layout_marginTop="2dp"
+                android:layout_marginBottom="2dp"
+                android:hint="Search points"
+                app:startIconDrawable="@drawable/ic_search_24"
+                app:boxBackgroundMode="outline"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/edit_point_search"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text"
+                    android:imeOptions="actionSearch"
+                    android:maxLines="1"
+                    android:singleLine="true" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Subtle divider between controls and the list -->
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="12dp"
+                android:layout_marginHorizontal="12dp"
                 android:background="?attr/colorOutlineVariant"
-                android:alpha="0.6" />
+                android:alpha="0.5" />
 
-            <!-- Scrollable coordinate list -->
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/coordinate_toggle_list"
+            <!-- Body: list fills the drawer; empty state centred when there are no points -->
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:maxHeight="340dp"
-                android:nestedScrollingEnabled="true"
-                android:overScrollMode="ifContentScrolls"
-                android:paddingTop="4dp"
-                android:paddingBottom="4dp" />
+                android:layout_height="0dp"
+                android:layout_weight="1">
 
-            <!-- Empty state (shown in-panel when there are no saved points) -->
-            <LinearLayout
-                android:id="@+id/left_panel_empty"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="16dp"
-                android:paddingBottom="16dp"
-                android:visibility="gone">
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/coordinate_toggle_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:overScrollMode="ifContentScrolls"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp" />
 
-                <TextView
-                    android:id="@+id/left_panel_placeholder"
+                <LinearLayout
+                    android:id="@+id/left_panel_empty"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="No saved points to show"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurface"
-                    android:gravity="center" />
+                    android:layout_gravity="center"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingHorizontal="16dp"
+                    android:visibility="gone">
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Capture or import coordinates, then return to this map."
-                    android:textAppearance="?attr/textAppearanceBodySmall"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:gravity="center" />
+                    <TextView
+                        android:id="@+id/left_panel_placeholder"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="No map points"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurface"
+                        android:gravity="center" />
 
-            </LinearLayout>
+                    <TextView
+                        android:id="@+id/left_panel_placeholder_sub"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Capture or import coordinates to show them here."
+                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:gravity="center" />
+
+                </LinearLayout>
+
+            </FrameLayout>
 
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Panel expand button: appears when panel is collapsed -->
-    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+    <!-- Collapsed rail: slim dark vertical tab (matches the Map Tools chips). Kept id
+         btn_expand_panel so the existing collapse/expand logic is unchanged. -->
+    <LinearLayout
         android:id="@+id/btn_expand_panel"
-        android:layout_width="wrap_content"
+        android:layout_width="48dp"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_margin="12dp"
-        android:text="Coordinates"
-        android:contentDescription="Show coordinates panel"
-        app:icon="@drawable/ic_list_coordinates"
-        android:visibility="gone" />
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingVertical="10dp"
+        android:background="@drawable/bg_ar_chip"
+        android:elevation="6dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:contentDescription="Show map points panel"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_list_coordinates"
+            android:tint="@color/ar_overlay_text"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/text_collapsed_count"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="0"
+            android:textColor="@color/ar_overlay_text"
+            android:textStyle="bold"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginTop="2dp"
+            android:src="@drawable/ic_chevron_right"
+            android:tint="@color/ar_overlay_text"
+            android:importantForAccessibility="no" />
+
+    </LinearLayout>
 
     <!-- ══════════════════════════════════════════════════════════════════
          TOP-END: Map Tools toggle + collapsible overlay toolbar
          (Modeled on the AR floating toolbar — reuses the same overlay
          resources. The app-wide toolbar owns GNSS/source/fix/accuracy, so
-         the map no longer shows a GNSS status chip.)
+         the map no longer shows a GNSS status chip. Recenter is now a top
+         app-bar action — see RenderMapFragment's MenuProvider.)
     ══════════════════════════════════════════════════════════════════ -->
-    <!-- Always-visible one-tap Recenter (Center also remains inside Map Tools). Sits just left of
-         the toggle so it stays clear of the toolbar panel when it slides out below the toggle. -->
-    <ImageButton
-        android:id="@+id/btnMapRecenter"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="12dp"
-        android:layout_marginEnd="66dp"
-        android:src="@drawable/ic_my_location_24"
-        android:background="@drawable/bg_ar_chip"
-        android:scaleType="center"
-        android:padding="12dp"
-        android:contentDescription="Recenter map"
-        android:elevation="4dp"
-        app:tint="@color/ar_overlay_text"
-        android:clickable="true"
-        android:focusable="true" />
-
     <ImageButton
         android:id="@+id/btnMapToolsToggle"
         android:layout_width="48dp"
@@ -229,7 +322,7 @@
         android:layout_gravity="top|end"
         android:layout_marginTop="12dp"
         android:layout_marginEnd="12dp"
-        android:src="@drawable/ic_ar_menu"
+        android:src="@drawable/ic_tune_24"
         android:background="@drawable/bg_ar_chip"
         android:scaleType="center"
         android:padding="12dp"
@@ -275,10 +368,11 @@
                     android:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
+                    android:id="@+id/txt_map_type"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:text="Type"
+                    android:text="Normal"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
                     android:gravity="center" />
             </LinearLayout>
@@ -286,7 +380,38 @@
             <View android:layout_width="match_parent" android:layout_height="1dp"
                 android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
-            <!-- Center (recenter on my location) -->
+            <!-- My Location (toggle current-location display on the map) -->
+            <LinearLayout
+                android:id="@+id/btnMapMyLocation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Hide my location and direction on map">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_person_pin_circle_24"
+                    android:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="My Location"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
+
+            <View android:layout_width="match_parent" android:layout_height="1dp"
+                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+            <!-- Center (recenter the map on the current position) -->
             <LinearLayout
                 android:id="@+id/btnMapCenter"
                 android:layout_width="match_parent"
@@ -298,7 +423,7 @@
                 android:background="@drawable/ripple_ar_toolbar_btn"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Recenter map">
+                android:contentDescription="Recenter map on my location">
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
@@ -329,7 +454,7 @@
                 android:background="@drawable/ripple_ar_toolbar_btn"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Toggle coordinate grid">
+                android:contentDescription="Grid off. Tap to switch to auto grid.">
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
@@ -337,10 +462,11 @@
                     android:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
+                    android:id="@+id/txt_map_grid"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:text="Grid"
+                    android:text="Off"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
                     android:gravity="center" />
             </LinearLayout>
@@ -348,9 +474,9 @@
             <View android:layout_width="match_parent" android:layout_height="1dp"
                 android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
-            <!-- Zoom in -->
+            <!-- Labels (cycle point label mode: Off → Name → Elevation → Distance) -->
             <LinearLayout
-                android:id="@+id/btnMapZoomIn"
+                android:id="@+id/btnMapLabels"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -360,80 +486,19 @@
                 android:background="@drawable/ripple_ar_toolbar_btn"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Zoom in">
+                android:contentDescription="Point labels off. Tap to show point names.">
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@drawable/ic_zoom_in"
+                    android:src="@drawable/ic_label_24"
                     android:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
+                    android:id="@+id/txt_map_labels"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="3dp"
-                    android:text="In"
-                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
-                    android:gravity="center" />
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
-
-            <!-- Zoom out -->
-            <LinearLayout
-                android:id="@+id/btnMapZoomOut"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                android:background="@drawable/ripple_ar_toolbar_btn"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Zoom out">
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_zoom_out"
-                    android:tint="@color/ar_overlay_text"
-                    android:importantForAccessibility="no" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="Out"
-                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
-                    android:gravity="center" />
-            </LinearLayout>
-
-            <View android:layout_width="match_parent" android:layout_height="1dp"
-                android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
-
-            <!-- Compass (reset map orientation) -->
-            <LinearLayout
-                android:id="@+id/btnMapCompass"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
-                android:background="@drawable/ripple_ar_toolbar_btn"
-                android:clickable="true"
-                android:focusable="true"
-                android:contentDescription="Reset map orientation">
-                <ImageView
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:src="@drawable/ic_compass_24"
-                    android:tint="@color/ar_overlay_text"
-                    android:importantForAccessibility="no" />
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
-                    android:text="North"
+                    android:text="Off"
                     android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
                     android:gravity="center" />
             </LinearLayout>
@@ -473,6 +538,49 @@
     </com.google.android.material.card.MaterialCardView>
 
     <!-- ══════════════════════════════════════════════════════════════════
+         BOTTOM-END: Zoom controls (separate map-navigation controls, kept
+         out of the Map Tools overlay). Sits above the Maps attribution/logo
+         (bottom-left) and clear of the bottom-centre stakeout card.
+    ══════════════════════════════════════════════════════════════════ -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="40dp"
+        android:orientation="vertical">
+
+        <ImageButton
+            android:id="@+id/btnMapZoomIn"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_zoom_in"
+            android:background="@drawable/bg_ar_chip"
+            android:scaleType="center"
+            android:padding="12dp"
+            android:contentDescription="Zoom in"
+            android:elevation="4dp"
+            app:tint="@color/ar_overlay_text"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <ImageButton
+            android:id="@+id/btnMapZoomOut"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:src="@drawable/ic_zoom_out"
+            android:background="@drawable/bg_ar_chip"
+            android:scaleType="center"
+            android:padding="12dp"
+            android:contentDescription="Zoom out"
+            android:elevation="4dp"
+            app:tint="@color/ar_overlay_text"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- ══════════════════════════════════════════════════════════════════
          BOTTOM-START: Selected coordinate card
     ══════════════════════════════════════════════════════════════════ -->
     <com.google.android.material.card.MaterialCardView
@@ -493,17 +601,16 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingTop="12dp"
-            android:paddingBottom="4dp">
+            android:paddingBottom="8dp">
 
-            <!-- Icon + name + subtitle + close -->
+            <!-- Header: overline + icon + name + close -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingStart="16dp"
-                android:paddingEnd="4dp"
-                android:paddingBottom="4dp">
+                android:paddingEnd="4dp">
 
                 <ImageView
                     android:id="@+id/img_selected_icon"
@@ -520,22 +627,20 @@
                     android:orientation="vertical">
 
                     <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SELECTED POINT"
+                        android:textAppearance="?attr/textAppearanceLabelSmall"
+                        android:textColor="?attr/colorPrimary"
+                        android:letterSpacing="0.08" />
+
+                    <TextView
                         android:id="@+id/txt_selected_name"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="—"
-                        android:textAppearance="?attr/textAppearanceTitleSmall"
+                        android:textAppearance="?attr/textAppearanceTitleMedium"
                         android:textColor="?attr/colorOnSurface"
-                        android:maxLines="1"
-                        android:ellipsize="end" />
-
-                    <TextView
-                        android:id="@+id/txt_selected_subtitle"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="—"
-                        android:textAppearance="?attr/textAppearanceLabelSmall"
-                        android:textColor="?attr/colorOnSurfaceVariant"
                         android:maxLines="1"
                         android:ellipsize="end" />
 
@@ -547,41 +652,146 @@
                     android:layout_height="40dp"
                     android:padding="8dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Close selected coordinate card"
-                    android:src="@drawable/ic_arrow_back"
-                    android:rotation="90"
+                    android:contentDescription="Close selected point"
+                    android:src="@drawable/ic_close_24"
                     app:tint="?attr/colorOnSurfaceVariant" />
 
             </LinearLayout>
 
-            <!-- Action buttons -->
+            <!-- Coordinates + elevation -->
+            <TextView
+                android:id="@+id/txt_selected_coords"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="—"
+                android:fontFamily="monospace"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface" />
+
+            <TextView
+                android:id="@+id/txt_selected_elevation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:text="—"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <!-- Live relationship: distance + bearing (to current position) -->
             <LinearLayout
+                android:id="@+id/layout_selected_live"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:layout_marginTop="8dp">
+
+                <TextView
+                    android:id="@+id/txt_selected_distance"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="—"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurface" />
+
+                <TextView
+                    android:id="@+id/txt_selected_bearing"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="—"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSurface" />
+            </LinearLayout>
+
+            <!-- Capture quality: source/fix + accuracy -->
+            <LinearLayout
+                android:id="@+id/layout_selected_capture"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:layout_marginTop="2dp">
+
+                <TextView
+                    android:id="@+id/txt_selected_source"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="—"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+                <TextView
+                    android:id="@+id/txt_selected_accuracy"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="—"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+
+            <!-- Actions -->
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
-                android:paddingBottom="4dp">
+                android:scrollbars="none"
+                android:fillViewport="true">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_selected_center"
-                    style="@style/Widget.Material3.Button.TextButton.Icon"
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Center"
-                    android:contentDescription="Center map on this coordinate"
-                    app:icon="@drawable/ic_my_location_24" />
+                    android:orientation="horizontal">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_selected_stakeout"
-                    style="@style/Widget.Material3.Button.TextButton.Icon"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Stakeout"
-                    android:contentDescription="Start stakeout"
-                    app:icon="@drawable/ic_stakeout_24" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_selected_center"
+                        style="@style/Widget.Material3.Button.TextButton.Icon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Center"
+                        android:contentDescription="Center map on this point"
+                        app:icon="@drawable/ic_my_location_24" />
 
-            </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_selected_stakeout"
+                        style="@style/Widget.Material3.Button.TextButton.Icon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Stakeout"
+                        android:contentDescription="Stake out this point"
+                        app:icon="@drawable/ic_stakeout_24" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_selected_ar"
+                        style="@style/Widget.Material3.Button.TextButton.Icon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="AR"
+                        android:contentDescription="Open this point in AR"
+                        app:icon="@drawable/ic_section_ar" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_selected_details"
+                        style="@style/Widget.Material3.Button.TextButton.Icon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Details"
+                        android:contentDescription="Show point details"
+                        app:icon="@drawable/ic_section_info" />
+
+                </LinearLayout>
+            </HorizontalScrollView>
 
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>

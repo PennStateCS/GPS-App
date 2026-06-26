@@ -290,6 +290,45 @@ class SettingsRepositoryRoundTripTest {
         assertEquals(SettingsDefaults.stakeout.warningAccuracyMeters, s.warningAccuracyMeters, 1e-9)
     }
 
+    // ── map display defaults ────────────────────────────────────────────────────
+
+    @Test
+    fun `map settings default matches SettingsDefaults`() = runBlocking {
+        assertEquals(SettingsDefaults.map, repo.mapSettings.first())
+    }
+
+    @Test
+    fun `map settings round-trip with stable enum tokens`() = runBlocking {
+        val s = com.example.surveyingapp.ui.rendermap.MapSettings(
+            defaultMapType = com.google.android.gms.maps.GoogleMap.MAP_TYPE_HYBRID,
+            defaultGridMode = com.example.surveyingapp.ui.rendermap.MapGridMode.FINE,
+            defaultPointLabelMode = com.example.surveyingapp.ui.rendermap.PointLabelMode.DISTANCE,
+            showMyLocationByDefault = false,
+            keepMapToolsOpenByDefault = true,
+            mapPointsDrawerExpandedByDefault = false,
+        )
+        repo.setMapSettings(s)
+        assertEquals(s, repo.mapSettings.first())
+        // Stored values are stable tokens, not enum.name / raw ints.
+        assertEquals("hybrid", dataStore.data.first()[SettingsKeys.MAP_DEFAULT_TYPE])
+        assertEquals("fine", dataStore.data.first()[SettingsKeys.MAP_DEFAULT_GRID_MODE])
+        assertEquals("distance", dataStore.data.first()[SettingsKeys.MAP_DEFAULT_LABEL_MODE])
+    }
+
+    @Test
+    fun `map settings tolerate legacy enum-name tokens and unknown map type`() = runBlocking {
+        dataStore.edit {
+            it[SettingsKeys.MAP_DEFAULT_GRID_MODE] = "COARSE"     // legacy uppercase enum name
+            it[SettingsKeys.MAP_DEFAULT_LABEL_MODE] = "ELEVATION"
+            it[SettingsKeys.MAP_DEFAULT_TYPE] = "nonsense"
+        }
+        val s = repo.mapSettings.first()
+        assertEquals(com.example.surveyingapp.ui.rendermap.MapGridMode.COARSE, s.defaultGridMode)
+        assertEquals(com.example.surveyingapp.ui.rendermap.PointLabelMode.ELEVATION, s.defaultPointLabelMode)
+        // Unknown / never MAP_TYPE_NONE → Normal.
+        assertEquals(com.google.android.gms.maps.GoogleMap.MAP_TYPE_NORMAL, s.defaultMapType)
+    }
+
     // ── focused interfaces share the one backing implementation ─────────────────
 
     @Test

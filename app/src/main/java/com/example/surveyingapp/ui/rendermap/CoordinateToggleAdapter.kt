@@ -28,7 +28,9 @@ data class CoordinateToggleItem(
     val icon: String,
     val color: Int,
     val lat: Double = 0.0,
-    val lon: Double = 0.0
+    val lon: Double = 0.0,
+    /** Pre-formatted compact metadata line (e.g. "Elev 432.7 m · Float · RS2+"); falls back to lat/lon. */
+    val meta: String = ""
 )
 
 class CoordinateToggleAdapter(
@@ -84,6 +86,7 @@ class CoordinateToggleAdapter(
         val name: TextView = v.findViewById(R.id.text_name)
         val subtitle: TextView = v.findViewById(R.id.text_subtitle)
         val rowBody: View = v.findViewById(R.id.coord_row_body)
+        val accent: View = v.findViewById(R.id.row_accent)
 
         private var iconJob: Job? = null
 
@@ -102,23 +105,29 @@ class CoordinateToggleAdapter(
         ) {
             name.text = item.name
 
-            // Subtitle: lat/lon
-            if (item.lat != 0.0 || item.lon != 0.0) {
-                subtitle.text = String.format(Locale.US, "%.5f, %.5f", item.lat, item.lon)
+            // Subtitle: compact surveyor metadata, falling back to lat/lon.
+            val subtitleText = when {
+                item.meta.isNotBlank() -> item.meta
+                item.lat != 0.0 || item.lon != 0.0 -> String.format(Locale.US, "%.5f, %.5f", item.lat, item.lon)
+                else -> ""
+            }
+            if (subtitleText.isNotBlank()) {
+                subtitle.text = subtitleText
                 subtitle.visibility = View.VISIBLE
             } else {
                 subtitle.visibility = View.GONE
             }
 
-            // Selection highlight on the row body
+            // Selection: subtle highlight on the row body + left accent bar + stronger title.
+            val isSelected = item.id == selectedId
             val selectedBg = MaterialColors.getColor(
                 itemView,
                 com.google.android.material.R.attr.colorPrimaryContainer,
                 android.graphics.Color.TRANSPARENT
             )
-            rowBody.setBackgroundColor(
-                if (item.id == selectedId) selectedBg else android.graphics.Color.TRANSPARENT
-            )
+            rowBody.setBackgroundColor(if (isSelected) selectedBg else android.graphics.Color.TRANSPARENT)
+            accent.visibility = if (isSelected) View.VISIBLE else View.INVISIBLE
+            name.setTypeface(null, if (isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
 
             // Icon
             icon.clearColorFilter()

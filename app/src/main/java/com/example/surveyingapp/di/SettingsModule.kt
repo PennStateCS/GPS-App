@@ -11,6 +11,7 @@ import com.example.surveyingapp.domain.repository.GnssReceiverSettingsRepository
 import com.example.surveyingapp.domain.repository.LocationSourceSettingsRepository
 import com.example.surveyingapp.domain.repository.MockLocationSettingsRepository
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.domain.repository.MapSettingsRepository
 import com.example.surveyingapp.domain.repository.StakeoutSettingsRepository
 import com.example.surveyingapp.gnss.capture.FixAcceptanceSettings
 import dagger.Module
@@ -112,4 +113,8 @@ object SettingsModule {
     @Provides
     @Singleton
     fun provideStakeoutSettingsRepository(): StakeoutSettingsRepository = SurveyingApp.settingsRepo
+
+    @Provides
+    @Singleton
+    fun provideMapSettingsRepository(): MapSettingsRepository = SurveyingApp.settingsRepo
 }

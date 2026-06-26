@@ -39,6 +39,7 @@ import com.google.android.gms.location.Priority
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
+import kotlin.coroutines.resume
 import kotlinx.coroutines.launch
 import java.util.UUID
 import kotlin.math.*
@@ -1294,12 +1295,10 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         return String.format(java.util.Locale.US, "%.2f %s", v, units[idx])
     }
 
-    // Opt-in suppression for internal coroutine APIs warning
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private suspend fun <T> com.google.android.gms.tasks.Task<T>.await(): T? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-        addOnSuccessListener { if (cont.isActive) cont.resume(it) {} }
-        addOnFailureListener { if (cont.isActive) cont.resume(null) {} }
-        addOnCanceledListener { if (cont.isActive) cont.resume(null) {} }
+        addOnSuccessListener { if (cont.isActive) cont.resume(it) }
+        addOnFailureListener { if (cont.isActive) cont.resume(null) }
+        addOnCanceledListener { if (cont.isActive) cont.resume(null) }
     }
 
     // Add maps status enum outside the fragment for reuse

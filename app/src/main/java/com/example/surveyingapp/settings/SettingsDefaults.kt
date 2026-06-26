@@ -49,6 +49,9 @@ object SettingsDefaults {
     val gnssCapture = GnssCaptureSettings()
     val stakeout = com.example.surveyingapp.settings.model.StakeoutSettings()
 
+    /** Durable map display defaults (applied when the map opens in a fresh session). */
+    val map = com.example.surveyingapp.ui.rendermap.MapSettings()
+
     /**
      * Default external receiver aggregate. Mirrors the individual defaults above. The connection
      * type default is [ExternalConnectionType.DEFAULT] (TCP) — TCP NMEA is the only implemented

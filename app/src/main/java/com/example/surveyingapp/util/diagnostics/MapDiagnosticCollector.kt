@@ -76,6 +76,11 @@ object MapDiagnosticCollector {
         sb.appendLine("   'MAP_READY but MAP_LOADED did not fire' = tiles never rendered → usually auth/key/network)")
         sb.appendLine()
 
+        // --- Map display state (non-sensitive: counts/modes/booleans only, never coordinates) ---
+        sb.appendLine("--- Map display state ---")
+        sb.appendLine(MapRuntimeDiagnostics.snapshot.format())
+        sb.appendLine()
+
         // --- Permissions ---
         sb.appendLine("--- Permissions ---")
         sb.appendLine("Fine location           : ${permissionGranted(context, Manifest.permission.ACCESS_FINE_LOCATION)}")

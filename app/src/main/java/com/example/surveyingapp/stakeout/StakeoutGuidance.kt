@@ -75,6 +75,16 @@ object StakeoutGuidance {
     }
 
     /**
+     * True when the most recent fix is older than [staleAfterMs] (clocks are monotonic elapsed-time).
+     * A never-received fix is treated as stale. Used to fall back to the "waiting" state when live
+     * positions stop arriving, so the arrow/readout don't appear live and feedback is suppressed.
+     */
+    fun isPositionStale(lastFixElapsedMs: Long?, nowElapsedMs: Long, staleAfterMs: Long): Boolean {
+        if (lastFixElapsedMs == null) return true
+        return nowElapsedMs - lastFixElapsedMs > staleAfterMs
+    }
+
+    /**
      * Arrow angle = bearingToTarget − heading, normalised to [0, 360). Returns null when no heading
      * reference is available (caller then shows a north-up arrow with a note).
      */

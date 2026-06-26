@@ -232,6 +232,33 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setStakeoutCompassHeading(settings.guidanceUsesCompassHeading)
     }
 
+    // Map display defaults — enum-backed values resolve via stable tokens (legacy name fallback).
+    override val mapSettings: Flow<com.example.surveyingapp.ui.rendermap.MapSettings> = combine(
+        local.mapDefaultTypeRaw,
+        local.mapDefaultGridModeRaw,
+        local.mapDefaultLabelModeRaw,
+        local.mapShowMyLocationDefault,
+        combine(local.mapToolsOpenDefault, local.mapDrawerExpandedDefault) { tools, drawer -> tools to drawer }
+    ) { typeToken, gridToken, labelToken, showLoc, (toolsOpen, drawerExpanded) ->
+        com.example.surveyingapp.ui.rendermap.MapSettings(
+            defaultMapType = com.example.surveyingapp.ui.rendermap.MapTypeTokens.fromToken(typeToken),
+            defaultGridMode = com.example.surveyingapp.ui.rendermap.MapGridMode.fromPrefKey(gridToken),
+            defaultPointLabelMode = com.example.surveyingapp.ui.rendermap.PointLabelMode.fromPrefKey(labelToken),
+            showMyLocationByDefault = showLoc,
+            keepMapToolsOpenByDefault = toolsOpen,
+            mapPointsDrawerExpandedByDefault = drawerExpanded,
+        )
+    }
+
+    override suspend fun setMapSettings(settings: com.example.surveyingapp.ui.rendermap.MapSettings) {
+        local.setMapDefaultType(com.example.surveyingapp.ui.rendermap.MapTypeTokens.toToken(settings.defaultMapType))
+        local.setMapDefaultGridMode(settings.defaultGridMode.prefKey)
+        local.setMapDefaultLabelMode(settings.defaultPointLabelMode.prefKey)
+        local.setMapShowMyLocationDefault(settings.showMyLocationByDefault)
+        local.setMapToolsOpenDefault(settings.keepMapToolsOpenByDefault)
+        local.setMapDrawerExpandedDefault(settings.mapPointsDrawerExpandedByDefault)
+    }
+
     // Enum persistence now lives on the enums themselves (stable prefKey + fromPrefKey with legacy
     // name fallback): LocationSourceType, ExternalConnectionType, AppThemeMode, RtkStatus.
 }
