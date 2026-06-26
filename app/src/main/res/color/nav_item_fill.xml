@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fill color for nav drawer items, used by NavigationView's app:itemShapeFillColor.
+     Checked: the rounded selection pill (nav_selected_bg, night override applies).
+     Unselected: transparent. The ripple (app:itemRippleColor) is drawn over this fill,
+     both clipped to ShapeAppearance.App.DrawerItem. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true" android:color="@color/nav_selected_bg" />
+    <item android:color="@android:color/transparent" />
+</selector>

@@ -24,12 +24,24 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:padding="16dp"
-        android:text="/storage/emulated/0"
+        android:text=""
         android:textAppearance="@style/TextAppearance.App.BodySecondary"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:background="?attr/colorSurfaceVariant"
         android:ellipsize="start"
         android:singleLine="true" />
+
+    <!-- Helper text for the landing screen (non-folder modes); mode-specific instructions. -->
+    <TextView
+        android:id="@+id/text_picker_helper"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="4dp"
+        android:textAppearance="?attr/textAppearanceBodyMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
 
     <!-- Select folder button - only visible in folder selection mode -->
     <Button
@@ -57,6 +69,18 @@
         android:text="No files found"
         android:textAppearance="@style/TextAppearance.App.BodyPrimary"
         android:textColor="?attr/colorOnSurfaceVariant"
+        android:visibility="gone" />
+
+    <!-- Explicit cancel for the landing screen (non-folder modes); toolbar back + system back
+         also cancel. Shown only on the landing screen. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_cancel"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginBottom="16dp"
+        android:text="Cancel"
         android:visibility="gone" />
 
 </LinearLayout>

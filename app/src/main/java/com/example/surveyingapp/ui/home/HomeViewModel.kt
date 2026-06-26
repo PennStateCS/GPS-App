@@ -20,9 +20,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.gnss.accumulator.FixSnapshot
 import com.example.surveyingapp.gnss.model.TimestampSource
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticData
+import com.example.surveyingapp.gnss.diagnostics.DiagnosticsService
 import com.example.surveyingapp.gnss.diagnostics.NmeaLogger
 import com.example.surveyingapp.gnss.diagnostics.NmeaLogStats
 import com.example.surveyingapp.gnss.model.Fix
+import com.example.surveyingapp.gnss.model.SkySnapshot
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
@@ -35,7 +38,8 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val coordinateRepository: CoordinateRepository,
-    private val nmeaLogger: NmeaLogger
+    private val nmeaLogger: NmeaLogger,
+    private val diagnosticsService: DiagnosticsService
 ) : ViewModel() {
 
     // ...existing code...
@@ -97,11 +101,33 @@ class HomeViewModel @Inject constructor(
         )
 
     /**
-     * Exposes NMEA stream statistics for monitoring data flow health.
+     * Exposes NMEA stream statistics for monitoring data flow health (FixBadge stream-health).
      */
     val nmeaStats: StateFlow<NmeaLogStats> = nmeaLogger.stats.stateIn(
         scope        = viewModelScope,
         started      = SharingStarted.WhileSubscribed(5_000),
         initialValue = nmeaLogger.stats.value
+    )
+
+    /**
+     * Live NMEA throughput/parse stats from the same [DiagnosticsService] singleton that both
+     * [com.example.surveyingapp.gnss.external.TcpNmeaSource] and the internal source feed (and that
+     * Developer Tools reads). This is the *real* live stream rate — unlike [nmeaLogger], whose
+     * logging path is not wired into the production NMEA flow. Used by the Home Field Status card.
+     */
+    val diagnosticData: StateFlow<DiagnosticData> = diagnosticsService.diagnosticData.stateIn(
+        scope        = viewModelScope,
+        started      = SharingStarted.WhileSubscribed(5_000),
+        initialValue = diagnosticsService.diagnosticData.value
+    )
+
+    /**
+     * Live sky snapshot (satellite counts) following the active provider — the same source the
+     * app-wide GNSS toolbar uses, so the Field Status "Sats" chip matches the toolbar exactly.
+     */
+    val sky: StateFlow<SkySnapshot> = fixSwitchboard.sky.stateIn(
+        scope        = viewModelScope,
+        started      = SharingStarted.WhileSubscribed(5_000),
+        initialValue = fixSwitchboard.sky.value
     )
 }

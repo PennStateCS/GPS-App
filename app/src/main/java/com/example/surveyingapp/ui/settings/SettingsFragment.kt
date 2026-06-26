@@ -636,20 +636,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             view.findViewById<TextView>(R.id.text_about_built)?.text =
                 BuildConfig.BUILD_TIME
 
-            view.findViewById<View>(R.id.btn_copy_build_info)?.setOnClickListener {
-                val info = buildString {
-                    appendLine("App version: ${BuildConfig.VERSION_NAME}")
-                    appendLine("Build: ${BuildConfig.BUILD_NUMBER}")
-                    appendLine("Commit: $hash${if (dirty) "-dirty" else ""}")
-                    appendLine("Branch: ${BuildConfig.BUILD_GIT_BRANCH}")
-                    appendLine("Dirty: $dirty")
-                    append("Built: ${BuildConfig.BUILD_TIME}")
-                }
-                val clipboard = requireContext().getSystemService(ClipboardManager::class.java)
-                clipboard.setPrimaryClip(ClipData.newPlainText("Build Info", info))
-                showSettingsMessage("Build info copied.")
-            }
-
             val btnExport = view.findViewById<com.google.android.material.button.MaterialButton>(
                 R.id.btn_export_diagnostic
             )

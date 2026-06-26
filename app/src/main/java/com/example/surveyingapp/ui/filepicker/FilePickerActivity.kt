@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -55,18 +56,14 @@ class FilePickerActivity : AppCompatActivity() {
                 }
                 returnSelectedFile(uri)
             } else {
-                // No URI returned despite OK result — treat as cancel
-                if (filterMode != FILTER_MODE_FOLDER_SELECT) {
-                    setResult(Activity.RESULT_CANCELED)
-                    finish()
-                }
+                // No URI despite OK — treat as a cancel and return to our own landing screen so the
+                // user keeps an obvious Browse/Cancel choice instead of being dropped or forced.
+                if (filterMode != FILTER_MODE_FOLDER_SELECT) showLandingScreen()
             }
         } else {
-            // User cancelled the SAF picker — nothing to show, so close this activity too.
-            if (filterMode != FILTER_MODE_FOLDER_SELECT) {
-                setResult(Activity.RESULT_CANCELED)
-                finish()
-            }
+            // Normal SAF cancellation (not an error). Return to the app's landing screen rather than
+            // finishing, so the user can Browse again or Cancel/back to Models on their own terms.
+            if (filterMode != FILTER_MODE_FOLDER_SELECT) showLandingScreen()
         }
     }
 
@@ -82,15 +79,55 @@ class FilePickerActivity : AppCompatActivity() {
         setupToolbar(title)
         setupRecyclerView()
         setupSelectFolderButton()
+        setupCancelButton()
 
-        // Go straight to the system file picker — no intermediate screen needed.
-        // If the mode is folder-select we still need the RecyclerView UI, so keep
-        // the old flow for that mode only.
+        // Folder-select keeps its directory-browsing UI. For normal file selection we now show an
+        // app-controlled landing screen first (Browse + Cancel) — instead of auto-launching SAF —
+        // so the user can clearly back out and return to the caller without picking a file.
         if (filterMode == FILTER_MODE_FOLDER_SELECT) {
             loadStorageOptions()
         } else {
-            openSafFilePicker()
+            showLandingScreen()
         }
+
+        // System back from the landing screen cancels cleanly and returns to the caller.
+        onBackPressedDispatcher.addCallback(this) {
+            setResult(Activity.RESULT_CANCELED)
+            finish()
+        }
+    }
+
+    private fun setupCancelButton() {
+        binding.btnCancel.setOnClickListener {
+            setResult(Activity.RESULT_CANCELED)
+            finish()
+        }
+    }
+
+    /**
+     * App-controlled landing screen for normal (non-folder) file selection. Shows mode-specific
+     * helper text plus a "Browse files…" row (opens the SAF picker) and an explicit Cancel button;
+     * the toolbar back arrow and system back also cancel. Shown first, and again whenever the user
+     * cancels SAF, so they are never forced to pick a file.
+     */
+    private fun showLandingScreen() {
+        binding.textCurrentPath.text = landingInstructionForMode()
+        binding.textPickerHelper.apply {
+            text = "You can cancel and return without selecting a file."
+            visibility = View.VISIBLE
+        }
+        binding.btnCancel.visibility = View.VISIBLE
+        binding.textEmptyMessage.visibility = View.GONE
+        adapter.submitList(listOf(FileItem.BrowseItem))
+    }
+
+    private fun landingInstructionForMode(): String = when (filterMode) {
+        FILTER_MODE_MODELS ->
+            "Choose a .glb or .gltf model from your device, cloud storage, SD card, or USB drive."
+        FILTER_MODE_IMPORT_DATA ->
+            "Choose a .json or .csv file from your device, cloud storage, SD card, or USB drive."
+        else ->
+            "Choose a file from your device, cloud storage, SD card, or USB drive."
     }
 
     private fun getExtensionsForMode(filterMode: String): Array<String> = when (filterMode) {

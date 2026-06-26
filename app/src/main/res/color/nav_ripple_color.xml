@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ripple color for nav drawer items.
-     Selected: 12% primary blue layered over the selection pill.
-     Unselected: 8% on-surface-variant for a subtle press effect. -->
+<!-- Ripple color for nav drawer items (Material 3 pressed state layer).
+     Selected: ~12% primary blue layered over the selection pill.
+     Unselected: ~12% on-surface-variant so the press reads clearly on the plain
+     surface, at the same strength as a selected-item press. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_checked="true" android:color="#1E155DA8" />
-    <item android:color="#1441484D" />
+    <item android:color="#1F41484D" />
 </selector>
