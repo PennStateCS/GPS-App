@@ -183,6 +183,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
 private const val CAT_ID_DEV                = 7
         private const val CAT_ID_ABOUT              = 8
         private const val CAT_ID_APPEARANCE         = 9
+        private const val CAT_ID_STAKEOUT           = 10
         // Connection status timing thresholds (ms)
         const val FRESH_FIX_MAX_AGE_MS = 5_000L
         const val STALE_FIX_MAX_AGE_MS = 15_000L
@@ -198,6 +199,7 @@ private const val CAT_ID_DEV                = 7
         SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_section_ar),
         SettingsCategory(CAT_ID_GNSS_CAPTURE,       "Capture",                 R.drawable.ic_satellite_24),
         SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinates",             R.drawable.ic_list_coordinates),
+        SettingsCategory(CAT_ID_STAKEOUT,           "Stakeout",                R.drawable.ic_stakeout_24),
         SettingsCategory(CAT_ID_DATA,               "Data",                    R.drawable.ic_file),
         SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
 SettingsCategory(CAT_ID_LOCATION,           "Receiver",                R.drawable.ic_section_location),
@@ -216,6 +218,7 @@ SettingsCategory(CAT_ID_LOCATION,           "Receiver",                R.drawabl
                 CAT_ID_GNSS_CAPTURE       -> setupGnssCaptureContent(inflater)
                 CAT_ID_AR_DISPLAY         -> setupARDisplayContent(inflater)
                 CAT_ID_COORDINATE_DISPLAY -> setupCoordinateDisplayContent(inflater)
+                CAT_ID_STAKEOUT           -> setupStakeoutContent(inflater)
                 CAT_ID_DATA               -> setupDataContent(inflater)
 CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 CAT_ID_ABOUT              -> setupAboutContent(inflater)
@@ -446,6 +449,61 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             editScale?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupARDisplayContent failed", e)
+        }
+        return view
+    }
+
+    private fun setupStakeoutContent(inflater: LayoutInflater): View {
+        val view = inflater.inflate(R.layout.content_settings_stakeout, contentContainer, false)
+        try {
+            val editTolerance = view.findViewById<EditText>(R.id.edit_stakeout_tolerance)
+            val editWarnAcc   = view.findViewById<EditText>(R.id.edit_stakeout_warning_accuracy)
+            val switchHaptics = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_stakeout_haptics)
+            val switchAudio   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_stakeout_audio)
+            val switchCompass = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_stakeout_compass)
+            val switchKeepOn  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_stakeout_keep_screen_on)
+
+            // Saves the current field values back as a sanitized StakeoutSettings.
+            fun persist() {
+                val current = view.tag as? com.example.surveyingapp.settings.model.StakeoutSettings ?: return
+                val updated = current.copy(
+                    toleranceMeters = editTolerance?.text?.toString()?.trim()?.toDoubleOrNull() ?: current.toleranceMeters,
+                    warningAccuracyMeters = editWarnAcc?.text?.toString()?.trim()?.toDoubleOrNull() ?: current.warningAccuracyMeters,
+                    enableHaptics = switchHaptics?.isChecked ?: current.enableHaptics,
+                    enableAudio = switchAudio?.isChecked ?: current.enableAudio,
+                    guidanceUsesCompassHeading = switchCompass?.isChecked ?: current.guidanceUsesCompassHeading,
+                    keepScreenOnDuringStakeout = switchKeepOn?.isChecked ?: current.keepScreenOnDuringStakeout,
+                )
+                view.tag = updated
+                viewLifecycleOwner.lifecycleScope.launch {
+                    runCatching { settingsRepo.setStakeoutSettings(updated) }
+                }
+            }
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    val s = settingsRepo.stakeoutSettings.first()
+                    view.tag = s
+                    editTolerance?.setText(s.toleranceMeters.toString())
+                    editWarnAcc?.setText(s.warningAccuracyMeters.toString())
+                    switchHaptics?.isChecked = s.enableHaptics
+                    switchAudio?.isChecked = s.enableAudio
+                    switchCompass?.isChecked = s.guidanceUsesCompassHeading
+                    switchKeepOn?.isChecked = s.keepScreenOnDuringStakeout
+
+                    // Wire change listeners only after initial population to avoid feedback writes.
+                    switchHaptics?.setOnCheckedChangeListener { _, _ -> persist() }
+                    switchAudio?.setOnCheckedChangeListener { _, _ -> persist() }
+                    switchCompass?.setOnCheckedChangeListener { _, _ -> persist() }
+                    switchKeepOn?.setOnCheckedChangeListener { _, _ -> persist() }
+                    editTolerance?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persist() }
+                    editWarnAcc?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persist() }
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "Failed to load stakeout settings", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsFragment", "setupStakeoutContent failed", e)
         }
         return view
     }

@@ -113,6 +113,18 @@ object SettingsSnapshotCollector {
         }
         sb.appendLine()
 
+        // ── Stakeout guidance (non-sensitive only — no target/live coordinates) ─────
+        sb.appendLine("--- Stakeout guidance ---")
+        runCatching { repo.stakeoutSettings.first() }.getOrNull()?.let { st ->
+            sb.appendLine("Tolerance (m)           : ${st.toleranceMeters}")
+            sb.appendLine("Warn accuracy (m)       : ${st.warningAccuracyMeters}")
+            sb.appendLine("Haptics                 : ${st.enableHaptics}")
+            sb.appendLine("Audio                   : ${st.enableAudio}")
+            sb.appendLine("Keep screen on          : ${st.keepScreenOnDuringStakeout}")
+            sb.appendLine("Compass heading         : ${st.guidanceUsesCompassHeading}")
+        }
+        sb.appendLine()
+
         // ── Settings storage ───────────────────────────────────────────────────────
         sb.appendLine("--- Settings storage ---")
         sb.appendLine("Latest schema version   : ${com.example.surveyingapp.settings.SettingsDefaults.CURRENT_SETTINGS_SCHEMA_VERSION}")

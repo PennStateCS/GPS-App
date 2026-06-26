@@ -30,7 +30,6 @@ import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.model.Fix
-import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.model.RtkStatus
 import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.viewpoints.CoordinatesViewModel
@@ -64,6 +63,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -77,6 +77,11 @@ class RenderMapFragment : Fragment() {
         private const val MAX_TRAIL_POINTS = 1000
         private const val STAKEOUT_GREEN_THRESHOLD = 0.10
         private const val STAKEOUT_AMBER_THRESHOLD = 0.25
+        // Display-only thresholds (no persisted setting, no effect on calculations):
+        //  • within "tolerance" reuses the existing green distance threshold (10 cm).
+        //  • low-accuracy warning when the live horizontal accuracy is worse than this.
+        private const val STAKEOUT_TOLERANCE_THRESHOLD_M = STAKEOUT_GREEN_THRESHOLD
+        private const val STAKEOUT_LOW_ACCURACY_M = 0.30
     }
 
     @Inject
@@ -87,6 +92,9 @@ class RenderMapFragment : Fragment() {
 
     @Inject
     lateinit var modelRepository: com.example.surveyingapp.domain.repository.ModelRepository
+
+    @Inject
+    lateinit var stakeoutSettingsRepo: com.example.surveyingapp.domain.repository.StakeoutSettingsRepository
 
     // Map
     private var mapView: MapView? = null
@@ -124,9 +132,10 @@ class RenderMapFragment : Fragment() {
     // Visibility menu button in panel header
     private var visibilityMenuBtn: ImageButton? = null
 
-    // Map controls (now ImageButton not FAB, but we only need View methods)
-    private var toggleSatBtn: ImageButton? = null
-    private var gridBtn: View? = null   // GONE compat stub
+    // Map Tools overlay (collapsible toolbar modeled on the AR floating toolbar)
+    private var mapToolsToggle: View? = null
+    private var mapToolsPanel: View? = null
+    private var mapToolsVisible = false
 
     // Grid / boundary (internal logic unchanged)
     private var showGrid = false
@@ -141,7 +150,6 @@ class RenderMapFragment : Fragment() {
     private var liveTrail: Polyline? = null
     private val trailPoints = mutableListOf<LatLng>()
     private var lastTrailFix: Fix? = null
-    private var gnssStatusChip: TextView? = null
     private var currentFix: Fix? = null
     private var lastCurrentMarkerHue: Float? = null
     private var lastStakeoutMarkerHue: Float? = null
@@ -160,6 +168,35 @@ class RenderMapFragment : Fragment() {
     private var txtStakeoutTarget: TextView? = null
     private var txtStakeoutDistance: TextView? = null
     private var txtStakeoutBearing: TextView? = null
+    private var txtStakeoutDelta: TextView? = null
+    private var txtStakeoutStatus: TextView? = null
+    private var txtStakeoutAccuracy: TextView? = null
+    private var stakeoutAccuracyDefaultColor: Int = 0
+
+    // Stakeout guidance mode (display/feedback only — does not touch distance/bearing math)
+    private var imgStakeoutArrow: ImageView? = null
+    private var txtStakeoutTolerance: TextView? = null
+    private var txtStakeoutHeadingNote: TextView? = null
+    private var btnStakeoutGuidance: com.google.android.material.button.MaterialButton? = null
+    private var stakeoutSettings = com.example.surveyingapp.settings.model.StakeoutSettings()
+    private var isGuidanceActive = false
+    private val feedbackGate = com.example.surveyingapp.stakeout.StakeoutFeedbackGate()
+    private var compassHeadingDeg: Double? = null
+    private var sensorManager: android.hardware.SensorManager? = null
+    private var rotationSensor: android.hardware.Sensor? = null
+    private var toneGenerator: android.media.ToneGenerator? = null
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
+    private val rotationListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(event: android.hardware.SensorEvent) {
+            if (event.sensor.type != android.hardware.Sensor.TYPE_ROTATION_VECTOR) return
+            android.hardware.SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+            android.hardware.SensorManager.getOrientation(rotationMatrix, orientationAngles)
+            compassHeadingDeg =
+                com.example.surveyingapp.stakeout.StakeoutGuidance.normalize360(Math.toDegrees(orientationAngles[0].toDouble()))
+        }
+        override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
+    }
 
     // Selected coordinate card
     private var selectedCoordinateId: String? = null
@@ -171,10 +208,6 @@ class RenderMapFragment : Fragment() {
     private var btnSelectedCenter: View? = null
     private var btnSelectedStakeout: View? = null
 
-    // New map controls
-    private var btnCompass: View? = null
-    private var btnFitVisible: View? = null
-
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     override fun onCreateView(
@@ -185,11 +218,10 @@ class RenderMapFragment : Fragment() {
         val root = inflater.inflate(R.layout.fragment_render_map, container, false)
 
         mapView = root.findViewById(R.id.mapView)
-        placeholder = root.findViewById(R.id.text_render_map)
-        gnssStatusChip = root.findViewById(R.id.text_gnss_status)
+        // Empty state now lives inside the left panel ("No saved points to show") rather than a
+        // confusing centered "No render available" overlay on top of a perfectly good map.
+        placeholder = root.findViewById(R.id.left_panel_empty)
         toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
-        toggleSatBtn = root.findViewById(R.id.fab_toggle_sat)
-        gridBtn = root.findViewById(R.id.fab_toggle_grid)
         visibilityMenuBtn = root.findViewById(R.id.btn_visibility_menu)
         leftPanelSubtitle = root.findViewById(R.id.left_panel_subtitle)
 
@@ -202,9 +234,9 @@ class RenderMapFragment : Fragment() {
         btnSelectedCenter = root.findViewById(R.id.btn_selected_center)
         btnSelectedStakeout = root.findViewById(R.id.btn_selected_stakeout)
 
-        // New controls
-        btnCompass = root.findViewById(R.id.btn_compass)
-        btnFitVisible = root.findViewById(R.id.btn_fit_visible)
+        // Map Tools collapsible overlay (toggle + panel)
+        mapToolsToggle = root.findViewById(R.id.btnMapToolsToggle)
+        mapToolsPanel = root.findViewById(R.id.layoutMapTools)
 
         toggleAdapter = CoordinateToggleAdapter(
             modelRepository = modelRepository,
@@ -252,18 +284,23 @@ class RenderMapFragment : Fragment() {
             setupMapClickListener()
         }
 
-        // Control button wiring
-        toggleSatBtn?.setOnClickListener { showLayersMenu(it) }
+        // Map Tools overlay wiring. The toggle slides the panel in/out (AR pattern); each row
+        // delegates to the SAME existing map action handlers — only the presentation changed.
+        mapToolsToggle?.setOnClickListener { toggleMapTools() }
+        // Always-visible one-tap recenter (Center row inside Map Tools is kept too).
+        root.findViewById<View>(R.id.btnMapRecenter)?.setOnClickListener { recenterMap() }
         visibilityMenuBtn?.setOnClickListener { showVisibilityMenu(it) }
-        root.findViewById<View>(R.id.fab_recenter)?.setOnClickListener { recenterMap() }
-        root.findViewById<View>(R.id.fab_zoom_in)?.setOnClickListener {
+        root.findViewById<View>(R.id.btnMapType)?.setOnClickListener { showLayersMenu(it) }
+        root.findViewById<View>(R.id.btnMapCenter)?.setOnClickListener { recenterMap() }
+        root.findViewById<View>(R.id.btnMapGrid)?.setOnClickListener { toggleGrid() }
+        root.findViewById<View>(R.id.btnMapZoomIn)?.setOnClickListener {
             googleMap?.animateCamera(CameraUpdateFactory.zoomIn())
         }
-        root.findViewById<View>(R.id.fab_zoom_out)?.setOnClickListener {
+        root.findViewById<View>(R.id.btnMapZoomOut)?.setOnClickListener {
             googleMap?.animateCamera(CameraUpdateFactory.zoomOut())
         }
-        btnCompass?.setOnClickListener { resetMapOrientation() }
-        btnFitVisible?.setOnClickListener { fitVisibleCoordinates() }
+        root.findViewById<View>(R.id.btnMapCompass)?.setOnClickListener { resetMapOrientation() }
+        root.findViewById<View>(R.id.btnMapFit)?.setOnClickListener { fitVisibleCoordinates() }
 
         // Selected coord card buttons
         btnSelectedClose?.setOnClickListener { dismissSelectedCoordinate() }
@@ -299,9 +336,27 @@ class RenderMapFragment : Fragment() {
         txtStakeoutTarget = view.findViewById(R.id.txt_stakeout_target)
         txtStakeoutDistance = view.findViewById(R.id.txt_stakeout_distance)
         txtStakeoutBearing = view.findViewById(R.id.txt_stakeout_bearing)
+        txtStakeoutDelta = view.findViewById(R.id.txt_stakeout_delta)
+        txtStakeoutStatus = view.findViewById(R.id.txt_stakeout_status)
+        txtStakeoutAccuracy = view.findViewById(R.id.txt_stakeout_accuracy)
+        // Capture the theme default text color so the low-accuracy warning can revert cleanly.
+        stakeoutAccuracyDefaultColor = txtStakeoutAccuracy?.currentTextColor ?: 0
+
+        imgStakeoutArrow = view.findViewById(R.id.img_stakeout_arrow)
+        txtStakeoutTolerance = view.findViewById(R.id.txt_stakeout_tolerance)
+        txtStakeoutHeadingNote = view.findViewById(R.id.txt_stakeout_heading_note)
+        btnStakeoutGuidance = view.findViewById(R.id.btn_stakeout_guidance)
 
         btnToggleStakeout?.setOnClickListener { toggleStakeoutMode() }
         btnClearStakeout?.setOnClickListener { stopStakeout() }
+        btnStakeoutGuidance?.setOnClickListener { if (isGuidanceActive) stopGuidance() else startGuidance() }
+
+        // Keep the latest stakeout settings in memory for the guidance loop.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                stakeoutSettingsRepo.stakeoutSettings.collect { stakeoutSettings = it }
+            }
+        }
 
         if (panelWidthPx == 0) panelWidthPx = dpToPx(272f)
         applyPanelState()
@@ -312,8 +367,8 @@ class RenderMapFragment : Fragment() {
     // ── Lifecycle pass-throughs ────────────────────────────────────────────────
 
     override fun onStart()  { super.onStart();  try { mapView?.onStart() } catch (e: Exception) { Log.e(TAG, "onStart", e) } }
-    override fun onResume() { super.onResume(); try { mapView?.onResume() } catch (e: Exception) { Log.e(TAG, "onResume", e) } }
-    override fun onPause()  { try { mapView?.onPause() } catch (e: Exception) { Log.e(TAG, "onPause", e) }; super.onPause() }
+    override fun onResume() { super.onResume(); try { mapView?.onResume(); resumeGuidanceFeedback() } catch (e: Exception) { Log.e(TAG, "onResume", e) } }
+    override fun onPause()  { try { mapView?.onPause(); pauseGuidanceFeedback() } catch (e: Exception) { Log.e(TAG, "onPause", e) }; super.onPause() }
 
     override fun onStop() {
         try { clearLiveTrail(); clearAccuracyCircle(); mapView?.onStop() } catch (e: Exception) { Log.e(TAG, "onStop", e) }
@@ -322,6 +377,7 @@ class RenderMapFragment : Fragment() {
 
     override fun onDestroyView() {
         try {
+            stopGuidance()   // unregister sensor, release tone, clear keep-screen-on
             clearLiveTrail(); clearAccuracyCircle()
             currentMarker?.remove(); currentMarker = null
             stakeoutLine?.remove(); stakeoutLine = null
@@ -347,7 +403,6 @@ class RenderMapFragment : Fragment() {
                         currentMarker?.remove(); currentMarker = null
                         lastFixLatLng = null
                         currentFix = null
-                        gnssStatusChip?.text = ""
                         lastCurrentMarkerHue = null
                     }
                     previousProvider = provider
@@ -381,40 +436,41 @@ class RenderMapFragment : Fragment() {
             try { updateAccuracyCircle(pos, fix.hAccM) } catch (e: Exception) { Log.w(TAG, "updateAccuracyCircle", e) }
             try { updateLiveTrail(pos, fix) } catch (e: Exception) { Log.w(TAG, "updateLiveTrail", e) }
             try { updateStakeoutCalculations(pos) } catch (e: Exception) { Log.w(TAG, "updateStakeoutCalculations", e) }
-            try { updateGnssStatusChip(fix) } catch (e: Exception) { Log.w(TAG, "updateGnssStatusChip", e) }
         } catch (e: Exception) {
             Log.e(TAG, "updateLiveTracking error", e)
         }
     }
 
-    private fun updateGnssStatusChip(fix: Fix) {
-        val chip = gnssStatusChip ?: return
-        val sourceLabel = when (fix.provider) {
-            Provider.INTERNAL                                        -> "Internal GPS"
-            Provider.RS2_TCP, Provider.RS2_EXTERNAL, Provider.RS2_BT -> "RS2+"
-            Provider.OTHER                                           -> "External"
-            Provider.MODEL                                           -> "Model"
+    // ── Map Tools overlay (collapsible, AR-style) ──────────────────────────────
+
+    /** Slides the Map Tools panel in/out, mirroring the AR floating-toolbar toggle. */
+    private fun toggleMapTools() {
+        val panel = mapToolsPanel ?: return
+        if (mapToolsVisible) {
+            panel.animate()
+                .translationX(panel.width.toFloat().coerceAtLeast(200f))
+                .alpha(0f)
+                .setDuration(160)
+                .setInterpolator(android.view.animation.AccelerateInterpolator())
+                .withEndAction { panel.visibility = View.GONE }
+                .start()
+            mapToolsToggle?.animate()?.rotation(0f)?.setDuration(160)?.start()
+            mapToolsToggle?.contentDescription = "Show map tools"
+            mapToolsVisible = false
+        } else {
+            panel.translationX = panel.width.toFloat().coerceAtLeast(200f)
+            panel.alpha = 0f
+            panel.visibility = View.VISIBLE
+            panel.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .setDuration(200)
+                .setInterpolator(android.view.animation.DecelerateInterpolator())
+                .start()
+            mapToolsToggle?.animate()?.rotation(90f)?.setDuration(200)?.start()
+            mapToolsToggle?.contentDescription = "Hide map tools"
+            mapToolsVisible = true
         }
-        val rtkLabel = when (fix.rtkStatus) {
-            RtkStatus.FIX            -> "RTK FIX"
-            RtkStatus.FLOAT          -> "RTK FLOAT"
-            RtkStatus.DGPS           -> "DGPS"
-            RtkStatus.SINGLE         -> "SINGLE"
-            RtkStatus.DEAD_RECKONING -> "DEAD RECKONING"
-            RtkStatus.NONE,
-            RtkStatus.INVALID        -> "NO FIX"
-        }
-        val accLabel = fix.hAccM?.let { " ±${"%.2f".format(it)}m" } ?: ""
-        chip.text = "$sourceLabel · $rtkLabel$accLabel"
-        chip.setBackgroundColor(when (fix.rtkStatus) {
-            RtkStatus.FIX            -> 0xCC1B5E20.toInt()
-            RtkStatus.FLOAT          -> 0xCCE65100.toInt()
-            RtkStatus.DGPS           -> 0xCC0D47A1.toInt()
-            RtkStatus.SINGLE         -> 0xCCB71C1C.toInt()
-            RtkStatus.DEAD_RECKONING -> 0xCC4A148C.toInt()
-            RtkStatus.NONE,
-            RtkStatus.INVALID        -> 0xCC424242.toInt()
-        })
     }
 
     // ── Stakeout calculations ──────────────────────────────────────────────────
@@ -423,6 +479,7 @@ class RenderMapFragment : Fragment() {
         val target = stakeoutTarget ?: return
         if (!isStakeoutMode) return
         try {
+            // Distance + bearing use the EXISTING haversine/great-circle helpers — unchanged math.
             val distance = calculateDistance(currentPos, target)
             val bearing = calculateBearing(currentPos, target)
             val distanceText = when {
@@ -431,7 +488,9 @@ class RenderMapFragment : Fragment() {
                 else            -> String.format(Locale.getDefault(), "%.0f m", distance)
             }
             txtStakeoutDistance?.text = distanceText
-            txtStakeoutBearing?.text = String.format(Locale.getDefault(), "%.1f°", bearing)
+            // Bearing shown with an 8-point compass label, e.g. "NE 42°".
+            txtStakeoutBearing?.text =
+                String.format(Locale.getDefault(), "%s %.0f°", compassPoint(bearing), bearing)
             val color = when {
                 distance < STAKEOUT_GREEN_THRESHOLD -> 0xFF4CAF50.toInt()
                 distance < STAKEOUT_AMBER_THRESHOLD -> 0xFFFF9800.toInt()
@@ -439,11 +498,217 @@ class RenderMapFragment : Fragment() {
             }
             txtStakeoutDistance?.setTextColor(color)
             txtStakeoutBearing?.setTextColor(color)
+
+            // Display-only north/east offsets (metres).
+            val (dN, dE) = northEastDeltaMeters(currentPos, target)
+            txtStakeoutDelta?.text =
+                String.format(Locale.getDefault(), "ΔN %+.2f m    ΔE %+.2f m", dN, dE)
+
+            // State line: within tolerance vs. which way to move.
+            txtStakeoutStatus?.text =
+                if (distance < STAKEOUT_TOLERANCE_THRESHOLD_M) "Within tolerance"
+                else "Move ${compassDirectionWord(bearing)}"
+
+            updateStakeoutAccuracy()
             updateStakeoutMarkerColor(distance)
             updateStakeoutLine(currentPos, target)
+            updateGuidance(distance, bearing)
         } catch (e: Exception) {
             Log.w(TAG, "updateStakeoutCalculations error", e)
         }
+    }
+
+    /** Target is set but there is no live fix yet — show a clear "waiting" state. Display-only. */
+    private fun showStakeoutWaiting() {
+        txtStakeoutDistance?.text = "—"
+        txtStakeoutBearing?.text = "—"
+        txtStakeoutDelta?.text = "—"
+        txtStakeoutStatus?.text = "Waiting for live position…"
+        txtStakeoutAccuracy?.visibility = View.GONE
+    }
+
+    /** Re-render the stakeout card from the latest fix, or the waiting state if none yet. */
+    private fun refreshStakeout() {
+        val fix = lastFixLatLng
+        if (fix != null) updateStakeoutCalculations(fix) else showStakeoutWaiting()
+    }
+
+    /** Live horizontal accuracy (the only GNSS detail in the card) + non-blocking low-accuracy warning. */
+    private fun updateStakeoutAccuracy() {
+        val tv = txtStakeoutAccuracy ?: return
+        val acc = currentFix?.hAccM
+        if (acc == null || acc <= 0.0) { tv.visibility = View.GONE; return }
+        tv.visibility = View.VISIBLE
+        if (acc > STAKEOUT_LOW_ACCURACY_M) {
+            tv.text = String.format(
+                Locale.getDefault(), "Accuracy ±%.2f m · Low accuracy — stakeout may be unreliable", acc
+            )
+            tv.setTextColor(0xFFF44336.toInt())
+        } else {
+            tv.text = String.format(Locale.getDefault(), "Accuracy ±%.2f m", acc)
+            tv.setTextColor(stakeoutAccuracyDefaultColor)
+        }
+    }
+
+    /** 8-point compass abbreviation for a bearing in degrees (display-only). */
+    private fun compassPoint(bearing: Double): String {
+        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+        val idx = ((((bearing % 360) + 360) % 360) / 45.0).roundToInt() % 8
+        return dirs[idx]
+    }
+
+    /** Human-readable "move" word for a bearing (display-only). */
+    private fun compassDirectionWord(bearing: Double): String = when (compassPoint(bearing)) {
+        "N"  -> "north"
+        "NE" -> "northeast"
+        "E"  -> "east"
+        "SE" -> "southeast"
+        "S"  -> "south"
+        "SW" -> "southwest"
+        "W"  -> "west"
+        else -> "northwest"
+    }
+
+    /**
+     * Display-only local north/east offsets (metres) from [from] to [to], using the same Earth
+     * radius as [calculateDistance]. Equirectangular approximation — adequate at stakeout distances.
+     * It does NOT feed the distance/bearing values shown, which keep their existing math.
+     */
+    private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> {
+        val r = 6371000.0
+        val dN = Math.toRadians(to.latitude - from.latitude) * r
+        val dE = Math.toRadians(to.longitude - from.longitude) * r * cos(Math.toRadians(from.latitude))
+        return dN to dE
+    }
+
+    // ── Stakeout guidance mode (display + feedback only) ───────────────────────
+
+    private fun startGuidance() {
+        if (!isStakeoutMode || stakeoutTarget == null) { showSnackbar("Select a stakeout target first"); return }
+        isGuidanceActive = true
+        feedbackGate.reset()
+        btnStakeoutGuidance?.text = "Stop Guidance"
+        imgStakeoutArrow?.visibility = View.VISIBLE
+        txtStakeoutTolerance?.visibility = View.VISIBLE
+        txtStakeoutTolerance?.text =
+            String.format(Locale.getDefault(), "Tolerance: %.2f m", stakeoutSettings.toleranceMeters)
+        if (stakeoutSettings.guidanceUsesCompassHeading) startCompass()
+        if (stakeoutSettings.enableAudio) ensureToneGenerator()
+        if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
+        refreshStakeout()
+    }
+
+    private fun stopGuidance() {
+        isGuidanceActive = false
+        btnStakeoutGuidance?.text = "Start Guidance"
+        imgStakeoutArrow?.visibility = View.GONE
+        txtStakeoutTolerance?.visibility = View.GONE
+        txtStakeoutHeadingNote?.visibility = View.GONE
+        stopCompass()
+        releaseToneGenerator()
+        setKeepScreenOn(false)
+        feedbackGate.reset()
+    }
+
+    /** Pause feedback (sensor/audio/screen) but keep the active target — for backgrounding. */
+    private fun pauseGuidanceFeedback() {
+        if (!isGuidanceActive) return
+        stopCompass()
+        releaseToneGenerator()
+        setKeepScreenOn(false)
+    }
+
+    private fun resumeGuidanceFeedback() {
+        if (!isGuidanceActive) return
+        if (stakeoutSettings.guidanceUsesCompassHeading) startCompass()
+        if (stakeoutSettings.enableAudio) ensureToneGenerator()
+        if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
+    }
+
+    /** Updates the arrow + fires throttled haptics/audio. Uses the passed-in distance/bearing — no new math. */
+    private fun updateGuidance(distanceMeters: Double, bearingToTargetDeg: Double) {
+        if (!isGuidanceActive) return
+        val s = stakeoutSettings
+        val (source, heading) = com.example.surveyingapp.stakeout.StakeoutGuidance.resolveHeading(
+            preferCompass = s.guidanceUsesCompassHeading,
+            compassHeadingDeg = compassHeadingDeg,
+            courseOverGroundDeg = currentFix?.courseDeg,
+            speedMps = currentFix?.speedMps,
+        )
+        val relative = com.example.surveyingapp.stakeout.StakeoutGuidance.relativeBearing(bearingToTargetDeg, heading)
+        // Arrow shows the relative direction when heading is known, else points at the map-north bearing.
+        imgStakeoutArrow?.rotation = (relative ?: bearingToTargetDeg).toFloat()
+        if (source == com.example.surveyingapp.stakeout.HeadingSource.NORTH_UP) {
+            txtStakeoutHeadingNote?.visibility = View.VISIBLE
+            txtStakeoutHeadingNote?.text = "Arrow is north-up until heading is available."
+        } else {
+            txtStakeoutHeadingNote?.visibility = View.GONE
+        }
+        val status = com.example.surveyingapp.stakeout.StakeoutGuidance.status(
+            hasTarget = true, hasPosition = true, distanceMeters = distanceMeters, toleranceMeters = s.toleranceMeters
+        )
+        when (feedbackGate.onUpdate(status, android.os.SystemClock.elapsedRealtime())) {
+            com.example.surveyingapp.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
+                if (s.enableHaptics) haptic(arrived = true); if (s.enableAudio) beep(arrived = true)
+            }
+            com.example.surveyingapp.stakeout.StakeoutFeedback.NAVIGATING_PULSE -> {
+                if (s.enableHaptics) haptic(arrived = false); if (s.enableAudio) beep(arrived = false)
+            }
+            com.example.surveyingapp.stakeout.StakeoutFeedback.NONE -> {}
+        }
+    }
+
+    private fun startCompass() {
+        try {
+            val sm = sensorManager ?: (requireContext()
+                .getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager)
+                ?.also { sensorManager = it }
+            rotationSensor = sm?.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR)
+            if (rotationSensor != null) {
+                sm?.registerListener(rotationListener, rotationSensor, android.hardware.SensorManager.SENSOR_DELAY_UI)
+            } else {
+                compassHeadingDeg = null  // no rotation-vector sensor → fall back to COG/north-up
+            }
+        } catch (e: Exception) { Log.w(TAG, "startCompass failed", e); compassHeadingDeg = null }
+    }
+
+    private fun stopCompass() {
+        try { sensorManager?.unregisterListener(rotationListener) } catch (_: Exception) {}
+        compassHeadingDeg = null
+    }
+
+    private fun ensureToneGenerator() {
+        if (toneGenerator == null) {
+            toneGenerator = try {
+                android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
+            } catch (e: Exception) { Log.w(TAG, "ToneGenerator init failed", e); null }
+        }
+    }
+
+    private fun releaseToneGenerator() {
+        try { toneGenerator?.release() } catch (_: Exception) {}
+        toneGenerator = null
+    }
+
+    private fun haptic(arrived: Boolean) {
+        val v = view ?: return
+        v.performHapticFeedback(
+            if (arrived) android.view.HapticFeedbackConstants.CONFIRM
+            else android.view.HapticFeedbackConstants.CLOCK_TICK
+        )
+    }
+
+    private fun beep(arrived: Boolean) {
+        ensureToneGenerator()
+        try {
+            if (arrived) toneGenerator?.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 200)
+            else toneGenerator?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 80)
+        } catch (e: Exception) { Log.w(TAG, "beep failed", e) }
+    }
+
+    /** Uses a per-view keep-screen-on request so it never clobbers a global window flag. */
+    private fun setKeepScreenOn(on: Boolean) {
+        try { view?.keepScreenOn = on } catch (e: Exception) { Log.w(TAG, "keepScreenOn failed", e) }
     }
 
     private fun updateStakeoutMarkerColor(distance: Double) {
@@ -867,12 +1132,8 @@ class RenderMapFragment : Fragment() {
     private fun updateVisibleCount() {
         val visible = visibilityMap.values.count { it }
         val total = coordinateMap.size
-        leftPanelSubtitle?.text = when {
-            total == 0       -> "No coordinates"
-            visible == total -> "All visible"
-            visible == 0     -> "None visible"
-            else             -> "$visible visible"
-        }
+        // Map-workspace style count, e.g. "12 shown / 18 total".
+        leftPanelSubtitle?.text = if (total == 0) "No points yet" else "$visible shown / $total total"
     }
 
     // ── Selected coordinate ────────────────────────────────────────────────────
@@ -947,8 +1208,7 @@ class RenderMapFragment : Fragment() {
 
         stakeoutTarget = latLng
         txtStakeoutTarget?.text = coord.name
-        txtStakeoutDistance?.text = "—"
-        txtStakeoutBearing?.text = "—"
+        showStakeoutWaiting()
 
         stakeoutMarker?.remove()
         lastStakeoutMarkerHue = null
@@ -957,20 +1217,23 @@ class RenderMapFragment : Fragment() {
                 .position(latLng)
                 .title("Stakeout: ${coord.name}")
                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                .zIndex(5f)   // keep the active target above the regular coordinate markers
         )
         lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
 
-        lastFixLatLng?.let { updateStakeoutDistanceAndBearing(latLng) }
+        refreshStakeout()
         showSnackbar("Stakeout started: ${coord.name}")
         dismissSelectedCoordinate()
     }
 
     private fun stopStakeout() {
         if (!isStakeoutMode) return
+        if (isGuidanceActive) stopGuidance()
         isStakeoutMode = false
         stakeoutPanel?.visibility = View.GONE
         stakeoutTarget = null
         txtStakeoutTarget?.text = "—"
+        showStakeoutWaiting()
         stakeoutMarker?.remove(); stakeoutMarker = null; lastStakeoutMarkerHue = null
         stakeoutLine?.remove(); stakeoutLine = null
         showSnackbar("Stakeout stopped")
@@ -986,23 +1249,6 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    private fun clearStakeout() {
-        stakeoutTarget = null
-        txtStakeoutTarget?.text = "—"
-        stakeoutMarker?.remove(); stakeoutMarker = null
-        stakeoutLine?.remove(); stakeoutLine = null
-    }
-
-    private fun updateStakeoutDistanceAndBearing(target: LatLng) {
-        val currentPos = lastFixLatLng ?: return
-        try {
-            val distance = calculateDistance(currentPos, target)
-            val bearing = calculateBearing(currentPos, target)
-            txtStakeoutDistance?.text = String.format(Locale.getDefault(), "%.1f m", distance)
-            txtStakeoutBearing?.text = String.format(Locale.getDefault(), "%.1f°", bearing)
-            updateStakeoutMarkerColor(distance)
-        } catch (e: Exception) { Log.w(TAG, "updateStakeoutDistanceAndBearing error", e) }
-    }
 
     private fun setupMapClickListener() {
         googleMap?.setOnMapClickListener { latLng ->
@@ -1014,11 +1260,12 @@ class RenderMapFragment : Fragment() {
                         stakeoutMarker = googleMap?.addMarker(
                             MarkerOptions().position(latLng).title("Stakeout Target")
                                 .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                                .zIndex(5f)   // keep the active target above the regular coordinate markers
                         )
                     } else {
                         try { stakeoutMarker?.position = latLng } catch (e: Exception) { Log.w(TAG, "stakeout marker move", e) }
                     }
-                    updateStakeoutDistanceAndBearing(latLng)
+                    refreshStakeout()
                 } catch (e: Exception) { Log.w(TAG, "Map click stakeout error", e) }
             } else {
                 dismissSelectedCoordinate()

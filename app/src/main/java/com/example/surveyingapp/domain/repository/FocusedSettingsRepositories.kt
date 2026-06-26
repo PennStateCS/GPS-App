@@ -10,6 +10,7 @@ import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
 import com.example.surveyingapp.settings.model.DeveloperSettings
 import com.example.surveyingapp.settings.model.ExternalReceiverProfile
 import com.example.surveyingapp.settings.model.ExternalReceiverSettings
+import com.example.surveyingapp.settings.model.StakeoutSettings
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -87,4 +88,10 @@ interface DeveloperSettingsRepository {
 interface AppearanceSettingsRepository {
     val appearanceSettings: Flow<AppearanceSettings>
     suspend fun setAppearanceSettings(settings: AppearanceSettings)
+}
+
+/** Stakeout guidance preferences (tolerance, accuracy warning, haptics/audio, keep-screen-on, heading). */
+interface StakeoutSettingsRepository {
+    val stakeoutSettings: Flow<StakeoutSettings>
+    suspend fun setStakeoutSettings(settings: StakeoutSettings)
 }

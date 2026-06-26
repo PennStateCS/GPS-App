@@ -47,6 +47,7 @@ object SettingsDefaults {
     val developer = DeveloperSettings()
     val gnssReceiver = GnssReceiverSettings()
     val gnssCapture = GnssCaptureSettings()
+    val stakeout = com.example.surveyingapp.settings.model.StakeoutSettings()
 
     /**
      * Default external receiver aggregate. Mirrors the individual defaults above. The connection
@@ -63,4 +64,12 @@ object SettingsDefaults {
 
     /** Clamps a TCP port to the valid range, falling back to [externalTcpPort] when absent/invalid. */
     fun sanitizeTcpPort(port: Int?): Int = port?.takeIf { it in 1..65535 } ?: externalTcpPort
+
+    /** Clamps the stakeout tolerance to a sane range (1 mm … 100 m); absent/invalid → default. */
+    fun sanitizeStakeoutTolerance(m: Double?): Double =
+        m?.takeIf { it.isFinite() && it in 0.001..100.0 } ?: stakeout.toleranceMeters
+
+    /** Clamps the stakeout accuracy-warning threshold (1 mm … 1000 m); absent/invalid → default. */
+    fun sanitizeStakeoutWarningAccuracy(m: Double?): Double =
+        m?.takeIf { it.isFinite() && it in 0.001..1000.0 } ?: stakeout.warningAccuracyMeters
 }

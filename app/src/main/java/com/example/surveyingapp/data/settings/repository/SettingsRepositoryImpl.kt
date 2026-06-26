@@ -200,6 +200,38 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setMaxBrightnessWhileOpen(settings.maxBrightnessWhileOpen)
     }
 
+    // Stakeout guidance — numeric values are sanitized on read (display/feedback only; never touches
+    // coordinates or stakeout distance/bearing math).
+    override val stakeoutSettings: Flow<com.example.surveyingapp.settings.model.StakeoutSettings> = combine(
+        local.stakeoutToleranceMRaw,
+        local.stakeoutWarningAccuracyMRaw,
+        local.stakeoutEnableHaptics,
+        local.stakeoutEnableAudio,
+        combine(local.stakeoutKeepScreenOn, local.stakeoutCompassHeading) { keep, compass -> keep to compass }
+    ) { tolerance, warnAcc, haptics, audio, (keepScreenOn, compass) ->
+        com.example.surveyingapp.settings.model.StakeoutSettings(
+            toleranceMeters = com.example.surveyingapp.settings.SettingsDefaults.sanitizeStakeoutTolerance(tolerance),
+            warningAccuracyMeters = com.example.surveyingapp.settings.SettingsDefaults.sanitizeStakeoutWarningAccuracy(warnAcc),
+            enableHaptics = haptics,
+            enableAudio = audio,
+            keepScreenOnDuringStakeout = keepScreenOn,
+            guidanceUsesCompassHeading = compass,
+        )
+    }
+
+    override suspend fun setStakeoutSettings(settings: com.example.surveyingapp.settings.model.StakeoutSettings) {
+        local.setStakeoutToleranceM(
+            com.example.surveyingapp.settings.SettingsDefaults.sanitizeStakeoutTolerance(settings.toleranceMeters)
+        )
+        local.setStakeoutWarningAccuracyM(
+            com.example.surveyingapp.settings.SettingsDefaults.sanitizeStakeoutWarningAccuracy(settings.warningAccuracyMeters)
+        )
+        local.setStakeoutEnableHaptics(settings.enableHaptics)
+        local.setStakeoutEnableAudio(settings.enableAudio)
+        local.setStakeoutKeepScreenOn(settings.keepScreenOnDuringStakeout)
+        local.setStakeoutCompassHeading(settings.guidanceUsesCompassHeading)
+    }
+
     // Enum persistence now lives on the enums themselves (stable prefKey + fromPrefKey with legacy
     // name fallback): LocationSourceType, ExternalConnectionType, AppThemeMode, RtkStatus.
 }
