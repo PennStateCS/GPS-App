@@ -43,6 +43,26 @@ class ExternalReceiverProfileTest {
     }
 
     @Test
+    fun portForProfileChange_keepsCustomPort() {
+        // 2947 is not any profile's default → custom → preserved.
+        assertEquals(2947, ExternalReceiverProfile.portForProfileChange(2947, ExternalReceiverProfile.REACH_RS4))
+    }
+
+    @Test
+    fun portForProfileChange_appliesNewDefaultWhenAtAProfileDefault() {
+        assertEquals(9001, ExternalReceiverProfile.portForProfileChange(9000, ExternalReceiverProfile.REACH_RS4))
+        assertEquals(9001, ExternalReceiverProfile.portForProfileChange(9001, ExternalReceiverProfile.REACH_RS4_PRO))
+        assertEquals(9000, ExternalReceiverProfile.portForProfileChange(9001, ExternalReceiverProfile.GENERIC_NMEA_TCP))
+    }
+
+    @Test
+    fun portForProfileChange_appliesNewDefaultForNullOrInvalid() {
+        assertEquals(9001, ExternalReceiverProfile.portForProfileChange(null, ExternalReceiverProfile.REACH_RS4))
+        assertEquals(9001, ExternalReceiverProfile.portForProfileChange(0, ExternalReceiverProfile.REACH_RS4))
+        assertEquals(9000, ExternalReceiverProfile.portForProfileChange(70000, ExternalReceiverProfile.GENERIC_NMEA_TCP))
+    }
+
+    @Test
     fun labels_areDistinctAndHumanReadable() {
         assertEquals("Emlid Reach RS4", ExternalReceiverProfile.REACH_RS4.label)
         assertEquals("Emlid Reach RS4 Pro", ExternalReceiverProfile.REACH_RS4_PRO.label)

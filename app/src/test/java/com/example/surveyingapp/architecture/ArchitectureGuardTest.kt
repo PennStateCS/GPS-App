@@ -77,6 +77,13 @@ class ArchitectureGuardTest {
     }
 
     // ── Rule 1: service-locator access to the settings singleton ────────────────
+    //
+    // GUIDANCE (not enforced): new ViewModels/consumers should inject the narrowest *focused*
+    // settings interface they need (e.g. GnssCaptureSettingsRepository, ArDisplaySettingsRepository,
+    // ExternalReceiverSettingsRepository) rather than the broad aggregate SettingsRepository. All of
+    // them resolve to the same SettingsRepositoryImpl singleton (see di/SettingsModule.kt). This is
+    // intentionally NOT a hard rule while the aggregate still backs large screens (SettingsFragment,
+    // MainActivity); see docs/settings-architecture.md.
 
     @Test
     fun `no new SurveyingApp_settingsRepo service-locator usage`() {
@@ -158,6 +165,19 @@ class ArchitectureGuardTest {
         )
     }
 
+    // ── Rule 7: persisted enums must use a stable prefKey, not the constant name ──
+
+    @Test
+    fun `settings persistence does not store enum constant names`() {
+        // Targets the settings write path specifically (`local.setX(enum.name)`), not `.name`
+        // everywhere. Persisted enums expose a stable prefKey + fromPrefKey instead.
+        enforce(
+            rule = "Enum constant name persisted in a DataStore write (brittle to renames)",
+            preferred = "Persist enum.prefKey and read with EnumType.fromPrefKey(...)",
+            violations = scan(Regex("""local\.set\w+\([^)]*\.name\b""")),
+        )
+    }
+
     // ── Rule 6: exact live coordinates in persistent diagnostic logs ─────────────
 
     @Test
@@ -172,6 +192,45 @@ class ArchitectureGuardTest {
             rule = "Exact live coordinates logged to persistent diagnostics (privacy)",
             preferred = "Log non-location fields (status/hAcc/sats/ageMs); keep exact coords in saved-coordinate exports only",
             violations = scan(coordInDiag, allow),
+        )
+    }
+
+    // ── Rule 8: single SettingsRepositoryImpl owner ─────────────────────────────
+
+    @Test
+    fun `SettingsRepositoryImpl is only constructed by the approved owner`() {
+        // Exactly one production SettingsRepositoryImpl may exist so there is one Preferences
+        // DataStore over the app_settings file (a second instance crashes at runtime). It is built
+        // by SurveyingApp.setupSettings() and bridged through Hilt. Tests live outside this scanned
+        // root (app/src/main/java) and may construct their own over isolated temp DataStores.
+        val allow = setOf(
+            // PERMANENT: the single approved construction site.
+            "com/example/surveyingapp/SurveyingApp.kt",
+            // PERMANENT: the class's own declaration (`class SettingsRepositoryImpl(...)`).
+            "com/example/surveyingapp/data/settings/repository/SettingsRepositoryImpl.kt",
+        )
+        enforce(
+            rule = "SettingsRepositoryImpl(...) constructed outside SurveyingApp.setupSettings()",
+            preferred = "Inject SettingsRepository (or a focused settings interface) via Hilt; it bridges to the one singleton",
+            violations = scan(Regex("""SettingsRepositoryImpl\("""), allow),
+        )
+    }
+
+    // ── Rule 9: single settings Preferences DataStore ───────────────────────────
+
+    @Test
+    fun `only one settings Preferences DataStore delegate exists`() {
+        // Guards against a second production settings DataStore. The one `app_settings` store is
+        // declared by the `Context.appDataStore` delegate in Preferences.kt; no other production
+        // file should declare a `preferencesDataStore(...)` delegate for settings.
+        val allow = setOf(
+            // PERMANENT: the single production settings DataStore delegate.
+            "com/example/surveyingapp/data/settings/datastore/Preferences.kt",
+        )
+        enforce(
+            rule = "Additional preferencesDataStore(...) delegate in production code",
+            preferred = "Reuse the single SettingsLocalDataSource/appDataStore; create isolated DataStores only in tests",
+            violations = scan(Regex("""preferencesDataStore\("""), allow),
         )
     }
 }

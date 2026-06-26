@@ -576,7 +576,7 @@ class MainActivity : AppCompatActivity() {
         // when the toolbar state is rendered.
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                settingsRepository.externalReceiverProfile.collect { externalReceiverLabel = it.shortLabel }
+                settingsRepository.externalReceiverSettings.collect { externalReceiverLabel = it.profile.shortLabel }
             }
         }
 

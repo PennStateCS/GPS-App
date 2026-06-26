@@ -1,13 +1,24 @@
 package com.example.surveyingapp.gnss.model
 
-enum class RtkStatus {
-    NONE,
-    DGPS,
-    FLOAT,
-    FIX,
-    SINGLE,
-    DEAD_RECKONING,
-    INVALID;
+enum class RtkStatus(val prefKey: String) {
+    NONE("none"),
+    DGPS("dgps"),
+    FLOAT("float"),
+    FIX("fix"),
+    SINGLE("single"),
+    DEAD_RECKONING("dead_reckoning"),
+    INVALID("invalid");
+
+    companion object {
+        /**
+         * Resolves a persisted token (new prefKey or legacy enum name) to a status. The [default]
+         * is caller-supplied because the documented default differs by context (e.g. the capture
+         * "required minimum status" defaults to [FIX]).
+         */
+        fun fromPrefKey(value: String?, default: RtkStatus = NONE): RtkStatus =
+            entries.firstOrNull { it.prefKey.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true) }
+                ?: default
+    }
 
     /**
      * Returns a quality rank for this RTK status, where higher values indicate better quality.

@@ -18,10 +18,18 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Maps raw DataStore preference primitives to domain enums/models and vice versa.
+ *
+ * **Ownership:** in production this is constructed exactly once, by
+ * [com.example.surveyingapp.SurveyingApp.setupSettings], and exposed through Hilt (and the focused
+ * settings interfaces) via [com.example.surveyingapp.SurveyingApp.settingsRepo]. Do not construct it
+ * anywhere else in production code — a second instance would open a second Preferences DataStore over
+ * the same `app_settings` file and crash. Tests construct it directly over an isolated temp DataStore
+ * (the [SettingsLocalDataSource] `DataStore` constructor). See `docs/settings-architecture.md` →
+ * Production ownership; enforced by `ArchitectureGuardTest`.
  */
 class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : SettingsRepository {
-    private val sourceFlow = local.locationSourceRaw.map { it.toLocationSourceType() }
-    private val connTypeFlow = local.externalConnTypeRaw.map { it.toExternalConnectionType() }
+    private val sourceFlow = local.locationSourceRaw.map { LocationSourceType.fromPrefKey(it) }
+    private val connTypeFlow = local.externalConnTypeRaw.map { ExternalConnectionType.fromPrefKey(it) }
 
     override val locationSource: Flow<LocationSourceType> = sourceFlow
     override val externalConnType: Flow<ExternalConnectionType> = connTypeFlow
@@ -32,16 +40,35 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val externalReceiverProfile =
         local.externalReceiverProfileRaw.map { com.example.surveyingapp.settings.model.ExternalReceiverProfile.fromPrefKey(it) }
 
+    override val externalReceiverSettings: Flow<com.example.surveyingapp.settings.model.ExternalReceiverSettings> = combine(
+        externalReceiverProfile, connTypeFlow, local.externalTcpHost, local.externalTcpPort, local.externalTcpName
+    ) { profile, connType, host, port, name ->
+        com.example.surveyingapp.settings.model.ExternalReceiverSettings(
+            profile = profile,
+            connectionType = connType,
+            tcpHost = host?.takeIf { it.isNotBlank() } ?: "",
+            tcpPort = com.example.surveyingapp.settings.SettingsDefaults.sanitizeTcpPort(port),
+            displayName = name?.takeIf { it.isNotBlank() } ?: "",
+        )
+    }
+
     override suspend fun setLocationSource(v: LocationSourceType) {
-        local.setLocationSourceString(v.toPrefString())
+        local.setLocationSourceString(v.prefKey)
     }
 
     override suspend fun setExternalReceiverProfile(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile) {
         local.setExternalReceiverProfile(profile.prefKey)
     }
 
+    override suspend fun setExternalReceiverSettings(settings: com.example.surveyingapp.settings.model.ExternalReceiverSettings) {
+        local.setExternalReceiverProfile(settings.profile.prefKey)
+        local.setExternalConnTypeString(settings.connectionType.prefKey)
+        local.setExternalTcp(settings.tcpHost, settings.tcpPort)
+        if (settings.displayName.isNotBlank()) local.setExternalTcpName(settings.displayName)
+    }
+
     override suspend fun setExternalConnType(v: ExternalConnectionType) {
-        local.setExternalConnTypeString(v.toPrefString())
+        local.setExternalConnTypeString(v.prefKey)
     }
 
     override suspend fun setExternalTcp(host: String, port: Int, name: String) {
@@ -64,7 +91,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         combine(local.gnssCaptureMaxFixAgeSec, local.gnssCaptureMaxDiffAgeSec) { fix, diff -> fix to diff }
     ) { rtkStr, minDur, maxDur, minSamples, (maxFix, maxDiff) ->
         GnssCaptureSettings(
-            requiredMinStatus = rtkStr.toRtkStatus(),
+            requiredMinStatus = RtkStatus.fromPrefKey(rtkStr, default = RtkStatus.FIX),
             minDurationSec    = minDur,
             maxDurationSec    = maxDur,
             minSamples        = minSamples,
@@ -74,7 +101,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings) {
-        local.setGnssCaptureRtkStatus(settings.requiredMinStatus.name)
+        local.setGnssCaptureRtkStatus(settings.requiredMinStatus.prefKey)
         local.setGnssCaptureMinDurationSec(settings.minDurationSec)
         local.setGnssCaptureMaxDurationSec(settings.maxDurationSec)
         local.setGnssCaptureMinSamples(settings.minSamples)
@@ -159,7 +186,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             local.maxBrightnessWhileOpen
         ) { theme, showStrip, keepAwake, maxBright ->
             AppearanceSettings(
-                themeMode              = theme.toAppThemeMode(),
+                themeMode              = AppThemeMode.fromPrefKey(theme),
                 showLiveGnssStatusBar  = showStrip,
                 keepScreenAwake        = keepAwake,
                 maxBrightnessWhileOpen = maxBright
@@ -167,53 +194,12 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         }
 
     override suspend fun setAppearanceSettings(settings: AppearanceSettings) {
-        local.setAppThemeModeString(settings.themeMode.name)
+        local.setAppThemeModeString(settings.themeMode.prefKey)
         local.setShowLiveGnssStatusBar(settings.showLiveGnssStatusBar)
         local.setKeepScreenAwake(settings.keepScreenAwake)
         local.setMaxBrightnessWhileOpen(settings.maxBrightnessWhileOpen)
     }
 
-    private fun String.toAppThemeMode(): AppThemeMode = when (this) {
-        "LIGHT"  -> AppThemeMode.LIGHT
-        "DARK"   -> AppThemeMode.DARK
-        else     -> AppThemeMode.SYSTEM
-    }
-
-    private fun String.toRtkStatus(): RtkStatus = when (this) {
-        "FIX"    -> RtkStatus.FIX
-        "FLOAT"  -> RtkStatus.FLOAT
-        "DGPS"   -> RtkStatus.DGPS
-        "SINGLE" -> RtkStatus.SINGLE
-        else     -> RtkStatus.FIX
-    }
-
-    private fun String?.toLocationSourceType(): LocationSourceType = when (this) {
-        "INTERNAL" -> LocationSourceType.INTERNAL
-        "EXTERNAL" -> LocationSourceType.EXTERNAL
-        "SIMULATOR" -> LocationSourceType.SIMULATOR
-        else -> LocationSourceType.INTERNAL
-    }
-
-    private fun LocationSourceType.toPrefString(): String = when (this) {
-        LocationSourceType.INTERNAL -> "INTERNAL"
-        LocationSourceType.EXTERNAL -> "EXTERNAL"
-        LocationSourceType.SIMULATOR -> "SIMULATOR"
-    }
-
-    private fun String?.toExternalConnectionType(): ExternalConnectionType = when (this) {
-        "BT" -> ExternalConnectionType.BT
-        "TCP" -> ExternalConnectionType.TCP
-        "USB" -> ExternalConnectionType.USB
-        "RADIO" -> ExternalConnectionType.RADIO
-        "WIFI" -> ExternalConnectionType.WIFI
-        else -> ExternalConnectionType.BT
-    }
-
-    private fun ExternalConnectionType.toPrefString(): String = when (this) {
-        ExternalConnectionType.BT -> "BT"
-        ExternalConnectionType.TCP -> "TCP"
-        ExternalConnectionType.USB -> "USB"
-        ExternalConnectionType.RADIO -> "RADIO"
-        ExternalConnectionType.WIFI -> "WIFI"
-    }
+    // Enum persistence now lives on the enums themselves (stable prefKey + fromPrefKey with legacy
+    // name fallback): LocationSourceType, ExternalConnectionType, AppThemeMode, RtkStatus.
 }

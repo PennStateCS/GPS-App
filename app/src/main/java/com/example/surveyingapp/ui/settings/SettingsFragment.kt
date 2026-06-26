@@ -39,6 +39,7 @@ import com.example.surveyingapp.domain.model.EmlidDeviceInfo
 import com.example.surveyingapp.domain.model.SelfTest
 import com.example.surveyingapp.domain.model.TestStatus
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.settings.SettingsDefaults
 import com.example.surveyingapp.gnss.external.repository.ReachDeviceRepository
 import com.example.surveyingapp.gnss.external.ReachHttpClient
 import com.example.surveyingapp.service.LocationService
@@ -146,6 +147,12 @@ class SettingsFragment : BaseTwoPaneFragment() {
             val radioGroup = root.findViewById<RadioGroup>(R.id.radio_location_source)
             val externalActive = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
             val dev = selectedDevice
+
+            // The External Receiver Setup card (host/port/profile + status) is only relevant for the
+            // External GNSS source. Layout-only: mirrors the same externalActive gate already used
+            // for its inner views, so the card hides entirely when Internal GPS is selected.
+            root.findViewById<View>(R.id.card_external_receiver_setup)?.visibility =
+                if (externalActive) View.VISIBLE else View.GONE
 
             if (!externalActive) {
                 box?.visibility = View.GONE
@@ -733,7 +740,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         .getOrDefault(com.example.surveyingapp.settings.model.ExternalReceiverProfile.DEFAULT)
                     if (persisted != profile) {
                         runCatching { settingsRepo.setExternalReceiverProfile(profile) }
-                        editPort?.setText(profile.defaultPort.toString())
+                        // Conservative: only apply the new profile's default port if the current
+                        // port is missing/invalid or wasn't user-customized (a custom port is kept).
+                        val currentPort = editPort?.text?.toString()?.trim()?.toIntOrNull()
+                        editPort?.setText(
+                            com.example.surveyingapp.settings.model.ExternalReceiverProfile
+                                .portForProfileChange(currentPort, profile).toString()
+                        )
                     }
                 }
             }
@@ -831,7 +844,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     focusedView.clearFocus()
                 }
                 val host = editHost?.text?.toString()?.trim().orEmpty()
-                val port = editPort?.text?.toString()?.trim()?.toIntOrNull() ?: 9000
+                val port = SettingsDefaults.sanitizeTcpPort(editPort?.text?.toString()?.trim()?.toIntOrNull())
                 if (host.isNotEmpty()) {
                     selectedDevice = host to port
                     selectedDeviceLabel = getString(R.string.host_port, host, port)
@@ -891,7 +904,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val lastPort = settingsRepo.externalTcpPort.first()
 
             editHost?.setText(lastHost.orEmpty())
-            editPort?.setText(lastPort?.toString() ?: "9000")
+            editPort?.setText(lastPort?.toString() ?: SettingsDefaults.externalTcpPort.toString())
         }
 
         // Observe stored TCP host/port and auto-diagnose on new device

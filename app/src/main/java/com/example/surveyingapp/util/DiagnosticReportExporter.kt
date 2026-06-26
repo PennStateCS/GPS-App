@@ -59,6 +59,10 @@ object DiagnosticReportExporter {
                     "map-troubleshooting.txt",
                     com.example.surveyingapp.util.diagnostics.MapDiagnosticCollector.collect(context)
                 )
+                zos.addText(
+                    "nmea-stream-diagnostics.txt",
+                    com.example.surveyingapp.util.diagnostics.NmeaStreamDiagnosticsCollector.collect(context)
+                )
             }
 
             zipFile

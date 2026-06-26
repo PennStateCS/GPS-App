@@ -25,6 +25,11 @@ interface NmeaSource : Startable {
     fun gsvStream(): SharedFlow<GsvMessage>
     /** Emits once for every raw NMEA sentence received, before parsing. */
     fun rawNmeaEvents(): SharedFlow<Unit>
+
+    /** Cumulative NMEA sentence/fix-rate stats from this source's fuser (diagnostics; no coordinates). */
+    fun nmeaTimingStats(): NmeaFuser.FuserTimingStats
+    /** Emlid EBP/ETC activity seen by this source's fuser (diagnostics). */
+    fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats
 }
 
 /**

@@ -1,6 +1,6 @@
 package com.example.surveyingapp.gnss.external.repository
 
-import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.domain.repository.ExternalReceiverSettingsRepository
 import com.example.surveyingapp.gnss.external.ReachBatteryService
 import com.example.surveyingapp.gnss.external.ReachCorrectionsService
 import com.example.surveyingapp.gnss.external.ReachDeviceService
@@ -24,7 +24,7 @@ import javax.inject.Singleton
 @Singleton
 class ReachDeviceRepository @Inject constructor(
     private val sourceSettings: SourceSettings,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: ExternalReceiverSettingsRepository
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

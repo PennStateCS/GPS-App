@@ -54,5 +54,17 @@ enum class ExternalReceiverProfile(
         /** Resolves a persisted [prefKey] back to a profile; unknown/blank → [DEFAULT]. */
         fun fromPrefKey(key: String?): ExternalReceiverProfile =
             entries.firstOrNull { it.prefKey == key } ?: DEFAULT
+
+        /**
+         * The port to use after the user switches to [newProfile]. Applies the new profile's
+         * [defaultPort] only when [currentPort] is missing/invalid or was still at *some* profile's
+         * default (i.e. not user-customized). A genuinely custom port is preserved — switching
+         * profiles never silently overwrites it.
+         */
+        fun portForProfileChange(currentPort: Int?, newProfile: ExternalReceiverProfile): Int {
+            val isCustom = currentPort != null && currentPort in 1..65535 &&
+                entries.none { it.defaultPort == currentPort }
+            return if (isCustom) currentPort!! else newProfile.defaultPort
+        }
     }
 }
