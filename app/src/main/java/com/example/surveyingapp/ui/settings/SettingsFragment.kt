@@ -194,16 +194,17 @@ private const val CAT_ID_DEV                = 7
 
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
 
+    // Categories are listed alphabetically by display name (case-insensitive), with About pinned last.
     private fun baseCategories(): List<SettingsCategory> = listOf(
         SettingsCategory(CAT_ID_APPEARANCE,         "Appearance",              R.drawable.ic_appearance_24),
         SettingsCategory(CAT_ID_AR_DISPLAY,         "AR Display",              R.drawable.ic_section_ar),
         SettingsCategory(CAT_ID_GNSS_CAPTURE,       "Capture",                 R.drawable.ic_satellite_24),
         SettingsCategory(CAT_ID_COORDINATE_DISPLAY, "Coordinates",             R.drawable.ic_list_coordinates),
-        SettingsCategory(CAT_ID_STAKEOUT,           "Stakeout",                R.drawable.ic_stakeout_24),
         SettingsCategory(CAT_ID_DATA,               "Data",                    R.drawable.ic_file),
         SettingsCategory(CAT_ID_DEV,                "Developer Tools",         R.drawable.ic_dev_tools),
-SettingsCategory(CAT_ID_LOCATION,           "Receiver",                R.drawable.ic_section_location),
-        SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info)
+        SettingsCategory(CAT_ID_LOCATION,           "Receiver",                R.drawable.ic_section_location),
+        SettingsCategory(CAT_ID_STAKEOUT,           "Stakeout",                R.drawable.ic_stakeout_24),
+        SettingsCategory(CAT_ID_ABOUT,              "About",                   R.drawable.ic_section_info),
     )
 
     private fun refreshCategoriesForSource(@Suppress("UNUSED_PARAMETER") source: LocationSourceType) {
