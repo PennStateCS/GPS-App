@@ -1,55 +1,23 @@
 package com.example.surveyingapp.domain.repository
 
-import com.example.surveyingapp.domain.model.LocationSourceType
-import com.example.surveyingapp.domain.model.ExternalConnectionType
-import com.example.surveyingapp.settings.model.ArDisplaySettings
-import com.example.surveyingapp.settings.model.CoordinateDisplaySettings
-import com.example.surveyingapp.settings.model.DeveloperSettings
-import com.example.surveyingapp.gnss.capture.GnssCaptureSettings
-import com.example.surveyingapp.settings.model.AppearanceSettings
-import com.example.surveyingapp.gnss.settings.GnssReceiverSettings
-import kotlinx.coroutines.flow.Flow
-
-interface SettingsRepository {
-    val locationSource: Flow<LocationSourceType>
-    val externalConnType: Flow<ExternalConnectionType>
-    val externalBtAddress: Flow<String?>
-    val externalTcpHost: Flow<String?>
-    val externalTcpPort: Flow<Int?>
-    val externalTcpName: Flow<String?>
-    val externalReceiverProfile: Flow<com.example.surveyingapp.settings.model.ExternalReceiverProfile>
-
-    suspend fun setLocationSource(v: LocationSourceType)
-    suspend fun setExternalReceiverProfile(profile: com.example.surveyingapp.settings.model.ExternalReceiverProfile)
-    suspend fun setExternalConnType(v: ExternalConnectionType)
-    suspend fun setExternalTcp(host: String, port: Int, name: String = "")
-    suspend fun clearExternalTcp()
-
-    // GNSS capture averaging policy
-    val gnssCaptureSettings: Flow<GnssCaptureSettings>
-    suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings)
-
-    // AR Display
-    val arDisplaySettings: Flow<ArDisplaySettings>
-    suspend fun setArDisplaySettings(settings: ArDisplaySettings)
-
-    // Coordinate display
-    val coordinateDisplaySettings: Flow<CoordinateDisplaySettings>
-    suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings)
-
-    // Mock location publishing
-    val mockLocationEnabled: Flow<Boolean>
-    suspend fun setMockLocationEnabled(enabled: Boolean)
-
-    // GNSS receiver settings
-    val gnssReceiverSettings: Flow<GnssReceiverSettings>
-    suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings)
-
-    // Developer settings
-    val developerSettings: Flow<DeveloperSettings>
-    suspend fun setDeveloperSettings(settings: DeveloperSettings)
-
-    // Appearance
-    val appearanceSettings: Flow<AppearanceSettings>
-    suspend fun setAppearanceSettings(settings: AppearanceSettings)
-}
+/**
+ * Aggregate settings repository — the union of all focused settings interfaces (see
+ * [FocusedSettingsRepositories.kt]). It is retained for compatibility and for screens that
+ * genuinely touch many settings areas at once (e.g. SettingsFragment, MainActivity).
+ *
+ * **New code should prefer a focused interface** (e.g. [GnssCaptureSettingsRepository],
+ * [ArDisplaySettingsRepository], [ExternalReceiverSettingsRepository]) so a consumer depends only on
+ * the settings area it uses. All interfaces — aggregate and focused — resolve to the same singleton
+ * [com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl] over the single
+ * Preferences DataStore; see `di/SettingsModule.kt` and `docs/settings-architecture.md`.
+ */
+interface SettingsRepository :
+    LocationSourceSettingsRepository,
+    ExternalReceiverSettingsRepository,
+    GnssCaptureSettingsRepository,
+    ArDisplaySettingsRepository,
+    CoordinateDisplaySettingsRepository,
+    MockLocationSettingsRepository,
+    GnssReceiverSettingsRepository,
+    DeveloperSettingsRepository,
+    AppearanceSettingsRepository

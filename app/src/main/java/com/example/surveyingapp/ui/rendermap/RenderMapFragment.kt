@@ -563,8 +563,12 @@ class RenderMapFragment : Fragment() {
     private fun bindData() {
         if (dataObserved) return
         dataObserved = true
-        val vm = ViewModelProvider(this, ViewModelProvider.AndroidViewModelFactory(requireActivity().application))
-            .get(CoordinatesViewModel::class.java)
+        // CoordinatesViewModel is @HiltViewModel (it has an @Inject constructor), so it must be
+        // created through Hilt's ViewModel factory. Passing AndroidViewModelFactory here bypasses
+        // Hilt and crashes with NoSuchMethodException (<init>[]). Using the fragment's default
+        // factory resolves the Hilt factory (this fragment is @AndroidEntryPoint), matching how
+        // CoordinatesFragment / CoordinateDetailFragment obtain the same ViewModel.
+        val vm = ViewModelProvider(this)[CoordinatesViewModel::class.java]
         vm.allCoordinates.observe(viewLifecycleOwner) { points ->
             if (googleMap == null) return@observe
             try {

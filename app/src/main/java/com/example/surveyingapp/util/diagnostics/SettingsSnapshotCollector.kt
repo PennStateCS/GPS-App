@@ -113,6 +113,18 @@ object SettingsSnapshotCollector {
         }
         sb.appendLine()
 
+        // ── Settings storage ───────────────────────────────────────────────────────
+        sb.appendLine("--- Settings storage ---")
+        sb.appendLine("Latest schema version   : ${com.example.surveyingapp.settings.SettingsDefaults.CURRENT_SETTINGS_SCHEMA_VERSION}")
+        val mig = com.example.surveyingapp.data.settings.migration.SettingsMigrationRunner.lastResult
+        sb.appendLine("Last migration          : " + when {
+            mig == null            -> "not run yet this session"
+            mig.error != null      -> "ERROR (${mig.error})"
+            mig.migrated           -> "migrated v${mig.fromVersion} → v${mig.toVersion}"
+            else                   -> "up to date (v${mig.toVersion})"
+        })
+        sb.appendLine()
+
         // ── Diagnostics ────────────────────────────────────────────────────────────
         sb.appendLine("--- Diagnostics ---")
         val logFiles = DiagnosticsLogger.logFiles()

@@ -1,7 +1,8 @@
 package com.example.surveyingapp.di
 
 import android.content.Context
-import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.domain.repository.ExternalReceiverSettingsRepository
+import com.example.surveyingapp.domain.repository.LocationSourceSettingsRepository
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.gnss.accumulator.FixAccumulator
 import com.example.surveyingapp.gnss.bus.FixBus
@@ -89,7 +90,7 @@ object GnssModule {
     @Singleton
     fun provideExternalNmeaSource(
         appScope: CoroutineScope,
-        settingsRepository: SettingsRepository,
+        settingsRepository: ExternalReceiverSettingsRepository,
         sourceSettings: SourceSettings,
         registry: NmeaRegistry,
         diagnosticsService: DiagnosticsService
@@ -104,7 +105,7 @@ object GnssModule {
     // --- GNSS settings & satellite store ---
     @Provides
     @Singleton
-    fun provideSourceSettings(settingsRepository: SettingsRepository): SourceSettings {
+    fun provideSourceSettings(settingsRepository: LocationSourceSettingsRepository): SourceSettings {
         // Read the persisted selection for diagnostics, but ALWAYS start the live provider as
         // Internal. Seeding EXTERNAL_TCP here would make the switchboard bind the external adapter
         // on launch and route to a receiver that has not been re-validated this session — surfacing

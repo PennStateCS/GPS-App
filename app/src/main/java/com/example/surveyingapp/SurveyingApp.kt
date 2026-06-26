@@ -33,6 +33,9 @@ interface SurveyingAppEntryPoint {
     fun fixSwitchboard(): FixSwitchboard
     fun sourceSettings(): com.example.surveyingapp.gnss.source.SourceSettings
     fun gnssSourceCoordinator(): com.example.surveyingapp.gnss.source.GnssSourceCoordinator
+    /** The external TCP NMEA source (for reading its fuser's diagnostics stats). */
+    fun externalNmeaSource(): com.example.surveyingapp.gnss.bus.adapters.NmeaSource
+    fun settingsRepository(): SettingsRepository
 }
 
 @HiltAndroidApp
@@ -182,10 +185,34 @@ class SurveyingApp : Application() {
         }
     }
 
+    /**
+     * Builds the ONE production settings repository for the process.
+     *
+     * This is the single approved construction site for [SettingsRepositoryImpl] and the single
+     * production [SettingsLocalDataSource] (which opens the one `app_settings` Preferences DataStore).
+     * It runs here, in `Application.onCreate`, so the theme ([applyThemeFromSettings]) and the
+     * mock-location publisher ([startMockLocationPublisher]) can read settings during startup. Hilt
+     * does not construct this — it bridges to [settingsRepo] (see [com.example.surveyingapp.di.SettingsModule]),
+     * which keeps the DataStore count at exactly one.
+     *
+     * Do NOT construct another [SettingsRepositoryImpl] or open another settings DataStore in
+     * production code: DataStore throws if two instances are active over the same file. Tests use
+     * isolated temp DataStores instead. See `docs/settings-architecture.md` → Production ownership;
+     * `ArchitectureGuardTest` enforces this.
+     */
     private fun setupSettings() {
         appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val localDs = SettingsLocalDataSource(this)
         settingsRepo = SettingsRepositoryImpl(localDs)
+        // Run settings-storage migrations on the same DataStore (currently a version stamp; this is
+        // the hook for future format changes). Non-blocking — current settings reads tolerate the
+        // pre-migration state (enum tokens normalize lazily on read).
+        appScope.launch {
+            com.example.surveyingapp.data.settings.migration.SettingsMigrationRunner(
+                readVersion = { localDs.schemaVersion.first() },
+                writeVersion = { localDs.setSchemaVersion(it) }
+            ).migrateIfNeeded()
+        }
     }
 
     private fun applyThemeFromSettings() {

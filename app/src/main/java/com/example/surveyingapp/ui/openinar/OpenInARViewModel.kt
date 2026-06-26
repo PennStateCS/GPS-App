@@ -5,7 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
-import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.domain.repository.ArDisplaySettingsRepository
+import com.example.surveyingapp.domain.repository.GnssReceiverSettingsRepository
 import com.example.surveyingapp.settings.model.ArDisplaySettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,7 +45,8 @@ data class CoordWithModel(
 class OpenInARViewModel @Inject constructor(
     private val coordinateDao: CoordinateDao,
     private val modelDao: ModelDao,
-    private val settingsRepository: SettingsRepository
+    private val arDisplayRepo: ArDisplaySettingsRepository,
+    private val gnssReceiverRepo: GnssReceiverSettingsRepository
 ) : ViewModel() {
 
     // ── Coordinate stream ─────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ class OpenInARViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             runCatching {
-                val ar = settingsRepository.arDisplaySettings.first()
+                val ar = arDisplayRepo.arDisplaySettings.first()
                 _distanceFilterIndex.value = ar.distanceFilterIndex.coerceIn(0, DISTANCE_FILTER_STEPS.lastIndex)
                 _debugVisible.value = ar.showDebugOverlay
             }
@@ -139,13 +141,13 @@ class OpenInARViewModel @Inject constructor(
      * Reflects the user's "high accuracy" GPS preference from SettingsRepository (DataStore).
      * Emits immediately with the current value and again whenever it changes.
      */
-    val highAccuracyEnabled: StateFlow<Boolean> = settingsRepository.gnssReceiverSettings
+    val highAccuracyEnabled: StateFlow<Boolean> = gnssReceiverRepo.gnssReceiverSettings
         .map { it.highAccuracy }
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     // ── AR Display settings ───────────────────────────────────────────────────
 
-    val arDisplaySettings: StateFlow<ArDisplaySettings> = settingsRepository.arDisplaySettings
+    val arDisplaySettings: StateFlow<ArDisplaySettings> = arDisplayRepo.arDisplaySettings
         .stateIn(viewModelScope, SharingStarted.Eagerly, ArDisplaySettings())
 
     // ── Companion ─────────────────────────────────────────────────────────────

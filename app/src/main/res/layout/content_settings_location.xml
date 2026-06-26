@@ -29,7 +29,7 @@
             android:layout_marginTop="4dp"
             android:layout_marginBottom="20dp"
             android:alpha="0.7"
-            android:text="Select the GNSS location source."
+            android:text="Choose your live position source and set up an external receiver."
             android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         <!-- ── Section 1: Location Source ── -->
@@ -52,10 +52,19 @@
                     android:layout_height="wrap_content"
                     android:paddingHorizontal="20dp"
                     android:paddingTop="16dp"
-                    android:paddingBottom="8dp"
-                    android:text="Location Source"
+                    android:paddingBottom="2dp"
+                    android:text="Position Source"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:text="Choose where the app gets live position data."
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
 
                 <!-- Radio buttons -->
                 <LinearLayout
@@ -75,7 +84,7 @@
                             android:id="@+id/radio_internal"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Internal device GPS"
+                            android:text="Internal GPS"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -91,7 +100,7 @@
                             android:id="@+id/radio_es2_tcp"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="External GNSS receiver"
+                            android:text="External GNSS"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -99,7 +108,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginStart="32dp"
                             android:layout_marginTop="2dp"
-                            android:text="Uses a connected GNSS receiver streaming NMEA over TCP, such as a Reach RS2+, RS4, RS4 Pro, or another compatible receiver."
+                            android:text="Uses a connected GNSS receiver streaming NMEA over TCP."
                             android:textAppearance="?attr/textAppearanceBodySmall"
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -110,8 +119,47 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingHorizontal="20dp"
+                    android:paddingBottom="16dp"
+                    android:text="The External Receiver Setup card below is used when “External GNSS” is selected."
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorOnSurfaceVariant" />
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Section 2: External Receiver Setup (shown when External GNSS selected) ── -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_external_receiver_setup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingTop="16dp"
+                    android:paddingBottom="2dp"
+                    android:text="External Receiver Setup"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
                     android:paddingBottom="8dp"
-                    android:text="The External Receiver Setup below is used when “External GNSS receiver” is selected."
+                    android:text="In Emlid Flow, enable Position Streaming as a TCP server using NMEA format."
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -122,12 +170,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:visibility="gone">
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginStart="20dp"
-                        android:background="?attr/colorOutlineVariant" />
 
                     <!-- Receiver profile (matches the capture/appearance ExposedDropdownMenu style) -->
                     <com.google.android.material.textfield.TextInputLayout

@@ -60,6 +60,8 @@ class InternalNmeaSource(
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv
 
     override fun rawNmeaEvents(): SharedFlow<Unit> = _emptyRawNmea
+    override fun nmeaTimingStats() = fuser.timingStats
+    override fun nmeaCustomStats() = fuser.nmeaCustomStats
 
     private val fuser = NmeaFuser(
         provider = Provider.INTERNAL,

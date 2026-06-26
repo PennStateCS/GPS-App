@@ -29,8 +29,8 @@ import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.fragment.NavHostFragment
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.repository.CoordinateDisplaySettingsRepository
 import com.example.surveyingapp.domain.repository.ModelRepository
-import com.example.surveyingapp.domain.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.example.surveyingapp.domain.model.EmbeddedModelLocation
@@ -76,7 +76,7 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     @Inject lateinit var modelRepository: ModelRepository
-    @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var settingsRepository: CoordinateDisplaySettingsRepository
 
     private lateinit var viewModel: CoordinatesViewModel
     private var currentId: String? = null

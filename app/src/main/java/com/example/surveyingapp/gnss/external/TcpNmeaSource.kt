@@ -1,7 +1,7 @@
 package com.example.surveyingapp.gnss.external
 
 import android.util.Log
-import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.domain.repository.ExternalReceiverSettingsRepository
 import com.example.surveyingapp.gnss.bus.adapters.GsvMessage
 import com.example.surveyingapp.gnss.bus.adapters.NmeaFuser
 import com.example.surveyingapp.gnss.bus.adapters.NmeaSource
@@ -51,7 +51,7 @@ import kotlin.coroutines.coroutineContext
  */
 class TcpNmeaSource(
     private val scope: CoroutineScope,
-    private val settingsRepository: SettingsRepository,
+    private val settingsRepository: ExternalReceiverSettingsRepository,
     @Suppress("UNUSED_PARAMETER") sourceSettings: SourceSettings,  // Reserved for future profile support
     registry: NmeaRegistry,
     private val provider: Provider = Provider.RS2_EXTERNAL,
@@ -76,6 +76,8 @@ class TcpNmeaSource(
     override fun parsedFixes(): SharedFlow<Fix> = _fixes.asSharedFlow()
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv.asSharedFlow()
     override fun rawNmeaEvents(): SharedFlow<Unit> = _rawNmea.asSharedFlow()
+    override fun nmeaTimingStats() = fuser.timingStats
+    override fun nmeaCustomStats() = fuser.nmeaCustomStats
 
     private val fuser = NmeaFuser(
         provider = provider,

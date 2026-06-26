@@ -21,7 +21,7 @@ A professional Android surveying application that combines GPS positioning, augm
 - **Database**: Room (SQLite)
 - **Navigation**: Android Navigation Component
 - **Networking**: Coroutines + OkHttp
-- **GNSS**: External receiver support via Bluetooth
+- **GNSS**: External receiver support via TCP NMEA (e.g. Emlid Reach RS2+/RS4/RS4 Pro over Wi-Fi)
 - **UI**: Material Design 3, ViewBinding
 
 ## 📋 Requirements
@@ -30,7 +30,7 @@ A professional Android surveying application that combines GPS positioning, augm
 - Google Play Services
 - Camera permission (for AR features)
 - Location permissions (for GPS functionality)
-- Optional: Bluetooth-enabled GNSS receiver for enhanced accuracy
+- Optional: External GNSS receiver reachable over TCP NMEA (e.g. an Emlid Reach on the same Wi-Fi network) for enhanced accuracy
 
 ## 🔧 Setup
 
