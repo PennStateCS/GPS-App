@@ -286,6 +286,16 @@
     </style>
 
     <!--
+        Rounded pill shape for navigation drawer items. Used by NavigationView's built-in
+        item shape system (app:itemShapeAppearanceOverlay) so the selected fill AND the
+        pressed ripple are both clipped to this rounded shape.
+    -->
+    <style name="ShapeAppearance.App.DrawerItem" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">28dp</item>
+    </style>
+
+    <!--
         Tonal button – medium emphasis, uses secondaryContainer colour.
         Use for: the "Disconnect" button in location settings (currently uses
                  Widget.Material3.Button.TonalButton directly).

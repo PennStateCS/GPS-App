@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Trailing count badge used as a NavigationView menu item actionLayout (Coordinates / Models).
+     The FrameLayout fills the row height and centers the pill vertically, with a trailing inset so
+     the badge sits inside the selected pill rather than hugging the drawer edge. Purely
+     informational: it never intercepts the row's click. Text + contentDescription are set from the
+     live count flows in MainActivity (find the inner @id/text_nav_badge). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:minHeight="40dp"
+    android:paddingEnd="16dp"
+    android:clickable="false"
+    android:focusable="false">
+
+    <TextView
+        android:id="@+id/text_nav_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="22dp"
+        android:layout_gravity="center_vertical|end"
+        android:minWidth="24dp"
+        android:gravity="center"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:background="@drawable/bg_nav_badge"
+        android:text="0"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:maxLines="1"
+        android:clickable="false"
+        android:focusable="false" />
+</FrameLayout>

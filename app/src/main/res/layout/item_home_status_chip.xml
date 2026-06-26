@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compact, non-interactive metadata chip for the Home Field Status card. Inflated once per
+     chip and added to the card's ChipGroup. Uniform subtle surface background; the code colors
+     the text by severity (the label text itself always conveys meaning, never color alone). -->
+<com.google.android.material.chip.Chip
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    style="@style/Widget.Material3.Chip.Assist"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:textAppearance="?attr/textAppearanceLabelMedium"
+    android:textColor="?attr/colorOnSurfaceVariant"
+    android:clickable="false"
+    android:checkable="false"
+    android:focusable="false"
+    app:chipMinHeight="30dp"
+    app:chipStartPadding="8dp"
+    app:chipEndPadding="8dp"
+    app:chipStrokeWidth="0dp"
+    app:ensureMinTouchTargetSize="false"
+    app:chipBackgroundColor="?attr/colorSurfaceContainerHigh" />

@@ -57,6 +57,10 @@ import javax.inject.Inject
 
 private const val LOG_GNSS_UI = false
 
+// Short beat between a drawer item tap and the drawer closing, so the item's ripple/pressed
+// state is visible before the panel slides away (Material 3 feel). Kept small to avoid lag.
+private const val NAV_DRAWER_CLOSE_DELAY_MS = 120L
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
@@ -66,6 +70,8 @@ class MainActivity : AppCompatActivity() {
 
 
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var coordinateRepository: com.example.surveyingapp.domain.repository.CoordinateRepository
+    @Inject lateinit var modelRepository: com.example.surveyingapp.domain.repository.ModelRepository
 
     private var batteryJob: Job? = null
 
@@ -256,10 +262,17 @@ class MainActivity : AppCompatActivity() {
             } catch (e: IllegalArgumentException) {
                 android.util.Log.w("MainActivity", "Drawer destination not found: $destId", e)
                 false
-            } finally {
-                drawerLayout.closeDrawer(GravityCompat.START)
-                drawerLayout.postDelayed({ drawerNavigationInProgress = false }, 300)
             }
+
+            // Navigation ran immediately above; defer the close one short beat so the tapped
+            // item's ripple/pressed feedback is visible before the drawer slides away. The new
+            // screen renders behind the drawer and is revealed smoothly as it closes.
+            drawerLayout.postDelayed(
+                { drawerLayout.closeDrawer(GravityCompat.START) },
+                NAV_DRAWER_CLOSE_DELAY_MS,
+            )
+            // Release the re-entrancy guard after the close animation settles.
+            drawerLayout.postDelayed({ drawerNavigationInProgress = false }, 300)
 
             handled
         }
@@ -271,6 +284,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        setupDrawerCountBadges(navView)
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             val isAr = destination.id == R.id.nav_open_in_ar
@@ -1014,6 +1029,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    /**
+     * Binds the Coordinates / Models drawer rows' [app:actionLayout] badges to the live count
+     * flows the repositories already expose (the same flows Home uses). Lifecycle-aware: collection
+     * runs only while STARTED and is torn down with the activity lifecycle, so there is no leak and
+     * no duplicate collector per drawer open. Badges are purely informational and never intercept
+     * the row's click.
+     */
+    private fun setupDrawerCountBadges(navView: NavigationView) {
+        val coordBadge = navView.menu.findItem(R.id.nav_view_coordinates)?.actionView
+            ?.findViewById<TextView>(R.id.text_nav_badge)
+        val modelBadge = navView.menu.findItem(R.id.nav_models)?.actionView
+            ?.findViewById<TextView>(R.id.text_nav_badge)
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                coordinateRepository.coordinateCountFlow.collect { count ->
+                    coordBadge?.apply {
+                        text = com.example.surveyingapp.ui.common.DrawerBadgeFormatter.format(count)
+                        // Row title already announces "Coordinates"; the badge adds just the count.
+                        contentDescription = "$count saved"
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                modelRepository.observeModelCount().collect { count ->
+                    modelBadge?.apply {
+                        text = com.example.surveyingapp.ui.common.DrawerBadgeFormatter.format(count)
+                        // Row title already announces "Models"; the badge adds just the count.
+                        contentDescription = "$count imported"
+                    }
+                }
+            }
+        }
+    }
 
     private fun updateDevToolsVisibility(devEnabled: Boolean) {
         if (devEnabled == lastDevToolsEnabled) return

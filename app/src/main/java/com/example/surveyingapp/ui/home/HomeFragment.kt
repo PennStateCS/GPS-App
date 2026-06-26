@@ -30,6 +30,9 @@ import com.example.surveyingapp.databinding.FragmentHomeBinding
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.repository.ModelRepository
 import com.example.surveyingapp.domain.repository.SettingsRepository
+import com.example.surveyingapp.gnss.accumulator.FixSnapshot
+import com.example.surveyingapp.gnss.diagnostics.NmeaLogStats
+import com.example.surveyingapp.settings.model.ExternalReceiverSettings
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
@@ -142,7 +145,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         setupQuickActionButtons()
         setupLocationStatusObservers()
         setupFixBadgeObservers()
-        setupRs2SummaryObservers()
+        setupFieldStatusObserver()
         setupMapUiControls()
         collectStatisticsFlows()
 
@@ -153,6 +156,13 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private fun setupQuickActionButtons() {
         // Quick Actions chips
         binding.chipQuickMap.setOnClickListener {
+            try { findNavController().navigate(R.id.nav_render_map) }
+            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to map failed", e) }
+        }
+
+        // Current Location card header action — same destination as the Quick Actions chip,
+        // giving the prominent map preview a clear "this opens the full map" affordance.
+        binding.btnOpenFullMap.setOnClickListener {
             try { findNavController().navigate(R.id.nav_render_map) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to map failed", e) }
         }
@@ -300,42 +310,134 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
-    private fun setupRs2SummaryObservers() {
+    /**
+     * Polished, plain-language "Field Status" summary. Combines the live fix snapshot, selected
+     * source/receiver profile, and NMEA stream stats the rest of Home already observes, runs them
+     * through the pure [HomeFieldStatusMapper], and renders a stable card: headline + two detail
+     * lines + a compact chip row. Read-only: no GNSS state is changed here.
+     */
+    /** Current header-action destination for the Field Status card (updated on each render). */
+    private var currentFieldStatusAction = HomeFieldStatusMapper.Action.OPEN_MAP
+
+    private fun setupFieldStatusObserver() {
+        binding.btnFieldStatusAction.setOnClickListener {
+            val dest = when (currentFieldStatusAction) {
+                HomeFieldStatusMapper.Action.RECEIVER_SETTINGS -> R.id.nav_settings
+                HomeFieldStatusMapper.Action.OPEN_MAP -> R.id.nav_render_map
+            }
+            try { findNavController().navigate(dest) }
+            catch (e: Exception) { android.util.Log.e(TAG, "Field status navigation failed", e) }
+        }
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     combine(
+                        viewModel.fixSnapshot,
                         settingsRepo.locationSource,
-                        settingsRepo.externalTcpName,
-                        settingsRepo.externalTcpHost,
-                        settingsRepo.externalTcpPort
-                    ) { source, name, host, port ->
-                        val address = if (!host.isNullOrBlank() && port != null) "$host:$port" else "--"
-                        Triple(source, name ?: "--", address)
-                    }.collectLatest { triple ->
-                        // Check if binding is still available before accessing UI
-                        val currentBinding = _binding ?: return@collectLatest
-
-                        val source = triple.first
-                        val name = triple.second
-                        val address = triple.third
-                        val show = source == LocationSourceType.EXTERNAL
-                        val visibility = if (show) View.VISIBLE else View.GONE
-
-                        currentBinding.textRs2SummaryHeader.visibility = visibility
-                        currentBinding.containerRs2Summary.visibility = visibility
-                        if (show) {
-                            currentBinding.textRs2Name.text = name
-                            currentBinding.textRs2Address.text = address
-                        }
+                        settingsRepo.externalReceiverSettings,
+                        viewModel.diagnosticData,
+                        viewModel.sky
+                    ) { snapshot, source, receiver, diag, sky ->
+                        buildFieldStatus(snapshot, source, receiver, diag, sky)
+                    }.collectLatest { status ->
+                        val b = _binding ?: return@collectLatest
+                        renderFieldStatus(b, status)
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting RS2 summary", e)
+                    android.util.Log.e(TAG, "Error collecting field status", e)
                 }
             }
         }
     }
+
+    private fun buildFieldStatus(
+        snapshot: FixSnapshot,
+        source: LocationSourceType,
+        receiver: ExternalReceiverSettings,
+        diag: com.example.surveyingapp.gnss.diagnostics.DiagnosticData,
+        sky: com.example.surveyingapp.gnss.model.SkySnapshot,
+    ): HomeFieldStatusMapper.FieldStatus {
+        // A usable fix is signalled by valid coordinates — NOT by comparing the fix's GNSS/UTC
+        // timestamp to the device wall clock, which can be skewed (or even ahead of) device time
+        // and would wrongly report a live position as "waiting". The app elsewhere shows the fix
+        // and merely annotates staleness rather than withholding it.
+        val hasRecentFix = snapshot.lat != null && snapshot.lon != null && snapshot.timestampMillis > 0
+        val address = receiver.tcpHost.takeIf { it.isNotBlank() }?.let { "$it:${receiver.tcpPort}" }
+        return HomeFieldStatusMapper.map(
+            HomeFieldStatusMapper.Inputs(
+                isInternal = source == LocationSourceType.INTERNAL,
+                externalLabel = receiver.profile.shortLabel,
+                receiverName = receiver.displayName,
+                connectionAddress = address,
+                rtkStatus = RtkStatus.fromPrefKey(snapshot.rtkStatus),
+                hAccM = snapshot.horizontalAccuracyM,
+                vAccM = snapshot.verticalAccuracyM,
+                satsUsed = snapshot.satsUsed,
+                satsVisible = snapshot.satellitesInView,
+                skyTotalUsed = sky.totalUsed,
+                skyTotalVisible = sky.totalVisible,
+                hdop = snapshot.hdop,
+                pdop = snapshot.pDop,
+                correctionAgeS = snapshot.correctionAgeS,
+                correctionStationId = snapshot.correctionStationId,
+                // Real live NMEA stream rate + parse-error count from the DiagnosticsService
+                // singleton (the source the receiver pipeline actually feeds).
+                nmeaLinesPerSecond = diag.linesPerSecond,
+                nmeaParseErrors = diag.totalParseErrors,
+                hasRecentFix = hasRecentFix,
+            )
+        )
+    }
+
+    private fun renderFieldStatus(
+        b: FragmentHomeBinding,
+        status: HomeFieldStatusMapper.FieldStatus,
+    ) {
+        // Headline: neutral severity reads as the brand primary (calm "waiting"/"internal" states).
+        val headlineColor = severityColor(b.root, status.severity, com.google.android.material.R.attr.colorPrimary)
+        b.textFieldStatusHeadline.text = status.headline
+        b.textFieldStatusHeadline.setTextColor(headlineColor)
+        b.fieldStatusDot.backgroundTintList = android.content.res.ColorStateList.valueOf(headlineColor)
+
+        b.textFieldStatusDetailPrimary.text = status.primaryDetail
+        b.textFieldStatusReceiver.text = status.receiverDetail
+
+        currentFieldStatusAction = status.actionDestination
+        b.btnFieldStatusAction.text = status.actionLabel
+        b.btnFieldStatusAction.contentDescription = status.actionLabel
+
+        renderFieldStatusChips(b.groupFieldStatusChips, status.chips)
+    }
+
+    private fun renderFieldStatusChips(
+        group: com.google.android.material.chip.ChipGroup,
+        chips: List<HomeFieldStatusMapper.Chip>,
+    ) {
+        group.removeAllViews()
+        val inflater = LayoutInflater.from(group.context)
+        for (chip in chips) {
+            val view = inflater.inflate(R.layout.item_home_status_chip, group, false)
+                as com.google.android.material.chip.Chip
+            view.text = chip.label
+            // Chips keep a uniform subtle background; only the text is severity-colored (neutral =
+            // onSurfaceVariant) so contrast stays strong and meaning never relies on color alone.
+            view.setTextColor(
+                severityColor(group, chip.severity, com.google.android.material.R.attr.colorOnSurfaceVariant)
+            )
+            group.addView(view)
+        }
+    }
+
+    /** Resolve a severity to a color; [neutralAttr] is the theme attr used for NEUTRAL. */
+    private fun severityColor(view: View, severity: HomeFieldStatusMapper.Severity, neutralAttr: Int): Int =
+        when (severity) {
+            HomeFieldStatusMapper.Severity.GOOD    -> view.context.getColor(R.color.app_success)
+            HomeFieldStatusMapper.Severity.CAUTION -> view.context.getColor(R.color.app_warning)
+            HomeFieldStatusMapper.Severity.WARNING -> view.context.getColor(R.color.app_error)
+            HomeFieldStatusMapper.Severity.NEUTRAL -> com.google.android.material.color.MaterialColors.getColor(view, neutralAttr)
+        }
 
     private fun setupMapUiControls() {
         // Map type cycler

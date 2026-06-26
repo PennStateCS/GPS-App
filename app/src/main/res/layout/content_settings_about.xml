@@ -149,41 +149,18 @@
                         android:textAppearance="?attr/textAppearanceBodyLarge" />
                 </LinearLayout>
 
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Section 2: Build Details -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
+                <View
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="20dp"
-                    android:paddingTop="16dp"
-                    android:paddingBottom="8dp"
-                    android:alpha="0.7"
-                    android:text="Build Details"
-                    android:textAppearance="?attr/textAppearanceLabelMedium"
-                    android:textColor="?attr/colorOnSurface" />
+                    android:layout_height="1dp"
+                    android:layout_marginStart="20dp"
+                    android:background="?attr/colorOutlineVariant" />
 
                 <!-- Commit row -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
-                    android:minHeight="48dp"
+                    android:minHeight="52dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
                     android:paddingVertical="@dimen/settings_content_row_padding_v">
@@ -193,7 +170,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Commit"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
@@ -202,8 +179,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="2"
                         android:text="—"
-                        android:fontFamily="monospace"
-                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        android:textAppearance="?attr/textAppearanceBodyLarge" />
                 </LinearLayout>
 
                 <View
@@ -217,7 +193,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
-                    android:minHeight="48dp"
+                    android:minHeight="52dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
                     android:paddingVertical="@dimen/settings_content_row_padding_v">
@@ -227,7 +203,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Branch"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
@@ -236,7 +212,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="2"
                         android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        android:textAppearance="?attr/textAppearanceBodyLarge" />
                 </LinearLayout>
 
                 <View
@@ -250,7 +226,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
-                    android:minHeight="48dp"
+                    android:minHeight="52dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
                     android:paddingVertical="@dimen/settings_content_row_padding_v">
@@ -260,7 +236,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Uncommitted"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
@@ -269,7 +245,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="2"
                         android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        android:textAppearance="?attr/textAppearanceBodyLarge" />
                 </LinearLayout>
 
                 <View
@@ -283,7 +259,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center_vertical"
-                    android:minHeight="48dp"
+                    android:minHeight="52dp"
                     android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
                     android:paddingVertical="@dimen/settings_content_row_padding_v">
@@ -293,7 +269,7 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text="Built"
-                        android:textAppearance="?attr/textAppearanceBodySmall"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
                     <TextView
@@ -302,40 +278,13 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="2"
                         android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodyMedium" />
+                        android:textAppearance="?attr/textAppearanceBodyLarge" />
                 </LinearLayout>
 
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Copy Build Info button -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_copy_build_info"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:text="Copy Build Info" />
-
-        <!-- Export Diagnostic Report button -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_export_diagnostic"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
-            android:text="Export Diagnostic Report" />
-
-        <!-- Privacy note -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:alpha="0.6"
-            android:text="The report includes recent app logs, build details, device info, and map/GNSS status. It does not include API keys, saved coordinates, or model files."
-            android:textAppearance="?attr/textAppearanceBodySmall" />
-
-        <!-- Section 3: Supported Workflows -->
+        <!-- Section: Diagnostics (export-style card, matching Settings > Data) -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -356,55 +305,49 @@
                     android:paddingHorizontal="20dp"
                     android:paddingTop="16dp"
                     android:paddingBottom="8dp"
-                    android:text="Supported Workflows"
+                    android:text="Diagnostics"
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary" />
 
-                <TextView
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:alpha="0.7"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
                     android:paddingHorizontal="20dp"
-                    android:paddingBottom="16dp"
-                    android:paddingTop="4dp"
-                    android:text="RTK GNSS capture with averaging · AR pin placement via ARCore Geospatial API · 3D model import and placement · Map view with coordinate overlay · Mock location publishing for third-party apps"
-                    android:textAppearance="?attr/textAppearanceBodyMedium" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
 
-        <!-- Section 4: Legal -->
-        <com.google.android.material.card.MaterialCardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="0dp"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:strokeWidth="1dp">
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Export Diagnostic Report"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="20dp"
-                    android:paddingTop="16dp"
-                    android:paddingBottom="8dp"
-                    android:text="Legal"
-                    android:textAppearance="?attr/textAppearanceLabelLarge"
-                    android:textColor="?attr/colorPrimary" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Includes recent app logs, build details, device info, and map/GNSS status. Excludes API keys, saved coordinates, and model files."
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    </LinearLayout>
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:alpha="0.7"
-                    android:paddingHorizontal="20dp"
-                    android:paddingVertical="16dp"
-                    android:text="This app uses ARCore (Google), osmdroid (OpenStreetMap), and other open-source components. See the licenses file for details."
-                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_export_diagnostic"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:text="Export Diagnostic Report" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

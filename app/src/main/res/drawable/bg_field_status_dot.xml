@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small circular status indicator for the Home "Field Status" card. White fill; the
+     code tints it with the severity color (app_success / app_warning / app_error / primary).
+     The dot is supplementary — the headline text always conveys the state in words too. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@android:color/white" />
+    <size
+        android:width="10dp"
+        android:height="10dp" />
+</shape>

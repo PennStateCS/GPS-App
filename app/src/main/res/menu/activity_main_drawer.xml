@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     tools:showIn="navigation_view">
 
@@ -14,7 +15,8 @@
         <item
             android:id="@+id/nav_view_coordinates"
             android:icon="@drawable/ic_list_coordinates"
-            android:title="@string/menu_view_coordinates" />
+            android:title="@string/menu_view_coordinates"
+            app:actionLayout="@layout/nav_drawer_badge" />
         <item
             android:id="@+id/nav_render_map"
             android:icon="@drawable/ic_map"
@@ -26,7 +28,8 @@
         <item
             android:id="@+id/nav_models"
             android:icon="@drawable/ic_models_24"
-            android:title="@string/menu_models" />
+            android:title="@string/menu_models"
+            app:actionLayout="@layout/nav_drawer_badge" />
     </group>
 
     <!-- System -->

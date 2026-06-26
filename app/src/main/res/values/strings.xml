@@ -62,6 +62,7 @@
     <string name="dev_category_icon_desc">Category icon</string>
     <string name="twopane_placeholder_select">Select an item from the list</string>
     <string name="nav_header_desc">Navigation header image</string>
+    <string name="home_open_full_map_desc">Open full map</string>
     <string name="nav_header_title">SurReal AR</string>
     <string name="nav_header_subtitle">Surveying · GNSS · AR</string>
     <string name="menu_home">Home</string>
