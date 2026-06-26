@@ -76,6 +76,20 @@ class StakeoutGuidanceTest {
         assertTrue(StakeoutGuidance.isLowAccuracy(0.45, 0.30))
     }
 
+    // ── position staleness ────────────────────────────────────────────────────────
+
+    @Test
+    fun `position staleness detection`() {
+        // Never-received fix is stale.
+        assertTrue(StakeoutGuidance.isPositionStale(null, nowElapsedMs = 1000, staleAfterMs = 5000))
+        // Fresh fix.
+        assertFalse(StakeoutGuidance.isPositionStale(lastFixElapsedMs = 1000, nowElapsedMs = 3000, staleAfterMs = 5000))
+        // Exactly at the threshold is not yet stale.
+        assertFalse(StakeoutGuidance.isPositionStale(lastFixElapsedMs = 1000, nowElapsedMs = 6000, staleAfterMs = 5000))
+        // Past the threshold is stale.
+        assertTrue(StakeoutGuidance.isPositionStale(lastFixElapsedMs = 1000, nowElapsedMs = 6001, staleAfterMs = 5000))
+    }
+
     // ── angle normalisation ───────────────────────────────────────────────────────
 
     @Test
@@ -130,6 +144,26 @@ class StakeoutGuidanceTest {
     fun `north-up fallback when not moving and no compass`() {
         val (src, hdg) = StakeoutGuidance.resolveHeading(
             preferCompass = true, compassHeadingDeg = null, courseOverGroundDeg = 200.0, speedMps = 0.1
+        )
+        assertEquals(HeadingSource.NORTH_UP, src)
+        assertNull(hdg)
+    }
+
+    @Test
+    fun `course is used exactly at the moving-speed threshold`() {
+        val (src, hdg) = StakeoutGuidance.resolveHeading(
+            preferCompass = true, compassHeadingDeg = null, courseOverGroundDeg = 200.0,
+            speedMps = 0.5, minMovingSpeedMps = 0.5
+        )
+        assertEquals(HeadingSource.COURSE_OVER_GROUND, src)
+        assertEquals(200.0, hdg!!, 1e-9)
+    }
+
+    @Test
+    fun `course ignored just below the moving-speed threshold gives north-up`() {
+        val (src, hdg) = StakeoutGuidance.resolveHeading(
+            preferCompass = true, compassHeadingDeg = null, courseOverGroundDeg = 200.0,
+            speedMps = 0.49, minMovingSpeedMps = 0.5
         )
         assertEquals(HeadingSource.NORTH_UP, src)
         assertNull(hdg)

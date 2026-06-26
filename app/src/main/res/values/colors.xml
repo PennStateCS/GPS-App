@@ -207,6 +207,7 @@
     <color name="ar_overlay_text">#FFFFFFFF</color>       <!-- pure white – primary text -->
     <color name="ar_overlay_alert">#FFFFC107</color>      <!-- amber – alert/debug text -->
     <color name="map_overlay_bg">#AAFFFFFF</color>        <!-- 67 % white – map panel -->
+    <color name="map_grid_line">#80616161</color>        <!-- 50 % mid-gray – survey meter grid (reads on light + satellite tiles) -->
 
     <!-- GNSS / satellite chart ──────────────────────────────────────────── -->
     <color name="chart_axis">#BDBDBD</color>

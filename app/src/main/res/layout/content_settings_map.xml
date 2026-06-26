@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="false">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="24dp"
+        android:paddingBottom="24dp"
+        android:paddingStart="@dimen/settings_content_padding_h"
+        android:paddingEnd="@dimen/settings_content_padding_h">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Map"
+            android:textAppearance="?attr/textAppearanceHeadlineSmall" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="20dp"
+            android:alpha="0.7"
+            android:text="Control map display, point overlays, and stakeout guidance defaults. These set how the map opens; in-session changes are kept while you move around the app."
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+        <!-- ── Map Display ── -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.App.Card.Outlined.Settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/TextAppearance.Settings.SectionHeader" android:text="Map Display" />
+
+                <!-- Default map type -->
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Default map type" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="The map type shown when the map opens." />
+                    </LinearLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="160dp"
+                        android:layout_height="wrap_content">
+                        <AutoCompleteTextView
+                            android:id="@+id/spinner_map_type"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none"
+                            android:singleLine="true"
+                            android:popupBackground="@drawable/bg_dropdown_menu" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View style="@style/Settings.Divider" />
+
+                <!-- Keep Map Tools open by default -->
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Open Map Tools by default" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Show the Map Tools panel automatically when the map opens." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_map_tools_open"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Point Display ── -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.App.Card.Outlined.Settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/TextAppearance.Settings.SectionHeader" android:text="Point Display" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Default point labels" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="What saved-point labels show on the map by default." />
+                    </LinearLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="160dp"
+                        android:layout_height="wrap_content">
+                        <AutoCompleteTextView
+                            android:id="@+id/spinner_label_mode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none"
+                            android:singleLine="true"
+                            android:popupBackground="@drawable/bg_dropdown_menu" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View style="@style/Settings.Divider" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Map Points drawer starts open" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Expand the Map Points list when the map opens." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_drawer_expanded"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Current Location ── -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.App.Card.Outlined.Settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/TextAppearance.Settings.SectionHeader" android:text="Current Location" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Show my location by default" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Show the current-position marker, accuracy circle and heading arrow when the map opens. Live position is always collected." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_show_my_location"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Grid ── -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.App.Card.Outlined.Settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/TextAppearance.Settings.SectionHeader" android:text="Grid" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Default grid mode" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="The metre grid shown when the map opens." />
+                    </LinearLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="160dp"
+                        android:layout_height="wrap_content">
+                        <AutoCompleteTextView
+                            android:id="@+id/spinner_grid_mode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="none"
+                            android:singleLine="true"
+                            android:popupBackground="@drawable/bg_dropdown_menu" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Stakeout Guidance ── -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.App.Card.Outlined.Settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/TextAppearance.Settings.SectionHeader" android:text="Stakeout Guidance" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="On-target tolerance (m)" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Distance within which the target counts as reached." />
+                    </LinearLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_stakeout_tolerance"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="numberDecimal"
+                            android:imeOptions="actionNext"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View style="@style/Settings.Divider" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Low-accuracy warning above (m)" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Warn when horizontal accuracy is worse than this. Does not block stakeout." />
+                    </LinearLayout>
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="140dp"
+                        android:layout_height="wrap_content">
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/edit_stakeout_warning_accuracy"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="numberDecimal"
+                            android:imeOptions="actionDone"
+                            android:singleLine="true" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <View style="@style/Settings.Divider" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Use compass heading" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Point the guidance arrow using the device compass. Falls back to direction of travel, then north-up." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_stakeout_compass"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <View style="@style/Settings.Divider" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Keep screen on during guidance" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Prevent the screen from sleeping while guidance is active." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_stakeout_keep_screen_on"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── Feedback ── -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.App.Card.Outlined.Settings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView style="@style/TextAppearance.Settings.SectionHeader" android:text="Feedback" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Vibrate on target" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Haptic pulse when you reach the tolerance, with a light tick while navigating." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_stakeout_haptics"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <View style="@style/Settings.Divider" />
+
+                <LinearLayout style="@style/Settings.Row">
+                    <LinearLayout style="@style/Settings.Row.Text">
+                        <TextView style="@style/Settings.Row.Title" android:text="Beep during guidance" />
+                        <TextView style="@style/Settings.Row.Subtitle" android:text="Distinct tone when on target, short beeps while navigating." />
+                    </LinearLayout>
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_stakeout_audio"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
+</ScrollView>

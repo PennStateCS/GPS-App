@@ -571,6 +571,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             .rotation(90f)
             .setDuration(200)
             .start()
+        binding.btnToolbarToggle.contentDescription = "Hide AR tools"
         toolbarVisible = true
     }
 
@@ -590,6 +591,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             .rotation(0f)
             .setDuration(160)
             .start()
+        binding.btnToolbarToggle.contentDescription = "Show AR tools"
         toolbarVisible = false
     }
 

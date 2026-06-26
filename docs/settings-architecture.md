@@ -74,6 +74,29 @@ one per settings area — so a consumer depends only on what it uses:
   static field, and `setupSettings()` must stop constructing it. Until that is done intentionally, the
   providers above must keep returning the `SurveyingApp`-owned singleton.
 
+## Map settings (durable defaults vs. session state)
+
+The Settings screen's **`Map`** category (formerly `Stakeout`) is backed by two repositories used
+together by one page (`SettingsFragment.setupMapContent` + `content_settings_map.xml`):
+
+- **`MapSettingsRepository.mapSettings`** ([MapSettings](../app/src/main/java/com/example/surveyingapp/ui/rendermap/MapSettings.kt))
+  — durable **defaults** applied when the map opens in a fresh session: default map type, grid mode,
+  point-label mode, show-my-location, keep-Map-Tools-open, and Map-Points-drawer-expanded. Enum-backed
+  fields persist via stable tokens (`MapGridMode.prefKey`, `PointLabelMode.prefKey`, `MapTypeTokens`),
+  never `enum.name`, and the map type never persists `MAP_TYPE_NONE`.
+- **`StakeoutSettingsRepository.stakeoutSettings`** — unchanged; the stakeout guidance + feedback
+  settings now live under the `Stakeout Guidance` / `Feedback` sections of the same Map page.
+
+**Durable defaults seed session state; session state preserves in-session choices.** On the first
+map open of a session, `RenderMapFragment` reads `mapSettings` and calls
+`MapUiStateViewModel.seedFromDefaults(...)` (a one-time seed). After that, the activity-scoped
+`MapUiState` preserves the user's in-session changes (map type, grid, labels, My Location, Map Tools
+open, drawer collapsed, camera, selected point) across navigation — see "Production ownership" peers
+in the map package. **Transient state is never persisted to DataStore**: the selected point, the
+selected-point card, the current camera, and temporary panels live only in `MapUiState`. New
+map-default DataStore keys (`map_default_*`, `map_show_my_location_default`, `map_tools_open_default`,
+`map_drawer_expanded_default`) were added; no existing keys changed.
+
 ## Persistence contract
 
 **DataStore key names and stored token strings are a compatibility contract.** Existing installs

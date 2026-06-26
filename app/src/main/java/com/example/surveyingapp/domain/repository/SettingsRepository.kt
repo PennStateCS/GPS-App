@@ -21,4 +21,5 @@ interface SettingsRepository :
     GnssReceiverSettingsRepository,
     DeveloperSettingsRepository,
     AppearanceSettingsRepository,
-    StakeoutSettingsRepository
+    StakeoutSettingsRepository,
+    MapSettingsRepository

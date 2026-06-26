@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="36dp"
+    android:height="36dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+    <!-- A directional wedge that points to the top (0° = north before rotation). White fill with a
+         dark outline so it reads on both light and satellite map tiles. -->
+    <path
+        android:fillColor="#1A73E8"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.5"
+        android:pathData="M18,4 L27,26 L18,21 L9,26 Z" />
+</vector>

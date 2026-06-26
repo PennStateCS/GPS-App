@@ -105,11 +105,12 @@
         android:layout_gravity="top|end"
         android:layout_marginTop="12dp"
         android:layout_marginEnd="12dp"
-        android:src="@drawable/ic_ar_menu"
+        android:src="@drawable/ic_tune_24"
         android:background="@drawable/bg_ar_chip"
         android:scaleType="center"
         android:padding="12dp"
-        android:contentDescription="Toggle AR toolbar"
+        android:contentDescription="Show AR tools"
+        android:elevation="4dp"
         android:clickable="true"
         android:focusable="true" />
 

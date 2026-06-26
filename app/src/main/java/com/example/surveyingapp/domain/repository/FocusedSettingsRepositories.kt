@@ -95,3 +95,9 @@ interface StakeoutSettingsRepository {
     val stakeoutSettings: Flow<StakeoutSettings>
     suspend fun setStakeoutSettings(settings: StakeoutSettings)
 }
+
+/** Durable map display defaults (default map type/grid/labels, show-my-location, tools/drawer defaults). */
+interface MapSettingsRepository {
+    val mapSettings: Flow<com.example.surveyingapp.ui.rendermap.MapSettings>
+    suspend fun setMapSettings(settings: com.example.surveyingapp.ui.rendermap.MapSettings)
+}
