@@ -61,6 +61,14 @@ private const val LOG_GNSS_UI = false
 // state is visible before the panel slides away (Material 3 feel). Kept small to avoid lag.
 private const val NAV_DRAWER_CLOSE_DELAY_MS = 120L
 
+/**
+ * Single host activity: owns the navigation drawer, the Navigation component `NavController`, and the
+ * always-visible GNSS status toolbar. It observes the injected [FixSwitchboard]'s fix/sky streams,
+ * maps them to a [GnssToolbarState] via [GnssToolbarStateMapper], and hands that to the view-only
+ * [GnssToolbarRenderer] — the activity holds no GNSS logic of its own. Individual screens are
+ * fragments under the `NavHostFragment`; this activity only wires chrome, navigation, and the
+ * foreground [LocationService]/permission prompts around them.
+ */
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 

@@ -15,6 +15,9 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
 
+/**
+ * State holder for the models screen: exposes the model list and loading state from `ModelRepository`.
+ */
 @HiltViewModel
 class ModelsViewModel @Inject constructor(
     private val repository: ModelRepository,

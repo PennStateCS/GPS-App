@@ -10,6 +10,9 @@ import app.surrealar.gnss.model.Fix
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/**
+ * RecyclerView adapter for the saved-coordinates list.
+ */
 class CoordinatesAdapter : RecyclerView.Adapter<CoordinatesAdapter.CoordinateViewHolder>() {
 
     private var fixes: List<Fix> = emptyList()

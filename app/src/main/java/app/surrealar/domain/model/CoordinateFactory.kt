@@ -9,13 +9,16 @@ import java.time.Duration
 /**
  * Factory + helpers for constructing Coordinate domain models.
  *
- * The preferred path for live captures is `toEntityFromFix` in CoordinateMappers,
- * which works directly with the typed `Fix` model. This factory targets the legacy
- * [FixSnapshot] accumulator and is kept for compatibility.
+ * The live averaged-capture path is [fromCaptureResult] (from a [CaptureResult], whose position
+ * fields are non-null). [fromFix] targets the [FixSnapshot] accumulator and is kept for compatibility.
  *
  * Semantics:
  * - altitude = ellipsoidal height (metres)
  * - altitudeMsl + geoidSeparationM are stored when available
+ *
+ * Missing latitude/longitude/altitude in a [FixSnapshot] are mapped to [Double.NaN] — a poison value,
+ * never a plausible measurement. [app.surrealar.domain.coordinates.CoordinateValidator] rejects
+ * non-finite lat/lon/altitude, so such a coordinate cannot pass the save gate.
  */
 object CoordinateFactory {
 

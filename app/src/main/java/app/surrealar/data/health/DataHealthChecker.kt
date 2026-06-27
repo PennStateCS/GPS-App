@@ -91,6 +91,25 @@ class DataHealthChecker @Inject constructor(
                     "$tag is at 0,0 (null island)")
             }
 
+            // altitude sanity (ellipsoidal height, metres)
+            if (!c.altitude.isFinite()) {
+                issues += HealthIssue(HealthSeverity.ERROR, "Coordinate altitude",
+                    "$tag has a non-finite altitude (${c.altitude})")
+            } else if (c.altitude == 0.0 && c.altitudeMsl == null && c.geoidSeparationM == null) {
+                // Exact 0.0 with no MSL/geoid metadata is the classic "missing altitude saved as zero"
+                // placeholder rather than a real sea-level measurement.
+                issues += HealthIssue(HealthSeverity.WARNING, "Coordinate altitude",
+                    "$tag has exactly 0.0 m altitude and no MSL/geoid metadata (possible missing-altitude placeholder)")
+            }
+            // h = H + N consistency when all three are present.
+            val msl = c.altitudeMsl; val sep = c.geoidSeparationM
+            if (c.altitude.isFinite() && msl != null && sep != null && msl.isFinite() && sep.isFinite()) {
+                if (abs(c.altitude - (msl + sep)) > GEOID_TOLERANCE_M) {
+                    issues += HealthIssue(HealthSeverity.WARNING, "Coordinate altitude",
+                        "$tag fails h = H + N: altitude=${c.altitude}, MSL=$msl, geoidSep=$sep")
+                }
+            }
+
             // captureMethod present and recognized
             if (c.captureMethod.isNullOrBlank()) {
                 issues += HealthIssue(HealthSeverity.WARNING, "Coordinate provenance",
@@ -200,6 +219,7 @@ class DataHealthChecker @Inject constructor(
         const val NULL_ISLAND_EPS = 1e-7
         const val FUTURE_SKEW_MS = 24L * 60 * 60 * 1000   // 1 day clock-skew allowance
         const val SUSPICIOUS_ACCURACY_M = 50.0
+        const val GEOID_TOLERANCE_M = 1.0                 // h = H + N agreement tolerance
         const val SUSPICIOUS_SCALE = 1000.0
         const val SUSPICIOUS_OFFSET_M = 10_000.0
     }

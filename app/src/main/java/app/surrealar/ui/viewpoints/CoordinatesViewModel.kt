@@ -25,6 +25,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * State holder for the coordinates screens: exposes the saved-coordinate list and edit operations
+ * through the repository.
+ */
 @HiltViewModel
 class CoordinatesViewModel @Inject constructor(
     private val repository: CoordinateRepository

@@ -67,6 +67,10 @@ private const val TAG = "HomeFragment"
  */
 private const val MAP_FIX_MAX_AGE_MS = 15_000L
 
+/**
+ * Home dashboard screen: hosts the map and the plain-language Field Status card. Observes
+ * `HomeViewModel` and renders the summary from `HomeFieldStatusMapper`; holds no GNSS logic itself.
+ */
 @AndroidEntryPoint
 class HomeFragment : Fragment(), OnMapReadyCallback {
 

@@ -21,6 +21,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
+/**
+ * A coordinate row in the map's visibility-toggle list: id/name, checked state, and either a built-in
+ * icon key or a linked model id.
+ */
 data class CoordinateToggleItem(
     val id: String,
     val name: String,
@@ -36,6 +40,9 @@ data class CoordinateToggleItem(
     val meta: String = ""
 )
 
+/**
+ * RecyclerView adapter for the map coordinate visibility toggles.
+ */
 class CoordinateToggleAdapter(
     private val modelRepository: ModelRepository,
     private val onToggle: (id: String, checked: Boolean) -> Unit,

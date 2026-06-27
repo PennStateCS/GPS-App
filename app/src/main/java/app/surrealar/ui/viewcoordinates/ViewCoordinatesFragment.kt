@@ -26,6 +26,10 @@ import javax.inject.Inject
 import kotlinx.coroutines.launch
 import java.io.File
 
+/**
+ * Saved-coordinates list and export screen. Exports are delegated to `data.export` (lossy CSV/GeoJSON
+ * interchange, not backups).
+ */
 @AndroidEntryPoint
 class ViewCoordinatesFragment : Fragment() {
 

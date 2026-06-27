@@ -43,6 +43,11 @@ private fun corrDomainStringToEnum(s: String?): CorrectionSource? =
 /**
  * Build a CoordinateEntity from a captured point + the latest Fix metadata.
  * Use when user creates a brand-new point from a live fix.
+ *
+ * Requires a real ellipsoidal height: the stored `altitude` column is non-nullable, and a missing
+ * altitude must not be silently saved as `0.0` (that is indistinguishable from a true sea-level
+ * measurement and corrupts AR/survey placement). Callers must gate on `fix.altEllipsoidalM != null`
+ * before capture; passing a fix without it throws rather than fabricating a value.
  */
 fun toEntityFromFix(
     id: String = UUID.randomUUID().toString(),
@@ -56,7 +61,10 @@ fun toEntityFromFix(
     name = name,
     latitude = fix.latDeg,
     longitude = fix.lonDeg,
-    altitude = fix.altEllipsoidalM ?: 0.0,     // ellipsoidal height; 0.0 if receiver didn't provide it
+    altitude = requireNotNull(fix.altEllipsoidalM) {
+        "Cannot save a coordinate without ellipsoidal height; capture must wait for altitude " +
+            "instead of storing 0.0."
+    },
     timestamp = fix.timeUtc.toEpochMilli(),
     icon = icon,
     color = color,

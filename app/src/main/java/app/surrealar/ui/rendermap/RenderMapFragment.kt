@@ -74,6 +74,11 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/**
+ * The full survey map screen: draws saved coordinates, the meter grid, point labels, visibility
+ * toggles, and the info bottom sheet. The grid/label math lives in pure helpers (`MapGrid`,
+ * `PointLabel`); camera/UI state is retained by `MapUiStateViewModel`.
+ */
 @AndroidEntryPoint
 class RenderMapFragment : Fragment() {
 

@@ -38,6 +38,17 @@ interface SurRealApplicationEntryPoint {
     fun coordinateRepository(): app.surrealar.domain.repository.CoordinateRepository
 }
 
+/**
+ * Hilt [Application] and process-startup entry point. In `onCreate` it builds the settings DataStore
+ * early (so startup reads don't race), applies the saved theme, restores the last GNSS source, kicks
+ * off a one-time UTM backfill, starts the mock-location publisher, and initializes the Maps renderer
+ * and osmdroid config.
+ *
+ * The companion exposes a few process-wide singletons ([settingsRepo], [mockLocationPublisher]) and
+ * map-diagnostic state ([activeMapsRenderer], [mapLoadStatus]). Prefer Hilt injection (via
+ * [SurRealApplicationEntryPoint]) over the [settingsRepo] service-locator in new code — it is retained
+ * only for early-startup access before the graph is available. See the architecture guard test.
+ */
 @HiltAndroidApp
 class SurRealApplication : Application() {
     companion object {

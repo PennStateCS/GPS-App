@@ -16,6 +16,9 @@ import app.surrealar.domain.model.Model
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+/**
+ * Picker screen for choosing a model to link to a coordinate; returns the selected model id.
+ */
 @AndroidEntryPoint
 class ModelPickerActivity : AppCompatActivity() {
 

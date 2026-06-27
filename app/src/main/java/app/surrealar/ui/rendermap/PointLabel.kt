@@ -28,6 +28,10 @@ enum class PointLabelMode(val label: String, val prefKey: String) {
     }
 }
 
+/**
+ * Pure text/format logic for on-map point labels (name / elevation / distance). The on-map rendering
+ * lives in `RenderMapFragment`; this is unit-tested.
+ */
 object PointLabel {
 
     private const val FALLBACK_NAME = "Point"

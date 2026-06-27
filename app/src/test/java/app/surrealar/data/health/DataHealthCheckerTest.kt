@@ -27,12 +27,15 @@ class DataHealthCheckerTest {
         icon: String = "ic_pin",
         modelId: String? = null,
         horizontalAccuracyM: Double? = null,
-        modelScale: Double? = null
+        modelScale: Double? = null,
+        altitude: Double = 100.0,
+        altitudeMsl: Double? = null,
+        geoidSeparationM: Double? = null
     ) = CoordinateEntity(
-        id = id, name = "P-$id", latitude = lat, longitude = lon, altitude = 0.0,
+        id = id, name = "P-$id", latitude = lat, longitude = lon, altitude = altitude,
         timestamp = timestamp, icon = icon, color = 0, provider = provider,
         captureMethod = captureMethod, horizontalAccuracyM = horizontalAccuracyM, modelId = modelId,
-        modelScale = modelScale
+        modelScale = modelScale, altitudeMsl = altitudeMsl, geoidSeparationM = geoidSeparationM
     )
 
     private fun model(id: String = "m1", filePath: String = "/no/such/file.glb", thumb: String? = null) =
@@ -94,5 +97,29 @@ class DataHealthCheckerTest {
     @Test fun cleanData_hasNoIssues() {
         val report = analyze(listOf(coord()))
         assertTrue("expected no issues, got ${report.issues}", report.issues.isEmpty())
+    }
+
+    @Test fun flagsFakeZeroAltitudeWithoutMetadata() =
+        assertTrue(analyze(listOf(coord(altitude = 0.0)))
+            .has(HealthSeverity.WARNING, "missing-altitude placeholder"))
+
+    @Test fun doesNotFlagZeroAltitudeWhenMslMetadataPresent() {
+        // A real ~sea-level point with MSL/geoid metadata is not the placeholder pattern.
+        val report = analyze(listOf(coord(altitude = 0.0, altitudeMsl = -34.0, geoidSeparationM = 34.0)))
+        assertTrue(report.issues.none { it.message.contains("missing-altitude placeholder") })
+    }
+
+    @Test fun flagsNonFiniteAltitude() =
+        assertTrue(analyze(listOf(coord(altitude = Double.NaN)))
+            .has(HealthSeverity.ERROR, "non-finite altitude"))
+
+    @Test fun flagsGeoidInconsistency() =
+        // h must equal H + N: 500 != 100 + 34.
+        assertTrue(analyze(listOf(coord(altitude = 500.0, altitudeMsl = 100.0, geoidSeparationM = 34.0)))
+            .has(HealthSeverity.WARNING, "h = H + N"))
+
+    @Test fun doesNotFlagConsistentGeoid() {
+        val report = analyze(listOf(coord(altitude = 134.0, altitudeMsl = 100.0, geoidSeparationM = 34.0)))
+        assertTrue(report.issues.none { it.message.contains("h = H + N") })
     }
 }

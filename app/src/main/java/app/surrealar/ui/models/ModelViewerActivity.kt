@@ -31,6 +31,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
+/**
+ * Full-screen Filament-based 3D preview of an imported model file.
+ */
 @AndroidEntryPoint
 class ModelViewerActivity : AppCompatActivity() {
 

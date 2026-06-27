@@ -45,6 +45,9 @@ import app.surrealar.domain.repository.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+/**
+ * Saved-coordinates browse screen backed by `CoordinatesViewModel`.
+ */
 @AndroidEntryPoint
 class CoordinatesFragment : Fragment() {
 

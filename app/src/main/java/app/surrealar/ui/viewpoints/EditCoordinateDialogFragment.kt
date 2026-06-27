@@ -33,6 +33,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
+/**
+ * Dialog for editing a saved coordinate's editable fields (e.g. name/note/model link) via the
+ * repository. Does not alter the measured position.
+ */
 class EditCoordinateDialogFragment(
     private val coordinate: Coordinate,
     private val dbModels: List<Model> = emptyList(),

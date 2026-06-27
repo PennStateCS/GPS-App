@@ -22,6 +22,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * State holder for the developer screen: exposes live fix/sky/diagnostics streams from the GNSS
+ * buses and `DiagnosticsService`. Read-only with respect to captured data.
+ */
 @HiltViewModel
 class DevelopmentViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
