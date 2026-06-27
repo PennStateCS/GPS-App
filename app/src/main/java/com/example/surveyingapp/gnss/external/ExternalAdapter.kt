@@ -34,14 +34,14 @@ import kotlin.coroutines.coroutineContext
  * Adapter for any external GNSS receiver whose fixes arrive via a [NmeaSource].
  *
  * Converts the NMEA stream into:
- *  - [fixes]: normalized [Fix] objects forwarded to [FixSwitchboard]
+ *  - [fixes]: normalized [Fix] objects forwarded to `FixSwitchboard`
  *  - [sky]:   smoothed SNR snapshots via [SatelliteInventory]
  *
  * Includes exponential-backoff reconnection logic so a transient TCP drop is recovered
  * automatically without user intervention.
  *
  * To add a new external provider (e.g., u-blox over Bluetooth), create a new [NmeaSource]
- * implementation and wrap it in a new [ExternalAdapter] instance registered in [GnssModule].
+ * implementation and wrap it in a new [ExternalAdapter] instance registered in `GnssModule`.
  */
 class ExternalAdapter(
     private val scope: CoroutineScope,

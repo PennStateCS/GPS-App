@@ -9,7 +9,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
- * Draws the boundary polygon of every detected ARCore plane as a yellow [GL_LINE_LOOP].
+ * Draws the boundary polygon of every detected ARCore plane as a yellow `GL_LINE_LOOP`.
  *
  * Call [drawAllPlanes] once per frame after obtaining matrices from the camera.
  * Returns the number of planes actually drawn.

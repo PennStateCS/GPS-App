@@ -76,8 +76,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var installRequested = false
     private var availabilityPolling = false
     /**
-     * True only after [session.resume()] has been called successfully.
-     * Guards [onDrawFrame] against calling [Session.update] on a paused session —
+     * True only after `session.resume()` has been called successfully.
+     * Guards `onDrawFrame` against calling `Session.update` on a paused session —
      * the GL thread starts as soon as the surface is created, which can be before
      * [onResume] fires (causing AR_ERROR_SESSION_PAUSED spam otherwise).
      */
@@ -139,7 +139,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Tracks each live ARCore geospatial anchor alongside its rendering metadata.
      *
      * Not a data class — [rgba] is a FloatArray and this type is never compared by value.
-     * [rgba] is eagerly pre-computed from [coordWithModel.coordinate.color] so it is only
+     * [rgba] is eagerly pre-computed from `coordWithModel.coordinate.color` so it is only
      * allocated once per anchor rather than on every render frame.
      * [modelFilePath] and [modelId] are derived from [coordWithModel] via properties.
      */
@@ -255,7 +255,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private const val REANCHOR_COOLDOWN_MS = 30_000L
         /**
          * Approximate camera lens height above ground when holding a phone at eye level.
-         * Used to convert [cameraGeospatialPose.altitude] to a ground-level estimate
+         * Used to convert `cameraGeospatialPose.altitude` to a ground-level estimate
          * in terrain-altitude mode.
          */
         private const val CAMERA_EYE_HEIGHT_M = 1.65
@@ -264,7 +264,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /**
      * When false (default): real coordinate anchors are placed at their stored ellipsoidal altitude.
      * When true (terrain mode): all anchors are placed at the current detected ground level
-     * ([cameraGeospatialPose.altitude] − [CAMERA_EYE_HEIGHT_M]), ignoring stored altitudes.
+     * (`cameraGeospatialPose.altitude` − [CAMERA_EYE_HEIGHT_M]), ignoring stored altitudes.
      * Written on the main thread (button click); read on the GL thread (rebuildGeoAnchorsIfNeeded).
      */
     @Volatile private var useTerrainAltitude: Boolean = false

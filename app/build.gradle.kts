@@ -8,6 +8,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    // Developer API reference docs (Dokka Gradle Plugin v2). HTML only; not published.
+    id("org.jetbrains.dokka") version "2.2.0"
 }
 
 kotlin { jvmToolchain(17) }
@@ -241,5 +243,21 @@ val verifyDebugKeystore = tasks.register("verifyDebugKeystore") {
 // debug build (assemble/install/Run). Compile-only and unit-test tasks don't require the keystore.
 tasks.matching { it.name == "validateSigningDebug" }.configureEach {
     dependsOn(verifyDebugKeystore)
+}
+
+// ── Developer API documentation (Dokka v2) ─────────────────────────────────────
+// Generates HTML developer reference for the `main` source set only (tests/generated code are
+// excluded by default). Output: app/build/dokka/html. Run with `:app:dokkaGenerate`.
+dokka {
+    moduleName.set("Surveying App Developer API")
+    dokkaSourceSets.configureEach {
+        // Module/package overview shown on the docs landing page.
+        includes.from("dokka/module.md")
+    }
+    // Android exposes one source set per build variant, all pointing at src/main — which Dokka
+    // rejects as duplicate source roots (Kotlin/dokka#3701). Document the debug variant only.
+    dokkaSourceSets.matching { it.name == "release" }.configureEach {
+        suppress.set(true)
+    }
 }
 
