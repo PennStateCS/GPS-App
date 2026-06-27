@@ -1528,8 +1528,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Filament API calls are required.
         val scope = viewLifecycleOwner.lifecycleScope
         items.forEach { item ->
-            if (item.modelFilePath != null) {
-                filamentRenderer?.preload(item.coordinate.id, item.modelFilePath, scope)
+            // renderEnabled gates whether a linked model is drawn in AR. When false we simply
+            // don't preload it, so the coordinate still shows its pin/label but no 3D model.
+            if (item.modelFilePath != null && item.coordinate.renderEnabled) {
+                filamentRenderer?.preload(item.coordinate.id, item.modelFilePath, scope, item.placement)
             }
         }
 

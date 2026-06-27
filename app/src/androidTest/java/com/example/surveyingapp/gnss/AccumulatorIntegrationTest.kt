@@ -4,6 +4,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.surveyingapp.gnss.accumulator.FixAccumulator
 import com.example.surveyingapp.gnss.nmea.parse.*
+import com.example.surveyingapp.gnss.nmea.sentence.GGA
+import com.example.surveyingapp.gnss.nmea.sentence.GSA
+import com.example.surveyingapp.gnss.nmea.sentence.GSV
+import com.example.surveyingapp.gnss.nmea.sentence.RMC
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before

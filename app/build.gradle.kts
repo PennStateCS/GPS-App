@@ -134,6 +134,13 @@ android {
         // (Log.w -> 0, etc.) for unmocked framework calls instead of throwing "not mocked".
         unitTests.isReturnDefaultValues = true
     }
+
+    // Expose the exported Room schemas to instrumented tests so MigrationTestHelper can load them.
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
+    }
 }
 
 dependencies {
@@ -193,6 +200,8 @@ dependencies {
     debugImplementation("androidx.fragment:fragment-testing:1.6.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // Room migration testing (MigrationTestHelper)
+    androidTestImplementation("androidx.room:room-testing:2.7.2")
 
     // Optional guard for compileSdk 35
     constraints {

@@ -97,7 +97,9 @@ class ArFilamentRenderer {
          * Null = no correction needed (model is well-formed or is a test-grid asset).
          * Computed once when the asset is first added to the scene.
          */
-        var correctionMatrix: FloatArray? = null
+        var correctionMatrix: FloatArray? = null,
+        /** Per-coordinate placement (scale/rotation/offset) folded into [correctionMatrix]. */
+        val placement: ModelPlacement = ModelPlacement()
     )
 
     private lateinit var engine: Engine
@@ -233,7 +235,7 @@ class ArFilamentRenderer {
      * Begin async loading of the GLB at [filePath] for the anchor identified by [key].
      * Idempotent — subsequent calls with the same key are silently ignored.
      */
-    fun preload(key: String, filePath: String, scope: CoroutineScope) {
+    fun preload(key: String, filePath: String, scope: CoroutineScope, placement: ModelPlacement = ModelPlacement()) {
         if (!initialized) {
             Log.w(DIAG, "preload($key) skipped — not initialized")
             return
@@ -272,7 +274,7 @@ class ArFilamentRenderer {
                         }
                         resourceLoader.asyncBeginLoad(asset)
                         asset.releaseSourceData()
-                        anchorAssets[key] = CachedAsset(asset)
+                        anchorAssets[key] = CachedAsset(asset, placement = placement)
                         loadingKeys.remove(key)
                         Log.d(DIAG, "preload($key) asyncBeginLoad called — entities=${asset.entities.size}  path=$filePath")
                     }
@@ -395,20 +397,44 @@ class ArFilamentRenderer {
                     Math.abs(bbc[2]) > BB_CENTER_THRESHOLD_M
                 val isTestKey = pose.key.startsWith(TEST_GRID_KEY_PREFIX)
                 if (!isTestKey) {
-                    // R(180°Y) · S(ns) · T(-bbc): always applied to user models.
+                    // Base correction R(180°Y) · S(effScale) · T(-bbc): always applied to user models.
                     //
                     // R(180°Y) rotates the model so its GLTF +Z axis (the face shown in
                     // standard viewers) points toward geodetic North in ARCore's EUS frame
                     // (EUS: X=East, Y=Up, Z=South → 180° around Y makes +Z face North).
                     //
-                    // Combined column-major matrix = diag(-ns, ns, -ns, 1) with translation
-                    // column = R(180°Y)·S(ns)·(-bbc) = (ns·bbc.x, -ns·bbc.y, ns·bbc.z, 1).
+                    // effScale = ns × the per-coordinate placement scale. Combined column-major
+                    // matrix = diag(-effScale, effScale, -effScale, 1) with translation column
+                    // = R(180°Y)·S(effScale)·(-bbc) = (effScale·bbc.x, -effScale·bbc.y, effScale·bbc.z, 1).
+                    val placement = cached.placement
+                    val effScale = ns * placement.scale
                     val cm = FloatArray(16)   // zero-initialised
-                    cm[0]  = -ns;  cm[5]  = ns;  cm[10] = -ns;  cm[15] = 1.0f
-                    cm[12] = ns * bbc[0]
-                    cm[13] = -ns * bbc[1]
-                    cm[14] = ns * bbc[2]
-                    cached.correctionMatrix = cm
+                    cm[0]  = -effScale;  cm[5]  = effScale;  cm[10] = -effScale;  cm[15] = 1.0f
+                    cm[12] = effScale * bbc[0]
+                    cm[13] = -effScale * bbc[1]
+                    cm[14] = effScale * bbc[2]
+
+                    cached.correctionMatrix = if (placement.isIdentity) {
+                        cm
+                    } else {
+                        // Compose the per-coordinate placement on top of the base correction:
+                        //   final = T(offset) · R(yaw,pitch,roll) · cm
+                        // With identity placement this reduces exactly to `cm`, so models without
+                        // custom placement are unaffected.
+                        val rot = FloatArray(16); Matrix.setIdentityM(rot, 0)
+                        Matrix.rotateM(rot, 0, placement.yawDeg,   0f, 1f, 0f) // yaw about Up (Y)
+                        Matrix.rotateM(rot, 0, placement.pitchDeg, 1f, 0f, 0f) // pitch about East (X)
+                        Matrix.rotateM(rot, 0, placement.rollDeg,  0f, 0f, 1f) // roll about Z
+                        val rc = FloatArray(16); Matrix.multiplyMM(rc, 0, rot, 0, cm, 0)
+                        val trans = FloatArray(16); Matrix.setIdentityM(trans, 0)
+                        Matrix.translateM(
+                            trans, 0,
+                            placement.originOffsetXM,
+                            placement.verticalOffsetM + placement.originOffsetYM,
+                            placement.originOffsetZM
+                        )
+                        FloatArray(16).also { Matrix.multiplyMM(it, 0, trans, 0, rc, 0) }
+                    }
                 }
                 Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)" +
                     "  entities=${cached.asset.entities.size}" +

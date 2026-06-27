@@ -1,6 +1,7 @@
 package com.example.surveyingapp.domain.coordinates
 
 import com.example.surveyingapp.domain.model.Coordinate
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -22,17 +23,34 @@ data class ValidationResult(
  */
 object CoordinateValidator {
 
+    /** Coordinates closer than this to 0,0 are treated as the invalid "null island" default. */
+    private const val NULL_ISLAND_EPSILON_DEG = 1e-7
+
+    /**
+     * True when lat/lon are finite, within geographic bounds, and not the 0,0 null-island
+     * default. Use this as the gate before accepting a captured/imported position.
+     */
+    fun isValidLatLon(latitude: Double, longitude: Double): Boolean =
+        latitude.isFinite() && longitude.isFinite() &&
+            latitude in -90.0..90.0 && longitude in -180.0..180.0 &&
+            !(abs(latitude) < NULL_ISLAND_EPSILON_DEG && abs(longitude) < NULL_ISLAND_EPSILON_DEG)
+
     /** Validates lat/lon bounds and name; emits quality warnings for accuracy/HDOP/satellite count. */
     fun validate(coordinate: Coordinate): ValidationResult {
         val errors = mutableListOf<String>()
         val warnings = mutableListOf<String>()
 
         // Basic validation
-        if (coordinate.latitude !in -90.0..90.0) {
+        if (!coordinate.latitude.isFinite() || coordinate.latitude !in -90.0..90.0) {
             errors.add("Latitude must be between -90 and 90 degrees")
         }
-        if (coordinate.longitude !in -180.0..180.0) {
+        if (!coordinate.longitude.isFinite() || coordinate.longitude !in -180.0..180.0) {
             errors.add("Longitude must be between -180 and 180 degrees")
+        }
+        // Reject the 0,0 null-island default (a common "no fix" / emulator placeholder).
+        if (abs(coordinate.latitude) < NULL_ISLAND_EPSILON_DEG &&
+            abs(coordinate.longitude) < NULL_ISLAND_EPSILON_DEG) {
+            errors.add("Coordinate is at 0,0 (no valid location fix)")
         }
         if (coordinate.name.isBlank()) {
             errors.add("Coordinate name cannot be empty")

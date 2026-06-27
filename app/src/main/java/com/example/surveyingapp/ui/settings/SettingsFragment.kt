@@ -83,6 +83,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // ─────────────────────────── Preferences / Data ───────────────────────────
     @Inject lateinit var repository: CoordinateRepository
     @Inject lateinit var settingsRepo: SettingsRepository
+    @Inject lateinit var modelRepository: com.example.surveyingapp.domain.repository.ModelRepository
 
     // Selected device for TCP connection (class scope)
     private var selectedDevice: Pair<String, Int>? = null
@@ -1706,11 +1707,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     private fun showExportFormatDialog() {
         AlertDialog.Builder(requireContext())
             .setTitle("Export Format")
-            .setItems(arrayOf("JSON", "CSV")) { d, which ->
+            .setItems(arrayOf("Full backup (JSON)", "JSON (basic)", "CSV (basic)")) { d, which ->
                 val ts = System.currentTimeMillis()
                 when (which) {
-                    0 -> exportJson(ts)
-                    1 -> exportCsv(ts)
+                    0 -> exportFullJson(ts)
+                    1 -> exportJson(ts)
+                    2 -> exportCsv(ts)
                 }
                 d.dismiss()
             }
@@ -1720,7 +1722,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
     private fun showImportFormatDialog() {
         AlertDialog.Builder(requireContext())
-            .setTitle("Import Format")
+            // JSON import auto-detects full backups vs. the basic array.
             .setItems(arrayOf("JSON", "CSV")) { d, which ->
                 when (which) {
                     0 -> importJson()
@@ -1728,11 +1730,21 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
                 d.dismiss()
             }
+            .setTitle("Import Format")
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
     // --- Export helpers ---
+    private fun exportFullJson(ts: Long) {
+        currentOperation = "export_full_json_$ts"
+        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_FOLDER_SELECT)
+            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Folder to Export Full Backup")
+        }
+        customFilePickerLauncher.launch(intent)
+    }
+
     private fun exportJson(ts: Long) {
         currentOperation = "export_json_$ts"
         val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
@@ -1782,6 +1794,10 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     private fun handleCustomFilePickerResult(uri: Uri) {
         try {
             when {
+                currentOperation?.startsWith("export_full_json_") == true -> {
+                    val timestamp = currentOperation?.substringAfter("export_full_json_")?.toLongOrNull() ?: System.currentTimeMillis()
+                    performFullJsonExport(uri, timestamp)
+                }
                 currentOperation?.startsWith("export_json_") == true -> {
                     val timestamp = currentOperation?.substringAfter("export_json_")?.toLongOrNull() ?: System.currentTimeMillis()
                     performJsonExport(uri, timestamp)
@@ -1809,6 +1825,39 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             Log.e("SettingsFragment", "handleCustomFilePickerResult failed", e)
         } finally {
             currentOperation = null
+        }
+    }
+
+    private fun performFullJsonExport(folderUri: Uri, timestamp: Long) {
+        lifecycleScope.launch {
+            runCatching {
+                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                val models = withContext(Dispatchers.IO) { modelRepository.getAllModels().first() }
+                val appVersion = runCatching {
+                    requireContext().packageManager.getPackageInfo(requireContext().packageName, 0).versionName
+                }.getOrNull()
+                val json = com.example.surveyingapp.data.export.CoordinateBackup.export(coords, models, appVersion)
+                val fileName = "coordinates_backup_${timestamp}.json"
+
+                withContext(Dispatchers.IO) {
+                    if (folderUri.scheme == "file") {
+                        val folderPath = folderUri.path ?: throw Exception("Invalid folder path")
+                        java.io.File(folderPath, fileName).writeText(json, StandardCharsets.UTF_8)
+                    } else {
+                        val fileUri = DocumentsContract.createDocument(
+                            requireContext().contentResolver, folderUri, "application/json", fileName
+                        ) ?: throw Exception("Failed to create document")
+                        requireContext().contentResolver.openOutputStream(fileUri)?.use {
+                            it.write(json.toByteArray(StandardCharsets.UTF_8))
+                        }
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    showSettingsMessage("Full backup exported: $fileName (${coords.size} points)", Snackbar.LENGTH_LONG)
+                }
+            }.onFailure { e ->
+                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
+            }
         }
     }
 
@@ -1941,6 +1990,14 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace, isCsv) }
     }
 
+    private data class ImportSummary(
+        val count: Int,
+        val skipped: List<String>,
+        val missingModels: List<String>,
+        val collisions: Int,
+        val replaced: Boolean
+    )
+
     private suspend fun importCoordinates(uri: Uri, replace: Boolean, isCsv: Boolean) {
         showImportProgress(true, 0, "Scanning…")
         importProcessed = 0; importTotal = 0
@@ -1950,14 +2007,53 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
                 } ?: error("Unable to open input stream")
             }
-            val list = if (isCsv) parseCsvCoordinates(raw) else parseJsonCoordinates(raw)
-            importTotal = list.size.coerceAtLeast(1)
-            showImportProgress(true, 70, "Writing ${list.size}…")
-            withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(list) }
-            list.size to replace
-        }.onSuccess { (count, replaced) ->
+            val existingIds = withContext(Dispatchers.IO) {
+                repository.getAllCoordinatesList().mapTo(HashSet()) { it.id }
+            }
+
+            val parsed: List<Coordinate>
+            val skipped: List<String>
+            val missingModels: List<String>
+            if (!isCsv && com.example.surveyingapp.data.export.CoordinateBackup.isFullBackup(raw)) {
+                // Full-fidelity backup: parser validates each coordinate. The backup carries model
+                // metadata but NOT the model files, so flag any modelId that doesn't exist in the
+                // LOCAL model database (not merely the backup's model list).
+                val r = com.example.surveyingapp.data.export.CoordinateBackup.parse(raw)
+                parsed = r.coordinates; skipped = r.skippedInvalid
+                val localModelIds = withContext(Dispatchers.IO) {
+                    modelRepository.getAllModels().first().mapTo(HashSet()) { it.id }
+                }
+                missingModels = parsed.mapNotNull { c ->
+                    c.modelId?.takeIf { it.isNotBlank() && it !in localModelIds }
+                        ?.let { "'${c.name}' (${c.id}) → $it" }
+                }
+            } else {
+                // Basic CSV/JSON: validate each row so invalid coordinates are never inserted.
+                val rawList = if (isCsv) parseCsvCoordinates(raw) else parseJsonCoordinates(raw)
+                val valid = mutableListOf<Coordinate>(); val bad = mutableListOf<String>()
+                rawList.forEach { c ->
+                    if (com.example.surveyingapp.domain.coordinates.CoordinateValidator.validate(c).isValid) valid += c
+                    else bad += "'${c.name}' (${c.id})"
+                }
+                parsed = valid; skipped = bad; missingModels = emptyList()
+            }
+
+            // When merging, IDs already present will be overwritten by REPLACE — report how many.
+            val collisions = if (!replace) parsed.count { it.id in existingIds } else 0
+            importTotal = parsed.size.coerceAtLeast(1)
+            showImportProgress(true, 70, "Writing ${parsed.size}…")
+            withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(parsed) }
+            ImportSummary(parsed.size, skipped, missingModels, collisions, replace)
+        }.onSuccess { s ->
             showImportProgress(false, 100, "Completed")
-            showSettingsMessage("Imported $count ${if (isCsv) "CSV" else "JSON"} (${if (replaced) "replaced" else "merged"})", Snackbar.LENGTH_LONG)
+            if (s.skipped.isNotEmpty()) Log.w("SettingsFragment", "Import skipped (invalid): ${s.skipped.joinToString()}")
+            if (s.missingModels.isNotEmpty()) Log.w("SettingsFragment", "Import missing models: ${s.missingModels.joinToString()}")
+            val parts = mutableListOf("Imported ${s.count}")
+            if (s.skipped.isNotEmpty()) parts += "${s.skipped.size} skipped"
+            if (s.missingModels.isNotEmpty()) parts += "${s.missingModels.size} missing model(s)"
+            if (!s.replaced && s.collisions > 0) parts += "${s.collisions} overwritten"
+            parts += if (s.replaced) "replaced" else "merged"
+            showSettingsMessage(parts.joinToString(" · "), Snackbar.LENGTH_LONG)
         }.onFailure { e ->
             if (e is CancellationException) {
                 showImportProgress(false, 0, "Canceled")

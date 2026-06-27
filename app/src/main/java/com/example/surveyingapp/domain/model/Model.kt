@@ -48,7 +48,15 @@ data class Model(
     // Access control
     val isReadOnly: Boolean = false,
     val createdBy: String? = null,
-    val lastAccessedDate: Long? = null
+    val lastAccessedDate: Long? = null,
+
+    // v10: default placement metadata (persisted on ModelEntity; safe defaults)
+    val defaultScale: Double = 1.0,
+    val defaultYawDeg: Double = 0.0,
+    val originOffsetXM: Double = 0.0,
+    val originOffsetYM: Double = 0.0,
+    val originOffsetZM: Double = 0.0,
+    val units: String? = null
 ) {
     fun getFormattedSize(): String {
         val kb = fileSize / 1024.0
