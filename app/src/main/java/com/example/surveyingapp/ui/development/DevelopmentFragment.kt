@@ -15,8 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
-import com.example.surveyingapp.domain.model.Coordinate
-import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.ui.common.BaseTwoPaneFragment
 import com.example.surveyingapp.ui.map.MapThemeHelper
 import com.example.surveyingapp.ui.settings.SettingsCategory
@@ -34,14 +32,11 @@ import android.os.Looper
 import androidx.appcompat.widget.AppCompatImageButton
 import android.util.TypedValue
 import android.view.ViewGroup
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import kotlin.coroutines.resume
 import kotlinx.coroutines.launch
-import java.util.UUID
 import kotlin.math.*
 import androidx.fragment.app.viewModels
 import com.example.surveyingapp.ui.common.SatelliteSignalChartView
@@ -71,14 +66,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     // Add/remove here to extend; IDs must remain stable for state restoration.
     private val devCategories = listOf(
         SettingsCategory(3, "AR Debug",     R.drawable.ic_dev_tools),
-        SettingsCategory(5, "Coordinates",  R.drawable.ic_section_location),
         SettingsCategory(7, "GNSS",         R.drawable.ic_satellite_24),
         SettingsCategory(4, "Maps Debug",   R.drawable.ic_map),
         SettingsCategory(2, "Permissions",  R.drawable.ic_lock_24),
         SettingsCategory(1, "System Info",  R.drawable.ic_section_info)
     )
-
-    @Inject lateinit var coordinateRepository: CoordinateRepository
 
     // Permission request launcher for core permissions
     private val corePermissionsLauncher = registerForActivityResult(
@@ -98,8 +90,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
     private var permissionsTableHolder: LinearLayout? = null
 
-    // coordinateRepository is now Hilt-injected (see @Inject field above); no manual init needed.
-
     override fun provideCategories(): List<SettingsCategory> = devCategories
 
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
@@ -109,7 +99,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 2 -> setupPermissionsContent(inflater)    // Manifest + grant snapshot
                 3 -> setupArDebugContent(inflater)        // ARCore capability probe (no camera start)
                 4 -> setupMapsDebugContent(inflater)      // Google Maps / Play Services debug
-                5 -> setupCoordinatesDevContent(inflater) // Coordinate generation and management
                 7 -> setupGnssLiveContent()               // Live GNSS fix + NMEA sentence history
                 else -> null
             }
@@ -651,148 +640,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         })
 
         return view
-    }
-
-    private fun setupCoordinatesDevContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.dev_page_coordinates, null)
-
-        // Get references to the layout components
-        val generateButton = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnGenerateCoords)
-        val clearButton = view.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnClearAllCoords)
-        val statusText = view.findViewById<TextView>(R.id.statusText)
-
-        fun setStatus(msg: String) { statusText.text = msg }
-
-        // Set up button click listeners
-        generateButton.setOnClickListener {
-            setStatus("Generating…")
-            viewLifecycleOwner.lifecycleScope.launch { generateCoordinates(::setStatus) }
-        }
-
-        clearButton.setOnClickListener {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle("Clear All Coordinates?")
-                .setMessage("This will permanently delete all saved coordinates. This cannot be undone.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Clear") { _, _ ->
-                    setStatus("Clearing…")
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        runCatching { coordinateRepository.deleteAll() }
-                            .onSuccess { setStatus("All coordinates cleared") }
-                            .onFailure { setStatus("Clear failed: ${it.message}") }
-                    }
-                }
-                .show()
-        }
-
-        return view
-    }
-
-    private suspend fun generateCoordinates(setStatus: (String) -> Unit) {
-        val ctx = requireContext()
-        val fineGranted = ActivityCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted) {
-            setStatus("Requesting location permission…")
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 991)
-            setStatus("Permission required")
-            return
-        }
-        val fused = LocationServices.getFusedLocationProviderClient(ctx)
-        val loc = runCatching {
-            @Suppress("MissingPermission")
-            fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
-        }.getOrNull() ?: runCatching {
-            @Suppress("MissingPermission")
-            fused.lastLocation.await()
-        }.getOrNull()
-        if (loc == null) {
-            setStatus("Location unavailable")
-            return
-        }
-        val baseLat = loc.latitude
-        val baseLon = loc.longitude
-        val baseAlt = loc.altitude
-        val list = mutableListOf<Coordinate>()
-        val now = System.currentTimeMillis()
-
-        // Available icons from AddCoordinateDialogFragment
-        val availableIcons = listOf(
-            "ic_pin", "ic_home", "ic_star", "ic_circle", "ic_square", "ic_triangle", "ic_diamond"
-        )
-
-        // Available colors
-        val availableColors = listOf(
-            0xFFE57373.toInt(), // Red
-            0xFF64B5F6.toInt(), // Blue
-            0xFF81C784.toInt(), // Green
-            0xFFFFB74D.toInt(), // Orange
-            0xFFBA68C8.toInt()  // Purple
-        )
-
-        // Realistic yard/property names
-        val propertyNames = listOf(
-            "Home", "Front Door", "Garage", "Driveway", "Mailbox", "Power Lines", "Water Meter",
-            "Property Corner", "Fence Post", "Garden Shed", "Fire Hydrant", "Street Light",
-            "Tree Line", "Sidewalk", "Back Yard", "Side Gate", "Utility Pole", "Survey Marker",
-            "Well Head", "Septic Tank", "Pool Corner", "Deck Corner", "Patio", "Greenhouse",
-            "Tool Shed", "Barn", "Chicken Coop", "Compost Bin", "Rain Gauge", "Weather Station"
-        )
-
-        // First coordinate is exact location with "Home" name
-        list += Coordinate(
-            id = UUID.randomUUID().toString(),
-            name = "Home",
-            latitude = baseLat,
-            longitude = baseLon,
-            altitude = baseAlt,
-            timestamp = now,
-            icon = "ic_home",
-            color = availableColors.random()
-        )
-
-        val earthRadius = 6378137.0 // meters
-        val usedNames = mutableSetOf("Home") // Track used names to avoid duplicates
-
-        repeat(14) { idx ->
-            val feet = (1..20).random()
-            val meters = feet * 0.3048
-            val angle = Math.random() * 2 * Math.PI
-            val dLat = (meters * cos(angle)) / earthRadius
-            val dLon = (meters * sin(angle)) / (earthRadius * cos(baseLat * Math.PI / 180))
-            val newLat = baseLat + dLat * (180 / Math.PI)
-            val newLon = baseLon + dLon * (180 / Math.PI)
-
-            // Pick a unique name
-            var name = propertyNames.random()
-            var attempts = 0
-            while (usedNames.contains(name) && attempts < 10) {
-                name = propertyNames.random()
-                attempts++
-            }
-            if (usedNames.contains(name)) {
-                name = "Point ${idx + 2}" // Fallback if all names used
-            }
-            usedNames.add(name)
-
-            list += Coordinate(
-                id = UUID.randomUUID().toString(),
-                name = name,
-                latitude = newLat,
-                longitude = newLon,
-                altitude = baseAlt,
-                timestamp = now + idx + 1,
-                icon = availableIcons.random(),
-                color = availableColors.random()
-            )
-        }
-        val result = runCatching { coordinateRepository.insertAll(list) }
-        if (result.isSuccess) {
-            val latStr = "%.5f".format(baseLat)
-            val lonStr = "%.5f".format(baseLon)
-            setStatus("Inserted ${list.size} coords @ $latStr, $lonStr")
-        } else {
-            setStatus("Insert failed: ${result.exceptionOrNull()?.message}")
-        }
     }
 
 
