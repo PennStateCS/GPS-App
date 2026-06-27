@@ -43,6 +43,12 @@ data class StakeoutGuidanceState(
     val status: StakeoutStatus = StakeoutStatus.NO_TARGET,
 )
 
+/**
+ * Pure functions that turn already-computed distance/bearing into [StakeoutGuidanceState]:
+ * navigation [status], the relative arrow angle, and direction text. Stateless and Android-free; it
+ * computes neither distance nor bearing (the map math does that). Tolerance handling is display-only
+ * and never blocks navigation.
+ */
 object StakeoutGuidance {
 
     /** AT_TARGET is reported once the distance is within this fraction of the tolerance. */

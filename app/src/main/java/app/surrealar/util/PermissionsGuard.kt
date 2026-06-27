@@ -3,7 +3,11 @@ package app.surrealar.util
 import android.Manifest
 import android.os.Build
 
-// Utility object for grouping runtime permissions needed by the app.
+/**
+ * Lightweight provider of runtime-permission arrays (location, notifications) for callers that just
+ * need the list to request. [PermissionManager] is the fuller helper with check/request logic; keep
+ * the permission sets here consistent with it.
+ */
 object PermissionsGuard {
     // Location permission required for accessing device location (fine accuracy)
     val locationPerms: Array<String> =

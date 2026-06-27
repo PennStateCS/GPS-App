@@ -1,5 +1,10 @@
 package app.surrealar.util
 
+/**
+ * An Emlid Reach receiver found on the local network during discovery. [discoveryMethod] records how
+ * it was located (e.g. "mdns", "http_sweep"); the `port*Open` flags indicate which service ports
+ * responded. Optional fields ([hostname], [wifiSsid]) are null when discovery could not resolve them.
+ */
 data class ReachDevice(
     val ip: String,
     val hostname: String? = null,

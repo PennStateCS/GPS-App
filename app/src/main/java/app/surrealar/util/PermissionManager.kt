@@ -9,6 +9,11 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 
+/**
+ * Runtime-permission groups and request/check helpers (location, notifications, etc.). This is the
+ * fuller helper used for permission flows; [PermissionsGuard] is a lighter array-only provider, so
+ * keep their permission lists in sync if you change either.
+ */
 object PermissionManager {
 
     // -------------------------------------------------------------------------

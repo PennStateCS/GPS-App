@@ -164,11 +164,17 @@ the parser). They hold no parsing logic — construct them via `gnss.nmea.parse`
 
 # Package app.surrealar.settings
 
-Immutable settings value types and their defaults (`AppearanceSettings`, `ArDisplaySettings`,
-`CoordinateDisplaySettings`, `DeveloperSettings`, `ExternalReceiverSettings`, `StakeoutSettings`,
-`SettingsDefaults`, `AppThemeMode`). These are configuration, not survey records: they are persisted in
-DataStore (never Room) and read at startup. Changing a setting must never alter saved coordinates or
-models.
+Settings defaults. `SettingsDefaults` holds the canonical default values applied when a preference has
+never been written; the settings value types themselves live in `settings.model`. These are
+configuration, not survey records — persisted in DataStore (never Room) and read at startup, so a
+settings change must never alter saved coordinates or models.
+
+# Package app.surrealar.settings.model
+
+Immutable settings value types: `AppearanceSettings` (+ `AppThemeMode`), `ArDisplaySettings`,
+`CoordinateDisplaySettings`, `DeveloperSettings`, `ExternalReceiverSettings` (+ `ExternalReceiverProfile`),
+and `StakeoutSettings`. Each is a plain configuration snapshot with no Android or persistence logic;
+the repositories read/write them against DataStore, and the defaults live in `settings.SettingsDefaults`.
 
 # Package app.surrealar.ui.models
 
