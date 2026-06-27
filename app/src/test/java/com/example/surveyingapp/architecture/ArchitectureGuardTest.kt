@@ -106,16 +106,14 @@ class ArchitectureGuardTest {
     // ── Rule 2: direct Room database construction ───────────────────────────────
 
     @Test
-    fun `no direct AppDatabase construction outside DI and startup`() {
+    fun `no direct AppDatabase construction outside DI`() {
         val allow = setOf(
             // PERMANENT: the Hilt provider that owns the single Room connection.
             "com/example/surveyingapp/di/DatabaseModule.kt",
-            // PERMANENT: app startup maintenance (UTM backfill) runs before the graph is available.
-            "com/example/surveyingapp/SurveyingApp.kt",
         )
         enforce(
             rule = "Direct AppDatabase.getDatabase(...) construction",
-            preferred = "Inject AppDatabase / a DAO / a repository via Hilt",
+            preferred = "Inject AppDatabase / a DAO / a repository via Hilt (e.g. SurveyingApp's UTM backfill uses the Hilt EntryPoint)",
             violations = scan(Regex("""AppDatabase\.getDatabase\("""), allow),
         )
     }

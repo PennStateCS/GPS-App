@@ -1,6 +1,7 @@
 package com.example.surveyingapp.ui.viewpoints
 
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.hasLinkedModel
 import java.util.Locale
 
 /**
@@ -81,7 +82,7 @@ object CoordinateDetailUiMapper {
     /** The "extra" badge: AVERAGED, MODEL LINKED, or `null` (hidden). */
     fun extraBadge(c: Coordinate): BadgeUi? = when {
         (c.averagedSamples ?: 0) > 0 -> BadgeUi("AVERAGED", 0xFF455A64.toInt())
-        c.icon.startsWith("model:")  -> BadgeUi("MODEL LINKED", 0xFF1565C0.toInt())
+        c.hasLinkedModel             -> BadgeUi("MODEL LINKED", 0xFF1565C0.toInt())
         else                         -> null
     }
 

@@ -40,7 +40,7 @@ object GnssModule {
 
     /**
      * Provides a singleton [FixAccumulator] used by the NMEA replay feature
-     * ([MainActivity]) and the Diagnostics screen.
+     * (`MainActivity`) and the Diagnostics screen.
      *
      * Note: the live GNSS path (internal GPS and TCP external) does NOT go through this
      * accumulator — it uses the [com.example.surveyingapp.gnss.bus.FixSwitchboard] pipeline
@@ -60,13 +60,13 @@ object GnssModule {
 
     /**
      * Provides the shared [NmeaRegistry] used by both the live GNSS pipeline
-     * ([NmeaFuser] inside each [NmeaSource]) and the NMEA replay [NmeaReplayController].
+     * (`NmeaFuser` inside each [NmeaSource]) and the NMEA replay `NmeaReplayController`.
      *
      * All sentence types supported by the app are registered here. To add a new sentence type:
-     *  1. Create a data class implementing [NmeaSentence] in `gnss/nmea/sentence/`
+     *  1. Create a data class implementing `NmeaSentence` in `gnss/nmea/sentence/`
      *  2. Create a [SentenceParser] in `gnss/nmea/parse/`
      *  3. Add it to this map
-     *  4. Handle it in [NmeaFuser.handle] (live path) and [FixAccumulator.accept] (replay path)
+     *  4. Handle it in `NmeaFuser.handle` (live path) and [FixAccumulator.accept] (replay path)
      */
     @Provides
     @Singleton

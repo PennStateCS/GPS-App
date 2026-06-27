@@ -1,5 +1,6 @@
 package com.example.surveyingapp.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -74,5 +75,26 @@ data class CoordinateEntity(
 
     // --- Device/App provenance (optional) ---
     val sourceDevice: String? = null,      // e.g., RS2+ serial/model
-    val appVersion: String? = null         // for export/audit
+    val appVersion: String? = null,        // for export/audit
+
+    // ─── v10: explicit model association (replaces the icon = "model:<id>" convention) ───
+    // modelId holds the linked model's id; iconKey holds a built-in/simple icon name.
+    // They are mutually exclusive in practice. Legacy rows keep their icon value AND are
+    // backfilled into these columns by MIGRATION_9_10; consumers migrate to these in later stages.
+    val modelId: String? = null,
+    val iconKey: String? = null,
+    @ColumnInfo(defaultValue = "1") val renderEnabled: Boolean = true,
+    @ColumnInfo(defaultValue = "0") val createdAt: Long = 0L,
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0L,
+
+    // ─── v10: per-coordinate model placement overrides (nullable; renderer falls back to
+    // the model's defaults, then hard defaults). Unset for coordinates without a model. ───
+    val modelScale: Double? = null,
+    val modelYawDeg: Double? = null,
+    val modelPitchDeg: Double? = null,
+    val modelRollDeg: Double? = null,
+    val modelVerticalOffsetM: Double? = null,
+    val modelOriginOffsetXM: Double? = null,
+    val modelOriginOffsetYM: Double? = null,
+    val modelOriginOffsetZM: Double? = null
 )

@@ -60,6 +60,9 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
 
+    @Inject
+    lateinit var dataHealthChecker: com.example.surveyingapp.data.health.DataHealthChecker
+
     private val viewModel: DevelopmentViewModel by viewModels()
 
     // Developer categories: lightweight side list for specialized debug panes.
@@ -367,6 +370,32 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             deviceRows.addInfoRow(ctx, label, value, isLast = idx == deviceInfoData.lastIndex)
         }
         deviceInfoTableContainer.addView(deviceCard)
+
+        // Data health check — read-only scan of coordinate/model records. Strictly debug-only:
+        // there is no release-safe internal diagnostics policy, so it is never exposed in release.
+        if (com.example.surveyingapp.BuildConfig.DEBUG) {
+            val healthBtn = Button(ctx).apply {
+                text = "Run Data Health Check"
+                setOnClickListener { btn ->
+                    btn.isEnabled = false
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        val report = runCatching { dataHealthChecker.check() }.getOrNull()
+                        btn.isEnabled = true
+                        if (report == null) {
+                            Snackbar.make(view, "Health check failed (see logcat)", Snackbar.LENGTH_SHORT).show()
+                            return@launch
+                        }
+                        android.util.Log.i("DataHealth", report.format())
+                        MaterialAlertDialogBuilder(ctx)
+                            .setTitle("Data Health · ${report.errorCount} errors, ${report.warningCount} warnings")
+                            .setMessage(report.format())
+                            .setPositiveButton("Close", null)
+                            .show()
+                    }
+                }
+            }
+            deviceInfoTableContainer.addView(healthBtn)
+        }
 
         return view
     }

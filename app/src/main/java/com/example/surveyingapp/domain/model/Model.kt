@@ -5,6 +5,21 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+/**
+ * Domain model for an imported 3D model. This is **metadata only** — the actual model file lives on
+ * disk at [filePath] and is not stored in the database.
+ *
+ * Field groups:
+ * - **Health** ([checksum], [isValid], [validationErrors]) support the data-health tooling.
+ * - **Default placement** ([defaultScale], [defaultYawDeg], `originOffset*`, [units]) are the
+ *   model's *baseline* AR transform. A coordinate may override these per-link via its model
+ *   placement fields (see [Coordinate]); the override wins, then these defaults, then hard defaults.
+ * - **Embedded origin** ([embeddedLatitude]/[embeddedLongitude]/[embeddedAltitudeM]) is the
+ *   georeferenced location captured at import (used to offer "Use Model Location").
+ *
+ * Mapped to/from Room in `ModelRepositoryImpl` ([boundingBox] and [validationErrors] are stored as
+ * JSON columns). Keep that mapping in sync when changing fields.
+ */
 data class Model(
     val id: String,
     val name: String,
@@ -48,7 +63,15 @@ data class Model(
     // Access control
     val isReadOnly: Boolean = false,
     val createdBy: String? = null,
-    val lastAccessedDate: Long? = null
+    val lastAccessedDate: Long? = null,
+
+    // v10: default placement metadata (persisted on ModelEntity; safe defaults)
+    val defaultScale: Double = 1.0,
+    val defaultYawDeg: Double = 0.0,
+    val originOffsetXM: Double = 0.0,
+    val originOffsetYM: Double = 0.0,
+    val originOffsetZM: Double = 0.0,
+    val units: String? = null
 ) {
     fun getFormattedSize(): String {
         val kb = fileSize / 1024.0

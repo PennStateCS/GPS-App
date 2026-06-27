@@ -28,7 +28,12 @@ import android.app.Activity
 import android.widget.ImageView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.navigation.fragment.NavHostFragment
+import com.example.surveyingapp.domain.model.CaptureMethod
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.CoordinateModelLink
+import com.example.surveyingapp.domain.model.displayIconKey
+import com.example.surveyingapp.domain.model.hasLinkedModel
+import com.example.surveyingapp.domain.model.linkedModelId
 import com.example.surveyingapp.domain.repository.CoordinateDisplaySettingsRepository
 import com.example.surveyingapp.domain.repository.ModelRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -356,7 +361,7 @@ class CoordinateDetailFragment : Fragment() {
     // ── Dynamic row helper ─────────────────────────────────────────────────────
 
     /**
-     * Inflates [item_coord_detail_row] into [container] with the given label/value.
+     * Inflates the `item_coord_detail_row` layout into [container] with the given label/value.
      * A thin divider is prepended before each row after the first.
      */
     private fun addDetailRow(container: LinearLayout?, label: String, value: String) {
@@ -572,12 +577,11 @@ class CoordinateDetailFragment : Fragment() {
 
     private fun bindModelCard(c: Coordinate) {
         cardModel?.visibility = View.VISIBLE
-        val iconKey = c.icon
-        if (!iconKey.startsWith("model:")) {
+        val modelId = c.linkedModelId
+        if (modelId == null) {
             showModelEmptyState()
             return
         }
-        val modelId = iconKey.removePrefix("model:")
         // Resolve model + file existence off the main thread, then render.
         viewLifecycleOwner.lifecycleScope.launch {
             val model = withContext(Dispatchers.IO) {
@@ -588,7 +592,7 @@ class CoordinateDetailFragment : Fragment() {
                     null
                 }
             }
-            if (!isAdded || lastCoordinate?.icon != iconKey) return@launch
+            if (!isAdded || lastCoordinate?.linkedModelId != modelId) return@launch
             val fileExists = model != null && withContext(Dispatchers.IO) {
                 try { model.filePath.isNotBlank() && File(model.filePath).exists() } catch (_: Exception) { false }
             }
@@ -741,14 +745,22 @@ class CoordinateDetailFragment : Fragment() {
             val utm = try { UtmConverter.latLonToUtm(lat, lon) } catch (_: Exception) { null }
             // Position now comes from the model file, so mark provenance accordingly.
             coord.copy(
-                icon = "model:$modelId",
+                icon = CoordinateModelLink.toLegacyIcon(modelId),
+                modelId = modelId,
+                iconKey = null,
                 latitude = lat, longitude = lon, altitude = alt,
                 provider = "model",
-                captureMethod = "model_embedded",
+                captureMethod = CaptureMethod.MODEL_EMBEDDED.storageValue,
+                updatedAt = System.currentTimeMillis(),
                 easting = utm?.easting, northing = utm?.northing, utmZone = utm?.utmZone
             )
         } else {
-            coord.copy(icon = "model:$modelId")
+            coord.copy(
+                icon = CoordinateModelLink.toLegacyIcon(modelId),
+                modelId = modelId,
+                iconKey = null,
+                updatedAt = System.currentTimeMillis()
+            )
         }
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.updateCoordinate(updated)
@@ -760,7 +772,7 @@ class CoordinateDetailFragment : Fragment() {
 
     private fun confirmRemoveLink() {
         val coord = lastCoordinate ?: return
-        if (!coord.icon.startsWith("model:")) return
+        if (!coord.hasLinkedModel) return
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Remove linked model?")
             .setMessage("This unlinks the model from this coordinate. The model file is not deleted.")
@@ -771,7 +783,14 @@ class CoordinateDetailFragment : Fragment() {
 
     private fun removeLink() {
         val coord = lastCoordinate ?: return
-        val updated = coord.copy(icon = "")
+        // Clearing the model link also clears every per-coordinate placement override so a future
+        // re-link starts from the model's defaults rather than stale values.
+        val updated = coord.copy(
+            icon = "", modelId = null, iconKey = null, updatedAt = System.currentTimeMillis(),
+            modelScale = null, modelYawDeg = null, modelPitchDeg = null, modelRollDeg = null,
+            modelVerticalOffsetM = null,
+            modelOriginOffsetXM = null, modelOriginOffsetYM = null, modelOriginOffsetZM = null
+        )
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
@@ -840,16 +859,14 @@ class CoordinateDetailFragment : Fragment() {
         val marker = map.addMarker(MarkerOptions().position(latLng).title(c.name))
         map.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 17f))
         viewLifecycleOwner.lifecycleScope.launch {
-            val descriptor = buildMarkerDescriptor(c.icon, c.color)
+            val descriptor = buildMarkerDescriptor(c.linkedModelId, c.displayIconKey, c.color)
             if (descriptor != null) marker?.setIcon(descriptor)
         }
     }
 
-    private suspend fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
+    private suspend fun buildMarkerDescriptor(modelId: String?, iconKey: String?, colorInt: Int): BitmapDescriptor? {
         val ctx = context ?: return null
-        if (iconName.isNullOrBlank()) return null
-        if (iconName.startsWith("model:")) {
-            val modelId = iconName.removePrefix("model:")
+        if (modelId != null) {
             return withContext(Dispatchers.IO) {
                 try {
                     val model = modelRepository.getModelById(modelId) ?: return@withContext null
@@ -863,7 +880,8 @@ class CoordinateDetailFragment : Fragment() {
                 }
             }
         }
-        val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
+        if (iconKey.isNullOrBlank()) return null
+        val resId = ctx.resources.getIdentifier(iconKey, "drawable", ctx.packageName)
         if (resId == 0) return null
         val d = ContextCompat.getDrawable(ctx, resId) ?: return null
         val size = (32 * resources.displayMetrics.density).toInt()

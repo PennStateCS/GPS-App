@@ -1,0 +1,497 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 10,
+    "identityHash": "2c71cefc94eee65df4d7a494be8e3847",
+    "entities": [
+      {
+        "tableName": "coordinates",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `altitude` REAL NOT NULL, `timestamp` INTEGER NOT NULL, `icon` TEXT NOT NULL, `color` INTEGER NOT NULL, `provider` TEXT NOT NULL, `rtkStatus` TEXT, `satsUsed` INTEGER, `satsVisible` INTEGER, `hdop` REAL, `vDop` REAL, `pDop` REAL, `horizontalAccuracyM` REAL, `verticalAccuracyM` REAL, `correctionSource` TEXT, `correctionAgeS` REAL, `correctionStationId` TEXT, `speedMps` REAL, `courseDeg` REAL, `timestampSource` TEXT, `multipathIndex` REAL, `altitudeMsl` REAL, `geoidSeparationM` REAL, `crsEpsg` INTEGER, `easting` REAL, `northing` REAL, `utmZone` TEXT, `note` TEXT, `captureMethod` TEXT, `averagedSamples` INTEGER, `averageDurationMs` INTEGER, `stdLatM` REAL, `stdLonM` REAL, `stdAltM` REAL, `sourceDevice` TEXT, `appVersion` TEXT, `modelId` TEXT, `iconKey` TEXT, `renderEnabled` INTEGER NOT NULL DEFAULT 1, `createdAt` INTEGER NOT NULL DEFAULT 0, `updatedAt` INTEGER NOT NULL DEFAULT 0, `modelScale` REAL, `modelYawDeg` REAL, `modelPitchDeg` REAL, `modelRollDeg` REAL, `modelVerticalOffsetM` REAL, `modelOriginOffsetXM` REAL, `modelOriginOffsetYM` REAL, `modelOriginOffsetZM` REAL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "altitude",
+            "columnName": "altitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "icon",
+            "columnName": "icon",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "color",
+            "columnName": "color",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rtkStatus",
+            "columnName": "rtkStatus",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "satsUsed",
+            "columnName": "satsUsed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "satsVisible",
+            "columnName": "satsVisible",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "hdop",
+            "columnName": "hdop",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "vDop",
+            "columnName": "vDop",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "pDop",
+            "columnName": "pDop",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "horizontalAccuracyM",
+            "columnName": "horizontalAccuracyM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "verticalAccuracyM",
+            "columnName": "verticalAccuracyM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "correctionSource",
+            "columnName": "correctionSource",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "correctionAgeS",
+            "columnName": "correctionAgeS",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "correctionStationId",
+            "columnName": "correctionStationId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "speedMps",
+            "columnName": "speedMps",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "courseDeg",
+            "columnName": "courseDeg",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "timestampSource",
+            "columnName": "timestampSource",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "multipathIndex",
+            "columnName": "multipathIndex",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "altitudeMsl",
+            "columnName": "altitudeMsl",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "geoidSeparationM",
+            "columnName": "geoidSeparationM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "crsEpsg",
+            "columnName": "crsEpsg",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "easting",
+            "columnName": "easting",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "northing",
+            "columnName": "northing",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "utmZone",
+            "columnName": "utmZone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "captureMethod",
+            "columnName": "captureMethod",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "averagedSamples",
+            "columnName": "averagedSamples",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "averageDurationMs",
+            "columnName": "averageDurationMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "stdLatM",
+            "columnName": "stdLatM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "stdLonM",
+            "columnName": "stdLonM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "stdAltM",
+            "columnName": "stdAltM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "sourceDevice",
+            "columnName": "sourceDevice",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "appVersion",
+            "columnName": "appVersion",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "modelId",
+            "columnName": "modelId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "iconKey",
+            "columnName": "iconKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "renderEnabled",
+            "columnName": "renderEnabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "modelScale",
+            "columnName": "modelScale",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelYawDeg",
+            "columnName": "modelYawDeg",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelPitchDeg",
+            "columnName": "modelPitchDeg",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelRollDeg",
+            "columnName": "modelRollDeg",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelVerticalOffsetM",
+            "columnName": "modelVerticalOffsetM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelOriginOffsetXM",
+            "columnName": "modelOriginOffsetXM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelOriginOffsetYM",
+            "columnName": "modelOriginOffsetYM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "modelOriginOffsetZM",
+            "columnName": "modelOriginOffsetZM",
+            "affinity": "REAL"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_coordinates_timestamp",
+            "unique": false,
+            "columnNames": [
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_coordinates_timestamp` ON `${TABLE_NAME}` (`timestamp`)"
+          },
+          {
+            "name": "index_coordinates_provider",
+            "unique": false,
+            "columnNames": [
+              "provider"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_coordinates_provider` ON `${TABLE_NAME}` (`provider`)"
+          },
+          {
+            "name": "index_coordinates_latitude_longitude",
+            "unique": false,
+            "columnNames": [
+              "latitude",
+              "longitude"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_coordinates_latitude_longitude` ON `${TABLE_NAME}` (`latitude`, `longitude`)"
+          },
+          {
+            "name": "index_coordinates_rtkStatus",
+            "unique": false,
+            "columnNames": [
+              "rtkStatus"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_coordinates_rtkStatus` ON `${TABLE_NAME}` (`rtkStatus`)"
+          },
+          {
+            "name": "index_coordinates_icon",
+            "unique": false,
+            "columnNames": [
+              "icon"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_coordinates_icon` ON `${TABLE_NAME}` (`icon`)"
+          },
+          {
+            "name": "index_coordinates_horizontalAccuracyM",
+            "unique": false,
+            "columnNames": [
+              "horizontalAccuracyM"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_coordinates_horizontalAccuracyM` ON `${TABLE_NAME}` (`horizontalAccuracyM`)"
+          }
+        ]
+      },
+      {
+        "tableName": "models",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `fileName` TEXT NOT NULL, `filePath` TEXT NOT NULL, `fileSize` INTEGER NOT NULL, `dateAdded` INTEGER NOT NULL, `description` TEXT, `thumbnailFileName` TEXT, `thumbnailFilePath` TEXT, `embeddedLatitude` REAL, `embeddedLongitude` REAL, `embeddedAltitudeM` REAL, `checksum` TEXT, `isValid` INTEGER NOT NULL DEFAULT 1, `validationErrorsJson` TEXT, `defaultScale` REAL NOT NULL DEFAULT 1.0, `defaultYawDeg` REAL NOT NULL DEFAULT 0.0, `originOffsetXM` REAL NOT NULL DEFAULT 0.0, `originOffsetYM` REAL NOT NULL DEFAULT 0.0, `originOffsetZM` REAL NOT NULL DEFAULT 0.0, `boundingBoxJson` TEXT, `units` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileName",
+            "columnName": "fileName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filePath",
+            "columnName": "filePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileSize",
+            "columnName": "fileSize",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dateAdded",
+            "columnName": "dateAdded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "thumbnailFileName",
+            "columnName": "thumbnailFileName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "thumbnailFilePath",
+            "columnName": "thumbnailFilePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "embeddedLatitude",
+            "columnName": "embeddedLatitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "embeddedLongitude",
+            "columnName": "embeddedLongitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "embeddedAltitudeM",
+            "columnName": "embeddedAltitudeM",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "checksum",
+            "columnName": "checksum",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isValid",
+            "columnName": "isValid",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "1"
+          },
+          {
+            "fieldPath": "validationErrorsJson",
+            "columnName": "validationErrorsJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "defaultScale",
+            "columnName": "defaultScale",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "1.0"
+          },
+          {
+            "fieldPath": "defaultYawDeg",
+            "columnName": "defaultYawDeg",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "originOffsetXM",
+            "columnName": "originOffsetXM",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "originOffsetYM",
+            "columnName": "originOffsetYM",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "originOffsetZM",
+            "columnName": "originOffsetZM",
+            "affinity": "REAL",
+            "notNull": true,
+            "defaultValue": "0.0"
+          },
+          {
+            "fieldPath": "boundingBoxJson",
+            "columnName": "boundingBoxJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "units",
+            "columnName": "units",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2c71cefc94eee65df4d7a494be8e3847')"
+    ]
+  }
+}

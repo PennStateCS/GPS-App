@@ -12,7 +12,7 @@ import java.nio.FloatBuffer
  * Renders the ARCore camera feed as a full-screen background quad.
  *
  * Owns the OES external texture used for the camera feed. Call [textureId] after
- * construction to pass the ID to [Session.setCameraTextureName].
+ * construction to pass the ID to `Session.setCameraTextureName`.
  *
  * Uses ARCore's [Frame.transformCoordinates2d] to correctly orient the camera
  * texture UVs for any device rotation, then draws with an OES external texture
@@ -45,7 +45,7 @@ internal class BackgroundRenderer {
 
     /**
      * The OpenGL OES texture ID used for the camera feed.
-     * Created in [init] on the GL thread; pass to [Session.setCameraTextureName] before use.
+     * Created in `init` on the GL thread; pass to `Session.setCameraTextureName` before use.
      */
     val textureId: Int
 

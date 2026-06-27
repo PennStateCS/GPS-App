@@ -7,7 +7,7 @@ enum class SkySource { NMEA_GSV, PLATFORM_API, PROPRIETARY, UNKNOWN }
 /**
  * Holds everything the skyplot and signal-strength charts need for one receiver update.
  *
- * [satellites] is the single source of truth. The properties below it are derived
+ * `satellites` is the single source of truth. The properties below it are derived
  * views computed lazily — they exist to keep UI code concise without duplicating
  * grouping logic everywhere.
  */
@@ -23,7 +23,7 @@ data class SatInfo(
 /**
  * Snapshot of the visible sky at one point in time.
  *
- * Keep it cohesive: [satellites] is the source of truth;
+ * Keep it cohesive: `satellites` is the source of truth;
  * aggregated maps are derived lazily to avoid drift.
  */
 data class SkySnapshot(
