@@ -2,6 +2,8 @@ package com.example.surveyingapp.data.health
 
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
+import com.example.surveyingapp.data.local.entity.CoordinateEntity
+import com.example.surveyingapp.data.local.entity.ModelEntity
 import com.example.surveyingapp.domain.model.CaptureMethod
 import com.example.surveyingapp.domain.model.CoordinateModelLink
 import kotlinx.coroutines.Dispatchers
@@ -59,8 +61,14 @@ class DataHealthChecker @Inject constructor(
 ) {
 
     suspend fun check(): DataHealthReport = withContext(Dispatchers.IO) {
-        val coords = coordinateDao.getAllCoordinatesList()
-        val models = modelDao.getAllModelsList()
+        analyze(coordinateDao.getAllCoordinatesList(), modelDao.getAllModelsList())
+    }
+
+    /**
+     * Pure, read-only analysis over already-loaded records. Extracted from [check] so it can be
+     * unit-tested without DAOs. Touches the filesystem only to check model file/thumbnail existence.
+     */
+    fun analyze(coords: List<CoordinateEntity>, models: List<ModelEntity>): DataHealthReport {
         val modelIds = models.mapTo(HashSet()) { it.id }
         val now = System.currentTimeMillis()
         val issues = mutableListOf<HealthIssue>()
@@ -180,7 +188,7 @@ class DataHealthChecker @Inject constructor(
             }
         }
 
-        DataHealthReport(coords.size, models.size, issues)
+        return DataHealthReport(coords.size, models.size, issues)
     }
 
     private companion object {

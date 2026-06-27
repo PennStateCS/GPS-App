@@ -27,6 +27,8 @@ import androidx.lifecycle.Lifecycle
 import com.example.surveyingapp.R
 import com.example.surveyingapp.SurveyingApp
 import com.example.surveyingapp.domain.repository.CoordinateRepository
+import com.example.surveyingapp.data.backup.BackupImportPlanner
+import com.example.surveyingapp.data.backup.ImportMode
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.Provider
@@ -1769,14 +1771,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace) }
     }
 
-    private data class ImportSummary(
-        val count: Int,
-        val skipped: List<String>,
-        val missingModels: List<String>,
-        val collisions: Int,
-        val replaced: Boolean
-    )
-
     private suspend fun importCoordinates(uri: Uri, replace: Boolean) {
         showImportProgress(true, 0, "Scanning…")
         importProcessed = 0; importTotal = 0
@@ -1789,50 +1783,43 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val existingIds = withContext(Dispatchers.IO) {
                 repository.getAllCoordinatesList().mapTo(HashSet()) { it.id }
             }
+            // The backup carries model metadata but NOT the model files; missing-model detection
+            // checks the LOCAL model database.
+            val existingModelIds = withContext(Dispatchers.IO) {
+                modelRepository.getAllModels().first().mapTo(HashSet()) { it.id }
+            }
 
+            // Parse: full backup (auto-detected) or legacy basic JSON array; both validated.
             val parsed: List<Coordinate>
             val skipped: List<String>
-            val missingModels: List<String>
             if (com.example.surveyingapp.data.export.CoordinateBackup.isFullBackup(raw)) {
-                // Full-fidelity backup: parser validates each coordinate. The backup carries model
-                // metadata but NOT the model files, so flag any modelId that doesn't exist in the
-                // LOCAL model database (not merely the backup's model list).
                 val r = com.example.surveyingapp.data.export.CoordinateBackup.parse(raw)
                 parsed = r.coordinates; skipped = r.skippedInvalid
-                val localModelIds = withContext(Dispatchers.IO) {
-                    modelRepository.getAllModels().first().mapTo(HashSet()) { it.id }
-                }
-                missingModels = parsed.mapNotNull { c ->
-                    c.modelId?.takeIf { it.isNotBlank() && it !in localModelIds }
-                        ?.let { "'${c.name}' (${c.id}) → $it" }
-                }
             } else {
-                // Legacy basic JSON array: validate each row so invalid coordinates are never inserted.
                 val rawList = parseJsonCoordinates(raw)
                 val valid = mutableListOf<Coordinate>(); val bad = mutableListOf<String>()
                 rawList.forEach { c ->
                     if (com.example.surveyingapp.domain.coordinates.CoordinateValidator.validate(c).isValid) valid += c
                     else bad += "'${c.name}' (${c.id})"
                 }
-                parsed = valid; skipped = bad; missingModels = emptyList()
+                parsed = valid; skipped = bad
             }
 
-            // When merging, IDs already present will be overwritten by REPLACE — report how many.
-            val collisions = if (!replace) parsed.count { it.id in existingIds } else 0
-            importTotal = parsed.size.coerceAtLeast(1)
-            showImportProgress(true, 70, "Writing ${parsed.size}…")
-            withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(parsed) }
-            ImportSummary(parsed.size, skipped, missingModels, collisions, replace)
-        }.onSuccess { s ->
-            showImportProgress(false, 100, "Completed")
-            if (s.skipped.isNotEmpty()) Log.w("SettingsFragment", "Import skipped (invalid): ${s.skipped.joinToString()}")
-            if (s.missingModels.isNotEmpty()) Log.w("SettingsFragment", "Import missing models: ${s.missingModels.joinToString()}")
-            val parts = mutableListOf("Imported ${s.count}")
-            if (s.skipped.isNotEmpty()) parts += "${s.skipped.size} skipped"
-            if (s.missingModels.isNotEmpty()) parts += "${s.missingModels.size} missing model(s)"
-            if (!s.replaced && s.collisions > 0) parts += "${s.collisions} overwritten"
-            parts += if (s.replaced) "replaced" else "merged"
-            showSettingsMessage(parts.joinToString(" · "), Snackbar.LENGTH_LONG)
+            // Decide duplicates / missing models / summary in the pure, unit-tested planner.
+            val mode = if (replace) ImportMode.REPLACE else ImportMode.MERGE
+            val plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, mode)
+
+            if (!plan.isNoOp) {
+                importTotal = plan.insertCount.coerceAtLeast(1)
+                showImportProgress(true, 70, "Writing ${plan.insertCount}…")
+                withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(plan.toInsert) }
+            }
+            plan
+        }.onSuccess { plan ->
+            showImportProgress(false, 100, if (plan.isNoOp) "Nothing to import" else "Completed")
+            if (plan.skippedInvalid.isNotEmpty()) Log.w("SettingsFragment", "Import skipped (invalid): ${plan.skippedInvalid.joinToString()}")
+            if (plan.missingModelRefs.isNotEmpty()) Log.w("SettingsFragment", "Import missing models: ${plan.missingModelRefs.joinToString()}")
+            showSettingsMessage(plan.summaryMessage(), Snackbar.LENGTH_LONG)
         }.onFailure { e ->
             if (e is CancellationException) {
                 showImportProgress(false, 0, "Canceled")

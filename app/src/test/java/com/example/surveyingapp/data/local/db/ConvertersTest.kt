@@ -1,10 +1,13 @@
 package com.example.surveyingapp.data.local.db
 
+import com.example.surveyingapp.domain.model.CorrectionSource
 import com.example.surveyingapp.gnss.model.Provider
 import com.example.surveyingapp.gnss.model.RtkStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.time.DurationUnit
+import kotlin.time.toDuration
 
 class ConvertersTest {
 
@@ -52,5 +55,33 @@ class ConvertersTest {
         assertNull(Converters.toRtkStatus(null))
         assertNull(Converters.toRtkStatus(""))
         assertNull(Converters.toRtkStatus("nonsense"))
+    }
+
+    @Test
+    fun instant_roundTrips() {
+        val now = java.time.Instant.ofEpochMilli(1_700_000_000_000L)
+        val millis = Converters.toEpochMillis(now)
+        assertEquals(now, Converters.fromEpochMillis(millis))
+        assertNull(Converters.fromEpochMillis(null))
+        assertNull(Converters.toEpochMillis(null))
+    }
+
+    @Test
+    fun duration_roundTrips() {
+        val d = 12.5.toDuration(DurationUnit.SECONDS)
+        val secs = Converters.toSeconds(d)
+        assertEquals(12.5, secs!!, 1e-9)
+        assertEquals(d, Converters.fromSeconds(secs))
+        assertNull(Converters.fromSeconds(null))
+        assertNull(Converters.toSeconds(null))
+    }
+
+    @Test
+    fun correctionSource_roundTrips_andSafe() {
+        assertEquals("NTRIP", Converters.fromCorrectionSource(CorrectionSource.NTRIP))
+        assertEquals(CorrectionSource.NTRIP, Converters.toCorrectionSource("NTRIP"))
+        assertNull(Converters.toCorrectionSource("garbage"))
+        assertNull(Converters.toCorrectionSource(null))
+        assertNull(Converters.fromCorrectionSource(null))
     }
 }
