@@ -13,10 +13,10 @@ import java.util.UUID
 // ---------- Helpers: enum <-> domain string ----------
 
 private fun providerEnumToDomainString(p: Provider): String = when (p) {
-    Provider.INTERNAL     -> DbConstants.PROVIDER_FUSED   // "fused"
-    Provider.RS2_EXTERNAL -> DbConstants.PROVIDER_RS2_TCP // "rs2-tcp" (or could be a new constant)
-    Provider.RS2_BT       -> DbConstants.PROVIDER_RS2_BT  // "rs2-bt"
-    Provider.RS2_TCP      -> DbConstants.PROVIDER_RS2_TCP // "rs2-tcp"
+    Provider.INTERNAL     -> DbConstants.PROVIDER_FUSED        // "fused"
+    Provider.RS2_EXTERNAL -> DbConstants.PROVIDER_RS2_EXTERNAL // "rs2-external" — distinct so it survives round-trip
+    Provider.RS2_BT       -> DbConstants.PROVIDER_RS2_BT       // "rs2-bt"
+    Provider.RS2_TCP      -> DbConstants.PROVIDER_RS2_TCP      // "rs2-tcp"
     Provider.OTHER        -> "other"
     Provider.MODEL        -> "model"
 }
@@ -156,10 +156,35 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     stdAltM = stdAltM,
 
     sourceDevice = sourceDevice,
-    appVersion = appVersion
+    appVersion = appVersion,
+
+    // v10 fields
+    modelId = modelId,
+    iconKey = iconKey,
+    renderEnabled = renderEnabled,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    modelScale = modelScale,
+    modelYawDeg = modelYawDeg,
+    modelPitchDeg = modelPitchDeg,
+    modelRollDeg = modelRollDeg,
+    modelVerticalOffsetM = modelVerticalOffsetM,
+    modelOriginOffsetXM = modelOriginOffsetXM,
+    modelOriginOffsetYM = modelOriginOffsetYM,
+    modelOriginOffsetZM = modelOriginOffsetZM
 )
 
-/** Map a domain Coordinate back to a CoordinateEntity for DB writes. */
+/**
+ * Maps a domain [Coordinate] back to a [CoordinateEntity] for DB writes.
+ *
+ * Invariants preserved here:
+ * - the provider string round-trips through [Provider] without degrading (notably `rs2-external`
+ *   stays `RS2_EXTERNAL`, not `RS2_TCP`);
+ * - `createdAt`/`updatedAt` fall back to `timestamp` when unset (0), so rows written through paths
+ *   that don't set audit times (e.g. legacy import) still get sensible values.
+ *
+ * Every field must round-trip with [toDomain]; changing one side requires changing the other.
+ */
 fun Coordinate.toEntity(): CoordinateEntity =
     CoordinateEntity(
         id = id,
@@ -205,5 +230,21 @@ fun Coordinate.toEntity(): CoordinateEntity =
         stdAltM = stdAltM,
 
         sourceDevice = sourceDevice,
-        appVersion = appVersion
+        appVersion = appVersion,
+
+        // v10 fields. createdAt/updatedAt fall back to `timestamp` so rows written through
+        // paths that don't set them yet (e.g. import) still get sensible audit times.
+        modelId = modelId,
+        iconKey = iconKey,
+        renderEnabled = renderEnabled,
+        createdAt = if (createdAt != 0L) createdAt else timestamp,
+        updatedAt = if (updatedAt != 0L) updatedAt else timestamp,
+        modelScale = modelScale,
+        modelYawDeg = modelYawDeg,
+        modelPitchDeg = modelPitchDeg,
+        modelRollDeg = modelRollDeg,
+        modelVerticalOffsetM = modelVerticalOffsetM,
+        modelOriginOffsetXM = modelOriginOffsetXM,
+        modelOriginOffsetYM = modelOriginOffsetYM,
+        modelOriginOffsetZM = modelOriginOffsetZM
     )

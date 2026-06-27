@@ -1,12 +1,24 @@
 package com.example.surveyingapp.domain.model
 
 /**
- * Domain model for a captured coordinate point.
+ * Domain model for a captured coordinate point — the app's primary survey record.
  *
- * Semantics:
+ * Position semantics:
  * - latitude/longitude in EPSG:4326 (degrees)
  * - altitude = ellipsoidal height (meters)
  * - altitudeMsl (meters) and geoidSeparationM (meters) are optional extras from GGA
+ *
+ * **Survey data vs. visual data.** Most fields are *survey data* (the measured position and its
+ * quality: lat/lon/alt, [rtkStatus], accuracies, DOPs, corrections, UTM, std-devs) and must be
+ * preserved exactly. The model-link and placement fields are *visual data*:
+ * - [modelId] links a 3D model (the explicit column; supersedes the legacy `icon = "model:<id>"`
+ *   convention, which is still read via [CoordinateModelLink]).
+ * - [iconKey] is the built-in/simple icon used when no model is linked.
+ * - [modelScale], [modelYawDeg]/[modelPitchDeg]/[modelRollDeg], [modelVerticalOffsetM] and the
+ *   `modelOriginOffset*` fields are AR placement *overrides*; they change how a linked model is
+ *   drawn, never the coordinate's measured position.
+ *
+ * Persisted via [com.example.surveyingapp.data.repository.mapper] — keep that mapping in sync.
  */
 data class Coordinate(
     val id: String,
@@ -50,5 +62,22 @@ data class Coordinate(
     val stdLonM: Double? = null,
     val stdAltM: Double? = null,
     val sourceDevice: String? = null,
-    val appVersion: String? = null
+    val appVersion: String? = null,
+
+    // v10: explicit model association (replaces icon = "model:<id>"). See CoordinateEntity.
+    val modelId: String? = null,
+    val iconKey: String? = null,
+    val renderEnabled: Boolean = true,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
+
+    // v10: per-coordinate model placement overrides (null = use model/default).
+    val modelScale: Double? = null,
+    val modelYawDeg: Double? = null,
+    val modelPitchDeg: Double? = null,
+    val modelRollDeg: Double? = null,
+    val modelVerticalOffsetM: Double? = null,
+    val modelOriginOffsetXM: Double? = null,
+    val modelOriginOffsetYM: Double? = null,
+    val modelOriginOffsetZM: Double? = null
 )

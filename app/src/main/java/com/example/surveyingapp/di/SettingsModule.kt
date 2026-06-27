@@ -55,7 +55,7 @@ object SettingsModule {
     /**
      * Provides [SettingsRepository] from the [SurveyingApp] application singleton.
      *
-     * Kept as a wrapper (rather than Hilt constructing [SettingsRepositoryImpl] directly) so there
+     * Kept as a wrapper (rather than Hilt constructing `SettingsRepositoryImpl` directly) so there
      * is exactly ONE [com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource] /
      * DataStore for the settings file. `SurveyingApp.setupSettings()` builds this instance during
      * `onCreate` and uses it synchronously for startup work (theme application, mock-location

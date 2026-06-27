@@ -114,7 +114,7 @@ class TestAnchorController(private val context: Context) {
     // ── GL-thread API ─────────────────────────────────────────────────────────
 
     /**
-     * Must be called from the GL thread (inside [onDrawFrame]).
+     * Must be called from the GL thread (inside `onDrawFrame`).
      * Processes any pending spawn/clear request using [earth] and the current GNSS position.
      */
     fun processActionIfNeeded(earth: Earth, gnssLat: Double, gnssLon: Double) {

@@ -2,7 +2,7 @@ package com.example.surveyingapp.domain.repository
 
 /**
  * Aggregate settings repository — the union of all focused settings interfaces (see
- * [FocusedSettingsRepositories.kt]). It is retained for compatibility and for screens that
+ * `FocusedSettingsRepositories.kt`). It is retained for compatibility and for screens that
  * genuinely touch many settings areas at once (e.g. SettingsFragment, MainActivity).
  *
  * **New code should prefer a focused interface** (e.g. [GnssCaptureSettingsRepository],

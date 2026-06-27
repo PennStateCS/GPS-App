@@ -8,6 +8,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    // Developer API reference docs (Dokka Gradle Plugin v2). HTML only; not published.
+    id("org.jetbrains.dokka") version "2.2.0"
 }
 
 kotlin { jvmToolchain(17) }
@@ -110,6 +112,9 @@ android {
         debug {
             signingConfig = signingConfigs.getByName("debug")
             ndk { debugSymbolLevel = "symbol_table" }
+            // First-party (JaCoCo-backed) unit-test coverage. Generates the
+            // `createDebugUnitTestCoverageReport` task with HTML/XML output. No extra plugin.
+            enableUnitTestCoverage = true
         }
     }
 
@@ -133,6 +138,13 @@ android {
         // Pure-JVM unit tests touch production code that logs via android.util.Log. Return defaults
         // (Log.w -> 0, etc.) for unmocked framework calls instead of throwing "not mocked".
         unitTests.isReturnDefaultValues = true
+    }
+
+    // Expose the exported Room schemas to instrumented tests so MigrationTestHelper can load them.
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDir("$projectDir/schemas")
+        }
     }
 }
 
@@ -193,6 +205,8 @@ dependencies {
     debugImplementation("androidx.fragment:fragment-testing:1.6.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    // Room migration testing (MigrationTestHelper)
+    androidTestImplementation("androidx.room:room-testing:2.7.2")
 
     // Optional guard for compileSdk 35
     constraints {
@@ -229,5 +243,21 @@ val verifyDebugKeystore = tasks.register("verifyDebugKeystore") {
 // debug build (assemble/install/Run). Compile-only and unit-test tasks don't require the keystore.
 tasks.matching { it.name == "validateSigningDebug" }.configureEach {
     dependsOn(verifyDebugKeystore)
+}
+
+// ── Developer API documentation (Dokka v2) ─────────────────────────────────────
+// Generates HTML developer reference for the `main` source set only (tests/generated code are
+// excluded by default). Output: app/build/dokka/html. Run with `:app:dokkaGenerate`.
+dokka {
+    moduleName.set("Surveying App Developer API")
+    dokkaSourceSets.configureEach {
+        // Module/package overview shown on the docs landing page.
+        includes.from("dokka/module.md")
+    }
+    // Android exposes one source set per build variant, all pointing at src/main — which Dokka
+    // rejects as duplicate source roots (Kotlin/dokka#3701). Document the debug variant only.
+    dokkaSourceSets.matching { it.name == "release" }.configureEach {
+        suppress.set(true)
+    }
 }
 

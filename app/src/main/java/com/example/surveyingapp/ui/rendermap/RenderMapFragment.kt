@@ -29,6 +29,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.displayIconKey
+import com.example.surveyingapp.domain.model.hasLinkedModel
+import com.example.surveyingapp.domain.model.linkedModelId
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.model.Fix
 import com.example.surveyingapp.gnss.model.RtkStatus
@@ -1161,7 +1164,7 @@ class RenderMapFragment : Fragment() {
                         // Rebuild icon only when icon or color changed
                         if (prev == null || prev.icon != p.icon || prev.color != p.color) {
                             viewLifecycleOwner.lifecycleScope.launch {
-                                val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                                val descriptor = buildMarkerDescriptor(p.linkedModelId, p.displayIconKey, p.color)
                                 if (descriptor != null) existingMarker.setIcon(descriptor)
                             }
                         }
@@ -1172,7 +1175,7 @@ class RenderMapFragment : Fragment() {
                             marker.tag = p.id
                             markerMap[p.id] = marker
                             viewLifecycleOwner.lifecycleScope.launch {
-                                val descriptor = buildMarkerDescriptor(p.icon, p.color)
+                                val descriptor = buildMarkerDescriptor(p.linkedModelId, p.displayIconKey, p.color)
                                 if (descriptor != null) marker.setIcon(descriptor)
                             }
                         }
@@ -1182,7 +1185,7 @@ class RenderMapFragment : Fragment() {
                     if (visible) latLngsVisible.add(ll)
                     toggleItems += CoordinateToggleItem(
                         id = p.id, name = p.name, checked = visible,
-                        icon = p.icon ?: "", color = p.color,
+                        icon = p.displayIconKey ?: "", modelId = p.linkedModelId, color = p.color,
                         lat = p.latitude, lon = p.longitude,
                         meta = buildRowMeta(p)
                     )
@@ -1209,11 +1212,9 @@ class RenderMapFragment : Fragment() {
 
     // ── Marker icon building ───────────────────────────────────────────────────
 
-    private suspend fun buildMarkerDescriptor(iconName: String?, colorInt: Int): BitmapDescriptor? {
+    private suspend fun buildMarkerDescriptor(modelId: String?, iconKey: String?, colorInt: Int): BitmapDescriptor? {
         val ctx = context ?: return null
-        if (iconName.isNullOrBlank()) return null
-        if (iconName.startsWith("model:")) {
-            val modelId = iconName.removePrefix("model:")
+        if (modelId != null) {
             return withContext(Dispatchers.IO) {
                 try {
                     val model = modelRepository.getModelById(modelId) ?: return@withContext null
@@ -1227,10 +1228,11 @@ class RenderMapFragment : Fragment() {
                 } catch (e: Exception) { Log.w(TAG, "Failed to load model thumbnail for marker", e); null }
             }
         }
-        val cacheKey = "icon:$iconName:$colorInt"
+        if (iconKey.isNullOrBlank()) return null
+        val cacheKey = "icon:$iconKey:$colorInt"
         markerDescriptorCache[cacheKey]?.let { return it }
         @Suppress("DiscouragedApi")
-        val resId = ctx.resources.getIdentifier(iconName, "drawable", ctx.packageName)
+        val resId = ctx.resources.getIdentifier(iconKey, "drawable", ctx.packageName)
         if (resId == 0) return null
         val d = ContextCompat.getDrawable(ctx, resId) ?: return null
         val size = dpToPx(32f)
@@ -1566,7 +1568,7 @@ class RenderMapFragment : Fragment() {
                 CoordinateToggleItem(
                     id = c.id, name = c.name,
                     checked = visibilityMap[c.id] ?: true,
-                    icon = c.icon ?: "", color = c.color,
+                    icon = c.displayIconKey ?: "", modelId = c.linkedModelId, color = c.color,
                     lat = c.latitude, lon = c.longitude,
                     meta = buildRowMeta(c)
                 )
@@ -1714,7 +1716,7 @@ class RenderMapFragment : Fragment() {
         parts += String.format(Locale.getDefault(), "Elev %.1f m", p.altitude)
         p.rtkStatus?.takeIf { it.isNotBlank() }?.let { parts += friendlyFix(it) }
         friendlySource(p.provider)?.let { parts += it }
-        if ((p.icon ?: "").startsWith("model:")) parts += "Model"
+        if (p.hasLinkedModel) parts += "Model"
         return parts.joinToString(" · ")
     }
 
@@ -1743,10 +1745,9 @@ class RenderMapFragment : Fragment() {
 
     private fun loadCoordinateIconIntoView(coord: Coordinate, iv: ImageView?) {
         iv ?: return
-        val iconName = coord.icon ?: ""
-        if (iconName.startsWith("model:")) {
+        val modelId = coord.linkedModelId
+        if (modelId != null) {
             iv.setImageResource(R.drawable.ic_pin)
-            val modelId = iconName.removePrefix("model:")
             viewLifecycleOwner.lifecycleScope.launch {
                 val bmp = withContext(Dispatchers.IO) {
                     try {
@@ -1757,6 +1758,7 @@ class RenderMapFragment : Fragment() {
                 if (bmp != null) { iv.clearColorFilter(); iv.setImageBitmap(bmp) }
             }
         } else {
+            val iconName = coord.displayIconKey ?: ""
             @Suppress("DiscouragedApi")
             val resId = if (iconName.isNotBlank()) {
                 requireContext().resources.getIdentifier(iconName, "drawable", requireContext().packageName)

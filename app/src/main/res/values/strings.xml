@@ -141,7 +141,8 @@
     <string name="host_port">%1$s:%2$d</string>
 
     <!-- Add coordinate dialog strings -->
-    <string name="fetching_location">Fetching location…</string>
+    <string name="fetching_location">Waiting for location…</string>
+    <string name="location_fix_failed">Couldn\'t get a location fix. Move to an area with a clear view of the sky and try again.</string>
     <string name="add_coordinate_title">Add Coordinate</string>
     <string name="location_permission_required">Location permission required</string>
     <string name="location_label_with_mode">Lat: %1$.6f, Lon: %2$.6f, Alt: %3$.2f (%4$s)</string>

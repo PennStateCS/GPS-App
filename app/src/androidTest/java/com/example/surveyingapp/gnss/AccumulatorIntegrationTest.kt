@@ -4,6 +4,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.surveyingapp.gnss.accumulator.FixAccumulator
 import com.example.surveyingapp.gnss.nmea.parse.*
+import com.example.surveyingapp.gnss.nmea.sentence.GGA
+import com.example.surveyingapp.gnss.nmea.sentence.GSA
+import com.example.surveyingapp.gnss.nmea.sentence.GSV
+import com.example.surveyingapp.gnss.nmea.sentence.RMC
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -39,7 +43,7 @@ class AccumulatorIntegrationTest {
     @Test
     fun testNmeaLogProcessingThroughAccumulator() = runBlocking {
         // Read the sample NMEA file from assets
-        val context = InstrumentationRegistry.getInstrumentation().context
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val assetManager = context.assets
         val inputStream = assetManager.open("sample.nmea")
         val reader = BufferedReader(InputStreamReader(inputStream))
@@ -159,7 +163,7 @@ class AccumulatorIntegrationTest {
     @Test
     fun testIndividualSentenceTypes() = runBlocking {
         // Test that each major sentence type is properly processed
-        val context = InstrumentationRegistry.getInstrumentation().context
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val assetManager = context.assets
         val inputStream = assetManager.open("sample.nmea")
         val reader = BufferedReader(InputStreamReader(inputStream))

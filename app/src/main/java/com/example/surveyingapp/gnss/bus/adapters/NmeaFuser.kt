@@ -21,9 +21,9 @@ import java.time.ZonedDateTime
  * **Not thread-safe**: all calls to [accept] must originate from the same thread, or callers
  * must provide their own synchronisation.
  *
- * Extracted from the duplicated logic that previously lived in both [InternalNmeaSource] and
- * [TcpNmeaSource]. Adding support for a new external provider requires only a new
- * [SourceAdapter] implementation that creates its own [NmeaFuser] with the appropriate
+ * Extracted from the duplicated logic that previously lived in both `InternalNmeaSource` and
+ * `TcpNmeaSource`. Adding support for a new external provider requires only a new
+ * `SourceAdapter` implementation that creates its own [NmeaFuser] with the appropriate
  * [Provider] value — no changes to the fuser itself are needed.
  *
  * @param provider   Which GNSS provider produced this data (stamped onto every [Fix]).

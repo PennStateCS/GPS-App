@@ -3,11 +3,14 @@ package com.example.surveyingapp.data.repository.impl
 import com.example.surveyingapp.data.files.ModelFileCleaner
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.ModelEntity
+import com.example.surveyingapp.domain.model.BoundingBox
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.domain.model.FileType
 import com.example.surveyingapp.domain.repository.ModelRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
 class ModelRepositoryImpl @javax.inject.Inject constructor(private val modelDao: ModelDao) : ModelRepository {
 
@@ -30,121 +33,109 @@ class ModelRepositoryImpl @javax.inject.Inject constructor(private val modelDao:
     override fun observeModelCount(): kotlinx.coroutines.flow.Flow<Int> = modelDao.observeModelCount()
 
     override fun getAllModels(): Flow<List<Model>> = modelDao.getAllModels().map { entities ->
-        entities.map { entity ->
-            Model(
-                id = entity.id,
-                name = entity.name,
-                fileName = entity.fileName,
-                filePath = entity.filePath,
-                fileSize = entity.fileSize,
-                dateAdded = entity.dateAdded,
-                description = entity.description,
-                fileType = getFileTypeFromExtension(entity.fileName),
-                thumbnailFileName = entity.thumbnailFileName,
-                thumbnailFilePath = entity.thumbnailFilePath,
-                embeddedLatitude = entity.embeddedLatitude,
-                embeddedLongitude = entity.embeddedLongitude,
-                embeddedAltitudeM = entity.embeddedAltitudeM
-            )
-        }
+        entities.map { it.toModel() }
     }
 
-    override suspend fun getModelById(id: String): Model? {
-        return modelDao.getModelById(id)?.let { entity ->
-            Model(
-                id = entity.id,
-                name = entity.name,
-                fileName = entity.fileName,
-                filePath = entity.filePath,
-                fileSize = entity.fileSize,
-                dateAdded = entity.dateAdded,
-                description = entity.description,
-                fileType = getFileTypeFromExtension(entity.fileName),
-                thumbnailFileName = entity.thumbnailFileName,
-                thumbnailFilePath = entity.thumbnailFilePath,
-                embeddedLatitude = entity.embeddedLatitude,
-                embeddedLongitude = entity.embeddedLongitude,
-                embeddedAltitudeM = entity.embeddedAltitudeM
-            )
-        }
-    }
+    override suspend fun getModelById(id: String): Model? =
+        modelDao.getModelById(id)?.toModel()
 
-    override suspend fun getModelByFileName(fileName: String): Model? {
-        return modelDao.getModelByFileName(fileName)?.let { entity ->
-            Model(
-                id = entity.id,
-                name = entity.name,
-                fileName = entity.fileName,
-                filePath = entity.filePath,
-                fileSize = entity.fileSize,
-                dateAdded = entity.dateAdded,
-                description = entity.description,
-                fileType = getFileTypeFromExtension(entity.fileName),
-                thumbnailFileName = entity.thumbnailFileName,
-                thumbnailFilePath = entity.thumbnailFilePath,
-                embeddedLatitude = entity.embeddedLatitude,
-                embeddedLongitude = entity.embeddedLongitude,
-                embeddedAltitudeM = entity.embeddedAltitudeM
-            )
-        }
-    }
+    override suspend fun getModelByFileName(fileName: String): Model? =
+        modelDao.getModelByFileName(fileName)?.toModel()
 
     override suspend fun insertModel(model: Model) {
-        val entity = ModelEntity(
-            id = model.id,
-            name = model.name,
-            fileName = model.fileName,
-            filePath = model.filePath,
-            fileSize = model.fileSize,
-            dateAdded = model.dateAdded,
-            description = model.description,
-            thumbnailFileName = model.thumbnailFileName,
-            thumbnailFilePath = model.thumbnailFilePath,
-            embeddedLatitude = model.embeddedLatitude,
-            embeddedLongitude = model.embeddedLongitude,
-            embeddedAltitudeM = model.embeddedAltitudeM
-        )
-        modelDao.insertModel(entity)
+        modelDao.insertModel(model.toEntity())
     }
 
     override suspend fun updateModel(model: Model) {
-        val entity = ModelEntity(
-            id = model.id,
-            name = model.name,
-            fileName = model.fileName,
-            filePath = model.filePath,
-            fileSize = model.fileSize,
-            dateAdded = model.dateAdded,
-            description = model.description,
-            thumbnailFileName = model.thumbnailFileName,
-            thumbnailFilePath = model.thumbnailFilePath,
-            embeddedLatitude = model.embeddedLatitude,
-            embeddedLongitude = model.embeddedLongitude,
-            embeddedAltitudeM = model.embeddedAltitudeM
-        )
-        modelDao.updateModel(entity)
+        modelDao.updateModel(model.toEntity())
     }
 
     override suspend fun deleteModel(model: Model) {
         // Delete thumbnail file from disk first (if it exists). The imported model file is removed
         // by the model-list UI; both delegate to ModelFileCleaner. See docs/data-architecture.md.
         ModelFileCleaner.deleteThumbnailFile(model.thumbnailFilePath)
+        modelDao.deleteModel(model.toEntity())
+    }
 
-        val entity = ModelEntity(
-            id = model.id,
-            name = model.name,
-            fileName = model.fileName,
-            filePath = model.filePath,
-            fileSize = model.fileSize,
-            dateAdded = model.dateAdded,
-            description = model.description,
-            thumbnailFileName = model.thumbnailFileName,
-            thumbnailFilePath = model.thumbnailFilePath,
-            embeddedLatitude = model.embeddedLatitude,
-            embeddedLongitude = model.embeddedLongitude,
-            embeddedAltitudeM = model.embeddedAltitudeM
-        )
-        modelDao.deleteModel(entity)
+    // ── Entity <-> domain mapping (single source of truth) ──────────────────────
+
+    private fun ModelEntity.toModel(): Model = Model(
+        id = id,
+        name = name,
+        fileName = fileName,
+        filePath = filePath,
+        fileSize = fileSize,
+        dateAdded = dateAdded,
+        description = description,
+        fileType = getFileTypeFromExtension(fileName),
+        thumbnailFileName = thumbnailFileName,
+        thumbnailFilePath = thumbnailFilePath,
+        embeddedLatitude = embeddedLatitude,
+        embeddedLongitude = embeddedLongitude,
+        embeddedAltitudeM = embeddedAltitudeM,
+        // v10 health + placement metadata
+        checksum = checksum,
+        isValid = isValid,
+        validationErrors = decodeValidationErrors(validationErrorsJson),
+        boundingBox = decodeBoundingBox(boundingBoxJson),
+        defaultScale = defaultScale,
+        defaultYawDeg = defaultYawDeg,
+        originOffsetXM = originOffsetXM,
+        originOffsetYM = originOffsetYM,
+        originOffsetZM = originOffsetZM,
+        units = units
+    )
+
+    private fun Model.toEntity(): ModelEntity = ModelEntity(
+        id = id,
+        name = name,
+        fileName = fileName,
+        filePath = filePath,
+        fileSize = fileSize,
+        dateAdded = dateAdded,
+        description = description,
+        thumbnailFileName = thumbnailFileName,
+        thumbnailFilePath = thumbnailFilePath,
+        embeddedLatitude = embeddedLatitude,
+        embeddedLongitude = embeddedLongitude,
+        embeddedAltitudeM = embeddedAltitudeM,
+        // v10 health + placement metadata
+        checksum = checksum,
+        isValid = isValid,
+        validationErrorsJson = encodeValidationErrors(validationErrors),
+        boundingBoxJson = encodeBoundingBox(boundingBox),
+        defaultScale = defaultScale,
+        defaultYawDeg = defaultYawDeg,
+        originOffsetXM = originOffsetXM,
+        originOffsetYM = originOffsetYM,
+        originOffsetZM = originOffsetZM,
+        units = units
+    )
+
+    private fun encodeValidationErrors(errors: List<String>): String? =
+        if (errors.isEmpty()) null else JSONArray(errors).toString()
+
+    private fun decodeValidationErrors(json: String?): List<String> {
+        if (json.isNullOrBlank()) return emptyList()
+        return runCatching {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun encodeBoundingBox(bb: BoundingBox?): String? = bb?.let {
+        JSONObject().apply {
+            put("minLat", it.minLat); put("maxLat", it.maxLat)
+            put("minLon", it.minLon); put("maxLon", it.maxLon)
+        }.toString()
+    }
+
+    private fun decodeBoundingBox(json: String?): BoundingBox? {
+        if (json.isNullOrBlank()) return null
+        return runCatching {
+            val o = JSONObject(json)
+            BoundingBox(o.getDouble("minLat"), o.getDouble("maxLat"), o.getDouble("minLon"), o.getDouble("maxLon"))
+        }.getOrNull()
     }
 
 }

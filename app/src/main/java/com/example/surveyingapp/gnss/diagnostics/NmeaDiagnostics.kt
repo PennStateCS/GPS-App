@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * test and reports whether NMEA data arrived, satellites were visible, both, or neither.
  *
  * Use [runDiagnostic] from a coroutine once at startup or from a debug screen to verify
- * that [InternalNmeaSource] will actually produce data on the current device.
+ * that `InternalNmeaSource` will actually produce data on the current device.
  */
 class NmeaDiagnostics(private val context: Context) {
 

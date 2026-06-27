@@ -7,10 +7,10 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
- * Renders the ARCore point cloud as white [GL_POINTS].
+ * Renders the ARCore point cloud as white `GL_POINTS`.
  *
  * Call [draw] once per frame; returns the number of points rendered.
- * Automatically adjusts point size to the device's [GL_ALIASED_POINT_SIZE_RANGE].
+ * Automatically adjusts point size to the device's `GL_ALIASED_POINT_SIZE_RANGE`.
  */
 internal class PointCloudRenderer {
     private val program: Int

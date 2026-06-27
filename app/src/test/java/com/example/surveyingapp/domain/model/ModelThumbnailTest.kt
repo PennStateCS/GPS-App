@@ -61,5 +61,22 @@ class ModelThumbnailTest {
             if (temp.exists()) temp.delete()
         }
     }
+
+    /** Merged from the former root-level ModelThumbnailTest: a path that never existed is false. */
+    @Test
+    fun thumbnailFileExists_falseForNeverExistingPath() {
+        val model = Model(
+            id = "t2",
+            name = "Test2",
+            fileName = "model.obj",
+            filePath = "/tmp/model2.obj",
+            fileSize = 1L,
+            dateAdded = 0L,
+            fileType = FileType.MESH_MODEL,
+            thumbnailFileName = "nope.png",
+            thumbnailFilePath = "/no/such/path/nope.png"
+        )
+        assertFalse(model.thumbnailFileExists())
+    }
 }
 

@@ -13,6 +13,10 @@ import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
+import com.example.surveyingapp.BuildConfig
+import com.example.surveyingapp.domain.coordinates.CoordinateValidator
+import com.example.surveyingapp.domain.model.CaptureMethod
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.graphics.drawable.toDrawable
@@ -25,6 +29,7 @@ import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.model.CoordinateFactory
+import com.example.surveyingapp.domain.model.CoordinateModelLink
 import com.example.surveyingapp.domain.model.EmbeddedModelLocation
 import com.example.surveyingapp.domain.model.LocationSourceType
 import com.example.surveyingapp.domain.model.Model
@@ -67,6 +72,11 @@ import kotlin.math.roundToInt
 
 /** Default coordinate marker color (app primary blue). */
 private const val DEFAULT_COORDINATE_COLOR = 0xFF155DA8.toInt()
+
+/** Dev/emulator-only fallback position (Googleplex). Never used in production — see
+ *  [AddCoordinateDialogFragment.allowDevLocationFallback]. */
+private const val DEV_FALLBACK_LAT = 37.4219999
+private const val DEV_FALLBACK_LON = -122.0840575
 
 @AndroidEntryPoint
 class AddCoordinateDialogFragment(
@@ -486,8 +496,41 @@ class AddCoordinateDialogFragment(
 
     // ── Internal GPS instant capture ──────────────────────────────────────────
 
+    /** True only when a hardcoded dev fallback location may be used (debug build on an emulator). */
+    private val allowDevLocationFallback: Boolean
+        get() = BuildConfig.DEBUG && isProbablyEmulator()
+
+    private fun isProbablyEmulator(): Boolean {
+        val fp = Build.FINGERPRINT.orEmpty()
+        return fp.startsWith("generic") || fp.startsWith("unknown") ||
+            Build.MODEL.contains("Emulator", ignoreCase = true) ||
+            Build.MODEL.contains("Android SDK built for", ignoreCase = true) ||
+            Build.MANUFACTURER.contains("Genymotion", ignoreCase = true) ||
+            Build.BRAND.startsWith("generic") ||
+            Build.PRODUCT.contains("sdk", ignoreCase = true) ||
+            Build.HARDWARE.contains("goldfish", ignoreCase = true) ||
+            Build.HARDWARE.contains("ranchu", ignoreCase = true)
+    }
+
+    /** Applies a validated internal-GPS location and enables Save. */
+    private fun acceptInternalLocation(
+        lat: Double, lon: Double, alt: Double,
+        hAcc: Double?, vAcc: Double?, modeLabel: String,
+        method: CaptureMethod, suffix: String = ""
+    ) {
+        latitude = lat; longitude = lon; altitude = alt
+        providerStr = "fused"
+        captureMethodStr = method.storageValue
+        hAccVal = hAcc; vAccVal = vAcc
+        capturedTimestampMs = System.currentTimeMillis()
+        locationText?.text =
+            getString(R.string.location_label_with_mode, lat, lon, alt, modeLabel) + suffix
+        btnSave?.isEnabled = true
+    }
+
     private suspend fun fetchInternalOneShot() {
-        captureMethodStr = "internal_gps"
+        captureMethodStr = CaptureMethod.INTERNAL_GPS.storageValue
+        btnSave?.isEnabled = false   // stay disabled until a real, valid fix arrives
         val fineGranted = ActivityCompat.checkSelfPermission(
             requireContext(), Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
@@ -501,7 +544,7 @@ class AddCoordinateDialogFragment(
             return
         }
 
-        locationText?.text = getString(R.string.fetching_location)
+        locationText?.text = getString(R.string.fetching_location)  // "Waiting for location…"
 
         val fused: FusedLocationProviderClient =
             LocationServices.getFusedLocationProviderClient(requireActivity())
@@ -509,47 +552,57 @@ class AddCoordinateDialogFragment(
         val priority = if (fineGranted && highAccuracy)
             Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
 
+        // 1) Fresh one-shot fix.
         val result = withTimeoutOrNull(6_000L) {
             @Suppress("MissingPermission")
             fused.getCurrentLocation(priority, cts.token).awaitSafe()
         }
-        if (result != null) {
-            latitude = result.latitude
-            longitude = result.longitude
-            altitude = result.altitude
-            providerStr = "fused"
-            hAccVal = if (result.hasAccuracy()) result.accuracy.toDouble() else null
-            vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && result.hasVerticalAccuracy())
-                result.verticalAccuracyMeters.toDouble() else null
-            val mode = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL"
-            locationText?.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, mode)
-            capturedTimestampMs = System.currentTimeMillis()
-            btnSave?.isEnabled = true
+        if (result != null && CoordinateValidator.isValidLatLon(result.latitude, result.longitude)) {
+            acceptInternalLocation(
+                result.latitude, result.longitude, result.altitude,
+                hAcc = if (result.hasAccuracy()) result.accuracy.toDouble() else null,
+                vAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && result.hasVerticalAccuracy())
+                    result.verticalAccuracyMeters.toDouble() else null,
+                modeLabel = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL",
+                method = CaptureMethod.INTERNAL_GPS
+            )
             return
         }
 
+        // 2) Last-known fix (only if it is itself valid).
         val last = try {
             @Suppress("MissingPermission") fused.lastLocation.awaitSafe()
         } catch (_: Exception) { null }
-        if (last != null) {
-            latitude = last.latitude
-            longitude = last.longitude
-            altitude = last.altitude
+        if (last != null && CoordinateValidator.isValidLatLon(last.latitude, last.longitude)) {
+            acceptInternalLocation(
+                last.latitude, last.longitude, last.altitude,
+                hAcc = if (last.hasAccuracy()) last.accuracy.toDouble() else null,
+                vAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && last.hasVerticalAccuracy())
+                    last.verticalAccuracyMeters.toDouble() else null,
+                modeLabel = "LAST-KNOWN", method = CaptureMethod.INTERNAL_GPS, suffix = " (fallback)"
+            )
+            return
+        }
+
+        // 3) Developer/emulator-only fallback. NEVER runs in production: gated to debug builds
+        //    on an emulator, and tagged as a SIMULATOR capture so it is clearly not field data.
+        if (allowDevLocationFallback) {
+            latitude = DEV_FALLBACK_LAT; longitude = DEV_FALLBACK_LON; altitude = 0.0
             providerStr = "fused"
-            hAccVal = if (last.hasAccuracy()) last.accuracy.toDouble() else null
-            vAccVal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && last.hasVerticalAccuracy())
-                last.verticalAccuracyMeters.toDouble() else null
-            locationText?.text = getString(R.string.location_label_with_mode, latitude, longitude, altitude, "LAST-KNOWN") + " (fallback)"
+            captureMethodStr = CaptureMethod.SIMULATOR.storageValue
+            hAccVal = null; vAccVal = null
             capturedTimestampMs = System.currentTimeMillis()
+            locationText?.text = String.format(
+                Locale.US, "%.6f, %.6f (developer fallback — emulator)", latitude, longitude
+            )
             btnSave?.isEnabled = true
             return
         }
 
-        // Emulator fallback
-        latitude = 37.4219999; longitude = -122.0840575; altitude = 0.0; providerStr = "fused"
-        locationText?.text = String.format(Locale.US, "%.6f, %.6f, %.2fm (emulator fallback)", latitude, longitude, altitude)
-        capturedTimestampMs = System.currentTimeMillis()
-        btnSave?.isEnabled = true
+        // 4) No valid fix. Clear any stale position, show a friendly error, keep Save disabled.
+        latitude = 0.0; longitude = 0.0
+        locationText?.text = getString(R.string.location_fix_failed)
+        btnSave?.isEnabled = false
     }
 
     // ── Save ──────────────────────────────────────────────────────────────────
@@ -557,7 +610,13 @@ class AddCoordinateDialogFragment(
     private fun handleSave() {
         val name = nameEdit?.text?.toString()?.ifBlank { "Unnamed Coordinate" } ?: "Unnamed Coordinate"
         val note = noteEdit?.text?.toString()?.trim()?.ifBlank { null }
-        val icon = selectedIconKey ?: ""
+
+        // Split the (legacy) selected icon into the explicit model/built-in fields. The legacy
+        // `icon` column is still written for backward compatibility until Stage 4 flips consumers.
+        val rawIcon = selectedIconKey
+        val linkedModelId = CoordinateModelLink.resolveModelId(null, rawIcon)
+        val builtinIconKey = CoordinateModelLink.resolveIconKey(null, null, rawIcon)
+        val legacyIcon = rawIcon ?: ""
 
         if (isExternalMode) {
             val completedState = captureVm.state.value as? ObservationSession.State.Complete ?: return
@@ -581,14 +640,15 @@ class AddCoordinateDialogFragment(
                     name          = name,
                     note          = note,
                     color         = DEFAULT_COORDINATE_COLOR,
-                    iconId        = icon,
+                    iconId        = legacyIcon,
                     provider      = Provider.RS2_EXTERNAL,
                     result        = completedState.result,
-                    captureMethod = "external_gnss",
-                    sourceDevice  = sourceDevice
+                    captureMethod = CaptureMethod.EXTERNAL_GNSS.storageValue,
+                    sourceDevice  = sourceDevice,
+                    modelId       = linkedModelId,
+                    iconKey       = builtinIconKey
                 )
-                onPointAdded(coordinate)
-                dismissAllowingStateLoss()
+                if (persistIfValid(coordinate)) dismissAllowingStateLoss()
             }
         } else {
             val utm = try { UtmConverter.latLonToUtm(latitude, longitude) } catch (_: Exception) { null }
@@ -599,7 +659,7 @@ class AddCoordinateDialogFragment(
                 longitude           = longitude,
                 altitude            = altitude,
                 timestamp           = capturedTimestampMs,
-                icon                = icon,
+                icon                = legacyIcon,
                 color               = DEFAULT_COORDINATE_COLOR,
                 provider            = providerStr,
                 rtkStatus           = rtkStatusStr,
@@ -627,11 +687,34 @@ class AddCoordinateDialogFragment(
                 captureMethod       = captureMethodStr,
                 stdLatM             = stdLatVal,
                 stdLonM             = stdLonVal,
-                stdAltM             = stdAltVal
+                stdAltM             = stdAltVal,
+                // v10 explicit model association + audit timestamps
+                modelId             = linkedModelId,
+                iconKey             = builtinIconKey,
+                renderEnabled       = true,
+                createdAt           = capturedTimestampMs,
+                updatedAt           = capturedTimestampMs
             )
-            onPointAdded(coordinate)
-            dismissAllowingStateLoss()
+            if (persistIfValid(coordinate)) dismissAllowingStateLoss()
         }
+    }
+
+    /**
+     * Validates [coordinate] and forwards it when valid (returns true). When invalid, shows a
+     * user-friendly message, disables Save, and keeps the dialog open (returns false) so an
+     * invalid coordinate — out-of-range, NaN, or 0,0 — can never be persisted.
+     */
+    private fun persistIfValid(coordinate: Coordinate): Boolean {
+        val validation = CoordinateValidator.validate(coordinate)
+        if (!validation.isValid) {
+            val msg = validation.errors.firstOrNull() ?: "Invalid coordinate"
+            DiagnosticsLogger.w("Capture", "Save blocked: ${validation.errors.joinToString()}")
+            if (isAdded) Toast.makeText(requireContext(), "Can't save: $msg", Toast.LENGTH_LONG).show()
+            btnSave?.isEnabled = false
+            return false
+        }
+        onPointAdded(coordinate)
+        return true
     }
 
     // ── Model selection + embedded-location detection ─────────────────────────
@@ -697,7 +780,7 @@ class AddCoordinateDialogFragment(
                 longitude = embedded.longitude
                 altitude = embedded.altitudeMeters ?: altitude
                 providerStr = "model"
-                captureMethodStr = "model_embedded"
+                captureMethodStr = CaptureMethod.MODEL_EMBEDDED.storageValue
                 locationText?.text = String.format(
                     Locale.US, "From model: %.6f, %.6f, %.2fm", latitude, longitude, altitude
                 )
@@ -713,7 +796,7 @@ class AddCoordinateDialogFragment(
     }
 
     private fun applySelectedModel(modelId: String, name: String?, thumbnailPath: String?) {
-        selectedIconKey = "model:$modelId"
+        selectedIconKey = CoordinateModelLink.toLegacyIcon(modelId)
         val button = btnModel ?: return
         button.text = name ?: "Selected model"
         if (thumbnailPath.isNullOrBlank()) {

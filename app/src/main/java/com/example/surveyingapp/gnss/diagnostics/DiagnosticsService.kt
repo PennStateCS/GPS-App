@@ -25,7 +25,7 @@ data class DiagnosticData(
 /**
  * Tracks NMEA throughput and error rates for the Developer Tools screen.
  *
- * Both [InternalNmeaSource] and [TcpNmeaSource] feed raw NMEA lines here before
+ * Both `InternalNmeaSource` and `TcpNmeaSource` feed raw NMEA lines here before
  * passing them to the fuser. The service counts lines, tracks errors, and keeps a
  * rolling list of the last 20 sentences — enough to spot obvious receiver problems
  * without the overhead of a full NMEA log.
