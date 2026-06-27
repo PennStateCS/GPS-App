@@ -3,6 +3,10 @@ package app.surrealar.domain.coordinates
 import app.surrealar.domain.model.Coordinate
 
 // Supporting data classes for coordinate statistics (moved out of the repository contract).
+/**
+ * Aggregate summary over a set of saved coordinates: total count, per-provider and per-RTK-status
+ * counts, mean accuracy, date range, and bounding box.
+ */
 data class CoordinateStats(
     val totalCount: Int,
     val countByProvider: Map<String, Int>,
@@ -12,6 +16,10 @@ data class CoordinateStats(
     val boundingBox: BoundingBox?
 )
 
+/**
+ * Accuracy-focused summary: mean horizontal/vertical accuracy and HDOP, best/worst accuracy, and a
+ * bucketed accuracy distribution.
+ */
 data class AccuracyStats(
     val meanHorizontalAccuracy: Double?,
     val meanVerticalAccuracy: Double?,
@@ -21,6 +29,10 @@ data class AccuracyStats(
     val accuracyDistribution: Map<String, Int> // e.g., "0-1m": 50, "1-5m": 30, etc.
 )
 
+/**
+ * Lat/lon extent of a coordinate set, with center/size helpers. A structurally identical
+ * `BoundingBox` also lives in `domain.model` (model footprints); kept separate per layer.
+ */
 data class BoundingBox(
     val minLat: Double,
     val maxLat: Double,
