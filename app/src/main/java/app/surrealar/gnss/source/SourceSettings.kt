@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.*
 /** Default NMEA/TCP port for many receivers. */
 private const val DEFAULT_NMEA_PORT = 9000
 
+/**
+ * A saved external-receiver TCP target ([host]:[port], identified by [id]/[name]). [port] defaults to
+ * the common NMEA port. Construction requires a non-blank host.
+ */
 data class ConnectionProfile(
     val id: String,
     val name: String,

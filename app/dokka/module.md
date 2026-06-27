@@ -135,17 +135,26 @@ than carrying stale values forward, and callers must treat an old snapshot as st
 # Package app.surrealar.gnss.bus
 
 In-memory routing of live GNSS data from the active source to UI/consumers. `FixSwitchboard` selects
-exactly one active source and republishes its fixes/sky data through `FixBus` and `SkyBus`; `NmeaFuser`
-drives accumulation, and `SourceAdapter`/`NmeaSource` abstract the producers. On source switch the
-buses must reset so a new source never inherits the previous one's fix or satellite data.
+exactly one active source (a `SourceAdapter`/`SkyProvider`) and republishes its fixes/sky data through
+`FixBus` and `SkyBus`. On source switch the buses must reset so a new source never inherits the
+previous one's fix or satellite data. The concrete producers and the NMEA fusion live in
+`gnss.bus.adapters`.
+
+# Package app.surrealar.gnss.bus.adapters
+
+Adapter-side contracts and NMEA fusion behind the buses. `NmeaSource`/`RawNmeaProvider` are the
+producer interfaces a source implements; `NmeaFuser` consumes raw NMEA and drives a `FixAccumulator`
+to publish fused fixes; `GsvMessage`/`GsvEntry` carry normalised satellite data. A malformed or
+partial sentence must not break fusion — it updates only what parsed.
 
 # Package app.surrealar.gnss.model
 
-Shared GNSS value types: `Fix`, `FixSnapshot` inputs, `Provider`, `RtkStatus`, `ConnectionStatus`,
-`Constellation`, and satellite/sky models (`SatInfo`, `SkySnapshot`, `SkyGeometry`). These are plain
-data carriers with no Android dependencies. Enum fallbacks (`UNKNOWN`/`OTHER`) mean "not reported by
-this receiver", not "none" — quality fields (RTK status, DOP, satellite counts) are indicators that
-may be absent or receiver-specific, never guarantees.
+Shared GNSS value types that feed the fused `gnss.accumulator.FixSnapshot`: `Fix`, `Provider`,
+`RtkStatus`, `ConnectionStatus`, `LocationStatus`, `TimestampSource`, `Constellation`, and the
+satellite/sky models (`SatInfo`, `SkySnapshot`, `SkySource`, `SkyGeometry`). These are plain data
+carriers with no Android dependencies. Enum fallbacks (`UNKNOWN`/`OTHER`) mean "not reported by this
+receiver", not "none" — quality fields (RTK status, DOP, satellite counts) are indicators that may be
+absent or receiver-specific, never guarantees.
 
 # Package app.surrealar.gnss.nmea.parse
 

@@ -11,6 +11,7 @@ import app.surrealar.gnss.model.Fix
  */
 object AccuracyEstimator {
 
+    /** Horizontal/vertical 1-sigma accuracy in metres; either is null when it could not be estimated. */
     data class Accuracy1Sigma(
         val horizontalMeters: Double?,
         val verticalMeters: Double?

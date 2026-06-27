@@ -72,6 +72,10 @@ class ExternalAdapter(
     private val _rawNmea = MutableSharedFlow<Unit>(extraBufferCapacity = 32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     override val rawNmea: SharedFlow<Unit> = _rawNmea.asSharedFlow()
 
+    /**
+     * Lifecycle of the external receiver socket. `RECONNECTING` is an automatic retry after a drop;
+     * `ERROR` is a failed attempt; `CANCELLED` is a user/explicit stop. Exposed via [connectionState].
+     */
     enum class ConnectionState { DISCONNECTED, CONNECTING, RECONNECTING, CONNECTED, ERROR, CANCELLED }
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()

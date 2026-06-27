@@ -21,6 +21,12 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Singleton owner of Emlid Reach device state (info, storage, connection, battery) over its HTTP API,
+ * keyed off the configured connection profile in [SourceSettings]/`ExternalReceiverSettingsRepository`.
+ * Polls/exposes device data on an IO scope; it does not handle the NMEA fix stream (that is the
+ * external NMEA source). Network failures surface as state rather than throwing.
+ */
 @Singleton
 class ReachDeviceRepository @Inject constructor(
     private val sourceSettings: SourceSettings,

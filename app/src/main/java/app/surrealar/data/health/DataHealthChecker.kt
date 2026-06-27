@@ -60,6 +60,11 @@ class DataHealthChecker @Inject constructor(
     private val modelDao: ModelDao
 ) {
 
+    /**
+     * Reads all coordinates and models and returns a [DataHealthReport] of detected issues. Runs on
+     * the IO dispatcher and only reads — it never repairs or deletes anything; acting on the findings
+     * is the caller's responsibility.
+     */
     suspend fun check(): DataHealthReport = withContext(Dispatchers.IO) {
         analyze(coordinateDao.getAllCoordinatesList(), modelDao.getAllModelsList())
     }
