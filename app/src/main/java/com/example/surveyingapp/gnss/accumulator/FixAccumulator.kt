@@ -205,11 +205,11 @@ class FixAccumulator {
         }
     }
 
-    private fun sumIfFinite(a: Double?, b: Double?): Double? {
-        return if (a.isFinite() && b.isFinite()) a!! + b!! else null
-    }
-
-    private fun Double?.isFinite(): Boolean = this != null && this.isFinite()
+    private fun sumIfFinite(a: Double?, b: Double?): Double? =
+        // Note: the finite check uses the smart-cast non-null receiver so it resolves to the
+        // stdlib Double.isFinite() — a former private `Double?.isFinite()` extension here shadowed
+        // the stdlib one and recursed infinitely (StackOverflowError).
+        if (a != null && b != null && a.isFinite() && b.isFinite()) a + b else null
 
     /**
      * Maps standard GGA fix-quality values to the app's RTK status labels.
