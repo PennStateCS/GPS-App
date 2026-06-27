@@ -361,7 +361,7 @@ class CoordinateDetailFragment : Fragment() {
     // ── Dynamic row helper ─────────────────────────────────────────────────────
 
     /**
-     * Inflates [item_coord_detail_row] into [container] with the given label/value.
+     * Inflates the `item_coord_detail_row` layout into [container] with the given label/value.
      * A thin divider is prepended before each row after the first.
      */
     private fun addDetailRow(container: LinearLayout?, label: String, value: String) {

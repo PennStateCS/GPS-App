@@ -27,7 +27,7 @@ import java.util.Collections
 /**
  * Renders GLB models at ARCore geospatial anchor positions using Filament.
  *
- * Attaches to a [TextureView] with [isOpaque] = false that sits on top of the
+ * Attaches to a [TextureView] with `isOpaque` = false that sits on top of the
  * existing camera-background [android.opengl.GLSurfaceView] in the layout.
  * Filament clears to transparent (RGBA 0,0,0,0) each frame so the camera feed
  * shows through wherever no model is rendered.
@@ -74,7 +74,7 @@ class ArFilamentRenderer {
     private data class CachedAsset(
         val asset: FilamentAsset,
         /**
-         * True once [scene.addEntities] has been called for this asset.
+         * True once `scene.addEntities` has been called for this asset.
          */
         var addedToScene: Boolean = false,
         /**
@@ -298,7 +298,7 @@ class ArFilamentRenderer {
      * ARCore anchors are tracking or the TextureView surface has been created.
      *
      * @param poses The current set of model poses; used to (a) remove stale test-grid assets
-     *              and (b) call [scene.addEntities] / [TransformManager.setTransform] for each
+     *              and (b) call `scene.addEntities` / [TransformManager.setTransform] for each
      *              asset that has just finished uploading.
      */
     fun tickAndApplyLoads(poses: List<ModelPose>) {
@@ -515,7 +515,7 @@ class ArFilamentRenderer {
 
     /**
      * Release all Filament resources.
-     * Engine.destroy() is deferred by 50 ms (same workaround as [ModelViewerActivity])
+     * Engine.destroy() is deferred by 50 ms (same workaround as `ModelViewerActivity`)
      * to avoid the SIGABRT that occurs when the deferred UiHelper cleanup message runs
      * after the engine has already been destroyed.
      *
@@ -590,7 +590,7 @@ class ArFilamentRenderer {
         private const val FAR_PLANE  = 2000.0
         private const val TEST_GRID_KEY_PREFIX = "test_grid_"
         /**
-         * Minimum number of [tickAndApplyLoads] calls that must occur after [asyncBeginLoad]
+         * Minimum number of [tickAndApplyLoads] calls that must occur after `asyncBeginLoad`
          * before an asset is added to the scene via the tick-based fallback path.
          * 5 ticks ≈ 83 ms at 60 fps — enough for mesh-buffer uploads queued inside
          * asyncBeginLoad() to drain through the Filament backend command queue.

@@ -174,7 +174,17 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     modelOriginOffsetZM = modelOriginOffsetZM
 )
 
-/** Map a domain Coordinate back to a CoordinateEntity for DB writes. */
+/**
+ * Maps a domain [Coordinate] back to a [CoordinateEntity] for DB writes.
+ *
+ * Invariants preserved here:
+ * - the provider string round-trips through [Provider] without degrading (notably `rs2-external`
+ *   stays `RS2_EXTERNAL`, not `RS2_TCP`);
+ * - `createdAt`/`updatedAt` fall back to `timestamp` when unset (0), so rows written through paths
+ *   that don't set audit times (e.g. legacy import) still get sensible values.
+ *
+ * Every field must round-trip with [toDomain]; changing one side requires changing the other.
+ */
 fun Coordinate.toEntity(): CoordinateEntity =
     CoordinateEntity(
         id = id,

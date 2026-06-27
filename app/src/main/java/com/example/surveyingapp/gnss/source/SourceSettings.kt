@@ -22,15 +22,15 @@ data class ConnectionInfo(val host: String, val port: Int)
  * Manages GNSS provider selection and TCP connection profiles.
  *
  * Provider switching is reactive: update [_activeProvider] via [setActiveProvider] and
- * [FixSwitchboard] will automatically route to the corresponding [SourceAdapter].
+ * `FixSwitchboard` will automatically route to the corresponding `SourceAdapter`.
  *
  * **Profile Support (Future)**: Connection profiles allow multiple named TCP endpoints to be
  * stored and selected without restarting the app. The active profile is resolved lazily via
  * [getConnectionInfo] / [connectionInfoFlow].
  *
  * **Current Status**: Profiles are initialized empty and not yet populated from UI. TCP
- * connection parameters are read from [SettingsRepository] by [TcpNmeaSource]. Once profile
- * UI is implemented, [TcpNmeaSource] can switch to using [getConnectionInfo] instead.
+ * connection parameters are read from `SettingsRepository` by `TcpNmeaSource`. Once profile
+ * UI is implemented, `TcpNmeaSource` can switch to using [getConnectionInfo] instead.
  */
 class SourceSettings(
     private val _activeProvider: MutableStateFlow<ProviderChoice>,
@@ -54,7 +54,7 @@ class SourceSettings(
      * - [EXTERNAL_TCP] — External GNSS receiver connected over TCP/IP (e.g. RS2+, u-blox, Reach)
      *
      * The enum is transport-level, not device-specific, so adding a new provider only requires
-     * a new [SourceAdapter] implementation and a new entry here.
+     * a new `SourceAdapter` implementation and a new entry here.
      */
     enum class ProviderChoice { INTERNAL, EXTERNAL_TCP }
 
@@ -75,7 +75,7 @@ class SourceSettings(
 
     /**
      * Emits whenever the active profile changes.
-     * [ExternalAdapter] / [TcpNmeaSource] can collect this to (re)connect automatically.
+     * `ExternalAdapter` / `TcpNmeaSource` can collect this to (re)connect automatically.
      */
     val connectionInfoFlow: Flow<ConnectionInfo?> =
         activeProfileFlow

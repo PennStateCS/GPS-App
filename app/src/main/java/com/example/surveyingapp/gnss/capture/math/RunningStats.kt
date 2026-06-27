@@ -9,7 +9,7 @@ package com.example.surveyingapp.gnss.capture.math
  *
  * This is useful for GNSS capture because ECEF coordinates can be large numbers
  * with small changes between samples. A naive variance formula such as
- * E[x²] - E[x]² can lose precision when values are large and tightly clustered.
+ * `E[x²] - E[x]²` can lose precision when values are large and tightly clustered.
  * Welford's method avoids most of that cancellation error.
  */
 class RunningStats {

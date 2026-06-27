@@ -32,11 +32,11 @@ import kotlin.coroutines.coroutineContext
 /**
  * [NmeaSource] that reads NMEA sentences from an external GNSS receiver over TCP.
  *
- * Connection parameters (host/port) are read from [SettingsRepository].
+ * Connection parameters (host/port) are read from `SettingsRepository`.
  *
  * **Future**: [SourceSettings] is wired for multi-profile support but profiles are not yet
  * populated from UI. When profile UI is implemented, this class can switch to using
- * [SourceSettings.getConnectionInfo] instead of [SettingsRepository] for connection parameters.
+ * [SourceSettings.getConnectionInfo] instead of `SettingsRepository` for connection parameters.
  *
  * This source makes a **single connection attempt** and streams until the connection drops or
  * [stop] is called. Reconnection logic (with exponential back-off) is the responsibility of
@@ -91,7 +91,7 @@ class TcpNmeaSource(
     @Volatile private var firstDataLogged = false
 
     /**
-     * Reads host/port from [SettingsRepository] and initiates a single TCP connection attempt.
+     * Reads host/port from `SettingsRepository` and initiates a single TCP connection attempt.
      * The connection streams lines until the remote closes it, a read error occurs, or [stop]
      * is called. Reconnection with exponential back-off is the responsibility of [ExternalAdapter].
      */

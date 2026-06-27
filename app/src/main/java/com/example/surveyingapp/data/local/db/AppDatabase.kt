@@ -11,6 +11,18 @@ import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
 import com.example.surveyingapp.data.local.entity.ModelEntity
 
+/**
+ * The single Room database — source of truth for saved **coordinates** and imported **model
+ * metadata**. Settings are NOT stored here (they live in the DataStore; see
+ * `com.example.surveyingapp.data.settings`).
+ *
+ * Invariants:
+ * - There is exactly one connection per process; obtain it through Hilt (`DatabaseModule`) which
+ *   delegates to [getDatabase]. Do not open a second builder.
+ * - The migration chain is contiguous and **additive**; every version bump must preserve all saved
+ *   field data (see `Migrations.kt`). The destructive fallback is debug-only and never runs in
+ *   release.
+ */
 @Database(
     entities = [CoordinateEntity::class, ModelEntity::class],
     // Schema history (see exported JSON in app/schemas):

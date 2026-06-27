@@ -13,14 +13,14 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Manages GLB file validation and load-state caching so the AR renderer always
  * knows the status of each assigned model.  The [draw] method currently delegates
- * to a plain GLES30 cube (via the [fallback] lambda) and visually encodes load
+ * to a plain GLES30 cube (via the `fallback` lambda) and visually encodes load
  * state through colour:
  *
  *   • Grey  — model is being validated / not yet requested
  *   • Cyan  — model file is valid and ready  (will render the actual GLB in Phase 2)
  *   • Red   — file missing or invalid GLB magic bytes
  *
- * Phase 2 (Filament integration) will replace the [fallback] call in the [LOADED]
+ * Phase 2 (Filament integration) will replace the `fallback` call in the `LOADED`
  * branch with a proper GLB geometry upload + Filament render pass.
  */
 class ArModelRenderer(private val scope: CoroutineScope) {
@@ -37,8 +37,8 @@ class ArModelRenderer(private val scope: CoroutineScope) {
      * Begin background validation of the GLB at [filePath].
      * Idempotent — duplicate calls for the same path are no-ops.
      *
-     * Call this as soon as you know a coordinate has a model assigned (e.g. in
-     * [rebuildGeoAnchorsIfNeeded]) so validation completes before the anchor
+     * Call this as soon as you know a coordinate has a model assigned (e.g. when
+     * rebuilding geo-anchors) so validation completes before the anchor
      * is first rendered.
      */
     fun preload(filePath: String) {
@@ -104,7 +104,7 @@ class ArModelRenderer(private val scope: CoroutineScope) {
         }
     }
 
-    /** Release all cached state (call from [onDestroyView]). */
+    /** Release all cached state (call from `onDestroyView`). */
     fun clear() = cache.clear()
 
     companion object {

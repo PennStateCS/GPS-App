@@ -9,8 +9,8 @@ import java.time.Duration
 /**
  * Factory + helpers for constructing Coordinate domain models.
  *
- * The preferred path for live captures is [toEntityFromFix] in CoordinateMappers,
- * which works directly with the typed [Fix] model. This factory targets the legacy
+ * The preferred path for live captures is `toEntityFromFix` in CoordinateMappers,
+ * which works directly with the typed `Fix` model. This factory targets the legacy
  * [FixSnapshot] accumulator and is kept for compatibility.
  *
  * Semantics:
@@ -23,7 +23,7 @@ object CoordinateFactory {
      * Builds a [Coordinate] from a [FixSnapshot].
      *
      * @param provider The display/storage string for the GNSS source (e.g. "fused", "rs2-tcp").
-     *                 Defaults to "fused". Do NOT pass [fix.timestampSource.name] — that gives
+     *                 Defaults to "fused". Do NOT pass `fix.timestampSource.name` — that gives
      *                 the clock source ("DEVICE", "NMEA_ZDA"), not the GNSS receiver.
      */
     fun fromFix(
