@@ -12,6 +12,12 @@ import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * [ModelRepository] backed by [ModelDao]. The boundary between [ModelEntity] rows and domain `Model`
+ * objects: it maps every persisted field (including file type, bounding box, and placement/health
+ * metadata) in both directions and must not drop data on round-trip. It owns model-file lifecycle via
+ * `ModelFileCleaner`; deleting a model removes both the row and its file.
+ */
 class ModelRepositoryImpl @javax.inject.Inject constructor(private val modelDao: ModelDao) : ModelRepository {
 
     private fun getFileTypeFromExtension(fileName: String): FileType {

@@ -25,7 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import app.surrealar.R
-import app.surrealar.SurveyingApp
+import app.surrealar.SurRealApplication
 import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.data.backup.BackupImportPlanner
 import app.surrealar.data.backup.ImportMode
@@ -1392,7 +1392,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     var lastShownError: AndroidMockLocationPublisher.MockLocationError? = null
-                    SurveyingApp.mockLocationPublisher.errorEvents.collect { error ->
+                    SurRealApplication.mockLocationPublisher.errorEvents.collect { error ->
                         val msg = when (error) {
                             AndroidMockLocationPublisher.MockLocationError.NOT_PERMITTED ->
                                 "Mock location is not enabled for this app. Open Developer Options and select this app as the mock location app."

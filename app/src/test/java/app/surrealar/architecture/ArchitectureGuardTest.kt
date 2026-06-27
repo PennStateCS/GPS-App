@@ -86,7 +86,7 @@ class ArchitectureGuardTest {
     // MainActivity); see docs/settings-architecture.md.
 
     @Test
-    fun `no new SurveyingApp_settingsRepo service-locator usage`() {
+    fun `no new SurRealApplication_settingsRepo service-locator usage`() {
         val allow = setOf(
             // PERMANENT: Hilt bridges SettingsRepository through the app singleton so there is
             // exactly one SettingsLocalDataSource/DataStore (SettingsModule.provideSettingsRepository).
@@ -97,9 +97,9 @@ class ArchitectureGuardTest {
             "app/surrealar/util/diagnostics/SettingsSnapshotCollector.kt",
         )
         enforce(
-            rule = "Direct service-locator access to SurveyingApp.settingsRepo",
+            rule = "Direct service-locator access to SurRealApplication.settingsRepo",
             preferred = "Inject SettingsRepository via Hilt (@Inject field / @HiltViewModel constructor)",
-            violations = scan(Regex("""SurveyingApp\.settingsRepo"""), allow),
+            violations = scan(Regex("""SurRealApplication\.settingsRepo"""), allow),
         )
     }
 
@@ -113,7 +113,7 @@ class ArchitectureGuardTest {
         )
         enforce(
             rule = "Direct AppDatabase.getDatabase(...) construction",
-            preferred = "Inject AppDatabase / a DAO / a repository via Hilt (e.g. SurveyingApp's UTM backfill uses the Hilt EntryPoint)",
+            preferred = "Inject AppDatabase / a DAO / a repository via Hilt (e.g. SurRealApplication's UTM backfill uses the Hilt EntryPoint)",
             violations = scan(Regex("""AppDatabase\.getDatabase\("""), allow),
         )
     }
@@ -199,16 +199,16 @@ class ArchitectureGuardTest {
     fun `SettingsRepositoryImpl is only constructed by the approved owner`() {
         // Exactly one production SettingsRepositoryImpl may exist so there is one Preferences
         // DataStore over the app_settings file (a second instance crashes at runtime). It is built
-        // by SurveyingApp.setupSettings() and bridged through Hilt. Tests live outside this scanned
+        // by SurRealApplication.setupSettings() and bridged through Hilt. Tests live outside this scanned
         // root (app/src/main/java) and may construct their own over isolated temp DataStores.
         val allow = setOf(
             // PERMANENT: the single approved construction site.
-            "app/surrealar/SurveyingApp.kt",
+            "app/surrealar/SurRealApplication.kt",
             // PERMANENT: the class's own declaration (`class SettingsRepositoryImpl(...)`).
             "app/surrealar/data/settings/repository/SettingsRepositoryImpl.kt",
         )
         enforce(
-            rule = "SettingsRepositoryImpl(...) constructed outside SurveyingApp.setupSettings()",
+            rule = "SettingsRepositoryImpl(...) constructed outside SurRealApplication.setupSettings()",
             preferred = "Inject SettingsRepository (or a focused settings interface) via Hilt; it bridges to the one singleton",
             violations = scan(Regex("""SettingsRepositoryImpl\("""), allow),
         )

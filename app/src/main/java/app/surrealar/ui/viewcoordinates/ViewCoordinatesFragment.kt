@@ -145,7 +145,7 @@ class ViewCoordinatesFragment : Fragment() {
                 }
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, "Surveying Data Export")
-                putExtra(Intent.EXTRA_TEXT, "Exported surveying coordinates from SurveyingApp")
+                putExtra(Intent.EXTRA_TEXT, "Exported surveying coordinates from SurReal AR")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 

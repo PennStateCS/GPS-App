@@ -251,7 +251,7 @@ tasks.matching { it.name == "validateSigningDebug" }.configureEach {
 // Generates HTML developer reference for the `main` source set only (tests/generated code are
 // excluded by default). Output: app/build/dokka/html. Run with `:app:dokkaGenerate`.
 dokka {
-    moduleName.set("Surveying App Developer API")
+    moduleName.set("SurReal AR Developer API")
     dokkaSourceSets.configureEach {
         // Module/package overview shown on the docs landing page.
         includes.from("dokka/module.md")

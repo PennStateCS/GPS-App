@@ -10,6 +10,13 @@ import java.io.FileWriter
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
+/**
+ * Writes captured fixes to a GeoJSON `FeatureCollection` file for use in GIS tools.
+ *
+ * Like [CsvExporter] this is a lossy interchange export, not a backup: it carries point geometry and
+ * basic properties only. Use `CoordinateBackup` when full-fidelity restore is needed. Returns the
+ * written [File].
+ */
 class GeoJsonExporter {
 
     fun exportToGeoJson(context: Context, fixes: List<Fix>): File {

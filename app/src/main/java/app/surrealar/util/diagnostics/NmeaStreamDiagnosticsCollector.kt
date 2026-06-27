@@ -1,7 +1,7 @@
 package app.surrealar.util.diagnostics
 
 import android.content.Context
-import app.surrealar.SurveyingAppEntryPoint
+import app.surrealar.SurRealApplicationEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.first
 
@@ -16,7 +16,7 @@ object NmeaStreamDiagnosticsCollector {
 
     suspend fun collect(context: Context): String = try {
         val ep = EntryPointAccessors.fromApplication(
-            context.applicationContext, SurveyingAppEntryPoint::class.java
+            context.applicationContext, SurRealApplicationEntryPoint::class.java
         )
         val repo = ep.settingsRepository()
         val profile = runCatching { repo.externalReceiverProfile.first() }.getOrNull()

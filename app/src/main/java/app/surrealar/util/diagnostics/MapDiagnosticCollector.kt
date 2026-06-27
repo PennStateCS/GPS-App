@@ -8,7 +8,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.core.content.ContextCompat
 import app.surrealar.BuildConfig
-import app.surrealar.SurveyingApp
+import app.surrealar.SurRealApplication
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
 import java.security.MessageDigest
@@ -61,7 +61,7 @@ object MapDiagnosticCollector {
         sb.appendLine("--- Google Play Services ---")
         sb.appendLine("Availability            : ${playServicesStatus(context)}")
         sb.appendLine("Installed GMS version   : ${gmsVersion(context)}")
-        sb.appendLine("Maps renderer (active)  : ${SurveyingApp.activeMapsRenderer}")
+        sb.appendLine("Maps renderer (active)  : ${SurRealApplication.activeMapsRenderer}")
         sb.appendLine()
 
         // --- Network ---
@@ -71,7 +71,7 @@ object MapDiagnosticCollector {
 
         // --- Map lifecycle / runtime ---
         sb.appendLine("--- Map runtime ---")
-        sb.appendLine("Last map load status    : ${SurveyingApp.mapLoadStatus}")
+        sb.appendLine("Last map load status    : ${SurRealApplication.mapLoadStatus}")
         sb.appendLine("  (MAP_READY = map object ready; MAP_LOADED = tiles drawn;")
         sb.appendLine("   'MAP_READY but MAP_LOADED did not fire' = tiles never rendered → usually auth/key/network)")
         sb.appendLine()

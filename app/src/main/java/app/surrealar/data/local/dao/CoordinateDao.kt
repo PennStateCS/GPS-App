@@ -7,6 +7,12 @@ import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.RtkStatus
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Room access to the `coordinates` table. Reads return [CoordinateEntity] rows (or projections such
+ * as [RtkStatusCount]); mapping to domain `Coordinate` happens in the repository, not here. Observed
+ * queries (`LiveData`/`Flow`) emit on every table change. Note the bulk and delete operations
+ * (`deleteByIds`, etc.) — they are unconditional, so callers own the confirm/undo policy.
+ */
 @Dao
 interface CoordinateDao {
     // --- Core retrieval ---
@@ -106,6 +112,7 @@ interface CoordinateDao {
     suspend fun deleteByIds(ids: List<String>)
 }
 
+/** Aggregate projection: how many stored coordinates have each [RtkStatus]. [status] is null for rows whose status was never recorded. */
 data class RtkStatusCount(
     val status: RtkStatus?,   // now typed
     val count: Int

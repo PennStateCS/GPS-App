@@ -302,7 +302,7 @@ class RenderMapFragment : Fragment() {
         // On the FIRST map open of a session, seed the session state from the durable MapSettings
         // defaults (default map type/grid/labels, show-my-location, tools/drawer). After that, the
         // session ViewModel preserves the user's in-session choices across navigation. The DataStore
-        // read is fast/cached; SurveyingApp uses the same runBlocking pattern for the startup theme.
+        // read is fast/cached; SurRealApplication uses the same runBlocking pattern for the startup theme.
         if (!mapUiVm.seededFromDefaults) {
             runCatching { kotlinx.coroutines.runBlocking { mapSettingsRepo.mapSettings.first() } }
                 .getOrNull()?.let { mapUiVm.seedFromDefaults(it) }

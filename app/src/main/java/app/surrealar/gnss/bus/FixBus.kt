@@ -16,6 +16,13 @@ interface FixBus {
     val fixes: SharedFlow<Fix>
 }
 
+/**
+ * Current satellite/sky state for skyplot and signal views.
+ *
+ * Unlike [FixBus], which streams discrete fixes, this exposes the latest [SkySnapshot] as state.
+ * The value is replaced wholesale on each receiver update; on a source switch it must be reset so a
+ * new source never shows the previous one's satellites.
+ */
 interface SkyBus {
     val sky: StateFlow<SkySnapshot>
 }

@@ -1,4 +1,4 @@
-# 📐 Surveying App
+# 📐 SurReal AR
 
 [![Android](https://img.shields.io/badge/Android-7.0%2B-brightgreen?logo=android)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9-blue?logo=kotlin)](https://kotlinlang.org)

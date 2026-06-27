@@ -25,7 +25,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.fragment.findNavController
 import app.surrealar.R
-import app.surrealar.SurveyingApp
+import app.surrealar.SurRealApplication
 import app.surrealar.databinding.FragmentHomeBinding
 import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.repository.ModelRepository
@@ -607,9 +607,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @SuppressLint("MissingPermission")
     override fun onMapReady(map: GoogleMap) {
         try {
-            android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${app.surrealar.SurveyingApp.activeMapsRenderer}")
-            DiagnosticsLogger.i("HomeMap", "MAP_READY mapsRenderer=${SurveyingApp.activeMapsRenderer}")
-            SurveyingApp.reportMapLoadStatus("MAP_READY")
+            android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${app.surrealar.SurRealApplication.activeMapsRenderer}")
+            DiagnosticsLogger.i("HomeMap", "MAP_READY mapsRenderer=${SurRealApplication.activeMapsRenderer}")
+            SurRealApplication.reportMapLoadStatus("MAP_READY")
             googleMap = map
 
             val playServicesVersion = try {
@@ -661,14 +661,14 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 android.util.Log.d(TAG, "Map tiles loaded: ${elapsed}ms after onMapReady, " +
                     "zoom=${cam.zoom}, lat=${cam.target.latitude}, lon=${cam.target.longitude}")
                 DiagnosticsLogger.i("HomeMap", "MAP_LOADED elapsed=${elapsed}ms zoom=%.1f".format(cam.zoom))
-                SurveyingApp.reportMapLoadStatus("MAP_LOADED (${elapsed}ms)")
+                SurRealApplication.reportMapLoadStatus("MAP_LOADED (${elapsed}ms)")
             }
             // Warn if tiles never load within 10 s (blank/gray map scenario)
             viewLifecycleOwner.lifecycleScope.launch {
                 delay(10_000)
                 if (!mapTilesLoaded) {
                     DiagnosticsLogger.w("HomeMap", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
-                    SurveyingApp.reportMapLoadStatus("MAP_READY but MAP_LOADED did not fire (10s)")
+                    SurRealApplication.reportMapLoadStatus("MAP_READY but MAP_LOADED did not fire (10s)")
                 }
             }
 

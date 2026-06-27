@@ -1,8 +1,8 @@
 package app.surrealar.util.diagnostics
 
 import android.content.Context
-import app.surrealar.SurveyingApp
-import app.surrealar.SurveyingAppEntryPoint
+import app.surrealar.SurRealApplication
+import app.surrealar.SurRealApplicationEntryPoint
 import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.first
@@ -23,7 +23,7 @@ object SettingsSnapshotCollector {
         sb.appendLine("Sanitized — no keys/passwords/tokens/raw NMEA/live coordinates.")
         sb.appendLine()
 
-        val repo = SurveyingApp.settingsRepo
+        val repo = SurRealApplication.settingsRepo
 
         // ── General app / display ────────────────────────────────────────────────
         sb.appendLine("--- App / display ---")
@@ -40,8 +40,8 @@ object SettingsSnapshotCollector {
 
         // ── Map ───────────────────────────────────────────────────────────────────
         sb.appendLine("--- Map ---")
-        sb.appendLine("Maps renderer (active)  : ${SurveyingApp.activeMapsRenderer}")
-        sb.appendLine("Last map load status    : ${SurveyingApp.mapLoadStatus}")
+        sb.appendLine("Maps renderer (active)  : ${SurRealApplication.activeMapsRenderer}")
+        sb.appendLine("Last map load status    : ${SurRealApplication.mapLoadStatus}")
         sb.appendLine("Maps API key            : ${MapDiagnosticCollector.redactApiKey(readMapsApiKey(context))}")
         sb.appendLine("(Map type & dark-map style are runtime UI state, not persisted settings — see map-troubleshooting.txt.)")
         sb.appendLine()
@@ -51,7 +51,7 @@ object SettingsSnapshotCollector {
         val selectedSource = runCatching { repo.locationSource.first() }.getOrNull()
         sb.appendLine("Selected source         : ${selectedSource?.name ?: "unknown"}")
         runCatching {
-            val ep = EntryPointAccessors.fromApplication(context.applicationContext, SurveyingAppEntryPoint::class.java)
+            val ep = EntryPointAccessors.fromApplication(context.applicationContext, SurRealApplicationEntryPoint::class.java)
             sb.appendLine("Active provider         : ${ep.sourceSettings().activeProvider.value}")
             val switchAt = ep.fixSwitchboard().lastProviderSwitchAtMs
             sb.appendLine("Last provider switch    : " +

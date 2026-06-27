@@ -334,8 +334,8 @@ class SettingsRepositoryRoundTripTest {
     @Test
     fun `aggregate and focused settings interfaces are one and the same owner instance`() = runBlocking {
         // OWNERSHIP: the single SettingsRepositoryImpl satisfies the aggregate AND every focused
-        // interface. In production this same instance is what SurveyingApp.setupSettings() builds and
-        // Hilt bridges via SurveyingApp.settingsRepo (see di/SettingsModule.kt). Here we assert
+        // interface. In production this same instance is what SurRealApplication.setupSettings() builds and
+        // Hilt bridges via SurRealApplication.settingsRepo (see di/SettingsModule.kt). Here we assert
         // referential identity — they are literally the one object, not separate impls/DataStores.
         val ext: ExternalReceiverSettingsRepository = repo
         val capture: GnssCaptureSettingsRepository = repo

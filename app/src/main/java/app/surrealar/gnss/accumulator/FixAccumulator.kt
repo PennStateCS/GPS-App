@@ -39,6 +39,15 @@ data class FixSnapshot(
     val stdAltM: Double?
 )
 
+/**
+ * Merges parsed NMEA sentences into a single current [FixSnapshot] exposed as a [StateFlow].
+ *
+ * Position comes from GGA/RMC, accuracy from GST, and DOP/used-satellite counts from GSA; this type
+ * carries those fields across sentences because no single sentence holds them all. The published
+ * snapshot is the latest fused view, not a history — a field that stops being reported goes null
+ * rather than retaining a stale value, and consumers must treat an old snapshot as stale by its
+ * timestamp. A malformed or partial sentence updates only the fields that parsed.
+ */
 class FixAccumulator {
 
     private val _state = MutableStateFlow(

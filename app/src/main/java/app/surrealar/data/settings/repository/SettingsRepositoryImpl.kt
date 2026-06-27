@@ -20,8 +20,8 @@ import kotlinx.coroutines.flow.map
  * Maps raw DataStore preference primitives to domain enums/models and vice versa.
  *
  * **Ownership:** in production this is constructed exactly once, by
- * [app.surrealar.SurveyingApp.setupSettings], and exposed through Hilt (and the focused
- * settings interfaces) via [app.surrealar.SurveyingApp.settingsRepo]. Do not construct it
+ * [app.surrealar.SurRealApplication.setupSettings], and exposed through Hilt (and the focused
+ * settings interfaces) via [app.surrealar.SurRealApplication.settingsRepo]. Do not construct it
  * anywhere else in production code — a second instance would open a second Preferences DataStore over
  * the same `app_settings` file and crash. Tests construct it directly over an isolated temp DataStore
  * (the [SettingsLocalDataSource] `DataStore` constructor). See `docs/settings-architecture.md` →

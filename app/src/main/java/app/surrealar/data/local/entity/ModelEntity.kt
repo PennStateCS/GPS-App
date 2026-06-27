@@ -4,6 +4,13 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/**
+ * Persisted metadata for one imported 3D model (table `models`) — not the model file itself, which
+ * lives on disk and is referenced by `fileName`. Column names and types are a storage contract: a
+ * coordinate links to a model by this row's `id`, so changing or dropping columns needs a matching
+ * migration. Nullable columns added in later schema versions (thumbnail, embedded-location, health,
+ * default placement) may be absent on rows written by older builds.
+ */
 @Entity(tableName = "models")
 data class ModelEntity(
     @PrimaryKey

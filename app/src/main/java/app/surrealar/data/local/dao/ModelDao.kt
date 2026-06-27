@@ -4,6 +4,11 @@ import androidx.room.*
 import app.surrealar.data.local.entity.ModelEntity
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Room access to the `models` table of imported-model metadata. Returns [ModelEntity] rows; mapping
+ * to domain `Model` happens in the repository. Deleting a row here removes only the metadata — the
+ * on-disk model file is cleaned up separately by the repository.
+ */
 @Dao
 interface ModelDao {
     @Query("SELECT * FROM models ORDER BY dateAdded DESC")

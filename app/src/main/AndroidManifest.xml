@@ -54,7 +54,7 @@
         android:minSdkVersion="31" />
 
     <application
-        android:name=".SurveyingApp"
+        android:name=".SurRealApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
