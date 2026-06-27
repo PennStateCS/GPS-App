@@ -1,5 +1,10 @@
 package app.surrealar.domain.model
 
+/**
+ * Source of the differential/RTK corrections applied to a fix (NTRIP, radio, SBAS, PPP, …).
+ * `UNKNOWN` is the fallback when the source was not reported or recognized — it does not mean
+ * "no corrections".
+ */
 enum class CorrectionSource {
     NTRIP,          // Network RTK via Internet Protocol
     LORA,           // LoRa radio corrections

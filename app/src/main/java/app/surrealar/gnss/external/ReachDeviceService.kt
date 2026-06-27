@@ -3,6 +3,10 @@ package app.surrealar.gnss.external
 import android.util.Log
 import org.json.JSONObject
 
+/**
+ * Raw device-info parsed from the Reach device's HTTP/JSON response. Service-layer DTO — mapped into
+ * the app-facing `ReachDeviceInfo`.
+ */
 data class ReachDeviceInfoDto(
     val name: String?,
     val model: String?,

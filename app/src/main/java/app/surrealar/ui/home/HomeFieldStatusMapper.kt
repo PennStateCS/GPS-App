@@ -21,6 +21,10 @@ object HomeFieldStatusMapper {
     /** Correction age (s) above which RTK corrections are considered stale (matches status bar). */
     const val STALE_CORRECTION_S = 15.0
 
+    /**
+     * Overall field-status state shown on the Home card, derived from the live source/fix/correction
+     * inputs (e.g. ready, float, low-accuracy, waiting, stale corrections).
+     */
     enum class State {
         READY, HIGH_ACCURACY, FLOAT, LOW_ACCURACY,
         WAITING, NO_RECEIVER_DATA, INTERNAL_GPS, CORRECTIONS_STALE,

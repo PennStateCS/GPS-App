@@ -113,6 +113,10 @@ data class Model(
     }
 }
 
+/**
+ * Broad content type of an imported file (coordinate data, NMEA log, CAD, point cloud, 3D mesh, …).
+ * `OTHER` is the fallback for an unrecognized type.
+ */
 enum class FileType {
     COORDINATE_DATA,    // CSV, KML, GPX coordinate files
     NMEA_LOG,          // NMEA sentence logs
@@ -128,6 +132,10 @@ enum class FileType {
     OTHER              // Unspecified file type
 }
 
+/**
+ * Survey-workflow grouping for a file (field data, processed, reference, deliverables, archive, …),
+ * independent of its [FileType].
+ */
 enum class FileCategory {
     FIELD_DATA,        // Data collected in the field
     PROCESSED_DATA,    // Post-processed results
@@ -138,6 +146,11 @@ enum class FileCategory {
     OTHER              // Miscellaneous
 }
 
+/**
+ * Geographic lat/lon bounds of a model's footprint, with center/size helpers. A structurally
+ * identical `BoundingBox` also exists in `domain.coordinates` for coordinate-set extents; the two
+ * are kept separate per layer rather than shared.
+ */
 data class BoundingBox(
     val minLat: Double,
     val maxLat: Double,

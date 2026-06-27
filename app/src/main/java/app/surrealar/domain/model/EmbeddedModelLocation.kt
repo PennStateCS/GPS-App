@@ -16,6 +16,10 @@ data class EmbeddedModelLocation(
     val source: String
 )
 
+/**
+ * Confidence in a 3D model's embedded georeference (its baked-in real-world location). Lower
+ * confidence means the placement should be treated as approximate.
+ */
 enum class ModelLocationConfidence {
     HIGH,
     MEDIUM,
