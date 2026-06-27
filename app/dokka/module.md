@@ -4,8 +4,9 @@ Developer-facing API reference for the SurReal AR surveying app, generated from 
 reference for developers working on the codebase — **not** an end-user manual.
 
 > **Public developer docs.** These pages are generated from the `main` branch by GitHub Actions and
-> are publicly visible. KDoc must **not** contain secrets, API keys, credentials, internal hostnames,
-> or sensitive deployment details. Keep those in private docs/secrets, not in source comments.
+> published at <https://pennstatewilkes-barre.github.io/GPS-App/>. They are publicly visible. KDoc
+> must **not** contain secrets, API keys, credentials, internal hostnames, or sensitive deployment
+> details. Keep those in private docs/secrets, not in source comments.
 
 ## Developer starting points
 
@@ -61,11 +62,38 @@ Core domain models and their helpers: `Coordinate` (the survey record), `Model` 
 metadata), `CaptureMethod`, and `CoordinateModelLink` (the single compatibility layer for the legacy
 `icon = "model:<id>"` convention). `CoordinateFactory` builds coordinates from captured fixes/results.
 
+# Package app.surrealar.domain.repository
+
+Repository interfaces (the domain's data-access contract): `CoordinateRepository`, `ModelRepository`,
+and the settings interfaces. Settings are split into focused interfaces (`GnssCaptureSettingsRepository`,
+`ArDisplaySettingsRepository`, etc., in `FocusedSettingsRepositories.kt`) plus the aggregate
+`SettingsRepository` that unions them. **Prefer the narrowest focused interface** so a consumer
+depends only on the settings area it uses; all of them resolve to the same singleton
+`SettingsRepositoryImpl` over the single Preferences DataStore. Implementations live in `data`, not
+here — keep this layer free of Android and Room types.
+
 # Package app.surrealar.data.local.db
 
 Room database layer: `AppDatabase` (the single connection, obtained via Hilt), type `Converters`
 (provider/RTK/correction enums and Instant/Duration), and `Migrations` (a contiguous, additive,
 data-preserving chain). Schema changes here are high-risk — see the stability notes above.
+
+# Package app.surrealar.data.local.entity
+
+Room `@Entity` rows: `CoordinateEntity` (table `coordinates`) and `ModelEntity` (table `models`).
+These define the on-disk schema — column names, types, and indices are load-bearing. **Do not edit an
+entity without a matching `Migrations` step and a regenerated exported schema JSON**; an unmigrated
+change corrupts existing installs. Entities are persistence shapes only; convert to/from
+`domain.model` via `data.repository.mapper` rather than using them as domain objects.
+
+# Package app.surrealar.data.export
+
+Export and full-backup formats. `CoordinateBackup` is the official, schema-versioned full backup
+(`format = "surreal-coordinate-backup"`): it round-trips every survey-quality and model-link field so
+a restore loses no data, and it bundles referenced model metadata. `CsvExporter` / `GeoJsonExporter`
+are lossy, human/GIS-friendly views (id/name/lat/lon/alt/timestamp/icon/color) — not for backups.
+Bump `SCHEMA_VERSION` and keep readers backward-compatible when the backup shape changes; import
+planning (duplicates, missing-model handling) lives in `data.backup`, not here.
 
 # Package app.surrealar.data.repository.mapper
 
