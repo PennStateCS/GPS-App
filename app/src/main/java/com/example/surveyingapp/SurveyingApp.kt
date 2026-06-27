@@ -9,7 +9,6 @@ import android.util.Log
 import com.example.surveyingapp.data.settings.datastore.SettingsLocalDataSource
 import com.example.surveyingapp.data.settings.repository.SettingsRepositoryImpl
 import com.example.surveyingapp.domain.repository.SettingsRepository
-import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.gnss.bus.FixSwitchboard
 import com.example.surveyingapp.gnss.mock.AndroidMockLocationPublisher
 import com.example.surveyingapp.util.UtmConverter
@@ -36,6 +35,7 @@ interface SurveyingAppEntryPoint {
     /** The external TCP NMEA source (for reading its fuser's diagnostics stats). */
     fun externalNmeaSource(): com.example.surveyingapp.gnss.bus.adapters.NmeaSource
     fun settingsRepository(): SettingsRepository
+    fun coordinateRepository(): com.example.surveyingapp.domain.repository.CoordinateRepository
 }
 
 @HiltAndroidApp
@@ -160,20 +160,18 @@ class SurveyingApp : Application() {
     private fun runUtmBackfill() {
         try {
             appScope.launch(Dispatchers.IO) {
-                val db = AppDatabase.getDatabase(this@SurveyingApp)
-                val dao = db.coordinateDao()
-                val list = kotlin.runCatching { dao.getAllCoordinatesList() }.getOrNull() ?: return@launch
+                // Use the Hilt graph (same EntryPoint pattern as the startup GNSS restore) instead
+                // of constructing the database directly — keeps all coordinate access on one path.
+                val repo = EntryPointAccessors
+                    .fromApplication(this@SurveyingApp, SurveyingAppEntryPoint::class.java)
+                    .coordinateRepository()
+                val list = kotlin.runCatching { repo.getAllCoordinatesList() }.getOrNull() ?: return@launch
                 var updated = 0
-                list.forEach { e ->
-                    if (e.easting == null || e.northing == null || e.utmZone == null) {
+                list.forEach { c ->
+                    if (c.easting == null || c.northing == null || c.utmZone == null) {
                         try {
-                            val utm = UtmConverter.latLonToUtm(e.latitude, e.longitude)
-                            val copy = e.copy(
-                                easting = utm.easting,
-                                northing = utm.northing,
-                                utmZone = utm.utmZone
-                            )
-                            dao.update(copy)
+                            val utm = UtmConverter.latLonToUtm(c.latitude, c.longitude)
+                            repo.update(c.copy(easting = utm.easting, northing = utm.northing, utmZone = utm.utmZone))
                             updated++
                         } catch (_: Exception) { /* ignore bad lat/lon */ }
                     }

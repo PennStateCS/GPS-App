@@ -43,7 +43,7 @@ class AccumulatorIntegrationTest {
     @Test
     fun testNmeaLogProcessingThroughAccumulator() = runBlocking {
         // Read the sample NMEA file from assets
-        val context = InstrumentationRegistry.getInstrumentation().context
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val assetManager = context.assets
         val inputStream = assetManager.open("sample.nmea")
         val reader = BufferedReader(InputStreamReader(inputStream))
@@ -163,7 +163,7 @@ class AccumulatorIntegrationTest {
     @Test
     fun testIndividualSentenceTypes() = runBlocking {
         // Test that each major sentence type is properly processed
-        val context = InstrumentationRegistry.getInstrumentation().context
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val assetManager = context.assets
         val inputStream = assetManager.open("sample.nmea")
         val reader = BufferedReader(InputStreamReader(inputStream))
