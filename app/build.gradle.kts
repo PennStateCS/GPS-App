@@ -52,11 +52,11 @@ if (localPropertiesFile.exists()) {
 val sharedDebugKeystore = rootProject.file("keystores/shared-debug.keystore")
 
 android {
-    namespace = "com.example.surveyingapp"
+    namespace = "app.surrealar"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.surveyingapp"
+        applicationId = "app.surrealar"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

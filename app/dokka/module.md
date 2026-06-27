@@ -50,48 +50,48 @@ reference for developers working on the codebase — **not** an end-user manual.
   chain is contiguous. Do not casually change entities, mappers, or converters.
 - These docs are generated from `main` by CI for developer reference.
 
-# Package com.example.surveyingapp.domain.coordinates
+# Package app.surrealar.domain.coordinates
 
 Pure (no Android, no DAO) coordinate validation and statistics. `CoordinateValidator` gates saves and
 imports — rejecting out-of-range, NaN, and 0,0 "null island" positions — and detects duplicates.
 
-# Package com.example.surveyingapp.domain.model
+# Package app.surrealar.domain.model
 
 Core domain models and their helpers: `Coordinate` (the survey record), `Model` (imported 3D model
 metadata), `CaptureMethod`, and `CoordinateModelLink` (the single compatibility layer for the legacy
 `icon = "model:<id>"` convention). `CoordinateFactory` builds coordinates from captured fixes/results.
 
-# Package com.example.surveyingapp.data.local.db
+# Package app.surrealar.data.local.db
 
 Room database layer: `AppDatabase` (the single connection, obtained via Hilt), type `Converters`
 (provider/RTK/correction enums and Instant/Duration), and `Migrations` (a contiguous, additive,
 data-preserving chain). Schema changes here are high-risk — see the stability notes above.
 
-# Package com.example.surveyingapp.data.repository.mapper
+# Package app.surrealar.data.repository.mapper
 
 Entity ↔ domain mapping for coordinates. Every field must round-trip between `Coordinate` and
 `CoordinateEntity`; the provider mapping is deliberately lossless (e.g. `RS2_EXTERNAL` does not
 degrade to `RS2_TCP`), and audit timestamps fall back to the capture timestamp when unset.
 
-# Package com.example.surveyingapp.data.backup
+# Package app.surrealar.data.backup
 
 Pure import-planning for coordinate backups. `BackupImportPlanner` turns parsed coordinates plus the
 local id sets into a `BackupImportPlan` (duplicate handling, missing-local-model flagging, and the
 user-facing summary) without touching Android or the database.
 
-# Package com.example.surveyingapp.data.health
+# Package app.surrealar.data.health
 
 Read-only developer diagnostics. `DataHealthChecker` scans coordinate/model records for invalid
 positions, missing provenance, dangling model links, legacy icons, and suspicious placement/file
 state. It never modifies data and is exposed only in debug builds.
 
-# Package com.example.surveyingapp.gnss.capture
+# Package app.surrealar.gnss.capture
 
 Averaged GNSS capture. `ObservationSession` collects accepted fixes under an `AveragingPolicy`
 (minimum sampling time, minimum accepted fixes, required RTK quality, max fix/correction age) and
 finishes when both minimums are met or the maximum sampling time is reached.
 
-# Package com.example.surveyingapp.ui.openinar
+# Package app.surrealar.ui.openinar
 
 AR rendering of model-linked coordinates. Loads GLB models at ARCore geospatial anchors and applies
 per-coordinate `ModelPlacement` (scale/rotation/offset) on top of each model's defaults. Placement is

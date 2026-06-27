@@ -14,7 +14,7 @@
         android:clickable="true" />
 
     <!-- 2-D text labels projected above each geospatial pin. -->
-    <com.example.surveyingapp.ui.openinar.CoordinateLabelOverlay
+    <app.surrealar.ui.openinar.CoordinateLabelOverlay
         android:id="@+id/labelOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -33,7 +33,7 @@
         android:focusableInTouchMode="false" />
 
     <!-- Off-screen pin arrows at screen edges. -->
-    <com.example.surveyingapp.ui.openinar.OffScreenPinIndicatorOverlay
+    <app.surrealar.ui.openinar.OffScreenPinIndicatorOverlay
         android:id="@+id/offScreenOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
