@@ -93,7 +93,7 @@ cd surveying-app
    - Click on your newly created API key to edit it
    - Under "Application restrictions":
      - Select "Android apps"
-     - Add your app's package name: `com.example.surveyingapp`
+     - Add your app's package name: `app.surrealar`
      - Add your app's SHA-1 certificate fingerprint
    - Under "API restrictions":
      - Select "Restrict key"
@@ -273,7 +273,7 @@ Or open the project in Android Studio and run it directly.
 ## 🏗️ Project Structure
 
 ```
-app/src/main/java/com/example/surveyingapp/
+app/src/main/java/app/surrealar/
 ├── data/           # Data layer (repositories, data sources)
 ├── di/             # Dependency injection
 ├── domain/         # Domain layer (use cases, entities)

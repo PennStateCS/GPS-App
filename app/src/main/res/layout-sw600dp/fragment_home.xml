@@ -90,7 +90,7 @@
                         </LinearLayout>
 
                         <!-- Fix Badge for GNSS quality and stream health indicators -->
-                        <com.example.surveyingapp.ui.components.FixBadgeView
+                        <app.surrealar.ui.components.FixBadgeView
                             android:id="@+id/fix_badge"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"

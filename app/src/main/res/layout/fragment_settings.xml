@@ -258,7 +258,7 @@
             android:paddingBottom="8dp" />
 
         <!-- Satellite Signal Chart -->
-        <com.example.surveyingapp.ui.common.SatelliteSignalChartView
+        <app.surrealar.ui.common.SatelliteSignalChartView
             android:id="@+id/satellite_signal_chart"
             android:layout_width="match_parent"
             android:layout_height="300dp"

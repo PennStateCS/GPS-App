@@ -7,26 +7,26 @@
 
     <fragment
         android:id="@+id/nav_home"
-        android:name="com.example.surveyingapp.ui.home.HomeFragment"
+        android:name="app.surrealar.ui.home.HomeFragment"
         android:label="@string/menu_home"
         tools:layout="@layout/fragment_home" />
 
 
     <fragment
         android:id="@+id/nav_models"
-        android:name="com.example.surveyingapp.ui.models.ModelsFragment"
+        android:name="app.surrealar.ui.models.ModelsFragment"
         android:label="@string/menu_models"
         tools:layout="@layout/fragment_models" />
 
     <fragment
         android:id="@+id/nav_open_in_ar"
-        android:name="com.example.surveyingapp.ui.openinar.OpenInARFragment"
+        android:name="app.surrealar.ui.openinar.OpenInARFragment"
         android:label=""
         tools:layout="@layout/fragment_open_in_ar" />
 
     <fragment
         android:id="@+id/nav_development"
-        android:name="com.example.surveyingapp.ui.development.DevelopmentFragment"
+        android:name="app.surrealar.ui.development.DevelopmentFragment"
         android:label="@string/menu_development"
         tools:layout="@layout/fragment_development" />
 
@@ -34,26 +34,26 @@
 
     <fragment
         android:id="@+id/nav_settings"
-        android:name="com.example.surveyingapp.ui.settings.SettingsFragment"
+        android:name="app.surrealar.ui.settings.SettingsFragment"
         android:label="@string/action_settings"
         tools:layout="@layout/fragment_settings" />
 
     <fragment
         android:id="@+id/nav_view_coordinates"
-        android:name="com.example.surveyingapp.ui.viewpoints.CoordinatesFragment"
+        android:name="app.surrealar.ui.viewpoints.CoordinatesFragment"
         android:label="@string/menu_view_coordinates"
         tools:layout="@layout/fragment_coordinates" />
 
     <fragment
         android:id="@+id/nav_render_map"
-        android:name="com.example.surveyingapp.ui.rendermap.RenderMapFragment"
+        android:name="app.surrealar.ui.rendermap.RenderMapFragment"
         android:label="@string/menu_render_map"
         tools:layout="@layout/fragment_render_map" />
 
     <!-- Detail destination for a single coordinate (navigated from CoordinatesFragment) -->
     <fragment
         android:id="@+id/nav_coordinate_detail"
-        android:name="com.example.surveyingapp.ui.viewpoints.CoordinateDetailFragment"
+        android:name="app.surrealar.ui.viewpoints.CoordinateDetailFragment"
         android:label="@string/title_coordinate_detail"
         tools:layout="@layout/fragment_coordinate_detail">
         <argument
