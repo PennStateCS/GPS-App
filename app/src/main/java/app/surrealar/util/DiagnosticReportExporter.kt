@@ -3,7 +3,7 @@ package app.surrealar.util
 import android.content.Context
 import android.os.Build
 import app.surrealar.BuildConfig
-import app.surrealar.SurveyingApp
+import app.surrealar.SurRealApplication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -117,7 +117,7 @@ object DiagnosticReportExporter {
         sb.appendLine("Timezone         : ${java.util.TimeZone.getDefault().id}")
         sb.appendLine()
         sb.appendLine("--- Maps ---")
-        sb.appendLine("Maps renderer    : ${SurveyingApp.activeMapsRenderer}")
+        sb.appendLine("Maps renderer    : ${SurRealApplication.activeMapsRenderer}")
         return sb.toString()
     }
 
@@ -129,7 +129,7 @@ object DiagnosticReportExporter {
         sb.appendLine()
         sb.appendLine("--- GNSS / Receiver ---")
         try {
-            val repo = SurveyingApp.settingsRepo
+            val repo = SurRealApplication.settingsRepo
             val locSrc = runCatching { repo.locationSource.first() }.getOrNull()
             sb.appendLine("Selected source        : ${locSrc?.name ?: "unknown"}")
 
@@ -137,7 +137,7 @@ object DiagnosticReportExporter {
             runCatching {
                 val ep = dagger.hilt.android.EntryPointAccessors.fromApplication(
                     context.applicationContext,
-                    app.surrealar.SurveyingAppEntryPoint::class.java
+                    app.surrealar.SurRealApplicationEntryPoint::class.java
                 )
                 val activeProvider = ep.sourceSettings().activeProvider.value
                 sb.appendLine("Active provider        : $activeProvider")
@@ -168,8 +168,8 @@ object DiagnosticReportExporter {
         }
         sb.appendLine()
         sb.appendLine("--- Maps ---")
-        sb.appendLine("Active renderer        : ${SurveyingApp.activeMapsRenderer}")
-        sb.appendLine("Map load status        : ${SurveyingApp.mapLoadStatus}")
+        sb.appendLine("Active renderer        : ${SurRealApplication.activeMapsRenderer}")
+        sb.appendLine("Map load status        : ${SurRealApplication.mapLoadStatus}")
         sb.appendLine()
         sb.appendLine("--- Network ---")
         try {

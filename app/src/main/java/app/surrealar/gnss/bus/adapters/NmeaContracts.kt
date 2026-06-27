@@ -47,6 +47,11 @@ data class GsvMessage(
     val entries: List<GsvEntry>
 )
 
+/**
+ * One satellite within a [GsvMessage], normalised for `SatelliteInventory`. Elevation/azimuth are
+ * degrees and [snrDbHz] is C/N0 in dB-Hz; these are null when the receiver omitted them. [usedInFix]
+ * reflects whether the satellite contributed to the position solution, when that is known.
+ */
 data class GsvEntry(
     val svid: Int,
     val elevationDeg: Int?,

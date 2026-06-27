@@ -2,6 +2,11 @@ package app.surrealar.gnss.model
 
 import java.time.Instant
 
+/**
+ * Origin of a [SkySnapshot]: external `GSV` sentences, the Android platform GNSS API, a
+ * receiver-proprietary message, or `UNKNOWN` when the source was not recorded. It identifies
+ * provenance only and implies nothing about completeness or accuracy of the satellite data.
+ */
 enum class SkySource { NMEA_GSV, PLATFORM_API, PROPRIETARY, UNKNOWN }
 
 /**

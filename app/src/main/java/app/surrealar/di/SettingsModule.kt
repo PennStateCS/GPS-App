@@ -1,6 +1,6 @@
 package app.surrealar.di
 
-import app.surrealar.SurveyingApp
+import app.surrealar.SurRealApplication
 import app.surrealar.domain.repository.AppearanceSettingsRepository
 import app.surrealar.domain.repository.ArDisplaySettingsRepository
 import app.surrealar.domain.repository.CoordinateDisplaySettingsRepository
@@ -26,9 +26,9 @@ import javax.inject.Singleton
  * ## Single-owner rule (do not break)
  * There must be exactly ONE production Preferences DataStore for the `app_settings` file and exactly
  * ONE [app.surrealar.data.settings.repository.SettingsRepositoryImpl] over it. That single
- * instance is built by [SurveyingApp.setupSettings] during `Application.onCreate` (early, so startup
+ * instance is built by [SurRealApplication.setupSettings] during `Application.onCreate` (early, so startup
  * theme + mock-location publishing can read settings synchronously) and exposed as
- * [SurveyingApp.settingsRepo].
+ * [SurRealApplication.settingsRepo].
  *
  * Every provider here — the aggregate [SettingsRepository] and all the focused settings interfaces —
  * intentionally **returns that same singleton** via `@Provides`. They are deliberately NOT `@Binds`:
@@ -53,11 +53,11 @@ object SettingsModule {
     }
 
     /**
-     * Provides [SettingsRepository] from the [SurveyingApp] application singleton.
+     * Provides [SettingsRepository] from the [SurRealApplication] application singleton.
      *
      * Kept as a wrapper (rather than Hilt constructing `SettingsRepositoryImpl` directly) so there
      * is exactly ONE [app.surrealar.data.settings.datastore.SettingsLocalDataSource] /
-     * DataStore for the settings file. `SurveyingApp.setupSettings()` builds this instance during
+     * DataStore for the settings file. `SurRealApplication.setupSettings()` builds this instance during
      * `onCreate` and uses it synchronously for startup work (theme application, mock-location
      * publisher). Having Hilt build a second instance would create a duplicate DataStore over the
      * same file and crash at runtime. The injected instance is therefore identical to the app
@@ -65,56 +65,56 @@ object SettingsModule {
      */
     @Provides
     @Singleton
-    fun provideSettingsRepository(): SettingsRepository = SurveyingApp.settingsRepo
+    fun provideSettingsRepository(): SettingsRepository = SurRealApplication.settingsRepo
 
     // ── Focused settings interfaces ─────────────────────────────────────────────
-    // Each resolves to the SAME aggregate singleton (`SurveyingApp.settingsRepo`), which implements
+    // Each resolves to the SAME aggregate singleton (`SurRealApplication.settingsRepo`), which implements
     // every focused interface. @Provides (not @Binds) for the same reason as the aggregate above:
-    // the impl is built by `SurveyingApp.setupSettings()` so there is exactly one DataStore; letting
+    // the impl is built by `SurRealApplication.setupSettings()` so there is exactly one DataStore; letting
     // Hilt construct it via @Binds would create a duplicate DataStore over the same file. Injecting a
     // focused interface therefore shares state with the aggregate and with every other interface.
 
     @Provides
     @Singleton
-    fun provideLocationSourceSettingsRepository(): LocationSourceSettingsRepository = SurveyingApp.settingsRepo
+    fun provideLocationSourceSettingsRepository(): LocationSourceSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideExternalReceiverSettingsRepository(): ExternalReceiverSettingsRepository = SurveyingApp.settingsRepo
+    fun provideExternalReceiverSettingsRepository(): ExternalReceiverSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideGnssCaptureSettingsRepository(): GnssCaptureSettingsRepository = SurveyingApp.settingsRepo
+    fun provideGnssCaptureSettingsRepository(): GnssCaptureSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideArDisplaySettingsRepository(): ArDisplaySettingsRepository = SurveyingApp.settingsRepo
+    fun provideArDisplaySettingsRepository(): ArDisplaySettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideCoordinateDisplaySettingsRepository(): CoordinateDisplaySettingsRepository = SurveyingApp.settingsRepo
+    fun provideCoordinateDisplaySettingsRepository(): CoordinateDisplaySettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideMockLocationSettingsRepository(): MockLocationSettingsRepository = SurveyingApp.settingsRepo
+    fun provideMockLocationSettingsRepository(): MockLocationSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideGnssReceiverSettingsRepository(): GnssReceiverSettingsRepository = SurveyingApp.settingsRepo
+    fun provideGnssReceiverSettingsRepository(): GnssReceiverSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideDeveloperSettingsRepository(): DeveloperSettingsRepository = SurveyingApp.settingsRepo
+    fun provideDeveloperSettingsRepository(): DeveloperSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideAppearanceSettingsRepository(): AppearanceSettingsRepository = SurveyingApp.settingsRepo
+    fun provideAppearanceSettingsRepository(): AppearanceSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideStakeoutSettingsRepository(): StakeoutSettingsRepository = SurveyingApp.settingsRepo
+    fun provideStakeoutSettingsRepository(): StakeoutSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
     @Singleton
-    fun provideMapSettingsRepository(): MapSettingsRepository = SurveyingApp.settingsRepo
+    fun provideMapSettingsRepository(): MapSettingsRepository = SurRealApplication.settingsRepo
 }

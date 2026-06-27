@@ -58,7 +58,7 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
-import app.surrealar.SurveyingAppEntryPoint
+import app.surrealar.SurRealApplicationEntryPoint
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -941,7 +941,7 @@ class CoordinateDetailFragment : Fragment() {
         val switchboard = try {
             EntryPointAccessors.fromApplication(
                 requireContext().applicationContext,
-                SurveyingAppEntryPoint::class.java
+                SurRealApplicationEntryPoint::class.java
             ).fixSwitchboard()
         } catch (_: Exception) { return }
 

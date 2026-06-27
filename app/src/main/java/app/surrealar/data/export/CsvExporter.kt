@@ -8,6 +8,12 @@ import java.io.FileWriter
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
+/**
+ * Writes captured fixes to a CSV file under the shared Documents folder for sharing/inspection.
+ *
+ * This is a lossy, human-readable export — it does not preserve full survey/model metadata and is not
+ * a backup. For round-trippable backups use `CoordinateBackup`. Returns the written [File].
+ */
 class CsvExporter {
 
     fun exportToCsv(context: Context, fixes: List<Fix>): File {

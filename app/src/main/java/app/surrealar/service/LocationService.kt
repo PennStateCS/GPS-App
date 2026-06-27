@@ -87,7 +87,7 @@ class LocationService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_location)
-            .setContentTitle("Surveying App Active")
+            .setContentTitle("SurReal AR Active")
             .setContentText("Location services running in background")
             .setOnlyAlertOnce(true)
             .setOngoing(true)

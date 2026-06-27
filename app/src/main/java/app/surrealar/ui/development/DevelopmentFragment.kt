@@ -555,7 +555,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         addRow("Maps Library Present", mapsLibPresent.toString(), if (mapsLibPresent) MapsStatus.OK else MapsStatus.ERROR)
         addRow("Fused Location Present", fusedLocPresent.toString(), if (fusedLocPresent) MapsStatus.OK else MapsStatus.WARN)
         addRow("Maps Initialize", mapsInitResult, mapsInitStatus)
-        val rendererName = app.surrealar.SurveyingApp.activeMapsRenderer
+        val rendererName = app.surrealar.SurRealApplication.activeMapsRenderer
         addRow("Maps Renderer", rendererName, when (rendererName) {
             "LATEST" -> MapsStatus.OK
             "LEGACY" -> MapsStatus.WARN

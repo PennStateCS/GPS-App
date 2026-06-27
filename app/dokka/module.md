@@ -1,4 +1,4 @@
-# Module Surveying App Developer API
+# Module SurReal AR Developer API
 
 Developer-facing API reference for the SurReal AR surveying app, generated from KDoc. This is a
 reference for developers working on the codebase — **not** an end-user manual.
@@ -124,3 +124,116 @@ finishes when both minimums are met or the maximum sampling time is reached.
 AR rendering of model-linked coordinates. Loads GLB models at ARCore geospatial anchors and applies
 per-coordinate `ModelPlacement` (scale/rotation/offset) on top of each model's defaults. Placement is
 a visual transform only.
+
+# Package app.surrealar.gnss.accumulator
+
+Fuses parsed NMEA sentences into a single current fix. `FixAccumulator` merges fields arriving across
+different sentence types (position from GGA/RMC, accuracy from GST, DOP/used-satellite count from GSA)
+into an immutable `FixSnapshot`. A snapshot is a point-in-time view: missing fields stay null rather
+than carrying stale values forward, and callers must treat an old snapshot as stale, not current.
+
+# Package app.surrealar.gnss.bus
+
+In-memory routing of live GNSS data from the active source to UI/consumers. `FixSwitchboard` selects
+exactly one active source and republishes its fixes/sky data through `FixBus` and `SkyBus`; `NmeaFuser`
+drives accumulation, and `SourceAdapter`/`NmeaSource` abstract the producers. On source switch the
+buses must reset so a new source never inherits the previous one's fix or satellite data.
+
+# Package app.surrealar.gnss.model
+
+Shared GNSS value types: `Fix`, `FixSnapshot` inputs, `Provider`, `RtkStatus`, `ConnectionStatus`,
+`Constellation`, and satellite/sky models (`SatInfo`, `SkySnapshot`, `SkyGeometry`). These are plain
+data carriers with no Android dependencies. Enum fallbacks (`UNKNOWN`/`OTHER`) mean "not reported by
+this receiver", not "none" — quality fields (RTK status, DOP, satellite counts) are indicators that
+may be absent or receiver-specific, never guarantees.
+
+# Package app.surrealar.gnss.nmea.parse
+
+Per-sentence NMEA parsers and the registry that dispatches by talker/type. Each parser (`GgaParser`,
+`GsaParser`, `GstParser`, `GsvParser`, `RmcParser`, etc.) turns one raw sentence into a typed
+`gnss.nmea.sentence` model; `NmeaRegistry`/`DefaultNmeaRegistry` route a line to the right parser.
+Parsers must tolerate missing/empty fields and malformed input by returning null rather than throwing —
+a bad sentence must never break the stream.
+
+# Package app.surrealar.gnss.nmea.sentence
+
+Typed, immutable representations of individual NMEA sentences (`GGA`, `GSA`, `GST`, `GSV`, `RMC`,
+`ZDA`, …) implementing `NmeaSentence`. They model exactly what the sentence carries; absent fields are
+nullable and units follow the NMEA spec (e.g. altitude in metres, lat/lon already decimal-degrees from
+the parser). They hold no parsing logic — construct them via `gnss.nmea.parse`.
+
+# Package app.surrealar.settings
+
+Immutable settings value types and their defaults (`AppearanceSettings`, `ArDisplaySettings`,
+`CoordinateDisplaySettings`, `DeveloperSettings`, `ExternalReceiverSettings`, `StakeoutSettings`,
+`SettingsDefaults`, `AppThemeMode`). These are configuration, not survey records: they are persisted in
+DataStore (never Room) and read at startup. Changing a setting must never alter saved coordinates or
+models.
+
+# Package app.surrealar.ui.models
+
+Screens for managing imported 3D models: list (`ModelsFragment`/`ModelsViewModel`), add/edit dialogs,
+picker (`ModelPickerActivity`), the Filament-based `ModelViewerActivity`, and `ThumbnailCaptureActivity`.
+This layer manages model **metadata** and files via the repositories; it does not own the survey
+coordinate records that link to a model.
+
+# Package app.surrealar.ui.settings
+
+The settings UI: `SettingsFragment` plus its category list (`SettingsCategory`,
+`SettingsCategoryAdapter`) and the developer `SelfTestDisplay`. It edits values through the settings
+repositories (DataStore-backed) only — it holds no settings state of its own and writes nothing to Room.
+
+# Package app.surrealar.ui.viewpoints
+
+Coordinate browsing and editing: list/detail (`CoordinatesFragment`, `CoordinateDetailFragment`,
+`CoordinatesViewModel`), add/edit dialogs, and the formatting/badge mappers (`CoordinateDetailFormatter`,
+`CoordinateDetailUiMapper`). UI mappers are presentation-only — they format stored values for display
+and must not mutate the underlying survey position.
+
+# Package app.surrealar.gnss.source
+
+Source selection and persistence for the active GNSS provider. `GnssSourceCoordinator` activates one
+source (internal Android location vs. an external NMEA receiver) and restores the last choice at
+startup; `SourceSettings` persists it. Switching sources must fully tear down the previous one so its
+fixes/satellites do not leak, and external receiver data must never be reported as internal GPS.
+
+# Package app.surrealar.data.local.dao
+
+Room DAOs (`CoordinateDao`, `ModelDao`) — the only sanctioned query surface for the database. Most
+methods are ordinary CRUD/observe queries; pay attention to bulk and delete operations and to any
+ordering or `@Transaction` guarantees, since those are the parts that affect data integrity. DAOs
+return/accept entities (`data.local.entity`); convert to domain models in the repositories, not here.
+
+# Package app.surrealar.data.repository.impl
+
+Repository implementations (`CoordinateRepositoryImpl`, `ModelRepositoryImpl`) — the boundary between
+Room entities and domain models. They own the entity↔domain mapping (via `data.repository.mapper`) and
+must preserve every survey/model field, including provider/RTK/capture-method values on older rows.
+Methods must avoid silent data loss; these are injected via their domain interfaces (`domain.repository`).
+
+# Package app.surrealar.data.settings.repository
+
+DataStore-backed settings repository. `SettingsRepositoryImpl` implements every settings interface
+(aggregate and focused) over the single Preferences store. Settings live in DataStore, never in Room;
+a settings read/write must never touch saved coordinates or models. Values are read early during
+startup, so keep access cheap.
+
+# Package app.surrealar.data.settings.datastore
+
+Low-level settings storage: `SettingsLocalDataSource` (the single `app_settings` Preferences store)
+and `SettingsKeys` (the preference key definitions). This is the only place that talks to DataStore
+directly; everything else goes through `data.settings.repository`.
+
+# Package app.surrealar.data.settings.migration
+
+Preference-key migrations for the settings store — `SettingsMigrationRunner` upgrades older DataStore
+layouts. These are **not** Room migrations and never touch the database; they only reconcile settings
+keys/defaults.
+
+# Package app.surrealar.di
+
+Hilt modules wiring the object graph. `DatabaseModule` is the sanctioned bridge to the `AppDatabase`
+singleton (UI code must not call `AppDatabase.getDatabase(...)` directly); `RepositoryModule` binds
+domain repository interfaces to their impls so consumers inject the interface; `SettingsModule` and
+`GnssModule` provide settings/GNSS singletons; `CoroutineModule` provides injected dispatchers and
+qualifiers so threading is explicit and testable.

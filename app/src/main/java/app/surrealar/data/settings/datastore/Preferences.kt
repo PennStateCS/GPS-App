@@ -17,6 +17,12 @@ import kotlinx.coroutines.flow.map
 private const val DATASTORE_NAME = "app_settings"
 val Context.appDataStore by preferencesDataStore(name = DATASTORE_NAME)
 
+/**
+ * Typed DataStore preference keys for the single `app_settings` store. Each key name is a persisted
+ * token — renaming one silently drops the user's saved value (handle key changes via
+ * `SettingsMigrationRunner`). These are raw storage keys only; defaults and domain types live in
+ * `SettingsDefaults` and the settings repository.
+ */
 object SettingsKeys {
     val LOCATION_SOURCE = stringPreferencesKey("location_source")
     val EXTERNAL_CONN_TYPE = stringPreferencesKey("external_connection_type")

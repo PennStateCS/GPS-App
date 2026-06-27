@@ -28,7 +28,7 @@ import org.osmdroid.config.Configuration
 /** Hilt entry point for accessing Hilt singletons from non-injected Application code. */
 @EntryPoint
 @InstallIn(SingletonComponent::class)
-interface SurveyingAppEntryPoint {
+interface SurRealApplicationEntryPoint {
     fun fixSwitchboard(): FixSwitchboard
     fun sourceSettings(): app.surrealar.gnss.source.SourceSettings
     fun gnssSourceCoordinator(): app.surrealar.gnss.source.GnssSourceCoordinator
@@ -39,7 +39,7 @@ interface SurveyingAppEntryPoint {
 }
 
 @HiltAndroidApp
-class SurveyingApp : Application() {
+class SurRealApplication : Application() {
     companion object {
         lateinit var settingsRepo: SettingsRepository
             private set
@@ -88,7 +88,7 @@ class SurveyingApp : Application() {
             MapsInitializer.Renderer.LEGACY else MapsInitializer.Renderer.LATEST
         MapsInitializer.initialize(this, preferredRenderer) { renderer ->
             activeMapsRenderer = renderer.name
-            Log.d("SurveyingApp", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
+            Log.d("SurRealApplication", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
             DiagnosticsLogger.i("App", "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
         // Global crash guard. Persists a SANITIZED crash record to DiagnosticsLogger so it lands in
@@ -125,11 +125,11 @@ class SurveyingApp : Application() {
                 } catch (e: Exception) { "0" }
                 Configuration.getInstance().userAgentValue = "$pkg/$versionName (SurveyingApp)"
             }
-            Log.d("SurveyingApp","osmdroid UA set to ${Configuration.getInstance().userAgentValue}")
+            Log.d("SurRealApplication","osmdroid UA set to ${Configuration.getInstance().userAgentValue}")
         } catch (e: Exception) {
-            Log.w("SurveyingApp","Failed to set osmdroid user agent: ${e.message}")
+            Log.w("SurRealApplication","Failed to set osmdroid user agent: ${e.message}")
         }
-        Log.d("SurveyingApp","Application started; global crash handler & osmdroid config done")
+        Log.d("SurRealApplication","Application started; global crash handler & osmdroid config done")
 
         setupSettings()
         applyThemeFromSettings()
@@ -147,13 +147,13 @@ class SurveyingApp : Application() {
      */
     private fun restoreSavedGnssSource() {
         try {
-            val entryPoint = EntryPointAccessors.fromApplication(this, SurveyingAppEntryPoint::class.java)
+            val entryPoint = EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
             appScope.launch {
                 runCatching { entryPoint.gnssSourceCoordinator().restoreSavedSourceOnStartup() }
-                    .onFailure { Log.e("SurveyingApp", "Startup GNSS source restore failed", it) }
+                    .onFailure { Log.e("SurRealApplication", "Startup GNSS source restore failed", it) }
             }
         } catch (e: Exception) {
-            Log.e("SurveyingApp", "Failed to launch GNSS source restore", e)
+            Log.e("SurRealApplication", "Failed to launch GNSS source restore", e)
         }
     }
 
@@ -163,7 +163,7 @@ class SurveyingApp : Application() {
                 // Use the Hilt graph (same EntryPoint pattern as the startup GNSS restore) instead
                 // of constructing the database directly — keeps all coordinate access on one path.
                 val repo = EntryPointAccessors
-                    .fromApplication(this@SurveyingApp, SurveyingAppEntryPoint::class.java)
+                    .fromApplication(this@SurRealApplication, SurRealApplicationEntryPoint::class.java)
                     .coordinateRepository()
                 val list = kotlin.runCatching { repo.getAllCoordinatesList() }.getOrNull() ?: return@launch
                 var updated = 0
@@ -176,10 +176,10 @@ class SurveyingApp : Application() {
                         } catch (_: Exception) { /* ignore bad lat/lon */ }
                     }
                 }
-                if (updated > 0) Log.d("SurveyingApp", "UTM backfill updated $updated coordinate(s)")
+                if (updated > 0) Log.d("SurRealApplication", "UTM backfill updated $updated coordinate(s)")
             }
         } catch (t: Throwable) {
-            Log.w("SurveyingApp", "UTM backfill skipped: ${t.message}")
+            Log.w("SurRealApplication", "UTM backfill skipped: ${t.message}")
         }
     }
 
@@ -224,18 +224,18 @@ class SurveyingApp : Application() {
                 }
             )
         } catch (e: Exception) {
-            Log.w("SurveyingApp", "Failed to apply theme from settings: ${e.message}")
+            Log.w("SurRealApplication", "Failed to apply theme from settings: ${e.message}")
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         }
     }
 
     private fun startMockLocationPublisher() {
         try {
-            val entryPoint = EntryPointAccessors.fromApplication(this, SurveyingAppEntryPoint::class.java)
+            val entryPoint = EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
             mockLocationPublisher = AndroidMockLocationPublisher(this, entryPoint.fixSwitchboard(), settingsRepo)
             mockLocationPublisher.start(appScope)
         } catch (e: Exception) {
-            Log.e("SurveyingApp", "Failed to start mock location publisher", e)
+            Log.e("SurRealApplication", "Failed to start mock location publisher", e)
         }
     }
 

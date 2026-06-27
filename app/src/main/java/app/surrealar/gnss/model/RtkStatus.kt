@@ -1,5 +1,13 @@
 package app.surrealar.gnss.model
 
+/**
+ * RTK/differential fix quality reported by the receiver, ordered by accuracy via [qualityRank].
+ *
+ * Not every receiver reports every level, and the value can downgrade live (e.g. `FIX` → `FLOAT`).
+ * `NONE` means no differential fix; `INVALID` means the receiver reported a status that could not be
+ * interpreted — treat both as lowest quality. Compare with [meetsOrExceeds], not enum ordinals.
+ * [prefKey] is the stable persisted token; [fromPrefKey] also accepts the legacy enum name.
+ */
 enum class RtkStatus(val prefKey: String) {
     NONE("none"),
     DGPS("dgps"),

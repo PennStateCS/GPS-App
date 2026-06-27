@@ -286,7 +286,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Surveying App v1.0\nA simple app for collecting survey points with location data."
+            android:text="SurReal AR v1.0\nA simple app for collecting survey points with location data."
             android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant" />
 

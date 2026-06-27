@@ -15,6 +15,11 @@ class NmeaParser(registry: NmeaRegistry = DefaultNmeaRegistry.create()) {
 
     private val registry: NmeaRegistry = registry
 
+    /**
+     * Outcome of parsing one line: [Success] with the decoded [NmeaSentence], or [Error] with a
+     * human-readable reason for an unrecognized or malformed line. Parsing never throws — an
+     * unparseable line is a normal [Error], not an exception.
+     */
     sealed class ParseResult {
         data class Success(val sentence: NmeaSentence) : ParseResult()
         data class Error(val message: String) : ParseResult()

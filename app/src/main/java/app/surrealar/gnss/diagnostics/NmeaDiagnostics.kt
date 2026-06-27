@@ -33,6 +33,12 @@ class NmeaDiagnostics(private val context: Context) {
     private var nmeaListener: OnNmeaMessageListener? = null
     private var gnssStatusCallback: GnssStatus.Callback? = null
 
+    /**
+     * State of the platform-NMEA self-test. [Success] means NMEA and satellites were both seen;
+     * [PartialSuccess] means one signal was present but not the other (e.g. satellites visible but no
+     * NMEA callbacks), with a [PartialSuccess.message] explaining what was missing; [Failure] carries
+     * the reason the test could not run or timed out. [NotStarted]/[Testing] are lifecycle states.
+     */
     sealed class DiagnosticResult {
         object NotStarted : DiagnosticResult()
         object Testing : DiagnosticResult()
