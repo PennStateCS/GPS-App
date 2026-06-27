@@ -9,7 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
-    // Developer API reference docs (Dokka Gradle Plugin v2). HTML only; not published.
+    // Developer API reference docs (Dokka Gradle Plugin v2). HTML, published to GitHub Pages by CI.
     id("org.jetbrains.dokka") version "2.2.0"
 }
 
@@ -266,6 +266,11 @@ dokka {
     // rejects as duplicate source roots (Kotlin/dokka#3701). Document the debug variant only.
     dokkaSourceSets.matching { it.name == "release" }.configureEach {
         suppress.set(true)
+    }
+    // Footer on every generated page. Provided by the built-in HTML output (dokka-base) — no extra
+    // plugin required.
+    pluginsConfiguration.html {
+        footerMessage.set("Generated from the main branch. Developer reference only.")
     }
 }
 
