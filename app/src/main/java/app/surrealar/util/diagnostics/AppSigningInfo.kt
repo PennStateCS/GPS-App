@@ -14,6 +14,7 @@ import java.security.MessageDigest
  */
 object AppSigningInfo {
 
+    /** A signing certificate's hex fingerprints (colon-separated), as needed for API-key restrictions. */
     data class Fingerprints(val sha1: String, val sha256: String)
 
     /** Returns the current signing cert's SHA-1 + SHA-256, or null if it can't be read. */

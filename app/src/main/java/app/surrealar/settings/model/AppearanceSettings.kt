@@ -18,6 +18,11 @@ enum class AppThemeMode(val prefKey: String) {
     }
 }
 
+/**
+ * Appearance/display preferences: theme, the live GNSS status bar, and screen power behavior
+ * (keep-awake, max brightness). Pure configuration persisted in DataStore; none of these affect
+ * captured survey data.
+ */
 data class AppearanceSettings(
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val showLiveGnssStatusBar: Boolean = true,

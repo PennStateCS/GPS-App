@@ -57,6 +57,11 @@ data class MapDiagSnapshot(
     private fun yn(b: Boolean) = if (b) "yes" else "no"
 }
 
+/**
+ * Process-wide holder for the latest map-rendering [MapDiagSnapshot], updated as the map runs and read
+ * by diagnostics reports. [update] applies a transform to the current snapshot; access is `@Volatile`
+ * for cross-thread reads. This is diagnostics state only and does not drive map behavior.
+ */
 object MapRuntimeDiagnostics {
 
     @Volatile
