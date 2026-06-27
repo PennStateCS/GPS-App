@@ -26,6 +26,12 @@ class SettingsMigrationRunner(
     private val readVersion: suspend () -> Int?,
     private val writeVersion: suspend (Int) -> Unit,
 ) {
+    /**
+     * Brings the stored settings schema up to [SettingsDefaults.CURRENT_SETTINGS_SCHEMA_VERSION],
+     * running each ordered step from the persisted version (absent = 0, a pre-versioning install).
+     * A no-op when already current. Returns a [SettingsMigrationResult] describing what ran; this
+     * only touches the settings store and never the Room database.
+     */
     suspend fun migrateIfNeeded(): SettingsMigrationResult {
         val result = try {
             val from = readVersion() ?: 0   // absent = pre-versioning install

@@ -14,7 +14,7 @@ data class Fix(
     val lonDeg: Double,                             // Longitude in decimal degrees (WGS84)
     val altEllipsoidalM: Double?,                   // Altitude above ellipsoid (meters); may be null for poor fixes
     val altMslM: Double?,                           // Altitude above mean sea level (meters); may be null if not provided/derived
-    val geoidSeparationM: Double?,                  // Geoid separation (meters); positive means geoid below ellipsoid
+    val geoidSeparationM: Double?,                  // Geoid separation N (meters); positive = geoid above ellipsoid (altEllipsoidal = altMsl + N)
     val hDop: Double?,                              // Horizontal dilution of precision (from GSA sentence)
     val vDop: Double?,                              // Vertical dilution of precision (from GSA sentence)
     val pDop: Double?,                              // Position dilution of precision (from GSA sentence)

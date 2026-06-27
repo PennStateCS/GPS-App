@@ -24,6 +24,12 @@ object CoordinateBackup {
 
     // ── Export ──────────────────────────────────────────────────────────────────
 
+    /**
+     * Serializes the full backup to a JSON string: every coordinate field plus the metadata for the
+     * referenced [models] (not the model files themselves). [appVersion] is recorded for diagnostics.
+     * The output is tagged with [FORMAT_ID]/[SCHEMA_VERSION] so [isFullBackup] and the importer can
+     * recognize and version-migrate it.
+     */
     fun export(coordinates: List<Coordinate>, models: List<Model>, appVersion: String?): String {
         val root = JSONObject()
         root.put("format", FORMAT_ID)

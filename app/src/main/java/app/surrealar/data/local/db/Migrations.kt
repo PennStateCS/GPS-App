@@ -127,9 +127,9 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
  *
  * The exported schemas (schemas/.../6.json and 7.json) are byte-identical for both the
  * coordinates and models tables — version 7 was a database version bump with no schema
- * change. (The "pointCode/pointType removed" note elsewhere in the codebase is inaccurate;
- * those columns never appear in any exported schema.) This bridge keeps the migration path
- * from 6 to 7 continuous so Room never resorts to a destructive migration.
+ * change. (For the record, there were never `pointCode`/`pointType` columns in any exported
+ * schema, despite older claims to the contrary.) This bridge keeps the migration path from 6
+ * to 7 continuous so Room never resorts to a destructive migration.
  */
 val MIGRATION_6_7 = object : Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) {

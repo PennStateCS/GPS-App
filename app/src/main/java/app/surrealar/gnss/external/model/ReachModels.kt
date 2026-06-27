@@ -59,6 +59,7 @@ data class ReachCorrectionsInfo(
     val solution: String?
 )
 
+/** Connection state to the Reach device's HTTP/socket API (distinct from the GNSS fix's RTK status). */
 enum class ReachConnectionStatus {
     CONNECTED,
     CONNECTING,
@@ -67,6 +68,11 @@ enum class ReachConnectionStatus {
     TIMEOUT
 }
 
+/**
+ * Control commands sent to the Reach device. Several are destructive or disruptive — `SHUTDOWN`,
+ * `FACTORY_RESET`, `CLEAR_LOGS`, and `RESTART_GNSS`/`REBOOT` interrupt surveying — so callers should
+ * confirm with the user before issuing them.
+ */
 enum class ReachDeviceCommand {
     REBOOT,
     SHUTDOWN,

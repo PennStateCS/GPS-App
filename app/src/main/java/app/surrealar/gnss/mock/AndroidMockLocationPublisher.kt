@@ -214,6 +214,7 @@ class AndroidMockLocationPublisher(
 
     // ── Error enum ────────────────────────────────────────────────────────────
 
+    /** Why mock-location publishing failed; surfaced so the UI can guide the user to a fix. */
     enum class MockLocationError {
         /**
          * The app has not been selected as the mock location app in Developer Options.
