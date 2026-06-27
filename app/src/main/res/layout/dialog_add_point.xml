@@ -51,6 +51,60 @@
             app:strokeColor="?attr/colorOutlineVariant"
             app:rippleColor="?attr/colorControlHighlight" />
 
+        <!-- Model placement: shown only when a model is linked; collapsed by default. -->
+        <LinearLayout
+            android:id="@+id/section_model_placement"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginTop="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/header_model_placement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="8dp"
+                android:text="▸ Model placement"
+                android:textColor="?attr/colorPrimary"
+                android:textAppearance="?attr/textAppearanceLabelLarge"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <LinearLayout
+                android:id="@+id/body_model_placement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <EditText android:id="@+id/edit_model_scale"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberDecimal" android:hint="Scale (×, blank = model default)" />
+                <EditText android:id="@+id/edit_model_yaw"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Yaw (°)" />
+                <EditText android:id="@+id/edit_model_pitch"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Pitch (°)" />
+                <EditText android:id="@+id/edit_model_roll"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Roll (°)" />
+                <EditText android:id="@+id/edit_model_voffset"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Vertical offset (m)" />
+                <EditText android:id="@+id/edit_model_offx"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Origin offset X (m)" />
+                <EditText android:id="@+id/edit_model_offy"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Origin offset Y (m)" />
+                <EditText android:id="@+id/edit_model_offz"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:inputType="numberSigned|numberDecimal" android:hint="Origin offset Z (m)" />
+            </LinearLayout>
+        </LinearLayout>
+
     </LinearLayout>
 </ScrollView>
 

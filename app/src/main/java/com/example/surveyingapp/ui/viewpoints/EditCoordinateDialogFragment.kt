@@ -8,13 +8,17 @@ import android.util.Log
 import android.view.View
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.graphics.drawable.toDrawable
 import androidx.fragment.app.DialogFragment
 import androidx.lifecycle.lifecycleScope
 import com.example.surveyingapp.R
+import com.example.surveyingapp.domain.model.CaptureMethod
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.CoordinateModelLink
+import com.example.surveyingapp.domain.model.linkedModelId
 import com.example.surveyingapp.domain.model.EmbeddedModelLocation
 import com.example.surveyingapp.domain.model.Model
 import com.example.surveyingapp.domain.model.ModelLocationConfidence
@@ -37,6 +41,7 @@ class EditCoordinateDialogFragment(
 
     private var iconButtonRef: MaterialButton? = null
     private var editTextRef: EditText? = null
+    private var placementSectionRef: View? = null
 
     // Preserves existing icon unless user picks a new model
     private var selectedIconKey: String = coordinate.icon
@@ -80,12 +85,41 @@ class EditCoordinateDialogFragment(
             )
         }
 
-        // Restore existing model icon on the button
-        coordinate.icon
-            .takeIf { it.startsWith("model:") }
-            ?.removePrefix("model:")
+        // ── Model placement section (collapsed; shown only when a model is linked) ──
+        val placementSection = view.findViewById<View>(R.id.section_model_placement)
+        val placementHeader = view.findViewById<TextView>(R.id.header_model_placement)
+        val placementBody = view.findViewById<View>(R.id.body_model_placement)
+        val editScale = view.findViewById<EditText>(R.id.edit_model_scale)
+        val editYaw = view.findViewById<EditText>(R.id.edit_model_yaw)
+        val editPitch = view.findViewById<EditText>(R.id.edit_model_pitch)
+        val editRoll = view.findViewById<EditText>(R.id.edit_model_roll)
+        val editVOff = view.findViewById<EditText>(R.id.edit_model_voffset)
+        val editOffX = view.findViewById<EditText>(R.id.edit_model_offx)
+        val editOffY = view.findViewById<EditText>(R.id.edit_model_offy)
+        val editOffZ = view.findViewById<EditText>(R.id.edit_model_offz)
+        placementSectionRef = placementSection
+
+        fun prefill(e: EditText?, v: Double?) { if (v != null) e?.setText(v.toString()) }
+        prefill(editScale, coordinate.modelScale); prefill(editYaw, coordinate.modelYawDeg)
+        prefill(editPitch, coordinate.modelPitchDeg); prefill(editRoll, coordinate.modelRollDeg)
+        prefill(editVOff, coordinate.modelVerticalOffsetM)
+        prefill(editOffX, coordinate.modelOriginOffsetXM); prefill(editOffY, coordinate.modelOriginOffsetYM)
+        prefill(editOffZ, coordinate.modelOriginOffsetZM)
+
+        placementSection?.visibility = if (coordinate.linkedModelId != null) View.VISIBLE else View.GONE
+        placementHeader?.setOnClickListener {
+            val expand = placementBody?.visibility != View.VISIBLE
+            placementBody?.visibility = if (expand) View.VISIBLE else View.GONE
+            placementHeader.text = (if (expand) "▾ " else "▸ ") + "Model placement"
+        }
+
+        // Restore existing model icon on the button (new modelId column or legacy icon)
+        coordinate.linkedModelId
             ?.let { id -> dbModels.firstOrNull { it.id == id } }
             ?.let { model -> applySelectedModel(model.id, model.name, model.thumbnailFilePath) }
+
+        fun parseField(e: EditText?): Double? =
+            e?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 
         return AlertDialog.Builder(requireContext())
             .setTitle(getString(R.string.edit_coordinate))
@@ -98,19 +132,58 @@ class EditCoordinateDialogFragment(
                 val lon = pendingLongitude ?: coordinate.longitude
                 val alt = pendingAltitude ?: coordinate.altitude
 
+                // Split the selected icon into the explicit model/built-in fields via the shared
+                // compatibility helper (keeps the legacy icon column for backward compatibility).
+                val linkedModelId = CoordinateModelLink.resolveModelId(null, icon)
+                val builtinIconKey = CoordinateModelLink.resolveIconKey(null, null, icon)
+
+                // Placement only applies when a model is linked; otherwise it is cleared.
+                // Invalid values are dropped (→ null = use default) and the user is warned:
+                // scale must be finite and > 0; angles/offsets must be finite.
+                val warnings = mutableListOf<String>()
+                fun scaleOf(e: EditText?): Double? = parseField(e)?.let {
+                    if (it.isFinite() && it > 0.0) it else { warnings += "scale must be greater than 0"; null }
+                }
+                fun finiteOf(e: EditText?, label: String): Double? = parseField(e)?.let {
+                    if (it.isFinite()) it else { warnings += "$label must be a number"; null }
+                }
+                val newScale = if (linkedModelId != null) scaleOf(editScale) else null
+                val newYaw   = if (linkedModelId != null) finiteOf(editYaw, "yaw") else null
+                val newPitch = if (linkedModelId != null) finiteOf(editPitch, "pitch") else null
+                val newRoll  = if (linkedModelId != null) finiteOf(editRoll, "roll") else null
+                val newVOff  = if (linkedModelId != null) finiteOf(editVOff, "vertical offset") else null
+                val newOffX  = if (linkedModelId != null) finiteOf(editOffX, "origin offset X") else null
+                val newOffY  = if (linkedModelId != null) finiteOf(editOffY, "origin offset Y") else null
+                val newOffZ  = if (linkedModelId != null) finiteOf(editOffZ, "origin offset Z") else null
+                if (warnings.isNotEmpty()) {
+                    Toast.makeText(requireContext(), "Ignored invalid placement: ${warnings.joinToString()}", Toast.LENGTH_LONG).show()
+                }
+
+                val placementChanged = newScale != coordinate.modelScale || newYaw != coordinate.modelYawDeg ||
+                    newPitch != coordinate.modelPitchDeg || newRoll != coordinate.modelRollDeg ||
+                    newVOff != coordinate.modelVerticalOffsetM || newOffX != coordinate.modelOriginOffsetXM ||
+                    newOffY != coordinate.modelOriginOffsetYM || newOffZ != coordinate.modelOriginOffsetZM
+
                 val changed = name != coordinate.name
                     || icon != coordinate.icon
                     || note != coordinate.note
                     || lat != coordinate.latitude
                     || lon != coordinate.longitude
                     || alt != coordinate.altitude
+                    || placementChanged
 
                 if (changed) {
                     val locationMoved = lat != coordinate.latitude || lon != coordinate.longitude
                     // Recompute the projected UTM snapshot when the position moved (e.g. "Use
                     // Model Location"); otherwise keep the existing values to avoid needless churn.
                     val base = coordinate.copy(
-                        name = name, icon = icon, note = note
+                        name = name, icon = icon, note = note,
+                        modelId = linkedModelId, iconKey = builtinIconKey,
+                        updatedAt = System.currentTimeMillis(),
+                        modelScale = newScale, modelYawDeg = newYaw,
+                        modelPitchDeg = newPitch, modelRollDeg = newRoll,
+                        modelVerticalOffsetM = newVOff,
+                        modelOriginOffsetXM = newOffX, modelOriginOffsetYM = newOffY, modelOriginOffsetZM = newOffZ
                     )
                     val updated = if (locationMoved) {
                         val utm = try { UtmConverter.latLonToUtm(lat, lon) } catch (_: Exception) { null }
@@ -121,7 +194,7 @@ class EditCoordinateDialogFragment(
                             longitude = lon,
                             altitude = alt,
                             provider = "model",
-                            captureMethod = "model_embedded",
+                            captureMethod = CaptureMethod.MODEL_EMBEDDED.storageValue,
                             easting = utm?.easting,
                             northing = utm?.northing,
                             utmZone = utm?.utmZone
@@ -207,7 +280,9 @@ class EditCoordinateDialogFragment(
     }
 
     private fun applySelectedModel(modelId: String, name: String?, thumbnailPath: String?) {
-        selectedIconKey = "model:$modelId"
+        selectedIconKey = CoordinateModelLink.toLegacyIcon(modelId)
+        // A model is now linked → reveal the placement section.
+        placementSectionRef?.visibility = View.VISIBLE
         val button = iconButtonRef ?: return
         button.text = name ?: "Selected model"
 
@@ -238,6 +313,7 @@ class EditCoordinateDialogFragment(
         editTextRef?.clearFocus()
         editTextRef = null
         iconButtonRef = null
+        placementSectionRef = null
     }
 
     override fun onDetach() {

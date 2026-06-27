@@ -86,8 +86,11 @@ interface CoordinateDao {
     @Query("SELECT rtkStatus AS status, COUNT(*) AS count FROM coordinates GROUP BY rtkStatus")
     suspend fun countByRtkStatus(): List<RtkStatusCount>
 
-    /** Returns the number of coordinates that use [modelId] as their icon ("model:<id>"). */
-    @Query("SELECT COUNT(*) FROM coordinates WHERE icon = 'model:' || :modelId")
+    /**
+     * Returns the number of coordinates linked to [modelId], via the explicit modelId column
+     * (v10+) or the legacy icon = "model:<id>" convention.
+     */
+    @Query("SELECT COUNT(*) FROM coordinates WHERE modelId = :modelId OR icon = 'model:' || :modelId")
     suspend fun countByModelId(modelId: String): Int
 
     @Query("SELECT * FROM coordinates WHERE name LIKE '%' || :query || '%' ORDER BY timestamp DESC")

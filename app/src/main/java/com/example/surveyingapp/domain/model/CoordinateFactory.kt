@@ -110,24 +110,30 @@ object CoordinateFactory {
         provider: Provider,
         result: CaptureResult,
         captureMethod: String? = null,
-        sourceDevice: String? = null
+        sourceDevice: String? = null,
+        modelId: String? = null,
+        iconKey: String? = null
     ): Coordinate {
+        // These strings MUST stay in sync with DbConstants / CoordinateMappers so a captured
+        // coordinate round-trips through the DB without its provider degrading. In particular
+        // RS2_EXTERNAL maps to its own "rs2-external" token (not "rs2-tcp").
         val providerStr = when (provider) {
             Provider.INTERNAL     -> "fused"
-            Provider.RS2_EXTERNAL -> "rs2-tcp"
+            Provider.RS2_EXTERNAL -> "rs2-external"
             Provider.RS2_TCP      -> "rs2-tcp"
             Provider.RS2_BT       -> "rs2-bt"
             Provider.MODEL        -> "model"
             Provider.OTHER        -> "other"
         }
         val utm = runCatching { UtmConverter.latLonToUtm(result.latDeg, result.lonDeg) }.getOrNull()
+        val capturedAtMs = result.endedAt.toEpochMilli()
         return Coordinate(
             id                  = id,
             name                = name,
             latitude            = result.latDeg,
             longitude           = result.lonDeg,
             altitude            = result.altEllipsoidalM,
-            timestamp           = result.endedAt.toEpochMilli(),
+            timestamp           = capturedAtMs,
             icon                = iconId,
             color               = color,
             provider            = providerStr,
@@ -149,7 +155,13 @@ object CoordinateFactory {
             averageDurationMs   = Duration.between(result.startedAt, result.endedAt).toMillis(),
             note                = note,
             captureMethod       = captureMethod,
-            sourceDevice        = sourceDevice
+            sourceDevice        = sourceDevice,
+            // v10 explicit model association + audit timestamps
+            modelId             = modelId,
+            iconKey             = iconKey,
+            renderEnabled       = true,
+            createdAt           = capturedAtMs,
+            updatedAt           = capturedAtMs
         )
     }
 

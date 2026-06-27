@@ -21,6 +21,8 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.example.surveyingapp.R
 import com.example.surveyingapp.domain.model.Coordinate
+import com.example.surveyingapp.domain.model.displayIconKey
+import com.example.surveyingapp.domain.model.linkedModelId
 import com.google.android.material.color.MaterialColors
 import java.io.File
 import java.util.Locale
@@ -157,15 +159,15 @@ class SimpleCoordinatesAdapter(
         holder.coords.text = buildSubtitle(p)
 
         // Trailing indicator when a 3D model is linked to this coordinate
-        val iconKey = p.icon
-        holder.modelLink.visibility = if (iconKey.startsWith("model:")) View.VISIBLE else View.GONE
+        val linkedModelId = p.linkedModelId
+        val iconKey = p.displayIconKey ?: ""
+        holder.modelLink.visibility = if (linkedModelId != null) View.VISIBLE else View.GONE
 
         // Icon: handle both built-in drawables and model thumbnails
         when {
-            iconKey.startsWith("model:") -> {
+            linkedModelId != null -> {
                 // DB model icon — load thumbnail from disk if available
-                val modelId = iconKey.removePrefix("model:")
-                val thumbPath = thumbnailMap[modelId]
+                val thumbPath = thumbnailMap[linkedModelId]
                 val bmp = loadThumbnailCached(thumbPath) ?: makePlaceholderBitmap(p.name)
                 holder.icon.clearColorFilter()
                 holder.icon.setImageBitmap(bmp)
@@ -260,11 +262,10 @@ class SimpleCoordinatesAdapter(
 
     private fun buildSubtitle(p: Coordinate): String {
         val latLon = String.format(Locale.US, "%.6f, %.6f", p.latitude, p.longitude)
-        val iconKey = p.icon
+        val linkedModelId = p.linkedModelId
         return when {
-            iconKey.startsWith("model:") -> {
-                val modelId = iconKey.removePrefix("model:")
-                val name = modelNameMap[modelId]?.takeIf { it.isNotBlank() } ?: "Model linked"
+            linkedModelId != null -> {
+                val name = modelNameMap[linkedModelId]?.takeIf { it.isNotBlank() } ?: "Model linked"
                 "$name · $latLon"
             }
             p.provider.lowercase(Locale.US).contains("rs2") ||

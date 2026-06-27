@@ -50,5 +50,22 @@ data class Coordinate(
     val stdLonM: Double? = null,
     val stdAltM: Double? = null,
     val sourceDevice: String? = null,
-    val appVersion: String? = null
+    val appVersion: String? = null,
+
+    // v10: explicit model association (replaces icon = "model:<id>"). See CoordinateEntity.
+    val modelId: String? = null,
+    val iconKey: String? = null,
+    val renderEnabled: Boolean = true,
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
+
+    // v10: per-coordinate model placement overrides (null = use model/default).
+    val modelScale: Double? = null,
+    val modelYawDeg: Double? = null,
+    val modelPitchDeg: Double? = null,
+    val modelRollDeg: Double? = null,
+    val modelVerticalOffsetM: Double? = null,
+    val modelOriginOffsetXM: Double? = null,
+    val modelOriginOffsetYM: Double? = null,
+    val modelOriginOffsetZM: Double? = null
 )

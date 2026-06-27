@@ -25,7 +25,10 @@ data class CoordinateToggleItem(
     val id: String,
     val name: String,
     val checked: Boolean,
+    /** Built-in icon key (drawable name) for non-model coordinates; "" when a model is linked. */
     val icon: String,
+    /** Linked model id (new column or legacy icon), or null when no model is linked. */
+    val modelId: String? = null,
     val color: Int,
     val lat: Double = 0.0,
     val lon: Double = 0.0,
@@ -136,8 +139,8 @@ class CoordinateToggleAdapter(
             cancelIconLoad()
 
             when {
-                item.icon.startsWith("model:") -> {
-                    val modelId = item.icon.removePrefix("model:")
+                item.modelId != null -> {
+                    val modelId = item.modelId
                     iconJob = scope.launch {
                         val bmp = withContext(Dispatchers.IO) {
                             try {

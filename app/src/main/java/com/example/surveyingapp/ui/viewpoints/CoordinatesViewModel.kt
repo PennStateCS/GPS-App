@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.surveyingapp.domain.coordinates.CoordinateValidator
 import com.example.surveyingapp.domain.model.Coordinate
 import com.example.surveyingapp.domain.repository.CoordinateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -35,6 +36,7 @@ class CoordinatesViewModel @Inject constructor(
     // Database operations wrapped in viewModelScope.launch for background execution
     // viewModelScope automatically cancels when ViewModel is destroyed
     fun addCoordinate(coordinate: Coordinate) = viewModelScope.launch {
+        if (rejectIfInvalid(coordinate, "addCoordinate")) return@launch
         try {
             repository.insert(coordinate)
         } catch (e: Exception) {
@@ -43,11 +45,26 @@ class CoordinatesViewModel @Inject constructor(
     }
 
     fun updateCoordinate(coordinate: Coordinate) = viewModelScope.launch {
+        if (rejectIfInvalid(coordinate, "updateCoordinate")) return@launch
         try {
             repository.update(coordinate)
         } catch (e: Exception) {
             Log.e("CoordinatesViewModel", "updateCoordinate failed", e)
         }
+    }
+
+    /**
+     * Defense-in-depth gate: refuses to persist a coordinate that fails validation
+     * (out-of-range, NaN, or 0,0). The capture dialog already blocks these at the UI, so this
+     * only catches programmatic callers. Returns true when the coordinate was rejected.
+     */
+    private fun rejectIfInvalid(coordinate: Coordinate, op: String): Boolean {
+        val result = CoordinateValidator.validate(coordinate)
+        if (!result.isValid) {
+            Log.w("CoordinatesViewModel", "$op rejected invalid coordinate: ${result.errors.joinToString()}")
+            return true
+        }
+        return false
     }
 
     fun deleteCoordinate(id: String) = viewModelScope.launch {

@@ -39,12 +39,13 @@ object CoordinateDetailFormatter {
     }
 
     fun providerLabel(p: String?): String? = when (p?.lowercase(Locale.US)) {
-        "fused"      -> "Internal GPS (fused)"
-        "rs2-tcp"    -> "External GNSS (TCP)"
-        "rs2-bt"     -> "External GNSS (Bluetooth)"
-        "model"      -> "Model"
+        "fused"        -> "Internal GPS (fused)"
+        "rs2-tcp"      -> "External GNSS (TCP)"
+        "rs2-bt"       -> "External GNSS (Bluetooth)"
+        "rs2-external" -> "External GNSS"
+        "model"        -> "Model"
         null, "", "other" -> null
-        else         -> p
+        else           -> p
     }
 
     fun fmtDistance(m: Double): String = when {

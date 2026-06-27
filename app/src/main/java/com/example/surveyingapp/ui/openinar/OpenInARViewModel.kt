@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.surveyingapp.data.local.dao.CoordinateDao
 import com.example.surveyingapp.data.local.dao.ModelDao
 import com.example.surveyingapp.data.local.entity.CoordinateEntity
+import com.example.surveyingapp.data.local.entity.ModelEntity
 import com.example.surveyingapp.domain.repository.ArDisplaySettingsRepository
 import com.example.surveyingapp.domain.repository.GnssReceiverSettingsRepository
 import com.example.surveyingapp.settings.model.ArDisplaySettings
@@ -30,7 +31,9 @@ import javax.inject.Inject
 data class CoordWithModel(
     val coordinate: CoordinateEntity,
     val modelId: String?,
-    val modelFilePath: String?
+    val modelFilePath: String?,
+    /** Resolved AR placement (per-coordinate override → model default → identity). */
+    val placement: ModelPlacement = ModelPlacement()
 )
 
 /**
@@ -59,13 +62,18 @@ class OpenInARViewModel @Inject constructor(
      */
     val coordsWithModels: StateFlow<List<CoordWithModel>> = coordinateDao.observeAll()
         .map { entities ->
-            val modelIndex: Map<String, String> = modelDao.getAllModelsList()
-                .associate { it.id to it.filePath }
+            val modelIndex: Map<String, ModelEntity> = modelDao.getAllModelsList()
+                .associateBy { it.id }
             entities.map { entity ->
-                val modelId = entity.icon
-                    .takeIf { it.startsWith("model:") }
-                    ?.removePrefix("model:")
-                CoordWithModel(entity, modelId, modelId?.let { modelIndex[it] })
+                val modelId = com.example.surveyingapp.domain.model.CoordinateModelLink
+                    .resolveModelId(entity.modelId, entity.icon)
+                val model = modelId?.let { modelIndex[it] }
+                CoordWithModel(
+                    coordinate = entity,
+                    modelId = modelId,
+                    modelFilePath = model?.filePath,
+                    placement = ModelPlacement.resolve(entity, model)
+                )
             }
         }
         .stateIn(
