@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.DocumentsContract
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -95,10 +94,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // Emlid device information
     private var currentDeviceInfo: EmlidDeviceInfo? = null
 
-    // Missing properties for import/export functionality
-    private var currentOperation: String? = null
+    // Coordinate backup import/export state
     private var pendingImportUri: Uri? = null
-    private var pendingImportIsCsv: Boolean = false
     private var coordinatesImportJob: Job? = null
     private var importProcessed: Int = 0
     private var importTotal: Int = 0
@@ -114,16 +111,16 @@ class SettingsFragment : BaseTwoPaneFragment() {
     /** Epoch ms of last raw NMEA sentence from the external adapter; 0 means none. */
     @Volatile private var lastExternalRawNmeaTimeMs: Long = 0L
 
-    // Activity result launcher for file picker
-    private val customFilePickerLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            result.data?.data?.let { uri ->
-                handleCustomFilePickerResult(uri)
-            }
-        }
-    }
+    // Coordinate backup export: system "create document" save dialog. A null uri means the
+    // user cancelled — do nothing (no error).
+    private val exportBackupLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) writeBackupTo(uri) }
+
+    // Coordinate backup import: system "open document" picker. A null uri means cancelled.
+    private val importBackupLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) onImportDocumentPicked(uri) }
 
     private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
 
@@ -333,8 +330,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     private fun setupDataContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_data, contentContainer, false)
         try {
-            view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener { try { showExportFormatDialog() } catch (e: Exception) { Log.e("SettingsFragment", "showExportFormatDialog failed", e) } }
-            view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener { try { showImportFormatDialog() } catch (e: Exception) { Log.e("SettingsFragment", "showImportFormatDialog failed", e) } }
+            view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener {
+                try {
+                    exportBackupLauncher.launch("coordinates_backup_${System.currentTimeMillis()}.json")
+                } catch (e: Exception) { Log.e("SettingsFragment", "export launch failed", e) }
+            }
+            view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener {
+                try {
+                    // Most providers label .json as application/json; the broader types are a
+                    // fallback for providers that mislabel it (the parser still validates content).
+                    importBackupLauncher.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream"))
+                } catch (e: Exception) { Log.e("SettingsFragment", "import launch failed", e) }
+            }
             view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { Log.e("SettingsFragment", "cancelActiveImport failed", e) } }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupDataContent wiring failed", e)
@@ -1704,131 +1711,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     }
 
     // ───────────────────────────── Import / Export ─────────────────────────────
-    private fun showExportFormatDialog() {
-        AlertDialog.Builder(requireContext())
-            .setTitle("Export Format")
-            .setItems(arrayOf("Full backup (JSON)", "JSON (basic)", "CSV (basic)")) { d, which ->
-                val ts = System.currentTimeMillis()
-                when (which) {
-                    0 -> exportFullJson(ts)
-                    1 -> exportJson(ts)
-                    2 -> exportCsv(ts)
-                }
-                d.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun showImportFormatDialog() {
-        AlertDialog.Builder(requireContext())
-            // JSON import auto-detects full backups vs. the basic array.
-            .setItems(arrayOf("JSON", "CSV")) { d, which ->
-                when (which) {
-                    0 -> importJson()
-                    1 -> importCsv()
-                }
-                d.dismiss()
-            }
-            .setTitle("Import Format")
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    // --- Export helpers ---
-    private fun exportFullJson(ts: Long) {
-        currentOperation = "export_full_json_$ts"
-        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_FOLDER_SELECT)
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Folder to Export Full Backup")
-        }
-        customFilePickerLauncher.launch(intent)
-    }
-
-    private fun exportJson(ts: Long) {
-        currentOperation = "export_json_$ts"
-        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_FOLDER_SELECT)
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Folder to Export JSON")
-        }
-        customFilePickerLauncher.launch(intent)
-    }
-
-    private fun exportCsv(ts: Long) {
-        currentOperation = "export_csv_$ts"
-        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_FOLDER_SELECT)
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Folder to Export CSV")
-        }
-        customFilePickerLauncher.launch(intent)
-    }
-
-    // --- Import helpers using custom file picker ---
-    private fun importJson() {
-        currentOperation = "import_json"
-        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILE_EXTENSIONS, arrayOf(".json"))
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select JSON File to Import")
-        }
-        customFilePickerLauncher.launch(intent)
-    }
-
-    private fun importCsv() {
-        currentOperation = "import_csv"
-        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILE_EXTENSIONS, arrayOf(".csv"))
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select CSV File to Import")
-        }
-        customFilePickerLauncher.launch(intent)
-    }
-
-    private fun importDataFiles() {
-        currentOperation = "import_data"
-        val intent = Intent(requireContext(), com.example.surveyingapp.ui.filepicker.FilePickerActivity::class.java).apply {
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_FILTER_MODE, com.example.surveyingapp.ui.filepicker.FilePickerActivity.FILTER_MODE_IMPORT_DATA)
-            putExtra(com.example.surveyingapp.ui.filepicker.FilePickerActivity.EXTRA_TITLE, "Select Data File to Import")
-        }
-        customFilePickerLauncher.launch(intent)
-    }
-
-    private fun handleCustomFilePickerResult(uri: Uri) {
-        try {
-            when {
-                currentOperation?.startsWith("export_full_json_") == true -> {
-                    val timestamp = currentOperation?.substringAfter("export_full_json_")?.toLongOrNull() ?: System.currentTimeMillis()
-                    performFullJsonExport(uri, timestamp)
-                }
-                currentOperation?.startsWith("export_json_") == true -> {
-                    val timestamp = currentOperation?.substringAfter("export_json_")?.toLongOrNull() ?: System.currentTimeMillis()
-                    performJsonExport(uri, timestamp)
-                }
-                currentOperation?.startsWith("export_csv_") == true -> {
-                    val timestamp = currentOperation?.substringAfter("export_csv_")?.toLongOrNull() ?: System.currentTimeMillis()
-                    performCsvExport(uri, timestamp)
-                }
-                currentOperation == "import_json" -> {
-                    pendingImportIsCsv = false
-                    lifecycleScope.launch { try { prepareImportCoordinatesWithConfirmation(uri, isCsv = false) } catch (e: Exception) { Log.e("SettingsFragment", "import_json failed", e) } }
-                }
-                currentOperation == "import_csv" -> {
-                    pendingImportIsCsv = true
-                    lifecycleScope.launch { try { prepareImportCoordinatesWithConfirmation(uri, isCsv = true) } catch (e: Exception) { Log.e("SettingsFragment", "import_csv failed", e) } }
-                }
-                currentOperation == "import_data" -> {
-                    val fileName = try { getFileNameFromUri(uri) } catch (_: Exception) { null } ?: ""
-                    val isCsvFile = fileName.lowercase().endsWith(".csv")
-                    pendingImportIsCsv = isCsvFile
-                    lifecycleScope.launch { try { prepareImportCoordinatesWithConfirmation(uri, isCsv = isCsvFile) } catch (e: Exception) { Log.e("SettingsFragment", "import_data failed", e) } }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("SettingsFragment", "handleCustomFilePickerResult failed", e)
-        } finally {
-            currentOperation = null
-        }
-    }
-
-    private fun performFullJsonExport(folderUri: Uri, timestamp: Long) {
+    /** Writes the official full JSON backup to the document the user chose in the save dialog. */
+    private fun writeBackupTo(uri: Uri) {
         lifecycleScope.launch {
             runCatching {
                 val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
@@ -1837,157 +1721,52 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     requireContext().packageManager.getPackageInfo(requireContext().packageName, 0).versionName
                 }.getOrNull()
                 val json = com.example.surveyingapp.data.export.CoordinateBackup.export(coords, models, appVersion)
-                val fileName = "coordinates_backup_${timestamp}.json"
-
                 withContext(Dispatchers.IO) {
-                    if (folderUri.scheme == "file") {
-                        val folderPath = folderUri.path ?: throw Exception("Invalid folder path")
-                        java.io.File(folderPath, fileName).writeText(json, StandardCharsets.UTF_8)
-                    } else {
-                        val fileUri = DocumentsContract.createDocument(
-                            requireContext().contentResolver, folderUri, "application/json", fileName
-                        ) ?: throw Exception("Failed to create document")
-                        requireContext().contentResolver.openOutputStream(fileUri)?.use {
-                            it.write(json.toByteArray(StandardCharsets.UTF_8))
-                        }
-                    }
+                    requireContext().contentResolver.openOutputStream(uri)?.use {
+                        it.write(json.toByteArray(StandardCharsets.UTF_8))
+                    } ?: error("Unable to open output stream")
                 }
-                withContext(Dispatchers.Main) {
-                    showSettingsMessage("Full backup exported: $fileName (${coords.size} points)", Snackbar.LENGTH_LONG)
-                }
+                coords.size
+            }.onSuccess { n ->
+                showSettingsMessage("JSON backup exported: $n coordinates", Snackbar.LENGTH_LONG)
             }.onFailure { e ->
                 showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
     }
 
-    private fun performJsonExport(folderUri: Uri, timestamp: Long) {
+    /** Routes a picked backup document into the import confirmation/merge flow. */
+    private fun onImportDocumentPicked(uri: Uri) {
         lifecycleScope.launch {
-            runCatching {
-                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                val arr = org.json.JSONArray()
-                coords.forEach { c ->
-                    arr.put(org.json.JSONObject().apply {
-                        put("id", c.id); put("name", c.name); put("latitude", c.latitude); put("longitude", c.longitude)
-                        put("altitude", c.altitude); put("timestamp", c.timestamp); put("icon", c.icon); put("color", c.color)
-                    })
-                }
-
-                // Create file in selected folder
-                val fileName = "coordinates_${timestamp}.json"
-
-                withContext(Dispatchers.IO) {
-                    if (folderUri.scheme == "file") {
-                        // Handle file:// URIs directly
-                        val folderPath = folderUri.path ?: throw Exception("Invalid folder path")
-                        val file = java.io.File(folderPath, fileName)
-                        file.writeText(arr.toString(2), StandardCharsets.UTF_8)
-                    } else {
-                        // Handle content:// URIs using DocumentsContract
-                        val mimeType = "application/json"
-                        val fileUri = DocumentsContract.createDocument(
-                            requireContext().contentResolver,
-                            folderUri,
-                            mimeType,
-                            fileName
-                        ) ?: throw Exception("Failed to create document")
-
-                        requireContext().contentResolver.openOutputStream(fileUri)?.use { outputStream ->
-                            outputStream.write(arr.toString(2).toByteArray(StandardCharsets.UTF_8))
-                        }
-                    }
-                }
-
-                withContext(Dispatchers.Main) {
-                    showSettingsMessage("JSON exported successfully: $fileName", Snackbar.LENGTH_LONG)
-                }
-            }.onFailure { e ->
-                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
+            try {
+                prepareImportCoordinatesWithConfirmation(uri)
+            } catch (e: Exception) {
+                Log.e("SettingsFragment", "import failed", e)
+                showSettingsMessage("Import failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
     }
 
-    private fun performCsvExport(folderUri: Uri, timestamp: Long) {
-        lifecycleScope.launch {
-            runCatching {
-                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                val sb = StringBuilder()
-                sb.append("id,name,latitude,longitude,altitude,timestamp,icon,color\n")
-                coords.forEach { c ->
-                    fun esc(v: String): String = if (v.contains(',') || v.contains('"') || v.contains('\n')) '"' + v.replace("\"", "\"\"") + '"' else v
-                    sb.append(esc(c.id)).append(',')
-                        .append(esc(c.name)).append(',')
-                        .append(c.latitude).append(',')
-                        .append(c.longitude).append(',')
-                        .append(c.altitude).append(',')
-                        .append(c.timestamp).append(',')
-                        .append(esc(c.icon)).append(',')
-                        .append(c.color)
-                        .append('\n')
-                }
-
-                // Create file in selected folder
-                val fileName = "coordinates_${timestamp}.csv"
-
-                withContext(Dispatchers.IO) {
-                    if (folderUri.scheme == "file") {
-                        // Handle file:// URIs directly
-                        val folderPath = folderUri.path ?: throw Exception("Invalid folder path")
-                        val file = java.io.File(folderPath, fileName)
-                        file.writeText(sb.toString(), StandardCharsets.UTF_8)
-                    } else {
-                        // Handle content:// URIs using DocumentsContract
-                        val mimeType = "text/csv"
-                        val fileUri = DocumentsContract.createDocument(
-                            requireContext().contentResolver,
-                            folderUri,
-                            mimeType,
-                            fileName
-                        ) ?: throw Exception("Failed to create document")
-
-                        requireContext().contentResolver.openOutputStream(fileUri)?.use { outputStream ->
-                            outputStream.write(sb.toString().toByteArray(StandardCharsets.UTF_8))
-                        }
-                    }
-                }
-
-                withContext(Dispatchers.Main) {
-                    showSettingsMessage("CSV exported successfully: $fileName", Snackbar.LENGTH_LONG)
-                }
-            }.onFailure { e ->
-                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
-            }
-        }
-    }
-
-    private fun getFileNameFromUri(uri: Uri): String? {
-        val cursor = requireContext().contentResolver.query(uri, null, null, null, null)
-        return cursor?.use {
-            if (it.moveToFirst()) {
-                val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex >= 0) it.getString(nameIndex) else null
-            } else null
-        }
-    }
-
-    // --- Import pipeline (extended for CSV) ---
-    private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri, isCsv: Boolean) {
+    // --- Import pipeline (full JSON backup; basic JSON arrays are still auto-detected) ---
+    private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri) {
         val existing = withContext(Dispatchers.IO) { repository.getAllCoordinatesList().size }
-        if (existing == 0) { launchImportCoordinates(uri, replace = false, isCsv = isCsv); return }
+        if (existing == 0) { launchImportCoordinates(uri, replace = false); return }
         pendingImportUri = uri
         if (!isAdded) return
+        // Duplicate-ID policy: merge overwrites matching IDs (and reports the count); replace clears
+        // first. The user must confirm before any existing data is overwritten.
         AlertDialog.Builder(requireContext())
-            .setTitle(if (isCsv) "Import CSV" else getString(R.string.import_select_file_title))
+            .setTitle(getString(R.string.import_select_file_title))
             .setMessage(getString(R.string.import_merge_replace_message))
-            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false, isCsv) } }
-            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true, isCsv) } }
+            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false) } }
+            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true) } }
             .setNegativeButton(R.string.import_cancel, null)
             .show()
     }
 
-    private fun launchImportCoordinates(uri: Uri, replace: Boolean, isCsv: Boolean) {
+    private fun launchImportCoordinates(uri: Uri, replace: Boolean) {
         if (coordinatesImportJob?.isActive == true) return
-        coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace, isCsv) }
+        coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace) }
     }
 
     private data class ImportSummary(
@@ -1998,7 +1777,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val replaced: Boolean
     )
 
-    private suspend fun importCoordinates(uri: Uri, replace: Boolean, isCsv: Boolean) {
+    private suspend fun importCoordinates(uri: Uri, replace: Boolean) {
         showImportProgress(true, 0, "Scanning…")
         importProcessed = 0; importTotal = 0
         runCatching {
@@ -2014,7 +1793,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val parsed: List<Coordinate>
             val skipped: List<String>
             val missingModels: List<String>
-            if (!isCsv && com.example.surveyingapp.data.export.CoordinateBackup.isFullBackup(raw)) {
+            if (com.example.surveyingapp.data.export.CoordinateBackup.isFullBackup(raw)) {
                 // Full-fidelity backup: parser validates each coordinate. The backup carries model
                 // metadata but NOT the model files, so flag any modelId that doesn't exist in the
                 // LOCAL model database (not merely the backup's model list).
@@ -2028,8 +1807,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         ?.let { "'${c.name}' (${c.id}) → $it" }
                 }
             } else {
-                // Basic CSV/JSON: validate each row so invalid coordinates are never inserted.
-                val rawList = if (isCsv) parseCsvCoordinates(raw) else parseJsonCoordinates(raw)
+                // Legacy basic JSON array: validate each row so invalid coordinates are never inserted.
+                val rawList = parseJsonCoordinates(raw)
                 val valid = mutableListOf<Coordinate>(); val bad = mutableListOf<String>()
                 rawList.forEach { c ->
                     if (com.example.surveyingapp.domain.coordinates.CoordinateValidator.validate(c).isValid) valid += c
@@ -2089,56 +1868,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         return list
     }
 
-    private fun parseCsvCoordinates(raw: String): List<Coordinate> {
-        val lines = raw.split('\n').filter { it.isNotBlank() }
-        if (lines.isEmpty()) return emptyList()
-        val header = lines.first().trim().lowercase()
-        val hasHeader = header.contains("latitude") && header.contains("longitude")
-        val dataLines = if (hasHeader) lines.drop(1) else lines
-        val list = mutableListOf<Coordinate>()
-        val now = System.currentTimeMillis()
-        dataLines.forEach { line ->
-            try {
-                val cols = parseCsvLine(line)
-                if (cols.size < 4) return@forEach
-                fun col(i: Int): String = cols.getOrNull(i)?.trim().orEmpty()
-                val idRaw = col(0)
-                val name = col(1).ifBlank { idRaw }
-                val lat = col(2).toDoubleOrNull() ?: return@forEach
-                val lon = col(3).toDoubleOrNull() ?: return@forEach
-                val alt = col(4).toDoubleOrNull() ?: 0.0
-                val ts = col(5).toLongOrNull() ?: now
-                val rawIcon = col(6).ifBlank { "ic_pin" }
-                val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
-                val color = col(7).toLongOrNull()?.toInt() ?: 0xFF64B5F6.toInt()
-                val id = if (idRaw.isBlank()) java.util.UUID.randomUUID().toString() else idRaw
-                list.add(Coordinate(id, if (name.isBlank()) id else name, lat, lon, alt, ts, icon, color))
-            } catch (e: Exception) {
-                Log.w("SettingsFragment", "Skipping malformed CSV line: $line", e)
-            }
-        }
-        return list
-    }
-
-    private fun parseCsvLine(line: String): List<String> {
-        val result = mutableListOf<String>()
-        val sb = StringBuilder()
-        var inQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            when (c) {
-                '"' -> {
-                    if (inQuotes && i + 1 < line.length && line[i + 1] == '"') { sb.append('"'); i++ } else { inQuotes = !inQuotes }
-                }
-                ',' -> if (!inQuotes) { result.add(sb.toString()); sb.setLength(0) } else sb.append(c)
-                else -> sb.append(c)
-            }
-            i++
-        }
-        result.add(sb.toString())
-        return result
-    }
 
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
         try {

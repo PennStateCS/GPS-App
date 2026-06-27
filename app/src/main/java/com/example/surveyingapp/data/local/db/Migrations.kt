@@ -25,6 +25,19 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
 }
 
 /**
+ * Migration 4 -> 5: add thumbnailFileName and thumbnailFilePath columns to the models table.
+ *
+ * Kept as a named class (rather than an `object : Migration` like the others) for historical
+ * reasons — [AppDatabase] and the migration tests reference it as `Migration4To5()`.
+ */
+class Migration4To5 : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE models ADD COLUMN thumbnailFileName TEXT")
+        db.execSQL("ALTER TABLE models ADD COLUMN thumbnailFilePath TEXT")
+    }
+}
+
+/**
  * Migration 5 -> 6: add auto-populated capture-method provenance to coordinates.
  * Nullable, so existing rows migrate cleanly with NULL values.
  */

@@ -22,10 +22,10 @@ import javax.inject.Singleton
 object DatabaseModule {
 
     /**
-     * Delegates to the [AppDatabase] static singleton so the Hilt-injected instance and
-     * any direct [AppDatabase.getDatabase] calls in legacy Fragment code share the exact
-     * same Room connection. Using a separate builder here would open a second connection
-     * to the same SQLite file and bypass the registered migrations.
+     * Delegates to the [AppDatabase] singleton so every Hilt-injected database access shares the
+     * exact same Room connection. Using a separate Room builder here would open a second
+     * connection to the same SQLite file and bypass the registered migrations. UI classes should
+     * inject [AppDatabase]/the DAOs/repositories rather than calling [AppDatabase.getDatabase].
      */
     @Provides
     @Singleton

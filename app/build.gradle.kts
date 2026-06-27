@@ -110,6 +110,9 @@ android {
         debug {
             signingConfig = signingConfigs.getByName("debug")
             ndk { debugSymbolLevel = "symbol_table" }
+            // First-party (JaCoCo-backed) unit-test coverage. Generates the
+            // `createDebugUnitTestCoverageReport` task with HTML/XML output. No extra plugin.
+            enableUnitTestCoverage = true
         }
     }
 

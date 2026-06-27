@@ -13,7 +13,9 @@ import com.example.surveyingapp.data.local.entity.ModelEntity
 
 @Database(
     entities = [CoordinateEntity::class, ModelEntity::class],
-    // v7: the v6 schema was revised during development (pointCode/pointType removed).
+    // Schema history (see exported JSON in app/schemas):
+    // v3->v4 and v6->v7: version bumps with no schema change (no-op migration bridges).
+    // v5: models table gained thumbnail columns.
     // v8: models table gained embedded-location columns.
     // v9: added indices on rtkStatus, icon, horizontalAccuracyM for faster filtering.
     // v10: coordinates gained explicit model association (modelId/iconKey/renderEnabled,
@@ -37,7 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    // Full, contiguous migration chain v2 -> v9. Every step has an explicit
+                    // Full, contiguous migration chain v2 -> v10. Every step has an explicit
                     // migration (3->4 and 6->7 are documented no-op bridges), so release builds
                     // upgrade existing installs without ever losing saved coordinates/models.
                     .addMigrations(
