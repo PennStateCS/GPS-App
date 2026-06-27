@@ -1,4 +1,5 @@
 // Module: app
+import java.net.URI
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Properties
@@ -254,6 +255,12 @@ dokka {
     dokkaSourceSets.configureEach {
         // Module/package overview shown on the docs landing page.
         includes.from("dokka/module.md")
+        // "(source)" links on each declaration point back to GitHub main.
+        sourceLink {
+            localDirectory.set(file("src/main/java"))
+            remoteUrl.set(URI("https://github.com/PennStateWilkes-Barre/GPS-App/tree/main/app/src/main/java"))
+            remoteLineSuffix.set("#L")
+        }
     }
     // Android exposes one source set per build variant, all pointing at src/main — which Dokka
     // rejects as duplicate source roots (Kotlin/dokka#3701). Document the debug variant only.
