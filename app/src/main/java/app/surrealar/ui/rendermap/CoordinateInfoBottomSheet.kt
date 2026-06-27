@@ -16,6 +16,10 @@ import androidx.core.content.ContextCompat
 import app.surrealar.domain.model.Coordinate
 import java.util.Locale
 
+/**
+ * Bottom sheet showing details for a tapped saved coordinate on the map (name, position, quality,
+ * linked model), with edit/navigate actions.
+ */
 class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
 
     companion object {

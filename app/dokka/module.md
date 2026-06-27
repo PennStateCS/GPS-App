@@ -252,3 +252,63 @@ singleton (UI code must not call `AppDatabase.getDatabase(...)` directly); `Repo
 domain repository interfaces to their impls so consumers inject the interface; `SettingsModule` and
 `GnssModule` provide settings/GNSS singletons; `CoroutineModule` provides injected dispatchers and
 qualifiers so threading is explicit and testable.
+
+# Package app.surrealar.ui.capture
+
+Standalone averaged-capture screen. `CaptureViewModel` runs an `ObservationSession` against the active
+GNSS source under the configured `FixAcceptanceSettings` and saves the result via the repository;
+`CaptureDialogFragment` is its view. Capture only completes with a real averaged fix (including
+altitude) — it does not fabricate position or altitude.
+
+# Package app.surrealar.ui.home
+
+Home dashboard. `HomeFragment` hosts the map and the plain-language "Field Status" card; `HomeViewModel`
+holds its state; `HomeFieldStatusMapper` is a pure mapper from live GNSS fix/source/stream data to that
+summary, reusing the shared `GnssStatusFormatter` so it never drifts from the GNSS toolbar.
+
+# Package app.surrealar.ui.rendermap
+
+The full survey map screen. `RenderMapFragment` draws saved coordinates, the meter grid, point labels,
+the per-coordinate visibility toggles, and the info bottom sheet; `MapUiStateViewModel` retains camera
+and UI state across recreation. The grid/label/spacing logic (`MapGrid`, `PointLabel`, `MapSettings`)
+is pure and unit-tested — only the on-map drawing lives in the fragment.
+
+# Package app.surrealar.ui.toolbar
+
+The app-wide GNSS status toolbar. `GnssToolbarStateMapper` maps live fixes to a `GnssToolbarState`,
+returning `ToolbarMapResult.Ignore` for stale fixes (older than the max-age threshold) so the toolbar
+never shows outdated status; `GnssToolbarRenderer` is the view-only renderer. This is the single source
+of GNSS status wording shared across screens.
+
+# Package app.surrealar.ui.viewcoordinates
+
+Saved-coordinates list and export screen. `ViewCoordinatesFragment` + `CoordinatesAdapter` present the
+stored points; exports are delegated to `data.export` (CSV/GeoJSON are lossy interchange, not backups).
+
+# Package app.surrealar.ui.development
+
+Debug-only developer screen. `DevelopmentFragment`/`DevelopmentViewModel` surface live fix, sky, and
+diagnostics data for troubleshooting GNSS/source issues. Gated behind the developer-tools setting; not
+part of the normal field workflow.
+
+# Package app.surrealar.ui.filepicker
+
+In-app file/folder browser used when importing a 3D model file. `FilePickerActivity` + `FilePickerAdapter`
+render rows modeled by the `FileItem` hierarchy (back / browse / directory / regular file); the "browse"
+entry hands off to the Android Storage Access Framework for the actual file grant.
+
+# Package app.surrealar.ui.map
+
+Map styling helpers. `MapThemeHelper` applies the day/night JSON style to the Google map; a debug flag
+can disable custom styling when diagnosing a blank or mis-styled map.
+
+# Package app.surrealar.ui.common
+
+Shared, presentation-only UI building blocks used across screens: the two-pane base fragment, the GNSS
+visualizations (`SkyplotView`, `SnrBarView`, `SatelliteSignalChartView`), and formatters
+(`DrawerBadgeFormatter`, `StatusBarFormatter`, `TimestampLabels`). These format or render already-computed
+state and hold no GNSS or persistence logic.
+
+# Package app.surrealar.ui.components
+
+Small reusable custom views (e.g. `FixBadgeView`) shared across screens. Presentation only.

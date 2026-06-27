@@ -30,6 +30,10 @@ import java.io.FileOutputStream
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
+/**
+ * Imported-models management screen: lists models from `ModelsViewModel` and offers add/edit/delete
+ * and 3D preview. Operates on model metadata and files via the repositories.
+ */
 @AndroidEntryPoint
 class ModelsFragment : Fragment() {
 

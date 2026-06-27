@@ -25,6 +25,12 @@ data class Coordinate(
     val name: String,
     val latitude: Double,
     val longitude: Double,
+    /**
+     * Ellipsoidal height in metres (required, non-null). Capture paths must supply a real value;
+     * unknown altitude is never stored as `0.0` (a fake sea-level reading). GNSS capture blocks until
+     * altitude is available, and the validator rejects non-finite values — see
+     * [app.surrealar.domain.coordinates.CoordinateValidator] and `CoordinateMappers.toEntityFromFix`.
+     */
     val altitude: Double,
     val timestamp: Long,
     val icon: String,

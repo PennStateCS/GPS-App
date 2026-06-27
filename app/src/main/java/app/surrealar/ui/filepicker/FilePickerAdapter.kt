@@ -13,6 +13,9 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * RecyclerView adapter rendering `FileItem` rows for `FilePickerActivity`.
+ */
 class FilePickerAdapter(
     private val onFileClick: (File) -> Unit,
     private val onBackClick: () -> Unit,

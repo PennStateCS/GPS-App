@@ -65,6 +65,10 @@ import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+/**
+ * Settings screen host: presents the settings categories and edits values through the DataStore-backed
+ * settings repositories. Holds no settings state of its own and writes nothing to Room.
+ */
 @AndroidEntryPoint
 class SettingsFragment : BaseTwoPaneFragment() {
 

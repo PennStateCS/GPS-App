@@ -28,6 +28,9 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * RecyclerView adapter for the imported-models list (thumbnail, name, metadata).
+ */
 class ModelsAdapter(
     private val onDeleteClick: (Model) -> Unit,
     private val onEditClick: (Model) -> Unit,

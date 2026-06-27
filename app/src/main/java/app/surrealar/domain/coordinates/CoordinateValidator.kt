@@ -52,6 +52,13 @@ object CoordinateValidator {
             abs(coordinate.longitude) < NULL_ISLAND_EPSILON_DEG) {
             errors.add("Coordinate is at 0,0 (no valid location fix)")
         }
+        // Altitude is ellipsoidal height in metres and must be a real number. A non-finite value
+        // (NaN/Inf) means "unknown altitude" leaked through — reject rather than persist it. A finite
+        // 0.0 is allowed (it can be a true sea-level measurement); DataHealthChecker flags suspicious
+        // zero-altitude rows that lack any MSL/geoid metadata.
+        if (!coordinate.altitude.isFinite()) {
+            errors.add("Altitude is missing or not a finite number")
+        }
         if (coordinate.name.isBlank()) {
             errors.add("Coordinate name cannot be empty")
         }

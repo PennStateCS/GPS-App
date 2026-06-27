@@ -3,9 +3,15 @@ package app.surrealar.data.repository.mapper
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.model.displayIconKey
 import app.surrealar.domain.model.linkedModelId
+import app.surrealar.gnss.model.Fix
+import app.surrealar.gnss.model.Provider
+import app.surrealar.gnss.model.RtkStatus
+import app.surrealar.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.time.Instant
 
 /**
  * Round-trips a fully-populated Coordinate through CoordinateEntity and back, guarding against
@@ -110,5 +116,29 @@ class CoordinateMappersTest {
         )
         assertNull(plain.linkedModelId)
         assertEquals("ic_star", plain.displayIconKey)
+    }
+
+    private fun fix(altEllipsoidalM: Double?) = Fix(
+        provider = Provider.RS2_EXTERNAL, timeUtc = Instant.ofEpochMilli(1_000L),
+        timestampSource = TimestampSource.NMEA_ZDA, latDeg = 41.0, lonDeg = -76.0,
+        altEllipsoidalM = altEllipsoidalM, altMslM = null, geoidSeparationM = null,
+        hDop = null, vDop = null, pDop = null, hAccM = null, vAccM = null,
+        stdDevEastM = null, stdDevNorthM = null, stdDevUpM = null,
+        rtkStatus = RtkStatus.FIX, satsUsed = 20, satsVisible = 28, diffAgeS = null,
+        speedMps = null, courseDeg = null
+    )
+
+    @Test
+    fun toEntityFromFix_missingAltitude_throwsInsteadOfStoringZero() {
+        // A fix without ellipsoidal height must not be silently saved as altitude 0.0.
+        assertThrows(IllegalArgumentException::class.java) {
+            toEntityFromFix(id = "c4", name = "P", icon = "ic_pin", color = 0, note = null, fix = fix(null))
+        }
+    }
+
+    @Test
+    fun toEntityFromFix_presentAltitude_mapsThrough() {
+        val e = toEntityFromFix(id = "c5", name = "P", icon = "ic_pin", color = 0, note = null, fix = fix(399.02))
+        assertEquals(399.02, e.altitude, 0.0)
     }
 }

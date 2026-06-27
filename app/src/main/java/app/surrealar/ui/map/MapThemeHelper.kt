@@ -7,6 +7,10 @@ import app.surrealar.R
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.MapStyleOptions
 
+/**
+ * Applies day/night JSON styling to the Google map. A debug flag can disable custom styling when
+ * diagnosing a blank or mis-styled map; it must stay false in production.
+ */
 object MapThemeHelper {
 
     private const val TAG = "MapThemeHelper"

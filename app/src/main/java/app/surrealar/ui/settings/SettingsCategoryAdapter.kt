@@ -14,12 +14,18 @@ import app.surrealar.R
 import com.google.android.material.color.MaterialColors
 
 // Represents a sidebar/settings section. Consider moving to its own file if reused elsewhere.
+/**
+ * One entry in the settings category list: a title/icon and the destination it navigates to.
+ */
 data class SettingsCategory(
     val id: Int,          // Stable logical id (could be leveraged with setHasStableIds())
     val title: String,
     val iconRes: Int
 )
 
+/**
+ * RecyclerView adapter for the settings category list.
+ */
 class SettingsCategoryAdapter(
     categories: List<SettingsCategory>,
     private val onCategorySelected: (SettingsCategory) -> Unit

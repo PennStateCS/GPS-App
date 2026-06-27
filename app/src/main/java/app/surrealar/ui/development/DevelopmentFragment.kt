@@ -54,6 +54,10 @@ import java.util.TimeZone
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+/**
+ * Debug-only developer screen showing live GNSS fix, sky, and diagnostics data for troubleshooting.
+ * Presentation only; gated behind the developer-tools setting.
+ */
 @AndroidEntryPoint
 class DevelopmentFragment : BaseTwoPaneFragment() {
 

@@ -29,6 +29,10 @@ enum class MapGridMode(val label: String, val prefKey: String) {
     }
 }
 
+/**
+ * Pure helpers for the survey meter grid: nice-number metric spacing selection and label formatting.
+ * The line drawing itself lives in `RenderMapFragment`; this is unit-tested.
+ */
 object MapGrid {
 
     /** "Nice number" metric grid spacings, in metres, smallest → largest. */

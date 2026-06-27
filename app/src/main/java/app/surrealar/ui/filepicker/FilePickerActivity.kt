@@ -15,6 +15,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import app.surrealar.databinding.ActivityFilePickerBinding
 import java.io.File
 
+/**
+ * In-app folder browser for choosing a model file. Lists directories/files via `FilePickerAdapter`
+ * and delegates to the Storage Access Framework for the actual file grant; returns the picked file.
+ */
 class FilePickerActivity : AppCompatActivity() {
 
     companion object {

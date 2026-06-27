@@ -70,6 +70,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Detail view for a single saved coordinate: formatted position/quality/model info with edit actions.
+ * Presentation only; formatting must not mutate the stored survey position.
+ */
 @AndroidEntryPoint
 class CoordinateDetailFragment : Fragment() {
 

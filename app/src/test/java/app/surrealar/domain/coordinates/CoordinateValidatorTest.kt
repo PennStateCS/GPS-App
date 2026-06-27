@@ -13,14 +13,31 @@ class CoordinateValidatorTest {
         name: String = "P1",
         lat: Double = 41.0,
         lon: Double = -75.0,
+        alt: Double = 0.0,
         horizontalAccuracyM: Double? = null,
         hdop: Double? = null,
         satsUsed: Int? = null
     ) = Coordinate(
-        id = id, name = name, latitude = lat, longitude = lon, altitude = 0.0,
+        id = id, name = name, latitude = lat, longitude = lon, altitude = alt,
         timestamp = 0L, icon = "", color = 0,
         horizontalAccuracyM = horizontalAccuracyM, hdop = hdop, satsUsed = satsUsed
     )
+
+    @Test
+    fun nonFiniteAltitude_isRejected() {
+        val nan = CoordinateValidator.validate(coord(alt = Double.NaN))
+        assertFalse(nan.isValid)
+        assertTrue(nan.errors.any { it.contains("Altitude") })
+        assertFalse(CoordinateValidator.validate(coord(alt = Double.POSITIVE_INFINITY)).isValid)
+    }
+
+    @Test
+    fun finiteZeroAltitude_isAllowed() {
+        // A finite altitude (incl. real sea-level 0.0) must NOT be rejected by the validator.
+        val r = CoordinateValidator.validate(coord(alt = 0.0))
+        assertTrue(r.isValid)
+        assertTrue(r.errors.none { it.contains("Altitude") })
+    }
 
     @Test
     fun validCoordinate_isValid_noErrors() {

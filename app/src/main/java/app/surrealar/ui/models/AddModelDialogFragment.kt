@@ -7,6 +7,9 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import app.surrealar.R
 
+/**
+ * Dialog for importing a new 3D model: collects a name/file and creates the model via the repository.
+ */
 class AddModelDialogFragment : DialogFragment() {
 
     companion object {

@@ -8,6 +8,9 @@ import androidx.fragment.app.DialogFragment
 import app.surrealar.R
 import app.surrealar.domain.model.Model
 
+/**
+ * Dialog for editing an existing model's metadata (e.g. name) via the repository.
+ */
 class EditModelDialogFragment : DialogFragment() {
 
     companion object {

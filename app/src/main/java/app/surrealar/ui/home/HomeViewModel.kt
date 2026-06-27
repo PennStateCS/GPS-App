@@ -34,6 +34,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+/**
+ * State holder for the Home screen, bridging the live GNSS/source data layer to the Home UI.
+ */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,

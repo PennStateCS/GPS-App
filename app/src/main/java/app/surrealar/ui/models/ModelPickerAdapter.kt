@@ -24,6 +24,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * RecyclerView adapter for the model-picker list.
+ */
 class ModelPickerAdapter(private val onModelClick: (Model) -> Unit) : ListAdapter<Model, ModelPickerAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
     private val coroutineScope = CoroutineScope(Dispatchers.Main)

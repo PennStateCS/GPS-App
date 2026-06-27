@@ -5,6 +5,9 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import app.surrealar.R
 
+/**
+ * Host activity for the coordinate list/detail two-pane flow.
+ */
 class CoordinatesActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

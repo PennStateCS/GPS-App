@@ -22,6 +22,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import java.util.UUID
 
+/**
+ * Drives the standalone capture screen: runs an `ObservationSession` against the active GNSS source
+ * under the injected `FixAcceptanceSettings`, exposes capture progress/state, and saves the averaged
+ * result via the repository. A capture only completes with a real averaged fix (position + altitude).
+ */
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,

@@ -35,6 +35,11 @@ object HomeFieldStatusMapper {
     /** A compact metadata chip, e.g. "Sats 29/29", "RTK 1s", "Errors 3". */
     data class Chip(val label: String, val severity: Severity = Severity.NEUTRAL)
 
+    /**
+     * Immutable Field Status summary for the Home card: a headline, two detail lines, and an ordered
+     * chip row, plus a severity and optional action. Callers map severity to colors/icons and the
+     * action to a navigation destination.
+     */
     data class FieldStatus(
         val state: State,
         val headline: String,

@@ -78,6 +78,10 @@ private const val DEFAULT_COORDINATE_COLOR = 0xFF155DA8.toInt()
 private const val DEV_FALLBACK_LAT = 37.4219999
 private const val DEV_FALLBACK_LON = -122.0840575
 
+/**
+ * Dialog for creating a coordinate from a live GNSS/internal fix or manual entry. Capture is gated on
+ * a real position and altitude; it never enables Save with a fabricated 0.0 altitude.
+ */
 @AndroidEntryPoint
 class AddCoordinateDialogFragment(
     private val highAccuracy: Boolean = true,
@@ -557,7 +561,10 @@ class AddCoordinateDialogFragment(
             @Suppress("MissingPermission")
             fused.getCurrentLocation(priority, cts.token).awaitSafe()
         }
-        if (result != null && CoordinateValidator.isValidLatLon(result.latitude, result.longitude)) {
+        // Require a real altitude: Location.getAltitude() returns 0.0 when hasAltitude() is false,
+        // and saving that fake zero would be indistinguishable from a true sea-level measurement.
+        if (result != null && CoordinateValidator.isValidLatLon(result.latitude, result.longitude) &&
+            result.hasAltitude()) {
             acceptInternalLocation(
                 result.latitude, result.longitude, result.altitude,
                 hAcc = if (result.hasAccuracy()) result.accuracy.toDouble() else null,
@@ -573,7 +580,8 @@ class AddCoordinateDialogFragment(
         val last = try {
             @Suppress("MissingPermission") fused.lastLocation.awaitSafe()
         } catch (_: Exception) { null }
-        if (last != null && CoordinateValidator.isValidLatLon(last.latitude, last.longitude)) {
+        if (last != null && CoordinateValidator.isValidLatLon(last.latitude, last.longitude) &&
+            last.hasAltitude()) {
             acceptInternalLocation(
                 last.latitude, last.longitude, last.altitude,
                 hAcc = if (last.hasAccuracy()) last.accuracy.toDouble() else null,
