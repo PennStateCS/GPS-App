@@ -106,6 +106,8 @@ class AddCoordinateDialogFragment(
     private var sectionInternal: View? = null
     private var locationText: TextView? = null
     private var sectionExternal: View? = null
+    private var tvRequirements: TextView? = null
+    private var tvRequirementsNote: TextView? = null
     private var tvSamplingStatus: TextView? = null
     private var progressCapture: ProgressBar? = null
     private var tvElapsed: TextView? = null
@@ -198,6 +200,8 @@ class AddCoordinateDialogFragment(
         sectionInternal   = view.findViewById(R.id.section_internal)
         locationText      = view.findViewById(R.id.text_location)
         sectionExternal   = view.findViewById(R.id.section_external)
+        tvRequirements    = view.findViewById(R.id.text_capture_requirements)
+        tvRequirementsNote = view.findViewById(R.id.text_capture_requirements_note)
         tvSamplingStatus  = view.findViewById(R.id.text_sampling_status)
         progressCapture   = view.findViewById(R.id.progress_capture)
         tvElapsed         = view.findViewById(R.id.text_elapsed)
@@ -327,6 +331,7 @@ class AddCoordinateDialogFragment(
         }
         nameEdit = null; noteEdit = null; locationText = null
         sectionInternal = null; sectionExternal = null
+        tvRequirements = null; tvRequirementsNote = null
         tvSamplingStatus = null; progressCapture = null
         tvElapsed = null; tvSamples = null; tvFixStatus = null; tvAccuracy = null
         btnModel = null; btnSave = null
@@ -340,8 +345,25 @@ class AddCoordinateDialogFragment(
                 settingsRepo.gnssCaptureSettings.first()
             }.getOrDefault(GnssCaptureSettings())
             capturePolicy = settings.toAveragingPolicy()
+            renderCaptureRequirements(capturePolicy!!)
             captureVm.startWithSavedPolicy()
         }
+    }
+
+    /**
+     * Fills the capture-requirements summary from the active [policy] (display only — it never
+     * changes capture rules). Shows the minimum sampling time, accepted-fix count, and required fix
+     * quality, plus the timeout. The required-quality clause is omitted when no minimum is enforced.
+     */
+    private fun renderCaptureRequirements(policy: AveragingPolicy) {
+        val qualityClause =
+            if (policy.requiredMinStatus.name == "NONE") ""
+            else " · ${shortFix(policy.requiredMinStatus.name)} or better"
+        tvRequirements?.text =
+            "At least ${policy.minDurationSec} sec · ${policy.minSamples} accepted fixes$qualityClause"
+        tvRequirementsNote?.text =
+            "Timeout after ${policy.maxDurationSec} sec. " +
+                "Save unlocks once both the minimum time and accepted-fix count are met."
     }
 
     /**
