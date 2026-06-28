@@ -93,6 +93,7 @@ class AddCoordinateDialogFragment(
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var sourceSettings: SourceSettings
     @Inject lateinit var coordinateRepository: CoordinateRepository
+    @Inject lateinit var validateForSave: app.surrealar.domain.usecase.ValidateCoordinateForSaveUseCase
 
     private val captureVm: CaptureViewModel by viewModels()
 
@@ -710,10 +711,14 @@ class AddCoordinateDialogFragment(
     /**
      * Validates [coordinate] and forwards it when valid (returns true). When invalid, shows a
      * user-friendly message, disables Save, and keeps the dialog open (returns false) so an
-     * invalid coordinate — out-of-range, NaN, or 0,0 — can never be persisted.
+     * invalid coordinate — out-of-range, NaN, 0,0, or bad model placement — can never be persisted.
+     *
+     * Delegates to the shared [app.surrealar.domain.usecase.ValidateCoordinateForSaveUseCase] (the
+     * same gate the capture use case uses) rather than checking rules inline, so the dialog path and
+     * the capture path stay consistent and placement checks (scale > 0, finite offsets) are applied.
      */
     private fun persistIfValid(coordinate: Coordinate): Boolean {
-        val validation = CoordinateValidator.validate(coordinate)
+        val validation = validateForSave(coordinate)
         if (!validation.isValid) {
             val msg = validation.errors.firstOrNull() ?: "Invalid coordinate"
             DiagnosticsLogger.w("Capture", "Save blocked: ${validation.errors.joinToString()}")

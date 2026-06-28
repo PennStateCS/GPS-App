@@ -2,8 +2,6 @@ package app.surrealar.ui.openinar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.surrealar.data.local.dao.CoordinateDao
-import app.surrealar.data.local.dao.ModelDao
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.domain.repository.ArDisplaySettingsRepository
 import app.surrealar.domain.repository.GnssReceiverSettingsRepository
@@ -45,11 +43,9 @@ data class CoordWithModel(
  */
 @HiltViewModel
 class OpenInARViewModel @Inject constructor(
-    private val coordinateDao: CoordinateDao,
-    private val modelDao: ModelDao,
+    private val observeArCoordinateModels: ObserveArCoordinateModelsUseCase,
     private val arDisplayRepo: ArDisplaySettingsRepository,
-    private val gnssReceiverRepo: GnssReceiverSettingsRepository,
-    private val prepareArCoordinateModels: PrepareArCoordinateModelsUseCase
+    private val gnssReceiverRepo: GnssReceiverSettingsRepository
 ) : ViewModel() {
 
     // ── Coordinate stream ─────────────────────────────────────────────────────
@@ -60,8 +56,7 @@ class OpenInARViewModel @Inject constructor(
      *
      * Emits a new list whenever the `coordinates` table changes.
      */
-    val coordsWithModels: StateFlow<List<CoordWithModel>> = coordinateDao.observeAll()
-        .map { entities -> prepareArCoordinateModels(entities, modelDao.getAllModelsList()) }
+    val coordsWithModels: StateFlow<List<CoordWithModel>> = observeArCoordinateModels()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
