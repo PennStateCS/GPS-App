@@ -312,3 +312,131 @@ state and hold no GNSS or persistence logic.
 # Package app.surrealar.ui.components
 
 Small reusable custom views (e.g. `FixBadgeView`) shared across screens. Presentation only.
+
+# Package app.surrealar
+
+App entry points: the `SurRealApplication` (Hilt `Application`) and the single-host `MainActivity`.
+`SurRealApplication` runs process startup — settings DataStore, theme, GNSS-source restore, UTM
+backfill, mock-location publisher, Maps init; `MainActivity` owns the navigation drawer, `NavController`,
+and the GNSS status toolbar. Most screens are fragments under `MainActivity`; see the `ui.*` packages.
+
+# Package app.surrealar.service
+
+Foreground services and their notifications. `LocationService` keeps location running in the
+background with a foreground notification; `LocationNotifications` builds that notification and owns
+the shared channel id (`surveying_location`) — keep the two in sync so the channel doesn't drift.
+
+# Package app.surrealar.stakeout
+
+Stakeout (navigate-to-target) guidance. `StakeoutGuidance` turns already-computed distance/bearing into
+a `StakeoutGuidanceState` (status, arrow angle, direction text); `StakeoutFeedbackGate` rate-limits the
+haptic/audio cues. Pure and Android-free — it computes neither distance nor bearing, so the existing
+map math is untouched, and tolerance handling is display-only.
+
+# Package app.surrealar.data.files
+
+Model file housekeeping on disk. `ModelFileCleaner` deletes the GLB and thumbnail files backing a
+removed model so they don't leak storage. It touches files only — the database row is the repository's
+responsibility.
+
+# Package app.surrealar.gnss.accumulator
+
+Fuses parsed NMEA sentences into a single current fix. `FixAccumulator` merges fields arriving across
+sentence types (position from GGA/RMC, accuracy from GST, DOP/used count from GSA) into an immutable
+`FixSnapshot`. A snapshot is point-in-time: missing fields stay null rather than carrying stale values,
+and callers must treat an old snapshot as stale.
+
+# Package app.surrealar.gnss.accuracy
+
+Position-accuracy estimation. `AccuracyEstimator` prefers receiver-reported GST 1-sigma values and
+falls back to DOP × an expected UERE (`UereTable`) when GST is absent, returning an `Accuracy1Sigma`.
+Either component can be null when nothing is available — an estimate is a quality indicator, not a
+guarantee.
+
+# Package app.surrealar.gnss.capture.math
+
+Pure math behind averaged capture: `Geodesy` (lat/lon/alt ↔ ECEF conversions for averaging in a metric
+frame) and `RunningStats` (streaming mean/standard deviation). No Android or GNSS-source dependencies,
+so both are unit-tested directly. Do not change these conversions without matching test coverage.
+
+# Package app.surrealar.gnss.diagnostics
+
+GNSS troubleshooting tools. `DiagnosticsService` aggregates live diagnostic data; `NmeaDiagnostics`
+runs the platform-NMEA self-test; `NmeaLogger` records raw NMEA for inspection. Read-only with respect
+to captured coordinates — these observe and report, they don't alter survey data.
+
+# Package app.surrealar.gnss.external
+
+External receiver integration (Emlid Reach RS2+). `TcpNmeaSource`/`ExternalAdapter` stream and adapt
+NMEA over TCP into the fix pipeline; the `Reach*Service` classes and `ReachHttpClient` talk to the
+device's HTTP/socket API for battery, corrections, and device info. The JSON DTOs here
+(`BatteryStatus`, `ReachDeviceInfoDto`) are raw service shapes mapped into the app-facing
+`gnss.external.model` types. External data must never be reported as internal GPS.
+
+# Package app.surrealar.gnss.external.model
+
+App-facing, normalized models for the external Reach receiver (`ReachDeviceInfo`, `ReachStorageInfo`,
+`ReachBatteryInfo`, `ReachCorrectionsInfo`, plus the connection/command enums). These are deliberately
+separate from the service-layer JSON DTOs in `gnss.external`, which parse and map into them.
+
+# Package app.surrealar.gnss.external.repository
+
+Owns external-device state. `ReachDeviceRepository` is the singleton that polls the Reach HTTP API for
+device info/storage/battery/connection, keyed off the configured connection profile, and exposes it as
+state. It does not handle the NMEA fix stream (that is the external NMEA source); network failures
+surface as state rather than throwing.
+
+# Package app.surrealar.gnss.format
+
+Presentation formatting for GNSS status. `GnssStatusFormatter` turns fix quality, accuracy, and source
+into the short human-readable strings shown in the toolbar, Home card, and capture dialog. Centralized
+here so the wording stays consistent across screens.
+
+# Package app.surrealar.gnss.internal
+
+Internal (Android platform) location source. `InternalNmeaSource`/`InternalAdapter` feed the phone's
+fused/GNSS location and platform NMEA into the same fix pipeline as external receivers, so consumers
+see one fix stream regardless of source.
+
+# Package app.surrealar.gnss.mock
+
+Mock-location publishing. `AndroidMockLocationPublisher` pushes the active fix into Android's test
+provider so other apps see the surveyed position; it requires the app to be selected as the mock
+location app in Developer Options and reports a `MockLocationError` when it is not.
+
+# Package app.surrealar.gnss.parser
+
+`NmeaParser` — a thin façade over the `gnss.nmea.parse` registry used by tests and the replay pipeline.
+Production sources drive `NmeaFuser` with the injected registry directly, so they do not instantiate
+this class. Parsing never throws; an unrecognized line is a normal `ParseResult.Error`.
+
+# Package app.surrealar.gnss.replay
+
+Deterministic NMEA replay for testing and demos. `NmeaReplayController` drives lines from an
+`NmeaLineSource` (e.g. `AssetNmeaReplaySource`) through the normal parse/fuse pipeline, so recorded
+sessions reproduce a fix stream without a live receiver. Test/dev tooling only.
+
+# Package app.surrealar.gnss.satellites
+
+`SatelliteInventory` — accumulates per-constellation GSV satellite entries into the current sky view
+for the skyplot and signal charts. On a source switch it must reset so a new source never shows the
+previous receiver's satellites.
+
+# Package app.surrealar.gnss.settings
+
+`GnssReceiverSettings` — receiver tuning preferences (e.g. the high-accuracy location mode). Plain
+configuration consumed by the GNSS sources; persisted via the settings layer, not here.
+
+# Package app.surrealar.util
+
+Cross-cutting helpers with no obvious home: coordinate conversion (`UtmConverter`, `GeoUtils`), GLB
+georeference detection/reprojection, runtime permissions (`PermissionManager`/`PermissionsGuard` —
+keep their permission lists in sync), Reach network discovery (`ReachDiscoveryHelper`,
+`ReachNameResolver`), and diagnostics export (`DiagnosticReportExporter`, `LogZip`, `DiagnosticsLogger`).
+Stateless utilities; avoid putting feature logic here.
+
+# Package app.surrealar.util.diagnostics
+
+Collectors that assemble the developer diagnostic report: signing fingerprints (`AppSigningInfo`), map
+runtime/state (`MapDiagnosticCollector`, `MapRuntimeDiagnostics`), NMEA stream stats, and a settings
+snapshot. Read-only — they gather and format existing state for support/debugging and never change it.
