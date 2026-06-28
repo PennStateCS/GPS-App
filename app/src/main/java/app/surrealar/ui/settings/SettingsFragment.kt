@@ -27,8 +27,6 @@ import androidx.lifecycle.Lifecycle
 import app.surrealar.R
 import app.surrealar.SurRealApplication
 import app.surrealar.domain.repository.CoordinateRepository
-import app.surrealar.data.backup.BackupImportPlanner
-import app.surrealar.data.backup.ImportMode
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
@@ -1780,46 +1778,15 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         showImportProgress(true, 0, "Scanning…")
         importProcessed = 0; importTotal = 0
         runCatching {
+            // Fragment owns the URI read; the use case parses, plans (duplicates/missing models),
+            // and writes via the repositories.
             val raw = withContext(Dispatchers.IO) {
                 requireContext().contentResolver.openInputStream(uri)?.use { inp ->
                     BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
                 } ?: error("Unable to open input stream")
             }
-            val existingIds = withContext(Dispatchers.IO) {
-                repository.getAllCoordinatesList().mapTo(HashSet()) { it.id }
-            }
-            // The backup carries model metadata but NOT the model files; missing-model detection
-            // checks the LOCAL model database.
-            val existingModelIds = withContext(Dispatchers.IO) {
-                modelRepository.getAllModels().first().mapTo(HashSet()) { it.id }
-            }
-
-            // Parse: full backup (auto-detected) or legacy basic JSON array; both validated.
-            val parsed: List<Coordinate>
-            val skipped: List<String>
-            if (app.surrealar.data.export.CoordinateBackup.isFullBackup(raw)) {
-                val r = app.surrealar.data.export.CoordinateBackup.parse(raw)
-                parsed = r.coordinates; skipped = r.skippedInvalid
-            } else {
-                val rawList = parseJsonCoordinates(raw)
-                val valid = mutableListOf<Coordinate>(); val bad = mutableListOf<String>()
-                rawList.forEach { c ->
-                    if (app.surrealar.domain.coordinates.CoordinateValidator.validate(c).isValid) valid += c
-                    else bad += "'${c.name}' (${c.id})"
-                }
-                parsed = valid; skipped = bad
-            }
-
-            // Decide duplicates / missing models / summary in the pure, unit-tested planner.
-            val mode = if (replace) ImportMode.REPLACE else ImportMode.MERGE
-            val plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, mode)
-
-            if (!plan.isNoOp) {
-                importTotal = plan.insertCount.coerceAtLeast(1)
-                showImportProgress(true, 70, "Writing ${plan.insertCount}…")
-                withContext(Dispatchers.IO) { if (replace) repository.deleteAll(); repository.insertAll(plan.toInsert) }
-            }
-            plan
+            showImportProgress(true, 70, "Writing…")
+            importBackup(raw, replace)
         }.onSuccess { plan ->
             showImportProgress(false, 100, if (plan.isNoOp) "Nothing to import" else "Completed")
             if (plan.skippedInvalid.isNotEmpty()) Log.w("SettingsFragment", "Import skipped (invalid): ${plan.skippedInvalid.joinToString()}")
@@ -1836,29 +1803,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         coordinatesImportJob = null
     }
 
-    private fun parseJsonCoordinates(raw: String): List<Coordinate> {
-        val arr = org.json.JSONArray(raw)
-        val list = mutableListOf<Coordinate>()
-        val now = System.currentTimeMillis()
-        for (i in 0 until arr.length()) {
-            try {
-                val obj = arr.getJSONObject(i)
-                val id = obj.optString("id").ifBlank { java.util.UUID.randomUUID().toString() }
-                val name = obj.optString("name", id)
-                val lat = obj.optDouble("latitude")
-                val lon = obj.optDouble("longitude")
-                val alt = obj.optDouble("altitude", 0.0)
-                val ts = obj.optLong("timestamp", now)
-                val rawIcon = obj.optString("icon", "ic_pin")
-                val icon = when (rawIcon) { "ic_menu_camera" -> "ic_pin"; "ic_menu_gallery" -> "ic_star"; "ic_menu_slideshow" -> "ic_home"; else -> rawIcon }
-                val color = obj.optInt("color", 0xFF64B5F6.toInt())
-                list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
-            } catch (e: Exception) {
-                Log.w("SettingsFragment", "Skipping malformed JSON object at index $i", e)
-            }
-        }
-        return list
-    }
 
 
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
