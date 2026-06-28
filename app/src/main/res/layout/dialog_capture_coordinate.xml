@@ -8,22 +8,14 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
-
-        <!-- ═══════════════ Coordinate details ═══════════════ -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Coordinate details"
-            android:textAppearance="?attr/textAppearanceLabelLarge"
-            android:textColor="?attr/colorPrimary" />
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="16dp">
 
         <!-- Point name -->
         <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
             android:hint="Point name">
 
             <com.google.android.material.textfield.TextInputEditText
@@ -36,26 +28,26 @@
 
         <!-- Note (optional) -->
         <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:hint="Note / description (optional)">
+            android:hint="Note (optional)">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/edit_point_note"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="textMultiLine|textCapSentences"
-                android:maxLines="3" />
+                android:inputType="textCapSentences"
+                android:singleLine="true" />
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- ═══════════════ Current location (INTERNAL source) ═══════════════ -->
+        <!-- ═══════════ Current location (INTERNAL source) ═══════════ -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/section_internal"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="12dp"
             android:visibility="gone"
             app:cardCornerRadius="12dp"
             app:cardElevation="0dp"
@@ -66,7 +58,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="12dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -79,18 +71,18 @@
                     android:id="@+id/text_location"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
+                    android:layout_marginTop="2dp"
                     android:text="Fetching location…"
                     android:textAppearance="?attr/textAppearanceBodyMedium" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ═══════════════ External GNSS capture (EXTERNAL source) ═══════════════ -->
+        <!-- ═══════════ External GNSS capture (EXTERNAL source) ═══════════ -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/section_external"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="12dp"
             android:visibility="gone"
             app:cardCornerRadius="12dp"
             app:cardElevation="0dp"
@@ -101,7 +93,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="12dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -110,39 +102,7 @@
                     android:textAppearance="?attr/textAppearanceLabelLarge"
                     android:textColor="?attr/colorPrimary" />
 
-                <!-- Capture requirements summary (populated from the active AveragingPolicy) -->
-                <TextView
-                    android:id="@+id/text_capture_requirements"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="Loading capture requirements…"
-                    android:textAppearance="?attr/textAppearanceBodyMedium"
-                    android:textColor="?attr/colorOnSurface" />
-
-                <TextView
-                    android:id="@+id/text_capture_requirements_note"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:alpha="0.7"
-                    android:text="Save unlocks once both the minimum time and accepted-fix count are met."
-                    android:textAppearance="?attr/textAppearanceBodySmall" />
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginTop="12dp"
-                    android:background="?attr/colorOutlineVariant" />
-
-                <!-- Capture status -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:text="Capture status"
-                    android:textAppearance="?attr/textAppearanceLabelMedium" />
-
+                <!-- Single compact status line -->
                 <TextView
                     android:id="@+id/text_sampling_status"
                     android:layout_width="match_parent"
@@ -151,122 +111,116 @@
                     android:text="Waiting for external receiver data…"
                     android:textAppearance="?attr/textAppearanceBodyMedium" />
 
-                <!-- Overall progress (0-100, driven by min of elapsed and accepted-fix progress) -->
+                <!-- Compact one-line rules summary -->
+                <TextView
+                    android:id="@+id/text_capture_requirements"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:alpha="0.7"
+                    android:text="Loading capture rules…"
+                    android:textAppearance="?attr/textAppearanceBodySmall" />
+
+                <!-- Thin progress -->
                 <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/progress_capture"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     android:max="100"
                     android:progress="0"
                     app:indicatorColor="?attr/colorPrimary"
                     app:trackColor="?attr/colorSurfaceVariant"
-                    app:trackCornerRadius="2dp" />
+                    app:trackCornerRadius="2dp"
+                    app:trackStopIndicatorSize="0dp" />
 
-                <!-- Elapsed time row -->
+                <!-- Compact two-column metric grid -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="10dp"
+                    android:baselineAligned="false"
                     android:orientation="horizontal">
 
-                    <TextView
-                        android:layout_width="150dp"
-                        android:layout_height="wrap_content"
-                        android:text="Elapsed time"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-
-                    <TextView
-                        android:id="@+id/text_elapsed"
+                    <!-- Left column: Time / Fixes / Fix -->
+                    <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
+                        android:orientation="vertical">
+
+                        <LinearLayout style="@style/CaptureMetricRow">
+                            <TextView style="@style/CaptureMetricLabel" android:text="Time" />
+                            <TextView android:id="@+id/text_elapsed" style="@style/CaptureMetricValue" android:text="—" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/CaptureMetricRow">
+                            <TextView style="@style/CaptureMetricLabel" android:text="Fixes" />
+                            <TextView android:id="@+id/text_samples" style="@style/CaptureMetricValue" android:text="—" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/CaptureMetricRow">
+                            <TextView style="@style/CaptureMetricLabel" android:text="Fix" />
+                            <TextView android:id="@+id/text_fix_status" style="@style/CaptureMetricValue" android:text="—" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Right column: Acc / Sats / HDOP -->
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="12dp"
+                        android:orientation="vertical">
+
+                        <LinearLayout style="@style/CaptureMetricRow">
+                            <TextView style="@style/CaptureMetricLabel" android:text="Acc" />
+                            <TextView android:id="@+id/text_accuracy" style="@style/CaptureMetricValue" android:text="—" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/CaptureMetricRow">
+                            <TextView style="@style/CaptureMetricLabel" android:text="Sats" />
+                            <TextView android:id="@+id/text_sats_used" style="@style/CaptureMetricValue" android:text="—" />
+                        </LinearLayout>
+
+                        <LinearLayout style="@style/CaptureMetricRow">
+                            <TextView style="@style/CaptureMetricLabel" android:text="HDOP" />
+                            <TextView android:id="@+id/text_hdop" style="@style/CaptureMetricValue" android:text="—" />
+                        </LinearLayout>
+                    </LinearLayout>
                 </LinearLayout>
 
-                <!-- Accepted fixes row -->
-                <LinearLayout
+                <!-- Optional compact details (vertical accuracy · correction age); shown when available -->
+                <TextView
+                    android:id="@+id/text_details"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal">
+                    android:layout_marginTop="6dp"
+                    android:alpha="0.7"
+                    android:text=""
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:visibility="gone" />
 
-                    <TextView
-                        android:layout_width="150dp"
-                        android:layout_height="wrap_content"
-                        android:text="Accepted fixes"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-
-                    <TextView
-                        android:id="@+id/text_samples"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-                </LinearLayout>
-
-                <!-- Current fix quality row -->
-                <LinearLayout
+                <!-- Short, conditional accuracy note (shown only when accuracy estimated/unavailable) -->
+                <TextView
+                    android:id="@+id/text_accuracy_note"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="150dp"
-                        android:layout_height="wrap_content"
-                        android:text="Current fix"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-
-                    <TextView
-                        android:id="@+id/text_fix_status"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-                </LinearLayout>
-
-                <!-- Horizontal accuracy row -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="150dp"
-                        android:layout_height="wrap_content"
-                        android:text="Horizontal accuracy"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-
-                    <TextView
-                        android:id="@+id/text_accuracy"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="—"
-                        android:textAppearance="?attr/textAppearanceBodySmall" />
-                </LinearLayout>
+                    android:layout_marginTop="2dp"
+                    android:alpha="0.7"
+                    android:text="Accuracy is informational; not required to save."
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:visibility="gone" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ═══════════════ Linked model ═══════════════ -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="Linked model"
-            android:textAppearance="?attr/textAppearanceLabelMedium" />
-
+        <!-- ═══════════ Linked model ═══════════ -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/button_model"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="12dp"
             android:gravity="center"
             android:text="No model selected"
             android:textColor="?attr/colorOnSurface"
@@ -276,11 +230,11 @@
             app:rippleColor="?attr/colorControlHighlight"
             app:strokeColor="?attr/colorOutlineVariant" />
 
-        <!-- ═══════════════ Actions ═══════════════ -->
+        <!-- ═══════════ Actions ═══════════ -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="12dp"
             android:gravity="end"
             android:orientation="horizontal">
 

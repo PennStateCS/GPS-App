@@ -464,4 +464,31 @@
         <item name="android:textColor">#FF41484D</item>
     </style>
 
+    <!-- ══════════════════════════════════════════════════════════════════════
+         6.  CAPTURE METRIC GRID
+         Compact "label  value" pairs for the Add Coordinate dialog's two-column
+         GNSS metric grid. Keeps each metric on a single dense row.
+    ══════════════════════════════════════════════════════════════════════════ -->
+
+    <style name="CaptureMetricRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
+
+    <style name="CaptureMetricLabel">
+        <item name="android:layout_width">52dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:alpha">0.7</item>
+        <item name="android:textAppearance">?attr/textAppearanceBodySmall</item>
+    </style>
+
+    <style name="CaptureMetricValue">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textAppearance">?attr/textAppearanceBodySmall</item>
+    </style>
+
 </resources>

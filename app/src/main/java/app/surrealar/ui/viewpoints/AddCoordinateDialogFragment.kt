@@ -107,13 +107,16 @@ class AddCoordinateDialogFragment(
     private var locationText: TextView? = null
     private var sectionExternal: View? = null
     private var tvRequirements: TextView? = null
-    private var tvRequirementsNote: TextView? = null
     private var tvSamplingStatus: TextView? = null
     private var progressCapture: ProgressBar? = null
     private var tvElapsed: TextView? = null
     private var tvSamples: TextView? = null
     private var tvFixStatus: TextView? = null
     private var tvAccuracy: TextView? = null
+    private var tvAccuracyNote: TextView? = null
+    private var tvHdop: TextView? = null
+    private var tvSatsUsed: TextView? = null
+    private var tvDetails: TextView? = null
     private var btnModel: MaterialButton? = null
     private var btnSave: MaterialButton? = null
 
@@ -201,13 +204,16 @@ class AddCoordinateDialogFragment(
         locationText      = view.findViewById(R.id.text_location)
         sectionExternal   = view.findViewById(R.id.section_external)
         tvRequirements    = view.findViewById(R.id.text_capture_requirements)
-        tvRequirementsNote = view.findViewById(R.id.text_capture_requirements_note)
         tvSamplingStatus  = view.findViewById(R.id.text_sampling_status)
         progressCapture   = view.findViewById(R.id.progress_capture)
         tvElapsed         = view.findViewById(R.id.text_elapsed)
         tvSamples         = view.findViewById(R.id.text_samples)
         tvFixStatus       = view.findViewById(R.id.text_fix_status)
         tvAccuracy        = view.findViewById(R.id.text_accuracy)
+        tvAccuracyNote    = view.findViewById(R.id.text_accuracy_note)
+        tvHdop            = view.findViewById(R.id.text_hdop)
+        tvSatsUsed        = view.findViewById(R.id.text_sats_used)
+        tvDetails         = view.findViewById(R.id.text_details)
         btnModel          = view.findViewById(R.id.button_model)
         btnSave           = view.findViewById(R.id.btn_save)
 
@@ -310,8 +316,8 @@ class AddCoordinateDialogFragment(
         if (captureVm.state.value is ObservationSession.State.Complete) return
         lastLiveFix = null
         tvSamplingStatus?.text = "Waiting for external GNSS data"
-        tvFixStatus?.text = "--"
-        tvAccuracy?.text = "--"
+        tvFixStatus?.text = "—"
+        clearPositionQuality()
     }
 
     /** Throttled (≤ once / 10 s) diagnostic for fixes the capture preview dropped. */
@@ -331,9 +337,10 @@ class AddCoordinateDialogFragment(
         }
         nameEdit = null; noteEdit = null; locationText = null
         sectionInternal = null; sectionExternal = null
-        tvRequirements = null; tvRequirementsNote = null
+        tvRequirements = null
         tvSamplingStatus = null; progressCapture = null
         tvElapsed = null; tvSamples = null; tvFixStatus = null; tvAccuracy = null
+        tvAccuracyNote = null; tvHdop = null; tvSatsUsed = null; tvDetails = null
         btnModel = null; btnSave = null
     }
 
@@ -358,12 +365,10 @@ class AddCoordinateDialogFragment(
     private fun renderCaptureRequirements(policy: AveragingPolicy) {
         val qualityClause =
             if (policy.requiredMinStatus.name == "NONE") ""
-            else " · ${shortFix(policy.requiredMinStatus.name)} or better"
+            else " · ${shortFix(policy.requiredMinStatus.name)}+"
         tvRequirements?.text =
-            "At least ${policy.minDurationSec} sec · ${policy.minSamples} accepted fixes$qualityClause"
-        tvRequirementsNote?.text =
-            "Timeout after ${policy.maxDurationSec} sec. " +
-                "Save unlocks once both the minimum time and accepted-fix count are met."
+            "Rules: ${policy.minDurationSec} sec min · ${policy.minSamples} fixes$qualityClause · " +
+                "${policy.maxDurationSec} sec timeout"
     }
 
     /**
@@ -391,13 +396,9 @@ class AddCoordinateDialogFragment(
                     (samples.toFloat() / policy.minSamples).coerceIn(0f, 1f) else 1f
                 progressCapture?.progress = (min(timeProgress, fixProgress) * 100).roundToInt()
 
-                // Time row never shows a fraction that can exceed its target.
-                tvElapsed?.text = if (timeComplete)
-                    "Complete · $elapsed sec elapsed"
-                else
-                    "$elapsed / ${policy.minDurationSec} sec"
-
-                tvSamples?.text = "$samples / ${policy.minSamples} accepted"
+                // Compact grid cells: "18 / 25 sec", "7 / 10".
+                tvElapsed?.text = "$elapsed / ${policy.minDurationSec} sec"
+                tvSamples?.text = "$samples / ${policy.minSamples}"
 
                 btnSave?.isEnabled = false
                 refreshExternalStatus()
@@ -406,10 +407,22 @@ class AddCoordinateDialogFragment(
                 progressCapture?.progress = 100
                 val result = state.result
                 val elapsedSec = Duration.between(result.startedAt, result.endedAt).seconds
-                tvElapsed?.text = "Complete · $elapsedSec sec elapsed"
-                tvSamples?.text = "${result.samples} accepted"
+                tvElapsed?.text = "$elapsedSec sec"
+                tvSamples?.text = "${result.samples}"
                 tvFixStatus?.text = shortFix(result.rtkStatus?.name ?: "")
-                tvAccuracy?.text = formatAccuracy(result.hAccM)
+                // CaptureResult.hAccM/vAccM are AccuracyEstimator output (receiver-reported when the
+                // receiver supplied GST, otherwise a DOP/UERE estimate). The result carries no source
+                // flag, so use the last live fix's GST presence to label each axis honestly — defaulting
+                // to "estimated" when unknown rather than over-claiming "reported".
+                val hReported = lastLiveFix?.hAccM != null
+                val vReported = lastLiveFix?.vAccM != null
+                renderPositionQuality(
+                    reportedHM = if (hReported) result.hAccM else null,
+                    estimatedHM = if (hReported) null else result.hAccM,
+                    reportedVM = if (vReported) result.vAccM else null,
+                    estimatedVM = if (vReported) null else result.vAccM,
+                    hdop = result.hdop, satsUsed = result.satsUsed, diffAgeS = result.diffAgeS,
+                )
                 // Maximum sampling time is a safety timeout, not a "force complete". Save Point is
                 // enabled ONLY when both minimum sampling time and minimum accepted fixes were met.
                 // A timed-out, under-sampled capture shows the timeout message and keeps Save
@@ -419,10 +432,7 @@ class AddCoordinateDialogFragment(
                     btnSave?.isEnabled = true
                 } else {
                     tvSamplingStatus?.text =
-                        "Capture timed out before requirements were met. " +
-                            "Accepted fixes: ${result.samples} / ${policy.minSamples}. " +
-                            "Try lowering the required fix quality or minimum accepted fixes, " +
-                            "or wait for a better GNSS signal."
+                        "Timed out · ${result.samples}/${policy.minSamples} fixes · try again or adjust settings"
                     btnSave?.isEnabled = false
                 }
             }
@@ -454,7 +464,12 @@ class AddCoordinateDialogFragment(
                 "$current · need ${shortFix(policy.requiredMinStatus.name)}"
             else
                 current
-        tvAccuracy?.text = formatAccuracy(fix.hAccM)
+        // Live values are receiver-reported (GST); the app does not estimate during the live preview.
+        renderPositionQuality(
+            reportedHM = fix.hAccM, estimatedHM = null,
+            reportedVM = fix.vAccM, estimatedVM = null,
+            hdop = fix.hDop, satsUsed = fix.satsUsed, diffAgeS = fix.diffAgeS,
+        )
 
         refreshExternalStatus()
     }
@@ -516,10 +531,52 @@ class AddCoordinateDialogFragment(
     private fun shortFix(status: String): String =
         app.surrealar.gnss.format.GnssStatusFormatter.formatCaptureFixStatus(status)
 
-    /** Formats horizontal accuracy, or "Not reported" when the receiver did not supply it. */
-    private fun formatAccuracy(meters: Double?): String =
-        meters?.let { app.surrealar.gnss.format.GnssStatusFormatter.formatAccuracyMeters(it) }
-            ?: "Not reported"
+    /**
+     * Updates the position-quality rows (display only). Horizontal accuracy is labeled reported vs
+     * estimated by the caller passing the receiver-reported value and/or an already-computed estimate;
+     * this method never estimates. Optional rows are hidden when their value is unavailable.
+     */
+    private fun renderPositionQuality(
+        reportedHM: Double?, estimatedHM: Double?,
+        reportedVM: Double?, estimatedVM: Double?,
+        hdop: Double?, satsUsed: Int?, diffAgeS: Double?,
+    ) {
+        val h = PositionQualityFormatter.horizontalAccuracy(reportedHM, estimatedHM)
+        // Grid cells stay single-line; "—" when unavailable so they never grow the card.
+        tvAccuracy?.text = PositionQualityFormatter.horizontalAccuracyCompact(reportedHM, estimatedHM)
+        tvSatsUsed?.text = satsUsed?.toString() ?: "—"
+        tvHdop?.text = hdop?.let { PositionQualityFormatter.dop(it) } ?: "—"
+
+        // Lower-priority values share one optional line, shown only when present.
+        val details = buildList {
+            PositionQualityFormatter.verticalAccuracy(reportedVM, estimatedVM)?.let { add("V $it") }
+            PositionQualityFormatter.correctionAgeSec(diffAgeS)?.let { add("Corr $it") }
+        }
+        setOptionalText(tvDetails, details.takeIf { it.isNotEmpty() }?.joinToString("  ·  "))
+
+        // Short note only when horizontal accuracy is estimated or unavailable.
+        tvAccuracyNote?.visibility =
+            if (h.source == PositionQualityFormatter.AccuracySource.REPORTED) View.GONE else View.VISIBLE
+    }
+
+    /** Sets [view] text and shows it, or hides it when [text] is null. */
+    private fun setOptionalText(view: TextView?, text: String?) {
+        if (text == null) {
+            view?.visibility = View.GONE
+        } else {
+            view?.text = text
+            view?.visibility = View.VISIBLE
+        }
+    }
+
+    /** Resets the position-quality grid to the "no fix yet" placeholder. */
+    private fun clearPositionQuality() {
+        tvAccuracy?.text = "—"
+        tvSatsUsed?.text = "—"
+        tvHdop?.text = "—"
+        tvDetails?.visibility = View.GONE
+        tvAccuracyNote?.visibility = View.GONE
+    }
 
     // ── Internal GPS instant capture ──────────────────────────────────────────
 
