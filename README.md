@@ -63,4 +63,4 @@ SurReal AR is being developed as a faculty and undergraduate research project.
 
 ## License
 
-This project is licensed under the terms of the [MIT License](LICENSE).
+This project is licensed under the terms of the [GNU](LICENSE).
