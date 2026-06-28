@@ -1,110 +1,207 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    android:layout_height="wrap_content">
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="16dp">
 
-        <EditText
-            android:id="@+id/edit_point_name"
+        <!-- Point name -->
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Point Name" />
+            android:hint="Point name">
 
-        <EditText
-            android:id="@+id/edit_point_note"
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/edit_point_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapSentences"
+                android:singleLine="true" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Note (optional) -->
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="3"
-            android:hint="Note / description (optional)" />
+            android:hint="Note (optional)">
 
-        <TextView
-            android:id="@+id/text_location"
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/edit_point_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapSentences"
+                android:singleLine="true" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Location (read-only info) -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Location: (fetching...)"
-            android:paddingTop="12dp" />
+            android:layout_marginTop="12dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Location"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:textColor="?attr/colorPrimary" />
+
+                <TextView
+                    android:id="@+id/text_location"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Location: (fetching…)"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Linked model / icon -->
         <TextView
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Choose Icon:" />
+            android:layout_marginTop="12dp"
+            android:text="Linked model"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/button_icon"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
+            android:layout_marginTop="4dp"
             android:gravity="center"
-            android:textSize="18sp"
-            android:text="Choose a model..."
-            app:icon="@android:color/transparent"
-            app:iconSize="24dp"
+            android:text="Choose a model…"
+            android:textColor="?attr/colorOnSurface"
             app:iconGravity="textStart"
             app:iconPadding="12dp"
-            android:textColor="?attr/colorOnSurface"
-            app:strokeColor="?attr/colorOutlineVariant"
-            app:rippleColor="?attr/colorControlHighlight" />
+            app:iconSize="24dp"
+            app:rippleColor="?attr/colorControlHighlight"
+            app:strokeColor="?attr/colorOutlineVariant" />
 
         <!-- Model placement: shown only when a model is linked; collapsed by default. -->
-        <LinearLayout
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/section_model_placement"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginTop="16dp"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/header_model_placement"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingVertical="8dp"
-                android:text="▸ Model placement"
-                android:textColor="?attr/colorPrimary"
-                android:textAppearance="?attr/textAppearanceLabelLarge"
-                android:clickable="true"
-                android:focusable="true" />
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp"
+            app:strokeColor="?attr/colorOutlineVariant"
+            app:strokeWidth="1dp">
 
             <LinearLayout
-                android:id="@+id/body_model_placement"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:visibility="gone">
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="4dp">
 
-                <EditText android:id="@+id/edit_model_scale"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberDecimal" android:hint="Scale (×, blank = model default)" />
-                <EditText android:id="@+id/edit_model_yaw"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Yaw (°)" />
-                <EditText android:id="@+id/edit_model_pitch"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Pitch (°)" />
-                <EditText android:id="@+id/edit_model_roll"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Roll (°)" />
-                <EditText android:id="@+id/edit_model_voffset"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Vertical offset (m)" />
-                <EditText android:id="@+id/edit_model_offx"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Origin offset X (m)" />
-                <EditText android:id="@+id/edit_model_offy"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Origin offset Y (m)" />
-                <EditText android:id="@+id/edit_model_offz"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:inputType="numberSigned|numberDecimal" android:hint="Origin offset Z (m)" />
+                <TextView
+                    android:id="@+id/header_model_placement"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingVertical="8dp"
+                    android:text="▸ Model placement"
+                    android:textColor="?attr/colorPrimary"
+                    android:textAppearance="?attr/textAppearanceLabelLarge"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <LinearLayout
+                    android:id="@+id/body_model_placement"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="8dp"
+                    android:visibility="gone">
+
+                    <!-- Scale · Vertical offset -->
+                    <LinearLayout style="@style/PlacementFieldRow">
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="Scale ×">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_scale"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:layout_marginStart="8dp" android:hint="V offset (m)">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_voffset"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
+
+                    <!-- Yaw · Pitch -->
+                    <LinearLayout style="@style/PlacementFieldRow">
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="Yaw °">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_yaw"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:layout_marginStart="8dp" android:hint="Pitch °">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_pitch"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
+
+                    <!-- Roll · Origin X -->
+                    <LinearLayout style="@style/PlacementFieldRow">
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="Roll °">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_roll"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:layout_marginStart="8dp" android:hint="Origin X (m)">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_offx"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
+
+                    <!-- Origin Y · Origin Z -->
+                    <LinearLayout style="@style/PlacementFieldRow">
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="Origin Y (m)">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_offy"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:layout_marginStart="8dp" android:hint="Origin Z (m)">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/edit_model_offz"
+                                android:layout_width="match_parent" android:layout_height="wrap_content"
+                                android:inputType="numberSigned|numberDecimal" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
-        </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
     </LinearLayout>
 </ScrollView>
-

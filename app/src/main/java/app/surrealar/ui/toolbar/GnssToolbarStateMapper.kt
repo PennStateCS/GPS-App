@@ -104,10 +104,9 @@ object GnssToolbarStateMapper {
 
         // --- ACCURACY ---
         val hAcc = fix.hAccM
-        val accVisible = hAcc != null && hAcc in 0.0..9999.0
         val accuracyText: String?
         val accuracyLevel: GnssStatusLevel
-        if (accVisible && hAcc != null) {
+        if (hAcc != null && hAcc in 0.0..9999.0) {
             accuracyText = GnssStatusFormatter.formatAccuracyMeters(hAcc)
             accuracyLevel = when {
                 hAcc <= 0.05 -> GnssStatusLevel.SUCCESS
