@@ -12,7 +12,7 @@ import javax.inject.Inject
  * (positive scale, finite angles/offsets) so capture, manual entry, and import all apply the same
  * rules.
  *
- * Set [allowNullIsland] only on an explicit debug/test path that intentionally needs the `0,0`
+ * Set `allowNullIsland` only on an explicit debug/test path that intentionally needs the `0,0`
  * placeholder; production callers leave it false. The returned [ValidationResult] is advisory —
  * callers decide whether to block on `errors` and surface `warnings`.
  */

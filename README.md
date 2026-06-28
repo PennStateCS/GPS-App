@@ -1,10 +1,12 @@
 # SurReal AR
 
 [![Android](https://img.shields.io/badge/Android-7.0%2B-brightgreen?logo=android)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/Kotlin-blue?logo=kotlin)](https://kotlinlang.org)
-[![API](https://img.shields.io/badge/API-24%2B-orange)](https://android-arsenal.com/api?level=24)
-[![ARCore](https://img.shields.io/badge/ARCore-Supported-ff6f00?logo=google)](https://developers.google.com/ar)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Android-blue?logo=kotlin)](https://kotlinlang.org)
+[![ARCore](https://img.shields.io/badge/ARCore-Required%20for%20AR-ff6f00?logo=google)](https://developers.google.com/ar)
+[![Google Maps](https://img.shields.io/badge/Google%20Maps-API%20Key%20Required-4285F4?logo=googlemaps)](https://developers.google.com/maps/documentation/android-sdk)
+[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue?logo=github)](https://pennstatewilkes-barre.github.io/GPS-App/)
+[![Status](https://img.shields.io/badge/Status-In%20Development-orange)](#project-status)
+[![License](https://img.shields.io/github/license/pennstatewilkes-barre/GPS-App)](LICENSE)
 
 SurReal AR is an Android field-mapping application for saving survey coordinates, linking them to 3D models, and visualizing those points and models in augmented reality.
 
