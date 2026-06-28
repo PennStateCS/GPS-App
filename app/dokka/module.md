@@ -62,6 +62,17 @@ Core domain models and their helpers: `Coordinate` (the survey record), `Model` 
 metadata), `CaptureMethod`, and `CoordinateModelLink` (the single compatibility layer for the legacy
 `icon = "model:<id>"` convention). `CoordinateFactory` builds coordinates from captured fixes/results.
 
+# Package app.surrealar.domain.usecase
+
+Small, injectable use cases that coordinate the highest-risk coordinate workflows, keeping that logic
+out of Fragments/ViewModels. `ValidateCoordinateForSaveUseCase` is the shared save gate (bounds, null
+island, finite altitude, model-placement checks); `ExportCoordinateBackupUseCase` /
+`ImportCoordinateBackupUseCase` build and apply the official full JSON backup (delegating duplicate and
+missing-model decisions to `data.backup.BackupImportPlanner`); `CaptureCoordinateUseCase` converts a
+completed `CaptureResult` into a validated, saved coordinate. They depend on repository interfaces, not
+implementations, and leave Android concerns (URIs, dialogs, files) to the UI. AR data preparation lives
+next to its view types in `ui.openinar.PrepareArCoordinateModelsUseCase`.
+
 # Package app.surrealar.domain.repository
 
 Repository interfaces (the domain's data-access contract): `CoordinateRepository`, `ModelRepository`,

@@ -34,81 +34,12 @@ These docs are intended for developers working on the codebase. They describe th
 
 ## Quick Start
 
-### 1. Clone the repository
+1. Clone the repository
+2. Create `local.properties`
+3. Configure your Google Maps API key
+4. Build the app
 
-```bash
-git clone https://github.com/PennStateWilkes-Barre/GPS-App.git
-cd GPS-App
-```
-
-### 2. Create `local.properties`
-
-Copy the template file:
-
-```bash
-cp local.properties.template local.properties
-```
-
-Or create a new `local.properties` file in the project root.
-
-At minimum, add your Android SDK path and Google Maps API key:
-
-```properties
-sdk.dir=YOUR_ANDROID_SDK_PATH
-GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
-```
-
-On Windows, the SDK path often looks similar to:
-
-```properties
-sdk.dir=C:\\Users\\YourUsername\\AppData\\Local\\Android\\Sdk
-```
-
-### 3. Configure your Google Maps API key
-
-In Google Cloud Console:
-
-1. Create or select a Google Cloud project.
-2. Enable **Maps SDK for Android**.
-3. Create an API key.
-4. Restrict the key to Android apps.
-5. Add the package name:
-
-```text
-app.surrealar
-```
-
-6. Add the SHA-1 fingerprint for the debug or release signing certificate.
-
-For debug builds, run:
-
-```bash
-./gradlew signingReport
-```
-
-On Windows PowerShell:
-
-```powershell
-.\gradlew signingReport
-```
-
-### 4. Build the app
-
-```bash
-./gradlew assembleDebug
-```
-
-On Windows PowerShell:
-
-```powershell
-.\gradlew assembleDebug
-```
-
-You can also open the project in Android Studio and run the app directly from the IDE.
-
-For more detailed setup and configuration instructions, see:
-
-[Development Setup](docs/development-setup.md)
+You can also open the project in Android Studio and run the app directly from the IDE.  For more detailed setup and configuration instructions, see: [Development Setup](docs/development-setup.md)
 
 ## Acknowledgements
 
@@ -121,7 +52,7 @@ SurReal AR is being developed as a faculty and undergraduate research project.
 | Dimitrios Bolkas | dxb80@psu.edu | [dbolkas](https://github.com/dbolkas) |
 | Jeffrey Chiampi  | jdc308@psu.edu        | [jdc308](https://github.com/jdc308)   |
 
-### Undergraduate Research Students
+### Undergraduate Research Assistants 
 
 | Name          | Email | GitHub |
 |---------------|---|---|
