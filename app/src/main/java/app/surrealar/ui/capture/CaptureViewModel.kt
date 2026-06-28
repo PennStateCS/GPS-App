@@ -2,7 +2,6 @@ package app.surrealar.ui.capture
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.surrealar.domain.model.CoordinateFactory
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.capture.toAveragingPolicy
@@ -10,7 +9,6 @@ import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.capture.AveragingPolicy
 import app.surrealar.gnss.capture.ObservationSession
 import app.surrealar.gnss.model.Fix
-import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.capture.FixAcceptanceSettings
 import kotlinx.coroutines.Job
@@ -20,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
-import java.util.UUID
 
 /**
  * Drives the standalone capture screen: runs an `ObservationSession` against the active GNSS source
@@ -30,7 +27,7 @@ import java.util.UUID
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
-    private val coordinateRepository: CoordinateRepository,
+    private val captureCoordinate: app.surrealar.domain.usecase.CaptureCoordinateUseCase,
     private val fixAcceptance: FixAcceptanceSettings,
     private val sourceSettings: app.surrealar.gnss.source.SourceSettings,
     private val settingsRepository: SettingsRepository
@@ -210,8 +207,10 @@ class CaptureViewModel @Inject constructor(
             LocationSourceType.SIMULATOR -> null
         }
 
-        val coordinate = CoordinateFactory.fromCaptureResult(
-            id            = UUID.randomUUID().toString(),
+        // Build → validate → save is centralized in the use case (it rejects an invalid coordinate
+        // rather than persisting it). The source/provider/device mapping above stays here because it
+        // reads UI/settings state.
+        captureCoordinate(
             name          = name,
             note          = note,
             color         = color,
@@ -219,11 +218,10 @@ class CaptureViewModel @Inject constructor(
             provider      = provider,
             result        = finished,
             captureMethod = captureMethod,
-            sourceDevice  = sourceDevice
+            sourceDevice  = sourceDevice,
         )
 
         DiagnosticsLogger.i("Capture", "Coordinate saved name=\"$name\" source=${provider.name} " +
             "samples=${finished.samples} hAcc=${finished.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${finished.rtkStatus}")
-        coordinateRepository.insert(coordinate)
     }
 }

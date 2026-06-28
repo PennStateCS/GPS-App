@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import app.surrealar.data.local.dao.CoordinateDao
 import app.surrealar.data.local.dao.ModelDao
 import app.surrealar.data.local.entity.CoordinateEntity
-import app.surrealar.data.local.entity.ModelEntity
 import app.surrealar.domain.repository.ArDisplaySettingsRepository
 import app.surrealar.domain.repository.GnssReceiverSettingsRepository
 import app.surrealar.settings.model.ArDisplaySettings
@@ -49,7 +48,8 @@ class OpenInARViewModel @Inject constructor(
     private val coordinateDao: CoordinateDao,
     private val modelDao: ModelDao,
     private val arDisplayRepo: ArDisplaySettingsRepository,
-    private val gnssReceiverRepo: GnssReceiverSettingsRepository
+    private val gnssReceiverRepo: GnssReceiverSettingsRepository,
+    private val prepareArCoordinateModels: PrepareArCoordinateModelsUseCase
 ) : ViewModel() {
 
     // ── Coordinate stream ─────────────────────────────────────────────────────
@@ -61,21 +61,7 @@ class OpenInARViewModel @Inject constructor(
      * Emits a new list whenever the `coordinates` table changes.
      */
     val coordsWithModels: StateFlow<List<CoordWithModel>> = coordinateDao.observeAll()
-        .map { entities ->
-            val modelIndex: Map<String, ModelEntity> = modelDao.getAllModelsList()
-                .associateBy { it.id }
-            entities.map { entity ->
-                val modelId = app.surrealar.domain.model.CoordinateModelLink
-                    .resolveModelId(entity.modelId, entity.icon)
-                val model = modelId?.let { modelIndex[it] }
-                CoordWithModel(
-                    coordinate = entity,
-                    modelId = modelId,
-                    modelFilePath = model?.filePath,
-                    placement = ModelPlacement.resolve(entity, model)
-                )
-            }
-        }
+        .map { entities -> prepareArCoordinateModels(entities, modelDao.getAllModelsList()) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),

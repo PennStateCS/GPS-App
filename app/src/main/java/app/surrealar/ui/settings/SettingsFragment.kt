@@ -89,6 +89,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
     @Inject lateinit var repository: CoordinateRepository
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var modelRepository: app.surrealar.domain.repository.ModelRepository
+    @Inject lateinit var exportBackup: app.surrealar.domain.usecase.ExportCoordinateBackupUseCase
+    @Inject lateinit var importBackup: app.surrealar.domain.usecase.ImportCoordinateBackupUseCase
 
     // Selected device for TCP connection (class scope)
     private var selectedDevice: Pair<String, Int>? = null
@@ -1721,18 +1723,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     private fun writeBackupTo(uri: Uri) {
         lifecycleScope.launch {
             runCatching {
-                val coords = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                val models = withContext(Dispatchers.IO) { modelRepository.getAllModels().first() }
                 val appVersion = runCatching {
                     requireContext().packageManager.getPackageInfo(requireContext().packageName, 0).versionName
                 }.getOrNull()
-                val json = app.surrealar.data.export.CoordinateBackup.export(coords, models, appVersion)
+                // Use case loads the data and builds the JSON; the fragment owns the URI write.
+                val result = exportBackup(appVersion)
                 withContext(Dispatchers.IO) {
                     requireContext().contentResolver.openOutputStream(uri)?.use {
-                        it.write(json.toByteArray(StandardCharsets.UTF_8))
+                        it.write(result.json.toByteArray(StandardCharsets.UTF_8))
                     } ?: error("Unable to open output stream")
                 }
-                coords.size
+                result.coordinateCount
             }.onSuccess { n ->
                 showSettingsMessage("JSON backup exported: $n coordinates", Snackbar.LENGTH_LONG)
             }.onFailure { e ->
