@@ -44,6 +44,7 @@ import app.surrealar.domain.model.ModelLocationConfidence
 import app.surrealar.ui.map.MapThemeHelper
 import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.ui.models.ModelViewerActivity
+import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.GlbGeoreferenceDetector
 import app.surrealar.util.UtmConverter
 import com.google.android.material.button.MaterialButton
@@ -981,7 +982,10 @@ class CoordinateDetailFragment : Fragment() {
             val model = withContext(Dispatchers.IO) {
                 try {
                     modelRepository.getModelById(modelId)
-                } catch (_: Exception) { null }
+                } catch (e: Exception) {
+                    DiagnosticsLogger.w("MODEL", "lookup failed for modelId=$modelId: ${e.javaClass.simpleName} ${e.message}")
+                    null
+                }
             }
             // Prefer the origin captured at import (reprojection erases the in-file signal);
             // fall back to detection for models imported before it was stored.
@@ -1061,6 +1065,8 @@ class CoordinateDetailFragment : Fragment() {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
+            DiagnosticsLogger.i("MODEL", "linked modelId=$modelId to coordinateId=${updated.id} " +
+                "name=\"${updated.name}\" useModelLocation=$useModelLocation")
             showSnackbar(if (useModelLocation) "Model linked · coordinate moved to model location" else "Model linked")
         }
     }
@@ -1086,10 +1092,12 @@ class CoordinateDetailFragment : Fragment() {
             modelVerticalOffsetM = null,
             modelOriginOffsetXM = null, modelOriginOffsetYM = null, modelOriginOffsetZM = null
         )
+        val priorModelId = coord.modelId
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
+            DiagnosticsLogger.i("MODEL", "unlinked modelId=$priorModelId from coordinateId=${updated.id}")
             showSnackbar("Model link removed")
         }
     }

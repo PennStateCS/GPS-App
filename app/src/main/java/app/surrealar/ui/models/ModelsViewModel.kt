@@ -7,6 +7,7 @@ import app.surrealar.data.local.dao.CoordinateDao
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.domain.model.Model
 import app.surrealar.domain.model.FileType
+import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,12 +97,15 @@ class ModelsViewModel @Inject constructor(
                     embeddedAltitudeM = embeddedAltitudeM
                 )
                 repository.insertModel(model)
+                DiagnosticsLogger.i("MODEL", "db record created id=$modelId name=\"$name\" " +
+                    "file=\"$fileName\" sizeBytes=$fileSize")
                 // Mark thumbnail as generating BEFORE notifying caller so the UI
                 // shows the spinner as soon as the item appears in the list.
                 markThumbnailGenerating(modelId)
                 onModelId?.invoke(modelId)
                 _statusMessage.value = "Model '$name' added successfully"
             } catch (e: Exception) {
+                DiagnosticsLogger.e("MODEL", "db insert failed name=\"$name\": ${e.javaClass.simpleName} ${e.message}", e)
                 _statusMessage.value = "Failed to add model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
@@ -114,8 +118,10 @@ class ModelsViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 repository.deleteModel(model)
+                DiagnosticsLogger.i("MODEL", "db record deleted id=${model.id} name=\"${model.name}\"")
                 _statusMessage.value = "Model '${model.name}' deleted"
             } catch (e: Exception) {
+                DiagnosticsLogger.e("MODEL", "db delete failed id=${model.id}: ${e.javaClass.simpleName} ${e.message}", e)
                 _statusMessage.value = "Failed to delete model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false

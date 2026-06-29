@@ -45,6 +45,9 @@ import com.google.ar.core.exceptions.*
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.inject.Inject
 import javax.microedition.khronos.egl.EGLConfig
@@ -251,6 +254,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private var lastDistanceSkippedIds: Set<String> = emptySet()
 
+    // ── Compact AR/model session tallies — written to ar-last-session.txt on close so the export
+    // still summarizes the session even after the rolling event log has rotated. Not an event log.
+    @Volatile private var sessionOpenedAtMs = 0L
+    @Volatile private var sessionCoordinatesConsidered = 0
+    @Volatile private var sessionModelLinked = 0
+    @Volatile private var sessionAnchorsCreated = 0
+    @Volatile private var sessionAnchorFailures = 0
+    @Volatile private var sessionModelsInScene = 0
+    @Volatile private var sessionEarthTrackingReached = false
+    @Volatile private var sessionLastSkipReason: String? = null
+
 
     companion object {
         private const val TAG = "OpenInARFragment"
@@ -384,6 +398,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentOpenInArBinding.inflate(inflater, container, false)
+        sessionOpenedAtMs = System.currentTimeMillis()
         DiagnosticsLogger.i(DIAG, "OpenInARFragment created — AR screen opened")
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
@@ -768,6 +783,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         DiagnosticsLogger.i(DIAG, "OpenInARFragment destroyed — AR screen closed " +
             "(anchors=${geoAnchors.size}, modelPoses=${modelPoses.size}, items=${geoItems.size}); " +
             "pending view-scoped callbacks cancelled")
+        writeArSessionSummary()
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         choreoPrevHadModels = false
@@ -797,6 +813,32 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         try { session?.close() } catch (_: Exception) {}
         session = null
         _binding = null
+    }
+
+    /**
+     * Writes a compact summary of the just-ended AR/model session to `ar-last-session.txt`. Unlike
+     * the rolling event log, this single file survives event-log rotation, so the export always has
+     * a snapshot of the most recent session (counts only — not an event log).
+     */
+    private fun writeArSessionSummary() {
+        if (sessionOpenedAtMs == 0L) return
+        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+        val now = System.currentTimeMillis()
+        val summary = buildString {
+            appendLine("=== AR last session ===")
+            appendLine("opened   : ${fmt.format(Date(sessionOpenedAtMs))}")
+            appendLine("closed   : ${fmt.format(Date(now))}")
+            appendLine("durationS: ${(now - sessionOpenedAtMs) / 1000}")
+            appendLine("coordinatesConsidered : $sessionCoordinatesConsidered")
+            appendLine("coordinatesWithModel  : $sessionModelLinked")
+            appendLine("anchorsCreated        : $sessionAnchorsCreated")
+            appendLine("anchorFailures        : $sessionAnchorFailures")
+            appendLine("modelsInScene(max)    : $sessionModelsInScene")
+            appendLine("earthTrackingReached  : $sessionEarthTrackingReached")
+            appendLine("lastSkipReason        : ${sessionLastSkipReason ?: "none"}")
+            appendLine("(detailed per-model events are in app-log-*.txt under tags AR / AR_MDL)")
+        }
+        DiagnosticsLogger.writeSessionSummary("ar-last-session.txt", summary)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -984,6 +1026,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Log once per blocked period — this method runs every GL frame until anchors exist.
             if (!loggedAccuracyGate) {
                 loggedAccuracyGate = true
+                sessionLastSkipReason = "gnss accuracy too poor"
                 DiagnosticsLogger.w(DIAG, "anchor skip reason=\"gnss accuracy too poor\" " +
                     "accuracyM=${"%.1f".format(accuracyM)} maxM=$MAX_GNSS_ACCURACY_M items=${geoItems.size}")
             }
@@ -1045,6 +1088,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=TERRAIN " +
                 "trackingState=${earth.trackingState} earthState=$earthStateName " +
                 "accuracyM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"} — will appear as terrain resolves")
+            sessionAnchorsCreated = maxOf(sessionAnchorsCreated, geoAnchors.size)
+            sessionAnchorFailures += failed
         } else {
             // Stored-altitude mode: create WGS84 anchors at each coordinate's recorded altitude.
             var failed = 0
@@ -1062,6 +1107,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=STORED " +
                 "trackingState=${earth.trackingState} earthState=$earthStateName " +
                 "accuracyM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"}")
+            sessionAnchorsCreated = maxOf(sessionAnchorsCreated, geoAnchors.size)
+            sessionAnchorFailures += failed
         }
 
         geoAnchorsCreated = true
@@ -1227,6 +1274,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         return when (earth.trackingState) {
             TrackingState.TRACKING -> {
+                sessionEarthTrackingReached = true
                 // Auto re-anchor only for a meaningful quality jump: non-RTK → RTK.
                 // Incremental steps (SINGLE→DGPS or FLOAT→FIX) are deliberately excluded
                 // because switching to RS2+ causes rapid steps through all quality levels
@@ -1386,6 +1434,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val newlyHidden = distanceSkipped - lastDistanceSkippedIds
             lastDistanceSkippedIds = distanceSkipped
             if (newlyHidden.isNotEmpty()) {
+                sessionLastSkipReason = "distance filter"
                 DiagnosticsLogger.i(DIAG, "scene skip reason=\"distance filter\" " +
                     "maxDistanceM=$filterM hidden=${distanceSkipped.size} newlyHiddenIds=$newlyHidden")
             }
@@ -1537,6 +1586,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         lastModelProgress = progress
         // Fires only on change (early-return above) — reports models currently rendered in scene.
         DiagnosticsLogger.i(DIAG, "scene state modelsInScene=$inScene total=$total activeAnchors=${geoAnchors.size}")
+        sessionModelsInScene = maxOf(sessionModelsInScene, inScene)
 
         val loading = total - inScene
         when {
@@ -1584,6 +1634,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val visibleModels = withModels.count { it.coordinate.renderEnabled }
         DiagnosticsLogger.i(DIAG,
             "setCoordinates total=${items.size} withModels=${withModels.size} visible=$visibleModels")
+        sessionCoordinatesConsidered = maxOf(sessionCoordinatesConsidered, items.size)
+        sessionModelLinked = maxOf(sessionModelLinked, withModels.size)
         // Skip rebuild if the incoming list is identical to what we already have.
         // Room emits on every observed change; without this guard a no-op emission
         // clears geoAnchorsCreated and forces a full anchor rebuild at 60fps.
@@ -1626,14 +1678,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 "sizeBytes=${if (exists) file.length() else -1L} renderEnabled=${coord.renderEnabled} " +
                 "altitude=$altState scale=$arModelScale placement=${item.placement}")
             when {
-                !exists ->
+                !exists -> {
+                    sessionLastSkipReason = "file missing"
                     DiagnosticsLogger.w(DIAG,
                         "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"file missing\" path=\"$path\"")
+                }
                 // renderEnabled gates whether a linked model is drawn in AR. When false we simply
                 // don't preload it, so the coordinate still shows its pin/label but no 3D model.
-                !coord.renderEnabled ->
+                !coord.renderEnabled -> {
+                    sessionLastSkipReason = "visibility off"
                     DiagnosticsLogger.i(DIAG,
                         "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"visibility off\"")
+                }
                 else ->
                     filamentRenderer?.preload(coord.id, path, scope, item.placement)
             }

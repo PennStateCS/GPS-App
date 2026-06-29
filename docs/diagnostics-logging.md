@@ -26,14 +26,16 @@ Built by `DiagnosticReportExporter.buildReport()` into `cacheDir/diagnostic_expo
 
 | File | Contents |
 |------|----------|
-| `diagnostic-summary.txt` | Report time, **Important warnings**, app/build/git, device, maps renderer |
-| `app-log-current.txt`, `app-log-1..4.txt` | Recent diagnostic event log (all categories below) |
-| `app-errors-current.txt`, `app-errors-1..2.txt` | Errors/crashes (separate so the latest crash is never lost) |
+| `diagnostic-summary.txt` | Report time, **Important warnings** (incl. permission denials), app/build/git, device, maps renderer |
+| `settings-snapshot.txt` | Sanitized current settings — GNSS/AR/map/capture (`SettingsSnapshotCollector`; API key redacted) |
+| `permissions-status.txt` | Runtime permission grants (camera/location/bluetooth/notifications) + GPS/network provider enabled |
 | `app-state-summary.txt` | Live GNSS/receiver/network/map state (selected source, active provider, current fix, host:port presence — no credentials) |
 | `coordinates.txt` | Coordinate counts + coordinate→model association rows (no raw lat/lon) |
-| `models.txt` | Model inventory: basename, file existence, size, linked-coordinate count |
-| `current-settings-snapshot.txt` | Non-sensitive, debug-relevant settings (`SettingsSnapshotCollector`) |
-| `map-troubleshooting.txt`, `nmea-stream-diagnostics.txt` | Map + NMEA-stream collectors |
+| `model-integrity.txt` | Model inventory: basename, file existence, size, linked-coordinate count |
+| `ar-session-summary.txt` | Most recent AR/model session tallies (from persisted `ar-last-session.txt`; survives event-log rotation) — open/close time, coordinates considered, anchors created/failed, models in scene, earth-tracking reached, last skip reason |
+| `map-diagnostics.txt`, `nmea-stream-diagnostics.txt` | Map renderer/key/tile status + NMEA stream timing/parse stats (no raw NMEA) |
+| `app-log-current.txt`, `app-log-1..4.txt` | Rolling diagnostic event log (all categories below) |
+| `app-errors-current.txt`, `app-errors-1..2.txt` | Errors/crashes (separate so the latest crash is never lost) |
 
 **Important warnings** surfaced in the summary include: selected GNSS source ≠ active provider;
 external GNSS selected but no receiver configured; coordinates link a model whose file is missing.
@@ -47,14 +49,15 @@ Each section is wrapped so one failing section cannot abort the whole export (`a
 Use a consistent tag string as the first arg to `DiagnosticsLogger`:
 
 - `APP` — startup/session metadata
-- `GNSS` / `SOURCE` — source selection, provider switching, fix/satellite summaries
-- `CORRECTIONS` — correction age/source/station id
-- `COORD` — coordinate create/edit/save/delete/link/visibility
-- `MODEL` — model import/storage/link
-- `AR` — AR screen + ARCore session/earth/camera tracking lifecycle
-- `AR_MDL` — model preload/parse/asset/anchor/scene state (value of `ArFilamentRenderer.DIAG`)
-- `EXPORT` — diagnostic export
-- `ERROR` — non-fatal exceptions / crashes (use `DiagnosticsLogger.e`)
+- `SOURCE` — internal GPS provider start/stop/permission/first-fix; GNSS source selection
+- `GNSS` — provider switch/state (legacy; some external code still uses `Receiver`)
+- `CORRECTIONS` — Reach socket connect/disconnect/failure, stream status, RTK solution changes, device-endpoint failures (`ReachCorrectionsService`, `ReachDeviceService`)
+- `NMEA` — throttled parse-failure summaries (`NmeaRegistry`; never per-sentence)
+- `COORD` — coordinate create/edit/save/delete/validation
+- `MODEL` — model import/copy/db-record/link/unlink (`ModelsFragment`, `ModelsViewModel`, link/unlink in `CoordinateDetailFragment`)
+- `AR_MDL` — AR screen + ARCore/earth lifecycle + model preload/parse/asset/anchor/scene state (value of `ArFilamentRenderer.DIAG`)
+- `EXPORT` / `DiagnosticExport` — diagnostic export
+- `ERROR` — non-fatal exceptions / crashes (use `DiagnosticsLogger.e`; also mirrored to `app-errors-*.txt`)
 
 ## 4. Where to add future diagnostic events
 

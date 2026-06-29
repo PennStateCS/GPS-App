@@ -13,6 +13,7 @@ import app.surrealar.gnss.diagnostics.DiagnosticsService
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.nmea.parse.NmeaRegistry
+import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -29,7 +30,7 @@ import kotlinx.coroutines.launch
 class InternalNmeaSource(
     context: Context,
     private val scope: CoroutineScope,
-    registry: NmeaRegistry,
+    private val registry: NmeaRegistry,
     private val diagnostics: DiagnosticsService? = null
 ) : NmeaSource {
 
@@ -67,6 +68,11 @@ class InternalNmeaSource(
         provider = Provider.INTERNAL,
         registry = registry,
         onFix = { fix ->
+            if (!firstFixLogged) {
+                firstFixLogged = true
+                DiagnosticsLogger.i("SOURCE", "internal GPS: first fix received " +
+                    "(provider=INTERNAL rtk=${fix.rtkStatus} sats=${fix.satsUsed ?: "?"})")
+            }
             scope.launch {
                 _fixes.emit(fix)
             }
@@ -80,6 +86,8 @@ class InternalNmeaSource(
 
     private var started = false
     private var nmeaListener: OnNmeaMessageListener? = null
+    /** Logs only the first usable fix per start() so the export shows the provider produced data. */
+    @Volatile private var firstFixLogged = false
 
     /*
      * Dummy LocationListener whose sole purpose is to keep the GPS hardware active.
@@ -93,6 +101,11 @@ class InternalNmeaSource(
         if (started) return
 
         android.util.Log.d(TAG, "Starting internal GNSS NMEA listener")
+        DiagnosticsLogger.i("SOURCE", "internal GPS: NMEA listener starting")
+        firstFixLogged = false
+        if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            DiagnosticsLogger.w("SOURCE", "internal GPS: GPS_PROVIDER is disabled in system settings")
+        }
 
         /*
          * Request GPS location updates to ensure the hardware stays active. The actual
@@ -109,8 +122,10 @@ class InternalNmeaSource(
             )
         } catch (e: SecurityException) {
             android.util.Log.e(TAG, "Missing location permission for GPS activation", e)
+            DiagnosticsLogger.e("SOURCE", "internal GPS: location permission missing for GPS activation", e)
         } catch (e: Exception) {
             android.util.Log.w(TAG, "Could not request GPS updates: ${e.message}")
+            DiagnosticsLogger.w("SOURCE", "internal GPS: could not request GPS updates: ${e.javaClass.simpleName} ${e.message}")
         }
 
         val listener = OnNmeaMessageListener { message, _ ->
@@ -135,8 +150,10 @@ class InternalNmeaSource(
             started = true
 
             android.util.Log.d(TAG, "Internal NMEA listener registered")
+            DiagnosticsLogger.i("SOURCE", "internal GPS: NMEA listener registered")
         } catch (e: SecurityException) {
             android.util.Log.e(TAG, "Missing location permission for internal NMEA listener", e)
+            DiagnosticsLogger.e("SOURCE", "internal GPS: location permission missing for NMEA listener — provider will not produce fixes", e)
 
             /*
              * Roll back the GPS activation request since we can't receive NMEA anyway.
@@ -178,5 +195,8 @@ class InternalNmeaSource(
         _fixes.resetReplayCache()
 
         android.util.Log.d(TAG, "Internal NMEA listener removed")
+        DiagnosticsLogger.i("SOURCE", "internal GPS: NMEA listener removed")
+        // Emit a final NMEA parse summary so a poor/unparseable stream is visible in the export.
+        registry.logParseSummary("internal stream stopped")
     }
 }
