@@ -21,6 +21,7 @@ import androidx.lifecycle.viewModelScope
 import app.surrealar.domain.coordinates.CoordinateValidator
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.repository.CoordinateRepository
+import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -43,8 +44,11 @@ class CoordinatesViewModel @Inject constructor(
         if (rejectIfInvalid(coordinate, "addCoordinate")) return@launch
         try {
             repository.insert(coordinate)
+            // COORD diagnostics: id/name/model link only — never the user's note.
+            DiagnosticsLogger.i("COORD", "saved id=${coordinate.id} name=\"${coordinate.name}\" " +
+                "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
         } catch (e: Exception) {
-            Log.e("CoordinatesViewModel", "addCoordinate failed", e)
+            DiagnosticsLogger.e("COORD", "save failed id=${coordinate.id}", e)
         }
     }
 
@@ -52,8 +56,10 @@ class CoordinatesViewModel @Inject constructor(
         if (rejectIfInvalid(coordinate, "updateCoordinate")) return@launch
         try {
             repository.update(coordinate)
+            DiagnosticsLogger.i("COORD", "updated id=${coordinate.id} name=\"${coordinate.name}\" " +
+                "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
         } catch (e: Exception) {
-            Log.e("CoordinatesViewModel", "updateCoordinate failed", e)
+            DiagnosticsLogger.e("COORD", "update failed id=${coordinate.id}", e)
         }
     }
 
@@ -65,7 +71,7 @@ class CoordinatesViewModel @Inject constructor(
     private fun rejectIfInvalid(coordinate: Coordinate, op: String): Boolean {
         val result = CoordinateValidator.validate(coordinate)
         if (!result.isValid) {
-            Log.w("CoordinatesViewModel", "$op rejected invalid coordinate: ${result.errors.joinToString()}")
+            DiagnosticsLogger.w("COORD", "$op rejected — validation failed: ${result.errors.joinToString()}")
             return true
         }
         return false
@@ -74,16 +80,18 @@ class CoordinatesViewModel @Inject constructor(
     fun deleteCoordinate(id: String) = viewModelScope.launch {
         try {
             repository.deleteById(id)
+            DiagnosticsLogger.i("COORD", "deleted id=$id")
         } catch (e: Exception) {
-            Log.e("CoordinatesViewModel", "deleteCoordinate failed for id=$id", e)
+            DiagnosticsLogger.e("COORD", "delete failed id=$id", e)
         }
     }
 
     fun deleteAllCoordinates() = viewModelScope.launch {
         try {
             repository.deleteAll()
+            DiagnosticsLogger.i("COORD", "deleted all coordinates")
         } catch (e: Exception) {
-            Log.e("CoordinatesViewModel", "deleteAllCoordinates failed", e)
+            DiagnosticsLogger.e("COORD", "deleteAll failed", e)
         }
     }
 

@@ -1,71 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Location card body: a geographic CRS caption + altitude extras, followed by the
-     Projected position (UTM). Single column on phone and tablet alike.
-     Row containers (card_location_rows, card_crs_rows) are populated by
-     CoordinateDetailFragment.bindLocationCard(). -->
+<!-- Location card body below the Latitude/Longitude/Altitude tiles. A single container that
+     CoordinateDetailFragment.bindLocationCard() fills dynamically with label-above-value sections
+     ("Reference system", "Projected coordinates", "Altitude details") so the card matches the
+     formatting of the Capture Source / Survey-GNSS / Averaging cards. Single column on phones,
+     two columns on sw600dp+ tablets (handled in code via renderStackedColumns / renderTileRow). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/location_sections"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical">
-
-    <!-- ── Geographic CRS caption + altitude extras (MSL / geoid) ── -->
-    <LinearLayout
-        android:id="@+id/geo_section"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:alpha="0.7"
-            android:text="WGS84 · EPSG:4326"
-            android:textAppearance="?attr/textAppearanceLabelSmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
-
-        <LinearLayout
-            android:id="@+id/card_location_rows"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </LinearLayout>
-
-    <!-- ── Projected position (UTM); hidden when there is no UTM data ── -->
-    <LinearLayout
-        android:id="@+id/projected_section"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_marginTop="6dp"
-        android:visibility="gone">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingTop="6dp"
-            android:text="Projected position"
-            android:textAppearance="?attr/textAppearanceLabelMedium"
-            android:textColor="?attr/colorOnSurface" />
-
-        <TextView
-            android:id="@+id/text_utm_zone"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:alpha="0.7"
-            android:textAppearance="?attr/textAppearanceLabelSmall"
-            android:textColor="?attr/colorOnSurfaceVariant" />
-
-        <LinearLayout
-            android:id="@+id/card_crs_rows"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </LinearLayout>
-
-</LinearLayout>
+    android:orientation="vertical" />

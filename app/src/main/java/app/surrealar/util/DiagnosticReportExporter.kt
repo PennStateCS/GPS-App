@@ -19,16 +19,29 @@ import java.util.zip.ZipOutputStream
  * Builds a shareable diagnostic ZIP in [Context.getCacheDir]/diagnostic_exports/.
  *
  * Report contents:
- *   diagnostic-summary.txt   build/device/maps info
- *   app-log-current.txt      active DiagnosticsLogger file
- *   app-log-1/2/3.txt        rotated logs (when present)
+ *   diagnostic-summary.txt   build/device/maps info + IMPORTANT WARNINGS
+ *   app-log-current.txt      active DiagnosticsLogger event log (AR/model/GNSS events)
+ *   app-log-1..4.txt         rotated event logs (when present)
+ *   app-errors-*.txt         separate error/crash log (latest crash, survives across launches)
  *   app-state-summary.txt    current GNSS/network/map state (no keys or coordinates)
- *   settings-summary.txt     non-sensitive debug-relevant settings
+ *   coordinates.txt          coordinate counts + coordinate→model association summary
+ *   models.txt               model inventory: path (basename), file existence, size, link count
+ *   current-settings-snapshot.txt  non-sensitive debug-relevant settings
+ *   map-troubleshooting.txt / nmea-stream-diagnostics.txt
  *
- * Privacy: no API keys, passwords, auth tokens, full coordinate databases,
- * model file contents, or raw NMEA streams are included.
+ * Privacy: no API keys, passwords, auth tokens, full coordinate databases (raw lat/lon are NOT
+ * dumped — only counts and model-association rows), model file contents, or raw NMEA streams.
  */
 object DiagnosticReportExporter {
+
+    /** Snapshot of app data gathered once and reused across the summary/coordinates/models sections. */
+    private data class DiagData(
+        val selectedSource: String?,
+        val activeProvider: String?,
+        val receiverConfigured: Boolean,
+        val coordinates: List<app.surrealar.domain.model.Coordinate>,
+        val models: List<app.surrealar.domain.model.Model>,
+    )
 
     suspend fun buildReport(context: Context): File? = withContext(Dispatchers.IO) {
         try {
@@ -43,14 +56,23 @@ object DiagnosticReportExporter {
             val stamp = SimpleDateFormat("yyyy-MM-dd-HHmm", Locale.US).format(Date())
             val zipFile = File(exportDir, "surreal-ar-diagnostic-$stamp.zip")
 
-            ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-                zos.addText("diagnostic-summary.txt", buildSummary(context))
+            // Gather app data once; never let a single failing section abort the whole export.
+            val data = runCatching { gatherDiagData(context) }.getOrElse {
+                DiagnosticsLogger.w("DiagnosticExport", "gatherDiagData failed: ${it.message}", it)
+                DiagData(null, null, false, emptyList(), emptyList())
+            }
+            val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())
 
-                DiagnosticsLogger.logFiles().forEach { file ->
-                    zos.addFile(file.name, file)
-                }
+            ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                zos.addText("diagnostic-summary.txt", buildSummary(context, warnings))
+
+                DiagnosticsLogger.logFiles().forEach { file -> zos.addFile(file.name, file) }
+                // Separate error/crash log — bundled even if the rolling event log has moved on.
+                DiagnosticsLogger.errorFiles().forEach { file -> zos.addFile(file.name, file) }
 
                 zos.addText("app-state-summary.txt", buildStateSummary(context))
+                zos.addTextSafe("coordinates.txt") { buildCoordinatesReport(data) }
+                zos.addTextSafe("models.txt") { buildModelsReport(data) }
                 zos.addText(
                     "current-settings-snapshot.txt",
                     app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
@@ -72,13 +94,64 @@ object DiagnosticReportExporter {
         }
     }
 
+    // ── data gathering ─────────────────────────────────────────────────────────
+
+    private suspend fun gatherDiagData(context: Context): DiagData {
+        val ep = dagger.hilt.android.EntryPointAccessors.fromApplication(
+            context.applicationContext, app.surrealar.SurRealApplicationEntryPoint::class.java
+        )
+        val repo = SurRealApplication.settingsRepo
+        val selectedSource = runCatching { repo.locationSource.first().name }.getOrNull()
+        val activeProvider = runCatching { ep.sourceSettings().activeProvider.value.toString() }.getOrNull()
+        val host = runCatching { repo.externalTcpHost.first() }.getOrNull()
+        val coordinates = runCatching { ep.coordinateRepository().getAllCoordinatesList() }.getOrDefault(emptyList())
+        val models = runCatching { ep.modelRepository().getAllModels().first() }.getOrDefault(emptyList())
+        return DiagData(
+            selectedSource = selectedSource,
+            activeProvider = activeProvider,
+            receiverConfigured = !host.isNullOrBlank(),
+            coordinates = coordinates,
+            models = models,
+        )
+    }
+
+    /** Builds the "Important warnings" lines surfaced at the top of the summary. Empty when all clear. */
+    private fun computeWarnings(d: DiagData): List<String> = buildList {
+        val sel = d.selectedSource?.uppercase(Locale.US)
+        val act = d.activeProvider?.uppercase(Locale.US)
+        // Selected source vs active provider mismatch (e.g. EXTERNAL selected but INTERNAL routing).
+        if (sel != null && act != null && !act.contains(sel) && !sel.contains(act)) {
+            val reason = if (sel.contains("EXTERNAL") && !d.receiverConfigured) "external_not_configured" else "provider_differs"
+            add("SOURCE mismatch: selected=$sel active=$act reason=\"$reason\"")
+        }
+        if (sel != null && sel.contains("EXTERNAL") && !d.receiverConfigured) {
+            add("GNSS: external receiver selected but no host/port configured")
+        }
+        // Coordinates link a model whose file is missing on disk.
+        val modelById = d.models.associateBy { it.id }
+        val missing = d.coordinates.count { c ->
+            val mid = c.modelId
+            mid != null && (modelById[mid]?.filePath?.let { !File(it).exists() } ?: true)
+        }
+        if (missing > 0) add("MODEL: $missing coordinate(s) link a model whose file is missing or unresolved — models will not render")
+        // Pointers for AR/model issues that can only be reconstructed from the event/error logs.
+        add("Note: AR session, Earth-tracking, anchor and model-load outcomes are in app-log-*.txt (tags AR / AR_MDL); crashes are in app-errors-*.txt.")
+    }
+
     // ── section builders ───────────────────────────────────────────────────────
 
-    private fun buildSummary(context: Context): String {
+    private fun buildSummary(context: Context, warnings: List<String>): String {
         val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", Locale.US).format(Date())
         val sb = StringBuilder()
         sb.appendLine("=== Diagnostic Summary ===")
         sb.appendLine("Report generated : $now")
+        sb.appendLine()
+        sb.appendLine("--- Important warnings ---")
+        if (warnings.isEmpty()) {
+            sb.appendLine("(none detected)")
+        } else {
+            warnings.forEach { sb.appendLine("⚠ $it") }
+        }
         sb.appendLine()
         sb.appendLine("--- App ---")
         sb.appendLine("App name         : SurReal AR")
@@ -200,12 +273,86 @@ object DiagnosticReportExporter {
     // Settings now live in `current-settings-snapshot.txt` (SettingsSnapshotCollector) — a more
     // complete, sanitized snapshot that supersedes the old settings-summary section.
 
+    /**
+     * Coordinate counts + the coordinate→model association rows needed to diagnose "models linked
+     * but not rendering". Raw lat/lon are deliberately NOT dumped (privacy); only aggregate counts
+     * and, for model-linked coordinates, the link/file state.
+     */
+    private fun buildCoordinatesReport(d: DiagData): String {
+        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val coords = d.coordinates
+        val modelById = d.models.associateBy { it.id }
+        val linked = coords.filter { it.modelId != null }
+        val sb = StringBuilder()
+        sb.appendLine("=== Coordinates ===")
+        sb.appendLine("Generated: $now")
+        sb.appendLine()
+        sb.appendLine("Total coordinates        : ${coords.size}")
+        sb.appendLine("With linked model        : ${linked.size}")
+        sb.appendLine("Render-in-AR enabled     : ${coords.count { it.renderEnabled }}")
+        sb.appendLine("With finite altitude     : ${coords.count { it.altitude.isFinite() }}")
+        sb.appendLine("With UTM (E/N/zone)      : ${coords.count { it.easting != null && it.northing != null && !it.utmZone.isNullOrBlank() }}")
+        sb.appendLine()
+        sb.appendLine("--- Coordinate → model associations ---")
+        if (linked.isEmpty()) {
+            sb.appendLine("(no coordinates link a model)")
+        } else {
+            linked.forEach { c ->
+                val model = c.modelId?.let { modelById[it] }
+                val fileState = when {
+                    model == null -> "model_record_missing"
+                    !File(model.filePath).exists() -> "file_missing"
+                    else -> "ok(${File(model.filePath).length()}B)"
+                }
+                sb.appendLine("id=${c.id} name=\"${c.name}\" modelId=${c.modelId} " +
+                    "renderEnabled=${c.renderEnabled} altitude=${if (c.altitude.isFinite()) "yes" else "missing"} file=$fileState")
+            }
+        }
+        return sb.toString()
+    }
+
+    /** Model inventory: basename (sanitized), file existence, stored vs actual size, and link count. */
+    private fun buildModelsReport(d: DiagData): String {
+        val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        val models = d.models
+        val linkCounts = d.coordinates.mapNotNull { it.modelId }.groupingBy { it }.eachCount()
+        val sb = StringBuilder()
+        sb.appendLine("=== Models ===")
+        sb.appendLine("Generated: $now")
+        sb.appendLine()
+        sb.appendLine("Total models             : ${models.size}")
+        sb.appendLine("Missing files            : ${models.count { !File(it.filePath).exists() }}")
+        sb.appendLine()
+        if (models.isEmpty()) {
+            sb.appendLine("(no models imported)")
+        } else {
+            models.forEach { m ->
+                val f = File(m.filePath)
+                val exists = f.exists()
+                // Show only the file name, not the full internal path.
+                sb.appendLine("id=${m.id} name=\"${m.name}\" file=\"${f.name}\" type=${m.fileType} " +
+                    "exists=$exists sizeBytes=${if (exists) f.length() else -1L} storedSize=${m.fileSize} " +
+                    "linkedCoordinates=${linkCounts[m.id] ?: 0}")
+            }
+        }
+        return sb.toString()
+    }
+
     // ── ZIP helpers ────────────────────────────────────────────────────────────
 
     private fun ZipOutputStream.addText(name: String, content: String) {
         putNextEntry(ZipEntry(name))
         write(content.toByteArray(Charsets.UTF_8))
         closeEntry()
+    }
+
+    /** Like [addText] but never lets one failing section abort the export — writes the error instead. */
+    private fun ZipOutputStream.addTextSafe(name: String, build: () -> String) {
+        val content = runCatching { build() }.getOrElse {
+            DiagnosticsLogger.w("DiagnosticExport", "section $name failed: ${it.message}", it)
+            "Section failed to generate: ${it.message}"
+        }
+        addText(name, content)
     }
 
     private fun ZipOutputStream.addFile(name: String, file: File) {
