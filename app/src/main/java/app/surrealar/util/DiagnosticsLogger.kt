@@ -23,14 +23,26 @@ import java.util.Locale
  * Call [i], [w], [e] (and [d] in debug builds) from any thread.
  *
  * Files are stored in:   filesDir/diagnostics/logs/
- *   app-log-current.txt  ← active log (up to ~1 MB)
+ *   app-log-current.txt  ← active event log (up to ~5 MB)
  *   app-log-1.txt        ← most recent rotated
  *   app-log-2.txt
- *   app-log-3.txt        ← oldest kept
+ *   app-log-3.txt
+ *   app-log-4.txt        ← oldest kept
  *
- * When the current file exceeds MAX_LOG_BYTES, it is rotated:
- *   app-log-3.txt is deleted, each log-N is shifted to log-(N+1),
+ * When the current file exceeds [MAX_LOG_BYTES], it is rotated:
+ *   app-log-4.txt is deleted, each log-N is shifted to log-(N+1),
  *   current is renamed to app-log-1.txt, and a fresh current file begins.
+ *
+ * Retention policy (see also the developer note in docs/diagnostics-logging.md):
+ *   - Event log:  5 MB per active file × (1 current + [MAX_ROTATED] rotated) ≈ 25 MB of history.
+ *     Sized so a full field session of state-change events survives until export. The whole set
+ *     is bundled into the diagnostic ZIP, so the export never loses the AR failure sequence to
+ *     last-N-lines tailing.
+ *   - Errors/crashes are ALSO written to a SEPARATE file ([ERROR_CURRENT] + rotated) via [e].
+ *     Keeping crashes out of the high-volume event log means the latest crash is not pushed out
+ *     by ordinary events and survives across app launches (the file is appended, not truncated),
+ *     so a crash from a previous launch is still in the export.
+ *   - Raw NMEA is NEVER written here — it has its own separate, optional logger ([LogZip]).
  *
  * File IO is always dispatched off the main thread via an internal CoroutineScope.
  * Logging failures (disk full, IO error) are caught and never crash the app.
@@ -40,9 +52,15 @@ import java.util.Locale
  */
 object DiagnosticsLogger {
 
-    private const val MAX_LOG_BYTES = 1L * 1024 * 1024   // 1 MB per file
-    private const val MAX_ROTATED   = 3                   // keep 3 rotated files
+    private const val MAX_LOG_BYTES = 5L * 1024 * 1024   // 5 MB per active file (field-session sized)
+    private const val MAX_ROTATED   = 4                   // keep 4 rotated event-log files (~25 MB total)
     private const val CURRENT_FILE  = "app-log-current.txt"
+
+    // Errors/crashes are mirrored to their own rotating file so the latest crash is never lost
+    // when the busy event log rolls over. Smaller retention — crashes are rare and high-value.
+    private const val ERROR_CURRENT     = "app-errors-current.txt"
+    private const val MAX_ERROR_ROTATED = 2
+    private const val MAX_ERROR_BYTES   = 1L * 1024 * 1024   // 1 MB per error file
 
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex   = Mutex()
@@ -50,6 +68,7 @@ object DiagnosticsLogger {
 
     @Volatile private var logDir: File? = null
     @Volatile private var currentSize: Long = 0L
+    @Volatile private var errorSize: Long = 0L
 
     /**
      * Must be called once before any log method. Safe to call multiple times.
@@ -61,6 +80,7 @@ object DiagnosticsLogger {
         dir.mkdirs()
         logDir = dir
         currentSize = File(dir, CURRENT_FILE).length()
+        errorSize   = File(dir, ERROR_CURRENT).length()
     }
 
     /** Info-level event. Always written to file (once initialized). */
@@ -75,10 +95,15 @@ object DiagnosticsLogger {
         writeAsync("WARN ", tag, message, throwable)
     }
 
-    /** Error-level event. Optional throwable appended as stack trace. */
+    /**
+     * Error-level event. Optional throwable appended as stack trace. Written to BOTH the rolling
+     * event log and the separate, longer-lived error log so the latest crash is never lost when
+     * the event log rolls over.
+     */
     fun e(tag: String, message: String, throwable: Throwable? = null) {
         Log.e(tag, message, throwable)
         writeAsync("ERROR", tag, message, throwable)
+        writeErrorAsync("ERROR", tag, message, throwable)
     }
 
     /** Debug-level: written to file only in debug builds; always written to Logcat. */
@@ -86,6 +111,29 @@ object DiagnosticsLogger {
         Log.d(tag, message)
         if (BuildConfig.DEBUG) writeAsync("DEBUG", tag, message, null)
     }
+
+    /**
+     * Overwrites a small, single-file "session summary" (e.g. `ar-last-session.txt`) in the
+     * diagnostics dir. Unlike the rolling event log, this file persists the most recent session's
+     * compact state so the export still has it even after the event log has rotated. Keep content
+     * small (summary, not an event log). Written off the main thread; failures never crash.
+     */
+    fun writeSessionSummary(name: String, content: String) {
+        val dir = logDir ?: return
+        ioScope.launch {
+            mutex.withLock {
+                try {
+                    File(dir, name).writeText(content, Charsets.UTF_8)
+                } catch (ex: Exception) {
+                    Log.e("DiagnosticsLogger", "Session summary write failed ($name): ${ex.message}")
+                }
+            }
+        }
+    }
+
+    /** Returns a previously written session-summary file if it exists and has content. */
+    fun sessionSummaryFile(name: String): File? =
+        logDir?.let { File(it, name).takeIf { f -> f.exists() && f.length() > 0 } }
 
     /**
      * Returns all log files that exist and have content, current first then rotated.
@@ -97,6 +145,21 @@ object DiagnosticsLogger {
             File(dir, CURRENT_FILE).takeIf { it.exists() && it.length() > 0 }?.let { add(it) }
             for (n in 1..MAX_ROTATED) {
                 File(dir, "app-log-$n.txt").takeIf { it.exists() && it.length() > 0 }?.let { add(it) }
+            }
+        }
+    }
+
+    /**
+     * Returns the separate error/crash log files that exist and have content, current first then
+     * rotated. Used by [DiagnosticReportExporter] to bundle errors.log into the export so the latest
+     * crash is always present — even one from a previous app launch.
+     */
+    fun errorFiles(): List<File> {
+        val dir = logDir ?: return emptyList()
+        return buildList {
+            File(dir, ERROR_CURRENT).takeIf { it.exists() && it.length() > 0 }?.let { add(it) }
+            for (n in 1..MAX_ERROR_ROTATED) {
+                File(dir, "app-errors-$n.txt").takeIf { it.exists() && it.length() > 0 }?.let { add(it) }
             }
         }
     }
@@ -118,6 +181,26 @@ object DiagnosticsLogger {
                     currentSize += bytes.size
                 } catch (ex: Exception) {
                     Log.e("DiagnosticsLogger", "File write failed: ${ex.message}")
+                }
+            }
+        }
+    }
+
+    private fun writeErrorAsync(level: String, tag: String, message: String, t: Throwable?) {
+        val dir = logDir ?: return
+        ioScope.launch {
+            mutex.withLock {
+                try {
+                    val file = File(dir, ERROR_CURRENT)
+                    val line = buildLogLine(level, tag, message, t)
+                    val bytes = line.toByteArray(Charsets.UTF_8)
+                    if (errorSize + bytes.size > MAX_ERROR_BYTES) {
+                        rotateErrors(dir)
+                    }
+                    file.appendBytes(bytes)
+                    errorSize += bytes.size
+                } catch (ex: Exception) {
+                    Log.e("DiagnosticsLogger", "Error-file write failed: ${ex.message}")
                 }
             }
         }
@@ -152,6 +235,21 @@ object DiagnosticsLogger {
             currentSize = 0L
         } catch (ex: Exception) {
             Log.e("DiagnosticsLogger", "Log rotation failed: ${ex.message}")
+        }
+    }
+
+    private fun rotateErrors(dir: File) {
+        try {
+            File(dir, "app-errors-$MAX_ERROR_ROTATED.txt").delete()
+            for (n in MAX_ERROR_ROTATED - 1 downTo 1) {
+                val src = File(dir, "app-errors-$n.txt")
+                if (src.exists()) src.renameTo(File(dir, "app-errors-${n + 1}.txt"))
+            }
+            File(dir, ERROR_CURRENT).takeIf { it.exists() }
+                ?.renameTo(File(dir, "app-errors-1.txt"))
+            errorSize = 0L
+        } catch (ex: Exception) {
+            Log.e("DiagnosticsLogger", "Error-log rotation failed: ${ex.message}")
         }
     }
 }

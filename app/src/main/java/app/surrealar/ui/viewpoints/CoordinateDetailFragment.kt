@@ -44,6 +44,7 @@ import app.surrealar.domain.model.ModelLocationConfidence
 import app.surrealar.ui.map.MapThemeHelper
 import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.ui.models.ModelViewerActivity
+import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.GlbGeoreferenceDetector
 import app.surrealar.util.UtmConverter
 import com.google.android.material.button.MaterialButton
@@ -58,11 +59,7 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
-import app.surrealar.SurRealApplicationEntryPoint
-import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,8 +90,8 @@ class CoordinateDetailFragment : Fragment() {
     // Header
     private var textName: TextView? = null
     private var rowBadges: View? = null
-    private var badgeRtk: TextView? = null
-    private var badgeAccuracy: TextView? = null
+    private var badgeRtk: com.google.android.material.chip.Chip? = null
+    private var badgeAccuracy: com.google.android.material.chip.Chip? = null
     private var textEmpty: TextView? = null
 
     // "Show list" header control (tablet two-pane; visible only when the list pane is collapsed)
@@ -116,9 +113,12 @@ class CoordinateDetailFragment : Fragment() {
 
     // Card body containers (rows inflated into these)
     private var cardSummaryRows: LinearLayout? = null
-    private var cardLocationRows: LinearLayout? = null
     private var cardProjectionRows: LinearLayout? = null
     private var cardGnssRows: LinearLayout? = null
+    private var gnssTiles: LinearLayout? = null
+    private var locationTiles: LinearLayout? = null
+    /** Dynamic body of the Location card (Reference system / Projected coordinates / Altitude details). */
+    private var locationSections: LinearLayout? = null
     private var cardCaptureRows: LinearLayout? = null
     private var cardAveragingRows: LinearLayout? = null
     private var cardMotionRows: LinearLayout? = null
@@ -144,19 +144,15 @@ class CoordinateDetailFragment : Fragment() {
     private var showAccuracyIndicators: Boolean = true
 
     // Additional badge views
-    private var badgeSource: TextView? = null
-    private var badgeExtra: TextView? = null
+    private var badgeSource: com.google.android.material.chip.Chip? = null
+    private var badgeExtra: com.google.android.material.chip.Chip? = null
 
-    // Location card additions
-    private var rowDistance: View? = null
-    private var textDistance: TextView? = null
-    private var crsSectionContainer: View? = null
-    private var btnToggleCrs: View? = null
+    // Location card copy actions (the projected/CRS rows are now built dynamically into locationSections)
     private var btnCopyLatLng: View? = null
     private var btnCopyUtm: View? = null
-    private var cardCrsRows: LinearLayout? = null
-    private var crsExpanded = false
-    private var distanceJob: Job? = null
+    /** Resolved (zone, easting, northing) for the current coordinate — stored values or a UTM
+     *  derivation from lat/lon. Non-null only when all three are available, gating Copy UTM. */
+    private var copyableUtm: Triple<String, Double, Double>? = null
 
     // Capture quality note
     private var textCaptureQualityNote: TextView? = null
@@ -184,7 +180,6 @@ class CoordinateDetailFragment : Fragment() {
     private fun fmtM2(v: Double) = CoordinateDetailFormatter.fmtM2(v)
     private fun fmtM3(v: Double) = CoordinateDetailFormatter.fmtM3(v)
     private fun fmtDop(v: Double) = CoordinateDetailFormatter.fmtDop(v)
-    private fun rtkLabel(s: String?) = CoordinateDetailFormatter.rtkLabel(s)
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -230,22 +225,19 @@ class CoordinateDetailFragment : Fragment() {
         btnRemoveLink?.setOnClickListener { confirmRemoveLink() }
 
         cardSummaryRows   = v.findViewById(R.id.card_summary_rows)
-        cardLocationRows  = v.findViewById(R.id.card_location_rows)
         cardProjectionRows= v.findViewById(R.id.card_projection_rows)
         cardGnssRows      = v.findViewById(R.id.card_gnss_rows)
+        gnssTiles         = v.findViewById(R.id.gnss_tiles)
+        locationTiles     = v.findViewById(R.id.location_tiles)
+        locationSections  = v.findViewById(R.id.location_sections)
         cardCaptureRows   = v.findViewById(R.id.card_capture_rows)
         cardAveragingRows = v.findViewById(R.id.card_averaging_rows)
         cardMotionRows    = v.findViewById(R.id.card_motion_rows)
 
         badgeSource            = v.findViewById(R.id.badge_source)
         badgeExtra             = v.findViewById(R.id.badge_extra)
-        rowDistance            = v.findViewById(R.id.row_distance)
-        textDistance           = v.findViewById(R.id.text_distance)
-        crsSectionContainer    = v.findViewById(R.id.crs_section_container)
-        btnToggleCrs           = v.findViewById(R.id.btn_toggle_crs)
         btnCopyLatLng          = v.findViewById(R.id.btn_copy_latlng)
         btnCopyUtm             = v.findViewById(R.id.btn_copy_utm)
-        cardCrsRows            = v.findViewById(R.id.card_crs_rows)
         textCaptureQualityNote = v.findViewById(R.id.text_capture_quality_note)
         textModelPlacement     = v.findViewById(R.id.text_model_placement)
 
@@ -259,20 +251,13 @@ class CoordinateDetailFragment : Fragment() {
         }
 
         btnCopyUtm?.setOnClickListener {
-            lastCoordinate?.let { c ->
-                val zone = c.utmZone ?: return@let
-                val e = c.easting ?: return@let
-                val n = c.northing ?: return@let
+            // Copies the resolved UTM (stored or derived) shown in the Projected coordinates section.
+            copyableUtm?.let { (zone, e, n) ->
                 val text = "$zone ${String.format(Locale.US, "%.3f", e)} ${String.format(Locale.US, "%.3f", n)}"
                 val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("UTM", text))
                 Toast.makeText(requireContext(), "UTM coordinates copied", Toast.LENGTH_SHORT).show()
             }
-        }
-
-        btnToggleCrs?.setOnClickListener {
-            crsExpanded = !crsExpanded
-            applyCrsExpansion()
         }
 
         mapView = v.findViewById(R.id.mapView)
@@ -371,23 +356,80 @@ class CoordinateDetailFragment : Fragment() {
     private fun addDetailRow(container: LinearLayout?, label: String, value: String) {
         container ?: return
         val inflater = LayoutInflater.from(requireContext())
-        if (container.childCount > 0) {
-            val divider = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 1
-                ).also { it.setMargins(20.dp, 0, 20.dp, 0) }
-                setBackgroundColor(
-                    ContextCompat.getColor(requireContext(),
-                        com.google.android.material.R.color.material_on_surface_stroke)
-                )
-                alpha = 0.12f
-            }
-            container.addView(divider)
-        }
+        if (container.childCount > 0) container.addView(makeDivider())
         val row = inflater.inflate(R.layout.item_coord_detail_row, container, false)
         row.findViewById<TextView>(R.id.row_label).text = label
         row.findViewById<TextView>(R.id.row_value).text = value
         container.addView(row)
+    }
+
+    /** A single label/value detail line. */
+    private data class DetailRow(val label: String, val value: String)
+
+    /** True on sw600dp+ tablets, where opt-in cards lay their rows out in two columns. */
+    private val twoColumnRows: Boolean
+        get() = resources.configuration.smallestScreenWidthDp >= 600
+
+    /**
+     * Adds a stacked label-over-value cell (full width) — the same look as the two-column tablet
+     * cells, used by the Location card so its fields match the Capture Source card.
+     */
+    private fun addStackedDetailRow(container: LinearLayout?, label: String, value: String) {
+        container ?: return
+        val cell = LayoutInflater.from(requireContext())
+            .inflate(R.layout.item_coord_detail_cell, container, false)
+        // The cell layout is sized for the two-column grid (0dp/weight 1); make it full width here.
+        cell.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        cell.findViewById<TextView>(R.id.cell_label).text = label
+        cell.findViewById<TextView>(R.id.cell_value).text = value
+        container.addView(cell)
+    }
+
+    /** A thin, low-contrast divider used between detail rows. */
+    private fun makeDivider(): View = View(requireContext()).apply {
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
+            .also { it.setMargins(20.dp, 0, 20.dp, 0) }
+        setBackgroundColor(
+            ContextCompat.getColor(requireContext(), com.google.android.material.R.color.material_on_surface_stroke)
+        )
+        alpha = 0.12f
+    }
+
+    /**
+     * Renders [rows] into [container]: one row per line on phones, or two cells per line on sw600dp+
+     * tablets. Phone output is identical to repeated [addDetailRow] calls. Order is preserved; an odd
+     * final row keeps the left column and leaves the right half empty.
+     */
+    private fun renderDetailRows(container: LinearLayout?, rows: List<DetailRow>) {
+        container ?: return
+        if (!twoColumnRows) {
+            rows.forEach { addDetailRow(container, it.label, it.value) }
+            return
+        }
+        val inflater = LayoutInflater.from(requireContext())
+        rows.chunked(2).forEachIndexed { idx, pair ->
+            if (idx > 0) container.addView(makeDivider())
+            val rowLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            pair.forEach { dr ->
+                val cell = inflater.inflate(R.layout.item_coord_detail_cell, rowLayout, false)
+                cell.findViewById<TextView>(R.id.cell_label).text = dr.label
+                cell.findViewById<TextView>(R.id.cell_value).text = dr.value
+                rowLayout.addView(cell)
+            }
+            if (pair.size == 1) {
+                rowLayout.addView(View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                })
+            }
+            container.addView(rowLayout)
+        }
     }
 
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
@@ -395,28 +437,23 @@ class CoordinateDetailFragment : Fragment() {
     // ── State: empty ───────────────────────────────────────────────────────────
 
     private fun showEmpty() {
-        distanceJob?.cancel(); distanceJob = null
-        rowDistance?.visibility = View.GONE
         textName?.text = "—"
         textEmpty?.visibility = View.VISIBLE
         rowBadges?.visibility = View.GONE
         listOf(cardSummary, cardModel, cardLocation, cardProjection, cardGnss, cardCapture,
-               cardAveraging, cardMotion, cardMap).forEach { it?.visibility = View.GONE }
+            cardAveraging, cardMotion, cardMap).forEach { it?.visibility = View.GONE }
     }
 
     // ── State: bound ───────────────────────────────────────────────────────────
 
     private fun bindCoordinate(c: Coordinate) {
-        distanceJob?.cancel(); distanceJob = null
-        rowDistance?.visibility = View.GONE
-
         lastCoordinate = c
         textEmpty?.visibility = View.GONE
         textName?.text = c.name.ifBlank { "—" }
 
         // Clear all dynamic containers before re-populating
-        listOf(cardSummaryRows, cardLocationRows, cardProjectionRows, cardGnssRows,
-               cardCaptureRows, cardAveragingRows, cardMotionRows, cardCrsRows)
+        listOf(cardSummaryRows, locationSections, cardProjectionRows, cardGnssRows,
+            cardCaptureRows, cardAveragingRows, cardMotionRows)
             .forEach { it?.removeAllViews() }
 
         bindSummaryCard(c)
@@ -429,10 +466,31 @@ class CoordinateDetailFragment : Fragment() {
         bindMotionCard(c)
         bindMapCard(c)
         bindBadges(c)
-        startDistanceBearing(c)
     }
 
     private fun captureMethodLabel(m: String?): String? = CoordinateDetailFormatter.captureMethodLabel(m)
+
+    /** Captured timestamp (to the second), e.g. "06/27/2026 9:10:47 pm". */
+    private fun capturedDateTime(ms: Long): String =
+        SimpleDateFormat("MM/dd/yyyy h:mm:ss a", Locale.US).format(Date(ms)).lowercase(Locale.US)
+
+    /** Date + time for audit rows (Created / Last updated), to the minute. */
+    private fun formatDateTime(ms: Long): String =
+        SimpleDateFormat("MM/dd/yyyy h:mm a", Locale.US).format(Date(ms)).lowercase(Locale.US)
+
+    /** Adds a small secondary heading (e.g. "Record history") into a dynamic card-rows container. */
+    private fun addCardSubheading(container: LinearLayout?, label: String) {
+        container ?: return
+        val tv = TextView(requireContext()).apply {
+            text = label
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_LabelMedium)
+            val tv2 = android.util.TypedValue()
+            context.theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurfaceVariant, tv2, true)
+            setTextColor(tv2.data)
+            setPadding(20.dp, 12.dp, 20.dp, 2.dp)
+        }
+        container.addView(tv)
+    }
 
     private fun bindSummaryCard(c: Coordinate) {
         // Note shown as flowing text; point code/type as compact rows
@@ -443,35 +501,174 @@ class CoordinateDetailFragment : Fragment() {
         cardSummary?.visibility = if (note != null) View.VISIBLE else View.GONE
     }
 
-    private fun bindLocationCard(c: Coordinate) {
-        addDetailRow(cardLocationRows, "Latitude",  "${fmt6(c.latitude)}°")
-        addDetailRow(cardLocationRows, "Longitude", "${fmt6(c.longitude)}°")
-        addDetailRow(cardLocationRows, "Altitude (ellipsoidal)", fmtM2(c.altitude))
-        c.altitudeMsl?.let { addDetailRow(cardLocationRows, "Altitude (MSL)", fmtM2(it)) }
-        c.geoidSeparationM?.let { addDetailRow(cardLocationRows, "Geoid separation", fmtM3(it)) }
+    /**
+     * Returns the single dynamic body for the Location card.
+     *
+     * Some intermediate layout attempts left a static "Geographic position" block in the
+     * Location card outside of [R.id.location_sections]. That caused duplicate geographic rows when
+     * this fragment also rendered the new projected-position rows. Normalize the card body here by
+     * keeping only the Lat/Lng/Alt tile row, one dynamic [location_sections] container, and the copy
+     * button row. Anything between the tile row and copy row that is not the dynamic container is
+     * removed before binding. This makes the Kotlin drop-in safe even when XML variants are stale.
+     */
+    private fun ensureLocationSectionsContainer(): LinearLayout? {
+        val cardBody = (cardLocation as? ViewGroup)?.getChildAt(0) as? LinearLayout ?: return locationSections
+        val tileRow = locationTiles
+        val copyRow = btnCopyLatLng?.parent as? View
 
-        // CRS rows go into the collapsible section inside the same card
-        val hasCrs = c.easting != null || c.northing != null || c.utmZone != null || c.crsEpsg != null
-        if (hasCrs) {
-            c.easting?.let  { addDetailRow(cardCrsRows, "Easting",  String.format(Locale.US, "%.3f m", it)) }
-            c.northing?.let { addDetailRow(cardCrsRows, "Northing", String.format(Locale.US, "%.3f m", it)) }
-            c.utmZone?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCrsRows, "UTM zone", it) }
-            c.crsEpsg?.let { addDetailRow(cardCrsRows, "CRS (EPSG)", it.toString()) }
-            val hasUtm = c.easting != null && c.northing != null && c.utmZone != null
-            btnCopyUtm?.visibility = if (hasUtm) View.VISIBLE else View.GONE
-        } else {
-            btnCopyUtm?.visibility = View.GONE
+        val tileIndex = tileRow?.let { cardBody.indexOfChild(it) }?.takeIf { it >= 0 } ?: 1
+        val copyIndexBeforeCleanup = copyRow?.let { cardBody.indexOfChild(it) }?.takeIf { it >= 0 } ?: cardBody.childCount
+
+        var target = locationSections?.takeIf { it.parent === cardBody }
+
+        // Remove stale/static location detail views between the primary tiles and the copy row.
+        // Keep the existing location_sections container if it is already present as a direct child.
+        for (i in (copyIndexBeforeCleanup - 1) downTo (tileIndex + 1)) {
+            val child = cardBody.getChildAt(i)
+            if (child === target) continue
+            cardBody.removeViewAt(i)
         }
-        btnToggleCrs?.visibility = if (hasCrs) View.VISIBLE else View.GONE
-        if (hasCrs) applyCrsExpansion() else crsSectionContainer?.visibility = View.GONE
+
+        if (target == null) {
+            target = LinearLayout(requireContext()).apply {
+                id = R.id.location_sections
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            val insertIndex = ((tileRow?.let { cardBody.indexOfChild(it) } ?: 1) + 1)
+                .coerceIn(0, cardBody.childCount)
+            cardBody.addView(target, insertIndex)
+        } else {
+            val desiredIndex = ((tileRow?.let { cardBody.indexOfChild(it) } ?: 1) + 1)
+                .coerceIn(0, cardBody.childCount - 1)
+            val currentIndex = cardBody.indexOfChild(target)
+            if (currentIndex >= 0 && currentIndex != desiredIndex) {
+                cardBody.removeView(target)
+                cardBody.addView(target, desiredIndex.coerceIn(0, cardBody.childCount))
+            }
+        }
+
+        target.visibility = View.VISIBLE
+        locationSections = target
+        return target
+    }
+
+    private fun bindLocationCard(c: Coordinate) {
+        // Latitude / Longitude / Altitude shown as scannable value tiles at the top (unchanged).
+        renderLocationTiles(c)
+
+        // Be defensive: earlier layout iterations moved this container into an include. If the
+        // include is missing/stale on a tester build, create a fresh container before the copy-row
+        // instead of silently rendering only the old geographic text.
+        val container = ensureLocationSectionsContainer()
+        container?.removeAllViews()
+        container?.visibility = View.VISIBLE
+
+        // Resolve the projected position: prefer stored fields, fall back to deriving UTM from
+        // lat/lon with the app's existing UtmConverter (display fallback — no EPSG is invented).
+        // Per-field fallback so partially-stored data still fills in cleanly.
+        val derived = if (c.latitude.isFinite() && c.longitude.isFinite() && c.latitude in -80.0..84.0)
+            runCatching { UtmConverter.latLonToUtm(c.latitude, c.longitude) }.getOrNull() else null
+        val utmZone  = c.utmZone?.takeIf { it.isNotBlank() } ?: derived?.utmZone
+        val easting  = c.easting  ?: derived?.easting
+        val northing = c.northing ?: derived?.northing
+        val naText = "Not available"
+
+        // Keep the visible Location card focused on values users act on. Latitude/longitude are
+        // already WGS84 geographic coordinates in this app, so the repeated "Geographic position"
+        // row adds noise here. Preserve CRS details in export/diagnostics/advanced views, but make
+        // the main card show the projected position compactly as plain label/value fields.
+        if (utmZone != null || easting != null || northing != null) {
+            renderPlainFieldRow(container, listOf(
+                DetailRow("Projected position", utmZone?.let { "UTM Zone $it" } ?: naText),
+                DetailRow("Easting", easting?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
+                DetailRow("Northing", northing?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
+            ))
+        }
+
+        // Copy UTM is enabled only when a full, copyable UTM triple is available.
+        copyableUtm = if (utmZone != null && easting != null && northing != null)
+            Triple(utmZone, easting, northing) else null
+        btnCopyUtm?.visibility = if (copyableUtm != null) View.VISIBLE else View.GONE
+
+        // Altitude details are supporting values. Keep them compact and only show them when present.
+        val altRows = mutableListOf<DetailRow>()
+        c.altitudeMsl?.let { altRows += DetailRow("Altitude (MSL)", fmtM2(it)) }
+        c.geoidSeparationM?.let { altRows += DetailRow("Geoid separation", fmtM3(it)) }
+        if (altRows.isNotEmpty()) {
+            renderStackedColumns(container, altRows)
+        }
 
         cardLocation?.visibility = View.VISIBLE
     }
 
-    private fun applyCrsExpansion() {
-        crsSectionContainer?.visibility = if (crsExpanded) View.VISIBLE else View.GONE
-        (btnToggleCrs as? com.google.android.material.button.MaterialButton)?.text =
-            if (crsExpanded) "Hide CRS / UTM" else "Show CRS / UTM"
+    /**
+     * Renders [rows] as label-above-value fields: stacked full-width on phones, two stacked cells
+     * per line on sw600dp+ tablets (reusing [R.layout.item_coord_detail_cell]). Matches the
+     * formatting used by the other coordinate-detail cards.
+     */
+    private fun renderStackedColumns(container: LinearLayout?, rows: List<DetailRow>) {
+        container ?: return
+        if (!twoColumnRows) {
+            rows.forEach { addStackedDetailRow(container, it.label, it.value) }
+            return
+        }
+        val inflater = LayoutInflater.from(requireContext())
+        rows.chunked(2).forEach { pair ->
+            val rowLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                isBaselineAligned = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            pair.forEach { dr ->
+                val cell = inflater.inflate(R.layout.item_coord_detail_cell, rowLayout, false)
+                cell.findViewById<TextView>(R.id.cell_label).text = dr.label
+                cell.findViewById<TextView>(R.id.cell_value).text = dr.value
+                rowLayout.addView(cell)
+            }
+            if (pair.size == 1) {
+                rowLayout.addView(View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                })
+            }
+            container.addView(rowLayout)
+        }
+    }
+
+    /**
+     * Renders a compact row of plain label/value fields. On tablets this supports three equal
+     * columns, which fits Projected position + Easting + Northing without making Easting/Northing
+     * look like primary Lat/Lng/Alt tiles. Phones stack the fields using the same label-over-value
+     * convention as the rest of the detail page.
+     */
+    private fun renderPlainFieldRow(container: LinearLayout?, rows: List<DetailRow>) {
+        container ?: return
+        if (!twoColumnRows) {
+            rows.forEach { addStackedDetailRow(container, it.label, it.value) }
+            return
+        }
+
+        val inflater = LayoutInflater.from(requireContext())
+        val rowLayout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).also { it.topMargin = 4.dp }
+        }
+        rows.forEach { dr ->
+            val cell = inflater.inflate(R.layout.item_coord_detail_cell, rowLayout, false)
+            cell.findViewById<TextView>(R.id.cell_label).text = dr.label
+            cell.findViewById<TextView>(R.id.cell_value).text = dr.value
+            rowLayout.addView(cell)
+        }
+        container.addView(rowLayout)
     }
 
     private fun bindProjectionCard(c: Coordinate) {
@@ -482,54 +679,139 @@ class CoordinateDetailFragment : Fragment() {
     private fun providerLabel(p: String?): String? = CoordinateDetailFormatter.providerLabel(p)
 
     private fun bindGnssCard(c: Coordinate) {
-        // Provider moved to capture card; only GNSS quality fields here
-        c.rtkStatus?.takeIf { it.isNotBlank() }?.let {
-            addDetailRow(cardGnssRows, "RTK status", rtkLabel(it))
-        }
-        c.hdop?.let    { addDetailRow(cardGnssRows, "HDOP", fmtDop(it)) }
-        c.vDop?.let    { addDetailRow(cardGnssRows, "VDOP", fmtDop(it)) }
-        c.pDop?.let    { addDetailRow(cardGnssRows, "PDOP", fmtDop(it)) }
-        if (showAccuracyIndicators) {
-            c.horizontalAccuracyM?.let { addDetailRow(cardGnssRows, "Horiz. accuracy", fmtM3(it)) }
-            c.verticalAccuracyM?.let   { addDetailRow(cardGnssRows, "Vert. accuracy",  fmtM3(it)) }
-        }
-        val used = c.satsUsed
-        val visible = c.satsVisible
-        when {
-            used != null && visible != null && used <= visible ->
-                addDetailRow(cardGnssRows, "Satellites", "$used used / $visible visible")
-            used != null && visible != null -> {
-                addDetailRow(cardGnssRows, "Satellites used", "$used")
-                addDetailRow(cardGnssRows, "Satellites visible", "$visible")
+        // Scannable quality tiles at the top (Fix / accuracy / satellites). The detail rows below show
+        // only supporting values NOT already on a tile, so nothing is duplicated.
+        renderGnssTiles(c)
+
+        // Plain-language quality summary (adds the grade context the tiles don't show).
+        var hasContent = (gnssTiles?.childCount ?: 0) > 0
+        CoordinateDetailFormatter.surveyQualitySummaryText(c.rtkStatus, c.horizontalAccuracyM, c.hdop)
+            ?.let { addStackedDetailRow(cardGnssRows, "Quality", it); hasContent = true }
+
+        // Corrections (left column on tablet) — none of these appear on a tile.
+        val corrections = mutableListOf<DetailRow>()
+        CoordinateDetailFormatter.correctionFreshnessText(c.correctionAgeS)
+            ?.let { corrections += DetailRow("Correction age", it) }
+        c.correctionStationId?.takeIf { it.isNotBlank() }?.let { corrections += DetailRow("Station ID", it) }
+        c.correctionSource?.takeIf { it.isNotBlank() }?.let { corrections += DetailRow("Correction source", it) }
+
+        // Precision details (right column on tablet) — DOP/multipath are not on tiles.
+        val precision = mutableListOf<DetailRow>()
+        c.hdop?.let { precision += DetailRow("HDOP", fmtDop(it)) }
+        c.vDop?.let { precision += DetailRow("VDOP", fmtDop(it)) }
+        c.pDop?.let { precision += DetailRow("PDOP", fmtDop(it)) }
+        c.multipathIndex?.let { precision += DetailRow("Multipath index", fmtDop(it)) }
+
+        renderRowGroups(cardGnssRows, listOf(
+            DetailGroup("Corrections", corrections),
+            DetailGroup("Precision details", precision),
+        ))
+        if (corrections.isNotEmpty() || precision.isNotEmpty()) hasContent = true
+
+        cardGnss?.visibility = if (hasContent) View.VISIBLE else View.GONE
+    }
+
+    /** A titled group of detail rows. */
+    private data class DetailGroup(val heading: String, val rows: List<DetailRow>)
+
+    /**
+     * Renders titled [groups] (each = a "Record history"-style heading + its rows). On phone the
+     * groups stack; on sw600dp+ exactly two non-empty groups sit side by side. Empty groups are skipped.
+     */
+    private fun renderRowGroups(container: LinearLayout?, groups: List<DetailGroup>) {
+        container ?: return
+        val visible = groups.filter { it.rows.isNotEmpty() }
+        if (visible.isEmpty()) return
+        if (twoColumnRows && visible.size == 2) {
+            val rowLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                isBaselineAligned = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             }
-            used != null    -> addDetailRow(cardGnssRows, "Satellites used", "$used")
-            visible != null -> addDetailRow(cardGnssRows, "Satellites visible", "$visible")
+            visible.forEachIndexed { i, g ->
+                val col = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .also { if (i > 0) it.marginStart = 8.dp }
+                }
+                addCardSubheading(col, g.heading)
+                g.rows.forEach { addStackedDetailRow(col, it.label, it.value) }
+                rowLayout.addView(col)
+            }
+            container.addView(rowLayout)
+        } else {
+            visible.forEach { g ->
+                addCardSubheading(container, g.heading)
+                g.rows.forEach { addStackedDetailRow(container, it.label, it.value) }
+            }
         }
-        c.correctionSource?.takeIf { it.isNotBlank() }?.let {
-            val age = c.correctionAgeS?.let { s -> String.format(Locale.US, " (%.1f s old)", s) } ?: ""
-            addDetailRow(cardGnssRows, "Correction", it + age)
+    }
+
+    /** Latitude / Longitude / Altitude tiles at the top of the Location card. */
+    private fun renderLocationTiles(c: Coordinate) {
+        val container = locationTiles ?: return
+        container.removeAllViews()
+        val inflater = LayoutInflater.from(requireContext())
+        val tiles = listOf(
+            DetailRow("Latitude", "${fmt6(c.latitude)}°"),
+            DetailRow("Longitude", "${fmt6(c.longitude)}°"),
+            DetailRow("Altitude", fmtM2(c.altitude)),
+        )
+        tiles.forEach { t ->
+            val tile = inflater.inflate(R.layout.item_gnss_stat_tile, container, false)
+            tile.findViewById<TextView>(R.id.tile_label).text = t.label
+            tile.findViewById<TextView>(R.id.tile_value).text = t.value
+            container.addView(tile)
         }
-        c.correctionStationId?.takeIf { it.isNotBlank() }?.let {
-            addDetailRow(cardGnssRows, "Station ID", it)
+        container.visibility = View.VISIBLE
+    }
+
+    /** Populates the scannable Survey/GNSS stat tiles; a tile appears only when its value is present. */
+    private fun renderGnssTiles(c: Coordinate) {
+        val container = gnssTiles ?: return
+        container.removeAllViews()
+        val tiles = mutableListOf<DetailRow>()
+        CoordinateDetailFormatter.fixTileValue(c.rtkStatus)?.let { tiles += DetailRow("Fix", it) }
+        if (showAccuracyIndicators) {
+            CoordinateDetailFormatter.accuracyTileText(c.horizontalAccuracyM)?.let { tiles += DetailRow("Horizontal accuracy", it) }
+            CoordinateDetailFormatter.accuracyTileText(c.verticalAccuracyM)?.let { tiles += DetailRow("Vertical accuracy", it) }
         }
-        c.multipathIndex?.let {
-            addDetailRow(cardGnssRows, "Multipath index", fmtDop(it))
+        CoordinateDetailFormatter.satellitesTileText(c.satsUsed, c.satsVisible)?.let { tiles += DetailRow("Satellites", it) }
+        if (tiles.isEmpty()) { container.visibility = View.GONE; return }
+        val inflater = LayoutInflater.from(requireContext())
+        tiles.forEach { t ->
+            val tile = inflater.inflate(R.layout.item_gnss_stat_tile, container, false)
+            tile.findViewById<TextView>(R.id.tile_label).text = t.label
+            tile.findViewById<TextView>(R.id.tile_value).text = t.value
+            container.addView(tile)
         }
-        if (cardGnssRows?.childCount ?: 0 > 0) cardGnss?.visibility = View.VISIBLE
-        else cardGnss?.visibility = View.GONE
+        container.visibility = View.VISIBLE
     }
 
     private fun bindCaptureCard(c: Coordinate) {
         // Source device and capture method first (most user-relevant)
-        c.sourceDevice?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Source device", it) }
-        captureMethodLabel(c.captureMethod)?.let { addDetailRow(cardCaptureRows, "Capture method", it) }
+        val rows = mutableListOf<DetailRow>()
+        c.sourceDevice?.takeIf { it.isNotBlank() }?.let { rows += DetailRow("Source device", it) }
+        captureMethodLabel(c.captureMethod)?.let { rows += DetailRow("Capture method", it) }
         // Provider only when informative (not "other")
-        providerLabel(c.provider)?.let { addDetailRow(cardCaptureRows, "Provider", it) }
-        val dateObj = Date(c.timestamp)
-        addDetailRow(cardCaptureRows, "Date", SimpleDateFormat("MM/dd/yyyy", Locale.US).format(dateObj))
-        addDetailRow(cardCaptureRows, "Time", SimpleDateFormat("h:mm:ss a", Locale.US).format(dateObj).lowercase(Locale.US))
-        c.timestampSource?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "Time source", it) }
-        c.appVersion?.takeIf { it.isNotBlank() }?.let { addDetailRow(cardCaptureRows, "App version", it) }
+        providerLabel(c.provider)?.let { rows += DetailRow("Provider", it) }
+        // Single "Captured" row replaces the old duplicate Date + Time rows.
+        if (c.timestamp > 0L) rows += DetailRow("Captured", capturedDateTime(c.timestamp))
+        c.timestampSource?.takeIf { it.isNotBlank() }?.let { rows += DetailRow("Time source", it) }
+        c.appVersion?.takeIf { it.isNotBlank() }?.let { rows += DetailRow("App version", it) }
+        renderDetailRows(cardCaptureRows, rows)
+
+        // Record history — shown only when Created/Last-updated add information beyond Captured.
+        val history = CoordinateDetailFormatter.recordHistoryVisibility(c.timestamp, c.createdAt, c.updatedAt)
+        if (history.anyShown) {
+            addCardSubheading(cardCaptureRows, "Record history")
+            val hist = mutableListOf<DetailRow>()
+            if (history.showCreated) hist += DetailRow("Created", formatDateTime(c.createdAt))
+            if (history.showUpdated) hist += DetailRow("Last updated", formatDateTime(c.updatedAt))
+            renderDetailRows(cardCaptureRows, hist)
+        }
 
         // Quality/accuracy context note
         val note = when (c.captureMethod?.lowercase(Locale.US)) {
@@ -549,18 +831,20 @@ class CoordinateDetailFragment : Fragment() {
 
     private fun bindAveragingCard(c: Coordinate) {
         val hasData = (c.averagedSamples ?: 0) > 0 || c.averageDurationMs != null ||
-            c.stdLatM != null || c.stdLonM != null || c.stdAltM != null
+                c.stdLatM != null || c.stdLonM != null || c.stdAltM != null
         if (!hasData) { cardAveraging?.visibility = View.GONE; return }
-        c.averagedSamples?.takeIf { it > 0 }?.let {
-            addDetailRow(cardAveragingRows, "Samples averaged", it.toString())
-        }
+        val rows = mutableListOf<DetailRow>()
+        c.averagedSamples?.takeIf { it > 0 }?.let { rows += DetailRow("Samples averaged", it.toString()) }
         c.averageDurationMs?.let {
-            val secs = it / 1000.0
-            addDetailRow(cardAveragingRows, "Averaging duration", String.format(Locale.US, "%.1f s", secs))
+            rows += DetailRow("Averaging duration", String.format(Locale.US, "%.1f s", it / 1000.0))
         }
-        c.stdLatM?.let  { addDetailRow(cardAveragingRows, "Std dev (lat)",  fmtM3(it)) }
-        c.stdLonM?.let  { addDetailRow(cardAveragingRows, "Std dev (lon)",  fmtM3(it)) }
-        c.stdAltM?.let  { addDetailRow(cardAveragingRows, "Std dev (alt)",  fmtM3(it)) }
+        // Calculated capture rate (display-only; only when both inputs are available).
+        CoordinateDetailFormatter.captureRateText(c.averagedSamples, c.averageDurationMs)
+            ?.let { rows += DetailRow("Capture rate", it) }
+        c.stdLatM?.let { rows += DetailRow("Std dev (lat)", fmtM3(it)) }
+        c.stdLonM?.let { rows += DetailRow("Std dev (lon)", fmtM3(it)) }
+        c.stdAltM?.let { rows += DetailRow("Std dev (alt)", fmtM3(it)) }
+        renderDetailRows(cardAveragingRows, rows)
         cardAveraging?.visibility = View.VISIBLE
     }
 
@@ -617,12 +901,20 @@ class CoordinateDetailFragment : Fragment() {
         modelMeta?.text = model?.let { buildModelMeta(it) } ?: ""
         modelMeta?.visibility = if (model == null) View.GONE else View.VISIBLE
 
-        // Placement note
-        val placementNote = when (lastCoordinate?.captureMethod?.lowercase(Locale.US)) {
+        // Placement note: source, AR visibility, and any per-coordinate placement overrides.
+        val placementSource = when (lastCoordinate?.captureMethod?.lowercase(Locale.US)) {
             "model_embedded" -> "Placement: Model embedded location"
             else             -> "Placement: Uses saved coordinate"
         }
-        textModelPlacement?.text = placementNote
+        val lines = mutableListOf(placementSource)
+        lastCoordinate?.let { c ->
+            lines += if (c.renderEnabled) "AR: Visible" else "AR: Hidden"
+            CoordinateDetailFormatter.modelPlacementSummaryText(
+                c.modelScale, c.modelYawDeg, c.modelPitchDeg, c.modelRollDeg,
+                c.modelVerticalOffsetM, c.modelOriginOffsetXM, c.modelOriginOffsetYM, c.modelOriginOffsetZM
+            )?.let { lines += it }
+        }
+        textModelPlacement?.text = lines.joinToString("\n")
         textModelPlacement?.visibility = View.VISIBLE
 
         val missing = model == null || !fileExists
@@ -690,7 +982,10 @@ class CoordinateDetailFragment : Fragment() {
             val model = withContext(Dispatchers.IO) {
                 try {
                     modelRepository.getModelById(modelId)
-                } catch (_: Exception) { null }
+                } catch (e: Exception) {
+                    DiagnosticsLogger.w("MODEL", "lookup failed for modelId=$modelId: ${e.javaClass.simpleName} ${e.message}")
+                    null
+                }
             }
             // Prefer the origin captured at import (reprojection erases the in-file signal);
             // fall back to detection for models imported before it was stored.
@@ -722,8 +1017,8 @@ class CoordinateDetailFragment : Fragment() {
         val message = String.format(
             Locale.US,
             "This model appears to contain an embedded location:\n\n" +
-                "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
-                "How would you like to place it?",
+                    "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
+                    "How would you like to place it?",
             embedded.latitude, embedded.longitude, altStr, confidenceNote
         )
         if (!isAdded || activity == null) return
@@ -770,6 +1065,8 @@ class CoordinateDetailFragment : Fragment() {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
+            DiagnosticsLogger.i("MODEL", "linked modelId=$modelId to coordinateId=${updated.id} " +
+                "name=\"${updated.name}\" useModelLocation=$useModelLocation")
             showSnackbar(if (useModelLocation) "Model linked · coordinate moved to model location" else "Model linked")
         }
     }
@@ -795,10 +1092,12 @@ class CoordinateDetailFragment : Fragment() {
             modelVerticalOffsetM = null,
             modelOriginOffsetXM = null, modelOriginOffsetYM = null, modelOriginOffsetZM = null
         )
+        val priorModelId = coord.modelId
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
+            DiagnosticsLogger.i("MODEL", "unlinked modelId=$priorModelId from coordinateId=${updated.id}")
             showSnackbar("Model link removed")
         }
     }
@@ -843,15 +1142,15 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     /** Renders a single badge: applies [state] to [tv], or hides it when [state] is null. */
-    private fun applyBadge(tv: TextView?, state: BadgeUi?) {
-        tv ?: return
-        if (state == null) { tv.visibility = View.GONE; return }
-        tv.text = state.text
-        tv.backgroundTintList = android.content.res.ColorStateList.valueOf(state.colorArgb)
+    private fun applyBadge(chip: com.google.android.material.chip.Chip?, state: BadgeUi?) {
+        chip ?: return
+        if (state == null) { chip.visibility = View.GONE; return }
+        chip.text = state.text
+        chip.chipBackgroundColor = android.content.res.ColorStateList.valueOf(state.colorArgb)
         // Only the fix/accuracy badges carry an accessibility description; leave the others' as-is
         // (matches the previous per-badge behavior — source/extra never set contentDescription).
-        state.contentDescription?.let { tv.contentDescription = it }
-        tv.visibility = View.VISIBLE
+        state.contentDescription?.let { chip.contentDescription = it }
+        chip.visibility = View.VISIBLE
     }
 
     // ── Map ────────────────────────────────────────────────────────────────────
@@ -916,49 +1215,6 @@ class CoordinateDetailFragment : Fragment() {
         canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, strokePaint)
         thumb.recycle()
         return BitmapDescriptorFactory.fromBitmap(out)
-    }
-
-    // ── Distance / bearing from live GNSS fix ─────────────────────────────────
-
-    private fun haversineDistanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val r = 6_371_000.0
-        val phi1 = Math.toRadians(lat1); val phi2 = Math.toRadians(lat2)
-        val dPhi = Math.toRadians(lat2 - lat1); val dL = Math.toRadians(lon2 - lon1)
-        val sinDPhi = Math.sin(dPhi / 2); val sinDL = Math.sin(dL / 2)
-        val a = sinDPhi * sinDPhi + Math.cos(phi1) * Math.cos(phi2) * sinDL * sinDL
-        return r * 2 * Math.asin(Math.sqrt(a))
-    }
-
-    private fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val phi1 = Math.toRadians(lat1); val phi2 = Math.toRadians(lat2)
-        val dL = Math.toRadians(lon2 - lon1)
-        val y = Math.sin(dL) * Math.cos(phi2)
-        val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dL)
-        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360
-    }
-
-    private fun cardinalDir(deg: Double) = CoordinateDetailFormatter.cardinalDir(deg)
-
-    private fun fmtDistance(m: Double) = CoordinateDetailFormatter.fmtDistance(m)
-
-    private fun startDistanceBearing(c: Coordinate) {
-        val switchboard = try {
-            EntryPointAccessors.fromApplication(
-                requireContext().applicationContext,
-                SurRealApplicationEntryPoint::class.java
-            ).fixSwitchboard()
-        } catch (_: Exception) { return }
-
-        distanceJob = viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                switchboard.fixes.collectLatest { fix ->
-                    val dist = haversineDistanceM(c.latitude, c.longitude, fix.latDeg, fix.lonDeg)
-                    val bearing = bearingDeg(c.latitude, c.longitude, fix.latDeg, fix.lonDeg)
-                    rowDistance?.visibility = View.VISIBLE
-                    textDistance?.text = "${fmtDistance(dist)} ${cardinalDir(bearing)}"
-                }
-            }
-        }
     }
 
     // ── Edit dialog ────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.TextureView
+import app.surrealar.util.ArSessionDiagnostics
+import app.surrealar.util.DiagnosticsLogger
 import com.google.android.filament.*
 import com.google.android.filament.gltfio.AssetLoader
 import com.google.android.filament.gltfio.FilamentAsset
@@ -237,7 +239,7 @@ class ArFilamentRenderer {
      */
     fun preload(key: String, filePath: String, scope: CoroutineScope, placement: ModelPlacement = ModelPlacement()) {
         if (!initialized) {
-            Log.w(DIAG, "preload($key) skipped — not initialized")
+            DiagnosticsLogger.w(DIAG, "preload($key) skipped — renderer not initialized")
             return
         }
         if (anchorAssets.containsKey(key)) {
@@ -248,7 +250,10 @@ class ArFilamentRenderer {
             Log.d(DIAG, "preload($key) skipped — already in loadingKeys")
             return
         }
-        Log.d(DIAG, "preload($key) starting  path=$filePath  fileExists=${File(filePath).exists()}  fileSize=${File(filePath).length()}B")
+        val srcFile = File(filePath)
+        DiagnosticsLogger.i(DIAG, "preload start key=$key path=\"$filePath\" " +
+            "exists=${srcFile.exists()} sizeBytes=${if (srcFile.exists()) srcFile.length() else -1L}")
+        ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.LOADING)
         scope.launch {
             try {
                 preloadSemaphore.withPermit {
@@ -262,13 +267,17 @@ class ArFilamentRenderer {
                     Log.d(DIAG, "preload($key) IO done — ${bytes.size}B read")
                     withContext(Dispatchers.Main) {
                         if (!initialized) {
-                            Log.w(DIAG, "preload($key) aborted — renderer destroyed while loading")
+                            // Lifecycle cancellation: the user left AR before the GLB finished loading.
+                            DiagnosticsLogger.w(DIAG, "preload aborted key=$key reason=\"renderer destroyed while loading\"")
+                            ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
                             return@withContext
                         }
                         val buffer = ByteBuffer.wrap(bytes)
+                        // createAsset parses the GLB/GLTF; null means parse / asset creation failed.
                         val asset = assetLoader.createAsset(buffer)
                         if (asset == null) {
-                            Log.e(DIAG, "preload($key) FAILED — createAsset returned null  path=$filePath")
+                            DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"createAsset returned null (GLB parse/asset creation failed)\" path=\"$filePath\"")
+                            ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
                             return@withContext
                         }
@@ -276,12 +285,14 @@ class ArFilamentRenderer {
                         asset.releaseSourceData()
                         anchorAssets[key] = CachedAsset(asset, placement = placement)
                         loadingKeys.remove(key)
-                        Log.d(DIAG, "preload($key) asyncBeginLoad called — entities=${asset.entities.size}  path=$filePath")
+                        DiagnosticsLogger.i(DIAG, "preload success key=$key entities=${asset.entities.size}")
+                        ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
                     }
                 }
             } catch (e: Exception) {
                 loadingKeys.remove(key)
-                Log.e(DIAG, "preload($key) EXCEPTION  path=$filePath", e)
+                DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"exception\" path=\"$filePath\"", e)
+                ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
             }
         }
     }

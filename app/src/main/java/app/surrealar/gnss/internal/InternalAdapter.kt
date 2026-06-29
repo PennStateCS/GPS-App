@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
+import app.surrealar.util.DiagnosticsLogger
 
 /**
  * Connects Android's internal GNSS NMEA stream to the app's fix and sky buses.
@@ -53,6 +54,7 @@ class InternalAdapter(
         if (collectJob != null) return
 
         android.util.Log.d(TAG, "Starting internal GNSS adapter")
+        DiagnosticsLogger.i("SOURCE", "internal GNSS adapter started")
 
         /*
          * Clear the inventory before starting collection so satellites from a
@@ -87,6 +89,7 @@ class InternalAdapter(
 
     override fun stop() {
         android.util.Log.d(TAG, "Stopping internal GNSS adapter")
+        DiagnosticsLogger.i("SOURCE", "internal GNSS adapter stopped")
 
         collectJob?.cancel()
         collectJob = null

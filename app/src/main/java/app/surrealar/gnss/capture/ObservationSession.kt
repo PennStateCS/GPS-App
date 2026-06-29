@@ -103,6 +103,13 @@ class ObservationSession(
     private var lastVAcc: Double? = null
     private var lastDiffAge: Double? = null
     private var lastCorrectionStationId: String? = null
+    private var lastAltMsl: Double? = null
+    private var lastGeoidSeparation: Double? = null
+    private var lastTimestampSource: app.surrealar.gnss.model.TimestampSource? = null
+    private var lastMultipathIndex: Double? = null
+    private var lastStdDevEast: Double? = null
+    private var lastStdDevNorth: Double? = null
+    private var lastStdDevUp: Double? = null
 
     /**
      * Starts collecting fixes for the averaging session.
@@ -160,6 +167,13 @@ class ObservationSession(
                     lastVAcc = v
                     lastDiffAge = fix.diffAgeS
                     lastCorrectionStationId = fix.correctionStationId
+                    lastAltMsl = fix.altMslM
+                    lastGeoidSeparation = fix.geoidSeparationM
+                    lastTimestampSource = fix.timestampSource
+                    lastMultipathIndex = fix.multipathIndex
+                    lastStdDevEast = fix.stdDevEastM
+                    lastStdDevNorth = fix.stdDevNorthM
+                    lastStdDevUp = fix.stdDevUpM
 
                     val elapsed = Duration.between(start, Instant.now()).seconds.toInt()
                     _state.value = State.Capturing(
@@ -232,7 +246,14 @@ class ObservationSession(
             hAccM = lastHAcc,
             vAccM = lastVAcc,
             diffAgeS = lastDiffAge,
-            correctionStationId = lastCorrectionStationId
+            correctionStationId = lastCorrectionStationId,
+            altMslM = lastAltMsl,
+            geoidSeparationM = lastGeoidSeparation,
+            timestampSource = lastTimestampSource,
+            multipathIndex = lastMultipathIndex,
+            stdDevEastM = lastStdDevEast,
+            stdDevNorthM = lastStdDevNorth,
+            stdDevUpM = lastStdDevUp
         )
 
         /*
