@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Location card body below the Latitude/Longitude/Altitude tiles. A single container that
+     CoordinateDetailFragment.bindLocationCard() fills dynamically with label-above-value sections
+     ("Reference system", "Projected coordinates", "Altitude details") so the card matches the
+     formatting of the Capture Source / Survey-GNSS / Averaging cards. Single column on phones,
+     two columns on sw600dp+ tablets (handled in code via renderStackedColumns / renderTileRow). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/location_sections"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical" />

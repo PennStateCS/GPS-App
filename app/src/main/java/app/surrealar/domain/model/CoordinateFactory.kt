@@ -150,6 +150,16 @@ object CoordinateFactory {
             verticalAccuracyM   = result.vAccM,
             correctionAgeS      = result.diffAgeS,
             correctionStationId = result.correctionStationId,
+            correctionSource    = deriveCorrectionsSource(result.correctionStationId),
+            // Final-fix metadata preserved from the last accepted epoch (no schema change; these
+            // Coordinate fields already exist). stdLat/stdLon map from North/East respectively.
+            altitudeMsl         = result.altMslM,
+            geoidSeparationM    = result.geoidSeparationM,
+            timestampSource     = result.timestampSource?.name,
+            multipathIndex      = result.multipathIndex,
+            stdLatM             = result.stdDevNorthM,
+            stdLonM             = result.stdDevEastM,
+            stdAltM             = result.stdDevUpM,
             crsEpsg             = 4326,
             easting             = utm?.easting,
             northing            = utm?.northing,

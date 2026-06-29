@@ -1,6 +1,7 @@
 package app.surrealar.gnss.external
 
 import android.util.Log
+import app.surrealar.util.DiagnosticsLogger
 import org.json.JSONObject
 
 /**
@@ -36,13 +37,18 @@ class ReachDeviceService(private val client: ReachHttpClient) {
 
     private suspend fun tryEndpoint(path: String): ReachDeviceInfoDto? {
         val text = runCatching { client.get(path) }
-            .onFailure { Log.w(TAG, "GET $path failed: ${it.message}") }
+            .onFailure {
+                Log.w(TAG, "GET $path failed: ${it.message}")
+                DiagnosticsLogger.w("CORRECTIONS",
+                    "device endpoint $path failed: ${it.javaClass.simpleName} ${it.message}")
+            }
             .getOrNull() ?: return null
 
         Log.d(TAG, "GET $path → ${text.length} chars: ${text.take(300)}")
 
         val root = try { JSONObject(text) } catch (e: Exception) {
             Log.w(TAG, "JSON parse failed for $path: ${e.message}")
+            DiagnosticsLogger.w("CORRECTIONS", "device endpoint $path returned non-JSON: ${e.message}")
             return null
         }
 
@@ -115,6 +121,7 @@ class ReachDeviceService(private val client: ReachHttpClient) {
         // If nothing at all was parsed, this endpoint doesn't have device info
         if (name == null && model == null && firmware == null && serial == null) {
             Log.w(TAG, "No device fields found in $path response – top-level keys: ${root.keys().asSequence().toList()}")
+            DiagnosticsLogger.w("CORRECTIONS", "device endpoint $path had no device fields (endpoint may be missing/404)")
             return null
         }
 

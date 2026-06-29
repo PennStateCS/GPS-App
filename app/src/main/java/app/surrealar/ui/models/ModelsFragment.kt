@@ -6,6 +6,7 @@ import android.content.res.AssetFileDescriptor
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import app.surrealar.util.DiagnosticsLogger
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -250,10 +251,13 @@ class ModelsFragment : Fragment() {
             }
 
             Log.d("ModelsFragment", "Selected URI: $uri  fileName: $fileName  size: $fileSize")
+            DiagnosticsLogger.i("MODEL",
+                "import started name=\"$fileName\" sizeBytes=$fileSize uriScheme=${uri.scheme}")
 
             // Validate file extension — accept .glb and .gltf
             val lowerName = fileName.lowercase()
             if (!lowerName.endsWith(".glb") && !lowerName.endsWith(".gltf")) {
+                DiagnosticsLogger.w("MODEL", "import rejected — unsupported file \"$fileName\" (expected .glb/.gltf)")
                 Toast.makeText(requireContext(), "Please select a .glb or .gltf file", Toast.LENGTH_LONG).show()
                 return
             }
@@ -261,6 +265,7 @@ class ModelsFragment : Fragment() {
             // Open the stream — this works for all URI schemes including content:// from SAF
             val inputStream = contentResolver.openInputStream(uri)
                 ?: run {
+                    DiagnosticsLogger.w("MODEL", "import failed — cannot open input stream for \"$fileName\" (uri unresolved)")
                     Toast.makeText(requireContext(), "Cannot open file", Toast.LENGTH_LONG).show()
                     return
                 }
@@ -281,6 +286,7 @@ class ModelsFragment : Fragment() {
                     copyModelToInternalStorage(uri, fileName, inputStream)
                 }
                 if (targetFile == null) {
+                    DiagnosticsLogger.e("MODEL", "file copy failed for \"$fileName\" — target null")
                     Toast.makeText(requireContext(), "Failed to import model file", Toast.LENGTH_LONG).show()
                     return@launch
                 }
@@ -295,6 +301,8 @@ class ModelsFragment : Fragment() {
                 }
                 // File may have been rewritten by reprojection; use its current size.
                 val finalSize = targetFile.length()
+                DiagnosticsLogger.i("MODEL", "file copied name=\"${targetFile.name}\" " +
+                    "sizeBytes=$finalSize path=\"models/${targetFile.name}\" georeferenced=${embedded != null}")
 
                 // Prompt user for name/description
                 showAddModelDialog(
@@ -308,6 +316,7 @@ class ModelsFragment : Fragment() {
 
         } catch (e: Exception) {
             Log.e("ModelsFragment", "Failed to import model", e)
+            DiagnosticsLogger.e("MODEL", "import exception: ${e.javaClass.simpleName} ${e.message}", e)
             Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
@@ -385,6 +394,8 @@ class ModelsFragment : Fragment() {
             }
         } catch (e: Exception) {
             Log.w("ModelsFragment", "Could not resolve source file for URI: $uri", e)
+            // glTF sidecar resources cannot be copied without the source dir — surface in export.
+            DiagnosticsLogger.w("MODEL", "URI resolution failed for gltf sidecars: ${e.javaClass.simpleName} ${e.message}")
             null
         }
     }

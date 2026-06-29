@@ -36,6 +36,7 @@ interface SurRealApplicationEntryPoint {
     fun externalNmeaSource(): app.surrealar.gnss.bus.adapters.NmeaSource
     fun settingsRepository(): SettingsRepository
     fun coordinateRepository(): app.surrealar.domain.repository.CoordinateRepository
+    fun modelRepository(): app.surrealar.domain.repository.ModelRepository
 }
 
 /**
