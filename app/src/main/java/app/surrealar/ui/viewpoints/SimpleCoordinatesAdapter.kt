@@ -154,9 +154,10 @@ class SimpleCoordinatesAdapter(
         // Set the name text
         holder.name.text = p.name
 
-        // Subtitle: context-aware (model name, source, RTK quality, lat/lon)
+        // Line 2: source · fix · accuracy summary.  Line 3: lat/lon. (pure CoordinateListFormatter)
         holder.coords.visibility = View.VISIBLE
-        holder.coords.text = buildSubtitle(p)
+        holder.coords.text = CoordinateListFormatter.summaryLine(p, modelNameMap[p.linkedModelId])
+        holder.latlon.text = CoordinateListFormatter.latLonLine(p)
 
         // Trailing indicator when a 3D model is linked to this coordinate
         val linkedModelId = p.linkedModelId
@@ -258,43 +259,6 @@ class SimpleCoordinatesAdapter(
         }
     }
 
-    // ── Subtitle builder ──────────────────────────────────────────────────────
-
-    private fun buildSubtitle(p: Coordinate): String {
-        val latLon = String.format(Locale.US, "%.6f, %.6f", p.latitude, p.longitude)
-        val linkedModelId = p.linkedModelId
-        return when {
-            linkedModelId != null -> {
-                val name = modelNameMap[linkedModelId]?.takeIf { it.isNotBlank() } ?: "Model linked"
-                "$name · $latLon"
-            }
-            p.provider.lowercase(Locale.US).contains("rs2") ||
-            p.captureMethod?.lowercase(Locale.US) == "external_gnss" ||
-            p.captureMethod?.lowercase(Locale.US) == "rtk_receiver" -> {
-                val src = p.sourceDevice?.takeIf { it.isNotBlank() } ?: "RS2+"
-                val quality = when (p.rtkStatus?.uppercase(Locale.US)) {
-                    "FIX", "FIXED" -> "Fixed"
-                    "FLOAT"        -> "Float"
-                    "DGPS"         -> "DGPS"
-                    "SINGLE", "GPS", "AUTONOMOUS" -> "Single"
-                    else           -> null
-                }
-                if (quality != null) "$src · $quality · $latLon" else "$src · $latLon"
-            }
-            else -> {
-                val src = when (p.captureMethod?.lowercase(Locale.US)) {
-                    "internal_gps" -> "Internal GPS"
-                    "averaged"     -> "Averaged"
-                    "manual"       -> "Manual"
-                    "imported"     -> "Imported"
-                    "map_tap"      -> "Map tap"
-                    "model_embedded" -> "Model"
-                    else           -> null
-                }
-                if (src != null) "$src · $latLon" else latLon
-            }
-        }
-    }
 
     // ── Cached helpers ────────────────────────────────────────────────────────
 
@@ -375,7 +339,8 @@ class SimpleCoordinatesAdapter(
     class Holder(v: View) : RecyclerView.ViewHolder(v) {
         val icon: ImageView = v.findViewById(R.id.image_icon)        // The coordinate point icon
         val name: TextView = v.findViewById(R.id.text_name)          // The coordinate point name
-        val coords: TextView = v.findViewById(R.id.text_coords)      // The coordinate values (lat/lon)
+        val coords: TextView = v.findViewById(R.id.text_coords)      // Source · fix · accuracy summary
+        val latlon: TextView = v.findViewById(R.id.text_latlon)      // Lat/lon position line
         val modelLink: ImageView = v.findViewById(R.id.image_model_link) // Linked-model indicator
     }
 

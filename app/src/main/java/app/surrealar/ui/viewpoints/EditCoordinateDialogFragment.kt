@@ -75,8 +75,9 @@ class EditCoordinateDialogFragment(
         val nameEdit = view.findViewById<EditText>(R.id.edit_point_name)
         val noteEdit = view.findViewById<EditText>(R.id.edit_point_note)
         val iconButton = view.findViewById<MaterialButton>(R.id.button_icon)
+        // Read-only saved-location summary (this dialog does not edit position).
         val locationText = view.findViewById<TextView>(R.id.text_location)
-        locationText.visibility = View.GONE
+        locationText.text = CoordinateDetailFormatter.locationSummary(coordinate)
 
         editTextRef = nameEdit
         iconButtonRef = iconButton
