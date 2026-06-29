@@ -31,8 +31,8 @@ Built by `DiagnosticReportExporter.buildReport()` into `cacheDir/diagnostic_expo
 | `permissions-status.txt` | Runtime permission grants (camera/location/bluetooth/notifications) + GPS/network provider enabled |
 | `app-state-summary.txt` | Live GNSS/receiver/network/map state (selected source, active provider, current fix, host:port presence — no credentials) |
 | `coordinates.txt` | Coordinate counts + coordinate→model association rows (no raw lat/lon) |
-| `model-integrity.txt` | Model inventory: basename, file existence, size, linked-coordinate count |
-| `ar-session-summary.txt` | Most recent AR/model session tallies (from persisted `ar-last-session.txt`; survives event-log rotation) — open/close time, coordinates considered, anchors created/failed, models in scene, earth-tracking reached, last skip reason |
+| `model-integrity.txt` | Model inventory: basename, file existence, size, linked-coordinate count, **+ `lastArStatus`/`reason`** joined from the last AR session (`queued`/`loading`/`ready`/`in_scene`/`failed`/`skipped`/`not_used_in_last_ar_session`) |
+| `ar-session-summary.txt` | Most recent AR/model session (from `ArSessionDiagnostics`, persisted as `ar-last-session.txt`; survives event-log rotation): open/close/duration, coordinates received/withModel/visible, labels shown, per-status model counts (queued/loading/loaded/inScene/failed/skipped) + reason breakdown, anchors attempted/created/failed, active anchors, reanchors, last Earth + camera tracking state, and warnings (e.g. "labels rendered but NO models reached the scene") |
 | `map-diagnostics.txt`, `nmea-stream-diagnostics.txt` | Map renderer/key/tile status + NMEA stream timing/parse stats (no raw NMEA) |
 | `app-log-current.txt`, `app-log-1..4.txt` | Rolling diagnostic event log (all categories below) |
 | `app-errors-current.txt`, `app-errors-1..2.txt` | Errors/crashes (separate so the latest crash is never lost) |
@@ -62,10 +62,16 @@ Use a consistent tag string as the first arg to `DiagnosticsLogger`:
 ## 4. Where to add future diagnostic events
 
 - **AR lifecycle / anchors / model load** → `ui/openinar/OpenInARFragment` and
-  `ui/openinar/ArFilamentRenderer` (tags `AR` / `AR_MDL`). Already instrumented: screen open/close,
-  session resume, anchor create/fail, accuracy gate, distance skips, preload start/success/fail,
-  scene-state counts. **Never log per frame** — gate on state change (see `loggedAccuracyGate`,
-  `lastDistanceSkippedIds`, the `progress == lastModelProgress` early-returns).
+  `ui/openinar/ArFilamentRenderer` (tag `AR_MDL`). Already instrumented: screen open/close,
+  session resume, Earth + camera tracking **state-change** events, anchor create/fail, accuracy gate,
+  distance skips, preload start/success/fail, scene-state counts. **Never log per frame** — gate on
+  state change (see `loggedAccuracyGate`, `lastDistanceSkippedIds`, `lastEarthTrackingLogged`,
+  `lastCameraTrackingLogged`, the `progress == lastModelProgress` early-returns).
+- **Per-AR-session model status** → `util/ArSessionDiagnostics` (process-wide holder). The fragment
+  records QUEUED/SKIPPED + skip reason and tracking/anchor tallies; the renderer reports
+  LOADING/READY/FAILED (`parse_failed`/`filament_asset_failed`/`lifecycle_cancelled`); IN_SCENE is
+  set from `modelLoadState`. It feeds `ar-session-summary.txt` and `model-integrity.txt`'s
+  `lastArStatus`. Keep it a compact summary — do NOT turn it into an event log.
 - **GNSS source / provider switching** → `gnss/source/GnssSourceCoordinator` + `SourceSettings`
   (tags `SOURCE` / `GNSS`). Summarize high-frequency fixes; log provider/state changes only.
 - **Coordinate save flow** → the add/edit coordinate dialogs + `CoordinateRepository` callers

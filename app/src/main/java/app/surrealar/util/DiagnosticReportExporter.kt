@@ -367,12 +367,15 @@ object DiagnosticReportExporter {
         val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
         val models = d.models
         val linkCounts = d.coordinates.mapNotNull { it.modelId }.groupingBy { it }.eachCount()
+        val hasArSession = ArSessionDiagnostics.hasSession()
         val sb = StringBuilder()
-        sb.appendLine("=== Models ===")
+        sb.appendLine("=== Model Integrity ===")
         sb.appendLine("Generated: $now")
         sb.appendLine()
         sb.appendLine("Total models             : ${models.size}")
         sb.appendLine("Missing files            : ${models.count { !File(it.filePath).exists() }}")
+        sb.appendLine("Last AR session present  : $hasArSession")
+        sb.appendLine("(lastArStatus reflects the most recent AR session in this app run, when available)")
         sb.appendLine()
         if (models.isEmpty()) {
             sb.appendLine("(no models imported)")
@@ -380,10 +383,18 @@ object DiagnosticReportExporter {
             models.forEach { m ->
                 val f = File(m.filePath)
                 val exists = f.exists()
+                // Join the stored model file to its last AR loading status (by model id).
+                val arEntry = if (hasArSession) ArSessionDiagnostics.statusForModelId(m.id) else null
+                val arStatus = when {
+                    !hasArSession -> "not_used_in_last_ar_session"
+                    arEntry == null -> "not_used_in_last_ar_session"
+                    else -> arEntry.status.name.lowercase(Locale.US)
+                }
+                val arReason = arEntry?.reason?.let { " reason=$it" } ?: ""
                 // Show only the file name, not the full internal path.
                 sb.appendLine("id=${m.id} name=\"${m.name}\" file=\"${f.name}\" type=${m.fileType} " +
                     "exists=$exists sizeBytes=${if (exists) f.length() else -1L} storedSize=${m.fileSize} " +
-                    "linkedCoordinates=${linkCounts[m.id] ?: 0}")
+                    "linkedCoordinates=${linkCounts[m.id] ?: 0} lastArStatus=$arStatus$arReason")
             }
         }
         return sb.toString()
