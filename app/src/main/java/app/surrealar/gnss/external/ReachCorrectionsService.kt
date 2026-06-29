@@ -2,6 +2,7 @@ package app.surrealar.gnss.external
 
 import android.util.Log
 import app.surrealar.gnss.external.model.ReachCorrectionsInfo
+import app.surrealar.util.DiagnosticsLogger
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
@@ -39,6 +40,11 @@ class ReachCorrectionsService(private val host: String) {
     private var cachedChannel: String? = null
     private var cachedIsReceiving: Boolean = false
 
+    // Last values logged to DiagnosticsLogger — used to log only state CHANGES (corrections
+    // broadcasts arrive continuously; logging each one would flood the diagnostic export).
+    private var lastLoggedSolution: String? = null
+    private var lastLoggedStreamKey: String? = null
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     fun connect() {
@@ -46,6 +52,7 @@ class ReachCorrectionsService(private val host: String) {
             Log.d(TAG, "Already connected to $host — ignoring duplicate connect()")
             return
         }
+        DiagnosticsLogger.i("CORRECTIONS", "connect attempt host=$host")
         try {
             val options = IO.Options().apply {
                 transports = arrayOf("polling")   // RS2+ supports polling; skip websocket upgrade
@@ -59,17 +66,21 @@ class ReachCorrectionsService(private val host: String) {
 
             s.on(Socket.EVENT_CONNECT) {
                 Log.d(TAG, "socket.io connected to $host")
+                DiagnosticsLogger.i("CORRECTIONS", "socket connected host=$host")
             }
             s.on(Socket.EVENT_CONNECT_ERROR) { args ->
                 val msg = args.firstOrNull()?.toString() ?: "unknown"
                 Log.w(TAG, "socket.io connect error (will retry): $msg")
+                DiagnosticsLogger.w("CORRECTIONS", "socket connect error host=$host (will retry): $msg")
             }
             s.on("reconnect_failed") {
                 Log.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
+                DiagnosticsLogger.w("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
             }
             s.on(Socket.EVENT_DISCONNECT) { args ->
                 val reason = args.firstOrNull()?.toString() ?: "unknown"
                 Log.d(TAG, "socket.io disconnected: $reason")
+                DiagnosticsLogger.i("CORRECTIONS", "socket disconnected host=$host reason=$reason")
             }
             s.on("broadcast", broadcastListener)
 
@@ -78,6 +89,8 @@ class ReachCorrectionsService(private val host: String) {
             Log.d(TAG, "socket.io connecting to http://$host")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create socket.io connection to $host: ${e.message}", e)
+            DiagnosticsLogger.e("CORRECTIONS",
+                "failed to create socket host=$host: ${e.javaClass.simpleName} ${e.message}", e)
         }
     }
 
@@ -86,11 +99,14 @@ class ReachCorrectionsService(private val host: String) {
             s.off("broadcast", broadcastListener)
             s.disconnect()
             Log.d(TAG, "socket.io disconnected from $host")
+            DiagnosticsLogger.i("CORRECTIONS", "disconnect requested host=$host")
         }
         socket = null
         cachedNav = null
         cachedChannel = null
         cachedIsReceiving = false
+        lastLoggedSolution = null
+        lastLoggedStreamKey = null
     }
 
     // ── Socket.IO listener ────────────────────────────────────────────────────
@@ -146,6 +162,14 @@ class ReachCorrectionsService(private val host: String) {
         Log.d(TAG, "navigation parsed: aod=$aod sol=$solution baseline=$baseline " +
                 "satsBase=$satsBase baseLat=$baseLat baseLon=$baseLon baseH=$baseH")
 
+        // Log only when the RTK solution state changes (navigation broadcasts arrive continuously).
+        // Base-station lat/lon are intentionally omitted to avoid coordinate spam in the export.
+        if (solution != lastLoggedSolution) {
+            lastLoggedSolution = solution
+            DiagnosticsLogger.i("CORRECTIONS", "rtk solution=${solution ?: "none"} " +
+                "ageS=${aod ?: "?"} baselineKm=${baseline ?: "?"} baseSats=${satsBase ?: "?"}")
+        }
+
         pushUpdate()
     }
 
@@ -174,6 +198,14 @@ class ReachCorrectionsService(private val host: String) {
                 cachedChannel     = type ?: if (connected) "RTCM" else null
 
                 Log.d(TAG, "stream_status parsed: state=$state connected=$connected channel=${cachedChannel}")
+
+                // Log only on a change of the correction-input state/channel.
+                val streamKey = "$state|$connected|${cachedChannel}"
+                if (streamKey != lastLoggedStreamKey) {
+                    lastLoggedStreamKey = streamKey
+                    DiagnosticsLogger.i("CORRECTIONS",
+                        "stream_status state=$state receiving=$connected channel=${cachedChannel ?: "none"}")
+                }
             }
         }
 

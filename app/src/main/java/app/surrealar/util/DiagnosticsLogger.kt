@@ -113,6 +113,29 @@ object DiagnosticsLogger {
     }
 
     /**
+     * Overwrites a small, single-file "session summary" (e.g. `ar-last-session.txt`) in the
+     * diagnostics dir. Unlike the rolling event log, this file persists the most recent session's
+     * compact state so the export still has it even after the event log has rotated. Keep content
+     * small (summary, not an event log). Written off the main thread; failures never crash.
+     */
+    fun writeSessionSummary(name: String, content: String) {
+        val dir = logDir ?: return
+        ioScope.launch {
+            mutex.withLock {
+                try {
+                    File(dir, name).writeText(content, Charsets.UTF_8)
+                } catch (ex: Exception) {
+                    Log.e("DiagnosticsLogger", "Session summary write failed ($name): ${ex.message}")
+                }
+            }
+        }
+    }
+
+    /** Returns a previously written session-summary file if it exists and has content. */
+    fun sessionSummaryFile(name: String): File? =
+        logDir?.let { File(it, name).takeIf { f -> f.exists() && f.length() > 0 } }
+
+    /**
      * Returns all log files that exist and have content, current first then rotated.
      * Used by [DiagnosticReportExporter] to bundle files into the ZIP.
      */
