@@ -112,11 +112,12 @@ class CoordinateDetailFragment : Fragment() {
 
     // Card body containers (rows inflated into these)
     private var cardSummaryRows: LinearLayout? = null
-    private var cardLocationRows: LinearLayout? = null
     private var cardProjectionRows: LinearLayout? = null
     private var cardGnssRows: LinearLayout? = null
     private var gnssTiles: LinearLayout? = null
     private var locationTiles: LinearLayout? = null
+    /** Dynamic body of the Location card (Reference system / Projected coordinates / Altitude details). */
+    private var locationSections: LinearLayout? = null
     private var cardCaptureRows: LinearLayout? = null
     private var cardAveragingRows: LinearLayout? = null
     private var cardMotionRows: LinearLayout? = null
@@ -145,12 +146,12 @@ class CoordinateDetailFragment : Fragment() {
     private var badgeSource: com.google.android.material.chip.Chip? = null
     private var badgeExtra: com.google.android.material.chip.Chip? = null
 
-    // Location card additions
-    private var projectedSection: View? = null
-    private var textUtmZone: TextView? = null
+    // Location card copy actions (the projected/CRS rows are now built dynamically into locationSections)
     private var btnCopyLatLng: View? = null
     private var btnCopyUtm: View? = null
-    private var cardCrsRows: LinearLayout? = null
+    /** Resolved (zone, easting, northing) for the current coordinate — stored values or a UTM
+     *  derivation from lat/lon. Non-null only when all three are available, gating Copy UTM. */
+    private var copyableUtm: Triple<String, Double, Double>? = null
 
     // Capture quality note
     private var textCaptureQualityNote: TextView? = null
@@ -223,22 +224,19 @@ class CoordinateDetailFragment : Fragment() {
         btnRemoveLink?.setOnClickListener { confirmRemoveLink() }
 
         cardSummaryRows   = v.findViewById(R.id.card_summary_rows)
-        cardLocationRows  = v.findViewById(R.id.card_location_rows)
         cardProjectionRows= v.findViewById(R.id.card_projection_rows)
         cardGnssRows      = v.findViewById(R.id.card_gnss_rows)
         gnssTiles         = v.findViewById(R.id.gnss_tiles)
         locationTiles     = v.findViewById(R.id.location_tiles)
+        locationSections  = v.findViewById(R.id.location_sections)
         cardCaptureRows   = v.findViewById(R.id.card_capture_rows)
         cardAveragingRows = v.findViewById(R.id.card_averaging_rows)
         cardMotionRows    = v.findViewById(R.id.card_motion_rows)
 
         badgeSource            = v.findViewById(R.id.badge_source)
         badgeExtra             = v.findViewById(R.id.badge_extra)
-        projectedSection       = v.findViewById(R.id.projected_section)
-        textUtmZone            = v.findViewById(R.id.text_utm_zone)
         btnCopyLatLng          = v.findViewById(R.id.btn_copy_latlng)
         btnCopyUtm             = v.findViewById(R.id.btn_copy_utm)
-        cardCrsRows            = v.findViewById(R.id.card_crs_rows)
         textCaptureQualityNote = v.findViewById(R.id.text_capture_quality_note)
         textModelPlacement     = v.findViewById(R.id.text_model_placement)
 
@@ -252,10 +250,8 @@ class CoordinateDetailFragment : Fragment() {
         }
 
         btnCopyUtm?.setOnClickListener {
-            lastCoordinate?.let { c ->
-                val zone = c.utmZone ?: return@let
-                val e = c.easting ?: return@let
-                val n = c.northing ?: return@let
+            // Copies the resolved UTM (stored or derived) shown in the Projected coordinates section.
+            copyableUtm?.let { (zone, e, n) ->
                 val text = "$zone ${String.format(Locale.US, "%.3f", e)} ${String.format(Locale.US, "%.3f", n)}"
                 val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("UTM", text))
@@ -455,8 +451,8 @@ class CoordinateDetailFragment : Fragment() {
         textName?.text = c.name.ifBlank { "—" }
 
         // Clear all dynamic containers before re-populating
-        listOf(cardSummaryRows, cardLocationRows, cardProjectionRows, cardGnssRows,
-               cardCaptureRows, cardAveragingRows, cardMotionRows, cardCrsRows)
+        listOf(cardSummaryRows, locationSections, cardProjectionRows, cardGnssRows,
+               cardCaptureRows, cardAveragingRows, cardMotionRows)
             .forEach { it?.removeAllViews() }
 
         bindSummaryCard(c)
@@ -505,28 +501,117 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     private fun bindLocationCard(c: Coordinate) {
-        // Latitude / Longitude / Altitude shown as scannable tiles (like the Survey/GNSS card); the
-        // geographic rows below carry only the supporting values (MSL, geoid) so nothing is repeated.
+        // Latitude / Longitude / Altitude shown as scannable value tiles at the top (unchanged).
         renderLocationTiles(c)
-        c.altitudeMsl?.let { addStackedDetailRow(cardLocationRows, "Altitude (MSL)", fmtM2(it)) }
-        c.geoidSeparationM?.let { addStackedDetailRow(cardLocationRows, "Geoid separation", fmtM3(it)) }
 
-        // Projected position (UTM). Shown only when a full UTM fix is available; the zone is the
-        // section subtitle, so only Easting/Northing are rows. EPSG:4326 is geographic, not UTM, so
-        // it is shown with the geographic section above — never here.
-        val hasUtm = c.easting != null && c.northing != null && !c.utmZone.isNullOrBlank()
-        if (hasUtm) {
-            textUtmZone?.text = "UTM Zone ${c.utmZone}"
-            addStackedDetailRow(cardCrsRows, "Easting",  String.format(Locale.US, "%.3f m", c.easting))
-            addStackedDetailRow(cardCrsRows, "Northing", String.format(Locale.US, "%.3f m", c.northing))
-            projectedSection?.visibility = View.VISIBLE
-            btnCopyUtm?.visibility = View.VISIBLE
-        } else {
-            projectedSection?.visibility = View.GONE
-            btnCopyUtm?.visibility = View.GONE
+        val container = locationSections
+        container?.removeAllViews()
+
+        // Resolve the projected position: prefer stored fields, fall back to deriving UTM from
+        // lat/lon with the app's existing UtmConverter (display fallback — no EPSG is invented).
+        // Per-field fallback so partially-stored data still fills in cleanly.
+        val derived = if (c.latitude.isFinite() && c.longitude.isFinite() && c.latitude in -80.0..84.0)
+            runCatching { UtmConverter.latLonToUtm(c.latitude, c.longitude) }.getOrNull() else null
+        val utmZone  = c.utmZone?.takeIf { it.isNotBlank() } ?: derived?.utmZone
+        val easting  = c.easting  ?: derived?.easting
+        val northing = c.northing ?: derived?.northing
+        val naText = "Not available"
+
+        // ── Reference system: Geographic position + Projected position (both columns ALWAYS shown,
+        // so the right side is never blank). Two compact label-above-value fields, side by side on
+        // tablets and stacked on phones — the same pattern as the Capture Source / Survey-GNSS cards.
+        addCardSubheading(container, "Reference system")
+        renderStackedColumns(container, listOf(
+            DetailRow("Geographic position", "WGS84 · EPSG:4326"),
+            DetailRow("Projected position", utmZone?.let { "UTM Zone $it" } ?: naText),
+        ))
+
+        // ── Projected coordinates: Easting / Northing as value boxes. Shown whenever any projected
+        // value exists; missing values use a "Not available" placeholder rather than hiding the box.
+        if (utmZone != null || easting != null || northing != null) {
+            addCardSubheading(container, "Projected coordinates")
+            renderTileRow(container, listOf(
+                DetailRow("Easting",  easting?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
+                DetailRow("Northing", northing?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
+            ))
+        }
+
+        // Copy UTM is enabled only when a full, copyable UTM triple is available.
+        copyableUtm = if (utmZone != null && easting != null && northing != null)
+            Triple(utmZone, easting, northing) else null
+        btnCopyUtm?.visibility = if (copyableUtm != null) View.VISIBLE else View.GONE
+
+        // ── Altitude details: MSL altitude / geoid separation — supporting values, shown only
+        // when present (typically absent for phone-GPS points). Same label-above-value pattern.
+        val altRows = mutableListOf<DetailRow>()
+        c.altitudeMsl?.let { altRows += DetailRow("Altitude (MSL)", fmtM2(it)) }
+        c.geoidSeparationM?.let { altRows += DetailRow("Geoid separation", fmtM3(it)) }
+        if (altRows.isNotEmpty()) {
+            addCardSubheading(container, "Altitude details")
+            renderStackedColumns(container, altRows)
         }
 
         cardLocation?.visibility = View.VISIBLE
+    }
+
+    /**
+     * Renders [rows] as label-above-value fields: stacked full-width on phones, two stacked cells
+     * per line on sw600dp+ tablets (reusing [R.layout.item_coord_detail_cell]). Matches the
+     * formatting used by the other coordinate-detail cards.
+     */
+    private fun renderStackedColumns(container: LinearLayout?, rows: List<DetailRow>) {
+        container ?: return
+        if (!twoColumnRows) {
+            rows.forEach { addStackedDetailRow(container, it.label, it.value) }
+            return
+        }
+        val inflater = LayoutInflater.from(requireContext())
+        rows.chunked(2).forEach { pair ->
+            val rowLayout = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                isBaselineAligned = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            pair.forEach { dr ->
+                val cell = inflater.inflate(R.layout.item_coord_detail_cell, rowLayout, false)
+                cell.findViewById<TextView>(R.id.cell_label).text = dr.label
+                cell.findViewById<TextView>(R.id.cell_value).text = dr.value
+                rowLayout.addView(cell)
+            }
+            if (pair.size == 1) {
+                rowLayout.addView(View(requireContext()).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+                })
+            }
+            container.addView(rowLayout)
+        }
+    }
+
+    /**
+     * Renders [tiles] as scannable value boxes (the same [R.layout.item_gnss_stat_tile] style as the
+     * Latitude/Longitude/Altitude tiles) in one weighted row. Used for Easting/Northing; the 17dp
+     * inset matches the location tiles so the boxes line up with the card's 20dp text labels.
+     */
+    private fun renderTileRow(container: LinearLayout?, tiles: List<DetailRow>) {
+        container ?: return
+        val inflater = LayoutInflater.from(requireContext())
+        val row = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).also { it.topMargin = 2.dp }
+            setPadding(17.dp, 0, 17.dp, 0)
+        }
+        tiles.forEach { t ->
+            val tile = inflater.inflate(R.layout.item_gnss_stat_tile, row, false)
+            tile.findViewById<TextView>(R.id.tile_label).text = t.label
+            tile.findViewById<TextView>(R.id.tile_value).text = t.value
+            row.addView(tile)
+        }
+        container.addView(row)
     }
 
     private fun bindProjectionCard(c: Coordinate) {
