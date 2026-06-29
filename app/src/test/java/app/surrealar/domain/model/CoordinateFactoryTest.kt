@@ -3,6 +3,7 @@ package app.surrealar.domain.model
 import app.surrealar.gnss.capture.CaptureResult
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.RtkStatus
+import app.surrealar.gnss.model.TimestampSource
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant
@@ -25,7 +26,14 @@ class CoordinateFactoryTest {
         correctionStationId: String? = "ABCD",
         samples: Int = 180,
         startedAt: Instant = Instant.ofEpochMilli(1_700_000_000_000L),
-        endedAt: Instant = Instant.ofEpochMilli(1_700_000_060_000L)
+        endedAt: Instant = Instant.ofEpochMilli(1_700_000_060_000L),
+        altMslM: Double? = 8.2,
+        geoidSeparationM: Double? = 2.3,
+        timestampSource: TimestampSource? = TimestampSource.NMEA_ZDA,
+        multipathIndex: Double? = 0.15,
+        stdDevEastM: Double? = 0.011,
+        stdDevNorthM: Double? = 0.013,
+        stdDevUpM: Double? = 0.021
     ) = CaptureResult(
         startedAt = startedAt,
         endedAt = endedAt,
@@ -43,7 +51,14 @@ class CoordinateFactoryTest {
         hAccM = hAccM,
         vAccM = vAccM,
         diffAgeS = diffAgeS,
-        correctionStationId = correctionStationId
+        correctionStationId = correctionStationId,
+        altMslM = altMslM,
+        geoidSeparationM = geoidSeparationM,
+        timestampSource = timestampSource,
+        multipathIndex = multipathIndex,
+        stdDevEastM = stdDevEastM,
+        stdDevNorthM = stdDevNorthM,
+        stdDevUpM = stdDevUpM
     )
 
     @Test
@@ -109,6 +124,46 @@ class CoordinateFactoryTest {
         )
         // fromCaptureResult normalizes the Provider enum to a storage string: INTERNAL -> "fused".
         assertEquals("fused", coord.provider)
+    }
+
+    @Test
+    fun `fromCaptureResult preserves final-fix metadata`() {
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "m", name = "M", note = null, color = 0, iconId = "pin",
+            provider = Provider.RS2_EXTERNAL, result = captureResult()
+        )
+
+        assertEquals(8.2, coord.altitudeMsl!!, 1e-10)
+        assertEquals(2.3, coord.geoidSeparationM!!, 1e-10)
+        assertEquals(TimestampSource.NMEA_ZDA.name, coord.timestampSource)
+        assertEquals(0.15, coord.multipathIndex!!, 1e-10)
+        // stdLat maps from North spread, stdLon from East spread.
+        assertEquals(0.013, coord.stdLatM!!, 1e-10)
+        assertEquals(0.011, coord.stdLonM!!, 1e-10)
+        assertEquals(0.021, coord.stdAltM!!, 1e-10)
+        // Correction source derived from the station id ("ABCD", length 4).
+        assertEquals("Base Station ABCD", coord.correctionSource)
+    }
+
+    @Test
+    fun `fromCaptureResult leaves final-fix metadata null when absent`() {
+        val sparse = captureResult(
+            altMslM = null, geoidSeparationM = null, timestampSource = null,
+            multipathIndex = null, stdDevEastM = null, stdDevNorthM = null, stdDevUpM = null,
+            correctionStationId = null
+        )
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "sm", name = "SM", note = null, color = 0, iconId = "pin",
+            provider = Provider.OTHER, result = sparse
+        )
+        assertNull(coord.altitudeMsl)
+        assertNull(coord.geoidSeparationM)
+        assertNull(coord.timestampSource)
+        assertNull(coord.multipathIndex)
+        assertNull(coord.stdLatM)
+        assertNull(coord.stdLonM)
+        assertNull(coord.stdAltM)
+        assertNull(coord.correctionSource)
     }
 
     @Test

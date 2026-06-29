@@ -68,6 +68,17 @@
                 android:maxLines="1"
                 android:ellipsize="end" />
 
+            <TextView
+                android:id="@+id/text_latlon"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:alpha="0.85"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
         </LinearLayout>
 
     </LinearLayout>

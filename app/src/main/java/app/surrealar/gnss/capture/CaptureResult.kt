@@ -1,6 +1,7 @@
 package app.surrealar.gnss.capture
 
 import app.surrealar.gnss.model.RtkStatus
+import app.surrealar.gnss.model.TimestampSource
 import java.time.Instant
 
 /**
@@ -93,5 +94,30 @@ data class CaptureResult(
     /**
      * Identifier of the correction station used by the receiver, when reported.
      */
-    val correctionStationId: String?
+    val correctionStationId: String?,
+
+    // ── Metadata carried over from the final accepted fix ───────────────────────
+    // These come from the last accepted epoch (like the quality fields above) so the saved
+    // coordinate keeps the height-reference and precision metadata that was available at capture.
+
+    /** Mean-sea-level height (metres) of the final accepted fix, when reported. */
+    val altMslM: Double? = null,
+
+    /** Geoid separation (metres, ellipsoidal − MSL) of the final accepted fix, when reported. */
+    val geoidSeparationM: Double? = null,
+
+    /** Where the final accepted fix's timestamp came from (device clock, NMEA ZDA, …). */
+    val timestampSource: TimestampSource? = null,
+
+    /** Multipath indicator of the final accepted fix, when reported. */
+    val multipathIndex: Double? = null,
+
+    /** East 1-sigma standard deviation (metres) of the final accepted fix, when reported. */
+    val stdDevEastM: Double? = null,
+
+    /** North 1-sigma standard deviation (metres) of the final accepted fix, when reported. */
+    val stdDevNorthM: Double? = null,
+
+    /** Up 1-sigma standard deviation (metres) of the final accepted fix, when reported. */
+    val stdDevUpM: Double? = null,
 )
