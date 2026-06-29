@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.TextureView
+import app.surrealar.util.ArSessionDiagnostics
 import app.surrealar.util.DiagnosticsLogger
 import com.google.android.filament.*
 import com.google.android.filament.gltfio.AssetLoader
@@ -252,6 +253,7 @@ class ArFilamentRenderer {
         val srcFile = File(filePath)
         DiagnosticsLogger.i(DIAG, "preload start key=$key path=\"$filePath\" " +
             "exists=${srcFile.exists()} sizeBytes=${if (srcFile.exists()) srcFile.length() else -1L}")
+        ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.LOADING)
         scope.launch {
             try {
                 preloadSemaphore.withPermit {
@@ -267,6 +269,7 @@ class ArFilamentRenderer {
                         if (!initialized) {
                             // Lifecycle cancellation: the user left AR before the GLB finished loading.
                             DiagnosticsLogger.w(DIAG, "preload aborted key=$key reason=\"renderer destroyed while loading\"")
+                            ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
                             return@withContext
                         }
                         val buffer = ByteBuffer.wrap(bytes)
@@ -274,6 +277,7 @@ class ArFilamentRenderer {
                         val asset = assetLoader.createAsset(buffer)
                         if (asset == null) {
                             DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"createAsset returned null (GLB parse/asset creation failed)\" path=\"$filePath\"")
+                            ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
                             return@withContext
                         }
@@ -282,11 +286,13 @@ class ArFilamentRenderer {
                         anchorAssets[key] = CachedAsset(asset, placement = placement)
                         loadingKeys.remove(key)
                         DiagnosticsLogger.i(DIAG, "preload success key=$key entities=${asset.entities.size}")
+                        ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
                     }
                 }
             } catch (e: Exception) {
                 loadingKeys.remove(key)
                 DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"exception\" path=\"$filePath\"", e)
+                ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
             }
         }
     }
