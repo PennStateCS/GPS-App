@@ -440,7 +440,7 @@ class CoordinateDetailFragment : Fragment() {
         textEmpty?.visibility = View.VISIBLE
         rowBadges?.visibility = View.GONE
         listOf(cardSummary, cardModel, cardLocation, cardProjection, cardGnss, cardCapture,
-               cardAveraging, cardMotion, cardMap).forEach { it?.visibility = View.GONE }
+            cardAveraging, cardMotion, cardMap).forEach { it?.visibility = View.GONE }
     }
 
     // ── State: bound ───────────────────────────────────────────────────────────
@@ -452,7 +452,7 @@ class CoordinateDetailFragment : Fragment() {
 
         // Clear all dynamic containers before re-populating
         listOf(cardSummaryRows, locationSections, cardProjectionRows, cardGnssRows,
-               cardCaptureRows, cardAveragingRows, cardMotionRows)
+            cardCaptureRows, cardAveragingRows, cardMotionRows)
             .forEach { it?.removeAllViews() }
 
         bindSummaryCard(c)
@@ -500,12 +500,71 @@ class CoordinateDetailFragment : Fragment() {
         cardSummary?.visibility = if (note != null) View.VISIBLE else View.GONE
     }
 
+    /**
+     * Returns the single dynamic body for the Location card.
+     *
+     * Some intermediate layout attempts left a static "Geographic position" block in the
+     * Location card outside of [R.id.location_sections]. That caused duplicate geographic rows when
+     * this fragment also rendered the new projected-position rows. Normalize the card body here by
+     * keeping only the Lat/Lng/Alt tile row, one dynamic [location_sections] container, and the copy
+     * button row. Anything between the tile row and copy row that is not the dynamic container is
+     * removed before binding. This makes the Kotlin drop-in safe even when XML variants are stale.
+     */
+    private fun ensureLocationSectionsContainer(): LinearLayout? {
+        val cardBody = (cardLocation as? ViewGroup)?.getChildAt(0) as? LinearLayout ?: return locationSections
+        val tileRow = locationTiles
+        val copyRow = btnCopyLatLng?.parent as? View
+
+        val tileIndex = tileRow?.let { cardBody.indexOfChild(it) }?.takeIf { it >= 0 } ?: 1
+        val copyIndexBeforeCleanup = copyRow?.let { cardBody.indexOfChild(it) }?.takeIf { it >= 0 } ?: cardBody.childCount
+
+        var target = locationSections?.takeIf { it.parent === cardBody }
+
+        // Remove stale/static location detail views between the primary tiles and the copy row.
+        // Keep the existing location_sections container if it is already present as a direct child.
+        for (i in (copyIndexBeforeCleanup - 1) downTo (tileIndex + 1)) {
+            val child = cardBody.getChildAt(i)
+            if (child === target) continue
+            cardBody.removeViewAt(i)
+        }
+
+        if (target == null) {
+            target = LinearLayout(requireContext()).apply {
+                id = R.id.location_sections
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+            val insertIndex = ((tileRow?.let { cardBody.indexOfChild(it) } ?: 1) + 1)
+                .coerceIn(0, cardBody.childCount)
+            cardBody.addView(target, insertIndex)
+        } else {
+            val desiredIndex = ((tileRow?.let { cardBody.indexOfChild(it) } ?: 1) + 1)
+                .coerceIn(0, cardBody.childCount - 1)
+            val currentIndex = cardBody.indexOfChild(target)
+            if (currentIndex >= 0 && currentIndex != desiredIndex) {
+                cardBody.removeView(target)
+                cardBody.addView(target, desiredIndex.coerceIn(0, cardBody.childCount))
+            }
+        }
+
+        target.visibility = View.VISIBLE
+        locationSections = target
+        return target
+    }
+
     private fun bindLocationCard(c: Coordinate) {
         // Latitude / Longitude / Altitude shown as scannable value tiles at the top (unchanged).
         renderLocationTiles(c)
 
-        val container = locationSections
+        // Be defensive: earlier layout iterations moved this container into an include. If the
+        // include is missing/stale on a tester build, create a fresh container before the copy-row
+        // instead of silently rendering only the old geographic text.
+        val container = ensureLocationSectionsContainer()
         container?.removeAllViews()
+        container?.visibility = View.VISIBLE
 
         // Resolve the projected position: prefer stored fields, fall back to deriving UTM from
         // lat/lon with the app's existing UtmConverter (display fallback — no EPSG is invented).
@@ -517,21 +576,14 @@ class CoordinateDetailFragment : Fragment() {
         val northing = c.northing ?: derived?.northing
         val naText = "Not available"
 
-        // ── Reference system: Geographic position + Projected position (both columns ALWAYS shown,
-        // so the right side is never blank). Two compact label-above-value fields, side by side on
-        // tablets and stacked on phones — the same pattern as the Capture Source / Survey-GNSS cards.
-        addCardSubheading(container, "Reference system")
-        renderStackedColumns(container, listOf(
-            DetailRow("Geographic position", "WGS84 · EPSG:4326"),
-            DetailRow("Projected position", utmZone?.let { "UTM Zone $it" } ?: naText),
-        ))
-
-        // ── Projected coordinates: Easting / Northing as value boxes. Shown whenever any projected
-        // value exists; missing values use a "Not available" placeholder rather than hiding the box.
+        // Keep the visible Location card focused on values users act on. Latitude/longitude are
+        // already WGS84 geographic coordinates in this app, so the repeated "Geographic position"
+        // row adds noise here. Preserve CRS details in export/diagnostics/advanced views, but make
+        // the main card show the projected position compactly as plain label/value fields.
         if (utmZone != null || easting != null || northing != null) {
-            addCardSubheading(container, "Projected coordinates")
-            renderTileRow(container, listOf(
-                DetailRow("Easting",  easting?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
+            renderPlainFieldRow(container, listOf(
+                DetailRow("Projected position", utmZone?.let { "UTM Zone $it" } ?: naText),
+                DetailRow("Easting", easting?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
                 DetailRow("Northing", northing?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
             ))
         }
@@ -541,13 +593,11 @@ class CoordinateDetailFragment : Fragment() {
             Triple(utmZone, easting, northing) else null
         btnCopyUtm?.visibility = if (copyableUtm != null) View.VISIBLE else View.GONE
 
-        // ── Altitude details: MSL altitude / geoid separation — supporting values, shown only
-        // when present (typically absent for phone-GPS points). Same label-above-value pattern.
+        // Altitude details are supporting values. Keep them compact and only show them when present.
         val altRows = mutableListOf<DetailRow>()
         c.altitudeMsl?.let { altRows += DetailRow("Altitude (MSL)", fmtM2(it)) }
         c.geoidSeparationM?.let { altRows += DetailRow("Geoid separation", fmtM3(it)) }
         if (altRows.isNotEmpty()) {
-            addCardSubheading(container, "Altitude details")
             renderStackedColumns(container, altRows)
         }
 
@@ -590,28 +640,34 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     /**
-     * Renders [tiles] as scannable value boxes (the same [R.layout.item_gnss_stat_tile] style as the
-     * Latitude/Longitude/Altitude tiles) in one weighted row. Used for Easting/Northing; the 17dp
-     * inset matches the location tiles so the boxes line up with the card's 20dp text labels.
+     * Renders a compact row of plain label/value fields. On tablets this supports three equal
+     * columns, which fits Projected position + Easting + Northing without making Easting/Northing
+     * look like primary Lat/Lng/Alt tiles. Phones stack the fields using the same label-over-value
+     * convention as the rest of the detail page.
      */
-    private fun renderTileRow(container: LinearLayout?, tiles: List<DetailRow>) {
+    private fun renderPlainFieldRow(container: LinearLayout?, rows: List<DetailRow>) {
         container ?: return
+        if (!twoColumnRows) {
+            rows.forEach { addStackedDetailRow(container, it.label, it.value) }
+            return
+        }
+
         val inflater = LayoutInflater.from(requireContext())
-        val row = LinearLayout(requireContext()).apply {
+        val rowLayout = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).also { it.topMargin = 2.dp }
-            setPadding(17.dp, 0, 17.dp, 0)
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).also { it.topMargin = 4.dp }
         }
-        tiles.forEach { t ->
-            val tile = inflater.inflate(R.layout.item_gnss_stat_tile, row, false)
-            tile.findViewById<TextView>(R.id.tile_label).text = t.label
-            tile.findViewById<TextView>(R.id.tile_value).text = t.value
-            row.addView(tile)
+        rows.forEach { dr ->
+            val cell = inflater.inflate(R.layout.item_coord_detail_cell, rowLayout, false)
+            cell.findViewById<TextView>(R.id.cell_label).text = dr.label
+            cell.findViewById<TextView>(R.id.cell_value).text = dr.value
+            rowLayout.addView(cell)
         }
-        container.addView(row)
+        container.addView(rowLayout)
     }
 
     private fun bindProjectionCard(c: Coordinate) {
@@ -774,7 +830,7 @@ class CoordinateDetailFragment : Fragment() {
 
     private fun bindAveragingCard(c: Coordinate) {
         val hasData = (c.averagedSamples ?: 0) > 0 || c.averageDurationMs != null ||
-            c.stdLatM != null || c.stdLonM != null || c.stdAltM != null
+                c.stdLatM != null || c.stdLonM != null || c.stdAltM != null
         if (!hasData) { cardAveraging?.visibility = View.GONE; return }
         val rows = mutableListOf<DetailRow>()
         c.averagedSamples?.takeIf { it > 0 }?.let { rows += DetailRow("Samples averaged", it.toString()) }
@@ -957,8 +1013,8 @@ class CoordinateDetailFragment : Fragment() {
         val message = String.format(
             Locale.US,
             "This model appears to contain an embedded location:\n\n" +
-                "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
-                "How would you like to place it?",
+                    "Latitude:  %.7f\nLongitude: %.7f\nAltitude:  %s%s\n\n" +
+                    "How would you like to place it?",
             embedded.latitude, embedded.longitude, altStr, confidenceNote
         )
         if (!isAdded || activity == null) return
