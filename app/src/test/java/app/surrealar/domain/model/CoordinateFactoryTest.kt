@@ -167,6 +167,45 @@ class CoordinateFactoryTest {
     }
 
     @Test
+    fun `antenna height offset is subtracted from ellipsoidal and MSL altitude and recorded`() {
+        val result = captureResult(altEllipsoidalM = 10.5, altMslM = 8.2)
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "ah", name = "AH", note = null, color = 0, iconId = "pin",
+            provider = Provider.RS2_EXTERNAL, result = result, antennaHeightM = 2.0
+        )
+        // Stored altitude is the ground mark = antenna altitude − pole height.
+        assertEquals(8.5, coord.altitude, 1e-10)
+        assertEquals(6.2, coord.altitudeMsl!!, 1e-10)
+        // Geoid separation (a difference) is unaffected; the offset is recorded for provenance.
+        assertEquals(2.3, coord.geoidSeparationM!!, 1e-10)
+        assertEquals(2.0, coord.antennaHeightM!!, 1e-10)
+    }
+
+    @Test
+    fun `zero antenna height leaves altitude unchanged and records no offset`() {
+        val result = captureResult(altEllipsoidalM = 10.5, altMslM = 8.2)
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "z", name = "Z", note = null, color = 0, iconId = "pin",
+            provider = Provider.RS2_EXTERNAL, result = result, antennaHeightM = 0.0
+        )
+        assertEquals(10.5, coord.altitude, 1e-10)
+        assertEquals(8.2, coord.altitudeMsl!!, 1e-10)
+        assertNull("no offset applied → no provenance value", coord.antennaHeightM)
+    }
+
+    @Test
+    fun `antenna height offset with absent MSL does not crash`() {
+        val result = captureResult(altEllipsoidalM = 10.5, altMslM = null)
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "nm", name = "NM", note = null, color = 0, iconId = "pin",
+            provider = Provider.RS2_EXTERNAL, result = result, antennaHeightM = 1.5
+        )
+        assertEquals(9.0, coord.altitude, 1e-10)
+        assertNull(coord.altitudeMsl)
+        assertEquals(1.5, coord.antennaHeightM!!, 1e-10)
+    }
+
+    @Test
     fun `fromCaptureResult handles nullable quality fields gracefully`() {
         val sparse = captureResult(
             rtkStatus = null, satsUsed = null, satsVisible = null,

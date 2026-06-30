@@ -207,18 +207,31 @@ class CaptureViewModel @Inject constructor(
             LocationSourceType.SIMULATOR -> null
         }
 
+        // Pole/antenna vertical offset: subtract the height of the antenna that produced this fix.
+        // External and internal have separate heights (the RS2 antenna and the pole-mounted tablet
+        // sit at different heights); simulator/replay has none.
+        val antennaHeightM = runCatching {
+            val receiver = settingsRepository.gnssReceiverSettings.first()
+            when (src) {
+                LocationSourceType.EXTERNAL  -> receiver.antennaHeightM
+                LocationSourceType.INTERNAL  -> receiver.internalAntennaHeightM
+                LocationSourceType.SIMULATOR -> 0.0
+            }
+        }.getOrDefault(0.0)
+
         // Build → validate → save is centralized in the use case (it rejects an invalid coordinate
         // rather than persisting it). The source/provider/device mapping above stays here because it
         // reads UI/settings state.
         captureCoordinate(
-            name          = name,
-            note          = note,
-            color         = color,
-            iconId        = iconId,
-            provider      = provider,
-            result        = finished,
-            captureMethod = captureMethod,
-            sourceDevice  = sourceDevice,
+            name           = name,
+            note           = note,
+            color          = color,
+            iconId         = iconId,
+            provider       = provider,
+            result         = finished,
+            captureMethod  = captureMethod,
+            sourceDevice   = sourceDevice,
+            antennaHeightM = antennaHeightM,
         )
 
         DiagnosticsLogger.i("Capture", "Coordinate saved name=\"$name\" source=${provider.name} " +

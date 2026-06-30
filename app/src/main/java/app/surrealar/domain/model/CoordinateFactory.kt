@@ -115,7 +115,8 @@ object CoordinateFactory {
         captureMethod: String? = null,
         sourceDevice: String? = null,
         modelId: String? = null,
-        iconKey: String? = null
+        iconKey: String? = null,
+        antennaHeightM: Double = 0.0
     ): Coordinate {
         // These strings MUST stay in sync with DbConstants / CoordinateMappers so a captured
         // coordinate round-trips through the DB without its provider degrading. In particular
@@ -130,12 +131,16 @@ object CoordinateFactory {
         }
         val utm = runCatching { UtmConverter.latLonToUtm(result.latDeg, result.lonDeg) }.getOrNull()
         val capturedAtMs = result.endedAt.toEpochMilli()
+        // Antenna/pole offset: the receiver reports the antenna phase-centre altitude; subtract the
+        // pole height so the stored altitude is the ground mark. Applied to both ellipsoidal and MSL
+        // (geoid separation is a difference, so it is unchanged). Recorded for provenance when > 0.
+        val appliedOffset = antennaHeightM.takeIf { it != 0.0 }
         return Coordinate(
             id                  = id,
             name                = name,
             latitude            = result.latDeg,
             longitude           = result.lonDeg,
-            altitude            = result.altEllipsoidalM,
+            altitude            = result.altEllipsoidalM - antennaHeightM,
             timestamp           = capturedAtMs,
             icon                = iconId,
             color               = color,
@@ -153,8 +158,9 @@ object CoordinateFactory {
             correctionSource    = deriveCorrectionsSource(result.correctionStationId),
             // Final-fix metadata preserved from the last accepted epoch (no schema change; these
             // Coordinate fields already exist). stdLat/stdLon map from North/East respectively.
-            altitudeMsl         = result.altMslM,
+            altitudeMsl         = result.altMslM?.let { it - antennaHeightM },
             geoidSeparationM    = result.geoidSeparationM,
+            antennaHeightM      = appliedOffset,
             timestampSource     = result.timestampSource?.name,
             multipathIndex      = result.multipathIndex,
             stdLatM             = result.stdDevNorthM,

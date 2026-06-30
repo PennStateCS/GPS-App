@@ -1,6 +1,7 @@
 package app.surrealar.gnss.internal
 
 import app.surrealar.gnss.bus.adapters.NmeaSource
+import app.surrealar.gnss.bus.PermissionRetryable
 import app.surrealar.gnss.bus.SourceAdapter
 import app.surrealar.gnss.bus.SkyProvider
 import app.surrealar.gnss.bus.Startable
@@ -31,7 +32,7 @@ class InternalAdapter(
     private val scope: CoroutineScope,
     private val nmea: NmeaSource,
     private val inv: SatelliteInventory
-) : SourceAdapter, SkyProvider, Startable {
+) : SourceAdapter, SkyProvider, Startable, PermissionRetryable {
 
     private companion object {
         const val TAG = "InternalAdapter"
@@ -85,6 +86,15 @@ class InternalAdapter(
                     _sky.value = inv.consume(gsv)
                 }
         }
+    }
+
+    /**
+     * Forwards a permission retry to the underlying NMEA source. The fix/sky collectors started in
+     * [start] keep running while the source is waiting, so once the source registers its listener
+     * (and fixes flow) they propagate without restarting the adapter.
+     */
+    override fun retryIfAwaitingPermission(reason: String) {
+        (nmea as? PermissionRetryable)?.retryIfAwaitingPermission(reason)
     }
 
     override fun stop() {
