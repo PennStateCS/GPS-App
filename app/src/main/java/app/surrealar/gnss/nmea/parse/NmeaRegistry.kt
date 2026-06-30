@@ -111,6 +111,16 @@ class NmeaRegistry(
     }
 
     private fun emitSummaryLocked(reason: String) {
+        drainSummaryLine(reason)?.let { DiagnosticsLogger.i("NMEA", it) }
+    }
+
+    /**
+     * Drains the current parse-failure window counters and returns the formatted summary line, or
+     * null for a `"periodic"` reason when nothing failed (so periodic windows stay silent). Resets
+     * the window as a side effect. `internal` for unit tests — production callers go through the
+     * throttled [maybeEmitSummary] / [logParseSummary].
+     */
+    internal fun drainSummaryLine(reason: String): String? {
         val considered = wConsidered.getAndSet(0)
         val malformed  = wMalformed.getAndSet(0)
         val checksum   = wChecksum.getAndSet(0)
@@ -118,11 +128,11 @@ class NmeaRegistry(
         val parseFail  = wParseFail.getAndSet(0)
         val failures   = malformed + checksum + unknown + parseFail
         // For the periodic window, stay silent unless something actually failed (avoid noise).
-        if (failures == 0L && reason == "periodic") return
+        if (failures == 0L && reason == "periodic") return null
         val types = synchronized(recentUnknownTypes) { recentUnknownTypes.toList() }
-        DiagnosticsLogger.i("NMEA", "parse summary ($reason): considered=$considered " +
+        return "parse summary ($reason): considered=$considered " +
             "ok=${considered - failures} malformed=$malformed checksumFail=$checksum " +
-            "unknownType=$unknown parseFail=$parseFail recentUnknownTypes=$types")
+            "unknownType=$unknown parseFail=$parseFail recentUnknownTypes=$types"
     }
 
     private fun xorChecksum(s: String): Int {

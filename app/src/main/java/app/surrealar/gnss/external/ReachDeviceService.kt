@@ -43,7 +43,15 @@ class ReachDeviceService(private val client: ReachHttpClient) {
                     "device endpoint $path failed: ${it.javaClass.simpleName} ${it.message}")
             }
             .getOrNull() ?: return null
+        return parseReachDeviceInfo(path, text)
+    }
 
+    /**
+     * Pure JSON→DTO parse for a device-info response body. Handles the nested (device/general/
+     * firmware) and flat-root firmware layouts, with safe fallbacks for missing/null fields and
+     * malformed JSON. `internal` so unit tests can exercise it without a live HTTP client.
+     */
+    internal fun parseReachDeviceInfo(path: String, text: String): ReachDeviceInfoDto? {
         Log.d(TAG, "GET $path → ${text.length} chars: ${text.take(300)}")
 
         val root = try { JSONObject(text) } catch (e: Exception) {
