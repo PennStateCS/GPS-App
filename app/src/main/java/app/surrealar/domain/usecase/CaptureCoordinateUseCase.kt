@@ -33,6 +33,7 @@ class CaptureCoordinateUseCase @Inject constructor(
         captureMethod: String?,
         sourceDevice: String?,
         id: String = UUID.randomUUID().toString(),
+        antennaHeightM: Double = 0.0,
     ): Coordinate {
         val coordinate = CoordinateFactory.fromCaptureResult(
             id = id,
@@ -44,6 +45,7 @@ class CaptureCoordinateUseCase @Inject constructor(
             result = result,
             captureMethod = captureMethod,
             sourceDevice = sourceDevice,
+            antennaHeightM = antennaHeightM,
         )
         val validation = validate(coordinate)
         require(validation.isValid) {

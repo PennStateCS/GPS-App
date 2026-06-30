@@ -123,6 +123,17 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
 }
 
 /**
+ * Migration 10 -> 11: coordinates gain `antennaHeightM` — the pole/antenna vertical offset (metres)
+ * that was applied to the stored altitude at capture time. Nullable; existing rows had no offset
+ * applied, so leaving it NULL is correct (their altitude is already the measured value).
+ */
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN antennaHeightM REAL")
+    }
+}
+
+/**
  * Migration 6 -> 7: no-op.
  *
  * The exported schemas (schemas/.../6.json and 7.json) are byte-identical for both the

@@ -149,6 +149,7 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
 
     altitudeMsl = altitudeMsl,
     geoidSeparationM = geoidSeparationM,
+    antennaHeightM = antennaHeightM,
     crsEpsg = crsEpsg,
 
     easting = easting,
@@ -223,6 +224,7 @@ fun Coordinate.toEntity(): CoordinateEntity =
 
         altitudeMsl = altitudeMsl,
         geoidSeparationM = geoidSeparationM,
+        antennaHeightM = antennaHeightM,
         crsEpsg = crsEpsg,
 
         easting = easting,
