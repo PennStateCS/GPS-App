@@ -7,6 +7,9 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import app.surrealar.BuildConfig
 import app.surrealar.SurRealApplication
+import app.surrealar.domain.model.LocationSourceType
+import app.surrealar.gnss.source.SourceRoutingDecisions
+import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -44,8 +47,8 @@ object DiagnosticReportExporter {
 
     /** Snapshot of app data gathered once and reused across the summary/coordinates/models sections. */
     private data class DiagData(
-        val selectedSource: String?,
-        val activeProvider: String?,
+        val selectedSource: LocationSourceType?,
+        val activeProvider: ProviderChoice?,
         val receiverConfigured: Boolean,
         val coordinates: List<app.surrealar.domain.model.Coordinate>,
         val models: List<app.surrealar.domain.model.Model>,
@@ -112,15 +115,18 @@ object DiagnosticReportExporter {
             context.applicationContext, app.surrealar.SurRealApplicationEntryPoint::class.java
         )
         val repo = SurRealApplication.settingsRepo
-        val selectedSource = runCatching { repo.locationSource.first().name }.getOrNull()
-        val activeProvider = runCatching { ep.sourceSettings().activeProvider.value.toString() }.getOrNull()
+        val selectedSource = runCatching { repo.locationSource.first() }.getOrNull()
+        val activeProvider = runCatching { ep.sourceSettings().activeProvider.value }.getOrNull()
         val host = runCatching { repo.externalTcpHost.first() }.getOrNull()
+        val port = runCatching { repo.externalTcpPort.first() }.getOrNull()
         val coordinates = runCatching { ep.coordinateRepository().getAllCoordinatesList() }.getOrDefault(emptyList())
         val models = runCatching { ep.modelRepository().getAllModels().first() }.getOrDefault(emptyList())
         return DiagData(
             selectedSource = selectedSource,
             activeProvider = activeProvider,
-            receiverConfigured = !host.isNullOrBlank(),
+            // Same "usable" notion as the coordinator (host AND port), so the exporter's
+            // external_not_configured matches GnssSourceCoordinator's decision.
+            receiverConfigured = SourceRoutingDecisions.externalConfigUsable(host, port),
             coordinates = coordinates,
             models = models,
         )
@@ -166,16 +172,28 @@ object DiagnosticReportExporter {
             add("PERMISSION: Fine location denied — GNSS/geospatial will not work")
     }
 
+    /**
+     * Formats the selected-vs-active source mismatch warning using the SAME classifier the
+     * coordinator uses ([SourceRoutingDecisions.classifySelectedActiveMismatch]), so the export can
+     * never describe the mismatch differently from how routing decided it. Returns null when the
+     * sources are aligned (e.g. SIMULATOR selected → INTERNAL active is NOT a mismatch). `internal`
+     * for unit tests.
+     */
+    internal fun sourceMismatchWarning(
+        selected: LocationSourceType?, active: ProviderChoice?, externalConfigured: Boolean
+    ): String? {
+        if (selected == null || active == null) return null
+        val mismatch = SourceRoutingDecisions.classifySelectedActiveMismatch(selected, active, externalConfigured)
+        return if (mismatch.isMismatch)
+            "SOURCE mismatch: selected=${selected.name} active=$active reason=\"${mismatch.reason}\""
+        else null
+    }
+
     /** Builds the "Important warnings" lines surfaced at the top of the summary. Empty when all clear. */
     private fun computeWarnings(d: DiagData): List<String> = buildList {
-        val sel = d.selectedSource?.uppercase(Locale.US)
-        val act = d.activeProvider?.uppercase(Locale.US)
-        // Selected source vs active provider mismatch (e.g. EXTERNAL selected but INTERNAL routing).
-        if (sel != null && act != null && !act.contains(sel) && !sel.contains(act)) {
-            val reason = if (sel.contains("EXTERNAL") && !d.receiverConfigured) "external_not_configured" else "provider_differs"
-            add("SOURCE mismatch: selected=$sel active=$act reason=\"$reason\"")
-        }
-        if (sel != null && sel.contains("EXTERNAL") && !d.receiverConfigured) {
+        // Selected source vs active provider mismatch — unified with the coordinator's classifier.
+        sourceMismatchWarning(d.selectedSource, d.activeProvider, d.receiverConfigured)?.let { add(it) }
+        if (d.selectedSource == LocationSourceType.EXTERNAL && !d.receiverConfigured) {
             add("GNSS: external receiver selected but no host/port configured")
         }
         // Coordinates link a model whose file is missing on disk.
