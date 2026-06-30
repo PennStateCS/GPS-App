@@ -61,18 +61,24 @@ class GnssSourceCoordinator @Inject constructor(
         val active = sourceSettings.activeProvider.value
         DiagnosticsLogger.i("GNSS", "Startup selectedSource=$selected activeProvider=$active")
 
-        if (selected != LocationSourceType.EXTERNAL) {
-            // Internal (or simulator): keep the safe default Internal provider.
-            activateInternalProvider(reason = "startup-restore-internal")
-            return
-        }
-
         val host = runCatching { settingsRepository.externalTcpHost.first() }.getOrNull()
         val port = runCatching { settingsRepository.externalTcpPort.first() }.getOrNull()
-        if (host.isNullOrBlank() || port == null) {
-            DiagnosticsLogger.w("GNSS",
-                "Startup External restore: no saved host/port — staying Internal until configured")
-            activateInternalProvider(reason = "startup-restore-no-host")
+        val decision = SourceRoutingDecisions.resolveStartupProvider(selected, host, port)
+
+        if (decision.provider == ProviderChoice.INTERNAL) {
+            // External selected but not usable → keep Internal and record the mismatch reason so the
+            // diagnostic export can explain the selected=EXTERNAL/active=INTERNAL state. (For Internal/
+            // Simulator selections there is no mismatch — just the safe default.)
+            if (selected == LocationSourceType.EXTERNAL) {
+                val mismatch = SourceRoutingDecisions.classifySelectedActiveMismatch(
+                    selected, ProviderChoice.INTERNAL,
+                    externalConfigured = SourceRoutingDecisions.externalConfigUsable(host, port)
+                )
+                DiagnosticsLogger.w("GNSS",
+                    "Startup External restore staying Internal: selected=EXTERNAL active=INTERNAL " +
+                        "reason=${mismatch.reason}")
+            }
+            activateInternalProvider(reason = decision.reason)
             return
         }
 
@@ -88,7 +94,8 @@ class GnssSourceCoordinator @Inject constructor(
             DiagnosticsLogger.i("GNSS", "Startup external restore aborted — source changed before activation")
             return
         }
-        activateExternalTcpProvider(host, port, reason = "startup-restore")
+        // Non-null: decision == EXTERNAL_TCP implies externalConfigUsable(host, port) was true.
+        activateExternalTcpProvider(host!!, port!!, reason = decision.reason)
     }
 
     /**
