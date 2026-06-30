@@ -798,6 +798,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val rs2OptionsLayout = view.findViewById<LinearLayout>(R.id.layout_rs2_options)
         val editHost = view.findViewById<EditText>(R.id.edit_host)
         val editPort = view.findViewById<EditText>(R.id.edit_port)
+        val editAntennaHeight = view.findViewById<EditText>(R.id.edit_antenna_height)
+        val editInternalAntennaHeight = view.findViewById<EditText>(R.id.edit_internal_antenna_height)
 
         // ── External receiver profile selector ──────────────────────────────────────
         // All profiles use the SAME External TCP NMEA pipeline; the profile only carries display
@@ -1354,6 +1356,57 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                 }
             }
+        }
+
+        // Antenna / pole vertical offset (metres). Subtracted from the captured altitude for
+        // external-receiver captures so the stored altitude is the ground mark, not the antenna.
+        editAntennaHeight?.apply {
+            lifecycleScope.launch {
+                try {
+                    val h = settingsRepo.gnssReceiverSettings.first().antennaHeightM
+                    if (h != 0.0) setText(String.format(java.util.Locale.US, "%.3f", h))
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "antenna height load error", e)
+                }
+            }
+            val saveAntenna = {
+                lifecycleScope.launch {
+                    try {
+                        val meters = (text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        settingsRepo.setGnssReceiverSettings(current.copy(antennaHeightM = meters))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "antenna height save error", e)
+                    }
+                }
+            }
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAntenna() }
+            setOnEditorActionListener { _, _, _ -> saveAntenna(); false }
+        }
+
+        // Tablet / internal-GNSS antenna height — applied to internal-GPS captures (pole-mounted tablet).
+        editInternalAntennaHeight?.apply {
+            lifecycleScope.launch {
+                try {
+                    val h = settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM
+                    if (h != 0.0) setText(String.format(java.util.Locale.US, "%.3f", h))
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "internal antenna height load error", e)
+                }
+            }
+            val saveInternalAntenna = {
+                lifecycleScope.launch {
+                    try {
+                        val meters = (text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        settingsRepo.setGnssReceiverSettings(current.copy(internalAntennaHeightM = meters))
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "internal antenna height save error", e)
+                    }
+                }
+            }
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveInternalAntenna() }
+            setOnEditorActionListener { _, _, _ -> saveInternalAntenna(); false }
         }
 
         // ── Advanced: mock location publishing ──

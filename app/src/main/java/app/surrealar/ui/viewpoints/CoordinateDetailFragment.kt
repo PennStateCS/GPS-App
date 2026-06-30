@@ -598,6 +598,8 @@ class CoordinateDetailFragment : Fragment() {
         val altRows = mutableListOf<DetailRow>()
         c.altitudeMsl?.let { altRows += DetailRow("Altitude (MSL)", fmtM2(it)) }
         c.geoidSeparationM?.let { altRows += DetailRow("Geoid separation", fmtM3(it)) }
+        // Antenna/pole offset applied at capture — shown so the user can see what it was set to.
+        c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", fmtM2(it)) }
         if (altRows.isNotEmpty()) {
             renderStackedColumns(container, altRows)
         }

@@ -57,6 +57,7 @@ data class CoordinateEntity(
     // --- Heights / CRS ---
     val altitudeMsl: Double? = null,       // orthometric (if computed)
     val geoidSeparationM: Double? = null,  // ellipsoidal - MSL
+    val antennaHeightM: Double? = null,    // v11: pole/antenna offset applied at capture (provenance)
     val crsEpsg: Int? = 4326,              // typically 4326
 
     // Optional projected snapshot (if you display/export it)

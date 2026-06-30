@@ -154,6 +154,8 @@ class MainActivity : AppCompatActivity() {
         if (stillMissing.isEmpty()) {
             android.util.Log.d("MainActivity", "All essential permissions granted")
             ensureLocationServiceStarted()
+            // Permission just became available — recover an internal provider that was waiting for it.
+            runCatching { switchboard.retryActiveSourceIfStalled("permission-granted") }
         } else {
             android.util.Log.d("MainActivity", "Still missing: ${stillMissing.joinToString()}")
             // Distinguish: can we still ask, or did the user permanently deny?
@@ -454,6 +456,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+
+        // Recover the internal GNSS provider if its startup was blocked waiting for location
+        // permission (cold-launch race) or for location services. Resuming is the moment the user
+        // returns after granting permission / enabling location in system settings. No-op when the
+        // active source is already streaming or not waiting, so it never double-registers.
+        runCatching { switchboard.retryActiveSourceIfStalled("app-resume") }
 
         // Note: choreographer/frame callbacks belong in ModelViewerActivity; do not call them from MainActivity
     }
@@ -780,6 +788,10 @@ class MainActivity : AppCompatActivity() {
     ) {
         latestSkySnapshot = null
         lastDataUpdateTime = System.currentTimeMillis()
+        // Reset the one-shot transition logs so each new source session (after an INTERNAL ↔ EXTERNAL
+        // switch) re-logs its waiting → first-fix flow accurately instead of staying silent.
+        loggedExternalWaiting = false
+        loggedFirstExternalToolbarFix = false
         toolbarRenderer.render(GnssToolbarStateMapper.waiting(source, externalReceiverLabel))
         tokenSource.value.alpha = 1.0f
     }
