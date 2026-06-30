@@ -135,6 +135,9 @@ object DiagnosticsLogger {
     fun sessionSummaryFile(name: String): File? =
         logDir?.let { File(it, name).takeIf { f -> f.exists() && f.length() > 0 } }
 
+    /** The active diagnostics directory, or null before [init]. `internal` for unit tests only. */
+    internal fun currentLogDir(): File? = logDir
+
     /**
      * Returns all log files that exist and have content, current first then rotated.
      * Used by [DiagnosticReportExporter] to bundle files into the ZIP.

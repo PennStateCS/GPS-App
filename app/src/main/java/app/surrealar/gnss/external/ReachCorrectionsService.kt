@@ -136,80 +136,83 @@ class ReachCorrectionsService(private val host: String) {
     private fun handleNavigation(data: JSONObject) {
         Log.d(TAG, "navigation broadcast: ${data.toString().take(300)}")
 
-        val aod      = data.optDoubleOrNull("aod")
-        val solution = data.optString("solution", "").takeIf { it.isNotBlank() }
-        val baseline = data.optDoubleOrNull("baseline")
+        val nav = parseNavigation(data)
+        cachedNav = nav
 
-        val satsObj = data.optJSONObject("satellites")
-        val satsBase = satsObj?.optIntOrNull("base")
-
-        val basePosObj   = data.optJSONObject("base_position")
-        val coordsObj    = basePosObj?.optJSONObject("coordinates")
-        val baseLat      = coordsObj?.optDoubleOrNull("lat")
-        val baseLon      = coordsObj?.optDoubleOrNull("lon")
-        val baseH        = coordsObj?.optDoubleOrNull("h")
-
-        cachedNav = NavSnapshot(
-            aod      = aod,
-            solution = solution,
-            baseline = baseline,
-            satsBase = satsBase,
-            baseLat  = baseLat,
-            baseLon  = baseLon,
-            baseH    = baseH
-        )
-
-        Log.d(TAG, "navigation parsed: aod=$aod sol=$solution baseline=$baseline " +
-                "satsBase=$satsBase baseLat=$baseLat baseLon=$baseLon baseH=$baseH")
+        Log.d(TAG, "navigation parsed: aod=${nav.aod} sol=${nav.solution} baseline=${nav.baseline} " +
+                "satsBase=${nav.satsBase} baseLat=${nav.baseLat} baseLon=${nav.baseLon} baseH=${nav.baseH}")
 
         // Log only when the RTK solution state changes (navigation broadcasts arrive continuously).
         // Base-station lat/lon are intentionally omitted to avoid coordinate spam in the export.
-        if (solution != lastLoggedSolution) {
-            lastLoggedSolution = solution
-            DiagnosticsLogger.i("CORRECTIONS", "rtk solution=${solution ?: "none"} " +
-                "ageS=${aod ?: "?"} baselineKm=${baseline ?: "?"} baseSats=${satsBase ?: "?"}")
+        if (nav.solution != lastLoggedSolution) {
+            lastLoggedSolution = nav.solution
+            DiagnosticsLogger.i("CORRECTIONS", "rtk solution=${nav.solution ?: "none"} " +
+                "ageS=${nav.aod ?: "?"} baselineKm=${nav.baseline ?: "?"} baseSats=${nav.satsBase ?: "?"}")
         }
 
         pushUpdate()
     }
 
+    /** Pure parse of a `navigation` broadcast payload. `internal` for unit tests. */
+    internal fun parseNavigation(data: JSONObject): NavSnapshot {
+        val coordsObj = data.optJSONObject("base_position")?.optJSONObject("coordinates")
+        return NavSnapshot(
+            aod      = data.optDoubleOrNull("aod"),
+            solution = data.optString("solution", "").takeIf { it.isNotBlank() },
+            baseline = data.optDoubleOrNull("baseline"),
+            satsBase = data.optJSONObject("satellites")?.optIntOrNull("base"),
+            baseLat  = coordsObj?.optDoubleOrNull("lat"),
+            baseLon  = coordsObj?.optDoubleOrNull("lon"),
+            baseH    = coordsObj?.optDoubleOrNull("h"),
+        )
+    }
+
     private fun handleStreamStatus(data: JSONObject) {
         Log.d(TAG, "stream_status broadcast: ${data.toString().take(300)}")
 
-        // correction_input may be an array; pick the first active entry
-        val corrInput = data.optJSONArray("correction_input")
-            ?: data.optJSONObject("correction_input")?.let { JSONArray().apply { put(it) } }
+        val parsed = parseStreamStatus(data)
+        if (parsed != null) {
+            cachedIsReceiving = parsed.isReceiving
+            cachedChannel     = parsed.channel
 
-        if (corrInput != null && corrInput.length() > 0) {
-            val entry = corrInput.optJSONObject(0)
-            if (entry != null) {
-                // Emlid firmware reports correction-input liveness via "state" ("active" when RTCM
-                // is flowing), NOT a boolean "connected". Treat state == "active" as receiving;
-                // keep the legacy boolean as a fallback for any firmware that does send it.
-                val state     = entry.optString("state", "")
-                val connected = state.equals("active", ignoreCase = true) ||
-                                entry.optBoolean("connected", false)
-                val type      = entry.optString("type", "").takeIf { it.isNotBlank() }
-                               ?: entry.optString("name", "").takeIf { it.isNotBlank() }
+            Log.d(TAG, "stream_status parsed: state=${parsed.state} connected=${parsed.isReceiving} channel=${parsed.channel}")
 
-                cachedIsReceiving = connected
-                // Friendlier label: prefer an explicit type/name; otherwise show "RTCM" while
-                // active (the input carries RTCM messages) instead of a bare "Connected".
-                cachedChannel     = type ?: if (connected) "RTCM" else null
-
-                Log.d(TAG, "stream_status parsed: state=$state connected=$connected channel=${cachedChannel}")
-
-                // Log only on a change of the correction-input state/channel.
-                val streamKey = "$state|$connected|${cachedChannel}"
-                if (streamKey != lastLoggedStreamKey) {
-                    lastLoggedStreamKey = streamKey
-                    DiagnosticsLogger.i("CORRECTIONS",
-                        "stream_status state=$state receiving=$connected channel=${cachedChannel ?: "none"}")
-                }
+            // Log only on a change of the correction-input state/channel.
+            val streamKey = "${parsed.state}|${parsed.isReceiving}|${parsed.channel}"
+            if (streamKey != lastLoggedStreamKey) {
+                lastLoggedStreamKey = streamKey
+                DiagnosticsLogger.i("CORRECTIONS",
+                    "stream_status state=${parsed.state} receiving=${parsed.isReceiving} channel=${parsed.channel ?: "none"}")
             }
         }
 
         pushUpdate()
+    }
+
+    /** Parsed correction-input liveness from a `stream_status` broadcast. */
+    internal data class StreamStatusParse(val state: String, val isReceiving: Boolean, val channel: String?)
+
+    /** Pure parse of a `stream_status` payload; null when no correction-input entry is present. */
+    internal fun parseStreamStatus(data: JSONObject): StreamStatusParse? {
+        // correction_input may be an array; pick the first active entry.
+        val corrInput = data.optJSONArray("correction_input")
+            ?: data.optJSONObject("correction_input")?.let { JSONArray().apply { put(it) } }
+            ?: return null
+        if (corrInput.length() == 0) return null
+        val entry = corrInput.optJSONObject(0) ?: return null
+
+        // Emlid firmware reports correction-input liveness via "state" ("active" when RTCM is
+        // flowing), NOT a boolean "connected". Treat state == "active" as receiving; keep the
+        // legacy boolean as a fallback for any firmware that does send it.
+        val state     = entry.optString("state", "")
+        val connected = state.equals("active", ignoreCase = true) ||
+                        entry.optBoolean("connected", false)
+        val type      = entry.optString("type", "").takeIf { it.isNotBlank() }
+                       ?: entry.optString("name", "").takeIf { it.isNotBlank() }
+        // Friendlier label: prefer an explicit type/name; otherwise show "RTCM" while active
+        // (the input carries RTCM messages) instead of a bare "Connected".
+        val channel   = type ?: if (connected) "RTCM" else null
+        return StreamStatusParse(state, connected, channel)
     }
 
     // ── State merge & emit ────────────────────────────────────────────────────
@@ -231,7 +234,7 @@ class ReachCorrectionsService(private val host: String) {
 
     // ── Internal snapshot ─────────────────────────────────────────────────────
 
-    private data class NavSnapshot(
+    internal data class NavSnapshot(
         val aod: Double?,
         val solution: String?,
         val baseline: Double?,
