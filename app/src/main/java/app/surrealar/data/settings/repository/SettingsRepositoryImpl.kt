@@ -163,10 +163,20 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     // GNSS receiver settings
     override val gnssReceiverSettings: Flow<GnssReceiverSettings> =
-        local.highAccuracy.map { GnssReceiverSettings(highAccuracy = it) }
+        combine(
+            local.highAccuracy, local.antennaHeightM, local.internalAntennaHeightM
+        ) { highAccuracy, antennaHeightM, internalAntennaHeightM ->
+            GnssReceiverSettings(
+                highAccuracy = highAccuracy,
+                antennaHeightM = antennaHeightM,
+                internalAntennaHeightM = internalAntennaHeightM,
+            )
+        }
 
     override suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings) {
         local.setHighAccuracy(settings.highAccuracy)
+        local.setAntennaHeightM(settings.antennaHeightM)
+        local.setInternalAntennaHeightM(settings.internalAntennaHeightM)
     }
 
     // Developer settings

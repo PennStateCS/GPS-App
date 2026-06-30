@@ -59,6 +59,8 @@ object SettingsKeys {
 
     // GNSS receiver
     val HIGH_ACCURACY = booleanPreferencesKey("high_accuracy")
+    val ANTENNA_HEIGHT_M = doublePreferencesKey("antenna_height_m")
+    val INTERNAL_ANTENNA_HEIGHT_M = doublePreferencesKey("internal_antenna_height_m")
 
     // Developer settings
     val DEV_TOOLS_ENABLED = booleanPreferencesKey("dev_tools_enabled")
@@ -131,6 +133,8 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     // GNSS receiver
     val highAccuracy: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.HIGH_ACCURACY] ?: SettingsDefaults.gnssReceiver.highAccuracy }
+    val antennaHeightM: Flow<Double> = dataStore.data.map { it[SettingsKeys.ANTENNA_HEIGHT_M] ?: SettingsDefaults.gnssReceiver.antennaHeightM }
+    val internalAntennaHeightM: Flow<Double> = dataStore.data.map { it[SettingsKeys.INTERNAL_ANTENNA_HEIGHT_M] ?: SettingsDefaults.gnssReceiver.internalAntennaHeightM }
 
     // Developer settings
     val developerToolsEnabled: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.DEV_TOOLS_ENABLED] ?: SettingsDefaults.developer.developerToolsEnabled }
@@ -189,6 +193,8 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     // GNSS receiver setter
     suspend fun setHighAccuracy(enabled: Boolean) { dataStore.edit { it[SettingsKeys.HIGH_ACCURACY] = enabled } }
+    suspend fun setAntennaHeightM(meters: Double) { dataStore.edit { it[SettingsKeys.ANTENNA_HEIGHT_M] = meters } }
+    suspend fun setInternalAntennaHeightM(meters: Double) { dataStore.edit { it[SettingsKeys.INTERNAL_ANTENNA_HEIGHT_M] = meters } }
 
     // Developer settings setter
     suspend fun setDeveloperToolsEnabled(enabled: Boolean) { dataStore.edit { it[SettingsKeys.DEV_TOOLS_ENABLED] = enabled } }

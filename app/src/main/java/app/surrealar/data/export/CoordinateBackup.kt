@@ -71,6 +71,7 @@ object CoordinateBackup {
         put("altitude", c.altitude)
         putN("altitudeMsl", c.altitudeMsl)
         putN("geoidSeparationM", c.geoidSeparationM)
+        putN("antennaHeightM", c.antennaHeightM)
         put("timestamp", c.timestamp)
         put("color", c.color)
         // provenance / quality
@@ -199,6 +200,7 @@ object CoordinateBackup {
             correctionStationId = o.optStringN("correctionStationId"),
             altitudeMsl = o.optDoubleN("altitudeMsl"),
             geoidSeparationM = o.optDoubleN("geoidSeparationM"),
+            antennaHeightM = o.optDoubleN("antennaHeightM"),
             speedMps = o.optDoubleN("speedMps"),
             courseDeg = o.optDoubleN("courseDeg"),
             timestampSource = o.optStringN("timestampSource"),

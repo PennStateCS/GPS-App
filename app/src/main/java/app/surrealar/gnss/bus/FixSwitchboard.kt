@@ -127,6 +127,16 @@ class FixSwitchboard(
     }
 
     /**
+     * Nudges the currently-bound source to retry a start that was blocked waiting for a runtime
+     * permission (e.g. INTERNAL started before location permission was granted at cold launch).
+     * Safe to call repeatedly — it is a no-op when the source is already active or not waiting, so
+     * it never creates duplicate listeners. Called on app resume and when permission is granted.
+     */
+    fun retryActiveSourceIfStalled(reason: String) {
+        (currentAdapter as? PermissionRetryable)?.retryIfAwaitingPermission(reason)
+    }
+
+    /**
      * Stops provider observation and disconnects from the active adapter.
      */
     fun stop() {
@@ -237,4 +247,13 @@ interface SkyProvider {
 interface Startable {
     fun start()
     fun stop()
+}
+
+/**
+ * Optional contract for a source/adapter whose [Startable.start] can be blocked waiting for a
+ * runtime permission, and which can re-attempt once permission is available. Implementations must
+ * make [retryIfAwaitingPermission] a no-op when already active (so retries never double-register).
+ */
+interface PermissionRetryable {
+    fun retryIfAwaitingPermission(reason: String)
 }

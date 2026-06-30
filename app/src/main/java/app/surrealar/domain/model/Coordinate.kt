@@ -51,6 +51,12 @@ data class Coordinate(
     val correctionStationId: String? = null,        // Correction station ID
     val altitudeMsl: Double? = null,
     val geoidSeparationM: Double? = null,
+    /**
+     * Antenna/pole vertical offset (metres) that was applied at capture: [altitude] and
+     * [altitudeMsl] are the ground mark (antenna altitude − this offset). Recorded for provenance so
+     * the original measurement can be re-derived. Null when no offset was applied (e.g. phone GPS).
+     */
+    val antennaHeightM: Double? = null,
     val speedMps: Double? = null,                   // Speed over ground (m/s)
     val courseDeg: Double? = null,                  // Course over ground (degrees)
     val timestampSource: String? = null,            // Source of timestamp
