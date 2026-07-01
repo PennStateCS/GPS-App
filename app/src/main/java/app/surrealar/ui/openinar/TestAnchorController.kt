@@ -3,6 +3,7 @@ package app.surrealar.ui.openinar
 import android.content.Context
 import android.opengl.Matrix
 import android.util.Log
+import app.surrealar.util.DiagnosticsLogger
 import com.google.ar.core.Anchor
 import com.google.ar.core.Earth
 import com.google.ar.core.TrackingState
@@ -250,8 +251,9 @@ class TestAnchorController(private val context: Context) {
         }
 
         isActive = true
-        Log.d(TAG, "Grid spawned: $created/$total terrain anchors, spacing=${GRID_SPACING_M}m — " +
-                "${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}")
+        DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
+            "Test grid spawned: $created/$total terrain anchors spacing=${GRID_SPACING_M}m " +
+            "at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}")
     }
 
     private fun clearGrid() {

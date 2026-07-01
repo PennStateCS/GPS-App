@@ -41,6 +41,61 @@
         android:focusable="false"
         android:focusableInTouchMode="false" />
 
+    <!-- Prominent centred "Localizing AR" banner. Shown while model-linked coordinates are being
+         held (anchors not yet committed) so the user knows AR is still locating and doesn't mistake
+         the delay for the models rendering on top of them. Hidden once anchors are placed. -->
+    <LinearLayout
+        android:id="@+id/localizingBanner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:maxWidth="320dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_ar_chip"
+        android:paddingStart="18dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:elevation="8dp"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false"
+        android:importantForAccessibility="yes"
+        android:contentDescription="Localizing AR, hold steady">
+
+        <ProgressBar
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/ar_overlay_text" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="14dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Localizing AR…"
+                android:textColor="@color/ar_overlay_text"
+                android:textSize="16sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="Hold steady and point the camera at nearby buildings, trees, or ground features."
+                android:textColor="@color/ar_overlay_text"
+                android:textSize="12sp"
+                android:alpha="0.85" />
+        </LinearLayout>
+    </LinearLayout>
+
     <!-- ── Floating toolbar ───────────────────────────────────────────────── -->
 
     <!-- Back button — top-left, always visible, exits AR -->

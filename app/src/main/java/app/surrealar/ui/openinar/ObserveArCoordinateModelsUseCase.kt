@@ -2,7 +2,9 @@ package app.surrealar.ui.openinar
 
 import app.surrealar.data.local.dao.CoordinateDao
 import app.surrealar.data.local.dao.ModelDao
+import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -24,5 +26,12 @@ class ObserveArCoordinateModelsUseCase @Inject constructor(
     private val prepare: PrepareArCoordinateModelsUseCase,
 ) {
     operator fun invoke(): Flow<List<CoordWithModel>> =
-        coordinateDao.observeAll().map { entities -> prepare(entities, modelDao.getAllModelsList()) }
+        coordinateDao.observeAll()
+            .map { entities -> prepare(entities, modelDao.getAllModelsList()) }
+            // A DB read/query failure here would otherwise propagate through the ViewModel's stateIn
+            // and crash the AR screen. Degrade to "no coordinates" and record why, so AR still opens.
+            .catch { e ->
+                DiagnosticsLogger.e("AR_MDL", "AR coordinate load failed — showing no coordinates", e)
+                emit(emptyList())
+            }
 }
