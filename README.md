@@ -1,12 +1,17 @@
 # SurReal AR
 
+[![Status](https://img.shields.io/badge/Status-In%20Development-orange)](#project-status)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-brightgreen?logo=android)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Android-blue?logo=kotlin)](https://kotlinlang.org)
-[![ARCore](https://img.shields.io/badge/ARCore-Required%20for%20AR-ff6f00?logo=google)](https://developers.google.com/ar)
+
 [![Google Maps](https://img.shields.io/badge/Google%20Maps-API%20Key%20Required-4285F4?logo=googlemaps)](https://developers.google.com/maps/documentation/android-sdk)
+[![ARCore](https://img.shields.io/badge/ARCore-Required%20for%20AR-ff6f00?logo=google)](https://developers.google.com/ar)
 [![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue?logo=github)](https://pennstatewilkes-barre.github.io/GPS-App/)
-[![Status](https://img.shields.io/badge/Status-In%20Development-orange)](#project-status)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+
+
+
+
 
 SurReal AR is an Android field-mapping application for saving survey coordinates, linking them to 3D models, and visualizing those points and models in augmented reality.
 
