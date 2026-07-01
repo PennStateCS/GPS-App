@@ -333,7 +333,6 @@
                     app:chipSpacingHorizontal="8dp"
                     app:chipSpacingVertical="8dp">
 
-                    <!-- Open Map = primary emphasis (most common action) -->
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chip_quick_map"
                         style="@style/Widget.Material3.Chip.Assist"
@@ -341,13 +340,13 @@
                         android:layout_height="wrap_content"
                         android:text="Open Map"
                         android:textAppearance="?attr/textAppearanceBodyMedium"
-                        android:textColor="?attr/colorOnPrimary"
+                        android:textColor="?attr/colorOnPrimaryContainer"
                         app:chipIcon="@drawable/ic_render_map"
                         app:chipIconVisible="true"
                         app:chipIconSize="16dp"
-                        app:chipIconTint="?attr/colorOnPrimary"
+                        app:chipIconTint="?attr/colorOnPrimaryContainer"
                         app:iconStartPadding="8dp"
-                        app:chipBackgroundColor="?attr/colorPrimary" />
+                        app:chipBackgroundColor="?attr/colorPrimaryContainer" />
 
                     <com.google.android.material.chip.Chip
                         android:id="@+id/chip_quick_ar"
