@@ -148,7 +148,11 @@ class ArFilamentRenderer {
 
     enum class ModelLoadState { NOT_REQUESTED, LOADING, IN_SCENE }
 
-    /** Returns the current load state for [key], safe to call from any thread. */
+    /**
+     * Returns the current load state for [key]. Call from the main thread: this reads [anchorAssets],
+     * which is a plain (non-concurrent) map confined to the main thread — every mutation happens in the
+     * Choreographer tick, the [preload] main-continuation, and [destroy], all of which run on main.
+     */
     fun modelLoadState(key: String): ModelLoadState {
         val cached = anchorAssets[key] ?: return ModelLoadState.NOT_REQUESTED
         return if (cached.addedToScene) ModelLoadState.IN_SCENE else ModelLoadState.LOADING
@@ -285,6 +289,12 @@ class ArFilamentRenderer {
                         asset.releaseSourceData()
                         anchorAssets[key] = CachedAsset(asset, placement = placement)
                         loadingKeys.remove(key)
+                        // The GLB is now parsed and its GPU upload is queued — the raw file bytes are no
+                        // longer needed. Drop them (under the same mutex that guards the cache) so a long
+                        // session with many/large models doesn't retain every file's bytes until destroy().
+                        // The cache still de-dups concurrent reads of a shared file; a later re-preload of
+                        // the same path simply re-reads it from disk.
+                        fileReadMutex.withLock { fileBytesCache.remove(filePath) }
                         DiagnosticsLogger.i(DIAG, "preload success key=$key entities=${asset.entities.size}")
                         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
                     }

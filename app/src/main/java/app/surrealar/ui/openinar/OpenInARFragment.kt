@@ -4,7 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.PointF
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -40,11 +39,11 @@ import app.surrealar.databinding.FragmentOpenInArBinding
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.model.Fix
 import com.google.ar.core.*
-import com.google.ar.core.Point
-import com.google.ar.core.Plane
 import com.google.ar.core.exceptions.*
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.inject.Inject
@@ -86,6 +85,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     @Volatile private var sessionReady = false
 
+    /**
+     * True once the session has been configured with geospatial mode ENABLED. When false, the device
+     * either doesn't support geospatial or enabling it failed — every geo-anchor will silently fail,
+     * so this drives a clearer status string and is the first thing recorded in the diagnostic export.
+     */
+    @Volatile private var geospatialAvailable = true
+
     // OpenGL renderers for different AR elements
     private var backgroundRenderer: BackgroundRenderer? = null  // Camera background (also owns OES texture)
     private var cubeRenderer: SimpleObjectRenderer? = null      // 3D objects/pins
@@ -93,9 +99,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var pointCloudRenderer: PointCloudRenderer? = null  // Point cloud visualization
     // Filament-based renderer for GLB 3D models overlaid on the AR camera feed
     private var filamentRenderer: ArFilamentRenderer? = null
-
-    // Local anchor for tap-to-place (single green floor square — tap on a detected plane)
-    private var demoFloorAnchor: Anchor? = null
 
     // Data class representing a geospatial item to display in AR.
     // `label` removed — coord name is always read from coordWithModel.coordinate.name directly.
@@ -174,10 +177,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val vp = FloatArray(16)      // View-projection matrix
     private val mvp = FloatArray(16)     // Model-view-projection matrix
 
-    // Thread-safe touch input handling
-    @Volatile
-    private var queuedTap: PointF? = null
-
     // Display rotation and surface dimensions — written on main thread, read on GL thread.
     @Volatile private var displayRotation: Int = Surface.ROTATION_0
     @Volatile private var surfaceWidth: Int = 0
@@ -240,6 +239,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var loggedAccuracyGate = false
 
     /**
+     * Wall-clock time (ms) when ARCore Earth most recently entered TRACKING (0 = not tracking).
+     * Drives the [GeoAnchorGate] localization timeout. GL-thread only.
+     */
+    private var earthTrackingSinceMs: Long = 0L
+
+    /**
+     * ARCore horizontal accuracy (m) captured when the current anchors were created. Used to decide
+     * an auto re-anchor once localization materially improves (see [GeoAnchorGate.shouldReanchorOnImprovement]).
+     * Null until anchors are created. GL-thread only.
+     */
+    private var earthAccuracyAtCreationM: Double? = null
+
+    /** True while holding placement waiting for AR localization — surfaces "Localizing…" status. GL-thread only. */
+    @Volatile private var awaitingLocalization = false
+
+    /** Log the "waiting for AR localization" skip once per blocked period (avoids per-frame spam). GL-thread only. */
+    private var loggedLocalizationWait = false
+
+    /** Throttle for the per-frame Earth-accuracy improvement check. GL-thread only. */
+    private var lastImprovementCheckMs: Long = 0L
+
+    /**
      * Volatile snapshot of the ViewModel's distanceFilterM — updated via StateFlow collection
      * on the main thread, read on the GL thread each frame.
      */
@@ -284,18 +305,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
          * in rapid succession after switching to an external receiver like the RS2+.
          */
         private const val REANCHOR_COOLDOWN_MS = 30_000L
-        /**
-         * Approximate camera lens height above ground when holding a phone at eye level.
-         * Used to convert `cameraGeospatialPose.altitude` to a ground-level estimate
-         * in terrain-altitude mode.
-         */
-        private const val CAMERA_EYE_HEIGHT_M = 1.65
     }
 
     /**
      * When false (default): real coordinate anchors are placed at their stored ellipsoidal altitude.
-     * When true (terrain mode): all anchors are placed at the current detected ground level
-     * (`cameraGeospatialPose.altitude` − [CAMERA_EYE_HEIGHT_M]), ignoring stored altitudes.
+     * When true (terrain mode): all anchors are resolved onto the detected ground via
+     * `earth.resolveAnchorOnTerrain(lat, lng, 0.0, …)` (ARCore downloads the terrain elevation and
+     * self-updates the anchor to TRACKING), ignoring stored altitudes.
      * Written on the main thread (button click); read on the GL thread (rebuildGeoAnchorsIfNeeded).
      */
     @Volatile private var useTerrainAltitude: Boolean = false
@@ -406,7 +422,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         testAnchorController = TestAnchorController(requireContext())
-        filamentRenderer = ArFilamentRenderer().also { it.init(binding.filamentSurface) }
+        // Guard Filament init: a native/engine init failure (e.g. missing GLES features on an odd
+        // device) must not take down the whole AR screen. On failure the renderer stays null and
+        // every `filamentRenderer?.` call no-ops, so GLES pins/labels still work — only GLB models
+        // are unavailable. Throwable (not Exception) to also catch UnsatisfiedLinkError.
+        filamentRenderer = try {
+            ArFilamentRenderer().also { it.init(binding.filamentSurface) }
+        } catch (t: Throwable) {
+            DiagnosticsLogger.e(DIAG, "Filament renderer init failed — 3D models disabled, " +
+                "pins/labels still render: ${t.message}", t)
+            null
+        }
 
         // Prepare the test-pin asset and preload its keys once ready.
         testAnchorController.prepareAsset(viewLifecycleOwner.lifecycleScope) { _ ->
@@ -419,36 +445,44 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         // Back button — always visible, exits AR and returns to previous destination.
         binding.btnArBack.setOnClickListener {
-            findNavController().popBackStack()
+            DiagnosticsLogger.i(DIAG, "Back pressed — exiting AR")
+            // findNavController() can throw if the view is mid-teardown; never let the exit button crash.
+            runCatching { findNavController().popBackStack() }
+                .onFailure { DiagnosticsLogger.w(DIAG, "popBackStack failed on AR exit: ${it.message}", it) }
         }
 
-        // Toolbar toggle — show/hide with a slide-in animation from the right edge.
+        // Toolbar toggle — show/hide with a slide-in animation from the right edge (UI chrome, not logged).
         binding.btnToolbarToggle.setOnClickListener {
             if (toolbarVisible) hideToolbar() else showToolbar()
         }
 
         binding.btnSpawnTestPoints.setOnClickListener {
             if (testAnchorController.isActive) {
+                DiagnosticsLogger.i(DIAG, "Test points: clear requested by user")
                 testAnchorController.requestClear()
                 binding.txtTestPoints.text = "Test"
             } else {
-                filamentRenderer?.let { r ->
-                    testAnchorController.preloadModelKeys(r, viewLifecycleOwner.lifecycleScope)
-                }
+                DiagnosticsLogger.i(DIAG, "Test points: spawn requested by user")
+                val r = filamentRenderer
+                if (r != null) testAnchorController.preloadModelKeys(r, viewLifecycleOwner.lifecycleScope)
+                else DiagnosticsLogger.w(DIAG, "Test points: renderer unavailable — pins spawn without 3D models")
                 testAnchorController.requestSpawn()
                 binding.txtTestPoints.text = "Clear"
             }
         }
 
         binding.btnToggleDebugOverlay.setOnClickListener {
+            DiagnosticsLogger.i(DIAG, "Debug overlay ${if (!debugOverlayVisible) "ON" else "OFF"} (user)")
             viewModel.toggleDebug()
         }
 
         binding.btnTogglePlanes.setOnClickListener {
+            DiagnosticsLogger.i(DIAG, "AR planes overlay ${if (!arShowPlanes) "ON" else "OFF"} (user)")
             viewModel.togglePlanes()
         }
 
         binding.btnTogglePointCloud.setOnClickListener {
+            DiagnosticsLogger.i(DIAG, "AR point cloud overlay ${if (!arShowPointCloud) "ON" else "OFF"} (user)")
             viewModel.togglePointCloud()
         }
 
@@ -466,13 +500,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         binding.btnDistanceFilter.setOnClickListener {
+            DiagnosticsLogger.i(DIAG, "Distance filter cycled by user")
             viewModel.cycleDistanceFilter()
         }
 
         binding.btnAltitudeMode.setOnClickListener {
-            useTerrainAltitude = !useTerrainAltitude
-            shouldRebuildAnchors = true
-            binding.txtAltitudeMode.text = if (useTerrainAltitude) "Terrain" else "Stored"
+            // Persist through the ViewModel so the choice survives pause/resume and stays in sync with
+            // the Settings screen; the arDisplaySettings collector then applies it (updates the flag,
+            // the button text, and triggers a rebuild). Previously this flipped a transient local flag
+            // that the collector silently reverted on the next settings emission.
+            val next = !useTerrainAltitude
+            DiagnosticsLogger.i(DIAG, "Altitude mode set to ${if (next) "TERRAIN" else "STORED"} by user")
+            viewModel.setAltitudeMode(next)
         }
 
 
@@ -750,7 +789,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         choreographerInstance = null
         sessionReady = false
         binding.glSurfaceViewAr.onPause()
-        try { session?.pause() } catch (_: Exception) {}
+        try { session?.pause() } catch (e: Exception) {
+            DiagnosticsLogger.w(DIAG, "session.pause() failed on AR pause: ${e.message}", e)
+        }
 
         // Reset one-shot warning flags so they re-fire if the user navigates away
         // and back while location/network state has changed.
@@ -795,15 +836,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         hideModelProgressJob = null
         // Clean up test anchors via controller
         testAnchorController.cleanup()
-        // Clean up tap-to-place floor anchor
-        try { demoFloorAnchor?.detach() } catch (_: Exception) {}
-        demoFloorAnchor = null
         // Clean up geospatial anchors
         for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
         geoAnchors.clear()
         geoAnchorsCreated = false
         lastAnchorRtkStatus = null
         lastReanchorTimeMs = 0L
+        earthTrackingSinceMs = 0L
+        earthAccuracyAtCreationM = null
+        awaitingLocalization = false
+        loggedLocalizationWait = false
         // Clean up AR session
         try { session?.close() } catch (_: Exception) {}
         session = null
@@ -879,17 +921,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private fun configureSession() {
         val ses = session ?: return
+        // Geospatial mode is what places anchors at real-world lat/lon. If it can't be enabled, every
+        // geo-anchor silently fails — the #1 cause of "AR doesn't work" reports — so all three outcomes
+        // are recorded in the diagnostic export (not just logcat), and the unavailable case is surfaced.
+        var geoEnabled = false
         val config = Config(ses).apply {
-            // Try to enable geospatial mode for GPS anchoring (optional - AR works without it)
             if (ses.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                 try {
                     geospatialMode = Config.GeospatialMode.ENABLED
-                    android.util.Log.d(TAG, "Geospatial mode enabled")
+                    geoEnabled = true
+                    DiagnosticsLogger.i(DIAG, "Geospatial mode enabled")
                 } catch (e: Exception) {
-                    android.util.Log.w(TAG, "Failed to enable geospatial mode: ${e.message}")
+                    DiagnosticsLogger.e(DIAG, "Geospatial mode supported but failed to enable — " +
+                        "coordinates cannot be anchored in AR: ${e.message}", e)
                 }
             } else {
-                android.util.Log.d(TAG, "Geospatial mode not supported on this device")
+                DiagnosticsLogger.w(DIAG, "Geospatial mode NOT supported on this device — " +
+                    "coordinates cannot be anchored in AR")
             }
             // Configure other AR features
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
@@ -903,7 +951,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         try {
             ses.configure(config)
             if (backgroundRenderer != null) ses.setCameraTextureName(backgroundRenderer!!.textureId)
-            android.util.Log.d(TAG, "AR session configured successfully")
+            geospatialAvailable = geoEnabled
+            DiagnosticsLogger.i(DIAG, "AR session configured successfully (geospatial=$geoEnabled)")
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "Error configuring AR session: ${e.message}", e)
             setArStatus("AR config error: ${e.message}")
@@ -1013,6 +1062,34 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
         loggedAccuracyGate = false
 
+        // ── ARCore Earth localization gate ──────────────────────────────────────────────────────
+        // The GNSS gate above validates the RECEIVER, not ARCore's visual localization. TrackingState
+        // == TRACKING alone can still be tens of metres off right after Earth first tracks, and
+        // committing anchors then maps every coordinate to ≈ the device origin (all models on the
+        // user). Wait until ARCore's own cameraGeospatialPose accuracy is good enough, or place after
+        // a timeout so models still appear where VPS is unavailable.
+        if (earthTrackingSinceMs == 0L) earthTrackingSinceMs = System.currentTimeMillis()
+        val camAccPose = runCatching { earth.cameraGeospatialPose }.getOrNull()
+        val arHAcc = camAccPose?.horizontalAccuracy ?: Double.POSITIVE_INFINITY
+        val arYawAcc = camAccPose?.orientationYawAccuracy ?: Double.POSITIVE_INFINITY
+        val trackingElapsed = System.currentTimeMillis() - earthTrackingSinceMs
+        val gate = GeoAnchorGate.decide(arHAcc, arYawAcc, trackingElapsed)
+        if (gate == GeoAnchorGate.Decision.WAIT) {
+            awaitingLocalization = true
+            if (!loggedLocalizationWait) {
+                loggedLocalizationWait = true
+                DiagnosticsLogger.w(DIAG, "anchor waiting reason=\"ar_localizing\" " +
+                    "arHAccM=${"%.1f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} " +
+                    "elapsedMs=$trackingElapsed items=${geoItems.size}")
+            }
+            return
+        }
+        awaitingLocalization = false
+        loggedLocalizationWait = false
+        // Remember the accuracy we committed at, so a later improvement can trigger a re-anchor.
+        earthAccuracyAtCreationM = arHAcc.takeIf { it.isFinite() }
+        val placedVia = if (gate == GeoAnchorGate.Decision.PLACE_TIMEOUT) "timeout" else "localized"
+
         // Clean up existing anchors
         for (entry in geoAnchors) try {
             entry.anchor.detach()
@@ -1031,13 +1108,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 if (msl != null && geoid != null) msl + geoid else null
             }
             ?: 0.0
-
-        // In terrain mode, snap every anchor to the current detected ground level so
-        // models appear on the ground regardless of their stored altitude.
-        // Ground level = camera ellipsoidal altitude − eye height above ground.
-        val terrainAlt: Double? = if (useTerrainAltitude)
-            earth.cameraGeospatialPose.altitude - CAMERA_EYE_HEIGHT_M
-        else null
 
         // Record the RTK status at the time of anchor creation for auto re-anchor logic.
         lastAnchorRtkStatus = gnssFix.rtkStatus
@@ -1068,8 +1138,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
             DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=TERRAIN " +
-                "trackingState=${earth.trackingState} earthState=$earthStateName " +
-                "accuracyM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"} — will appear as terrain resolves")
+                "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
+                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"} " +
+                "arHAccM=${"%.1f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} — will appear as terrain resolves")
             recordAnchorOutcome(items.size, geoAnchors.size, failed)
         } else {
             // Stored-altitude mode: create WGS84 anchors at each coordinate's recorded altitude.
@@ -1089,8 +1160,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
             DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=STORED " +
-                "trackingState=${earth.trackingState} earthState=$earthStateName " +
-                "accuracyM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"}")
+                "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
+                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"} " +
+                "arHAccM=${"%.1f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)}")
             recordAnchorOutcome(items.size, geoAnchors.size, failed)
         }
 
@@ -1162,7 +1234,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         edgeMarginPx = 40f * resources.displayMetrics.density
         try {
             session?.setDisplayGeometry(displayRotation, width, height)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DIAG, "setDisplayGeometry failed (${width}x$height rot=$displayRotation): ${e.message}", e)
         }
     }
 
@@ -1198,10 +1271,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val earth       = s.earth
             val earthStatus = processEarthAndAnchors(earth)
 
-            // 3) Tap-to-place floor marker
-            processTapToPlace(frame, camera)
-
-            // 4) 3-D rendering (only when camera is tracking)
+            // 3) 3-D rendering (only when camera is tracking)
             var planeCount = 0
             var pointCount = 0
             if (camera.trackingState == TrackingState.TRACKING) {
@@ -1214,8 +1284,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
                 pointCount = if (arDebugToolsEnabled && arShowPointCloud) pointCloudRenderer?.draw(frame, vp) ?: 0 else 0
                 planeCount = if (arDebugToolsEnabled && arShowPlanes) planeVisualizer?.drawAllPlanes(s, vp) ?: 0 else 0
-
-                drawFloorMarker(vp)
 
                 val margin        = edgeMarginPx
                 val pinPositions  = mutableListOf<PinScreenEntry>()
@@ -1232,7 +1300,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 postOverlayUpdates(labelEntries, arrowEntries)
             }
 
-            // 5) Status bar, debug panel, model progress chip (posted to main thread)
+            // 4) Status bar, debug panel, model progress chip (posted to main thread)
             postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount)
 
         } catch (_: CameraNotAvailableException) {
@@ -1267,11 +1335,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             lastAnchorRtkStatus = null
             lastReanchorTimeMs = System.currentTimeMillis()
             loggedAccuracyGate = false
+            earthAccuracyAtCreationM = null
             ArSessionDiagnostics.reanchorAttempts++
             DiagnosticsLogger.i(DIAG, "Re-anchor (manual) — anchors cleared for rebuild")
         }
 
-        if (earth == null) return "Geo: N/A"
+        if (earth == null) return if (geospatialAvailable) "Geo: N/A" else "Geo: unavailable on this device"
 
         // Earth/geospatial tracking-state CHANGE detection (logged + recorded once per change,
         // never per frame).
@@ -1282,6 +1351,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             ArSessionDiagnostics.lastEarthTrackingState = earthTracking
             ArSessionDiagnostics.lastEarthState = earthStateName
             DiagnosticsLogger.i(DIAG, "earth_state trackingState=$earthTracking earthState=$earthStateName")
+            // (Re)start the localization timeout clock on entering TRACKING; clear it (and the
+            // waiting state) when tracking is lost so a fresh TRACKING period is timed from scratch.
+            if (earth.trackingState == TrackingState.TRACKING) {
+                earthTrackingSinceMs = System.currentTimeMillis()
+            } else {
+                earthTrackingSinceMs = 0L
+                awaitingLocalization = false
+                loggedLocalizationWait = false
+            }
         }
 
         return when (earth.trackingState) {
@@ -1307,61 +1385,42 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         lastAnchorRtkStatus = null
                         lastReanchorTimeMs = System.currentTimeMillis()
                         loggedAccuracyGate = false
+                        earthAccuracyAtCreationM = null
                     }
                 }
+
+                // Auto re-anchor when ARCore's OWN localization materially improves after a rough or
+                // timeout placement — so a placement committed near the user self-corrects instead of
+                // requiring a manual re-anchor. Throttled + cooldown-gated to avoid churn.
+                val nowMs = System.currentTimeMillis()
+                val committedAcc = earthAccuracyAtCreationM
+                if (geoAnchorsCreated && committedAcc != null && nowMs - lastImprovementCheckMs >= 2_000L) {
+                    lastImprovementCheckMs = nowMs
+                    val curAcc = runCatching { earth.cameraGeospatialPose.horizontalAccuracy }.getOrNull()
+                    val cooldownElapsed = nowMs - lastReanchorTimeMs >= REANCHOR_COOLDOWN_MS
+                    if (curAcc != null &&
+                        GeoAnchorGate.shouldReanchorOnImprovement(committedAcc, curAcc, cooldownElapsed)) {
+                        ArSessionDiagnostics.reanchorAttempts++
+                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) — AR localization improved " +
+                            "${"%.1f".format(committedAcc)} → ${"%.1f".format(curAcc)} m")
+                        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
+                        geoAnchors.clear()
+                        geoAnchorsCreated = false
+                        earthAccuracyAtCreationM = null
+                        lastReanchorTimeMs = nowMs
+                        loggedAccuracyGate = false
+                    }
+                }
+
                 rebuildGeoAnchorsIfNeeded(earth)
                 val fix = currentGnssFix
                 if (fix != null) {
                     testAnchorController.processActionIfNeeded(earth, fix.latDeg, fix.lonDeg)
                 }
-                "Geo: TRACKING"
+                if (awaitingLocalization) "Geo: Localizing…" else "Geo: TRACKING"
             }
             TrackingState.PAUSED  -> "Geo: Localizing..."
             TrackingState.STOPPED -> "Geo: Off (AR active)"
-        }
-    }
-
-    /** Processes a queued tap: places a floor marker or logs why it failed. */
-    private fun processTapToPlace(frame: Frame, camera: Camera) {
-        queuedTap?.let { pt ->
-            if (camera.trackingState == TrackingState.TRACKING) {
-                val hits = frame.hitTest(pt.x, pt.y)
-                var found = false
-                for ((index, hit) in hits.withIndex()) {
-                    val trackable  = hit.trackable
-                    val isPlane    = trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)
-                    val isPoint    = trackable is Point &&
-                            trackable.orientationMode == Point.OrientationMode.ESTIMATED_SURFACE_NORMAL
-                    if (isPlane || isPoint) {
-                        found = true
-                        try {
-                            demoFloorAnchor?.detach()
-                            demoFloorAnchor = hit.createAnchor()
-                            android.util.Log.d(TAG, "✅ Floor marker placed at hit $index")
-                        } catch (e: Exception) {
-                            android.util.Log.e(TAG, "❌ Failed to place anchor: ${e.message}", e)
-                        }
-                        break
-                    }
-                }
-                if (!found) android.util.Log.w(TAG,
-                    if (hits.isEmpty()) "⚠️ No hits — tap on a detected plane"
-                    else "⚠️ ${hits.size} hits but none were valid planes/points")
-            }
-            queuedTap = null
-        }
-    }
-
-    /** Renders the demo floor marker (bright-green flat square) if its anchor is tracking. */
-    private fun drawFloorMarker(vp: FloatArray) {
-        demoFloorAnchor?.let { anchor ->
-            if (anchor.trackingState == TrackingState.TRACKING) {
-                anchor.pose.toMatrix(model, 0)
-                System.arraycopy(model, 0, modelScaled, 0, 16)
-                Matrix.scaleM(modelScaled, 0, 0.3f, 0.02f, 0.3f)
-                Matrix.multiplyMM(mvp, 0, vp, 0, modelScaled, 0)
-                cubeRenderer?.draw(mvp, 0.0f, 1.0f, 0.0f, 1.0f)
-            }
         }
     }
 
@@ -1537,6 +1596,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Always update the top status bar.
             _binding?.textArStatus?.text = topStatus
 
+            // Prominent centred banner: shown while model-linked coordinates are still being held
+            // (anchors not yet committed) so the delay reads as "AR is locating", not as the models
+            // rendering on top of the user. Hidden the moment anchors are placed.
+            val holdingModels = !geoAnchorsCreated && geoItems.any { it.modelFilePath != null }
+            _binding?.localizingBanner?.visibility = if (holdingModels) View.VISIBLE else View.GONE
+
             // Only build the debug string (and pay its allocation cost) when the panel is visible.
             if (debugOverlayVisible) {
                 val debugLines = buildDebugText(snapshot, earthStatus, planeCount, pointCount, gnssFix, anchorDebug)
@@ -1683,45 +1748,49 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         geoItems = newItems
         geoAnchorsCreated = false
 
-        // Kick off Filament GLB loading for every model-linked coordinate.
-        // This runs on the main thread (StateFlow collector), which is where
-        // Filament API calls are required.
+        // Kick off Filament GLB loading for every model-linked coordinate. preload() must run on the
+        // main thread (Filament requirement), but the per-file existence/size stat is filesystem I/O —
+        // batch those off the main thread first, then dispatch the preloads back on main.
         val scope = viewLifecycleOwner.lifecycleScope
-        items.forEach { item ->
-            val coord = item.coordinate
-            val path  = item.modelFilePath
-            if (path == null) return@forEach   // coordinate has no linked model — pin/label only
-            // Record per-model context up front so the export can pinpoint why a model
-            // did or did not render (missing file, disabled visibility, altitude, scale, placement).
-            val file   = File(path)
-            val exists = file.exists()
-            val sizeBytes = if (exists) file.length() else -1L
-            val altState = if (coord.altitude.isNaN() || !coord.altitude.isFinite()) "missing" else "stored"
-            DiagnosticsLogger.i(DIAG,
-                "preload dispatch coordinateId=${coord.id} modelId=${item.modelId} " +
-                "name=\"${coord.name}\" path=\"$path\" exists=$exists " +
-                "sizeBytes=$sizeBytes renderEnabled=${coord.renderEnabled} " +
-                "altitude=$altState scale=$arModelScale placement=${item.placement}")
-            val basename = path.substringAfterLast('/')
-            when {
-                !exists -> {
-                    ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
-                        exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "missing_file")
-                    DiagnosticsLogger.w(DIAG,
-                        "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"missing_file\" path=\"$path\"")
+        scope.launch {
+            val stats: Map<String, Pair<Boolean, Long>> = withContext(Dispatchers.IO) {
+                items.mapNotNull { it.modelFilePath }.distinct().associateWith { p ->
+                    val f = File(p); val e = f.exists(); e to (if (e) f.length() else -1L)
                 }
-                // renderEnabled gates whether a linked model is drawn in AR. When false we simply
-                // don't preload it, so the coordinate still shows its pin/label but no 3D model.
-                !coord.renderEnabled -> {
-                    ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
-                        exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "model_visibility_disabled")
-                    DiagnosticsLogger.i(DIAG,
-                        "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"model_visibility_disabled\"")
-                }
-                else -> {
-                    ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
-                        exists, sizeBytes, ArSessionDiagnostics.ModelStatus.QUEUED)
-                    filamentRenderer?.preload(coord.id, path, scope, item.placement)
+            }
+            items.forEach { item ->
+                val coord = item.coordinate
+                val path  = item.modelFilePath ?: return@forEach   // no linked model — pin/label only
+                // Per-model context so the export can pinpoint why a model did or did not render
+                // (missing file, disabled visibility, altitude, scale, placement).
+                val (exists, sizeBytes) = stats[path] ?: (false to -1L)
+                val altState = if (coord.altitude.isNaN() || !coord.altitude.isFinite()) "missing" else "stored"
+                DiagnosticsLogger.i(DIAG,
+                    "preload dispatch coordinateId=${coord.id} modelId=${item.modelId} " +
+                    "name=\"${coord.name}\" path=\"$path\" exists=$exists " +
+                    "sizeBytes=$sizeBytes renderEnabled=${coord.renderEnabled} " +
+                    "altitude=$altState scale=$arModelScale placement=${item.placement}")
+                val basename = path.substringAfterLast('/')
+                when {
+                    !exists -> {
+                        ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
+                            exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "missing_file")
+                        DiagnosticsLogger.w(DIAG,
+                            "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"missing_file\" path=\"$path\"")
+                    }
+                    // renderEnabled gates whether a linked model is drawn in AR. When false we simply
+                    // don't preload it, so the coordinate still shows its pin/label but no 3D model.
+                    !coord.renderEnabled -> {
+                        ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
+                            exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "model_visibility_disabled")
+                        DiagnosticsLogger.i(DIAG,
+                            "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"model_visibility_disabled\"")
+                    }
+                    else -> {
+                        ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
+                            exists, sizeBytes, ArSessionDiagnostics.ModelStatus.QUEUED)
+                        filamentRenderer?.preload(coord.id, path, scope, item.placement)
+                    }
                 }
             }
         }
@@ -1797,8 +1866,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     }
                 }
 
-                // No pin tapped — queue tap for demo floor-marker placement
-                queuedTap = PointF(tapX, tapY)
+                // No pin tapped — consume the tap (performClick for accessibility) and do nothing.
                 v.performClick()
                 true
             } else {
