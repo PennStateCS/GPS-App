@@ -6,6 +6,7 @@ import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.data.local.entity.ModelEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -81,5 +82,25 @@ class ObserveArCoordinateModelsUseCaseTest {
         assertEquals(listOf("a"), flow.first().map { it.coordinate.id })
         coords.value = listOf(coord("b"), coord("c"))
         assertEquals(listOf("b", "c"), flow.first().map { it.coordinate.id })
+    }
+
+    // A DB failure must degrade to an empty list, not crash the AR screen (the flow feeds the
+    // ViewModel's stateIn, whose uncaught upstream exception would otherwise take down the fragment).
+
+    @Test fun coordinateStreamError_emitsEmptyListInsteadOfThrowing() = runTest {
+        val coordinateDao = Mockito.mock(CoordinateDao::class.java)
+        val modelDao = Mockito.mock(ModelDao::class.java)
+        Mockito.`when`(coordinateDao.observeAll()).thenReturn(flow { throw RuntimeException("db read failed") })
+        val useCase = ObserveArCoordinateModelsUseCase(coordinateDao, modelDao, PrepareArCoordinateModelsUseCase())
+        assertEquals(emptyList<CoordWithModel>(), useCase().first())
+    }
+
+    @Test fun modelLookupError_emitsEmptyListInsteadOfThrowing() = runTest {
+        val coordinateDao = Mockito.mock(CoordinateDao::class.java)
+        val modelDao = Mockito.mock(ModelDao::class.java)
+        Mockito.`when`(coordinateDao.observeAll()).thenReturn(MutableStateFlow(listOf(coord("a", modelId = "m1"))))
+        runBlocking { Mockito.`when`(modelDao.getAllModelsList()).thenThrow(RuntimeException("query failed")) }
+        val useCase = ObserveArCoordinateModelsUseCase(coordinateDao, modelDao, PrepareArCoordinateModelsUseCase())
+        assertEquals(emptyList<CoordWithModel>(), useCase().first())
     }
 }

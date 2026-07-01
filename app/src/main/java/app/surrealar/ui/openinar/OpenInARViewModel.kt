@@ -139,6 +139,23 @@ class OpenInARViewModel @Inject constructor(
     val arDisplaySettings: StateFlow<ArDisplaySettings> = arDisplayRepo.arDisplaySettings
         .stateIn(viewModelScope, SharingStarted.Eagerly, ArDisplaySettings())
 
+    /**
+     * Persist the AR altitude mode chosen from the in-AR toolbar so it survives pause/resume and stays
+     * in sync with the Settings screen. The fragment applies the change through its [arDisplaySettings]
+     * collector; persisting here makes it durable — the toolbar previously flipped a transient local
+     * flag that the collector silently reverted on the next emission. runCatching so a DataStore write
+     * failure can never crash the toggle.
+     */
+    fun setAltitudeMode(terrain: Boolean) {
+        viewModelScope.launch {
+            runCatching {
+                arDisplayRepo.setArDisplaySettings(
+                    arDisplaySettings.value.copy(altitudeMode = if (terrain) "TERRAIN" else "STORED")
+                )
+            }
+        }
+    }
+
     // ── Companion ─────────────────────────────────────────────────────────────
 
     companion object {
