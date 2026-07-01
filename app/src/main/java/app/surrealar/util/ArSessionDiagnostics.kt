@@ -48,6 +48,25 @@ object ArSessionDiagnostics {
     @Volatile var lastEarthState: String? = null
     @Volatile var lastCameraTrackingState: String? = null
 
+    // ── AR / mock-location / source context captured at anchor creation ───────────────────────────
+    // Answers, from a future export: was mock location enabled + actively injecting during AR, what
+    // source/fix was active, and what was ARCore Earth's pose accuracy when the anchors were created.
+    // Accuracy fields are null when genuinely unknown — never 0.0-as-missing.
+    @Volatile var arSelectedSource: String? = null
+    @Volatile var arCurrentFixProvider: String? = null
+    @Volatile var arMockEnabledDuringAr: Boolean? = null
+    @Volatile var arMockInjectionActiveDuringAr: Boolean? = null
+    @Volatile var arMockAppApproved: Boolean? = null
+    @Volatile var arLastMockFixAgeAtAnchorMs: Long? = null
+    @Volatile var arEarthTrackingAtAnchor: String? = null
+    @Volatile var arHAccAtAnchorM: Double? = null
+    @Volatile var arVAccAtAnchorM: Double? = null
+    @Volatile var arYawAccAtAnchorDeg: Double? = null
+    @Volatile var anchorsViaTimeout = 0
+    @Volatile var anchorsRebuiltAfterInitial = 0
+    /** "anchor-driven" once real anchors are committed; distinguishes stable anchoring from user-relative. */
+    @Volatile var modelTransformSource: String? = null
+
     // key = coordinateId
     private val models = ConcurrentHashMap<String, ModelEntry>()
 
@@ -59,6 +78,11 @@ object ArSessionDiagnostics {
         anchorsAttempted = 0; anchorsCreated = 0; anchorFailures = 0
         activeAnchorCount = 0; reanchorAttempts = 0
         lastEarthTrackingState = null; lastEarthState = null; lastCameraTrackingState = null
+        arSelectedSource = null; arCurrentFixProvider = null
+        arMockEnabledDuringAr = null; arMockInjectionActiveDuringAr = null; arMockAppApproved = null
+        arLastMockFixAgeAtAnchorMs = null; arEarthTrackingAtAnchor = null
+        arHAccAtAnchorM = null; arVAccAtAnchorM = null; arYawAccAtAnchorDeg = null
+        anchorsViaTimeout = 0; anchorsRebuiltAfterInitial = 0; modelTransformSource = null
     }
 
     /** Finalizes terminal states for models that loaded but never reached the scene. */
@@ -113,6 +137,9 @@ object ArSessionDiagnostics {
 
     private fun countByStatus(s: ModelStatus) = models.values.count { it.status == s }
 
+    /** yes/no/unknown for nullable booleans in the summary (null = genuinely undetermined). */
+    private fun yn(b: Boolean?): String = when (b) { true -> "yes"; false -> "no"; null -> "unknown" }
+
     /** Counts of SKIPPED/FAILED reasons (short structured strings) for the summary. */
     fun reasonCounts(): Map<String, Int> =
         models.values
@@ -162,6 +189,21 @@ object ArSessionDiagnostics {
             if (failed > 0) add("$failed model(s) FAILED (${reasons.filterValues { it > 0 }})")
         }
         if (warnings.isEmpty()) appendLine("(none)") else warnings.forEach { appendLine("⚠ $it") }
+        appendLine()
+        appendLine("--- AR / Mock Location Summary ---")
+        appendLine("selectedSource(AR)         : ${arSelectedSource ?: "unknown"}")
+        appendLine("currentFixProvider(AR)     : ${arCurrentFixProvider ?: "unknown"}")
+        appendLine("mockLocationEnabled(AR)    : ${yn(arMockEnabledDuringAr)}")
+        appendLine("mockInjectionActive(AR)    : ${yn(arMockInjectionActiveDuringAr)}")
+        appendLine("mockAppApproved(AppOps)    : ${yn(arMockAppApproved)}")
+        appendLine("lastMockFixAge@anchor(ms)  : ${arLastMockFixAgeAtAnchorMs?.toString() ?: "n/a"}")
+        appendLine("earthTracking@anchor       : ${arEarthTrackingAtAnchor ?: "n/a"}")
+        appendLine("earth hAcc@anchor(m)       : ${arHAccAtAnchorM?.let { "%.1f".format(it) } ?: "unknown"}")
+        appendLine("earth vAcc@anchor(m)       : ${arVAccAtAnchorM?.let { "%.1f".format(it) } ?: "unknown"}")
+        appendLine("earth yawAcc@anchor(deg)   : ${arYawAccAtAnchorDeg?.let { "%.1f".format(it) } ?: "unknown"}")
+        appendLine("anchorsCreatedViaTimeout   : $anchorsViaTimeout")
+        appendLine("anchorsRebuiltAfterInitial : $anchorsRebuiltAfterInitial")
+        appendLine("modelTransformSource       : ${modelTransformSource ?: "unknown"}")
         appendLine()
         appendLine("--- per-model (last AR session) ---")
         if (models.isEmpty()) {
