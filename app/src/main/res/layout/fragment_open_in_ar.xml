@@ -78,6 +78,7 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/txtLocalizingTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Localizing AR…"
@@ -86,6 +87,7 @@
                 android:fontFamily="sans-serif-medium" />
 
             <TextView
+                android:id="@+id/txtLocalizingHint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="3dp"
@@ -95,6 +97,27 @@
                 android:alpha="0.85" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- Compact, persistent AR-view-quality chip. Shown AFTER anchors are placed (the banner is for
+         the pre-placement phase). Reports ARCore geospatial (AR) confidence + horizontal accuracy —
+         distinct from the GNSS fix chip below the Back button. -->
+    <TextView
+        android:id="@+id/chipArQuality"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="98dp"
+        android:layout_marginStart="12dp"
+        android:text="AR quality: —"
+        android:textColor="@color/ar_overlay_text"
+        android:textSize="11sp"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="5dp"
+        android:background="@drawable/bg_ar_chip"
+        android:visibility="gone"
+        android:clickable="false"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
 
     <!-- ── Floating toolbar ───────────────────────────────────────────────── -->
 

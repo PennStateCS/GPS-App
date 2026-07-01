@@ -12,6 +12,7 @@ import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
+import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -63,6 +64,8 @@ class AndroidMockLocationPublisher(
     private var publishJob: Job? = null
     private var providerAdded = false
     private var lastPublishedUtc: Instant = Instant.EPOCH
+    /** Throttle for the per-injection export log — status is updated every injection, file log is not. */
+    private var lastInjectionLogMs: Long = 0L
 
     private val _errorEvents = MutableSharedFlow<MockLocationError>(extraBufferCapacity = 8)
 
@@ -93,7 +96,7 @@ class AndroidMockLocationPublisher(
                 if (isStale(fix))         return@collect
                 if (!isValid(fix))        return@collect
                 if (isDuplicate(fix))     return@collect
-                publishLocation(fixToLocation(fix))
+                publishLocation(fix, fixToLocation(fix))
             }
         }
     }
@@ -156,16 +159,53 @@ class AndroidMockLocationPublisher(
 
     // ── Publishing ────────────────────────────────────────────────────────────
 
-    private fun publishLocation(location: Location) {
+    private fun publishLocation(fix: Fix, location: Location) {
+        val appRecvMs = System.currentTimeMillis()
         try {
             ensureProviderAdded()
             locationManager.setTestProviderLocation(LocationManager.GPS_PROVIDER, location)
-            Log.d(TAG, "Published mock location lat=${location.latitude} lon=${location.longitude}")
+
+            // Accuracy is a REQUIRED, non-zero field on the Android test provider, so when the source
+            // fix carries none we inject a placeholder. Record the REAL source accuracy (null if
+            // missing) plus this flag so a missing accuracy is never mistaken for a genuine 0 m fix.
+            val hAccWasFallback = fix.hAccM?.let { it > 0.0 } != true
+            val fixTimeMs = fix.timeUtc.toEpochMilli()
+            MockInjectionStatus.apply {
+                providerActive = true
+                injectionCount++
+                lastInjectionAtMs = appRecvMs
+                lastInjectedProvider = LocationManager.GPS_PROVIDER
+                lastInjectedLat = location.latitude
+                lastInjectedLon = location.longitude
+                lastInjectedAltM = fix.altEllipsoidalM
+                lastInjectedHAccM = fix.hAccM
+                lastInjectedVAccM = fix.vAccM
+                lastInjectedHAccWasFallback = hAccWasFallback
+                lastSourceFixProvider = fix.provider.name
+                lastSourceFixTimeMs = fixTimeMs
+            }
+
+            // Throttle the export log to ~INJECT_LOG_INTERVAL_MS (fixes arrive at up to 10 Hz — logging
+            // every one would flood the rolling log). The in-memory status above updates every fix.
+            if (appRecvMs - lastInjectionLogMs >= INJECT_LOG_INTERVAL_MS) {
+                lastInjectionLogMs = appRecvMs
+                DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_INJECTED sourceProvider=${fix.provider} " +
+                    "fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
+                    "lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)} " +
+                    "altM=${fix.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
+                    "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
+                    (if (hAccWasFallback) "(placeholder ${location.accuracy}m injected)" else "") +
+                    " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus} " +
+                    "injections=${MockInjectionStatus.injectionCount}")
+            }
         } catch (e: SecurityException) {
-            Log.w(TAG, "Mock location blocked — app not selected as mock location app", e)
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION injection blocked — app not selected as mock " +
+                "location app: ${e.javaClass.simpleName}: ${e.message}", e)
+            MockInjectionStatus.providerActive = false
             _errorEvents.tryEmit(MockLocationError.NOT_PERMITTED)
         } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "Test provider configuration error", e)
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION test provider configuration error: " +
+                "${e.javaClass.simpleName}: ${e.message}", e)
             _errorEvents.tryEmit(MockLocationError.PROVIDER_ERROR)
         }
     }
@@ -187,15 +227,17 @@ class AndroidMockLocationPublisher(
             )
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
             providerAdded = true
-            Log.i(TAG, "Mock publishing started — GPS test provider added and enabled")
+            MockInjectionStatus.providerActive = true
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_START — GPS test provider added and enabled")
         } catch (e: SecurityException) {
             // Propagated to caller, which handles it uniformly
             throw e
         } catch (e: IllegalArgumentException) {
             // Provider already registered by this process from a previous start; treat as added.
             providerAdded = true
+            MockInjectionStatus.providerActive = true
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
-            Log.d(TAG, "GPS test provider already existed; re-enabled")
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_START — GPS test provider already existed; re-enabled")
         }
     }
 
@@ -204,11 +246,13 @@ class AndroidMockLocationPublisher(
         try {
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, false)
             locationManager.removeTestProvider(LocationManager.GPS_PROVIDER)
-            Log.d(TAG, "GPS test provider removed")
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_STOP — GPS test provider removed " +
+                "(injections=${MockInjectionStatus.injectionCount})")
         } catch (e: Exception) {
-            Log.w(TAG, "Teardown failed (provider already gone?): ${e.message}")
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_STOP teardown failed (provider already gone?): ${e.message}")
         } finally {
             providerAdded = false
+            MockInjectionStatus.providerActive = false
         }
     }
 
@@ -228,6 +272,10 @@ class AndroidMockLocationPublisher(
 
     companion object {
         private const val TAG = "MockLocPublisher"
+        /** Diagnostic export tag for all mock-location lifecycle/injection events. */
+        private const val DIAG = "MOCK"
+        /** Minimum spacing between per-injection export logs (status still updates every fix). */
+        private const val INJECT_LOG_INTERVAL_MS = 3_000L
 
         /** Drop fixes older than 10 seconds. */
         internal const val MAX_FIX_AGE_MS = 10_000L
