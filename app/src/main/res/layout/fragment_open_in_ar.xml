@@ -306,11 +306,11 @@
                 android:background="@drawable/ripple_ar_toolbar_btn"
                 android:clickable="true"
                 android:focusable="true"
-                android:contentDescription="Distance filter">
+                android:contentDescription="Visible models">
                 <ImageView
                     android:layout_width="24dp"
                     android:layout_height="24dp"
-                    android:src="@drawable/ic_ar_filter"
+                    android:src="@drawable/ic_models_24"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:id="@+id/txtDistanceFilter"

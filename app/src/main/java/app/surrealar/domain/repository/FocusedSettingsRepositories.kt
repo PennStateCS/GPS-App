@@ -72,6 +72,20 @@ interface MockLocationSettingsRepository {
     suspend fun setMockLocationEnabled(enabled: Boolean)
 }
 
+/**
+ * AR-only model visibility state (separate from the coordinate `renderEnabled` / map selection).
+ * [arVisibilityCustomized] false means "use map selection" (derive visibility from renderEnabled);
+ * true means [arVisibleIds] is the authoritative AR-visible set. [arVisibilityMode] is SELECTED / NEARBY / ALL.
+ */
+interface ArVisibilitySettingsRepository {
+    val arVisibilityMode: Flow<String>
+    val arVisibilityCustomized: Flow<Boolean>
+    val arVisibleIds: Flow<Set<String>>
+    suspend fun setArVisibilityMode(mode: String)
+    suspend fun setArVisibilityCustomized(customized: Boolean)
+    suspend fun setArVisibleIds(ids: Set<String>)
+}
+
 /** GNSS receiver runtime preferences (e.g. high-accuracy mode). */
 interface GnssReceiverSettingsRepository {
     val gnssReceiverSettings: Flow<GnssReceiverSettings>
