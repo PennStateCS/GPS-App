@@ -180,7 +180,8 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     modelVerticalOffsetM = modelVerticalOffsetM,
     modelOriginOffsetXM = modelOriginOffsetXM,
     modelOriginOffsetYM = modelOriginOffsetYM,
-    modelOriginOffsetZM = modelOriginOffsetZM
+    modelOriginOffsetZM = modelOriginOffsetZM,
+    modelPlacementOrigin = modelPlacementOrigin
 )
 
 /**
@@ -256,5 +257,6 @@ fun Coordinate.toEntity(): CoordinateEntity =
         modelVerticalOffsetM = modelVerticalOffsetM,
         modelOriginOffsetXM = modelOriginOffsetXM,
         modelOriginOffsetYM = modelOriginOffsetYM,
-        modelOriginOffsetZM = modelOriginOffsetZM
+        modelOriginOffsetZM = modelOriginOffsetZM,
+        modelPlacementOrigin = modelPlacementOrigin
     )

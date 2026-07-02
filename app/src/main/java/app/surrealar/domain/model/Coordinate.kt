@@ -91,5 +91,8 @@ data class Coordinate(
     val modelVerticalOffsetM: Double? = null,
     val modelOriginOffsetXM: Double? = null,
     val modelOriginOffsetYM: Double? = null,
-    val modelOriginOffsetZM: Double? = null
+    val modelOriginOffsetZM: Double? = null,
+
+    // v12: model-local placement origin preset (ORIGIN/CENTER/BOTTOM_CENTER/CUSTOM); null = CENTER.
+    val modelPlacementOrigin: String? = null
 )

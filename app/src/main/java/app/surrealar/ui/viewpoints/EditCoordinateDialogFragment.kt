@@ -6,7 +6,9 @@ import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -111,6 +113,29 @@ class EditCoordinateDialogFragment(
         prefill(editOffX, coordinate.modelOriginOffsetXM); prefill(editOffY, coordinate.modelOriginOffsetYM)
         prefill(editOffZ, coordinate.modelOriginOffsetZM)
 
+        // Placement origin: which model-local point aligns to the coordinate anchor. Index 0 (null)
+        // is the renderer's historical CENTER behavior, so existing coordinates do not shift.
+        val placementOriginSpinner = view.findViewById<Spinner>(R.id.spinner_model_placement_origin)
+        val originOptions: List<Pair<String, String?>> = listOf(
+            "Center of model (default)" to null,
+            "Model origin (GLB 0,0,0)" to "ORIGIN",
+            "Bottom center / ground contact" to "BOTTOM_CENTER",
+            "Custom offset" to "CUSTOM",
+        )
+        placementOriginSpinner?.adapter = ArrayAdapter(
+            requireContext(), android.R.layout.simple_spinner_dropdown_item, originOptions.map { it.first }
+        )
+        placementOriginSpinner?.setSelection(
+            when (val cur = coordinate.modelPlacementOrigin) {
+                null, "CENTER" -> 0
+                else -> originOptions.indexOfFirst { it.second == cur }.takeIf { it >= 0 } ?: 0
+            }
+        )
+        view.findViewById<View>(R.id.btn_snap_bottom_center)?.setOnClickListener {
+            val idx = originOptions.indexOfFirst { it.second == "BOTTOM_CENTER" }
+            if (idx >= 0) placementOriginSpinner?.setSelection(idx)
+        }
+
         placementSection?.visibility = if (coordinate.linkedModelId != null) View.VISIBLE else View.GONE
         placementHeader?.setOnClickListener {
             val expand = placementBody?.visibility != View.VISIBLE
@@ -160,6 +185,8 @@ class EditCoordinateDialogFragment(
                 val newOffX  = if (linkedModelId != null) finiteOf(editOffX, "origin offset X") else null
                 val newOffY  = if (linkedModelId != null) finiteOf(editOffY, "origin offset Y") else null
                 val newOffZ  = if (linkedModelId != null) finiteOf(editOffZ, "origin offset Z") else null
+                val newPlacementOrigin = if (linkedModelId != null)
+                    originOptions[placementOriginSpinner?.selectedItemPosition ?: 0].second else null
                 if (warnings.isNotEmpty()) {
                     Toast.makeText(requireContext(), "Ignored invalid placement: ${warnings.joinToString()}", Toast.LENGTH_LONG).show()
                 }
@@ -167,7 +194,8 @@ class EditCoordinateDialogFragment(
                 val placementChanged = newScale != coordinate.modelScale || newYaw != coordinate.modelYawDeg ||
                     newPitch != coordinate.modelPitchDeg || newRoll != coordinate.modelRollDeg ||
                     newVOff != coordinate.modelVerticalOffsetM || newOffX != coordinate.modelOriginOffsetXM ||
-                    newOffY != coordinate.modelOriginOffsetYM || newOffZ != coordinate.modelOriginOffsetZM
+                    newOffY != coordinate.modelOriginOffsetYM || newOffZ != coordinate.modelOriginOffsetZM ||
+                    newPlacementOrigin != coordinate.modelPlacementOrigin
 
                 val changed = name != coordinate.name
                     || icon != coordinate.icon
@@ -188,7 +216,8 @@ class EditCoordinateDialogFragment(
                         modelScale = newScale, modelYawDeg = newYaw,
                         modelPitchDeg = newPitch, modelRollDeg = newRoll,
                         modelVerticalOffsetM = newVOff,
-                        modelOriginOffsetXM = newOffX, modelOriginOffsetYM = newOffY, modelOriginOffsetZM = newOffZ
+                        modelOriginOffsetXM = newOffX, modelOriginOffsetYM = newOffY, modelOriginOffsetZM = newOffZ,
+                        modelPlacementOrigin = newPlacementOrigin
                     )
                     val updated = if (locationMoved) {
                         val utm = try { UtmConverter.latLonToUtm(lat, lon) } catch (_: Exception) { null }

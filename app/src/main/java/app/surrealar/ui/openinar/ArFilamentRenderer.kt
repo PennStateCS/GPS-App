@@ -431,44 +431,74 @@ class ArFilamentRenderer {
                     Math.abs(bbc[2]) > BB_CENTER_THRESHOLD_M
                 val isTestKey = pose.key.startsWith(TEST_GRID_KEY_PREFIX)
                 if (!isTestKey) {
-                    // Base correction R(180°Y) · S(effScale) · T(-bbc): always applied to user models.
-                    //
-                    // R(180°Y) rotates the model so its GLTF +Z axis (the face shown in
-                    // standard viewers) points toward geodetic North in ARCore's EUS frame
-                    // (EUS: X=East, Y=Up, Z=South → 180° around Y makes +Z face North).
-                    //
-                    // effScale = ns × the per-coordinate placement scale. Combined column-major
-                    // matrix = diag(-effScale, effScale, -effScale, 1) with translation column
-                    // = R(180°Y)·S(effScale)·(-bbc) = (effScale·bbc.x, -effScale·bbc.y, effScale·bbc.z, 1).
+                    val f: (Float) -> String = { "%.2f".format(it) }
+                    val fileName = pose.filePath.substringAfterLast('/')
+                    val bounds = ModelBounds.fromCenterHalfExtent(bbc[0], bbc[1], bbc[2], bbh[0], bbh[1], bbh[2])
                     val placement = cached.placement
+                    val origin = placement.placementOrigin
+
+                    DiagnosticsLogger.i(DIAG, "MODEL_BOUNDS model=$fileName coordId=${pose.key} " +
+                        "boundsMin=(${f(bounds.min.x)},${f(bounds.min.y)},${f(bounds.min.z)}) " +
+                        "boundsMax=(${f(bounds.max.x)},${f(bounds.max.y)},${f(bounds.max.z)}) " +
+                        "size=(${f(bounds.size.x)},${f(bounds.size.y)},${f(bounds.size.z)}) " +
+                        "center=(${f(bounds.center.x)},${f(bounds.center.y)},${f(bounds.center.z)}) " +
+                        "bottomCenter=(${f(bounds.bottomCenter.x)},${f(bounds.bottomCenter.y)},${f(bounds.bottomCenter.z)}) " +
+                        "originToBottomCenter=${f(bounds.originToBottomCenterM)}m")
+                    // Warn only when the geometry is far from the origin AND the (default) ORIGIN/CENTER
+                    // presets would leave it misplaced — steer the user to Bottom Center / Custom Offset.
+                    if (bounds.originToBottomCenterM > ModelBounds.FAR_FROM_ORIGIN_M &&
+                        (origin == ModelPlacementOrigin.ORIGIN || origin == ModelPlacementOrigin.CUSTOM)) {
+                        DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=$fileName " +
+                            "originToBottomCenter=${f(bounds.originToBottomCenterM)}m; visible geometry is far " +
+                            "from origin. Use Bottom Center or Custom Offset.")
+                    }
+
+                    // Anchor point = the model-local point that should sit on the AR anchor, per preset.
+                    // For CUSTOM it is the per-coordinate offset. The base correction is
+                    //   R(180°Y) · S(effScale) · T(-anchorPoint)
+                    // R(180°Y) points the model's GLTF +Z toward geodetic North in ARCore's EUS frame.
+                    // Column-major: diag(-eff, eff, -eff, 1) with translation (eff·ap.x, -eff·ap.y, eff·ap.z, 1).
+                    val customOffset = Vec3(placement.originOffsetXM, placement.originOffsetYM, placement.originOffsetZM)
+                    // Shared split so the custom offset is applied EXACTLY ONCE (anchor point for CUSTOM,
+                    // nudge otherwise) — see ModelBounds.resolveOffsets. Same logic the tests exercise.
+                    val offsets = bounds.resolveOffsets(origin, customOffset, placement.verticalOffsetM)
+                    val ap = offsets.anchorPoint
                     val effScale = ns * placement.scale
                     val cm = FloatArray(16)   // zero-initialised
                     cm[0]  = -effScale;  cm[5]  = effScale;  cm[10] = -effScale;  cm[15] = 1.0f
-                    cm[12] = effScale * bbc[0]
-                    cm[13] = -effScale * bbc[1]
-                    cm[14] = effScale * bbc[2]
+                    cm[12] = effScale * ap.x
+                    cm[13] = -effScale * ap.y
+                    cm[14] = effScale * ap.z
 
-                    cached.correctionMatrix = if (placement.isIdentity) {
+                    // Fine nudge applied on top (T(nudge) · R · cm). For CUSTOM the offset is already in the
+                    // anchor point above, so only the vertical nudge remains; other presets keep the nudge.
+                    val nudgeX = offsets.nudge.x
+                    val nudgeY = offsets.nudge.y
+                    val nudgeZ = offsets.nudge.z
+                    val hasRot = placement.yawDeg != 0f || placement.pitchDeg != 0f || placement.rollDeg != 0f
+                    val hasNudge = nudgeX != 0f || nudgeY != 0f || nudgeZ != 0f
+
+                    cached.correctionMatrix = if (!hasRot && !hasNudge) {
                         cm
                     } else {
-                        // Compose the per-coordinate placement on top of the base correction:
-                        //   final = T(offset) · R(yaw,pitch,roll) · cm
-                        // With identity placement this reduces exactly to `cm`, so models without
-                        // custom placement are unaffected.
+                        // final = T(nudge) · R(yaw,pitch,roll) · cm
                         val rot = FloatArray(16); Matrix.setIdentityM(rot, 0)
                         Matrix.rotateM(rot, 0, placement.yawDeg,   0f, 1f, 0f) // yaw about Up (Y)
                         Matrix.rotateM(rot, 0, placement.pitchDeg, 1f, 0f, 0f) // pitch about East (X)
                         Matrix.rotateM(rot, 0, placement.rollDeg,  0f, 0f, 1f) // roll about Z
                         val rc = FloatArray(16); Matrix.multiplyMM(rc, 0, rot, 0, cm, 0)
                         val trans = FloatArray(16); Matrix.setIdentityM(trans, 0)
-                        Matrix.translateM(
-                            trans, 0,
-                            placement.originOffsetXM,
-                            placement.verticalOffsetM + placement.originOffsetYM,
-                            placement.originOffsetZM
-                        )
+                        Matrix.translateM(trans, 0, nudgeX, nudgeY, nudgeZ)
                         FloatArray(16).also { Matrix.multiplyMM(it, 0, trans, 0, rc, 0) }
                     }
+
+                    DiagnosticsLogger.i(DIAG, "MODEL_PLACEMENT model=$fileName coordId=${pose.key} origin=$origin " +
+                        "anchorPoint=(${f(ap.x)},${f(ap.y)},${f(ap.z)}) " +
+                        "computedOffset=(${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}) " +
+                        "customOffset=(${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}) " +
+                        "nudge=(${f(nudgeX)},${f(nudgeY)},${f(nudgeZ)}) scale=${f(effScale)} " +
+                        "yaw=${f(placement.yawDeg)} pitch=${f(placement.pitchDeg)} roll=${f(placement.rollDeg)} " +
+                        "anchorType=geospatial transformSource=anchor-driven")
                 }
                 Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)" +
                     "  entities=${cached.asset.entities.size}" +
