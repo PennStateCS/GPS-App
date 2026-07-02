@@ -18,6 +18,7 @@ interface SettingsRepository :
     ArDisplaySettingsRepository,
     CoordinateDisplaySettingsRepository,
     MockLocationSettingsRepository,
+    ArVisibilitySettingsRepository,
     GnssReceiverSettingsRepository,
     DeveloperSettingsRepository,
     AppearanceSettingsRepository,

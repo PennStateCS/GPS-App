@@ -161,6 +161,14 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override val mockLocationEnabled: Flow<Boolean> = local.mockLocationEnabled
     override suspend fun setMockLocationEnabled(enabled: Boolean) { local.setMockLocationEnabled(enabled) }
 
+    // AR model visibility (AR-only)
+    override val arVisibilityMode: Flow<String> = local.arVisibilityMode
+    override val arVisibilityCustomized: Flow<Boolean> = local.arVisibilityCustomized
+    override val arVisibleIds: Flow<Set<String>> = local.arVisibleIds
+    override suspend fun setArVisibilityMode(mode: String) { local.setArVisibilityMode(mode) }
+    override suspend fun setArVisibilityCustomized(customized: Boolean) { local.setArVisibilityCustomized(customized) }
+    override suspend fun setArVisibleIds(ids: Set<String>) { local.setArVisibleIds(ids) }
+
     // GNSS receiver settings
     override val gnssReceiverSettings: Flow<GnssReceiverSettings> =
         combine(

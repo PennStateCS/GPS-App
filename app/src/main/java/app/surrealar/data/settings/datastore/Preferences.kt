@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.surrealar.settings.SettingsDefaults
 import kotlinx.coroutines.flow.Flow
@@ -67,6 +68,11 @@ object SettingsKeys {
 
     // Mock location publishing
     val MOCK_LOCATION_ENABLED          = booleanPreferencesKey("mock_location_enabled")
+
+    // AR model visibility (AR-only; separate from coordinate renderEnabled / map selection)
+    val AR_VISIBILITY_MODE             = stringPreferencesKey("ar_visibility_mode")
+    val AR_VISIBILITY_CUSTOMIZED       = booleanPreferencesKey("ar_visibility_customized")
+    val AR_VISIBLE_IDS                 = stringSetPreferencesKey("ar_visible_ids")
 
     // Appearance
     val APP_THEME_MODE                 = stringPreferencesKey("app_theme_mode")
@@ -142,6 +148,11 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     // Mock location
     val mockLocationEnabled: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.MOCK_LOCATION_ENABLED] ?: SettingsDefaults.mockLocationEnabled }
 
+    // AR model visibility (AR-only)
+    val arVisibilityMode: Flow<String> = dataStore.data.map { it[SettingsKeys.AR_VISIBILITY_MODE] ?: "SELECTED" }
+    val arVisibilityCustomized: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.AR_VISIBILITY_CUSTOMIZED] ?: false }
+    val arVisibleIds: Flow<Set<String>> = dataStore.data.map { it[SettingsKeys.AR_VISIBLE_IDS] ?: emptySet() }
+
     // Stakeout guidance (defaults centralized in SettingsDefaults.stakeout). Raw values; the
     // repository sanitizes the numeric ones before exposing the typed model.
     val stakeoutToleranceMRaw:        Flow<Double?>  = dataStore.data.map { it[SettingsKeys.STAKEOUT_TOLERANCE_M] }
@@ -201,6 +212,11 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     // Mock location setter
     suspend fun setMockLocationEnabled(v: Boolean) { dataStore.edit { it[SettingsKeys.MOCK_LOCATION_ENABLED] = v } }
+
+    // AR model visibility setters
+    suspend fun setArVisibilityMode(v: String)       { dataStore.edit { it[SettingsKeys.AR_VISIBILITY_MODE] = v } }
+    suspend fun setArVisibilityCustomized(v: Boolean) { dataStore.edit { it[SettingsKeys.AR_VISIBILITY_CUSTOMIZED] = v } }
+    suspend fun setArVisibleIds(v: Set<String>)      { dataStore.edit { it[SettingsKeys.AR_VISIBLE_IDS] = v } }
 
     // Appearance
     val appThemeModeRaw: Flow<String> = dataStore.data.map { it[SettingsKeys.APP_THEME_MODE] ?: SettingsDefaults.appearance.themeMode.prefKey }

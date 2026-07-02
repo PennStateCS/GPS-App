@@ -360,8 +360,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // preload() is called — even before ARCore anchors start tracking or the
             // Filament TextureView surface has been fully created.
             val currentPoses = modelPoses
-            filamentRenderer?.tickAndApplyLoads(currentPoses)
-            val hasModels = currentPoses.isNotEmpty()
+            val currentVisibleKeys = modelVisibleKeys
+            filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys)
+            // Keep rendering while any model is visible — a visible model whose anchor briefly stopped
+            // tracking has no pose this frame but stays in the scene holding its last transform.
+            val hasModels = currentPoses.isNotEmpty() || currentVisibleKeys.isNotEmpty()
             // Skip GPU rendering when no models are present and none were present last frame.
             // When models are just cleared (choreoPrevHadModels=true, hasModels=false), we
             // fall through and render one transparent frame so Filament clears the TextureView.
@@ -385,6 +388,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var arViewMatrix: FloatArray? = null
     @Volatile private var arProjMatrix: FloatArray? = null
     @Volatile private var modelPoses: List<ArFilamentRenderer.ModelPose> = emptyList()
+    /** Coord ids whose model is intentionally visible this frame (drives Filament scene membership). */
+    @Volatile private var modelVisibleKeys: Set<String> = emptySet()
+
+    // AR model-visibility mirrors — updated by ViewModel collectors, read on the GL thread each frame.
+    @Volatile private var arVisibleIdsMirror: Set<String> = emptySet()
+    @Volatile private var arVisibilityModeMirror: ArVisibilityMode = ArVisibilityMode.SELECTED
+    /** Last visible-model count logged (rendered set change → diagnostics). GL-thread only. */
+    private var lastLoggedVisibleCount: Int = -1
 
     // State flags for error recovery and user experience
     private var hasWarnedLocationOff = false
@@ -519,9 +530,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // The former distance-filter button now opens the model-visibility sheet (range moves inside it).
         binding.btnDistanceFilter.setOnClickListener {
-            DiagnosticsLogger.i(DIAG, "Distance filter cycled by user")
-            viewModel.cycleDistanceFilter()
+            DiagnosticsLogger.i(DIAG, "Model visibility sheet opened by user")
+            ArModelsBottomSheet.show(this)
         }
 
         binding.btnAltitudeMode.setOnClickListener {
@@ -580,13 +592,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
-        // Keep button label in sync with filter state.
+        // Toolbar "Models" label reflects the current visibility mode + shown count.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.distanceFilterLabel.collect { label ->
-                    // Strip the leading emoji prefix and trim to keep the label short.
-                    binding.txtDistanceFilter.text = label.replace("📏 ", "").take(8)
+                viewModel.arModelsSummary.collect { s ->
+                    binding.txtDistanceFilter.text = when (s.mode) {
+                        ArVisibilityMode.SELECTED -> "${s.shown} shown"
+                        ArVisibilityMode.NEARBY   -> "${s.shown} nearby"
+                        ArVisibilityMode.ALL      -> "All ${s.total}"
+                    }
                 }
+            }
+        }
+
+        // Mirror AR visibility mode + effective visible set for the GL-thread render gate.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.arVisibilityMode.collect { arVisibilityModeMirror = it }
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.effectiveVisibleIds.collect { arVisibleIdsMirror = it }
             }
         }
 
@@ -1323,6 +1350,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             "lastMockInjectionAgeMs=${MockInjectionStatus.lastInjectionAgeMs()?.toString() ?: "n/a"} " +
             "sdk=${Build.VERSION.SDK_INT} geospatialEnabled=$geospatialAvailable " +
             "earthTracking=${lastEarthTrackingLogged ?: "n/a"}")
+        viewModel.logArVisibilityState("ar_start")
     }
 
 
@@ -1593,22 +1621,36 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val camGeoPose = earth.cameraGeospatialPose
         val filterM    = distanceFilterM
         val distanceSkipped = mutableSetOf<String>()
+        val mode = arVisibilityModeMirror
+        val visibleIds = arVisibleIdsMirror
+        val visibleKeys = HashSet<String>()
 
         for (entry in geoAnchors) {
-            if (entry.anchor.trackingState != TrackingState.TRACKING) continue
-            entry.anchor.pose.toMatrix(model, 0)
-            System.arraycopy(model, 0, modelScaled, 0, 16)
-
             val coord = entry.coordWithModel.coordinate
+            val entryModelFilePath = entry.modelFilePath
             val distM = haversineM(camGeoPose.latitude, camGeoPose.longitude,
                 coord.latitude, coord.longitude)
+            // Model-visibility decision (shared with the bottom sheet via ArVisibilityLogic): eligibility
+            // (has model + in range unless ALL) AND selection (SELECTED mode). Computed regardless of this
+            // anchor's tracking so a visible-but-not-tracking model stays in the Filament scene (no
+            // flicker). Toggling one item only changes this set — the anchors are untouched, no rebuild.
+            val inRange = ArVisibilityLogic.inRange(mode, distM, filterM)
+            val modelVisible = entryModelFilePath != null &&
+                ArVisibilityLogic.renderable(mode, inRange, coord.id in visibleIds)
+            if (modelVisible) visibleKeys += coord.id
+            if (!inRange) distanceSkipped += coord.id
 
-            if (filterM != null && distM > filterM) {
-                distanceSkipped += coord.id
+            if (entry.anchor.trackingState != TrackingState.TRACKING) continue
+            // Hidden model coords render nothing (no model/pin/label); out-of-range pins are skipped.
+            if (entryModelFilePath != null) {
+                if (!modelVisible) continue
+            } else if (!inRange) {
                 continue
             }
 
-            val entryModelFilePath = entry.modelFilePath
+            entry.anchor.pose.toMatrix(model, 0)
+            System.arraycopy(model, 0, modelScaled, 0, 16)
+
             if (entryModelFilePath != null) {
                 val scaledWorld = model.copyOf()
                 val s = arModelScale
@@ -1650,6 +1692,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     )
                 }
             }
+        }
+
+        // Publish the visible-model set for Filament scene membership; log rendered count on change.
+        modelVisibleKeys = visibleKeys
+        if (visibleKeys.size != lastLoggedVisibleCount) {
+            DiagnosticsLogger.i(DIAG, "AR_MODELS_RENDERED count=${visibleKeys.size} mode=$mode " +
+                "rangeM=${filterM?.let { "%.0f".format(it) } ?: "all"} selectedIds=${visibleIds.size}")
+            lastLoggedVisibleCount = visibleKeys.size
         }
 
         // Log only when the distance-filtered set changes — never every frame.
@@ -1986,15 +2036,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         DiagnosticsLogger.w(DIAG,
                             "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"missing_file\" path=\"$path\"")
                     }
-                    // renderEnabled gates whether a linked model is drawn in AR. When false we simply
-                    // don't preload it, so the coordinate still shows its pin/label but no 3D model.
-                    !coord.renderEnabled -> {
-                        ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
-                            exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "model_visibility_disabled")
-                        DiagnosticsLogger.i(DIAG,
-                            "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"model_visibility_disabled\"")
-                    }
                     else -> {
+                        // Preload every model that exists on disk regardless of visibility — the AR
+                        // model-visibility control decides at render time which are shown, so preloading
+                        // all makes toggling a model on instant (no reload) with no anchor rebuild.
                         ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
                             exists, sizeBytes, ArSessionDiagnostics.ModelStatus.QUEUED)
                         filamentRenderer?.preload(coord.id, path, scope, item.placement)
