@@ -1,5 +1,7 @@
 package com.example.surveyingapp.ui.models
 
+import android.app.ActivityManager
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -9,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Choreographer
 import android.view.MenuItem
 import android.view.PixelCopy
 import android.view.SurfaceView
@@ -21,6 +24,7 @@ import com.example.surveyingapp.data.local.db.AppDatabase
 import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
 import com.example.surveyingapp.databinding.ActivityModelViewerBinding
 import com.example.surveyingapp.R
+import com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
 import com.google.android.filament.*
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +33,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import java.nio.FloatBuffer
+import java.nio.ShortBuffer
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class ModelViewerActivity : AppCompatActivity() {
 
@@ -37,7 +48,7 @@ class ModelViewerActivity : AppCompatActivity() {
     // Nullable until initialization completes on the main thread after async setup
     private var newModelViewer: ModelViewer? = null
     // Make choreographer nullable and guard calls (safer across lifecycle transitions)
-    private var choreographer: android.view.Choreographer? = null
+    private var choreographer: Choreographer? = null
 
     private var thumbnailExists = false
     private var thumbnailCaptureScheduled = false
@@ -121,7 +132,7 @@ class ModelViewerActivity : AppCompatActivity() {
             binding.textError.visibility = View.VISIBLE
             binding.progressLoading.visibility = View.GONE
 
-            android.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle("Device Not Supported")
                 .setMessage("This device does not support the required OpenGL ES 3.0 for 3D rendering. Please try again on a different device.")
                 .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -163,6 +174,7 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
         binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
         binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
+        binding.btnModelDiagnostics.setOnClickListener { clickedModelDiagnosticsButton() }
 
         // Load the model viewer surface view
         if (!setupModelViewer())
@@ -548,7 +560,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     // ── Frame loop ────────────────────────────────────────────────────────────
 
-    private val frameCallback = object : android.view.Choreographer.FrameCallback {
+    private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             // Throttle rendering if frames arrive too quickly; this prevents hammering the
             // main thread on slow devices/emulators and reduces skipped-frame warnings.
@@ -812,6 +824,7 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.visibility = View.VISIBLE
         binding.btnToggleLighting.visibility = View.VISIBLE
         binding.btnResetRotation.visibility = View.VISIBLE
+        binding.btnModelDiagnostics.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
@@ -820,6 +833,7 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.visibility = View.INVISIBLE
         binding.btnToggleLighting.visibility = View.INVISIBLE
         binding.btnResetRotation.visibility = View.INVISIBLE
+        binding.btnModelDiagnostics.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
@@ -855,6 +869,139 @@ class ModelViewerActivity : AppCompatActivity() {
         Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
     }
 
+    private fun clickedModelDiagnosticsButton() {
+        val asset = newModelViewer?.asset
+        if (asset == null) {
+            Toast.makeText(this, R.string.model_diag_not_ready, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val diagnostics = computeModelDiagnostics(asset.boundingBox)
+
+        try {
+            ModelDiagnosticsDialogFragment.newInstance(diagnostics).show(supportFragmentManager, "ModelDiagnosticsDialog")
+        } catch (e: Exception) {
+            Log.e("ModelViewerActivity", "Failed to show diagnostics dialog", e)
+        }
+    }
+
+    private fun computeModelDiagnostics(box: Box): ModelDiagnostics {
+        val center = box.center
+        val halfExtent = box.halfExtent
+
+        // coordinates for glb is:
+        // Y-up
+        // X = width
+        // Y = height
+        // Z = depth
+        val width = 2f * abs(halfExtent[0])
+        val height = 2f * abs(halfExtent[1])
+        val depth = 2f * abs(halfExtent[2])
+
+        val fileSizeBytes = intent.getStringExtra(EXTRA_MODEL_PATH)?.let { File(it).length() } ?: 0L
+
+        // Distance from the model's local origin (0,0,0) to the center
+        val originOffset = sqrt(
+            center[0] * center[0] + center[1] * center[1] + center[2] * center[2]
+        )
+
+        // Axis-aligned bounds of the model in its local space
+        val minX = center[0] - halfExtent[0]; val maxX = center[0] + halfExtent[0]
+        val minY = center[1] - halfExtent[1]; val maxY = center[1] + halfExtent[1]
+        val minZ = center[2] - halfExtent[2]; val maxZ = center[2] + halfExtent[2]
+
+        // Shortest distance from the local origin to the model's surface (0 if inside the box)
+        val originDistanceFromModel = distanceFromOriginToBox(minX, maxX, minY, maxY, minZ, maxZ)
+
+        return ModelDiagnostics(
+            fileSizeBytes = fileSizeBytes,
+            widthMeters = width,
+            depthMeters = depth,
+            heightMeters = height,
+            originOffsetMeters = originOffset,
+            originDescription = describeOriginLocation(minY, maxY, originDistanceFromModel),
+            verticalPlacement = describeVerticalPlacement(minY, height),
+            arReadiness = assessArReadiness(originOffset, minY, width, height, depth)
+        )
+    }
+
+    private fun distanceFromOriginToBox(
+        minX: Float, maxX: Float,
+        minY: Float, maxY: Float,
+        minZ: Float, maxZ: Float
+    ): Float {
+
+        val dx = maxOf(minX, 0f, -maxX)
+        val dy = maxOf(minY, 0f, -maxY)
+        val dz = maxOf(minZ, 0f, -maxZ)
+        return sqrt(dx * dx + dy * dy + dz * dz)
+    }
+
+    private fun describeOriginLocation(minY: Float, maxY: Float, distanceFromModel: Float): String {
+        val span = maxY - minY
+        val category = if (span <= 0f) {
+            "Undetermined"
+        }
+        else {
+            val t = (0f - minY) / span // 0 = base, 1 = top
+
+            // switch case!!!
+            when {
+                t < -0.05f || t > 1.05f -> "Outside the model bounds"
+                t < 0.2f -> "Near base of model"
+                t > 0.8f -> "Near top of model"
+                t in 0.4f..0.6f -> "Near center of model"
+                t < 0.5f -> "Below center of model"
+                else -> "Above center of model"
+            }
+        }
+
+        if (distanceFromModel <= 1e-4f) {
+            return "$category (origin is inside the model)"
+        }
+        else {
+            return String.format(Locale.US, "%s (%.2f m from the model)", category, distanceFromModel)
+        }
+    }
+
+    private fun describeVerticalPlacement(minY: Float, height: Float): String {
+        val tolerance = maxOf(0.02f, height * 0.02f)
+        val distance = abs(minY)
+
+        // switch case
+        when {
+            distance <= tolerance -> return "Model sits on the anchor point"
+            minY > 0f -> return String.format(Locale.US, "Model floats %.2f m above the anchor point", distance)
+            else -> return String.format(Locale.US, "Model sinks %.2f m below the anchor point", distance)
+        }
+    }
+
+    // Might need to change later
+    private fun assessArReadiness(
+        originOffset: Float,
+        minY: Float,
+        width: Float,
+        height: Float,
+        depth: Float
+    ): String {
+        val largestDim = maxOf(width, height, depth)
+        if (largestDim <= 0f) return "Unknown"
+
+        val tolerance = maxOf(0.02f, height * 0.02f)
+        val sitsOnAnchor = abs(minY) <= tolerance
+        val offsetRatio = originOffset / largestDim
+
+        // AR models are typically between a few centimeters and a few meters across
+        // Context on what AR models are being used is unknown
+        val plausibleScale = largestDim in 0.05f..10f
+
+        when {
+            sitsOnAnchor && offsetRatio < 0.1f && plausibleScale -> return "Good"
+            offsetRatio < 0.35f && plausibleScale -> return "Fair"
+            else -> return "Needs adjustment"
+        }
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> { finish(); true }
@@ -865,7 +1012,7 @@ class ModelViewerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing")
-        choreographer = android.view.Choreographer.getInstance()
+        choreographer = Choreographer.getInstance()
         choreographer?.postFrameCallback(frameCallback)
     }
 
