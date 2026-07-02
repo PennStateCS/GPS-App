@@ -12,19 +12,18 @@ class EbpParser : SentenceParser<EBP> {
     override fun parse(talker: String, fields: List<String>): EBP? {
         if (fields.isEmpty()) return null
 
-        val timeRaw = fields.getOrNull(1).orEmpty().ifBlank { null }
-
+        // Real RS4 format: $..EBP,lat,N,lon,W,alt,M — no leading time field.
         val lat = ddmmToDecimal(
-            fields.getOrNull(2).orEmpty().ifBlank { null },
-            fields.getOrNull(3).orEmpty().ifBlank { null }?.uppercase()
+            fields.getOrNull(1).orEmpty().ifBlank { null },
+            fields.getOrNull(2).orEmpty().ifBlank { null }?.uppercase()
         )
         val lon = dddmmToDecimal(
-            fields.getOrNull(4).orEmpty().ifBlank { null },
-            fields.getOrNull(5).orEmpty().ifBlank { null }?.uppercase()
+            fields.getOrNull(3).orEmpty().ifBlank { null },
+            fields.getOrNull(4).orEmpty().ifBlank { null }?.uppercase()
         )
-        val altM = fields.getOrNull(6)?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+        val altM = fields.getOrNull(5)?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 
-        return EBP(talker = talker, timeRaw = timeRaw, baseLat = lat, baseLon = lon, baseAltM = altM)
+        return EBP(talker = talker, baseLat = lat, baseLon = lon, baseAltM = altM)
     }
 
     private fun ddmmToDecimal(ddmm: String?, hemisphere: String?): Double? {

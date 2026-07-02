@@ -36,7 +36,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import app.surrealar.R
 import app.surrealar.databinding.FragmentOpenInArBinding
+import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
+import app.surrealar.gnss.mock.MockInjectionStatus
 import app.surrealar.gnss.model.Fix
 import com.google.ar.core.*
 import com.google.ar.core.exceptions.*
@@ -65,6 +67,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
 
+    /** Read-only access to the selected GNSS source and mock-location setting for AR diagnostics. */
+    @Inject
+    lateinit var settingsRepo: SettingsRepository
+
     private val viewModel: OpenInARViewModel by viewModels()
 
     // Current GNSS fix from switchboard (surveying-grade GPS)
@@ -72,6 +78,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var currentGnssFix: Fix? = null
     /** Last logged GNSS provider — used to suppress repeated identical fix logs. */
     private var lastLoggedProvider: app.surrealar.gnss.model.Provider? = null
+
+    // Source/mock context for AR diagnostics (collected on the main thread; read anywhere).
+    @Volatile private var selectedLocationSource: String? = null
+    @Volatile private var mockLocationEnabled: Boolean? = null
+    /** Guards the one-per-AR-session diagnostic header. Reset in onCreateView. */
+    private var loggedArSessionHeader = false
 
     // ARCore session management
     private var session: Session? = null
@@ -279,6 +291,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var lastEarthTrackingLogged: String? = null
     private var lastCameraTrackingLogged: String? = null
 
+    /** How the current anchors were placed ("localized"/"timeout"); null until placed. GL-thread only. */
+    @Volatile private var lastPlacedVia: String? = null
+    /** Last AR-view-quality level surfaced to the user — logs quality transitions. GL-thread only. */
+    private var lastLoggedQualityLevel: ArViewQuality.Level? = null
+
 
     companion object {
         private const val TAG = "OpenInARFragment"
@@ -343,8 +360,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // preload() is called — even before ARCore anchors start tracking or the
             // Filament TextureView surface has been fully created.
             val currentPoses = modelPoses
-            filamentRenderer?.tickAndApplyLoads(currentPoses)
-            val hasModels = currentPoses.isNotEmpty()
+            val currentVisibleKeys = modelVisibleKeys
+            filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys)
+            // Keep rendering while any model is visible — a visible model whose anchor briefly stopped
+            // tracking has no pose this frame but stays in the scene holding its last transform.
+            val hasModels = currentPoses.isNotEmpty() || currentVisibleKeys.isNotEmpty()
             // Skip GPU rendering when no models are present and none were present last frame.
             // When models are just cleared (choreoPrevHadModels=true, hasModels=false), we
             // fall through and render one transparent frame so Filament clears the TextureView.
@@ -368,6 +388,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var arViewMatrix: FloatArray? = null
     @Volatile private var arProjMatrix: FloatArray? = null
     @Volatile private var modelPoses: List<ArFilamentRenderer.ModelPose> = emptyList()
+    /** Coord ids whose model is intentionally visible this frame (drives Filament scene membership). */
+    @Volatile private var modelVisibleKeys: Set<String> = emptySet()
+
+    // AR model-visibility mirrors — updated by ViewModel collectors, read on the GL thread each frame.
+    @Volatile private var arVisibleIdsMirror: Set<String> = emptySet()
+    @Volatile private var arVisibilityModeMirror: ArVisibilityMode = ArVisibilityMode.SELECTED
+    /** Last visible-model count logged (rendered set change → diagnostics). GL-thread only. */
+    private var lastLoggedVisibleCount: Int = -1
 
     // State flags for error recovery and user experience
     private var hasWarnedLocationOff = false
@@ -410,6 +438,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         ArSessionDiagnostics.startSession()
         lastEarthTrackingLogged = null
         lastCameraTrackingLogged = null
+        loggedArSessionHeader = false
+        lastPlacedVia = null
+        lastLoggedQualityLevel = null
         DiagnosticsLogger.i(DIAG, "OpenInARFragment created — AR screen opened")
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
@@ -499,9 +530,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // The former distance-filter button now opens the model-visibility sheet (range moves inside it).
         binding.btnDistanceFilter.setOnClickListener {
-            DiagnosticsLogger.i(DIAG, "Distance filter cycled by user")
-            viewModel.cycleDistanceFilter()
+            DiagnosticsLogger.i(DIAG, "Model visibility sheet opened by user")
+            ArModelsBottomSheet.show(this)
         }
 
         binding.btnAltitudeMode.setOnClickListener {
@@ -527,6 +559,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 fixSwitchboard.fixes.collect { fix ->
                     currentGnssFix = fix
+                    logArSessionHeaderOnce()
                     updateArGnssChip(fix)
                     // Only log when the provider changes — fixes arrive at up to 10Hz
                     // and logging every one would flood logcat.
@@ -538,6 +571,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // Track the selected GNSS source (INTERNAL/EXTERNAL) for AR diagnostics.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepo.locationSource.collect { selectedLocationSource = it.name }
+            }
+        }
+
+        // Track the mock-location setting for AR diagnostics (does ARCore/Android see a mocked provider?).
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepo.mockLocationEnabled.collect { mockLocationEnabled = it }
+            }
+        }
+
         // Keep local volatile copy of distance filter in sync for the GL thread.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -545,13 +592,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
-        // Keep button label in sync with filter state.
+        // Toolbar "Models" label reflects the current visibility mode + shown count.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.distanceFilterLabel.collect { label ->
-                    // Strip the leading emoji prefix and trim to keep the label short.
-                    binding.txtDistanceFilter.text = label.replace("📏 ", "").take(8)
+                viewModel.arModelsSummary.collect { s ->
+                    binding.txtDistanceFilter.text = when (s.mode) {
+                        ArVisibilityMode.SELECTED -> "${s.shown} shown"
+                        ArVisibilityMode.NEARBY   -> "${s.shown} nearby"
+                        ArVisibilityMode.ALL      -> "All ${s.total}"
+                    }
                 }
+            }
+        }
+
+        // Mirror AR visibility mode + effective visible set for the GL-thread render gate.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.arVisibilityMode.collect { arVisibilityModeMirror = it }
+            }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.effectiveVisibleIds.collect { arVisibleIdsMirror = it }
             }
         }
 
@@ -846,6 +908,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         earthAccuracyAtCreationM = null
         awaitingLocalization = false
         loggedLocalizationWait = false
+        lastPlacedVia = null
         // Clean up AR session
         try { session?.close() } catch (_: Exception) {}
         session = null
@@ -1090,6 +1153,62 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         earthAccuracyAtCreationM = arHAcc.takeIf { it.isFinite() }
         val placedVia = if (gate == GeoAnchorGate.Decision.PLACE_TIMEOUT) "timeout" else "localized"
 
+        // ── Diagnostics: the exact placement INPUTS (fix + Earth pose + mock/source state) ──────────
+        // Lets a future export distinguish a good geospatial estimate from a low-confidence timeout,
+        // and see which location source (incl. mock injection) was feeding ARCore. Missing accuracy is
+        // logged as "unknown" — never 0.0. Runs once per (re)anchor, not per frame.
+        val anchorMode = if (useTerrainAltitude) "TERRAIN" else "WGS84"
+        val replacedPrevious = geoAnchors.isNotEmpty()
+        val fixAgeMs = System.currentTimeMillis() - gnssFix.timeUtc.toEpochMilli()
+        val earthVAcc = camAccPose?.verticalAccuracy?.takeIf { it.isFinite() }
+        ArSessionDiagnostics.apply {
+            arSelectedSource = selectedLocationSource
+            arCurrentFixProvider = gnssFix.provider.name
+            arMockEnabledDuringAr = mockLocationEnabled
+            arMockInjectionActiveDuringAr = MockInjectionStatus.providerActive
+            arMockAppApproved = isMockLocationAppApproved()
+            arLastMockFixAgeAtAnchorMs = MockInjectionStatus.lastSourceFixAgeMs()
+            arEarthTrackingAtAnchor = earth.trackingState.name
+            arHAccAtAnchorM = arHAcc.takeIf { it.isFinite() }
+            arVAccAtAnchorM = earthVAcc
+            arYawAccAtAnchorDeg = arYawAcc.takeIf { it.isFinite() }
+            if (placedVia == "timeout") anchorsViaTimeout += 1
+            modelTransformSource = "anchor-driven"
+        }
+        DiagnosticsLogger.i(DIAG, "ANCHOR_PLACEMENT_INPUT anchorMode=$anchorMode placementReason=$placedVia " +
+            "replacedPrevious=$replacedPrevious items=${geoItems.size} " +
+            "selectedSource=${selectedLocationSource ?: "unknown"} " +
+            "fixProvider=${gnssFix.provider} fixAgeMs=$fixAgeMs " +
+            "fixLat=${"%.7f".format(gnssFix.latDeg)} fixLon=${"%.7f".format(gnssFix.lonDeg)} " +
+            "fixAltM=${gnssFix.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "fixHAccM=${gnssFix.hAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "fixVAccM=${gnssFix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${gnssFix.rtkStatus} " +
+            "gnssGateAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
+            "mockEnabled=${mockLocationEnabled?.toString() ?: "unknown"} " +
+            "mockInjectionActive=${MockInjectionStatus.providerActive} " +
+            "lastMockFixProvider=${MockInjectionStatus.lastSourceFixProvider ?: "n/a"} " +
+            "lastMockFixAgeMs=${MockInjectionStatus.lastSourceFixAgeMs()?.toString() ?: "n/a"} " +
+            "earthLat=${camAccPose?.latitude?.let { "%.7f".format(it) } ?: "unknown"} " +
+            "earthLon=${camAccPose?.longitude?.let { "%.7f".format(it) } ?: "unknown"} " +
+            "earthAltM=${camAccPose?.altitude?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "earthHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "earthVAccM=${earthVAcc?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "earthYawAccDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "earthTracking=${earth.trackingState} cameraTracking=${lastCameraTrackingLogged ?: "n/a"} " +
+            "transformSource=anchor-driven")
+        // Per-coordinate placement inputs: distance/bearing from the CURRENT fix to each target
+        // (for display/diagnosis only — these never feed the model transform).
+        for (item in geoItems) {
+            val c = item.coordWithModel.coordinate
+            val dM  = haversineM(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
+            val brg = bearingDeg(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
+            DiagnosticsLogger.i(DIAG, "  anchor input coordId=${c.id} name=\"${c.name}\" " +
+                "lat=${"%.7f".format(c.latitude)} lon=${"%.7f".format(c.longitude)} " +
+                "altM=${if (c.altitude.isFinite()) "%.2f".format(c.altitude) else "unknown"} " +
+                "distFromFixM=${"%.1f".format(dM)} bearingDeg=${"%.0f".format(brg)} " +
+                "hasModel=${item.modelFilePath != null}")
+        }
+
         // Clean up existing anchors
         for (entry in geoAnchors) try {
             entry.anchor.detach()
@@ -1138,9 +1257,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
             DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=TERRAIN " +
+                "anchorType=TERRAIN transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
                 "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
-                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"} " +
-                "arHAccM=${"%.1f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} — will appear as terrain resolves")
+                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} — will appear as terrain resolves")
             recordAnchorOutcome(items.size, geoAnchors.size, failed)
         } else {
             // Stored-altitude mode: create WGS84 anchors at each coordinate's recorded altitude.
@@ -1160,12 +1281,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
             }
             DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=STORED " +
+                "anchorType=WGS84 transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
                 "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
-                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "n/a"} " +
-                "arHAccM=${"%.1f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)}")
+                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"}")
             recordAnchorOutcome(items.size, geoAnchors.size, failed)
         }
 
+        lastPlacedVia = placedVia
         geoAnchorsCreated = true
     }
 
@@ -1174,6 +1298,59 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         ArSessionDiagnostics.anchorsAttempted += attempted
         ArSessionDiagnostics.anchorsCreated = maxOf(ArSessionDiagnostics.anchorsCreated, created)
         ArSessionDiagnostics.anchorFailures += failed
+    }
+
+    /**
+     * Whether this app is the OS-selected mock-location app (AppOps `OPSTR_MOCK_LOCATION` == ALLOWED).
+     * Returns null when the value cannot be determined. This is the app-level signal for "could ARCore
+     * be reading a mocked Android location" — distinct from the in-app mock-enabled setting.
+     */
+    private fun isMockLocationAppApproved(): Boolean? = try {
+        val ctx = requireContext()
+        val aom = ctx.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            aom.unsafeCheckOpNoThrow(android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
+                android.os.Process.myUid(), ctx.packageName)
+        else @Suppress("DEPRECATION")
+            aom.checkOpNoThrow(android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
+                android.os.Process.myUid(), ctx.packageName)
+        mode == android.app.AppOpsManager.MODE_ALLOWED
+    } catch (_: Exception) { null }
+
+    /**
+     * Logs one AR session header (source + fix + mock + geospatial state) the first time a fix arrives
+     * after the AR screen opens. Answers, from a future export: what location source was active, was
+     * mock location enabled/approved/injecting, and was ARCore geospatial available. Missing values are
+     * logged as "unknown" — never 0.0. Also seeds the AR/Mock export summary. Main thread only.
+     */
+    private fun logArSessionHeaderOnce() {
+        if (loggedArSessionHeader) return
+        loggedArSessionHeader = true
+        val fix = currentGnssFix
+        val fixAgeMs = fix?.let { System.currentTimeMillis() - it.timeUtc.toEpochMilli() }
+        val mockApproved = isMockLocationAppApproved()
+        ArSessionDiagnostics.arSelectedSource = selectedLocationSource
+        ArSessionDiagnostics.arCurrentFixProvider = fix?.provider?.name
+        ArSessionDiagnostics.arMockEnabledDuringAr = mockLocationEnabled
+        ArSessionDiagnostics.arMockInjectionActiveDuringAr = MockInjectionStatus.providerActive
+        ArSessionDiagnostics.arMockAppApproved = mockApproved
+        DiagnosticsLogger.i(DIAG, "AR_SESSION_HEADER " +
+            "selectedSource=${selectedLocationSource ?: "unknown"} " +
+            "activeFixProvider=${fix?.provider?.name ?: "none"} " +
+            "fixAgeMs=${fixAgeMs?.toString() ?: "n/a"} " +
+            "fixLat=${fix?.let { "%.7f".format(it.latDeg) } ?: "n/a"} " +
+            "fixLon=${fix?.let { "%.7f".format(it.lonDeg) } ?: "n/a"} " +
+            "fixAltM=${fix?.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "fixHAccM=${fix?.hAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "fixVAccM=${fix?.vAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
+            "rtk=${fix?.rtkStatus?.name ?: "n/a"} " +
+            "mockLocationEnabled=${mockLocationEnabled?.toString() ?: "unknown"} " +
+            "mockInjectionActive=${MockInjectionStatus.providerActive} " +
+            "mockAppApproved=${mockApproved?.toString() ?: "unknown"} " +
+            "lastMockInjectionAgeMs=${MockInjectionStatus.lastInjectionAgeMs()?.toString() ?: "n/a"} " +
+            "sdk=${Build.VERSION.SDK_INT} geospatialEnabled=$geospatialAvailable " +
+            "earthTracking=${lastEarthTrackingLogged ?: "n/a"}")
+        viewModel.logArVisibilityState("ar_start")
     }
 
 
@@ -1378,7 +1555,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     val cooldownElapsed = System.currentTimeMillis() - lastReanchorTimeMs >= REANCHOR_COOLDOWN_MS
                     if (isRtkUpgrade && cooldownElapsed) {
                         ArSessionDiagnostics.reanchorAttempts++
-                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) — RTK upgrade $lastAnchorRtkStatus → ${currentFix.rtkStatus}")
+                        ArSessionDiagnostics.anchorsRebuiltAfterInitial++
+                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) reason=rtk_upgrade " +
+                            "$lastAnchorRtkStatus → ${currentFix.rtkStatus} — clearing ${geoAnchors.size} anchors")
                         for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
                         geoAnchors.clear()
                         geoAnchorsCreated = false
@@ -1401,8 +1580,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     if (curAcc != null &&
                         GeoAnchorGate.shouldReanchorOnImprovement(committedAcc, curAcc, cooldownElapsed)) {
                         ArSessionDiagnostics.reanchorAttempts++
-                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) — AR localization improved " +
-                            "${"%.1f".format(committedAcc)} → ${"%.1f".format(curAcc)} m")
+                        ArSessionDiagnostics.anchorsRebuiltAfterInitial++
+                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) reason=ar_localization_improved " +
+                            "${"%.1f".format(committedAcc)} → ${"%.1f".format(curAcc)} m — clearing ${geoAnchors.size} anchors")
                         for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
                         geoAnchors.clear()
                         geoAnchorsCreated = false
@@ -1441,22 +1621,36 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val camGeoPose = earth.cameraGeospatialPose
         val filterM    = distanceFilterM
         val distanceSkipped = mutableSetOf<String>()
+        val mode = arVisibilityModeMirror
+        val visibleIds = arVisibleIdsMirror
+        val visibleKeys = HashSet<String>()
 
         for (entry in geoAnchors) {
-            if (entry.anchor.trackingState != TrackingState.TRACKING) continue
-            entry.anchor.pose.toMatrix(model, 0)
-            System.arraycopy(model, 0, modelScaled, 0, 16)
-
             val coord = entry.coordWithModel.coordinate
+            val entryModelFilePath = entry.modelFilePath
             val distM = haversineM(camGeoPose.latitude, camGeoPose.longitude,
                 coord.latitude, coord.longitude)
+            // Model-visibility decision (shared with the bottom sheet via ArVisibilityLogic): eligibility
+            // (has model + in range unless ALL) AND selection (SELECTED mode). Computed regardless of this
+            // anchor's tracking so a visible-but-not-tracking model stays in the Filament scene (no
+            // flicker). Toggling one item only changes this set — the anchors are untouched, no rebuild.
+            val inRange = ArVisibilityLogic.inRange(mode, distM, filterM)
+            val modelVisible = entryModelFilePath != null &&
+                ArVisibilityLogic.renderable(mode, inRange, coord.id in visibleIds)
+            if (modelVisible) visibleKeys += coord.id
+            if (!inRange) distanceSkipped += coord.id
 
-            if (filterM != null && distM > filterM) {
-                distanceSkipped += coord.id
+            if (entry.anchor.trackingState != TrackingState.TRACKING) continue
+            // Hidden model coords render nothing (no model/pin/label); out-of-range pins are skipped.
+            if (entryModelFilePath != null) {
+                if (!modelVisible) continue
+            } else if (!inRange) {
                 continue
             }
 
-            val entryModelFilePath = entry.modelFilePath
+            entry.anchor.pose.toMatrix(model, 0)
+            System.arraycopy(model, 0, modelScaled, 0, 16)
+
             if (entryModelFilePath != null) {
                 val scaledWorld = model.copyOf()
                 val s = arModelScale
@@ -1498,6 +1692,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     )
                 }
             }
+        }
+
+        // Publish the visible-model set for Filament scene membership; log rendered count on change.
+        modelVisibleKeys = visibleKeys
+        if (visibleKeys.size != lastLoggedVisibleCount) {
+            DiagnosticsLogger.i(DIAG, "AR_MODELS_RENDERED count=${visibleKeys.size} mode=$mode " +
+                "rangeM=${filterM?.let { "%.0f".format(it) } ?: "all"} selectedIds=${visibleIds.size}")
+            lastLoggedVisibleCount = visibleKeys.size
         }
 
         // Log only when the distance-filtered set changes — never every frame.
@@ -1555,11 +1757,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         planeCount: Int,
         pointCount: Int
     ) {
-        // Extract all ARCore earth values NOW on the GL thread before posting.
+        // Extract all ARCore earth values NOW on the GL thread before posting (one pose read, reused
+        // for both the debug snapshot and the AR-view-quality indicator).
+        val camGeo = runCatching {
+            if (earth != null && earth.trackingState == TrackingState.TRACKING) earth.cameraGeospatialPose else null
+        }.getOrNull()
         val snapshot: EarthDebugSnapshot? = if (earth != null) {
-            val camGeo = runCatching {
-                if (earth.trackingState == TrackingState.TRACKING) earth.cameraGeospatialPose else null
-            }.getOrNull()
             EarthDebugSnapshot(
                 earthStateName = earth.earthState?.name ?: "null",
                 camLat         = camGeo?.latitude,
@@ -1568,6 +1771,33 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 camHeading     = camGeo?.heading
             )
         } else null
+
+        // ── AR view quality (ARCore geospatial confidence — NOT the GNSS fix) ────────────────────────
+        val qHAcc = camGeo?.horizontalAccuracy
+        val qVAcc = camGeo?.verticalAccuracy
+        val qYaw  = camGeo?.orientationYawAccuracy
+        val placement = when {
+            !geoAnchorsCreated          -> ArViewQuality.Placement.WAITING
+            geoAnchors.isEmpty()        -> ArViewQuality.Placement.FAILED
+            lastPlacedVia == "timeout"  -> ArViewQuality.Placement.PLACED_BY_TIMEOUT
+            else                        -> ArViewQuality.Placement.PLACED
+        }
+        val quality = ArViewQuality.evaluate(
+            earthTracking  = earth?.trackingState == TrackingState.TRACKING,
+            cameraTracking = lastCameraTrackingLogged == "TRACKING",
+            hAccM = qHAcc, vAccM = qVAcc, yawDeg = qYaw,
+            placement = placement,
+        )
+        if (quality.level != lastLoggedQualityLevel) {
+            DiagnosticsLogger.i(DIAG, "AR_QUALITY ${lastLoggedQualityLevel ?: "n/a"} → ${quality.level} " +
+                "hAccM=${qHAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "vAccM=${qVAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "yawDeg=${qYaw?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
+                "earthTracking=${earth?.trackingState ?: "null"} cameraTracking=${lastCameraTrackingLogged ?: "n/a"} " +
+                "placement=$placement modelsRendered=${quality.modelsRenderable} " +
+                "placedByTimeout=${placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT}")
+            lastLoggedQualityLevel = quality.level
+        }
 
         // Extract per-anchor states on the GL thread (anchor.trackingState is an ARCore call).
         val camLat = snapshot?.camLat
@@ -1596,11 +1826,35 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Always update the top status bar.
             _binding?.textArStatus?.text = topStatus
 
-            // Prominent centred banner: shown while model-linked coordinates are still being held
-            // (anchors not yet committed) so the delay reads as "AR is locating", not as the models
-            // rendering on top of the user. Hidden the moment anchors are placed.
-            val holdingModels = !geoAnchorsCreated && geoItems.any { it.modelFilePath != null }
-            _binding?.localizingBanner?.visibility = if (holdingModels) View.VISIBLE else View.GONE
+            // AR view quality surfacing (only when there are model-linked coordinates to place):
+            //  - before placement → prominent centred banner with live AR accuracy + guidance
+            //  - after placement  → compact persistent "AR quality" chip
+            // This is the ARCore geospatial (AR) confidence, distinct from the GNSS fix chip.
+            val haveModels = geoItems.any { it.modelFilePath != null }
+            when {
+                !haveModels -> {
+                    _binding?.localizingBanner?.visibility = View.GONE
+                    _binding?.chipArQuality?.visibility = View.GONE
+                }
+                quality.modelsRenderable -> {
+                    _binding?.localizingBanner?.visibility = View.GONE
+                    _binding?.chipArQuality?.let { chip ->
+                        val timeoutTag = if (placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT) " · timeout" else ""
+                        chip.text = "${quality.statusLabel} · ${quality.accuracyText}$timeoutTag"
+                        chip.visibility = View.VISIBLE
+                    }
+                }
+                else -> {
+                    _binding?.chipArQuality?.visibility = View.GONE
+                    _binding?.txtLocalizingTitle?.text = quality.statusLabel
+                    _binding?.txtLocalizingHint?.text = buildString {
+                        append("AR accuracy: ${quality.accuracyText}")
+                        quality.headingText?.let { append(" · Heading: $it") }
+                        quality.helperText?.let { append("\n$it") }
+                    }
+                    _binding?.localizingBanner?.visibility = View.VISIBLE
+                }
+            }
 
             // Only build the debug string (and pay its allocation cost) when the panel is visible.
             if (debugOverlayVisible) {
@@ -1746,6 +2000,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (newItems == geoItems) return   // nothing changed — avoid spurious anchor rebuild
 
         geoItems = newItems
+        // Invalidate anchors so they rebuild for the new coordinate set. Logged so the export shows
+        // every reason anchors are cleared/rebuilt (here: the coordinate list changed, not user motion).
+        if (geoAnchorsCreated) DiagnosticsLogger.i(DIAG,
+            "anchors invalidated reason=coordinates_changed newCount=${newItems.size} prevAnchors=${geoAnchors.size}")
         geoAnchorsCreated = false
 
         // Kick off Filament GLB loading for every model-linked coordinate. preload() must run on the
@@ -1778,15 +2036,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         DiagnosticsLogger.w(DIAG,
                             "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"missing_file\" path=\"$path\"")
                     }
-                    // renderEnabled gates whether a linked model is drawn in AR. When false we simply
-                    // don't preload it, so the coordinate still shows its pin/label but no 3D model.
-                    !coord.renderEnabled -> {
-                        ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
-                            exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "model_visibility_disabled")
-                        DiagnosticsLogger.i(DIAG,
-                            "scene skip coordinateId=${coord.id} modelId=${item.modelId} reason=\"model_visibility_disabled\"")
-                    }
                     else -> {
+                        // Preload every model that exists on disk regardless of visibility — the AR
+                        // model-visibility control decides at render time which are shown, so preloading
+                        // all makes toggling a model on instant (no reload) with no anchor rebuild.
                         ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
                             exists, sizeBytes, ArSessionDiagnostics.ModelStatus.QUEUED)
                         filamentRenderer?.preload(coord.id, path, scope, item.placement)

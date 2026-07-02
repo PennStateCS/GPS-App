@@ -50,6 +50,9 @@ class GnssSourceCoordinatorMismatchTest {
         override val arDisplaySettings: Flow<ArDisplaySettings> = emptyFlow()
         override val coordinateDisplaySettings: Flow<CoordinateDisplaySettings> = emptyFlow()
         override val mockLocationEnabled: Flow<Boolean> = emptyFlow()
+        override val arVisibilityMode: Flow<String> = emptyFlow()
+        override val arVisibilityCustomized: Flow<Boolean> = emptyFlow()
+        override val arVisibleIds: Flow<Set<String>> = emptyFlow()
         override val gnssReceiverSettings: Flow<GnssReceiverSettings> = emptyFlow()
         override val developerSettings: Flow<DeveloperSettings> = emptyFlow()
         override val appearanceSettings: Flow<AppearanceSettings> = emptyFlow()
@@ -61,6 +64,9 @@ class GnssSourceCoordinatorMismatchTest {
         override suspend fun setLocationSource(v: LocationSourceType) {}
         override suspend fun setExternalTcp(host: String, port: Int, name: String) {}
         override suspend fun setMockLocationEnabled(enabled: Boolean) {}
+        override suspend fun setArVisibilityMode(mode: String) {}
+        override suspend fun setArVisibilityCustomized(customized: Boolean) {}
+        override suspend fun setArVisibleIds(ids: Set<String>) {}
         override suspend fun setExternalConnType(v: ExternalConnectionType) {}
         override suspend fun clearExternalTcp() {}
         override suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings) {}

@@ -100,6 +100,11 @@ object SettingsModule {
 
     @Provides
     @Singleton
+    fun provideArVisibilitySettingsRepository(): app.surrealar.domain.repository.ArVisibilitySettingsRepository =
+        SurRealApplication.settingsRepo
+
+    @Provides
+    @Singleton
     fun provideGnssReceiverSettingsRepository(): GnssReceiverSettingsRepository = SurRealApplication.settingsRepo
 
     @Provides
