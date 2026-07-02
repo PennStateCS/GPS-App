@@ -20,7 +20,13 @@ data class ModelPlacement(
     val verticalOffsetM: Float = 0f,
     val originOffsetXM: Float = 0f,
     val originOffsetYM: Float = 0f,
-    val originOffsetZM: Float = 0f
+    val originOffsetZM: Float = 0f,
+    /**
+     * Which model-local point aligns to the AR anchor. Defaults to [ModelPlacementOrigin.CENTER] —
+     * the renderer's historical behavior (bounding-box center at the anchor) — so existing models do
+     * not shift. Large structure GLBs whose geometry is far from the origin should use BOTTOM_CENTER.
+     */
+    val placementOrigin: ModelPlacementOrigin = ModelPlacementOrigin.CENTER,
 ) {
     /** True when this placement changes nothing — lets the renderer skip the extra matrix math. */
     val isIdentity: Boolean
@@ -42,7 +48,8 @@ data class ModelPlacement(
                 verticalOffsetM = (coordinate.modelVerticalOffsetM ?: 0.0).toFloat(),
                 originOffsetXM  = (coordinate.modelOriginOffsetXM ?: model.originOffsetXM).toFloat(),
                 originOffsetYM  = (coordinate.modelOriginOffsetYM ?: model.originOffsetYM).toFloat(),
-                originOffsetZM  = (coordinate.modelOriginOffsetZM ?: model.originOffsetZM).toFloat()
+                originOffsetZM  = (coordinate.modelOriginOffsetZM ?: model.originOffsetZM).toFloat(),
+                placementOrigin = ModelPlacementOrigin.from(coordinate.modelPlacementOrigin),
             )
         }
     }

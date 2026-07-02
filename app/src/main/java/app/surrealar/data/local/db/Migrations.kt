@@ -134,6 +134,17 @@ val MIGRATION_10_11 = object : Migration(10, 11) {
 }
 
 /**
+ * Migration 11 -> 12: coordinates gain `modelPlacementOrigin` — which model-local point aligns to the
+ * AR anchor (ORIGIN/CENTER/BOTTOM_CENTER/CUSTOM). Nullable; NULL means the renderer's historical
+ * CENTER behavior, so existing coordinates render exactly as before.
+ */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN modelPlacementOrigin TEXT")
+    }
+}
+
+/**
  * Migration 6 -> 7: no-op.
  *
  * The exported schemas (schemas/.../6.json and 7.json) are byte-identical for both the

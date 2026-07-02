@@ -143,6 +143,42 @@
                     android:paddingBottom="8dp"
                     android:visibility="gone">
 
+                    <!-- Placement origin: which model-local point aligns to the coordinate anchor. -->
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Placement origin"
+                        android:textSize="12sp"
+                        android:textColor="?android:attr/textColorSecondary" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="4dp">
+                        <Spinner
+                            android:id="@+id/spinner_model_placement_origin"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1" />
+                        <Button
+                            android:id="@+id/btn_snap_bottom_center"
+                            style="?attr/borderlessButtonStyle"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Snap bottom"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:text="For large structures, use Bottom center so the model sits on the coordinate instead of being centered around it."
+                        android:textSize="12sp"
+                        android:textColor="?android:attr/textColorSecondary" />
+
                     <!-- Scale · Vertical offset -->
                     <LinearLayout style="@style/PlacementFieldRow">
                         <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="Scale ×">
