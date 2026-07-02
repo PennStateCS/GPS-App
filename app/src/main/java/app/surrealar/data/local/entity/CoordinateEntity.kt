@@ -97,5 +97,9 @@ data class CoordinateEntity(
     val modelVerticalOffsetM: Double? = null,
     val modelOriginOffsetXM: Double? = null,
     val modelOriginOffsetYM: Double? = null,
-    val modelOriginOffsetZM: Double? = null
+    val modelOriginOffsetZM: Double? = null,
+
+    // ─── v12: which model-local point aligns to the anchor (ORIGIN/CENTER/BOTTOM_CENTER/CUSTOM).
+    // Null → the renderer's historical CENTER behavior, so existing coordinates do not shift. ───
+    val modelPlacementOrigin: String? = null
 )
