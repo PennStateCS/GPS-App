@@ -98,9 +98,10 @@ class NmeaFuser(
             is GSA -> handleGsa(sentence)
             is GSV -> handleGsv(sentence)
             is ZDA -> { zdaCount++; handleZda(sentence) }
-            is GST -> lastGst = sentence  // store accuracy ellipse; used in next fix emission
+            is GST -> { gstCount++; lastGst = sentence }  // accuracy ellipse; used in next fix emission
             is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
-            is ETC -> { etcCount++; lastEtc = sentence }  // Emlid tilt — diagnostics only
+            is ETC -> { etcCount++; lastEtc = sentence   // Emlid orientation/IMU — diagnostics only
+                        if (sentence.hasOrientationData) etcOrientationSeen = true }
             else   -> Unit // unknown sentence type — fuser is tolerant by design
         }
     }
@@ -108,6 +109,7 @@ class NmeaFuser(
     // ── RS4 custom-sentence diagnostics (do not affect fix generation) ──────────
     private var ebpCount = 0
     private var etcCount = 0
+    private var etcOrientationSeen = false
     private var lastEtc: ETC? = null
 
     /** Snapshot of Emlid custom-sentence activity, for diagnostics. */
@@ -117,31 +119,65 @@ class NmeaFuser(
         val ebpCount: Int,
         val etcCount: Int,
         val latestEtc: ETC?,
+        /** True if any ETC carried orientation/IMU-style data (undocumented — never used for AR). */
+        val imuOrientationSeen: Boolean,
     )
 
     /** Read-only view of EBP/ETC activity seen by this fuser (diagnostics). */
     val nmeaCustomStats: NmeaCustomStats
-        get() = NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc)
+        get() = NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc, etcOrientationSeen)
+
+    /** Where the last fix's horizontal accuracy came from. */
+    enum class AccuracySource { RECEIVER_GST, DOP_ESTIMATE, UNKNOWN }
 
     // ── Sentence/fix rate diagnostics (cumulative counts; consumers compute rates from deltas) ──
     private var ggaCount = 0
     private var rmcCount = 0
     private var zdaCount = 0
+    private var gstCount = 0
     private var emittedFixCount = 0
+    // Per-constellation GSA/GSV sentence counts, keyed by talker (GP/GL/GA/GB/GN/…).
+    private val gsaCountByTalker = sortedMapOf<String, Int>()
+    private val gsvCountByTalker = sortedMapOf<String, Int>()
 
-    /** Cumulative sentence/fix counts + the clock used for the last fix's date (diagnostics). */
+    // Last emitted-fix summary for diagnostics (null = the field was absent, i.e. "unknown" — never 0.0).
+    private var lastRtkStatus: RtkStatus? = null
+    private var lastSatsUsed: Int? = null
+    private var lastSatsVisible: Int? = null
+    private var lastAltMslM: Double? = null
+    private var lastGeoidSepM: Double? = null
+    private var lastHAccM: Double? = null
+    private var lastAccuracySource: AccuracySource = AccuracySource.UNKNOWN
+
+    /** Cumulative sentence/fix counts + last-fix summary + the clock used for the last fix's date. */
     data class FuserTimingStats(
         val ggaCount: Int,
         val rmcCount: Int,
         val zdaCount: Int,
+        val gstCount: Int,
         val emittedFixCount: Int,
         /** "GGA time + ZDA date", "GGA time + RMC date", "GGA time + device date", or device fallback. */
         val lastTimestampSource: TimestampSource?,
+        val lastRtkStatus: RtkStatus?,
+        val lastSatsUsed: Int?,
+        val lastSatsVisible: Int?,
+        val lastAltMslM: Double?,
+        val lastGeoidSepM: Double?,
+        /** Last parsed horizontal accuracy (m); null = unknown (never 0.0). */
+        val lastHAccM: Double?,
+        /** Where [lastHAccM] came from: receiver GST, a downstream DOP estimate, or unknown. */
+        val lastAccuracySource: AccuracySource,
+        /** GSA sentence counts by constellation talker (GP/GL/GA/GB/GN). */
+        val gsaCountByTalker: Map<String, Int>,
+        /** GSV sentence counts by constellation talker (GP/GL/GA/GB/GN). */
+        val gsvCountByTalker: Map<String, Int>,
     )
 
-    /** Snapshot of GGA/RMC/ZDA + emitted-fix counts and the date source of the last fix. */
+    /** Snapshot of sentence/fix counts, last-fix summary, and the date source of the last fix. */
     val timingStats: FuserTimingStats
-        get() = FuserTimingStats(ggaCount, rmcCount, zdaCount, emittedFixCount, lastTimestampSource)
+        get() = FuserTimingStats(ggaCount, rmcCount, zdaCount, gstCount, emittedFixCount, lastTimestampSource,
+            lastRtkStatus, lastSatsUsed, lastSatsVisible, lastAltMslM, lastGeoidSepM, lastHAccM, lastAccuracySource,
+            gsaCountByTalker.toMap(), gsvCountByTalker.toMap())
 
     private fun handleZda(zda: ZDA) {
         val epochMs = zda.epochMillis
@@ -162,6 +198,7 @@ class NmeaFuser(
 
     private fun handleGsa(gsa: GSA) {
         lastGsa = gsa
+        gsaCountByTalker[gsa.talker] = (gsaCountByTalker[gsa.talker] ?: 0) + 1
 
         val now = System.currentTimeMillis()
         if (now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
@@ -177,6 +214,7 @@ class NmeaFuser(
 
     private fun handleGsv(gsv: GSV) {
         val talker = gsv.talker
+        gsvCountByTalker[talker] = (gsvCountByTalker[talker] ?: 0) + 1
         val total = gsv.totalMessages ?: 1
         val num   = gsv.messageNumber ?: total
 
@@ -265,14 +303,29 @@ class NmeaFuser(
         val rawVisible = gsvVisibleByTalker.values.sum().takeIf { it > 0 }
         val satsVisible = rawVisible?.takeIf { it >= satsUsed }
 
-        // DRMS horizontal accuracy from GST error ellipse axes (see drmsAccuracy below)
-        val hAccM = drmsAccuracy(lastGst?.stdDevMajor, lastGst?.stdDevMinor)
+        // Horizontal accuracy from GST: prefer the error-ellipse semi-axes; otherwise fall back to the
+        // lat/lon standard deviations — Emlid Reach (RS2+/RS4) leaves the semi-major/minor fields
+        // empty and populates lat/lon instead. Null when GST carried neither — never fabricated as 0.0.
+        val hAccM = horizontalAccuracyFromGst(lastGst)
         val vAccM = lastGst?.stdDevAlt
         val stdDevEastM = lastGst?.stdDevLon
         val stdDevNorthM = lastGst?.stdDevLat
         val stdDevUpM = lastGst?.stdDevAlt
 
         emittedFixCount++
+        lastRtkStatus = rtk
+        lastSatsUsed = satsUsed
+        lastSatsVisible = satsVisible
+        lastAltMslM = gga.altMsl
+        lastGeoidSepM = gga.geoidSeparation
+        lastHAccM = hAccM
+        // hAccM is only ever set from GST here; a null GST accuracy is filled downstream by
+        // AccuracyEstimator (DOP × UERE) when HDOP is available, else it stays unknown.
+        lastAccuracySource = when {
+            hAccM != null    -> AccuracySource.RECEIVER_GST
+            gga.hdop != null -> AccuracySource.DOP_ESTIMATE
+            else             -> AccuracySource.UNKNOWN
+        }
         onFix(
             Fix(
                 provider            = provider,
@@ -341,18 +394,33 @@ class NmeaFuser(
     fun reset() {
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
         lastEmittedGgaTimeUtc = null; lastTimestampSource = null
-        ggaCount = 0; rmcCount = 0; zdaCount = 0; emittedFixCount = 0
+        ggaCount = 0; rmcCount = 0; zdaCount = 0; gstCount = 0; emittedFixCount = 0
+        gsaCountByTalker.clear(); gsvCountByTalker.clear()
+        lastRtkStatus = null; lastSatsUsed = null; lastSatsVisible = null
+        lastAltMslM = null; lastGeoidSepM = null; lastHAccM = null; lastAccuracySource = AccuracySource.UNKNOWN
+        ebpCount = 0; etcCount = 0; etcOrientationSeen = false; lastEtc = null
         gsaUsedSatIds.clear(); lastGsaUpdateMs = 0L
         pendingGsvByTalker.clear(); gsvVisibleByTalker.clear()
     }
 
     /**
-     * 1-sigma circular horizontal accuracy (DRMS) from GST error ellipse semi-axes.
-     * DRMS = sqrt((σ_major² + σ_minor²) / 2) correctly handles elongated ellipses.
+     * 1-sigma circular horizontal accuracy from GST, in metres, or null when GST provides neither the
+     * error-ellipse semi-axes nor the lat/lon standard deviations (i.e. accuracy is genuinely unknown —
+     * callers must treat null as "unknown", never 0.0).
+     *
+     * Preference order:
+     *  1. Semi-major/semi-minor axes (fields 3–4): sqrt((σ_major² + σ_minor²) / 2), handling elongated ellipses.
+     *  2. Lat/lon std-devs (fields 6–7): sqrt((σ_lat² + σ_lon²) / 2). Emlid Reach fills these and leaves 1 empty.
      */
-    private fun drmsAccuracy(major: Double?, minor: Double?): Double? {
-        if (major == null || minor == null) return null
-        return Math.sqrt((major * major + minor * minor) / 2.0)
+    private fun horizontalAccuracyFromGst(gst: GST?): Double? {
+        if (gst == null) return null
+        val major = gst.stdDevMajor
+        val minor = gst.stdDevMinor
+        if (major != null && minor != null) return Math.sqrt((major * major + minor * minor) / 2.0)
+        val lat = gst.stdDevLat
+        val lon = gst.stdDevLon
+        if (lat != null && lon != null) return Math.sqrt((lat * lat + lon * lon) / 2.0)
+        return null
     }
 
     private fun sumIfFinite(a: Double?, b: Double?): Double? =

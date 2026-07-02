@@ -1,30 +1,25 @@
 package app.surrealar.gnss.nmea.sentence
 
 /**
- * Emlid-specific `$..ETC` sentence (Reach RS4 / RS4 Pro) — **tilt compensation** state.
+ * Emlid-specific `$..ETC` sentence (Reach RS4 / RS4 Pro).
  *
- * Vendor-custom message; the field order reflects the documented/assumed Emlid layout and may need
- * reconciling with the official spec. The parser is tolerant — missing/unknown fields are left null.
- * ETC is **diagnostics-only**: it does NOT modify coordinates or the live fix in this build.
+ * The field semantics are **not documented** by Emlid in this build. In captures the message ranges
+ * from timestamp-only (`$GNETC,hhmmss.ss,,,,,,,,`) to an orientation/IMU-style payload
+ * (`$GNETC,hhmmss.ss,30,00,268.660,116.146,17.651,6.280,6.280,6.991`). Because the layout is
+ * unverified we deliberately do **not** map specific fields to heading/tilt/roll/pitch — guessing
+ * would risk feeding wrong orientation into AR later. The raw data fields are carried for diagnostics
+ * only. ETC never modifies the live fix, coordinates, or AR orientation in this build.
  *
- * Assumed fields (after talker+tag, without `$` / `*CS`):
- *  [1]=UTC time (hhmmss[.sss])
- *  [2]=tilt status (raw token, e.g. "0"/"1" or a state word)
- *  [3]=tilt angle (degrees from vertical)
- *  [4]=heading / azimuth (degrees)
- *  [5]=warning / quality code (raw token)
+ * @param timeRaw    UTC time (field 1), if present.
+ * @param dataFields raw fields after the timestamp, unparsed (semantics undocumented).
  */
 data class ETC(
     override val talker: String,
     val timeRaw: String?,
-    val tiltStatusRaw: String?,
-    val tiltAngleDeg: Double?,
-    val headingDeg: Double?,
-    val warningRaw: String?,
+    val dataFields: List<String>,
 ) : NmeaSentence {
     override val tag: String = "ETC"
 
-    /** True when a non-zero/non-blank tilt status is reported (best-effort, for diagnostics). */
-    val tiltActive: Boolean
-        get() = tiltStatusRaw?.trim()?.let { it.isNotEmpty() && it != "0" && !it.equals("off", true) } ?: false
+    /** True when ETC carries any non-blank data beyond the timestamp (orientation/IMU-style output). */
+    val hasOrientationData: Boolean get() = dataFields.any { it.isNotBlank() }
 }

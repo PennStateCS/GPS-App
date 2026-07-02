@@ -322,7 +322,7 @@ class ArFilamentRenderer {
      *              and (b) call `scene.addEntities` / [TransformManager.setTransform] for each
      *              asset that has just finished uploading.
      */
-    fun tickAndApplyLoads(poses: List<ModelPose>) {
+    fun tickAndApplyLoads(poses: List<ModelPose>, visibleKeys: Set<String> = poses.mapTo(HashSet()) { it.key }) {
         if (!initialized) return
 
         tickCount++
@@ -374,6 +374,19 @@ class ArFilamentRenderer {
                         runCatching { resourceLoader.asyncBeginLoad(cached.asset) }
                     }
                 }
+            }
+        }
+
+        // Model-visibility: an asset that is no longer in [visibleKeys] (user hid it, or it fell out of
+        // range/mode) is removed from the scene but kept cached (addedToScene=false) so re-showing it
+        // re-adds instantly without reloading. A key that IS visible but has no pose this frame (its
+        // anchor briefly stopped tracking) is left in the scene, holding its last transform — no flicker.
+        for ((key, cached) in anchorAssets) {
+            if (key.startsWith(TEST_GRID_KEY_PREFIX)) continue
+            if (cached.addedToScene && key !in visibleKeys) {
+                runCatching { scene.removeEntities(cached.asset.entities) }
+                cached.addedToScene = false
+                if (logThisFrame) Log.d(DIAG, "  model $key → HIDDEN (removed from scene, kept cached)")
             }
         }
 

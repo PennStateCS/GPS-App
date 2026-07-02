@@ -3,25 +3,17 @@ package app.surrealar.gnss.nmea.parse
 import app.surrealar.gnss.nmea.sentence.ETC
 
 /**
- * Parses Emlid-specific `$..ETC` (tilt compensation) sentences. Tolerant: any missing/unparseable
- * field yields null. ETC is diagnostics-only and never modifies coordinates. See [ETC] for the
- * assumed field order.
+ * Parses Emlid-specific `$..ETC` sentences. Tolerant by design: it captures the UTC time and the raw
+ * data fields WITHOUT interpreting their semantics (the layout is undocumented — see [ETC]). ETC is
+ * diagnostics-only and never modifies coordinates, the live fix, or AR orientation.
  */
 class EtcParser : SentenceParser<ETC> {
     override val tag: String = "ETC"
 
     override fun parse(talker: String, fields: List<String>): ETC? {
         if (fields.isEmpty()) return null
-        fun str(i: Int) = fields.getOrNull(i)?.trim()?.takeIf { it.isNotEmpty() }
-        fun num(i: Int) = str(i)?.toDoubleOrNull()
-
-        return ETC(
-            talker = talker,
-            timeRaw = str(1),
-            tiltStatusRaw = str(2),
-            tiltAngleDeg = num(3),
-            headingDeg = num(4),
-            warningRaw = str(5),
-        )
+        val timeRaw = fields.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
+        val dataFields = if (fields.size > 2) fields.subList(2, fields.size).map { it.trim() } else emptyList()
+        return ETC(talker = talker, timeRaw = timeRaw, dataFields = dataFields)
     }
 }

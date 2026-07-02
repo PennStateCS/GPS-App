@@ -4,12 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.domain.repository.ArDisplaySettingsRepository
+import app.surrealar.domain.repository.ArVisibilitySettingsRepository
 import app.surrealar.domain.repository.GnssReceiverSettingsRepository
+import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.settings.model.ArDisplaySettings
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.haversineM
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -17,6 +24,46 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** AR model display modes. Selected = user-picked within range; Nearby = all within range; All = all. */
+enum class ArVisibilityMode {
+    SELECTED, NEARBY, ALL;
+    companion object {
+        fun from(s: String): ArVisibilityMode = runCatching { valueOf(s) }.getOrDefault(SELECTED)
+    }
+}
+
+/** One row in the AR model-visibility bottom sheet. */
+data class ArModelRow(
+    val coordId: String,
+    val name: String,
+    val hasModel: Boolean,
+    val distanceM: Double?,   // null when the current position is unknown
+    val inRange: Boolean,
+    val selected: Boolean,    // checkbox state (user's AR selection)
+    val renderable: Boolean,  // would actually render under the current mode + range
+    val status: String,       // "Has model" / "Missing model" / "Out of range"
+)
+
+/** Toolbar summary of AR model visibility. */
+data class ArModelsSummary(
+    val mode: ArVisibilityMode,
+    val shown: Int,
+    val nearby: Int,
+    val total: Int,
+    val rangeM: Double?,   // active range in metres; null = "all ranges". Ignored when mode == ALL.
+) {
+    /** Human phrase describing the mode + how range applies (for the sheet header). */
+    val modeRangeText: String
+        get() {
+            val range = rangeM?.let { "within ${it.toInt()} m" } ?: "all ranges"
+            return when (mode) {
+                ArVisibilityMode.SELECTED -> "Selected · $range"
+                ArVisibilityMode.NEARBY   -> "Nearby · $range"
+                ArVisibilityMode.ALL      -> "All models · range ignored"
+            }
+        }
+}
 
 /**
  * A coordinate entity paired with its assigned 3D model's file path (if any).
@@ -45,7 +92,9 @@ data class CoordWithModel(
 class OpenInARViewModel @Inject constructor(
     private val observeArCoordinateModels: ObserveArCoordinateModelsUseCase,
     private val arDisplayRepo: ArDisplaySettingsRepository,
-    private val gnssReceiverRepo: GnssReceiverSettingsRepository
+    private val gnssReceiverRepo: GnssReceiverSettingsRepository,
+    private val arVisibilityRepo: ArVisibilitySettingsRepository,
+    private val fixSwitchboard: FixSwitchboard,
 ) : ViewModel() {
 
     // ── Coordinate stream ─────────────────────────────────────────────────────
@@ -103,6 +152,14 @@ class OpenInARViewModel @Inject constructor(
         _distanceFilterIndex.update { (it + 1) % DISTANCE_FILTER_STEPS.size }
     }
 
+    /** Current distance-filter step index (for the range chips in the model sheet). */
+    val distanceFilterIndex: StateFlow<Int> = _distanceFilterIndex.asStateFlow()
+
+    /** Set the distance-filter step directly (range chips in the model sheet). */
+    fun setDistanceFilterIndex(index: Int) {
+        _distanceFilterIndex.value = index.coerceIn(0, DISTANCE_FILTER_STEPS.lastIndex)
+    }
+
     // ── Debug overlay ─────────────────────────────────────────────────────────
 
     private val _debugVisible = MutableStateFlow(false)
@@ -157,6 +214,114 @@ class OpenInARViewModel @Inject constructor(
     }
 
     // ── Companion ─────────────────────────────────────────────────────────────
+
+    // ── AR model visibility (separate AR-only state; see ArVisibilitySettingsRepository) ──────────
+
+    /** Current display mode (persisted). Default SELECTED. */
+    val arVisibilityMode: StateFlow<ArVisibilityMode> = arVisibilityRepo.arVisibilityMode
+        .map { ArVisibilityMode.from(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ArVisibilityMode.SELECTED)
+
+    /** Whether AR visibility is customized (true) or derived from the map selection (false). */
+    val arVisibilityCustomized: StateFlow<Boolean> = arVisibilityRepo.arVisibilityCustomized
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Current device position (lat, lon) for row distances; null until a fix arrives. */
+    private val position: StateFlow<DoubleArray?> = fixSwitchboard.fixes
+        .map { doubleArrayOf(it.latDeg, it.lonDeg) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Effective AR-visible coordinate ids. When the user hasn't customised AR visibility it derives
+     * from the map selection (coordinate.renderEnabled); once customised it is the explicit AR set.
+     * This is the checkbox state and the SELECTED-mode render set — read as a live mirror by the fragment.
+     */
+    val effectiveVisibleIds: StateFlow<Set<String>> = combine(
+        arVisibilityRepo.arVisibilityCustomized,
+        arVisibilityRepo.arVisibleIds,
+        coordsWithModels,
+    ) { customized, ids, coords ->
+        ArVisibilityLogic.effectiveVisibleIds(coords, customized, ids)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** Reactive rows for the bottom sheet: model coordinates with distance, range, selection, status. */
+    val arModelRows: StateFlow<List<ArModelRow>> = combine(
+        coordsWithModels, position, distanceFilterM, arVisibilityMode, effectiveVisibleIds,
+    ) { coords, pos, range, mode, visibleIds ->
+        coords.filter { it.modelFilePath != null }.map { cwm ->
+            val c = cwm.coordinate
+            val dist = if (pos != null) haversineM(pos[0], pos[1], c.latitude, c.longitude) else null
+            val inRange = ArVisibilityLogic.inRange(mode, dist, range)
+            val selected = c.id in visibleIds
+            val renderable = ArVisibilityLogic.renderable(mode, inRange, selected)
+            val status = if (!inRange) "Out of range" else "Has model"
+            ArModelRow(c.id, c.name, hasModel = true, dist, inRange, selected, renderable, status)
+        }.sortedBy { it.distanceM ?: Double.MAX_VALUE }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Toolbar summary (mode + counts + active range). */
+    val arModelsSummary: StateFlow<ArModelsSummary> = combine(arModelRows, arVisibilityMode, distanceFilterM) { rows, mode, range ->
+        ArModelsSummary(mode, shown = rows.count { it.renderable }, nearby = rows.count { it.inRange }, total = rows.size, rangeM = range)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ArModelsSummary(ArVisibilityMode.SELECTED, 0, 0, 0, null))
+
+    /** Compact AR visibility state snapshot for the export (call on sheet open / AR start / change). */
+    fun logArVisibilityState(trigger: String) {
+        val rows = arModelRows.value
+        val customized = arVisibilityCustomized.value
+        DiagnosticsLogger.i("AR_MDL", "AR_VISIBILITY_STATE trigger=$trigger mode=${arVisibilityMode.value} " +
+            "customized=$customized derivedFromMap=${!customized} visibleIds=${effectiveVisibleIds.value.size} " +
+            "rangeM=${distanceFilterM.value?.toInt() ?: "all"} eligible=${rows.count { it.inRange }} " +
+            "rendered=${rows.count { it.renderable }}")
+    }
+
+    init {
+        // Emit AR_VISIBILITY_STATE after any visibility SETTING changes (mode / customized / selection /
+        // range). Keyed on the settings signature only (not device position) so movement never spams it.
+        viewModelScope.launch {
+            combine(arVisibilityMode, arVisibilityCustomized, effectiveVisibleIds, distanceFilterM) { m, c, ids, r ->
+                "$m|$c|${ids.size}|$r"
+            }.distinctUntilChanged().drop(1).collect { logArVisibilityState("settings_changed") }
+        }
+    }
+
+    private fun logVisibility(msg: String) = DiagnosticsLogger.i(
+        "AR_MDL", "AR_VISIBILITY $msg mode=${arVisibilityMode.value} " +
+            "eligible=${arModelRows.value.count { it.inRange }} total=${arModelRows.value.size}")
+
+    fun setArVisibilityMode(mode: ArVisibilityMode) = viewModelScope.launch {
+        logVisibility("reason=mode_changed newMode=$mode")
+        arVisibilityRepo.setArVisibilityMode(mode.name)
+    }
+
+    /** Toggle one model's AR selection. First customisation seeds from the current effective set. */
+    fun setArModelSelected(coordId: String, selected: Boolean) = viewModelScope.launch {
+        val prev = coordId in effectiveVisibleIds.value
+        logVisibility("reason=user_toggle coordId=$coordId prevVisible=$prev newVisible=$selected")
+        val next = ArVisibilityLogic.toggle(effectiveVisibleIds.value, coordId, selected)
+        arVisibilityRepo.setArVisibleIds(next)
+        arVisibilityRepo.setArVisibilityCustomized(true)
+    }
+
+    /** Select every model currently within range (adds to the selection). */
+    fun showAllNearbyArModels() = viewModelScope.launch {
+        val nearby = arModelRows.value.filter { it.inRange }.map { it.coordId }.toSet()
+        logVisibility("reason=show_all_nearby added=${nearby.size}")
+        arVisibilityRepo.setArVisibleIds(effectiveVisibleIds.value + nearby)
+        arVisibilityRepo.setArVisibilityCustomized(true)
+    }
+
+    /** Clear the AR selection (hide all). */
+    fun hideAllArModels() = viewModelScope.launch {
+        logVisibility("reason=hide_all previouslySelected=${effectiveVisibleIds.value.size}")
+        arVisibilityRepo.setArVisibleIds(emptySet())
+        arVisibilityRepo.setArVisibilityCustomized(true)
+    }
+
+    /** Revert to using the map selection (coordinate.renderEnabled) instead of a custom AR set. */
+    fun resetArVisibilityToMapSelection() = viewModelScope.launch {
+        logVisibility("reason=reset_to_map_selection")
+        arVisibilityRepo.setArVisibilityCustomized(false)
+    }
 
     companion object {
         /** Ordered distance-filter steps; null = show all pins regardless of distance. */
