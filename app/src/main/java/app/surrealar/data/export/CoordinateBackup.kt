@@ -119,6 +119,7 @@ object CoordinateBackup {
         putN("modelOriginOffsetXM", c.modelOriginOffsetXM)
         putN("modelOriginOffsetYM", c.modelOriginOffsetYM)
         putN("modelOriginOffsetZM", c.modelOriginOffsetZM)
+        putN("modelPlacementOrigin", c.modelPlacementOrigin)
     }
 
     // ── Import ──────────────────────────────────────────────────────────────────
@@ -230,7 +231,8 @@ object CoordinateBackup {
             modelVerticalOffsetM = o.optDoubleN("modelVerticalOffsetM"),
             modelOriginOffsetXM = o.optDoubleN("modelOriginOffsetXM"),
             modelOriginOffsetYM = o.optDoubleN("modelOriginOffsetYM"),
-            modelOriginOffsetZM = o.optDoubleN("modelOriginOffsetZM")
+            modelOriginOffsetZM = o.optDoubleN("modelOriginOffsetZM"),
+            modelPlacementOrigin = o.optStringN("modelPlacementOrigin")
         )
     }
 }
