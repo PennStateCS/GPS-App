@@ -188,17 +188,32 @@
             app:layout_constraintEnd_toEndOf="@id/btn_toggle_lighting"
             android:visibility="invisible"/>
 
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_axis"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/axis_on"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_model_diagnostics"
+            app:layout_constraintEnd_toEndOf="@id/btn_model_diagnostics"
+            android:visibility="invisible"/>
 
-
-
-
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_offset"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/offset_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_axis"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_axis"
+            android:visibility="invisible"/>
     </androidx.constraintlayout.widget.ConstraintLayout>
-
-
-
-
-
-
-
-
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
