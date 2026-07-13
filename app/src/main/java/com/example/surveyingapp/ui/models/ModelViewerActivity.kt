@@ -76,6 +76,12 @@ class ModelViewerActivity : AppCompatActivity() {
     private var gizmoEntity: Int = 0
     private var gizmoVertexBuffer: VertexBuffer? = null
     private var gizmoIndexBuffer: IndexBuffer? = null
+    private var gizmoVisible = true
+
+    private var offsetMarkerEntity: Int = 0
+    private var offsetMarkerVertexBuffer: VertexBuffer? = null
+    private var offsetMarkerIndexBuffer: IndexBuffer? = null
+    private var offsetMarkerVisible = false
 
     // fixes a crash when material isn't unloaded properly (onDestroy)
     private var gizmoMaterial: Material? = null
@@ -175,6 +181,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
         binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
         binding.btnModelDiagnostics.setOnClickListener { clickedModelDiagnosticsButton() }
+        binding.btnToggleAxis.setOnClickListener { clickedToggleGizmo() }
+        binding.btnToggleOffset.setOnClickListener { clickedToggleOffsetMarker() }
 
         // Load the model viewer surface view
         if (!setupModelViewer())
@@ -271,6 +279,9 @@ class ModelViewerActivity : AppCompatActivity() {
 
             // Create axis at origin
             createAxisGizmo(viewer)
+
+            // Create the origin offset marker
+            createOffsetMarker(viewer)
 
             // Snapshot the unit-cube transform so rotation is always composed on top of it.
             viewer.asset?.let { asset ->
@@ -426,112 +437,92 @@ class ModelViewerActivity : AppCompatActivity() {
         return instance
     }
 
-    private fun createAxisGizmo(viewer: ModelViewer) {
-        val engine = viewer.engine
+    // Appends a box with a solid color to the shared vertex/index lists
+    // Originally a part of createAxisGizmo, now reused
+    // 8 verts, 36 indices
+    private fun appendBox(
+        vertexList: MutableList<Float>,
+        indexList: MutableList<Short>,
+        baseIndex: Short,
+        minX: Float, maxX: Float,
+        minY: Float, maxY: Float,
+        minZ: Float, maxZ: Float,
+        r: Float, g: Float, b: Float
+    ): Short {
 
-        val thickness = 0.03f // Change thickness of the axes here
+        val verts = arrayOf(
+            floatArrayOf(minX, minY, minZ),
+            floatArrayOf(maxX, minY, minZ),
+            floatArrayOf(maxX, maxY, minZ),
+            floatArrayOf(minX, maxY, minZ),
+            floatArrayOf(minX, minY, maxZ),
+            floatArrayOf(maxX, minY, maxZ),
+            floatArrayOf(maxX, maxY, maxZ),
+            floatArrayOf(minX, maxY, maxZ)
+        )
 
-        val half = thickness / 2f
-
-        val vertexList = mutableListOf<Float>()
-        val indexList = mutableListOf<Short>()
-        var baseIndex: Short = 0
-
-        // Creates the triangles for a single axis-aligned box and appends to the vertex/index lists
-        // Color is passed as parameters
-        fun addBox(
-            minX: Float, maxX: Float,
-            minY: Float, maxY: Float,
-            minZ: Float, maxZ: Float,
-            r: Float, g: Float, b: Float
-        ) {
-
-            // Vertices
-            val verts = arrayOf(
-                floatArrayOf(minX, minY, minZ),
-                floatArrayOf(maxX, minY, minZ),
-                floatArrayOf(maxX, maxY, minZ),
-                floatArrayOf(minX, maxY, minZ),
-                floatArrayOf(minX, minY, maxZ),
-                floatArrayOf(maxX, minY, maxZ),
-                floatArrayOf(maxX, maxY, maxZ),
-                floatArrayOf(minX, maxY, maxZ)
-            )
-
-            for (v in verts) {
-                vertexList.add(v[0])
-                vertexList.add(v[1])
-                vertexList.add(v[2])
-                vertexList.add(r)
-                vertexList.add(g)
-                vertexList.add(b)
-            }
-
-            val inds = shortArrayOf(
-                0, 1, 2,  0, 2, 3,   // front
-                4, 6, 5,  4, 7, 6,   // back
-                0, 4, 5,  0, 5, 1,   // bottom
-                3, 2, 6,  3, 6, 7,   // top
-                0, 3, 7,  0, 7, 4,   // left
-                1, 5, 6,  1, 6, 2    // right
-            )
-
-            for (i in inds) {
-                indexList.add((baseIndex + i).toShort())
-            }
-
-            baseIndex = (baseIndex + 8).toShort()
+        for (v in verts) {
+            vertexList.add(v[0])
+            vertexList.add(v[1])
+            vertexList.add(v[2])
+            vertexList.add(r)
+            vertexList.add(g)
+            vertexList.add(b)
         }
 
-        // X axis: red
-        addBox( 0f, 1f, -half, half, -half, half, 1f, 0f, 0f)
+        val inds = shortArrayOf(
+            0, 1, 2,  0, 2, 3,   // front
+            4, 6, 5,  4, 7, 6,   // back
+            0, 4, 5,  0, 5, 1,   // bottom
+            3, 2, 6,  3, 6, 7,   // top
+            0, 3, 7,  0, 7, 4,   // left
+            1, 5, 6,  1, 6, 2    // right
+        )
 
-        // Y axis: green
-        addBox(-half, half, 0f, 1f, -half, half, 0f, 1f, 0f)
+        for (i in inds) {
+            indexList.add((baseIndex + i).toShort())
+        }
 
-        // Z axis: blue
-        addBox(-half, half, -half, half, 0f, 1f, 0f, 0f, 1f)
+        return (baseIndex + 8).toShort()
+    }
 
-        val vertices = vertexList.toFloatArray()
-        val indices = indexList.toShortArray()
-
-        gizmoVertexBuffer = VertexBuffer.Builder()
+    // Originally a part of createAxisGizmo, now reused
+    private fun buildColoredRenderable(
+        engine: Engine,
+        vertices: FloatArray,
+        indices: ShortArray,
+        material: MaterialInstance,
+        scale: Float = 1f,
+        position: FloatArray? = null
+    ): Triple<Int, VertexBuffer, IndexBuffer> {
+        val vertexBuffer = VertexBuffer.Builder()
             .vertexCount(vertices.size / 6)
             .bufferCount(1)
             .attribute(
-                VertexBuffer.VertexAttribute.POSITION,
-                0,
-                VertexBuffer.AttributeType.FLOAT3,
-                0,
-                24
+                VertexBuffer.VertexAttribute.POSITION, 0,
+                VertexBuffer.AttributeType.FLOAT3, 0, 24
             )
             .attribute(
-                VertexBuffer.VertexAttribute.COLOR,
-                0,
-                VertexBuffer.AttributeType.FLOAT3,
-                12,
-                24
+                VertexBuffer.VertexAttribute.COLOR, 0,
+                VertexBuffer.AttributeType.FLOAT3, 12, 24
             )
             .build(engine)
+        vertexBuffer.setBufferAt(engine, 0, FloatBuffer.wrap(vertices))
 
-        gizmoVertexBuffer!!.setBufferAt(engine, 0, java.nio.FloatBuffer.wrap(vertices))
-
-        gizmoIndexBuffer = IndexBuffer.Builder()
+        val indexBuffer = IndexBuffer.Builder()
             .indexCount(indices.size)
             .bufferType(IndexBuffer.Builder.IndexType.USHORT)
             .build(engine)
-
-        gizmoIndexBuffer!!.setBuffer(engine, java.nio.ShortBuffer.wrap(indices))
+        indexBuffer.setBuffer(engine, ShortBuffer.wrap(indices))
 
         val entity = EntityManager.get().create()
-        val material = createGizmoMaterial(engine)
 
         RenderableManager.Builder(1)
             .geometry(
                 0,
                 RenderableManager.PrimitiveType.TRIANGLES,
-                gizmoVertexBuffer!!,
-                gizmoIndexBuffer!!
+                vertexBuffer,
+                indexBuffer
             )
             .material(0, material)
             .culling(false)
@@ -539,8 +530,96 @@ class ModelViewerActivity : AppCompatActivity() {
             .receiveShadows(false)
             .build(engine, entity)
 
+        // Attach a transform = translate(position) * scale(scale): a local point p maps to
+        // position + scale * p, so the shape scales about its own local origin, then moves into
+        // place. Column-major 4x4; only touched when it differs from identity.
+        if (scale != 1f || position != null) {
+            val transform = FloatArray(16)
+            transform[0] = scale
+            transform[5] = scale
+            transform[10] = scale
+            transform[15] = 1f
+            if (position != null) {
+                transform[12] = position[0]
+                transform[13] = position[1]
+                transform[14] = position[2]
+            }
+            val tm = engine.transformManager
+            if (!tm.hasComponent(entity)) tm.create(entity)
+            tm.setTransform(tm.getInstance(entity), transform)
+        }
+
+        return Triple(entity, vertexBuffer, indexBuffer)
+    }
+
+    // Uniform scale that makes origin markers track the model's size, using the largest
+    // bounding-box half-extent so the gizmo/marker stay proportional across big and small models.
+    private fun boundingBoxScale(viewer: ModelViewer): Float {
+        val h = viewer.asset?.boundingBox?.halfExtent ?: return 1f
+        return maxOf(abs(h[0]), abs(h[1]), abs(h[2])).coerceAtLeast(0.01f)
+    }
+
+    private fun createAxisGizmo(viewer: ModelViewer) {
+        val engine = viewer.engine
+
+        val thickness = 0.03f
+        val half = thickness / 2f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+
+        // X axis: red
+        baseIndex = appendBox(vertexList, indexList, baseIndex, 0f, 1f, -half, half, -half, half, 1f, 0f, 0f)
+
+        // Y axis: green
+        baseIndex = appendBox(vertexList, indexList, baseIndex, -half, half, 0f, 1f, -half, half, 0f, 1f, 0f)
+
+        // Z axis: blue (last box — return value unused)
+        appendBox(vertexList, indexList, baseIndex, -half, half, -half, half, 0f, 1f, 0f, 0f, 1f)
+
+        val material = createGizmoMaterial(engine)
+
+        // Scale the rods to the model so the axes stay proportional
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material,
+            scale = boundingBoxScale(viewer)
+        )
+
+        gizmoVertexBuffer = vertexBuffer
+        gizmoIndexBuffer = indexBuffer
+
         viewer.scene.addEntity(entity)
         gizmoEntity = entity
+    }
+
+    private fun createOffsetMarker(viewer: ModelViewer) {
+        val engine = viewer.engine
+        val center = viewer.asset?.boundingBox?.center ?: return
+
+        // Reuse the gizmo's unlit vertex-color material
+        // May change later for axis gizmo?
+        val material = gizmoMaterialInstance ?: return
+
+        val half = 0.05f
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+
+        appendBox(
+            vertexList, indexList, 0,
+            -half, half, -half, half, -half, half,
+            1f, 0.5f, 0f
+        )
+
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material,
+            scale = boundingBoxScale(viewer),
+            position = center
+        )
+        offsetMarkerVertexBuffer = vertexBuffer
+        offsetMarkerIndexBuffer = indexBuffer
+        offsetMarkerEntity = entity
     }
 
     private fun updateOrbitTargetFromAsset(viewer: ModelViewer) {
@@ -825,6 +904,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnToggleLighting.visibility = View.VISIBLE
         binding.btnResetRotation.visibility = View.VISIBLE
         binding.btnModelDiagnostics.visibility = View.VISIBLE
+        binding.btnToggleAxis.visibility = View.VISIBLE
+        binding.btnToggleOffset.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
@@ -834,6 +915,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnToggleLighting.visibility = View.INVISIBLE
         binding.btnResetRotation.visibility = View.INVISIBLE
         binding.btnModelDiagnostics.visibility = View.INVISIBLE
+        binding.btnToggleAxis.visibility = View.INVISIBLE
+        binding.btnToggleOffset.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
@@ -867,6 +950,36 @@ class ModelViewerActivity : AppCompatActivity() {
             binding.btnToggleLighting.text = getString(R.string.lighting_off)
         }
         Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
+    }
+
+    private fun clickedToggleGizmo() {
+        val viewer = newModelViewer ?: return
+        if (gizmoEntity == 0) return  // gizmo not built yet
+
+        gizmoVisible = !gizmoVisible
+        if (gizmoVisible) {
+            viewer.scene.addEntity(gizmoEntity)
+            binding.btnToggleAxis.text = getString(R.string.axis_on)
+        } else {
+            viewer.scene.removeEntity(gizmoEntity)
+            binding.btnToggleAxis.text = getString(R.string.axis_off)
+        }
+        Log.d("ModelViewerActivity", "gizmoVisible set to $gizmoVisible")
+    }
+
+    private fun clickedToggleOffsetMarker() {
+        val viewer = newModelViewer ?: return
+        if (offsetMarkerEntity == 0) return  // marker not built yet
+
+        offsetMarkerVisible = !offsetMarkerVisible
+        if (offsetMarkerVisible) {
+            viewer.scene.addEntity(offsetMarkerEntity)
+            binding.btnToggleOffset.text = getString(R.string.offset_on)
+        } else {
+            viewer.scene.removeEntity(offsetMarkerEntity)
+            binding.btnToggleOffset.text = getString(R.string.offset_off)
+        }
+        Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
     }
 
     private fun clickedModelDiagnosticsButton() {
@@ -1070,7 +1183,15 @@ class ModelViewerActivity : AppCompatActivity() {
                 gizmoEntity = 0
             }
 
+            if (offsetMarkerEntity != 0) {
+                viewer.scene.removeEntity(offsetMarkerEntity)
+                viewer.engine.destroyEntity(offsetMarkerEntity)
+                EntityManager.get().destroy(offsetMarkerEntity)
+                offsetMarkerEntity = 0
+            }
+
             // NEW
+            // Note: the offset marker shares gizmoMaterialInstance, so it is destroyed once here.
             gizmoMaterialInstance?.let { viewer.engine.destroyMaterialInstance(it) }
             gizmoMaterialInstance = null
             gizmoMaterial?.let { viewer.engine.destroyMaterial(it) }
@@ -1079,6 +1200,10 @@ class ModelViewerActivity : AppCompatActivity() {
             gizmoVertexBuffer = null
             gizmoIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
             gizmoIndexBuffer = null
+            offsetMarkerVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            offsetMarkerVertexBuffer = null
+            offsetMarkerIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            offsetMarkerIndexBuffer = null
 
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
