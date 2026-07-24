@@ -76,12 +76,22 @@ class ModelViewerActivity : AppCompatActivity() {
     private var gizmoEntity: Int = 0
     private var gizmoVertexBuffer: VertexBuffer? = null
     private var gizmoIndexBuffer: IndexBuffer? = null
-    private var gizmoVisible = true
+    private var gizmoVisible = false
 
     private var offsetMarkerEntity: Int = 0
     private var offsetMarkerVertexBuffer: VertexBuffer? = null
     private var offsetMarkerIndexBuffer: IndexBuffer? = null
     private var offsetMarkerVisible = false
+
+    private var boundingBoxEntity: Int = 0
+    private var boundingBoxVertexBuffer: VertexBuffer? = null
+    private var boundingBoxIndexBuffer: IndexBuffer? = null
+    private var boundingBoxVisible = false
+
+    private var gridEntity: Int = 0
+    private var gridVertexBuffer: VertexBuffer? = null
+    private var gridIndexBuffer: IndexBuffer? = null
+    private var gridVisible = false
 
     // fixes a crash when material isn't unloaded properly (onDestroy)
     private var gizmoMaterial: Material? = null
@@ -183,6 +193,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnModelDiagnostics.setOnClickListener { clickedModelDiagnosticsButton() }
         binding.btnToggleAxis.setOnClickListener { clickedToggleGizmo() }
         binding.btnToggleOffset.setOnClickListener { clickedToggleOffsetMarker() }
+        binding.btnToggleBbox.setOnClickListener { clickedToggleBoundingBox() }
+        binding.btnToggleGrid.setOnClickListener { clickedToggleGridPlane() }
 
         // Load the model viewer surface view
         if (!setupModelViewer())
@@ -282,6 +294,12 @@ class ModelViewerActivity : AppCompatActivity() {
 
             // Create the origin offset marker
             createOffsetMarker(viewer)
+
+            // Create the model's bounding box wireframe
+            createBoundingBox(viewer)
+
+            // Create the ground grid plane beneath the model
+            createGridPlane(viewer)
 
             // Snapshot the unit-cube transform so rotation is always composed on top of it.
             viewer.asset?.let { asset ->
@@ -590,7 +608,6 @@ class ModelViewerActivity : AppCompatActivity() {
         gizmoVertexBuffer = vertexBuffer
         gizmoIndexBuffer = indexBuffer
 
-        viewer.scene.addEntity(entity)
         gizmoEntity = entity
     }
 
@@ -620,6 +637,129 @@ class ModelViewerActivity : AppCompatActivity() {
         offsetMarkerVertexBuffer = vertexBuffer
         offsetMarkerIndexBuffer = indexBuffer
         offsetMarkerEntity = entity
+    }
+
+    private fun createBoundingBox(viewer: ModelViewer) {
+        val engine = viewer.engine
+        val box = viewer.asset?.boundingBox ?: return
+
+        // Reuse the gizmo's unlit vertex-color material
+        // May change later for axis gizmo?
+        val material = gizmoMaterialInstance ?: return
+
+        val center = box.center
+        val halfExtent = box.halfExtent
+
+        val minX = center[0] - abs(halfExtent[0])
+        val maxX = center[0] + abs(halfExtent[0])
+
+        val minY = center[1] - abs(halfExtent[1])
+        val maxY = center[1] + abs(halfExtent[1])
+
+        val minZ = center[2] - abs(halfExtent[2])
+        val maxZ = center[2] + abs(halfExtent[2])
+
+        // Thin rods sized proportional to the model, similar to axis gizmo
+        val half = 0.015f * boundingBoxScale(viewer)
+
+        // The color orange (for now, it is the same as origin offset)
+        val r = 1f; val g = 0.5f; val b = 0f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // 4 edges running along X
+        for (y in listOf(minY, maxY)) {
+            for (z in listOf(minZ, maxZ)) {
+                baseIndex = appendBox(vertexList, indexList, baseIndex,
+                    minX, maxX, y - half, y + half, z - half, z + half, r, g, b)
+            }
+        }
+
+        // 4 edges running along Y
+        for (x in listOf(minX, maxX)) {
+            for (z in listOf(minZ, maxZ)) {
+                baseIndex = appendBox(vertexList, indexList, baseIndex,
+                    x - half, x + half, minY, maxY, z - half, z + half, r, g, b)
+            }
+        }
+
+        // 4 edges running along Z
+        for (x in listOf(minX, maxX)) {
+            for (y in listOf(minY, maxY)) {
+                baseIndex = appendBox(vertexList, indexList, baseIndex,
+                    x - half, x + half, y - half, y + half, minZ, maxZ, r, g, b)
+            }
+        }
+
+        // Vertices are already in the asset's local space, so no extra scale/translate
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material
+        )
+
+        boundingBoxVertexBuffer = vertexBuffer
+        boundingBoxIndexBuffer = indexBuffer
+        boundingBoxEntity = entity
+    }
+
+    // There is no official way to create a grid plane on Filament, so we make our own
+    // TODO: find a way to do this better, currently grid plane is "local" to the model
+    private fun createGridPlane(viewer: ModelViewer) {
+        val engine = viewer.engine
+        val box = viewer.asset?.boundingBox ?: return
+
+        // Reuse the gizmo's unlit vertex-color material
+        // May change later for axis gizmo?
+        val material = gizmoMaterialInstance ?: return
+
+        val center = box.center
+        val halfExtent = box.halfExtent
+
+        val width = 2f * abs(halfExtent[0])   // X footprint
+        val depth = 2f * abs(halfExtent[2])   // Z footprint
+        val minY = center[1] - abs(halfExtent[1])   // model's lowest point -> grid height
+
+        val scale = boundingBoxScale(viewer)
+        val halfSize = (0.75f * maxOf(width, depth)).coerceAtLeast(scale)
+
+        // Center the grid on the model's footprint (not origin offset)
+        val minGX = center[0] - halfSize; val maxGX = center[0] + halfSize
+        val minGZ = center[2] - halfSize; val maxGZ = center[2] + halfSize
+
+        val divisions = 10
+        val step = (2f * halfSize) / divisions
+
+        // Thin rod for each line
+        val half = 0.004f * scale
+
+        // Gray color - good contrast against white background
+        val r = 0.5f; val g = 0.5f; val b = 0.5f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // Lines running along X (stepping across Z)
+        for (i in 0..divisions) {
+            val z = minGZ + i * step
+            baseIndex = appendBox(vertexList, indexList, baseIndex,
+                minGX, maxGX, minY - half, minY + half, z - half, z + half, r, g, b)
+        }
+        // Lines running along Z (stepping across X)
+        for (i in 0..divisions) {
+            val x = minGX + i * step
+            baseIndex = appendBox(vertexList, indexList, baseIndex,
+                x - half, x + half, minY - half, minY + half, minGZ, maxGZ, r, g, b)
+        }
+
+        // Vertices are already in the asset's local space, so no extra scale/translate
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material
+        )
+        gridVertexBuffer = vertexBuffer
+        gridIndexBuffer = indexBuffer
+        gridEntity = entity
     }
 
     private fun updateOrbitTargetFromAsset(viewer: ModelViewer) {
@@ -906,6 +1046,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnModelDiagnostics.visibility = View.VISIBLE
         binding.btnToggleAxis.visibility = View.VISIBLE
         binding.btnToggleOffset.visibility = View.VISIBLE
+        binding.btnToggleBbox.visibility = View.VISIBLE
+        binding.btnToggleGrid.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
@@ -917,6 +1059,8 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnModelDiagnostics.visibility = View.INVISIBLE
         binding.btnToggleAxis.visibility = View.INVISIBLE
         binding.btnToggleOffset.visibility = View.INVISIBLE
+        binding.btnToggleBbox.visibility = View.INVISIBLE
+        binding.btnToggleGrid.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
@@ -980,6 +1124,36 @@ class ModelViewerActivity : AppCompatActivity() {
             binding.btnToggleOffset.text = getString(R.string.offset_off)
         }
         Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
+    }
+
+    private fun clickedToggleBoundingBox() {
+        val viewer = newModelViewer ?: return
+        if (boundingBoxEntity == 0) return  // bounding box not built yet
+
+        boundingBoxVisible = !boundingBoxVisible
+        if (boundingBoxVisible) {
+            viewer.scene.addEntity(boundingBoxEntity)
+            binding.btnToggleBbox.text = getString(R.string.bbox_on)
+        } else {
+            viewer.scene.removeEntity(boundingBoxEntity)
+            binding.btnToggleBbox.text = getString(R.string.bbox_off)
+        }
+        Log.d("ModelViewerActivity", "boundingBoxVisible set to $boundingBoxVisible")
+    }
+
+    private fun clickedToggleGridPlane() {
+        val viewer = newModelViewer ?: return
+        if (gridEntity == 0) return  // grid not built yet
+
+        gridVisible = !gridVisible
+        if (gridVisible) {
+            viewer.scene.addEntity(gridEntity)
+            binding.btnToggleGrid.text = getString(R.string.grid_on)
+        } else {
+            viewer.scene.removeEntity(gridEntity)
+            binding.btnToggleGrid.text = getString(R.string.grid_off)
+        }
+        Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
     }
 
     private fun clickedModelDiagnosticsButton() {
@@ -1190,6 +1364,20 @@ class ModelViewerActivity : AppCompatActivity() {
                 offsetMarkerEntity = 0
             }
 
+            if (boundingBoxEntity != 0) {
+                viewer.scene.removeEntity(boundingBoxEntity)
+                viewer.engine.destroyEntity(boundingBoxEntity)
+                EntityManager.get().destroy(boundingBoxEntity)
+                boundingBoxEntity = 0
+            }
+
+            if (gridEntity != 0) {
+                viewer.scene.removeEntity(gridEntity)
+                viewer.engine.destroyEntity(gridEntity)
+                EntityManager.get().destroy(gridEntity)
+                gridEntity = 0
+            }
+
             // NEW
             // Note: the offset marker shares gizmoMaterialInstance, so it is destroyed once here.
             gizmoMaterialInstance?.let { viewer.engine.destroyMaterialInstance(it) }
@@ -1204,6 +1392,14 @@ class ModelViewerActivity : AppCompatActivity() {
             offsetMarkerVertexBuffer = null
             offsetMarkerIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
             offsetMarkerIndexBuffer = null
+            boundingBoxVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            boundingBoxVertexBuffer = null
+            boundingBoxIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            boundingBoxIndexBuffer = null
+            gridVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            gridVertexBuffer = null
+            gridIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            gridIndexBuffer = null
 
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
