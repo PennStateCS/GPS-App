@@ -225,6 +225,10 @@
     <string name="axis_off">Show Axis (Local Origin)</string>
     <string name="offset_on">Hide Origin Offset</string>
     <string name="offset_off">Show Origin Offset</string>
+    <string name="bbox_on">Hide Bounding Box</string>
+    <string name="bbox_off">Show Bounding Box</string>
+    <string name="grid_on">Hide Grid Plane</string>
+    <string name="grid_off">Show Grid Plane</string>
 
     <!-- Model diagnostics dialog -->
     <string name="model_diag_ar_readiness">AR Readiness: %1$s</string>

@@ -74,7 +74,8 @@
             android:id="@+id/name_container"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_rounded_tab"
+            android:layout_marginBottom="30dp"
+            android:background="@drawable/bg_rounded_tab_floating"
             android:elevation="4dp"
             android:orientation="vertical"
             android:padding="16dp"
@@ -194,7 +195,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="10dp"
             android:minWidth="0dp"
-            android:text="@string/axis_on"
+            android:text="@string/axis_off"
             android:textColor="@color/white"
             app:backgroundTint="?attr/colorPrimary"
             app:layout_constrainedWidth="true"
@@ -215,5 +216,34 @@
             app:layout_constraintBottom_toTopOf="@id/btn_toggle_axis"
             app:layout_constraintEnd_toEndOf="@id/btn_toggle_axis"
             android:visibility="invisible"/>
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_bbox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/bbox_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_offset"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_offset"
+            android:visibility="invisible"/>
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_grid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/grid_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_bbox"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_bbox"
+            android:visibility="invisible"/>
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
