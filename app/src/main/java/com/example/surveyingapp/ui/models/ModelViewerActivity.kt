@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Choreographer
 import android.view.MenuItem
@@ -53,7 +54,14 @@ class ModelViewerActivity : AppCompatActivity() {
     private var thumbnailExists = false
     private var thumbnailCaptureScheduled = false
     private var modelReadyForThumbnail = false
-    private var framesAfterLoad = 0
+
+    private var modelPresented = false
+    private var presenceProbeInFlight = false
+    private var presenceProbeAttempts = 0
+    private var presenceProbeBitmap: Bitmap? = null
+    private val presenceProbePixels = IntArray(PRESENCE_PROBE_SIZE * PRESENCE_PROBE_SIZE)
+    private var viewerReadyAtMs = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var autoRotate = false
 
@@ -117,6 +125,14 @@ class ModelViewerActivity : AppCompatActivity() {
         private const val CAPTURE_MAX_ATTEMPTS = 20
         private const val CAPTURE_RETRY_DELAY_MS = 250L
 
+        private const val PRESENCE_PROBE_SIZE = 64
+        private const val PRESENCE_PROBE_STEP = 2
+        private const val PRESENCE_MAX_PROBES = 40
+        private const val REVEAL_TIMEOUT_MS = 10_000L
+
+        private const val WHITE_LEVEL = 245
+        private const val BLACK_LEVEL = 12
+
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
         private const val MIN_RENDER_INTERVAL_NS = 33_333_333L
@@ -145,8 +161,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
         // Check if the device supports Filament for 3D rendering; if not, show an error message and skip setup.
         if (!supportsFilamentViewer()) {
-            binding.textError.visibility = View.VISIBLE
-            binding.progressLoading.visibility = View.GONE
+            showLoadFailure()
 
             AlertDialog.Builder(this)
                 .setTitle("Device Not Supported")
@@ -169,8 +184,13 @@ class ModelViewerActivity : AppCompatActivity() {
         setupToolbar()
 
         // Set name/path of 3d model on the UI
-        binding.textModelName.text = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model";
+        val modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model"
+        binding.textModelName.text = modelName;
         binding.textModelFilename.text = intent.getStringExtra(EXTRA_MODEL_PATH)?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Unknown file";
+
+        // Tell the user which model the spinner is waiting on
+        binding.textLoading.text = getString(R.string.now_loading_model, modelName)
+        binding.textLoading.visibility = View.VISIBLE
 
         // Set up button click listeners
         binding.btnControlsExpand.setOnClickListener {
@@ -200,7 +220,7 @@ class ModelViewerActivity : AppCompatActivity() {
         if (!setupModelViewer())
         {
             Log.e("ModelViewerActivity", "Something went wrong while loading the model viewer.")
-            binding.textError.visibility = View.VISIBLE
+            showLoadFailure()
             return
         }
     }
@@ -236,6 +256,8 @@ class ModelViewerActivity : AppCompatActivity() {
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) return@launch
 
             if (modelBuffer == null) {
+                Log.e("ModelViewerActivity", "Could not read model file: ${modelFile.absolutePath}")
+                showLoadFailure()
                 return@launch
             }
 
@@ -280,8 +302,7 @@ class ModelViewerActivity : AppCompatActivity() {
             // Load model geometry. .gltf needs a sidecar resolver for texture/bin files.
             val loaded = loadModelIntoViewer(viewer, modelFile, modelBuffer)
             if (!loaded) {
-                binding.progressLoading.visibility = View.GONE
-                binding.textError?.visibility = View.VISIBLE
+                showLoadFailure()
                 return@launch
             }
 
@@ -312,9 +333,10 @@ class ModelViewerActivity : AppCompatActivity() {
             hasAppliedThumbnailFraming = true
             indirectLightEnabled = true
 
+            // Start counting seconds since load to prevent infinite loading
+            viewerReadyAtMs = SystemClock.uptimeMillis()
             newModelViewer = viewer
             modelReadyForThumbnail = true
-            framesAfterLoad = 0
         }
 
         return true
@@ -784,7 +806,7 @@ class ModelViewerActivity : AppCompatActivity() {
             // Throttle rendering if frames arrive too quickly; this prevents hammering the
             // main thread on slow devices/emulators and reduces skipped-frame warnings.
             val last = lastRenderTimeNs
-            if (last != 0L) {
+            if (last != 0L && modelPresented) {
                 val dt = frameTimeNanos - last
                 if (dt < MIN_RENDER_INTERVAL_NS) {
                     // Post next frame and skip rendering this time.
@@ -817,16 +839,127 @@ class ModelViewerActivity : AppCompatActivity() {
                  viewer.render(frameTimeNanos)
                  lastRenderTimeNs = frameTimeNanos
 
-                 if (framesAfterLoad < 2) {
-                     framesAfterLoad++
-                     if (framesAfterLoad == 2) {
-                         binding.progressLoading.visibility = View.GONE
-                     }
+                 if (!modelPresented) {
+                     updateLoadingState(viewer)
                  }
              }
              choreographer?.postFrameCallback(this)
          }
      }
+
+    // ── Loading reveal ────────────────────────────────────────────────────────
+    // Originally, I was gonna use FilamentAsset.popRenderables() to detect models,
+    // but we get a nasty crash trying to do that (SIGABRT -> "jarray was NULL")
+
+
+    private fun updateLoadingState(viewer: ModelViewer) {
+        if (SystemClock.uptimeMillis() - viewerReadyAtMs > REVEAL_TIMEOUT_MS) {
+            revealModel("timed out waiting for a painted frame")
+            return
+        }
+
+        if (presenceProbeInFlight) return
+        if (viewer.progress < 1f) return
+
+        probeSurfaceForContent()
+    }
+
+    // Copies the surface into a small bitmap to find out whether Filament has actually put
+    // anything on screen yet, we scale the surface down to make checking cheap
+    private fun probeSurfaceForContent() {
+        val w = surfaceView.width
+        val h = surfaceView.height
+        if (w <= 0 || h <= 0) return
+        if (!surfaceView.holder.surface.isValid) return
+
+        val probe = presenceProbeBitmap ?: Bitmap.createBitmap(PRESENCE_PROBE_SIZE, PRESENCE_PROBE_SIZE, Bitmap.Config.ARGB_8888).also { presenceProbeBitmap = it }
+
+        presenceProbeInFlight = true
+        presenceProbeAttempts++
+
+        try {
+            PixelCopy.request(surfaceView, probe, { result ->
+                presenceProbeInFlight = false
+                when {
+                    result == PixelCopy.SUCCESS -> {
+                        if (probeHasModelContent(probe)) {
+                            revealModel("model content on surface")
+                        } else if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
+                            revealModel("no content after $PRESENCE_MAX_PROBES probes")
+                        }
+                    }
+
+                    // Filament has not queued a buffer yet, wait it out and try again
+                    result == PixelCopy.ERROR_SOURCE_NO_DATA -> Unit
+
+                    else -> {
+                        Log.w("ModelViewerActivity", "Reveal probe failed: result = $result")
+                        if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
+                            revealModel("PixelCopy kept failing (result=$result)")
+                        }
+                    }
+                }
+            }, mainHandler)
+        } catch (t: Throwable) {
+            presenceProbeInFlight = false
+            Log.w("ModelViewerActivity", "Reveal probe threw", t)
+            if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
+                revealModel("PixelCopy kept throwing")
+            }
+        }
+    }
+
+    // True once the frame holds something that is neither the
+    // white background nor an unpainted (black) surface
+    private fun probeHasModelContent(bmp: Bitmap): Boolean {
+        val size = PRESENCE_PROBE_SIZE
+        if (bmp.width != size || bmp.height != size) return false
+
+        bmp.getPixels(presenceProbePixels, 0, size, 0, 0, size, size)
+
+        var sawNonWhite = false
+        var sawNonBlack = false
+        for (y in 0 until size step PRESENCE_PROBE_STEP) {
+            val row = y * size
+            for (x in 0 until size step PRESENCE_PROBE_STEP) {
+                val px = presenceProbePixels[row + x]
+                val r = (px shr 16) and 0xFF
+                val g = (px shr 8) and 0xFF
+                val b = px and 0xFF
+
+                if (r < WHITE_LEVEL || g < WHITE_LEVEL || b < WHITE_LEVEL) sawNonWhite = true
+                if (r > BLACK_LEVEL || g > BLACK_LEVEL || b > BLACK_LEVEL) sawNonBlack = true
+                if (sawNonWhite && sawNonBlack) return true
+            }
+        }
+        return false
+    }
+
+    private fun revealModel(reason: String) {
+        if (modelPresented) return
+        modelPresented = true
+
+        binding.progressLoading.visibility = View.GONE
+        binding.textLoading.visibility = View.GONE
+        binding.loadingOverlay.visibility = View.GONE
+
+        Log.d("ModelViewerActivity", "Revealing model because $reason (after $presenceProbeAttempts probe(s))")
+
+        // Safe to drop only when no copy is reading it, otherwise onDestroy cleans up
+        if (!presenceProbeInFlight) {
+            presenceProbeBitmap?.recycle()
+            presenceProbeBitmap = null
+        }
+    }
+
+    // If the model fails to load for any reason
+    private fun showLoadFailure() {
+        modelPresented = true
+        binding.progressLoading.visibility = View.GONE
+        binding.textLoading.visibility = View.GONE
+        binding.loadingOverlay.visibility = View.GONE
+        binding.textError.visibility = View.VISIBLE
+    }
 
     // ── Manual capture (user taps button) ────────────────────────────────────
 
@@ -1327,6 +1460,10 @@ class ModelViewerActivity : AppCompatActivity() {
         if (::surfaceView.isInitialized) {
             surfaceView.setOnTouchListener(null)
         }
+
+        // Only recycle when no PixelCopy is reading it, otherwise let GC do it
+        if (!presenceProbeInFlight) presenceProbeBitmap?.recycle()
+        presenceProbeBitmap = null
 
         val viewer = newModelViewer
         newModelViewer = null   // null first — stops any further rendering use

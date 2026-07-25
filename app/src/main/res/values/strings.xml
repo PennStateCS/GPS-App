@@ -153,6 +153,7 @@
 
     <!-- Strings used by ModelViewer layout -->
     <string name="failed_load_model">Failed to load 3D model</string>
+    <string name="now_loading_model">Now loading %1$s</string>
     <string name="rotation_controls">Rotation Controls</string>
     <string name="label_x">X:</string>
     <string name="label_y">Y:</string>
