@@ -64,10 +64,22 @@ class ArFilamentRenderer {
     data class ModelPose(
         /** Unique key — coordinate ID — so the asset cache is keyed per anchor. */
         val key: String,
-        /** 4×4 column-major world matrix from [com.google.ar.core.Anchor.pose] toMatrix(). */
+        /**
+         * 4×4 column-major world matrix from [com.google.ar.core.Anchor.pose] toMatrix().
+         * Must be the **raw** anchor pose — do NOT pre-scale the basis columns via Matrix.scaleM.
+         * Scaling is handled inside [tickAndApplyLoads] via [coordScale] so the correction
+         * matrix and bounding-box normalization thresholds use the correct effective scale.
+         */
         val worldMatrix: FloatArray,
         /** Absolute path to the .glb file. */
-        val filePath: String
+        val filePath: String,
+        /**
+         * Global scale factor applied to this model in addition to [ModelPlacement.scale].
+         * Corresponds to the per-session "model scale" slider (default 1.0 = real-world size).
+         * Folded into [effScale] inside [tickAndApplyLoads] so the correction matrix,
+         * normalization threshold, and placement all account for the full intended scale.
+         */
+        val coordScale: Float = 1.0f
     )
 
     // -------------------------------------------------------------------------
@@ -137,6 +149,17 @@ class ArFilamentRenderer {
     private val preloadSemaphore = Semaphore(permits = 2)
 
     private var initialized = false
+
+    /**
+     * Called on the main thread when a model whose geometry is far from its local origin
+     * is first added to the scene with a placement preset (ORIGIN or CUSTOM) that is unlikely
+     * to show the geometry correctly. The fragment uses this to show a one-time snackbar
+     * guiding the user to switch to Bottom Center or Custom Offset.
+     *
+     * [coordId] — the coordinate ID; [modelFileName] — the model's file basename;
+     * [originToBottomCenterM] — distance from local origin to visible geometry bottom center.
+     */
+    var onModelPlacementWarning: ((coordId: String, modelFileName: String, originToBottomCenterM: Float) -> Unit)? = null
 
     /** Counts every tickAndApplyLoads() call; used to throttle per-frame log spam. */
     private var tickCount = 0L
@@ -451,6 +474,7 @@ class ArFilamentRenderer {
                         DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=$fileName " +
                             "originToBottomCenter=${f(bounds.originToBottomCenterM)}m; visible geometry is far " +
                             "from origin. Use Bottom Center or Custom Offset.")
+                        onModelPlacementWarning?.invoke(pose.key, fileName, bounds.originToBottomCenterM)
                     }
 
                     // Anchor point = the model-local point that should sit on the AR anchor, per preset.
@@ -463,7 +487,12 @@ class ArFilamentRenderer {
                     // nudge otherwise) — see ModelBounds.resolveOffsets. Same logic the tests exercise.
                     val offsets = bounds.resolveOffsets(origin, customOffset, placement.verticalOffsetM)
                     val ap = offsets.anchorPoint
-                    val effScale = ns * placement.scale
+                    // coordScale = global "model scale" slider; placement.scale = per-model scale;
+                    // ns = normalization factor that shrinks non-metric models to ≤1 m reference.
+                    // All three are folded here so the correction matrix and threshold checks are
+                    // correct for the actual rendered size (fixes the arModelScale inconsistency
+                    // that occurred when the caller applied scale to worldMatrix basis columns).
+                    val effScale = ns * placement.scale * pose.coordScale
                     val cm = FloatArray(16)   // zero-initialised
                     cm[0]  = -effScale;  cm[5]  = effScale;  cm[10] = -effScale;  cm[15] = 1.0f
                     cm[12] = effScale * ap.x
