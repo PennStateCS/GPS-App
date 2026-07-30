@@ -1,5 +1,7 @@
-package app.surrealar.ui.models
+package com.example.surveyingapp.ui.models
 
+import android.app.ActivityManager
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -8,7 +10,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
+import android.view.Choreographer
 import android.view.MenuItem
 import android.view.PixelCopy
 import android.view.SurfaceView
@@ -17,11 +21,11 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import app.surrealar.databinding.ActivityModelViewerBinding
-import app.surrealar.domain.repository.ModelRepository
-import app.surrealar.R
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
+import com.example.surveyingapp.data.local.db.AppDatabase
+import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
+import com.example.surveyingapp.databinding.ActivityModelViewerBinding
+import com.example.surveyingapp.R
+import com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
 import com.google.android.filament.*
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
@@ -30,26 +34,34 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
+import java.nio.FloatBuffer
+import java.nio.ShortBuffer
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
-/**
- * Full-screen Filament-based 3D preview of an imported model file.
- */
-@AndroidEntryPoint
 class ModelViewerActivity : AppCompatActivity() {
-
-    @Inject lateinit var modelRepository: ModelRepository
 
     private lateinit var binding: ActivityModelViewerBinding
     private lateinit var surfaceView: SurfaceView
     // Nullable until initialization completes on the main thread after async setup
     private var newModelViewer: ModelViewer? = null
     // Make choreographer nullable and guard calls (safer across lifecycle transitions)
-    private var choreographer: android.view.Choreographer? = null
+    private var choreographer: Choreographer? = null
 
     private var thumbnailExists = false
     private var thumbnailCaptureScheduled = false
     private var modelReadyForThumbnail = false
-    private var framesAfterLoad = 0
+
+    private var modelPresented = false
+    private var presenceProbeInFlight = false
+    private var presenceProbeAttempts = 0
+    private var presenceProbeBitmap: Bitmap? = null
+    private val presenceProbePixels = IntArray(PRESENCE_PROBE_SIZE * PRESENCE_PROBE_SIZE)
+    private var viewerReadyAtMs = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var autoRotate = false
 
@@ -72,6 +84,22 @@ class ModelViewerActivity : AppCompatActivity() {
     private var gizmoEntity: Int = 0
     private var gizmoVertexBuffer: VertexBuffer? = null
     private var gizmoIndexBuffer: IndexBuffer? = null
+    private var gizmoVisible = false
+
+    private var offsetMarkerEntity: Int = 0
+    private var offsetMarkerVertexBuffer: VertexBuffer? = null
+    private var offsetMarkerIndexBuffer: IndexBuffer? = null
+    private var offsetMarkerVisible = false
+
+    private var boundingBoxEntity: Int = 0
+    private var boundingBoxVertexBuffer: VertexBuffer? = null
+    private var boundingBoxIndexBuffer: IndexBuffer? = null
+    private var boundingBoxVisible = false
+
+    private var gridEntity: Int = 0
+    private var gridVertexBuffer: VertexBuffer? = null
+    private var gridIndexBuffer: IndexBuffer? = null
+    private var gridVisible = false
 
     // fixes a crash when material isn't unloaded properly (onDestroy)
     private var gizmoMaterial: Material? = null
@@ -96,6 +124,14 @@ class ModelViewerActivity : AppCompatActivity() {
         private const val THUMBNAIL_SIZE = 256
         private const val CAPTURE_MAX_ATTEMPTS = 20
         private const val CAPTURE_RETRY_DELAY_MS = 250L
+
+        private const val PRESENCE_PROBE_SIZE = 64
+        private const val PRESENCE_PROBE_STEP = 2
+        private const val PRESENCE_MAX_PROBES = 40
+        private const val REVEAL_TIMEOUT_MS = 10_000L
+
+        private const val WHITE_LEVEL = 245
+        private const val BLACK_LEVEL = 12
 
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
@@ -125,10 +161,9 @@ class ModelViewerActivity : AppCompatActivity() {
 
         // Check if the device supports Filament for 3D rendering; if not, show an error message and skip setup.
         if (!supportsFilamentViewer()) {
-            binding.textError.visibility = View.VISIBLE
-            binding.progressLoading.visibility = View.GONE
+            showLoadFailure()
 
-            android.app.AlertDialog.Builder(this)
+            AlertDialog.Builder(this)
                 .setTitle("Device Not Supported")
                 .setMessage("This device does not support the required OpenGL ES 3.0 for 3D rendering. Please try again on a different device.")
                 .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -149,8 +184,13 @@ class ModelViewerActivity : AppCompatActivity() {
         setupToolbar()
 
         // Set name/path of 3d model on the UI
-        binding.textModelName.text = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model";
+        val modelName = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model"
+        binding.textModelName.text = modelName;
         binding.textModelFilename.text = intent.getStringExtra(EXTRA_MODEL_PATH)?.substringAfterLast('/')?.substringAfterLast('\\') ?: "Unknown file";
+
+        // Tell the user which model the spinner is waiting on
+        binding.textLoading.text = getString(R.string.now_loading_model, modelName)
+        binding.textLoading.visibility = View.VISIBLE
 
         // Set up button click listeners
         binding.btnControlsExpand.setOnClickListener {
@@ -170,12 +210,17 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
         binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
         binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
+        binding.btnModelDiagnostics.setOnClickListener { clickedModelDiagnosticsButton() }
+        binding.btnToggleAxis.setOnClickListener { clickedToggleGizmo() }
+        binding.btnToggleOffset.setOnClickListener { clickedToggleOffsetMarker() }
+        binding.btnToggleBbox.setOnClickListener { clickedToggleBoundingBox() }
+        binding.btnToggleGrid.setOnClickListener { clickedToggleGridPlane() }
 
         // Load the model viewer surface view
         if (!setupModelViewer())
         {
             Log.e("ModelViewerActivity", "Something went wrong while loading the model viewer.")
-            binding.textError.visibility = View.VISIBLE
+            showLoadFailure()
             return
         }
     }
@@ -211,6 +256,8 @@ class ModelViewerActivity : AppCompatActivity() {
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) return@launch
 
             if (modelBuffer == null) {
+                Log.e("ModelViewerActivity", "Could not read model file: ${modelFile.absolutePath}")
+                showLoadFailure()
                 return@launch
             }
 
@@ -255,8 +302,7 @@ class ModelViewerActivity : AppCompatActivity() {
             // Load model geometry. .gltf needs a sidecar resolver for texture/bin files.
             val loaded = loadModelIntoViewer(viewer, modelFile, modelBuffer)
             if (!loaded) {
-                binding.progressLoading.visibility = View.GONE
-                binding.textError?.visibility = View.VISIBLE
+                showLoadFailure()
                 return@launch
             }
 
@@ -266,6 +312,15 @@ class ModelViewerActivity : AppCompatActivity() {
 
             // Create axis at origin
             createAxisGizmo(viewer)
+
+            // Create the origin offset marker
+            createOffsetMarker(viewer)
+
+            // Create the model's bounding box wireframe
+            createBoundingBox(viewer)
+
+            // Create the ground grid plane beneath the model
+            createGridPlane(viewer)
 
             // Snapshot the unit-cube transform so rotation is always composed on top of it.
             viewer.asset?.let { asset ->
@@ -278,9 +333,10 @@ class ModelViewerActivity : AppCompatActivity() {
             hasAppliedThumbnailFraming = true
             indirectLightEnabled = true
 
+            // Start counting seconds since load to prevent infinite loading
+            viewerReadyAtMs = SystemClock.uptimeMillis()
             newModelViewer = viewer
             modelReadyForThumbnail = true
-            framesAfterLoad = 0
         }
 
         return true
@@ -421,112 +477,92 @@ class ModelViewerActivity : AppCompatActivity() {
         return instance
     }
 
-    private fun createAxisGizmo(viewer: ModelViewer) {
-        val engine = viewer.engine
+    // Appends a box with a solid color to the shared vertex/index lists
+    // Originally a part of createAxisGizmo, now reused
+    // 8 verts, 36 indices
+    private fun appendBox(
+        vertexList: MutableList<Float>,
+        indexList: MutableList<Short>,
+        baseIndex: Short,
+        minX: Float, maxX: Float,
+        minY: Float, maxY: Float,
+        minZ: Float, maxZ: Float,
+        r: Float, g: Float, b: Float
+    ): Short {
 
-        val thickness = 0.03f // Change thickness of the axes here
+        val verts = arrayOf(
+            floatArrayOf(minX, minY, minZ),
+            floatArrayOf(maxX, minY, minZ),
+            floatArrayOf(maxX, maxY, minZ),
+            floatArrayOf(minX, maxY, minZ),
+            floatArrayOf(minX, minY, maxZ),
+            floatArrayOf(maxX, minY, maxZ),
+            floatArrayOf(maxX, maxY, maxZ),
+            floatArrayOf(minX, maxY, maxZ)
+        )
 
-        val half = thickness / 2f
-
-        val vertexList = mutableListOf<Float>()
-        val indexList = mutableListOf<Short>()
-        var baseIndex: Short = 0
-
-        // Creates the triangles for a single axis-aligned box and appends to the vertex/index lists
-        // Color is passed as parameters
-        fun addBox(
-            minX: Float, maxX: Float,
-            minY: Float, maxY: Float,
-            minZ: Float, maxZ: Float,
-            r: Float, g: Float, b: Float
-        ) {
-
-            // Vertices
-            val verts = arrayOf(
-                floatArrayOf(minX, minY, minZ),
-                floatArrayOf(maxX, minY, minZ),
-                floatArrayOf(maxX, maxY, minZ),
-                floatArrayOf(minX, maxY, minZ),
-                floatArrayOf(minX, minY, maxZ),
-                floatArrayOf(maxX, minY, maxZ),
-                floatArrayOf(maxX, maxY, maxZ),
-                floatArrayOf(minX, maxY, maxZ)
-            )
-
-            for (v in verts) {
-                vertexList.add(v[0])
-                vertexList.add(v[1])
-                vertexList.add(v[2])
-                vertexList.add(r)
-                vertexList.add(g)
-                vertexList.add(b)
-            }
-
-            val inds = shortArrayOf(
-                0, 1, 2,  0, 2, 3,   // front
-                4, 6, 5,  4, 7, 6,   // back
-                0, 4, 5,  0, 5, 1,   // bottom
-                3, 2, 6,  3, 6, 7,   // top
-                0, 3, 7,  0, 7, 4,   // left
-                1, 5, 6,  1, 6, 2    // right
-            )
-
-            for (i in inds) {
-                indexList.add((baseIndex + i).toShort())
-            }
-
-            baseIndex = (baseIndex + 8).toShort()
+        for (v in verts) {
+            vertexList.add(v[0])
+            vertexList.add(v[1])
+            vertexList.add(v[2])
+            vertexList.add(r)
+            vertexList.add(g)
+            vertexList.add(b)
         }
 
-        // X axis: red
-        addBox( 0f, 1f, -half, half, -half, half, 1f, 0f, 0f)
+        val inds = shortArrayOf(
+            0, 1, 2,  0, 2, 3,   // front
+            4, 6, 5,  4, 7, 6,   // back
+            0, 4, 5,  0, 5, 1,   // bottom
+            3, 2, 6,  3, 6, 7,   // top
+            0, 3, 7,  0, 7, 4,   // left
+            1, 5, 6,  1, 6, 2    // right
+        )
 
-        // Y axis: green
-        addBox(-half, half, 0f, 1f, -half, half, 0f, 1f, 0f)
+        for (i in inds) {
+            indexList.add((baseIndex + i).toShort())
+        }
 
-        // Z axis: blue
-        addBox(-half, half, -half, half, 0f, 1f, 0f, 0f, 1f)
+        return (baseIndex + 8).toShort()
+    }
 
-        val vertices = vertexList.toFloatArray()
-        val indices = indexList.toShortArray()
-
-        gizmoVertexBuffer = VertexBuffer.Builder()
+    // Originally a part of createAxisGizmo, now reused
+    private fun buildColoredRenderable(
+        engine: Engine,
+        vertices: FloatArray,
+        indices: ShortArray,
+        material: MaterialInstance,
+        scale: Float = 1f,
+        position: FloatArray? = null
+    ): Triple<Int, VertexBuffer, IndexBuffer> {
+        val vertexBuffer = VertexBuffer.Builder()
             .vertexCount(vertices.size / 6)
             .bufferCount(1)
             .attribute(
-                VertexBuffer.VertexAttribute.POSITION,
-                0,
-                VertexBuffer.AttributeType.FLOAT3,
-                0,
-                24
+                VertexBuffer.VertexAttribute.POSITION, 0,
+                VertexBuffer.AttributeType.FLOAT3, 0, 24
             )
             .attribute(
-                VertexBuffer.VertexAttribute.COLOR,
-                0,
-                VertexBuffer.AttributeType.FLOAT3,
-                12,
-                24
+                VertexBuffer.VertexAttribute.COLOR, 0,
+                VertexBuffer.AttributeType.FLOAT3, 12, 24
             )
             .build(engine)
+        vertexBuffer.setBufferAt(engine, 0, FloatBuffer.wrap(vertices))
 
-        gizmoVertexBuffer!!.setBufferAt(engine, 0, java.nio.FloatBuffer.wrap(vertices))
-
-        gizmoIndexBuffer = IndexBuffer.Builder()
+        val indexBuffer = IndexBuffer.Builder()
             .indexCount(indices.size)
             .bufferType(IndexBuffer.Builder.IndexType.USHORT)
             .build(engine)
-
-        gizmoIndexBuffer!!.setBuffer(engine, java.nio.ShortBuffer.wrap(indices))
+        indexBuffer.setBuffer(engine, ShortBuffer.wrap(indices))
 
         val entity = EntityManager.get().create()
-        val material = createGizmoMaterial(engine)
 
         RenderableManager.Builder(1)
             .geometry(
                 0,
                 RenderableManager.PrimitiveType.TRIANGLES,
-                gizmoVertexBuffer!!,
-                gizmoIndexBuffer!!
+                vertexBuffer,
+                indexBuffer
             )
             .material(0, material)
             .culling(false)
@@ -534,8 +570,218 @@ class ModelViewerActivity : AppCompatActivity() {
             .receiveShadows(false)
             .build(engine, entity)
 
-        viewer.scene.addEntity(entity)
+        // Attach a transform = translate(position) * scale(scale): a local point p maps to
+        // position + scale * p, so the shape scales about its own local origin, then moves into
+        // place. Column-major 4x4; only touched when it differs from identity.
+        if (scale != 1f || position != null) {
+            val transform = FloatArray(16)
+            transform[0] = scale
+            transform[5] = scale
+            transform[10] = scale
+            transform[15] = 1f
+            if (position != null) {
+                transform[12] = position[0]
+                transform[13] = position[1]
+                transform[14] = position[2]
+            }
+            val tm = engine.transformManager
+            if (!tm.hasComponent(entity)) tm.create(entity)
+            tm.setTransform(tm.getInstance(entity), transform)
+        }
+
+        return Triple(entity, vertexBuffer, indexBuffer)
+    }
+
+    // Uniform scale that makes origin markers track the model's size, using the largest
+    // bounding-box half-extent so the gizmo/marker stay proportional across big and small models.
+    private fun boundingBoxScale(viewer: ModelViewer): Float {
+        val h = viewer.asset?.boundingBox?.halfExtent ?: return 1f
+        return maxOf(abs(h[0]), abs(h[1]), abs(h[2])).coerceAtLeast(0.01f)
+    }
+
+    private fun createAxisGizmo(viewer: ModelViewer) {
+        val engine = viewer.engine
+
+        val thickness = 0.03f
+        val half = thickness / 2f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+
+        // X axis: red
+        baseIndex = appendBox(vertexList, indexList, baseIndex, 0f, 1f, -half, half, -half, half, 1f, 0f, 0f)
+
+        // Y axis: green
+        baseIndex = appendBox(vertexList, indexList, baseIndex, -half, half, 0f, 1f, -half, half, 0f, 1f, 0f)
+
+        // Z axis: blue (last box — return value unused)
+        appendBox(vertexList, indexList, baseIndex, -half, half, -half, half, 0f, 1f, 0f, 0f, 1f)
+
+        val material = createGizmoMaterial(engine)
+
+        // Scale the rods to the model so the axes stay proportional
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material,
+            scale = boundingBoxScale(viewer)
+        )
+
+        gizmoVertexBuffer = vertexBuffer
+        gizmoIndexBuffer = indexBuffer
+
         gizmoEntity = entity
+    }
+
+    private fun createOffsetMarker(viewer: ModelViewer) {
+        val engine = viewer.engine
+        val center = viewer.asset?.boundingBox?.center ?: return
+
+        // Reuse the gizmo's unlit vertex-color material
+        // May change later for axis gizmo?
+        val material = gizmoMaterialInstance ?: return
+
+        val half = 0.05f
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+
+        appendBox(
+            vertexList, indexList, 0,
+            -half, half, -half, half, -half, half,
+            1f, 0.5f, 0f
+        )
+
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material,
+            scale = boundingBoxScale(viewer),
+            position = center
+        )
+        offsetMarkerVertexBuffer = vertexBuffer
+        offsetMarkerIndexBuffer = indexBuffer
+        offsetMarkerEntity = entity
+    }
+
+    private fun createBoundingBox(viewer: ModelViewer) {
+        val engine = viewer.engine
+        val box = viewer.asset?.boundingBox ?: return
+
+        // Reuse the gizmo's unlit vertex-color material
+        // May change later for axis gizmo?
+        val material = gizmoMaterialInstance ?: return
+
+        val center = box.center
+        val halfExtent = box.halfExtent
+
+        val minX = center[0] - abs(halfExtent[0])
+        val maxX = center[0] + abs(halfExtent[0])
+
+        val minY = center[1] - abs(halfExtent[1])
+        val maxY = center[1] + abs(halfExtent[1])
+
+        val minZ = center[2] - abs(halfExtent[2])
+        val maxZ = center[2] + abs(halfExtent[2])
+
+        // Thin rods sized proportional to the model, similar to axis gizmo
+        val half = 0.015f * boundingBoxScale(viewer)
+
+        // The color orange (for now, it is the same as origin offset)
+        val r = 1f; val g = 0.5f; val b = 0f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // 4 edges running along X
+        for (y in listOf(minY, maxY)) {
+            for (z in listOf(minZ, maxZ)) {
+                baseIndex = appendBox(vertexList, indexList, baseIndex,
+                    minX, maxX, y - half, y + half, z - half, z + half, r, g, b)
+            }
+        }
+
+        // 4 edges running along Y
+        for (x in listOf(minX, maxX)) {
+            for (z in listOf(minZ, maxZ)) {
+                baseIndex = appendBox(vertexList, indexList, baseIndex,
+                    x - half, x + half, minY, maxY, z - half, z + half, r, g, b)
+            }
+        }
+
+        // 4 edges running along Z
+        for (x in listOf(minX, maxX)) {
+            for (y in listOf(minY, maxY)) {
+                baseIndex = appendBox(vertexList, indexList, baseIndex,
+                    x - half, x + half, y - half, y + half, minZ, maxZ, r, g, b)
+            }
+        }
+
+        // Vertices are already in the asset's local space, so no extra scale/translate
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material
+        )
+
+        boundingBoxVertexBuffer = vertexBuffer
+        boundingBoxIndexBuffer = indexBuffer
+        boundingBoxEntity = entity
+    }
+
+    // There is no official way to create a grid plane on Filament, so we make our own
+    // TODO: find a way to do this better, currently grid plane is "local" to the model
+    private fun createGridPlane(viewer: ModelViewer) {
+        val engine = viewer.engine
+        val box = viewer.asset?.boundingBox ?: return
+
+        // Reuse the gizmo's unlit vertex-color material
+        // May change later for axis gizmo?
+        val material = gizmoMaterialInstance ?: return
+
+        val center = box.center
+        val halfExtent = box.halfExtent
+
+        val width = 2f * abs(halfExtent[0])   // X footprint
+        val depth = 2f * abs(halfExtent[2])   // Z footprint
+        val minY = center[1] - abs(halfExtent[1])   // model's lowest point -> grid height
+
+        val scale = boundingBoxScale(viewer)
+        val halfSize = (0.75f * maxOf(width, depth)).coerceAtLeast(scale)
+
+        // Center the grid on the model's footprint (not origin offset)
+        val minGX = center[0] - halfSize; val maxGX = center[0] + halfSize
+        val minGZ = center[2] - halfSize; val maxGZ = center[2] + halfSize
+
+        val divisions = 10
+        val step = (2f * halfSize) / divisions
+
+        // Thin rod for each line
+        val half = 0.004f * scale
+
+        // Gray color - good contrast against white background
+        val r = 0.5f; val g = 0.5f; val b = 0.5f
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // Lines running along X (stepping across Z)
+        for (i in 0..divisions) {
+            val z = minGZ + i * step
+            baseIndex = appendBox(vertexList, indexList, baseIndex,
+                minGX, maxGX, minY - half, minY + half, z - half, z + half, r, g, b)
+        }
+        // Lines running along Z (stepping across X)
+        for (i in 0..divisions) {
+            val x = minGX + i * step
+            baseIndex = appendBox(vertexList, indexList, baseIndex,
+                x - half, x + half, minY - half, minY + half, minGZ, maxGZ, r, g, b)
+        }
+
+        // Vertices are already in the asset's local space, so no extra scale/translate
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material
+        )
+        gridVertexBuffer = vertexBuffer
+        gridIndexBuffer = indexBuffer
+        gridEntity = entity
     }
 
     private fun updateOrbitTargetFromAsset(viewer: ModelViewer) {
@@ -555,12 +801,12 @@ class ModelViewerActivity : AppCompatActivity() {
 
     // ── Frame loop ────────────────────────────────────────────────────────────
 
-    private val frameCallback = object : android.view.Choreographer.FrameCallback {
+    private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             // Throttle rendering if frames arrive too quickly; this prevents hammering the
             // main thread on slow devices/emulators and reduces skipped-frame warnings.
             val last = lastRenderTimeNs
-            if (last != 0L) {
+            if (last != 0L && modelPresented) {
                 val dt = frameTimeNanos - last
                 if (dt < MIN_RENDER_INTERVAL_NS) {
                     // Post next frame and skip rendering this time.
@@ -593,16 +839,127 @@ class ModelViewerActivity : AppCompatActivity() {
                  viewer.render(frameTimeNanos)
                  lastRenderTimeNs = frameTimeNanos
 
-                 if (framesAfterLoad < 2) {
-                     framesAfterLoad++
-                     if (framesAfterLoad == 2) {
-                         binding.progressLoading.visibility = View.GONE
-                     }
+                 if (!modelPresented) {
+                     updateLoadingState(viewer)
                  }
              }
              choreographer?.postFrameCallback(this)
          }
      }
+
+    // ── Loading reveal ────────────────────────────────────────────────────────
+    // Originally, I was gonna use FilamentAsset.popRenderables() to detect models,
+    // but we get a nasty crash trying to do that (SIGABRT -> "jarray was NULL")
+
+
+    private fun updateLoadingState(viewer: ModelViewer) {
+        if (SystemClock.uptimeMillis() - viewerReadyAtMs > REVEAL_TIMEOUT_MS) {
+            revealModel("timed out waiting for a painted frame")
+            return
+        }
+
+        if (presenceProbeInFlight) return
+        if (viewer.progress < 1f) return
+
+        probeSurfaceForContent()
+    }
+
+    // Copies the surface into a small bitmap to find out whether Filament has actually put
+    // anything on screen yet, we scale the surface down to make checking cheap
+    private fun probeSurfaceForContent() {
+        val w = surfaceView.width
+        val h = surfaceView.height
+        if (w <= 0 || h <= 0) return
+        if (!surfaceView.holder.surface.isValid) return
+
+        val probe = presenceProbeBitmap ?: Bitmap.createBitmap(PRESENCE_PROBE_SIZE, PRESENCE_PROBE_SIZE, Bitmap.Config.ARGB_8888).also { presenceProbeBitmap = it }
+
+        presenceProbeInFlight = true
+        presenceProbeAttempts++
+
+        try {
+            PixelCopy.request(surfaceView, probe, { result ->
+                presenceProbeInFlight = false
+                when {
+                    result == PixelCopy.SUCCESS -> {
+                        if (probeHasModelContent(probe)) {
+                            revealModel("model content on surface")
+                        } else if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
+                            revealModel("no content after $PRESENCE_MAX_PROBES probes")
+                        }
+                    }
+
+                    // Filament has not queued a buffer yet, wait it out and try again
+                    result == PixelCopy.ERROR_SOURCE_NO_DATA -> Unit
+
+                    else -> {
+                        Log.w("ModelViewerActivity", "Reveal probe failed: result = $result")
+                        if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
+                            revealModel("PixelCopy kept failing (result=$result)")
+                        }
+                    }
+                }
+            }, mainHandler)
+        } catch (t: Throwable) {
+            presenceProbeInFlight = false
+            Log.w("ModelViewerActivity", "Reveal probe threw", t)
+            if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
+                revealModel("PixelCopy kept throwing")
+            }
+        }
+    }
+
+    // True once the frame holds something that is neither the
+    // white background nor an unpainted (black) surface
+    private fun probeHasModelContent(bmp: Bitmap): Boolean {
+        val size = PRESENCE_PROBE_SIZE
+        if (bmp.width != size || bmp.height != size) return false
+
+        bmp.getPixels(presenceProbePixels, 0, size, 0, 0, size, size)
+
+        var sawNonWhite = false
+        var sawNonBlack = false
+        for (y in 0 until size step PRESENCE_PROBE_STEP) {
+            val row = y * size
+            for (x in 0 until size step PRESENCE_PROBE_STEP) {
+                val px = presenceProbePixels[row + x]
+                val r = (px shr 16) and 0xFF
+                val g = (px shr 8) and 0xFF
+                val b = px and 0xFF
+
+                if (r < WHITE_LEVEL || g < WHITE_LEVEL || b < WHITE_LEVEL) sawNonWhite = true
+                if (r > BLACK_LEVEL || g > BLACK_LEVEL || b > BLACK_LEVEL) sawNonBlack = true
+                if (sawNonWhite && sawNonBlack) return true
+            }
+        }
+        return false
+    }
+
+    private fun revealModel(reason: String) {
+        if (modelPresented) return
+        modelPresented = true
+
+        binding.progressLoading.visibility = View.GONE
+        binding.textLoading.visibility = View.GONE
+        binding.loadingOverlay.visibility = View.GONE
+
+        Log.d("ModelViewerActivity", "Revealing model because $reason (after $presenceProbeAttempts probe(s))")
+
+        // Safe to drop only when no copy is reading it, otherwise onDestroy cleans up
+        if (!presenceProbeInFlight) {
+            presenceProbeBitmap?.recycle()
+            presenceProbeBitmap = null
+        }
+    }
+
+    // If the model fails to load for any reason
+    private fun showLoadFailure() {
+        modelPresented = true
+        binding.progressLoading.visibility = View.GONE
+        binding.textLoading.visibility = View.GONE
+        binding.loadingOverlay.visibility = View.GONE
+        binding.textError.visibility = View.VISIBLE
+    }
 
     // ── Manual capture (user taps button) ────────────────────────────────────
 
@@ -738,11 +1095,12 @@ class ModelViewerActivity : AppCompatActivity() {
                 }
                 bitmap.recycle()
 
-                app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
+                com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
                     .evictThumbnail(thumbFile.absolutePath)
 
                 try {
-                    val repo = modelRepository
+                    val db = AppDatabase.getDatabase(applicationContext)
+                    val repo = ModelRepositoryImpl(db.modelDao())
                     val modelFileName = intent.getStringExtra(EXTRA_MODEL_PATH)
                         ?.substringAfterLast('/')?.substringAfterLast('\\')
                     if (modelFileName != null) {
@@ -818,6 +1176,11 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.visibility = View.VISIBLE
         binding.btnToggleLighting.visibility = View.VISIBLE
         binding.btnResetRotation.visibility = View.VISIBLE
+        binding.btnModelDiagnostics.visibility = View.VISIBLE
+        binding.btnToggleAxis.visibility = View.VISIBLE
+        binding.btnToggleOffset.visibility = View.VISIBLE
+        binding.btnToggleBbox.visibility = View.VISIBLE
+        binding.btnToggleGrid.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
@@ -826,6 +1189,11 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnAutoRotate.visibility = View.INVISIBLE
         binding.btnToggleLighting.visibility = View.INVISIBLE
         binding.btnResetRotation.visibility = View.INVISIBLE
+        binding.btnModelDiagnostics.visibility = View.INVISIBLE
+        binding.btnToggleAxis.visibility = View.INVISIBLE
+        binding.btnToggleOffset.visibility = View.INVISIBLE
+        binding.btnToggleBbox.visibility = View.INVISIBLE
+        binding.btnToggleGrid.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
@@ -861,6 +1229,199 @@ class ModelViewerActivity : AppCompatActivity() {
         Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
     }
 
+    private fun clickedToggleGizmo() {
+        val viewer = newModelViewer ?: return
+        if (gizmoEntity == 0) return  // gizmo not built yet
+
+        gizmoVisible = !gizmoVisible
+        if (gizmoVisible) {
+            viewer.scene.addEntity(gizmoEntity)
+            binding.btnToggleAxis.text = getString(R.string.axis_on)
+        } else {
+            viewer.scene.removeEntity(gizmoEntity)
+            binding.btnToggleAxis.text = getString(R.string.axis_off)
+        }
+        Log.d("ModelViewerActivity", "gizmoVisible set to $gizmoVisible")
+    }
+
+    private fun clickedToggleOffsetMarker() {
+        val viewer = newModelViewer ?: return
+        if (offsetMarkerEntity == 0) return  // marker not built yet
+
+        offsetMarkerVisible = !offsetMarkerVisible
+        if (offsetMarkerVisible) {
+            viewer.scene.addEntity(offsetMarkerEntity)
+            binding.btnToggleOffset.text = getString(R.string.offset_on)
+        } else {
+            viewer.scene.removeEntity(offsetMarkerEntity)
+            binding.btnToggleOffset.text = getString(R.string.offset_off)
+        }
+        Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
+    }
+
+    private fun clickedToggleBoundingBox() {
+        val viewer = newModelViewer ?: return
+        if (boundingBoxEntity == 0) return  // bounding box not built yet
+
+        boundingBoxVisible = !boundingBoxVisible
+        if (boundingBoxVisible) {
+            viewer.scene.addEntity(boundingBoxEntity)
+            binding.btnToggleBbox.text = getString(R.string.bbox_on)
+        } else {
+            viewer.scene.removeEntity(boundingBoxEntity)
+            binding.btnToggleBbox.text = getString(R.string.bbox_off)
+        }
+        Log.d("ModelViewerActivity", "boundingBoxVisible set to $boundingBoxVisible")
+    }
+
+    private fun clickedToggleGridPlane() {
+        val viewer = newModelViewer ?: return
+        if (gridEntity == 0) return  // grid not built yet
+
+        gridVisible = !gridVisible
+        if (gridVisible) {
+            viewer.scene.addEntity(gridEntity)
+            binding.btnToggleGrid.text = getString(R.string.grid_on)
+        } else {
+            viewer.scene.removeEntity(gridEntity)
+            binding.btnToggleGrid.text = getString(R.string.grid_off)
+        }
+        Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
+    }
+
+    private fun clickedModelDiagnosticsButton() {
+        val asset = newModelViewer?.asset
+        if (asset == null) {
+            Toast.makeText(this, R.string.model_diag_not_ready, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val diagnostics = computeModelDiagnostics(asset.boundingBox)
+
+        try {
+            ModelDiagnosticsDialogFragment.newInstance(diagnostics).show(supportFragmentManager, "ModelDiagnosticsDialog")
+        } catch (e: Exception) {
+            Log.e("ModelViewerActivity", "Failed to show diagnostics dialog", e)
+        }
+    }
+
+    private fun computeModelDiagnostics(box: Box): ModelDiagnostics {
+        val center = box.center
+        val halfExtent = box.halfExtent
+
+        // coordinates for glb is:
+        // Y-up
+        // X = width
+        // Y = height
+        // Z = depth
+        val width = 2f * abs(halfExtent[0])
+        val height = 2f * abs(halfExtent[1])
+        val depth = 2f * abs(halfExtent[2])
+
+        val fileSizeBytes = intent.getStringExtra(EXTRA_MODEL_PATH)?.let { File(it).length() } ?: 0L
+
+        // Distance from the model's local origin (0,0,0) to the center
+        val originOffset = sqrt(
+            center[0] * center[0] + center[1] * center[1] + center[2] * center[2]
+        )
+
+        // Axis-aligned bounds of the model in its local space
+        val minX = center[0] - halfExtent[0]; val maxX = center[0] + halfExtent[0]
+        val minY = center[1] - halfExtent[1]; val maxY = center[1] + halfExtent[1]
+        val minZ = center[2] - halfExtent[2]; val maxZ = center[2] + halfExtent[2]
+
+        // Shortest distance from the local origin to the model's surface (0 if inside the box)
+        val originDistanceFromModel = distanceFromOriginToBox(minX, maxX, minY, maxY, minZ, maxZ)
+
+        return ModelDiagnostics(
+            fileSizeBytes = fileSizeBytes,
+            widthMeters = width,
+            depthMeters = depth,
+            heightMeters = height,
+            originOffsetMeters = originOffset,
+            originDescription = describeOriginLocation(minY, maxY, originDistanceFromModel),
+            verticalPlacement = describeVerticalPlacement(minY, height),
+            arReadiness = assessArReadiness(originOffset, minY, width, height, depth)
+        )
+    }
+
+    private fun distanceFromOriginToBox(
+        minX: Float, maxX: Float,
+        minY: Float, maxY: Float,
+        minZ: Float, maxZ: Float
+    ): Float {
+
+        val dx = maxOf(minX, 0f, -maxX)
+        val dy = maxOf(minY, 0f, -maxY)
+        val dz = maxOf(minZ, 0f, -maxZ)
+        return sqrt(dx * dx + dy * dy + dz * dz)
+    }
+
+    private fun describeOriginLocation(minY: Float, maxY: Float, distanceFromModel: Float): String {
+        val span = maxY - minY
+        val category = if (span <= 0f) {
+            "Undetermined"
+        }
+        else {
+            val t = (0f - minY) / span // 0 = base, 1 = top
+
+            // switch case!!!
+            when {
+                t < -0.05f || t > 1.05f -> "Outside the model bounds"
+                t < 0.2f -> "Near base of model"
+                t > 0.8f -> "Near top of model"
+                t in 0.4f..0.6f -> "Near center of model"
+                t < 0.5f -> "Below center of model"
+                else -> "Above center of model"
+            }
+        }
+
+        if (distanceFromModel <= 1e-4f) {
+            return "$category (origin is inside the model)"
+        }
+        else {
+            return String.format(Locale.US, "%s (%.2f m from the model)", category, distanceFromModel)
+        }
+    }
+
+    private fun describeVerticalPlacement(minY: Float, height: Float): String {
+        val tolerance = maxOf(0.02f, height * 0.02f)
+        val distance = abs(minY)
+
+        // switch case
+        when {
+            distance <= tolerance -> return "Model sits on the anchor point"
+            minY > 0f -> return String.format(Locale.US, "Model floats %.2f m above the anchor point", distance)
+            else -> return String.format(Locale.US, "Model sinks %.2f m below the anchor point", distance)
+        }
+    }
+
+    // Might need to change later
+    private fun assessArReadiness(
+        originOffset: Float,
+        minY: Float,
+        width: Float,
+        height: Float,
+        depth: Float
+    ): String {
+        val largestDim = maxOf(width, height, depth)
+        if (largestDim <= 0f) return "Unknown"
+
+        val tolerance = maxOf(0.02f, height * 0.02f)
+        val sitsOnAnchor = abs(minY) <= tolerance
+        val offsetRatio = originOffset / largestDim
+
+        // AR models are typically between a few centimeters and a few meters across
+        // Context on what AR models are being used is unknown
+        val plausibleScale = largestDim in 0.05f..10f
+
+        when {
+            sitsOnAnchor && offsetRatio < 0.1f && plausibleScale -> return "Good"
+            offsetRatio < 0.35f && plausibleScale -> return "Fair"
+            else -> return "Needs adjustment"
+        }
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> { finish(); true }
@@ -871,7 +1432,7 @@ class ModelViewerActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing")
-        choreographer = android.view.Choreographer.getInstance()
+        choreographer = Choreographer.getInstance()
         choreographer?.postFrameCallback(frameCallback)
     }
 
@@ -899,6 +1460,10 @@ class ModelViewerActivity : AppCompatActivity() {
         if (::surfaceView.isInitialized) {
             surfaceView.setOnTouchListener(null)
         }
+
+        // Only recycle when no PixelCopy is reading it, otherwise let GC do it
+        if (!presenceProbeInFlight) presenceProbeBitmap?.recycle()
+        presenceProbeBitmap = null
 
         val viewer = newModelViewer
         newModelViewer = null   // null first — stops any further rendering use
@@ -929,7 +1494,29 @@ class ModelViewerActivity : AppCompatActivity() {
                 gizmoEntity = 0
             }
 
+            if (offsetMarkerEntity != 0) {
+                viewer.scene.removeEntity(offsetMarkerEntity)
+                viewer.engine.destroyEntity(offsetMarkerEntity)
+                EntityManager.get().destroy(offsetMarkerEntity)
+                offsetMarkerEntity = 0
+            }
+
+            if (boundingBoxEntity != 0) {
+                viewer.scene.removeEntity(boundingBoxEntity)
+                viewer.engine.destroyEntity(boundingBoxEntity)
+                EntityManager.get().destroy(boundingBoxEntity)
+                boundingBoxEntity = 0
+            }
+
+            if (gridEntity != 0) {
+                viewer.scene.removeEntity(gridEntity)
+                viewer.engine.destroyEntity(gridEntity)
+                EntityManager.get().destroy(gridEntity)
+                gridEntity = 0
+            }
+
             // NEW
+            // Note: the offset marker shares gizmoMaterialInstance, so it is destroyed once here.
             gizmoMaterialInstance?.let { viewer.engine.destroyMaterialInstance(it) }
             gizmoMaterialInstance = null
             gizmoMaterial?.let { viewer.engine.destroyMaterial(it) }
@@ -938,6 +1525,18 @@ class ModelViewerActivity : AppCompatActivity() {
             gizmoVertexBuffer = null
             gizmoIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
             gizmoIndexBuffer = null
+            offsetMarkerVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            offsetMarkerVertexBuffer = null
+            offsetMarkerIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            offsetMarkerIndexBuffer = null
+            boundingBoxVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            boundingBoxVertexBuffer = null
+            boundingBoxIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            boundingBoxIndexBuffer = null
+            gridVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+            gridVertexBuffer = null
+            gridIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+            gridIndexBuffer = null
 
             viewer.destroyModel()
             Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")

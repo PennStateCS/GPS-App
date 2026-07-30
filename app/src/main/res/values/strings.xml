@@ -155,6 +155,7 @@
 
     <!-- Strings used by ModelViewer layout -->
     <string name="failed_load_model">Failed to load 3D model</string>
+    <string name="now_loading_model">Now loading %1$s</string>
     <string name="rotation_controls">Rotation Controls</string>
     <string name="label_x">X:</string>
     <string name="label_y">Y:</string>
@@ -223,5 +224,27 @@
     <string name="location_acquiring">Acquiring…</string>
     <string name="location_acquired">Location acquired</string>
     <string name="no_location">No location</string>
+    <string name="model_diag_string">Model Diagnostics</string>
+
+    <!-- Text reflects the action; name reflects the current state, matching lighting_on/off -->
+    <string name="axis_on">Hide Axis (Local Origin)</string>
+    <string name="axis_off">Show Axis (Local Origin)</string>
+    <string name="offset_on">Hide Origin Offset</string>
+    <string name="offset_off">Show Origin Offset</string>
+    <string name="bbox_on">Hide Bounding Box</string>
+    <string name="bbox_off">Show Bounding Box</string>
+    <string name="grid_on">Hide Grid Plane</string>
+    <string name="grid_off">Show Grid Plane</string>
+
+    <!-- Model diagnostics dialog -->
+    <string name="model_diag_ar_readiness">AR Readiness: %1$s</string>
+    <string name="model_diag_file_size">File size: %1$s</string>
+    <string name="model_diag_triangles">Triangle count: %1$s</string>
+    <string name="model_diag_dimensions">Model dimensions: %1$s</string>
+    <string name="model_diag_origin">Local origin: %1$s</string>
+    <string name="model_diag_origin_offset">Origin offset: %1$s from visible geometry center</string>
+    <string name="model_diag_vertical_placement">Vertical placement: %1$s</string>
+    <string name="model_diag_close">Close</string>
+    <string name="model_diag_not_ready">Model is still loading…</string>
 
 </resources>

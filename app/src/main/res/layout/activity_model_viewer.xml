@@ -42,6 +42,16 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
+        <View
+            android:id="@+id/loading_overlay"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:background="@color/white"
+            app:layout_constraintBottom_toBottomOf="@id/modelSurface"
+            app:layout_constraintEnd_toEndOf="@id/modelSurface"
+            app:layout_constraintStart_toStartOf="@id/modelSurface"
+            app:layout_constraintTop_toTopOf="@id/modelSurface" />
+
         <!-- Loading Progress (hidden by default) -->
         <ProgressBar
             android:id="@+id/progress_loading"
@@ -52,6 +62,23 @@
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
             app:layout_constraintStart_toStartOf="@id/modelSurface"
             app:layout_constraintTop_toTopOf="@id/modelSurface" />
+
+        <!-- Loading Label (hidden once the model is revealed) -->
+        <TextView
+            android:id="@+id/text_loading"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="16dp"
+            android:gravity="center"
+            android:textAppearance="@style/TextAppearance.App.BodyPrimary"
+            android:textColor="?attr/colorOnSurface"
+            android:visibility="visible"
+            app:layout_constraintEnd_toEndOf="@id/modelSurface"
+            app:layout_constraintStart_toStartOf="@id/modelSurface"
+            app:layout_constraintTop_toBottomOf="@id/progress_loading"
+            tools:text="Now loading PLACEHOLDER" />
 
         <!-- Error Message -->
         <TextView
@@ -74,7 +101,8 @@
             android:id="@+id/name_container"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:background="@drawable/bg_rounded_tab"
+            android:layout_marginBottom="30dp"
+            android:background="@drawable/bg_rounded_tab_floating"
             android:elevation="4dp"
             android:orientation="vertical"
             android:padding="16dp"
@@ -174,16 +202,75 @@
             app:layout_constraintEnd_toEndOf="@id/btn_auto_rotate"
             android:visibility="invisible"/>
 
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_model_diagnostics"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/model_diag_string"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_lighting"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_lighting"
+            android:visibility="invisible"/>
 
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_axis"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/axis_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_model_diagnostics"
+            app:layout_constraintEnd_toEndOf="@id/btn_model_diagnostics"
+            android:visibility="invisible"/>
 
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_offset"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/offset_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_axis"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_axis"
+            android:visibility="invisible"/>
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_bbox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/bbox_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_offset"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_offset"
+            android:visibility="invisible"/>
+
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_grid"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/grid_off"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_bbox"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_bbox"
+            android:visibility="invisible"/>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
-
-
-
-
-
-
-
-
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
