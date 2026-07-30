@@ -163,13 +163,17 @@ class TestAnchorController(private val context: Context) {
             te.anchor.pose.toMatrix(model, 0)
 
             if (te.modelKey != null && testPinPath != null) {
-                val scaledWorld = model.copyOf()
-                Matrix.scaleM(scaledWorld, 0, PIN_SCALE, PIN_SCALE, PIN_SCALE)
-                scaledWorld[13] -= PIN_GROUND_DROP_M   // lower tip to ground
+                // Pass the raw anchor world matrix (no pre-scaling) and let ArFilamentRenderer
+                // fold PIN_SCALE into effScale via coordScale. The ground-drop Y offset is a
+                // direct ARCore-world-metre translation (unaffected by the basis-column scaling
+                // that Matrix.scaleM used to apply) so it stays correct here.
+                val rawWorld = model.copyOf()
+                rawWorld[13] -= PIN_GROUND_DROP_M   // lower pin tip to ground (ARCore world metres)
                 newModelPoses += ArFilamentRenderer.ModelPose(
                     key         = te.modelKey,
-                    worldMatrix = scaledWorld,
-                    filePath    = testPinPath
+                    worldMatrix = rawWorld,
+                    filePath    = testPinPath,
+                    coordScale  = PIN_SCALE
                 )
             } else {
                 System.arraycopy(model, 0, modelScaled, 0, 16)

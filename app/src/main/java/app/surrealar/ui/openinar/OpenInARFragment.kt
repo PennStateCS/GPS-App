@@ -309,10 +309,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         /** Minimum GNSS horizontal accuracy required before creating geospatial anchors. */
         private const val MAX_GNSS_ACCURACY_M = 20.0
         /**
-         * Uniform scale applied to every GLB model world matrix before handing it to Filament.
-         * Adjust to match the native size of your models.
+         * Default uniform scale applied to every GLB model rendered via Filament.
+         * 1.0 = real-world metric scale (correct for BIM/survey models exported in metres).
+         * Increase only if your models were exported at a non-metric unit (e.g. 0.01 for cm).
+         * This value is folded into ModelPose.coordScale and applied inside ArFilamentRenderer
+         * so the correction matrix, normalization threshold, and placement all use the
+         * correct effective scale.
          */
-        private const val MODEL_SCALE = 2f
+        private const val MODEL_SCALE = 1f
         /** Near/far clip planes — must match [ArFilamentRenderer] constants. */
         private const val NEAR_CLIP = 0.1f
         private const val FAR_CLIP  = 2000f
@@ -332,7 +336,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Written on the main thread (button click); read on the GL thread (rebuildGeoAnchorsIfNeeded).
      */
     @Volatile private var useTerrainAltitude: Boolean = false
-    @Volatile private var arModelScale: Float = 2f
+    @Volatile private var arModelScale: Float = MODEL_SCALE
     @Volatile private var arShowLabels: Boolean = true
     @Volatile private var arShowOffscreenArrows: Boolean = true
     @Volatile private var arDebugToolsEnabled: Boolean = false
@@ -356,11 +360,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         override fun doFrame(frameTimeNs: Long) {
             choreographerInstance?.postFrameCallback(this)
             choreographerFrameCount++
+            // Read one consistent snapshot: view matrix, proj matrix, model poses, and visible-keys
+            // are all from the SAME GL frame (written atomically after collectGeoAnchors).
+            val snapshot = arRenderSnapshot
+            val currentPoses    = snapshot?.modelPoses    ?: emptyList()
+            val currentVisibleKeys = snapshot?.visibleKeys ?: emptySet()
             // Always pump asset loading / scene management so models load as soon as
             // preload() is called — even before ARCore anchors start tracking or the
             // Filament TextureView surface has been fully created.
-            val currentPoses = modelPoses
-            val currentVisibleKeys = modelVisibleKeys
             filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys)
             // Keep rendering while any model is visible — a visible model whose anchor briefly stopped
             // tracking has no pose this frame but stays in the scene holding its last transform.
@@ -374,8 +381,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         "Choreographer#$choreographerFrameCount — modelPoses empty (no anchors tracking or no models)")
                 return
             }
-            val vm = arViewMatrix ?: return
-            val pm = arProjMatrix ?: return
+            val vm = snapshot?.viewMatrix ?: return
+            val pm = snapshot.projMatrix
             filamentRenderer?.renderFrame(frameTimeNs, vm, pm)
             // Update only after a successful render so we retry the clear frame if
             // camera matrices were unavailable this tick.
@@ -383,19 +390,33 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
-    // ARCore matrices + model poses — written by the GL thread each frame,
-    // read by the Choreographer callback on the main thread (@Volatile for visibility).
-    @Volatile private var arViewMatrix: FloatArray? = null
-    @Volatile private var arProjMatrix: FloatArray? = null
-    @Volatile private var modelPoses: List<ArFilamentRenderer.ModelPose> = emptyList()
-    /** Coord ids whose model is intentionally visible this frame (drives Filament scene membership). */
-    @Volatile private var modelVisibleKeys: Set<String> = emptySet()
+    /**
+     * Atomic snapshot of the three values the Choreographer needs to drive Filament for one frame.
+     * Written as a single `@Volatile` reference on the GL thread after `collectGeoAnchors` so the
+     * camera matrix and model poses are always from the same ARCore frame — eliminating the race
+     * that occurred when the Choreographer read the three former independent `@Volatile` fields at
+     * different moments and could combine a view matrix from frame N+1 with poses from frame N.
+     */
+    private data class ArRenderSnapshot(
+        val viewMatrix: FloatArray,
+        val projMatrix: FloatArray,
+        val modelPoses: List<ArFilamentRenderer.ModelPose>,
+        val visibleKeys: Set<String>
+    )
+    @Volatile private var arRenderSnapshot: ArRenderSnapshot? = null
 
-    // AR model-visibility mirrors — updated by ViewModel collectors, read on the GL thread each frame.
     @Volatile private var arVisibleIdsMirror: Set<String> = emptySet()
     @Volatile private var arVisibilityModeMirror: ArVisibilityMode = ArVisibilityMode.SELECTED
     /** Last visible-model count logged (rendered set change → diagnostics). GL-thread only. */
     private var lastLoggedVisibleCount: Int = -1
+    /**
+     * The set of coordinate IDs whose models are currently visible in the Filament scene.
+     * Written by [collectGeoAnchors] on the GL thread after each frame's visibility pass;
+     * read on the same GL thread when building [arRenderSnapshot].
+     * Also read by [tickAndApplyLoads] via the snapshot, so this field is only needed
+     * as a GL-thread-local staging field — it is never read from another thread.
+     */
+    private var modelVisibleKeys: Set<String> = emptySet()
 
     // State flags for error recovery and user experience
     private var hasWarnedLocationOff = false
@@ -458,7 +479,27 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // every `filamentRenderer?.` call no-ops, so GLES pins/labels still work — only GLB models
         // are unavailable. Throwable (not Exception) to also catch UnsatisfiedLinkError.
         filamentRenderer = try {
-            ArFilamentRenderer().also { it.init(binding.filamentSurface) }
+            ArFilamentRenderer().also { renderer ->
+                renderer.init(binding.filamentSurface)
+                // Surface the "geometry far from origin" warning as an in-app snackbar.
+                // Fires once per affected model when it is first added to the Filament scene.
+                // Uses a set so each model file is only warned about once per session.
+                val warnedModels = mutableSetOf<String>()
+                renderer.onModelPlacementWarning = { coordId, modelFileName, originToBottomCenterM ->
+                    if (warnedModels.add(modelFileName)) {
+                        val msg = "\"$modelFileName\": geometry is " +
+                            "${"%.0f".format(originToBottomCenterM)} m from its origin — " +
+                            "try Bottom Center or Custom Offset placement"
+                        _binding?.root?.let { root ->
+                            com.google.android.material.snackbar.Snackbar
+                                .make(root, msg, com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
+                                .show()
+                        }
+                        DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN_UI shown coordId=$coordId " +
+                            "model=$modelFileName originToBottomCenterM=${"%.1f".format(originToBottomCenterM)}")
+                    }
+                }
+            }
         } catch (t: Throwable) {
             DiagnosticsLogger.e(DIAG, "Filament renderer init failed — 3D models disabled, " +
                 "pins/labels still render: ${t.message}", t)
@@ -879,7 +920,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onDestroyView() {
         super.onDestroyView()
         DiagnosticsLogger.i(DIAG, "OpenInARFragment destroyed — AR screen closed " +
-            "(anchors=${geoAnchors.size}, modelPoses=${modelPoses.size}, items=${geoItems.size}); " +
+            "(anchors=${geoAnchors.size}, modelPoses=${arRenderSnapshot?.modelPoses?.size ?: 0}, items=${geoItems.size}); " +
             "pending view-scoped callbacks cancelled")
         writeArSessionSummary()
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
@@ -887,9 +928,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         choreoPrevHadModels = false
         filamentRenderer?.destroy()
         filamentRenderer = null
-        arViewMatrix  = null
-        arProjMatrix  = null
-        modelPoses    = emptyList()
+        arRenderSnapshot  = null
         pinScreenCache = emptyList()
         lastPostedLabels = emptyList()
         lastPostedArrows = emptyList()
@@ -1456,8 +1495,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 camera.getProjectionMatrix(proj, 0, NEAR_CLIP, FAR_CLIP)
                 Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
-                arViewMatrix = view.copyOf()
-                arProjMatrix = proj.copyOf()
 
                 pointCount = if (arDebugToolsEnabled && arShowPointCloud) pointCloudRenderer?.draw(frame, vp) ?: 0 else 0
                 planeCount = if (arDebugToolsEnabled && arShowPlanes) planeVisualizer?.drawAllPlanes(s, vp) ?: 0 else 0
@@ -1473,7 +1510,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses)
 
                 pinScreenCache = pinPositions
-                modelPoses     = newModelPoses
+                // Publish a single atomic snapshot so the Choreographer always reads a camera matrix
+                // and model poses from the SAME ARCore frame — see ArRenderSnapshot kdoc.
+                arRenderSnapshot = ArRenderSnapshot(
+                    viewMatrix  = view.copyOf(),
+                    projMatrix  = proj.copyOf(),
+                    modelPoses  = newModelPoses,
+                    visibleKeys = modelVisibleKeys
+                )
                 postOverlayUpdates(labelEntries, arrowEntries)
             }
 
@@ -1652,13 +1696,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             System.arraycopy(model, 0, modelScaled, 0, 16)
 
             if (entryModelFilePath != null) {
-                val scaledWorld = model.copyOf()
-                val s = arModelScale
-                Matrix.scaleM(scaledWorld, 0, s, s, s)
+                // Pass the raw anchor pose — do NOT pre-scale the basis columns here.
+                // ArFilamentRenderer folds arModelScale into effScale via ModelPose.coordScale
+                // so the correction matrix and bounding-box normalization both see the
+                // correct full scale (fixes the inconsistency that caused arModelScale to be
+                // applied to the world matrix but NOT to the correction matrix's effScale).
                 newModelPoses += ArFilamentRenderer.ModelPose(
-                    key         = coord.id,
-                    worldMatrix = scaledWorld,
-                    filePath    = entryModelFilePath
+                    key        = coord.id,
+                    worldMatrix = model.copyOf(),
+                    filePath   = entryModelFilePath,
+                    coordScale = arModelScale
                 )
             } else {
                 Matrix.scaleM(modelScaled, 0, 0.1f, 0.3f, 0.1f)
@@ -1913,7 +1960,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /** Updates the model-load-progress chip. Must be called on the main thread. */
     private fun updateModelProgressChip() {
-        val posesSnapshot = modelPoses
+        val posesSnapshot = arRenderSnapshot?.modelPoses ?: emptyList()
         val total   = posesSnapshot.size
         val inScene = posesSnapshot.count {
             filamentRenderer?.modelLoadState(it.key) == ArFilamentRenderer.ModelLoadState.IN_SCENE
@@ -2027,7 +2074,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     "preload dispatch coordinateId=${coord.id} modelId=${item.modelId} " +
                     "name=\"${coord.name}\" path=\"$path\" exists=$exists " +
                     "sizeBytes=$sizeBytes renderEnabled=${coord.renderEnabled} " +
-                    "altitude=$altState scale=$arModelScale placement=${item.placement}")
+                    "altitude=$altState coordScale=$arModelScale placement=${item.placement}")
                 val basename = path.substringAfterLast('/')
                 when {
                     !exists -> {

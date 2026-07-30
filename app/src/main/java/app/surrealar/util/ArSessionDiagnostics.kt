@@ -20,7 +20,14 @@ import java.util.concurrent.ConcurrentHashMap
 object ArSessionDiagnostics {
 
     /** Per-coordinate model lifecycle status during the last AR session. */
-    enum class ModelStatus { NOT_USED, QUEUED, LOADING, READY, ANCHOR_PENDING, IN_SCENE, FAILED, SKIPPED }
+    enum class ModelStatus {
+        NOT_USED, QUEUED, LOADING, READY,
+        /** Model was preloaded but the anchor never reached TRACKING before the session ended. */
+        ANCHOR_PENDING,
+        /** Model was preloaded and anchor tracked, but the model was never selected/visible this session. */
+        NOT_RENDERED,
+        IN_SCENE, FAILED, SKIPPED
+    }
 
     class ModelEntry(
         val coordinateId: String,
@@ -89,12 +96,23 @@ object ArSessionDiagnostics {
     @Synchronized
     fun endSession() {
         closedAtMs = System.currentTimeMillis()
+        val earthWasTracking = lastEarthTrackingState == "TRACKING"
         models.values.forEach { e ->
-            if (e.status == ModelStatus.QUEUED || e.status == ModelStatus.LOADING || e.status == ModelStatus.READY) {
-                e.status = ModelStatus.ANCHOR_PENDING
-                if (e.reason == null) {
-                    e.reason = if (lastEarthTrackingState != "TRACKING") "earth_not_tracking" else "anchor_pending"
+            when (e.status) {
+                // Still loading/queued at session end — anchor tracking is the likely blocker.
+                ModelStatus.QUEUED, ModelStatus.LOADING -> {
+                    e.status = ModelStatus.ANCHOR_PENDING
+                    if (e.reason == null)
+                        e.reason = if (earthWasTracking) "anchor_pending" else "earth_not_tracking"
                 }
+                // Preloaded successfully but never rendered — typically not selected as visible.
+                // Distinct from ANCHOR_PENDING so the summary is not misleading.
+                ModelStatus.READY -> {
+                    e.status = if (earthWasTracking) ModelStatus.NOT_RENDERED else ModelStatus.ANCHOR_PENDING
+                    if (e.reason == null)
+                        e.reason = if (earthWasTracking) "not_selected_visible" else "earth_not_tracking"
+                }
+                else -> { /* IN_SCENE, FAILED, SKIPPED, NOT_USED — already terminal, leave as-is */ }
             }
         }
     }
@@ -130,9 +148,11 @@ object ArSessionDiagnostics {
         models.values.filter { it.modelId == modelId }.maxByOrNull { successRank(it.status) }
 
     private fun successRank(s: ModelStatus): Int = when (s) {
-        ModelStatus.IN_SCENE -> 7; ModelStatus.READY -> 6; ModelStatus.ANCHOR_PENDING -> 5
-        ModelStatus.LOADING -> 4; ModelStatus.QUEUED -> 3; ModelStatus.SKIPPED -> 2
-        ModelStatus.FAILED -> 1; ModelStatus.NOT_USED -> 0
+        ModelStatus.IN_SCENE -> 7; ModelStatus.READY -> 6
+        ModelStatus.NOT_RENDERED -> 5       // preloaded + anchor tracked, just not visible
+        ModelStatus.ANCHOR_PENDING -> 4     // preloaded but anchor never tracked
+        ModelStatus.LOADING -> 3; ModelStatus.QUEUED -> 2; ModelStatus.SKIPPED -> 1
+        ModelStatus.FAILED -> 0; ModelStatus.NOT_USED -> -1
     }
 
     private fun countByStatus(s: ModelStatus) = models.values.count { it.status == s }
@@ -163,8 +183,9 @@ object ArSessionDiagnostics {
         appendLine("models considered    : ${models.size}")
         appendLine("  queued   : ${countByStatus(ModelStatus.QUEUED)}")
         appendLine("  loading  : ${countByStatus(ModelStatus.LOADING)}")
-        appendLine("  loaded   : ${countByStatus(ModelStatus.READY) + countByStatus(ModelStatus.ANCHOR_PENDING)}")
+        appendLine("  loaded   : ${countByStatus(ModelStatus.READY) + countByStatus(ModelStatus.ANCHOR_PENDING) + countByStatus(ModelStatus.NOT_RENDERED)}")
         appendLine("  inScene  : ${countByStatus(ModelStatus.IN_SCENE)}")
+        appendLine("  notVis   : ${countByStatus(ModelStatus.NOT_RENDERED)}")
         appendLine("  failed   : ${countByStatus(ModelStatus.FAILED)}")
         appendLine("  skipped  : ${countByStatus(ModelStatus.SKIPPED)}")
         val reasons = reasonCounts()
@@ -187,6 +208,8 @@ object ArSessionDiagnostics {
                 add("Earth tracking never reached TRACKING — geospatial anchors could not form")
             val failed = countByStatus(ModelStatus.FAILED)
             if (failed > 0) add("$failed model(s) FAILED (${reasons.filterValues { it > 0 }})")
+            val notRendered = countByStatus(ModelStatus.NOT_RENDERED)
+            if (notRendered > 0) add("$notRendered model(s) were loaded and ready but never rendered (not selected as visible this session)")
         }
         if (warnings.isEmpty()) appendLine("(none)") else warnings.forEach { appendLine("⚠ $it") }
         appendLine()
