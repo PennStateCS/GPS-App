@@ -1,4 +1,4 @@
-package com.example.surveyingapp.ui.models
+package app.surrealar.ui.models
 
 import android.app.Dialog
 import android.os.Build
@@ -8,7 +8,7 @@ import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
-import com.example.surveyingapp.R
+import app.surrealar.R
 import java.util.Locale
 
 class ModelDiagnosticsDialogFragment : DialogFragment() {
