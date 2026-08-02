@@ -83,14 +83,27 @@ class ArSessionDiagnosticsTest {
         assertEquals(ModelStatus.IN_SCENE, ArSessionDiagnostics.statusForModelId("m1")!!.status)
     }
 
-    @Test fun `endSession finalizes loaded-but-not-shown models as anchor pending`() {
+    @Test fun `endSession finalizes a loaded-but-not-shown model as not-rendered when earth tracked`() {
+        // Preloaded + anchor tracked but never selected/visible → NOT_RENDERED (distinct from
+        // ANCHOR_PENDING, so the summary is not misleading about why the model didn't appear).
         ArSessionDiagnostics.linkedModelCount = 1
         ArSessionDiagnostics.lastEarthTrackingState = "TRACKING"
         ArSessionDiagnostics.recordModel("c1", "P", "m1", "a.glb", true, 1, ModelStatus.READY)
         ArSessionDiagnostics.endSession()
         val e = ArSessionDiagnostics.models().single()
+        assertEquals(ModelStatus.NOT_RENDERED, e.status)
+        assertEquals("not_selected_visible", e.reason)
+        assertTrue(ArSessionDiagnostics.closedAtMs > 0)
+    }
+
+    @Test fun `endSession finalizes a loaded model as anchor pending when earth never tracked`() {
+        ArSessionDiagnostics.linkedModelCount = 1
+        ArSessionDiagnostics.lastEarthTrackingState = null   // never reached TRACKING
+        ArSessionDiagnostics.recordModel("c1", "P", "m1", "a.glb", true, 1, ModelStatus.READY)
+        ArSessionDiagnostics.endSession()
+        val e = ArSessionDiagnostics.models().single()
         assertEquals(ModelStatus.ANCHOR_PENDING, e.status)
-        assertEquals("anchor_pending", e.reason)
+        assertEquals("earth_not_tracking", e.reason)
         assertTrue(ArSessionDiagnostics.closedAtMs > 0)
     }
 

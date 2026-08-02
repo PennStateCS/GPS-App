@@ -1,4 +1,4 @@
-package com.example.surveyingapp.ui.models
+package app.surrealar.ui.models
 
 import java.io.Serializable
 

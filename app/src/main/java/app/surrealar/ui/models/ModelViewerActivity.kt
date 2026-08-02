@@ -1,4 +1,4 @@
-package com.example.surveyingapp.ui.models
+package app.surrealar.ui.models
 
 import android.app.ActivityManager
 import android.app.AlertDialog
@@ -21,11 +21,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import com.example.surveyingapp.data.local.db.AppDatabase
-import com.example.surveyingapp.data.repository.impl.ModelRepositoryImpl
-import com.example.surveyingapp.databinding.ActivityModelViewerBinding
-import com.example.surveyingapp.R
-import com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
+import app.surrealar.databinding.ActivityModelViewerBinding
+import app.surrealar.R
+import app.surrealar.domain.repository.ModelRepository
+import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import com.google.android.filament.*
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +43,10 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+@AndroidEntryPoint
 class ModelViewerActivity : AppCompatActivity() {
+
+    @Inject lateinit var modelRepository: ModelRepository
 
     private lateinit var binding: ActivityModelViewerBinding
     private lateinit var surfaceView: SurfaceView
@@ -1095,12 +1099,11 @@ class ModelViewerActivity : AppCompatActivity() {
                 }
                 bitmap.recycle()
 
-                com.example.surveyingapp.ui.viewpoints.SimpleCoordinatesAdapter
+                app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
                     .evictThumbnail(thumbFile.absolutePath)
 
                 try {
-                    val db = AppDatabase.getDatabase(applicationContext)
-                    val repo = ModelRepositoryImpl(db.modelDao())
+                    val repo = modelRepository
                     val modelFileName = intent.getStringExtra(EXTRA_MODEL_PATH)
                         ?.substringAfterLast('/')?.substringAfterLast('\\')
                     if (modelFileName != null) {
