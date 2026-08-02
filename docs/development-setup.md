@@ -78,14 +78,40 @@ General steps:
 
 1. Open the Google Cloud Console.
 2. Create or select a Google Cloud project.
-3. Enable the Maps SDK for Android.
+3. Enable the **Maps SDK for Android** and the **ARCore API**.
 4. Create an API key.
 5. Restrict the key to Android apps.
-6. Add this app's package name.
-7. Add the SHA-1 fingerprint for your debug or release signing certificate.
+6. Add this app's package name (`app.surrealar`).
+7. Add the SHA-1 fingerprint of the signing certificate — for local development this is the shared debug keystore (see [Signing: the shared debug keystore](#signing-the-shared-debug-keystore) below).
 8. Add the key to `local.properties`.
 
-For local development, use the debug signing certificate. For release builds, use the release signing certificate.
+For the full restriction workflow — including the separate **development** and **release** keys — see [API_KEYS_SETUP.md](../API_KEYS_SETUP.md).
+
+### Signing: the shared debug keystore
+
+This project commits a shared **debug** keystore at `keystores/shared-debug.keystore` and wires it into `app/build.gradle.kts`, so every developer's debug builds are signed with the **same SHA-1**. That shared SHA-1 is what the Google Maps / ARCore key's Android restriction is tied to.
+
+Because of this:
+
+- You do **not** need to create or register your own debug keystore — the build already uses the shared one.
+- To read the SHA-1 to enter in the key restriction:
+
+  ```bash
+  keytool -list -v -keystore keystores/shared-debug.keystore -alias androiddebugkey -storepass android -keypass android
+  ```
+
+- The keystore uses the standard debug credentials (store/key password `android`, alias `androiddebugkey`). A debug keystore is **not** a secret — it can only sign debug builds — which is why it is safe to commit.
+
+**Release builds** are intentionally left unsigned in `build.gradle.kts`. For a shipping build, generate a private **release** keystore and keep it out of git (never commit it); see the development-vs-release key split in [API_KEYS_SETUP.md](../API_KEYS_SETUP.md).
+
+**Regenerating the shared debug keystore** — only if it is ever lost or deliberately rotated. This changes the SHA-1, so the API key's Android restriction must be updated to match:
+
+```bash
+keytool -genkeypair -v -keystore keystores/shared-debug.keystore \
+  -storepass android -keypass android -alias androiddebugkey \
+  -keyalg RSA -keysize 2048 -validity 10000 \
+  -dname "CN=Android Debug,O=Android,C=US"
+```
 
 ## 5. Sync Gradle
 
