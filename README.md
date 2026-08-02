@@ -6,7 +6,7 @@
 
 [![Google Maps](https://img.shields.io/badge/Google%20Maps-API%20Key%20Required-4285F4?logo=googlemaps)](https://developers.google.com/maps/documentation/android-sdk)
 [![ARCore](https://img.shields.io/badge/ARCore-Required%20for%20AR-ff6f00?logo=google)](https://developers.google.com/ar)
-[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue?logo=github)](https://pennstatewilkes-barre.github.io/GPS-App/)
+[![Docs](https://img.shields.io/badge/Docs-GitHub%20Pages-blue?logo=github)](https://pennstatecs.github.io/GPS-App/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 
@@ -23,7 +23,7 @@ SurReal AR is currently in development. Features, data formats, and device workf
 
 Developer API documentation is generated from KDoc using Dokka and published through GitHub Pages:
 
-[View the SurReal AR Developer Documentation](https://pennstatewilkes-barre.github.io/GPS-App/)
+[View the SurReal AR Developer Documentation](https://pennstatecs.github.io/GPS-App/)
 
 These docs are intended for developers working on the codebase. They describe the app’s packages, important classes, data flow, coordinate/model storage, GNSS handling, import/export behavior, and AR rendering support. They are not an end-user manual.
 

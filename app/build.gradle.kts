@@ -258,7 +258,7 @@ dokka {
         // "(source)" links on each declaration point back to GitHub main.
         sourceLink {
             localDirectory.set(file("src/main/java"))
-            remoteUrl.set(URI("https://github.com/PennStateWilkes-Barre/GPS-App/tree/main/app/src/main/java"))
+            remoteUrl.set(URI("https://github.com/PennStateCS/GPS-App/tree/main/app/src/main/java"))
             remoteLineSuffix.set("#L")
         }
     }

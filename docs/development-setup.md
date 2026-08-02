@@ -17,7 +17,7 @@ For AR testing, use a physical Android device that supports ARCore / Google Play
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/pennstatewilkes-barre/GPS-App.git
+git clone https://github.com/PennStateCS/GPS-App.git
 cd GPS-App
 ```
 
@@ -49,21 +49,21 @@ On Windows, it may look like this:
 
 ```properties
 sdk.dir=C\:\\Users\\YOUR_USERNAME\\AppData\\Local\\Android\\Sdk
-MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
 ```
 
 On macOS, it may look like this:
 
 ```properties
 sdk.dir=/Users/YOUR_USERNAME/Library/Android/sdk
-MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
 ```
 
 On Linux, it may look like this:
 
 ```properties
 sdk.dir=/home/YOUR_USERNAME/Android/Sdk
-MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
 ```
 
 Replace `YOUR_GOOGLE_MAPS_API_KEY` with your actual Google Maps API key.
@@ -99,7 +99,7 @@ If Gradle sync fails, check that:
 
 - `local.properties` exists in the project root
 - `sdk.dir` points to your Android SDK
-- `MAPS_API_KEY` is present
+- `GOOGLE_MAPS_API_KEY` is present
 - Android Studio has installed the required SDK version
 - The Maps SDK for Android is enabled in Google Cloud
 

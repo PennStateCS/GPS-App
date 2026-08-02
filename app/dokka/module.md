@@ -4,7 +4,7 @@ Developer-facing API reference for the SurReal AR surveying app, generated from 
 reference for developers working on the codebase — **not** an end-user manual.
 
 > **Public developer docs.** These pages are generated from the `main` branch by GitHub Actions and
-> published at <https://pennstatewilkes-barre.github.io/GPS-App/>. They are publicly visible. KDoc
+> published at <https://pennstatecs.github.io/GPS-App/>. They are publicly visible. KDoc
 > must **not** contain secrets, API keys, credentials, internal hostnames, or sensitive deployment
 > details. Keep those in private docs/secrets, not in source comments.
 
