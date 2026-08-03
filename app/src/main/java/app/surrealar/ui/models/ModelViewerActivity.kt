@@ -28,6 +28,7 @@ import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.google.android.filament.*
+import com.google.android.filament.FilamentChannelDepth
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -105,6 +106,8 @@ class ModelViewerActivity : AppCompatActivity() {
     private var gridIndexBuffer: IndexBuffer? = null
     private var gridVisible = false
 
+    private var overlayAlwaysOnTop = true
+
     // fixes a crash when material isn't unloaded properly (onDestroy)
     private var gizmoMaterial: Material? = null
     private var gizmoMaterialInstance: MaterialInstance? = null
@@ -140,6 +143,10 @@ class ModelViewerActivity : AppCompatActivity() {
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
         private const val MIN_RENDER_INTERVAL_NS = 33_333_333L
+
+        // Render channel for the overlay geometry (gizmo, origin marker, bounding box, grid)
+        private const val DEFAULT_CHANNEL = 2
+        private const val OVERLAY_CHANNEL = 3
 
         private const val ROTATION_SPEED_PER_PXL_RADIANS = 0.01f
         private const val AUTO_ROTATE_DEG_PER_FRAME = 0.5 // Change this to make the rotation go faster or slower
@@ -219,6 +226,7 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnToggleOffset.setOnClickListener { clickedToggleOffsetMarker() }
         binding.btnToggleBbox.setOnClickListener { clickedToggleBoundingBox() }
         binding.btnToggleGrid.setOnClickListener { clickedToggleGridPlane() }
+        binding.btnToggleOverlayTop.setOnClickListener { clickedToggleOverlayOnTop() }
 
         // Load the model viewer surface view
         if (!setupModelViewer())
@@ -313,6 +321,9 @@ class ModelViewerActivity : AppCompatActivity() {
             // Control our own camera
             updateOrbitTargetFromAsset(viewer)
             applyOrbitManipulator(viewer)
+
+            // Draw the overlays below on top of the model instead of inside it
+            applyOverlayDepthClear(viewer, overlayAlwaysOnTop)
 
             // Create axis at origin
             createAxisGizmo(viewer)
@@ -465,6 +476,19 @@ class ModelViewerActivity : AppCompatActivity() {
 
     }
 
+    // Controls whether everything built by buildColoredRenderable draws on top of the model
+    private fun applyOverlayDepthClear(viewer: ModelViewer, enabled: Boolean) {
+        overlayAlwaysOnTop = try {
+            FilamentChannelDepth.setChannelDepthClearEnabled(viewer.view, OVERLAY_CHANNEL, enabled)
+            enabled
+        } catch (t: Throwable) {
+            Log.e("ModelViewerActivity", "Failed to set depth clear for overlay channel", t)
+            false
+        }
+
+        binding.btnToggleOverlayTop.text = getString(if (overlayAlwaysOnTop) R.string.overlay_top_on else R.string.overlay_top_off)
+    }
+
     private fun createGizmoMaterial(engine: Engine): MaterialInstance {
         val buffer = loadAsset("unlit.filamat")!!
 
@@ -530,14 +554,16 @@ class ModelViewerActivity : AppCompatActivity() {
         return (baseIndex + 8).toShort()
     }
 
-    // Originally a part of createAxisGizmo, now reused
+    // Originally a part of createAxisGizmo, now reused.
+    // setting the channel allows for models to be rendered on top of other models in the scene
     private fun buildColoredRenderable(
         engine: Engine,
         vertices: FloatArray,
         indices: ShortArray,
         material: MaterialInstance,
         scale: Float = 1f,
-        position: FloatArray? = null
+        position: FloatArray? = null,
+        channel: Int = OVERLAY_CHANNEL
     ): Triple<Int, VertexBuffer, IndexBuffer> {
         val vertexBuffer = VertexBuffer.Builder()
             .vertexCount(vertices.size / 6)
@@ -569,6 +595,7 @@ class ModelViewerActivity : AppCompatActivity() {
                 indexBuffer
             )
             .material(0, material)
+            .channel(channel)
             .culling(false)
             .castShadows(false)
             .receiveShadows(false)
@@ -1184,6 +1211,7 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnToggleOffset.visibility = View.VISIBLE
         binding.btnToggleBbox.visibility = View.VISIBLE
         binding.btnToggleGrid.visibility = View.VISIBLE
+        binding.btnToggleOverlayTop.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
@@ -1197,6 +1225,7 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.btnToggleOffset.visibility = View.INVISIBLE
         binding.btnToggleBbox.visibility = View.INVISIBLE
         binding.btnToggleGrid.visibility = View.INVISIBLE
+        binding.btnToggleOverlayTop.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
@@ -1290,6 +1319,13 @@ class ModelViewerActivity : AppCompatActivity() {
             binding.btnToggleGrid.text = getString(R.string.grid_off)
         }
         Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
+    }
+
+    private fun clickedToggleOverlayOnTop() {
+        val viewer = newModelViewer ?: return
+
+        applyOverlayDepthClear(viewer, !overlayAlwaysOnTop)
+        Log.d("ModelViewerActivity", "overlayAlwaysOnTop set to $overlayAlwaysOnTop")
     }
 
     private fun clickedModelDiagnosticsButton() {
