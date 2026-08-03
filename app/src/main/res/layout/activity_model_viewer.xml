@@ -272,5 +272,19 @@
             app:layout_constraintEnd_toEndOf="@id/btn_toggle_bbox"
             android:visibility="invisible"/>
 
+        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+            android:id="@+id/btn_toggle_overlay_top"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10dp"
+            android:minWidth="0dp"
+            android:text="@string/overlay_top_on"
+            android:textColor="@color/white"
+            app:backgroundTint="?attr/colorPrimary"
+            app:layout_constrainedWidth="true"
+            app:layout_constraintBottom_toTopOf="@id/btn_toggle_grid"
+            app:layout_constraintEnd_toEndOf="@id/btn_toggle_grid"
+            android:visibility="invisible"/>
+
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
