@@ -23,7 +23,7 @@ SurReal AR is currently in development. Features, data formats, and device workf
 
 Developer API documentation is generated from KDoc using Dokka and published through GitHub Pages:
 
-[View the SurReal AR Developer Documentation](https://pennstatewilkes-barre.github.io/GPS-App/)
+[View the SurReal AR Developer Documentation](https://pennstatecs.github.io/GPS-App/)
 
 These docs are intended for developers working on the codebase. They describe the app’s packages, important classes, data flow, coordinate/model storage, GNSS handling, import/export behavior, and AR rendering support. They are not an end-user manual.
 
