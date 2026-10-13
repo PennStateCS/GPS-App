@@ -84,6 +84,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     // Controls menu toggle
     private var controlsExpanded = false
+    private lateinit var controlsAdapter: ModelViewerControlsAdapter
 
     // Gizmo setup
     private var gizmoEntity: Int = 0
@@ -217,16 +218,25 @@ class ModelViewerActivity : AppCompatActivity() {
             controlsExpanded = !controlsExpanded
         }
 
-        binding.btnResetRotation.setOnClickListener { clickedResetView() }
-        binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
-        binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
         binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
-        binding.btnModelDiagnostics.setOnClickListener { clickedModelDiagnosticsButton() }
-        binding.btnToggleAxis.setOnClickListener { clickedToggleGizmo() }
-        binding.btnToggleOffset.setOnClickListener { clickedToggleOffsetMarker() }
-        binding.btnToggleBbox.setOnClickListener { clickedToggleBoundingBox() }
-        binding.btnToggleGrid.setOnClickListener { clickedToggleGridPlane() }
-        binding.btnToggleOverlayTop.setOnClickListener { clickedToggleOverlayOnTop() }
+
+        // Binding the new model viewer controls viewer
+        controlsAdapter = ModelViewerControlsAdapter(this) { control ->
+            when (control) {
+                ModelViewerControl.RESET_ROTATION -> clickedResetView()
+                ModelViewerControl.AUTO_ROTATE -> clickedAutoRotate()
+                ModelViewerControl.LIGHTING -> clickedToggleIndirectLight()
+                ModelViewerControl.DIAGNOSTICS -> clickedModelDiagnosticsButton()
+                ModelViewerControl.AXIS -> clickedToggleGizmo()
+                ModelViewerControl.OFFSET -> clickedToggleOffsetMarker()
+                ModelViewerControl.BOUNDING_BOX -> clickedToggleBoundingBox()
+                ModelViewerControl.GRID -> clickedToggleGridPlane()
+                ModelViewerControl.OVERLAY_ON_TOP -> clickedToggleOverlayOnTop()
+            }
+        }
+
+        binding.rvViewerControls.itemAnimator = null
+        binding.rvViewerControls.adapter = controlsAdapter
 
         // Load the model viewer surface view
         if (!setupModelViewer())
@@ -486,7 +496,7 @@ class ModelViewerActivity : AppCompatActivity() {
             false
         }
 
-        binding.btnToggleOverlayTop.text = getString(if (overlayAlwaysOnTop) R.string.overlay_top_on else R.string.overlay_top_off)
+        controlsAdapter.setLabel(ModelViewerControl.OVERLAY_ON_TOP, getString(if (overlayAlwaysOnTop) R.string.overlay_top_on else R.string.overlay_top_off))
     }
 
     private fun createGizmoMaterial(engine: Engine): MaterialInstance {
@@ -1203,35 +1213,19 @@ class ModelViewerActivity : AppCompatActivity() {
     private fun expandControls() {
         Log.d("ModelViewerActivity", "expandControls: showing controls")
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_out)
-        binding.btnAutoRotate.visibility = View.VISIBLE
-        binding.btnToggleLighting.visibility = View.VISIBLE
-        binding.btnResetRotation.visibility = View.VISIBLE
-        binding.btnModelDiagnostics.visibility = View.VISIBLE
-        binding.btnToggleAxis.visibility = View.VISIBLE
-        binding.btnToggleOffset.visibility = View.VISIBLE
-        binding.btnToggleBbox.visibility = View.VISIBLE
-        binding.btnToggleGrid.visibility = View.VISIBLE
-        binding.btnToggleOverlayTop.visibility = View.VISIBLE
+        binding.cardViewerControls.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
         Log.d("ModelViewerActivity", "collapseControls: hiding controls")
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_in)
-        binding.btnAutoRotate.visibility = View.INVISIBLE
-        binding.btnToggleLighting.visibility = View.INVISIBLE
-        binding.btnResetRotation.visibility = View.INVISIBLE
-        binding.btnModelDiagnostics.visibility = View.INVISIBLE
-        binding.btnToggleAxis.visibility = View.INVISIBLE
-        binding.btnToggleOffset.visibility = View.INVISIBLE
-        binding.btnToggleBbox.visibility = View.INVISIBLE
-        binding.btnToggleGrid.visibility = View.INVISIBLE
-        binding.btnToggleOverlayTop.visibility = View.INVISIBLE
+        binding.cardViewerControls.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
         if (autoRotate) {
             autoRotate = false
-            binding.btnAutoRotate.text = getString(R.string.auto_rotate)
+            controlsAdapter.setLabel(ModelViewerControl.AUTO_ROTATE, getString(R.string.auto_rotate))
         }
         grabPixelAccum = 0.0
 
@@ -1241,7 +1235,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     private fun clickedAutoRotate() {
         autoRotate = !autoRotate
-        binding.btnAutoRotate.text = if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate)
+        controlsAdapter.setLabel(ModelViewerControl.AUTO_ROTATE, if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate))
         grabPixelAccum = 0.0
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
     }
@@ -1253,10 +1247,10 @@ class ModelViewerActivity : AppCompatActivity() {
         indirectLightEnabled = !indirectLightEnabled
         if (indirectLightEnabled) {
             viewer.scene.indirectLight?.intensity = 50_000f
-            binding.btnToggleLighting.text = getString(R.string.lighting_on)
+            controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_on))
         } else {
             viewer.scene.indirectLight?.intensity = 0f
-            binding.btnToggleLighting.text = getString(R.string.lighting_off)
+            controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_off))
         }
         Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
     }
@@ -1268,10 +1262,10 @@ class ModelViewerActivity : AppCompatActivity() {
         gizmoVisible = !gizmoVisible
         if (gizmoVisible) {
             viewer.scene.addEntity(gizmoEntity)
-            binding.btnToggleAxis.text = getString(R.string.axis_on)
+            controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_on))
         } else {
             viewer.scene.removeEntity(gizmoEntity)
-            binding.btnToggleAxis.text = getString(R.string.axis_off)
+            controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_off))
         }
         Log.d("ModelViewerActivity", "gizmoVisible set to $gizmoVisible")
     }
@@ -1283,10 +1277,10 @@ class ModelViewerActivity : AppCompatActivity() {
         offsetMarkerVisible = !offsetMarkerVisible
         if (offsetMarkerVisible) {
             viewer.scene.addEntity(offsetMarkerEntity)
-            binding.btnToggleOffset.text = getString(R.string.offset_on)
+            controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_on))
         } else {
             viewer.scene.removeEntity(offsetMarkerEntity)
-            binding.btnToggleOffset.text = getString(R.string.offset_off)
+            controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_off))
         }
         Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
     }
@@ -1298,10 +1292,10 @@ class ModelViewerActivity : AppCompatActivity() {
         boundingBoxVisible = !boundingBoxVisible
         if (boundingBoxVisible) {
             viewer.scene.addEntity(boundingBoxEntity)
-            binding.btnToggleBbox.text = getString(R.string.bbox_on)
+            controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_on))
         } else {
             viewer.scene.removeEntity(boundingBoxEntity)
-            binding.btnToggleBbox.text = getString(R.string.bbox_off)
+            controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_off))
         }
         Log.d("ModelViewerActivity", "boundingBoxVisible set to $boundingBoxVisible")
     }
@@ -1313,10 +1307,10 @@ class ModelViewerActivity : AppCompatActivity() {
         gridVisible = !gridVisible
         if (gridVisible) {
             viewer.scene.addEntity(gridEntity)
-            binding.btnToggleGrid.text = getString(R.string.grid_on)
+            controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_on))
         } else {
             viewer.scene.removeEntity(gridEntity)
-            binding.btnToggleGrid.text = getString(R.string.grid_off)
+            controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_off))
         }
         Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
     }

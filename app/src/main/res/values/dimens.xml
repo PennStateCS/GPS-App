@@ -24,4 +24,7 @@
          ellipsizes if an option is longer than this. Phone-safe here; widened on tablet
          (values-sw600dp) where there is more horizontal room. -->
     <dimen name="settings_dropdown_width">200dp</dimen>
+
+    <dimen name="model_viewer_control_tile_width">184dp</dimen>
+    <dimen name="model_viewer_control_tile_height">88dp</dimen>
 </resources>
