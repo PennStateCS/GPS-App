@@ -160,117 +160,32 @@
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_reset_rotation"
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_viewer_controls"
+            style="@style/Widget.App.Card.Elevated"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/reset"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
+            android:visibility="invisible"
+            app:layout_constrainedHeight="true"
             app:layout_constraintBottom_toTopOf="@id/btn_controls_expand"
             app:layout_constraintEnd_toEndOf="@id/btn_controls_expand"
-            android:visibility="invisible"/>
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintVertical_bias="1.0">
 
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_auto_rotate"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/auto_rotate"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_reset_rotation"
-            app:layout_constraintEnd_toEndOf="@id/btn_reset_rotation"
-            android:visibility="invisible"/>
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_viewer_controls"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clipToPadding="false"
+                android:orientation="vertical"
+                android:padding="4dp"
+                app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
+                tools:itemCount="9"
+                tools:listitem="@layout/item_model_viewer_control" />
 
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_toggle_lighting"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/lighting_on"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_auto_rotate"
-            app:layout_constraintEnd_toEndOf="@id/btn_auto_rotate"
-            android:visibility="invisible"/>
-
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_model_diagnostics"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/model_diag_string"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_toggle_lighting"
-            app:layout_constraintEnd_toEndOf="@id/btn_toggle_lighting"
-            android:visibility="invisible"/>
-
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_toggle_axis"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/axis_off"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_model_diagnostics"
-            app:layout_constraintEnd_toEndOf="@id/btn_model_diagnostics"
-            android:visibility="invisible"/>
-
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_toggle_offset"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/offset_off"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_toggle_axis"
-            app:layout_constraintEnd_toEndOf="@id/btn_toggle_axis"
-            android:visibility="invisible"/>
-
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_toggle_bbox"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/bbox_off"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_toggle_offset"
-            app:layout_constraintEnd_toEndOf="@id/btn_toggle_offset"
-            android:visibility="invisible"/>
-
-        <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
-            android:id="@+id/btn_toggle_grid"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="10dp"
-            android:minWidth="0dp"
-            android:text="@string/grid_off"
-            android:textColor="@color/white"
-            app:backgroundTint="?attr/colorPrimary"
-            app:layout_constrainedWidth="true"
-            app:layout_constraintBottom_toTopOf="@id/btn_toggle_bbox"
-            app:layout_constraintEnd_toEndOf="@id/btn_toggle_bbox"
-            android:visibility="invisible"/>
+        </com.google.android.material.card.MaterialCardView>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

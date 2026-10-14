@@ -28,6 +28,7 @@ import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.google.android.filament.*
+import com.google.android.filament.FilamentChannelDepth
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -83,6 +84,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     // Controls menu toggle
     private var controlsExpanded = false
+    private lateinit var controlsAdapter: ModelViewerControlsAdapter
 
     // Gizmo setup
     private var gizmoEntity: Int = 0
@@ -104,6 +106,8 @@ class ModelViewerActivity : AppCompatActivity() {
     private var gridVertexBuffer: VertexBuffer? = null
     private var gridIndexBuffer: IndexBuffer? = null
     private var gridVisible = false
+
+    private var overlayAlwaysOnTop = true
 
     // fixes a crash when material isn't unloaded properly (onDestroy)
     private var gizmoMaterial: Material? = null
@@ -140,6 +144,10 @@ class ModelViewerActivity : AppCompatActivity() {
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
         private const val MIN_RENDER_INTERVAL_NS = 33_333_333L
+
+        // Render channel for the overlay geometry (gizmo, origin marker, bounding box, grid)
+        private const val DEFAULT_CHANNEL = 2
+        private const val OVERLAY_CHANNEL = 3
 
         private const val ROTATION_SPEED_PER_PXL_RADIANS = 0.01f
         private const val AUTO_ROTATE_DEG_PER_FRAME = 0.5 // Change this to make the rotation go faster or slower
@@ -210,15 +218,25 @@ class ModelViewerActivity : AppCompatActivity() {
             controlsExpanded = !controlsExpanded
         }
 
-        binding.btnResetRotation.setOnClickListener { clickedResetView() }
-        binding.btnAutoRotate.setOnClickListener { clickedAutoRotate() }
-        binding.btnToggleLighting.setOnClickListener { clickedToggleIndirectLight() }
         binding.btnCaptureThumbnail.setOnClickListener { onCaptureThumbnailClicked() }
-        binding.btnModelDiagnostics.setOnClickListener { clickedModelDiagnosticsButton() }
-        binding.btnToggleAxis.setOnClickListener { clickedToggleGizmo() }
-        binding.btnToggleOffset.setOnClickListener { clickedToggleOffsetMarker() }
-        binding.btnToggleBbox.setOnClickListener { clickedToggleBoundingBox() }
-        binding.btnToggleGrid.setOnClickListener { clickedToggleGridPlane() }
+
+        // Binding the new model viewer controls viewer
+        controlsAdapter = ModelViewerControlsAdapter(this) { control ->
+            when (control) {
+                ModelViewerControl.RESET_ROTATION -> clickedResetView()
+                ModelViewerControl.AUTO_ROTATE -> clickedAutoRotate()
+                ModelViewerControl.LIGHTING -> clickedToggleIndirectLight()
+                ModelViewerControl.DIAGNOSTICS -> clickedModelDiagnosticsButton()
+                ModelViewerControl.AXIS -> clickedToggleGizmo()
+                ModelViewerControl.OFFSET -> clickedToggleOffsetMarker()
+                ModelViewerControl.BOUNDING_BOX -> clickedToggleBoundingBox()
+                ModelViewerControl.GRID -> clickedToggleGridPlane()
+                ModelViewerControl.OVERLAY_ON_TOP -> clickedToggleOverlayOnTop()
+            }
+        }
+
+        binding.rvViewerControls.itemAnimator = null
+        binding.rvViewerControls.adapter = controlsAdapter
 
         // Load the model viewer surface view
         if (!setupModelViewer())
@@ -313,6 +331,9 @@ class ModelViewerActivity : AppCompatActivity() {
             // Control our own camera
             updateOrbitTargetFromAsset(viewer)
             applyOrbitManipulator(viewer)
+
+            // Draw the overlays below on top of the model instead of inside it
+            applyOverlayDepthClear(viewer, overlayAlwaysOnTop)
 
             // Create axis at origin
             createAxisGizmo(viewer)
@@ -465,6 +486,19 @@ class ModelViewerActivity : AppCompatActivity() {
 
     }
 
+    // Controls whether everything built by buildColoredRenderable draws on top of the model
+    private fun applyOverlayDepthClear(viewer: ModelViewer, enabled: Boolean) {
+        overlayAlwaysOnTop = try {
+            FilamentChannelDepth.setChannelDepthClearEnabled(viewer.view, OVERLAY_CHANNEL, enabled)
+            enabled
+        } catch (t: Throwable) {
+            Log.e("ModelViewerActivity", "Failed to set depth clear for overlay channel", t)
+            false
+        }
+
+        controlsAdapter.setLabel(ModelViewerControl.OVERLAY_ON_TOP, getString(if (overlayAlwaysOnTop) R.string.overlay_top_on else R.string.overlay_top_off))
+    }
+
     private fun createGizmoMaterial(engine: Engine): MaterialInstance {
         val buffer = loadAsset("unlit.filamat")!!
 
@@ -530,14 +564,16 @@ class ModelViewerActivity : AppCompatActivity() {
         return (baseIndex + 8).toShort()
     }
 
-    // Originally a part of createAxisGizmo, now reused
+    // Originally a part of createAxisGizmo, now reused.
+    // setting the channel allows for models to be rendered on top of other models in the scene
     private fun buildColoredRenderable(
         engine: Engine,
         vertices: FloatArray,
         indices: ShortArray,
         material: MaterialInstance,
         scale: Float = 1f,
-        position: FloatArray? = null
+        position: FloatArray? = null,
+        channel: Int = OVERLAY_CHANNEL
     ): Triple<Int, VertexBuffer, IndexBuffer> {
         val vertexBuffer = VertexBuffer.Builder()
             .vertexCount(vertices.size / 6)
@@ -569,6 +605,7 @@ class ModelViewerActivity : AppCompatActivity() {
                 indexBuffer
             )
             .material(0, material)
+            .channel(channel)
             .culling(false)
             .castShadows(false)
             .receiveShadows(false)
@@ -1176,33 +1213,19 @@ class ModelViewerActivity : AppCompatActivity() {
     private fun expandControls() {
         Log.d("ModelViewerActivity", "expandControls: showing controls")
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_out)
-        binding.btnAutoRotate.visibility = View.VISIBLE
-        binding.btnToggleLighting.visibility = View.VISIBLE
-        binding.btnResetRotation.visibility = View.VISIBLE
-        binding.btnModelDiagnostics.visibility = View.VISIBLE
-        binding.btnToggleAxis.visibility = View.VISIBLE
-        binding.btnToggleOffset.visibility = View.VISIBLE
-        binding.btnToggleBbox.visibility = View.VISIBLE
-        binding.btnToggleGrid.visibility = View.VISIBLE
+        binding.cardViewerControls.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
         Log.d("ModelViewerActivity", "collapseControls: hiding controls")
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_in)
-        binding.btnAutoRotate.visibility = View.INVISIBLE
-        binding.btnToggleLighting.visibility = View.INVISIBLE
-        binding.btnResetRotation.visibility = View.INVISIBLE
-        binding.btnModelDiagnostics.visibility = View.INVISIBLE
-        binding.btnToggleAxis.visibility = View.INVISIBLE
-        binding.btnToggleOffset.visibility = View.INVISIBLE
-        binding.btnToggleBbox.visibility = View.INVISIBLE
-        binding.btnToggleGrid.visibility = View.INVISIBLE
+        binding.cardViewerControls.visibility = View.INVISIBLE
     }
 
     private fun clickedResetView() {
         if (autoRotate) {
             autoRotate = false
-            binding.btnAutoRotate.text = getString(R.string.auto_rotate)
+            controlsAdapter.setLabel(ModelViewerControl.AUTO_ROTATE, getString(R.string.auto_rotate))
         }
         grabPixelAccum = 0.0
 
@@ -1212,7 +1235,7 @@ class ModelViewerActivity : AppCompatActivity() {
 
     private fun clickedAutoRotate() {
         autoRotate = !autoRotate
-        binding.btnAutoRotate.text = if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate)
+        controlsAdapter.setLabel(ModelViewerControl.AUTO_ROTATE, if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate))
         grabPixelAccum = 0.0
         Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
     }
@@ -1224,10 +1247,10 @@ class ModelViewerActivity : AppCompatActivity() {
         indirectLightEnabled = !indirectLightEnabled
         if (indirectLightEnabled) {
             viewer.scene.indirectLight?.intensity = 50_000f
-            binding.btnToggleLighting.text = getString(R.string.lighting_on)
+            controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_on))
         } else {
             viewer.scene.indirectLight?.intensity = 0f
-            binding.btnToggleLighting.text = getString(R.string.lighting_off)
+            controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_off))
         }
         Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
     }
@@ -1239,10 +1262,10 @@ class ModelViewerActivity : AppCompatActivity() {
         gizmoVisible = !gizmoVisible
         if (gizmoVisible) {
             viewer.scene.addEntity(gizmoEntity)
-            binding.btnToggleAxis.text = getString(R.string.axis_on)
+            controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_on))
         } else {
             viewer.scene.removeEntity(gizmoEntity)
-            binding.btnToggleAxis.text = getString(R.string.axis_off)
+            controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_off))
         }
         Log.d("ModelViewerActivity", "gizmoVisible set to $gizmoVisible")
     }
@@ -1254,10 +1277,10 @@ class ModelViewerActivity : AppCompatActivity() {
         offsetMarkerVisible = !offsetMarkerVisible
         if (offsetMarkerVisible) {
             viewer.scene.addEntity(offsetMarkerEntity)
-            binding.btnToggleOffset.text = getString(R.string.offset_on)
+            controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_on))
         } else {
             viewer.scene.removeEntity(offsetMarkerEntity)
-            binding.btnToggleOffset.text = getString(R.string.offset_off)
+            controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_off))
         }
         Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
     }
@@ -1269,10 +1292,10 @@ class ModelViewerActivity : AppCompatActivity() {
         boundingBoxVisible = !boundingBoxVisible
         if (boundingBoxVisible) {
             viewer.scene.addEntity(boundingBoxEntity)
-            binding.btnToggleBbox.text = getString(R.string.bbox_on)
+            controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_on))
         } else {
             viewer.scene.removeEntity(boundingBoxEntity)
-            binding.btnToggleBbox.text = getString(R.string.bbox_off)
+            controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_off))
         }
         Log.d("ModelViewerActivity", "boundingBoxVisible set to $boundingBoxVisible")
     }
@@ -1284,12 +1307,19 @@ class ModelViewerActivity : AppCompatActivity() {
         gridVisible = !gridVisible
         if (gridVisible) {
             viewer.scene.addEntity(gridEntity)
-            binding.btnToggleGrid.text = getString(R.string.grid_on)
+            controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_on))
         } else {
             viewer.scene.removeEntity(gridEntity)
-            binding.btnToggleGrid.text = getString(R.string.grid_off)
+            controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_off))
         }
         Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
+    }
+
+    private fun clickedToggleOverlayOnTop() {
+        val viewer = newModelViewer ?: return
+
+        applyOverlayDepthClear(viewer, !overlayAlwaysOnTop)
+        Log.d("ModelViewerActivity", "overlayAlwaysOnTop set to $overlayAlwaysOnTop")
     }
 
     private fun clickedModelDiagnosticsButton() {
