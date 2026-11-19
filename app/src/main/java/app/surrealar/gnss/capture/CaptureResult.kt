@@ -120,4 +120,14 @@ data class CaptureResult(
 
     /** Up 1-sigma standard deviation (metres) of the final accepted fix, when reported. */
     val stdDevUpM: Double? = null,
+
+    /**
+     * Measured horizontal spread of the accepted samples (metres): sqrt(σE² + σN²) of the local
+     * East/North offsets. Shows how repeatable the averaged point was — an empirical figure, unlike
+     * the receiver-reported/estimated [hAccM]. Null with fewer than two samples.
+     */
+    val spreadHorizontalM: Double? = null,
+
+    /** Measured vertical spread (σ of the local Up offsets, metres). Null with fewer than two samples. */
+    val spreadVerticalM: Double? = null,
 )

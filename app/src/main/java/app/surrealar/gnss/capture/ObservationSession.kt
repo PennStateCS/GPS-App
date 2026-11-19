@@ -125,6 +125,10 @@ class ObservationSession(
          * every accepted fix. X, Y, and Z are tracked independently.
          */
         val xs = RunningStats(); val ys = RunningStats(); val zs = RunningStats()
+        // Local East/North/Up offsets from the first accepted sample, for horizontal/vertical spread.
+        val es = RunningStats(); val ns = RunningStats(); val us = RunningStats()
+        var ref: Triple<Double, Double, Double>? = null      // first sample ECEF
+        var refLatLon: Pair<Double, Double>? = null
         var samples = 0
         val freshness = FixFreshnessGate(maxAgeMs = policy.maxFixAgeSec * 1_000L)
 
@@ -152,6 +156,10 @@ class ObservationSession(
                      */
                     val (x, y, z) = Geodesy.llaToEcef(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM!!)
                     xs.push(x); ys.push(y); zs.push(z)
+                    val r = ref ?: Triple(x, y, z).also { ref = it; refLatLon = fix.latDeg to fix.lonDeg }
+                    val (rl, rn) = refLatLon!!
+                    val (de, dn, du) = Geodesy.ecefDeltaToEnu(x - r.first, y - r.second, z - r.third, rl, rn)
+                    es.push(de); ns.push(dn); us.push(du)
                     samples++
 
                     /*
@@ -200,7 +208,9 @@ class ObservationSession(
                      */
                     val requirementsMet = reachedDuration && reachedSamples
                     if (requirementsMet || capDuration) {
-                        finalize(start, xs, ys, zs, samples, requirementsMet)
+                        val spreadH = if (samples > 1) kotlin.math.sqrt(es.variance() + ns.variance()) else null
+                        val spreadV = if (samples > 1) us.stddev() else null
+                        finalize(start, xs, ys, zs, samples, requirementsMet, spreadH, spreadV)
                     }
                 }
                 .catch { e -> _state.value = State.Paused("error: ${e.message}") }
@@ -223,7 +233,9 @@ class ObservationSession(
     private fun finalize(
         start: Instant,
         xs: RunningStats, ys: RunningStats, zs: RunningStats, samples: Int,
-        requirementsMet: Boolean
+        requirementsMet: Boolean,
+        spreadHorizontalM: Double?,
+        spreadVerticalM: Double?,
     ) {
         /*
          * Convert the averaged ECEF coordinate back to latitude, longitude, and
@@ -255,7 +267,9 @@ class ObservationSession(
             multipathIndex = lastMultipathIndex,
             stdDevEastM = lastStdDevEast,
             stdDevNorthM = lastStdDevNorth,
-            stdDevUpM = lastStdDevUp
+            stdDevUpM = lastStdDevUp,
+            spreadHorizontalM = spreadHorizontalM,
+            spreadVerticalM = spreadVerticalM
         )
 
         /*

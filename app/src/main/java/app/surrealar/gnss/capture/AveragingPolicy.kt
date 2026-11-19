@@ -46,4 +46,22 @@ data class AveragingPolicy(
      * RTK status still looks acceptable.
      */
     val maxDiffAgeSec: Int = 10
-)
+) {
+    companion object {
+        /**
+         * Averaging rules for INTERNAL (phone/tablet) GNSS captures. Phone GNSS never reaches RTK, so
+         * standalone (SINGLE) quality is accepted. 30 s / 20 fixes averages out per-fix jitter and
+         * single-epoch jumps; most of a phone's error is slowly varying (multipath, atmosphere), so
+         * much longer sessions give diminishing returns for a field workflow. Phones send no
+         * correction age, so that gate never applies.
+         */
+        val INTERNAL = AveragingPolicy(
+            minDurationSec = 30,
+            maxDurationSec = 90,
+            minSamples = 20,
+            requiredMinStatus = RtkStatus.SINGLE,
+            maxFixAgeSec = 3,
+            maxDiffAgeSec = 10,
+        )
+    }
+}

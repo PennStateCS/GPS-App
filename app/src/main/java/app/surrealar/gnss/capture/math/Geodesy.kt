@@ -28,6 +28,20 @@ object Geodesy {
         return Triple(x, y, z)
     }
 
+    /**
+     * Rotates an ECEF offset (dx, dy, dz, metres) into local East/North/Up at [refLatDeg]/[refLonDeg].
+     * Used to express the spread of averaged samples as horizontal / vertical distances.
+     */
+    fun ecefDeltaToEnu(dx: Double, dy: Double, dz: Double, refLatDeg: Double, refLonDeg: Double): Triple<Double, Double, Double> {
+        val lat = Math.toRadians(refLatDeg); val lon = Math.toRadians(refLonDeg)
+        val sinLat = sin(lat); val cosLat = cos(lat)
+        val sinLon = sin(lon); val cosLon = cos(lon)
+        val e = -sinLon * dx + cosLon * dy
+        val n = -sinLat * cosLon * dx - sinLat * sinLon * dy + cosLat * dz
+        val u = cosLat * cosLon * dx + cosLat * sinLon * dy + sinLat * dz
+        return Triple(e, n, u)
+    }
+
     fun ecefToLla(x: Double, y: Double, z: Double): Triple<Double, Double, Double> {
         val e2 = E2                                   // First eccentricity squared
         val ep2 = (A*A - B*B) / (B*B)                 // Second eccentricity squared

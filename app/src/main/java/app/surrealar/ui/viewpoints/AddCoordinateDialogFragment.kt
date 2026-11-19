@@ -69,13 +69,6 @@ import kotlin.math.roundToInt
 /** Default coordinate marker color (app primary blue). */
 private const val DEFAULT_COORDINATE_COLOR = 0xFF155DA8.toInt()
 
-/** Dev/emulator-only fallback position (Googleplex). Never used in production — see
- *  [AddCoordinateDialogFragment.allowDevLocationFallback]. */
-/** How long Internal capture waits for a live internal fix from the GNSS feed (cold start can be slow). */
-private const val INTERNAL_FIX_WAIT_MS = 15_000L
-private const val DEV_FALLBACK_LAT = 37.4219999
-private const val DEV_FALLBACK_LON = -122.0840575
-
 /**
  * Dialog for creating a coordinate from a live GNSS/internal fix or manual entry. Capture is gated on
  * a real position and altitude; it never enables Save with a fabricated 0.0 altitude.
@@ -121,6 +114,8 @@ class AddCoordinateDialogFragment(
     private var selectedIconKey: String? = null
     private var capturePolicy: AveragingPolicy? = null
     private var isExternalMode = false
+    /** False until the selected source has been read; live/session updates wait for it. */
+    private var modeResolved = false
 
     /** Most recent live fix, so the status line can reflect current quality between accepted epochs. */
     private var lastLiveFix: Fix? = null
@@ -243,11 +238,11 @@ class AddCoordinateDialogFragment(
 
         btnSave?.setOnClickListener { handleSave() }
 
-        // Determine source and show the appropriate section. Capture MODE follows the user's
-        // selected source (Internal = instant fused capture, External = averaged GNSS capture).
-        // Live data correctness is enforced separately by provider filtering (averaging input and
-        // live preview both reject non-external fixes), so an External capture started while the
-        // receiver is still reconnecting simply shows a waiting state instead of internal data.
+        // Determine source. Capture MODE follows the user's selected source; BOTH modes are averaged
+        // captures (Internal uses AveragingPolicy.INTERNAL, External the saved GNSS Capture settings)
+        // and share the averaging UI. Provider filtering (averaging input and live preview) keeps the
+        // other source's fixes out, so e.g. an External capture started while the receiver is still
+        // reconnecting shows a waiting state instead of internal data.
         viewLifecycleOwner.lifecycleScope.launch {
             val sourceSetting = runCatching {
                 settingsRepo.locationSource.first()
@@ -255,64 +250,64 @@ class AddCoordinateDialogFragment(
             val activeProvider = sourceSettings.activeProvider.value
 
             isExternalMode = sourceSetting != LocationSourceType.INTERNAL
+            modeResolved = true
 
             DiagnosticsLogger.i("Capture",
                 "Capture opened selectedSource=$sourceSetting activeProvider=$activeProvider " +
                     "mode=${if (isExternalMode) "EXTERNAL" else "INTERNAL"}")
 
+            sectionInternal?.visibility = View.GONE
+            sectionExternal?.visibility = View.VISIBLE
             if (isExternalMode) {
-                sectionInternal?.visibility = View.GONE
-                sectionExternal?.visibility = View.VISIBLE
                 if (activeProvider != SourceSettings.ProviderChoice.EXTERNAL_TCP) {
                     DiagnosticsLogger.i("Capture", "External capture waiting for external data (activeProvider=$activeProvider)")
                     showExternalWaiting()
                 }
                 startExternalAveraging()
             } else {
-                sectionInternal?.visibility = View.VISIBLE
-                sectionExternal?.visibility = View.GONE
-                fetchInternalOneShot()
+                startInternalAveraging()
             }
         }
 
-        // Observe session state for the external averaging UI
+        // Observe session state for the averaging UI (both modes)
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 captureVm.state.collect { state ->
-                    if (isExternalMode) updateExternalUi(state)
+                    if (modeResolved) updateExternalUi(state)
                 }
             }
         }
 
-        // Show live fix quality + waiting reasons during external mode.
-        //
-        // Driven by currentFix (current-provider-only, cleared on switch). For external capture we
-        // only display EXTERNAL-provider fixes — a null or internal fix means the receiver hasn't
-        // delivered data yet, so we show "Waiting for external GNSS data" instead of ever surfacing
-        // internal GPS coordinates as the external capture value.
+        // Live fix quality + waiting reasons. Driven by currentFix (current-provider-only, cleared on
+        // switch / lost signal). Only fixes from the selected mode's provider are shown — a null or
+        // other-provider fix shows "Waiting for … GNSS data", never the other source's coordinates.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 fixSwitchboard.currentFix.collect { fix ->
-                    if (!isExternalMode) return@collect
-                    if (fix == null || fix.provider == Provider.INTERNAL) {
-                        if (fix?.provider == Provider.INTERNAL) logCaptureIgnore("wrong-provider")
+                    if (!modeResolved) return@collect
+                    val matchesMode = fix != null && (fix.provider == Provider.INTERNAL) == !isExternalMode
+                    if (!matchesMode) {
+                        if (fix != null) logCaptureIgnore("wrong-provider")
                         showExternalWaiting()
                     } else {
-                        updateLiveFix(fix)
+                        updateLiveFix(fix!!)
                     }
                 }
             }
         }
     }
 
+    /** "external" / "internal" for status text. */
+    private val modeWord: String get() = if (isExternalMode) "external" else "internal"
+
     /**
-     * Shows the external-capture waiting state without overwriting a completed result. Used when
-     * External is selected but no external-provider fix is available yet (receiver reconnecting).
+     * Shows the waiting state without overwriting a completed result. Used when no fix from the
+     * selected mode's provider is available yet (acquiring, receiver reconnecting, signal lost).
      */
     private fun showExternalWaiting() {
         if (captureVm.state.value is ObservationSession.State.Complete) return
         lastLiveFix = null
-        tvSamplingStatus?.text = "Waiting for external GNSS data"
+        tvSamplingStatus?.text = "Waiting for $modeWord GNSS data"
         tvFixStatus?.text = "—"
         clearPositionQuality()
     }
@@ -355,6 +350,24 @@ class AddCoordinateDialogFragment(
     }
 
     /**
+     * Internal (phone/tablet GNSS) capture: an averaged session over internal fixes from the GNSS
+     * feed using [AveragingPolicy.INTERNAL]. Averaging removes single-epoch jumps and per-fix jitter
+     * and yields a measured spread; the saved point is the mean, like external captures.
+     */
+    private fun startInternalAveraging() {
+        val fine = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!fine) {
+            tvSamplingStatus?.text = getString(R.string.location_permission_required)
+            btnSave?.isEnabled = false
+            return
+        }
+        capturePolicy = AveragingPolicy.INTERNAL
+        renderCaptureRequirements(AveragingPolicy.INTERNAL)
+        captureVm.startInternal()
+    }
+
+    /**
      * Fills the capture-requirements summary from the active [policy] (display only — it never
      * changes capture rules). Shows the minimum sampling time, accepted-fix count, and required fix
      * quality, plus the timeout. The required-quality clause is omitted when no minimum is enforced.
@@ -377,6 +390,9 @@ class AddCoordinateDialogFragment(
      * fix even between accepted epochs.
      */
     private fun updateExternalUi(state: ObservationSession.State) {
+        // Internal "Use Model Location" replaced the averaged capture; don't let the (cancelled)
+        // session's state disable Save or overwrite the status.
+        if (!isExternalMode && captureMethodStr == CaptureMethod.MODEL_EMBEDDED.storageValue) return
         val policy = capturePolicy ?: AveragingPolicy()
         when (state) {
             is ObservationSession.State.Capturing -> {
@@ -419,6 +435,7 @@ class AddCoordinateDialogFragment(
                     reportedVM = if (vReported) result.vAccM else null,
                     estimatedVM = if (vReported) null else result.vAccM,
                     hdop = result.hdop, satsUsed = result.satsUsed, diffAgeS = result.diffAgeS,
+                    spreadHM = result.spreadHorizontalM, spreadVM = result.spreadVerticalM,
                 )
                 // Maximum sampling time is a safety timeout, not a "force complete". Save Point is
                 // enabled ONLY when both minimum sampling time and minimum accepted fixes were met.
@@ -496,12 +513,12 @@ class AddCoordinateDialogFragment(
                     !timeComplete && fixesComplete ->
                         "Waiting for minimum sampling time"
                     else ->
-                        fix?.let { qualityWaitReason(it, policy) } ?: "Sampling external GNSS fixes…"
+                        fix?.let { qualityWaitReason(it, policy) } ?: "Sampling $modeWord GNSS fixes…"
                 }
             }
             is ObservationSession.State.Idle ->
                 fix?.let { qualityWaitReason(it, policy) }
-                    ?: if (fix == null) "Waiting for current external GNSS fix" else "No accepted fixes yet"
+                    ?: if (fix == null) "Waiting for current $modeWord GNSS fix" else "No accepted fixes yet"
             else -> return  // Complete / Paused set their own status
         }
         tvSamplingStatus?.text = reason
@@ -514,8 +531,6 @@ class AddCoordinateDialogFragment(
     private fun qualityWaitReason(fix: Fix, policy: AveragingPolicy): String? {
         if (!fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus))
             return "Waiting for required fix quality: ${shortFix(policy.requiredMinStatus.name)}"
-        if (Duration.between(fix.timeUtc, Instant.now()).seconds > policy.maxFixAgeSec)
-            return "Waiting for fresh GNSS fix"
         val diffAge = fix.diffAgeS
         if (diffAge != null && diffAge > policy.maxDiffAgeSec)
             return "Waiting for fresh correction data"
@@ -537,6 +552,8 @@ class AddCoordinateDialogFragment(
         reportedHM: Double?, estimatedHM: Double?,
         reportedVM: Double?, estimatedVM: Double?,
         hdop: Double?, satsUsed: Int?, diffAgeS: Double?,
+        /** Measured spread of the averaged samples (completed captures only). */
+        spreadHM: Double? = null, spreadVM: Double? = null,
     ) {
         val h = PositionQualityFormatter.horizontalAccuracy(reportedHM, estimatedHM)
         // Grid cells stay single-line; "—" when unavailable so they never grow the card.
@@ -546,6 +563,11 @@ class AddCoordinateDialogFragment(
 
         // Lower-priority values share one optional line, shown only when present.
         val details = buildList {
+            // How tightly the averaged samples clustered — measured, not receiver-reported.
+            if (spreadHM != null) {
+                add("Spread H ±${String.format(Locale.US, "%.2f", spreadHM)} m" +
+                    (spreadVM?.let { " / V ±${String.format(Locale.US, "%.2f", it)} m" } ?: ""))
+            }
             PositionQualityFormatter.verticalAccuracy(reportedVM, estimatedVM)?.let { add("V $it") }
             PositionQualityFormatter.correctionAgeSec(diffAgeS)?.let { add("Corr $it") }
         }
@@ -575,114 +597,6 @@ class AddCoordinateDialogFragment(
         tvAccuracyNote?.visibility = View.GONE
     }
 
-    // ── Internal GPS instant capture ──────────────────────────────────────────
-
-    /** True only when a hardcoded dev fallback location may be used (debug build on an emulator). */
-    private val allowDevLocationFallback: Boolean
-        get() = BuildConfig.DEBUG && isProbablyEmulator()
-
-    private fun isProbablyEmulator(): Boolean {
-        val fp = Build.FINGERPRINT.orEmpty()
-        return fp.startsWith("generic") || fp.startsWith("unknown") ||
-            Build.MODEL.contains("Emulator", ignoreCase = true) ||
-            Build.MODEL.contains("Android SDK built for", ignoreCase = true) ||
-            Build.MANUFACTURER.contains("Genymotion", ignoreCase = true) ||
-            Build.BRAND.startsWith("generic") ||
-            Build.PRODUCT.contains("sdk", ignoreCase = true) ||
-            Build.HARDWARE.contains("goldfish", ignoreCase = true) ||
-            Build.HARDWARE.contains("ranchu", ignoreCase = true)
-    }
-
-    /** Applies a validated internal-GPS location and enables Save. */
-    private fun acceptInternalLocation(
-        lat: Double, lon: Double, alt: Double,
-        hAcc: Double?, vAcc: Double?, modeLabel: String,
-        method: CaptureMethod, suffix: String = ""
-    ) {
-        latitude = lat; longitude = lon; altitude = alt
-        providerStr = "fused"
-        captureMethodStr = method.storageValue
-        hAccVal = hAcc; vAccVal = vAcc
-        capturedTimestampMs = System.currentTimeMillis()
-        locationText?.text =
-            getString(R.string.location_label_with_mode, lat, lon, alt, modeLabel) + suffix
-        btnSave?.isEnabled = true
-    }
-
-    private suspend fun fetchInternalOneShot() {
-        captureMethodStr = CaptureMethod.INTERNAL_GPS.storageValue
-        btnSave?.isEnabled = false   // stay disabled until a real, valid fix arrives
-        val fineGranted = ActivityCompat.checkSelfPermission(
-            requireContext(), Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ActivityCompat.checkSelfPermission(
-            requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (!fineGranted && !coarseGranted) {
-            locationText?.text = getString(R.string.location_permission_required)
-            btnSave?.isEnabled = false
-            return
-        }
-
-        locationText?.text = getString(R.string.fetching_location)  // "Waiting for location…"
-
-        // The GNSS feed (FixSwitchboard) is the app's single location authority. Take the next live
-        // INTERNAL fix from it — the same position the toolbar/map show — instead of asking Google's
-        // fused provider (which could differ, or hand back an old cached last-known location).
-        // currentFix is liveness-gated: it is null whenever fixes have stopped, so this never
-        // captures a frozen position. Altitude must be ellipsoidal (as the fused Location altitude
-        // was); a fix without it is skipped rather than saving an MSL/zero height.
-        val fix = withTimeoutOrNull(INTERNAL_FIX_WAIT_MS) {
-            fixSwitchboard.currentFix.first { f ->
-                f != null && f.provider == Provider.INTERNAL &&
-                    CoordinateValidator.isValidLatLon(f.latDeg, f.lonDeg) && f.altEllipsoidalM != null
-            }
-        }
-        if (fix != null) {
-            // The fix carries full quality metadata (the fused Location did not) — keep it.
-            rtkStatusStr = fix.rtkStatus.name
-            satsUsedVal = fix.satsUsed
-            satsVisibleVal = fix.satsVisible
-            hdopVal = fix.hDop; vDopVal = fix.vDop; pDopVal = fix.pDop
-            altitudeMslVal = fix.altMslM
-            geoidSeparationVal = fix.geoidSeparationM
-            speedMpsVal = fix.speedMps; courseDegVal = fix.courseDeg
-            timestampSourceStr = fix.timestampSource.name
-            stdLatVal = fix.stdDevNorthM; stdLonVal = fix.stdDevEastM; stdAltVal = fix.stdDevUpM
-            acceptInternalLocation(
-                fix.latDeg, fix.lonDeg, fix.altEllipsoidalM!!,
-                hAcc = fix.hAccM, vAcc = fix.vAccM,
-                modeLabel = "INTERNAL",
-                method = CaptureMethod.INTERNAL_GPS
-            )
-            DiagnosticsLogger.i("Capture", "Internal capture from GNSS feed rtk=${fix.rtkStatus} sats=${fix.satsUsed}")
-            return
-        }
-        DiagnosticsLogger.w("Capture", "Internal capture: no live internal fix within ${INTERNAL_FIX_WAIT_MS}ms " +
-            "(activeProvider=${sourceSettings.activeProvider.value})")
-
-        // 3) Developer/emulator-only fallback. NEVER runs in production: gated to debug builds
-        //    on an emulator, and tagged as a SIMULATOR capture so it is clearly not field data.
-        if (allowDevLocationFallback) {
-            latitude = DEV_FALLBACK_LAT; longitude = DEV_FALLBACK_LON; altitude = 0.0
-            providerStr = "fused"
-            captureMethodStr = CaptureMethod.SIMULATOR.storageValue
-            hAccVal = null; vAccVal = null
-            capturedTimestampMs = System.currentTimeMillis()
-            locationText?.text = String.format(
-                Locale.US, "%.6f, %.6f (developer fallback — emulator)", latitude, longitude
-            )
-            btnSave?.isEnabled = true
-            return
-        }
-
-        // 4) No valid fix. Clear any stale position, show a friendly error, keep Save disabled.
-        latitude = 0.0; longitude = 0.0
-        locationText?.text = getString(R.string.location_fix_failed)
-        btnSave?.isEnabled = false
-    }
-
     // ── Save ──────────────────────────────────────────────────────────────────
 
     private fun handleSave() {
@@ -696,7 +610,10 @@ class AddCoordinateDialogFragment(
         val builtinIconKey = CoordinateModelLink.resolveIconKey(null, null, rawIcon)
         val legacyIcon = rawIcon ?: ""
 
-        if (isExternalMode) {
+        // Internal mode can instead save a model's embedded location ("Use Model Location"); every
+        // other capture — internal or external — saves the averaged session result.
+        val useModelLocation = !isExternalMode && captureMethodStr == CaptureMethod.MODEL_EMBEDDED.storageValue
+        if (!useModelLocation) {
             val completedState = captureVm.state.value as? ObservationSession.State.Complete ?: return
             // Guard: never persist a timed-out, under-sampled capture (max sampling time reached
             // before the minimums were met). The Save button is already disabled in that case;
@@ -706,16 +623,17 @@ class AddCoordinateDialogFragment(
                 return
             }
             viewLifecycleOwner.lifecycleScope.launch {
+                val receiver = runCatching { settingsRepo.gnssReceiverSettings.first() }.getOrNull()
+                // Settings → antenna (pole) height for the antenna that produced the fixes, subtracted
+                // so the stored altitude is the ground mark, not the antenna.
+                val antennaHeightM = if (isExternalMode) receiver?.antennaHeightM ?: 0.0
+                    else receiver?.internalAntennaHeightM ?: 0.0
                 // Prefer the user's device name; otherwise record the selected receiver profile
                 // (e.g. "Emlid Reach RS4") rather than a hardcoded "RS2+".
-                val sourceDevice = runCatching {
+                val sourceDevice = if (!isExternalMode) "Internal GPS" else runCatching {
                     settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }
                         ?: settingsRepo.externalReceiverProfile.first().label
                 }.getOrNull() ?: "External GNSS"
-                // Settings → receiver antenna (pole) height: subtracted so the stored altitude is
-                // the ground mark, not the antenna. (Previously never applied on this save path.)
-                val poleHeightM = runCatching { settingsRepo.gnssReceiverSettings.first().antennaHeightM }
-                    .getOrDefault(0.0)
 
                 val coordinate = CoordinateFactory.fromCaptureResult(
                     id            = UUID.randomUUID().toString(),
@@ -723,30 +641,26 @@ class AddCoordinateDialogFragment(
                     note          = note,
                     color         = DEFAULT_COORDINATE_COLOR,
                     iconId        = legacyIcon,
-                    provider      = Provider.RS2_EXTERNAL,
+                    provider      = if (isExternalMode) Provider.RS2_EXTERNAL else Provider.INTERNAL,
                     result        = completedState.result,
-                    captureMethod = CaptureMethod.EXTERNAL_GNSS.storageValue,
+                    captureMethod = (if (isExternalMode) CaptureMethod.EXTERNAL_GNSS else CaptureMethod.INTERNAL_GPS).storageValue,
                     sourceDevice  = sourceDevice,
                     modelId       = linkedModelId,
                     iconKey       = builtinIconKey,
-                    antennaHeightM = poleHeightM
+                    antennaHeightM = antennaHeightM
                 )
                 if (persistIfValid(coordinate)) dismissAllowingStateLoss()
             }
-        } else viewLifecycleOwner.lifecycleScope.launch {
-            // Settings → internal antenna height (tablet on a pole/bracket), subtracted so the stored
-            // altitude is the ground mark — same rule as external captures. The developer emulator
-            // fallback (SIMULATOR) has no antenna.
-            val internalHeightM = if (captureMethodStr == CaptureMethod.SIMULATOR.storageValue) 0.0
-                else runCatching { settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM }.getOrDefault(0.0)
+        } else {
+            // Model-embedded location: the model's own coordinates, not an antenna measurement, so
+            // no antenna height is subtracted.
             val utm = try { UtmConverter.latLonToUtm(latitude, longitude) } catch (_: Exception) { null }
             val coordinate = Coordinate(
                 id                  = UUID.randomUUID().toString(),
                 name                = name,
                 latitude            = latitude,
                 longitude           = longitude,
-                altitude            = altitude - internalHeightM,
-                antennaHeightM      = internalHeightM.takeIf { it != 0.0 },
+                altitude            = altitude,
                 timestamp           = capturedTimestampMs,
                 icon                = legacyIcon,
                 color               = DEFAULT_COORDINATE_COLOR,
@@ -766,7 +680,7 @@ class AddCoordinateDialogFragment(
                 courseDeg           = courseDegVal,
                 timestampSource     = timestampSourceStr,
                 multipathIndex      = multipathIndexVal,
-                altitudeMsl         = altitudeMslVal?.let { it - internalHeightM },
+                altitudeMsl         = altitudeMslVal,
                 geoidSeparationM    = geoidSeparationVal,
                 crsEpsg             = crsEpsgVal,
                 easting             = utm?.easting,
@@ -877,8 +791,14 @@ class AddCoordinateDialogFragment(
                 locationText?.text = String.format(
                     Locale.US, "From model: %.6f, %.6f, %.2fm", latitude, longitude, altitude
                 )
-                // Enable save for internal mode when model location is used
-                if (!isExternalMode) btnSave?.isEnabled = true
+                // Internal mode: the model's location replaces the averaged capture — stop the
+                // session, show the chosen location, and allow Save.
+                if (!isExternalMode) {
+                    captureVm.cancel()
+                    sectionInternal?.visibility = View.VISIBLE
+                    tvSamplingStatus?.text = "Using the model's embedded location"
+                    btnSave?.isEnabled = true
+                }
                 applySelectedModel(modelId, modelName, thumbnailPath)
             }
             .setNegativeButton("Use Current Coordinate") { _, _ ->

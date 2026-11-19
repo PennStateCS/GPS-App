@@ -179,6 +179,21 @@ class CaptureViewModelTest {
     }
 
     @Test
+    fun internalCapture_averagesOnlyInternalFixes_andReportsSpread() = runBlocking {
+        val vm = vm(settings(source = LocationSourceType.INTERNAL))
+        vm.start(policy(minSamples = 2).copy(requiredMinStatus = RtkStatus.SINGLE), internal = true)
+        repeat(3) { push(fix(provider = Provider.RS2_EXTERNAL)) }   // external fixes are ignored
+        assertFalse(vm.state.value is ObservationSession.State.Complete)
+
+        push(fix(provider = Provider.INTERNAL, rtk = RtkStatus.SINGLE).copy(latDeg = 41.0))
+        push(fix(provider = Provider.INTERNAL, rtk = RtkStatus.SINGLE).copy(latDeg = 41.00002)) // ~2.2 m north
+        val s = vm.state.value as ObservationSession.State.Complete
+        assertEquals(2, s.result.samples)
+        val spread = s.result.spreadHorizontalM!!
+        assertTrue("spread was $spread", spread in 1.0..3.0)   // σ of two points 2.2 m apart ≈ 1.57 m
+    }
+
+    @Test
     fun cancel_returnsToIdle() = runBlocking {
         val vm = vm()
         vm.start(policy(minSamples = 10))

@@ -119,7 +119,18 @@ class CaptureViewModel @Inject constructor(
         }
     }
 
-    fun start(policy: AveragingPolicy) {
+    /**
+     * Starts an INTERNAL (phone/tablet GNSS) averaged capture with [AveragingPolicy.INTERNAL].
+     * Only internal-provider fixes are averaged.
+     */
+    fun startInternal() = start(AveragingPolicy.INTERNAL, internal = true)
+
+    /**
+     * Starts an averaging session. [internal] selects which provider's fixes are averaged: false =
+     * external receiver only (default), true = internal GNSS only. Fixes from the other provider are
+     * never mixed in, even during a reconnect window where the live provider differs.
+     */
+    fun start(policy: AveragingPolicy, internal: Boolean = false) {
         // Cancel any existing session FIRST so a previous ObservationSession can't keep collecting
         // fixes or emitting state into the UI after a new capture begins.
         if (session != null) {
@@ -129,20 +140,20 @@ class CaptureViewModel @Inject constructor(
         _state.value = ObservationSession.State.Idle
 
         val provider = sourceSettings.activeProvider.value
-        DiagnosticsLogger.i("Capture", "Capture started source=$provider " +
-            "minDur=${policy.minDurationSec}s maxDur=${policy.maxDurationSec}s " +
+        DiagnosticsLogger.i("Capture", "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} " +
+            "activeProvider=$provider minDur=${policy.minDurationSec}s maxDur=${policy.maxDurationSec}s " +
             "minFixes=${policy.minSamples} required=${policy.requiredMinStatus}")
-        // The averaging session is only used for EXTERNAL capture. Feed it ONLY external-provider
-        // fixes so internal GPS fixes can never be averaged into an external capture — even if the
-        // required quality is lowered to Single/DGPS, and even during the window where External is
-        // selected but the live provider is still Internal (reconnecting).
+        // Feed the session ONLY the selected mode's provider, so internal GPS fixes can never be
+        // averaged into an external capture (even with quality lowered to Single/DGPS, or while
+        // External is selected but the live provider is still Internal) and vice versa.
         // Also skip the fix replayed from before this session started (the fixes flow replays its
         // last value to new subscribers) — only fixes that arrive during the session are averaged.
         val replayedBeforeStart = fixSwitchboard.fixes.replayCache.lastOrNull()
-        val externalFixes = fixSwitchboard.fixes.filter {
-            it !== replayedBeforeStart && it.provider != app.surrealar.gnss.model.Provider.INTERNAL
+        val modeFixes = fixSwitchboard.fixes.filter {
+            it !== replayedBeforeStart &&
+                (it.provider == app.surrealar.gnss.model.Provider.INTERNAL) == internal
         }
-        val s = ObservationSession(viewModelScope, externalFixes, policy)
+        val s = ObservationSession(viewModelScope, modeFixes, policy)
         session = s
         sessionForwardJob = viewModelScope.launch {
             s.state.collect { st ->
