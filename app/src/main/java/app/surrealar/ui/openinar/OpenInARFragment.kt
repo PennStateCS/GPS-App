@@ -417,6 +417,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     )
     @Volatile private var arRenderSnapshot: ArRenderSnapshot? = null
 
+    /** Terrain mode: snaps pins/models to the ground ARCore has detected. GL thread only. */
+    private val groundSnapper = GroundSnapper()
+
     @Volatile private var arVisibleIdsMirror: Set<String> = emptySet()
     @Volatile private var arVisibilityModeMirror: ArVisibilityMode = ArVisibilityMode.SELECTED
     /** Last visible-model count logged (rendered set change → diagnostics). GL-thread only. */
@@ -1592,9 +1595,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val arrowEntries  = mutableListOf<OffScreenPinIndicatorOverlay.ArrowEntry>()
                 val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
 
+                // Detected ground/floor for Terrain mode (snaps content to the surface ARCore sees).
+                if (useTerrainAltitude) groundSnapper.update(s, camera.pose) else groundSnapper.reset()
+
                 collectGeoAnchors(earth, vp, margin, pinPositions, labelEntries, arrowEntries, newModelPoses)
                 testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
-                    surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses)
+                    surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses,
+                    groundSnapper)
 
                 pinScreenCache = pinPositions
                 // Depth occlusion mesh (world space) from this frame's depth image, when enabled.
@@ -1814,6 +1821,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
 
             entry.anchor.pose.toMatrix(model, 0)
+            // Terrain mode: put the model on the ground/floor ARCore detected under (or near) it.
+            // Far models with no detected surface keep their terrain-anchor height.
+            if (useTerrainAltitude) groundSnapper.groundY(model[12], model[14])?.let { model[13] = it }
             System.arraycopy(model, 0, modelScaled, 0, 16)
 
             if (entryModelFilePath != null) {

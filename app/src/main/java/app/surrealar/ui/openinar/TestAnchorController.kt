@@ -212,15 +212,20 @@ class TestAnchorController(private val context: Context) {
         edgeMargin: Float,
         labelEntries: MutableList<CoordinateLabelOverlay.LabelEntry>,
         arrowEntries: MutableList<OffScreenPinIndicatorOverlay.ArrowEntry>,
-        newModelPoses: MutableList<ArFilamentRenderer.ModelPose>
+        newModelPoses: MutableList<ArFilamentRenderer.ModelPose>,
+        /** Terrain mode: snaps each pin to the detected ground/floor when one is known. */
+        groundSnapper: GroundSnapper? = null
     ) {
         val testPinPath = pinModelFilePath
         var rendered = 0
+        val snap = if (useTerrain) groundSnapper else null
 
         for (te in anchors) {
             if (te.anchor.trackingState != TrackingState.TRACKING) continue
             rendered++
             te.anchor.pose.toMatrix(model, 0)
+            // Terrain mode: replace the anchor height with the detected ground under the pin.
+            snap?.groundY(model[12], model[14])?.let { model[13] = it }
 
             if (te.modelKey != null && testPinPath != null) {
                 // Pass the raw anchor world matrix (no pre-scaling) and let ArFilamentRenderer
@@ -282,22 +287,24 @@ class TestAnchorController(private val context: Context) {
         val lat0 = centerLat
         val lon0 = centerLon
 
-        // Stored mode needs an altitude. Prefer the spawn fix's ellipsoidal altitude; otherwise
-        // fall back to ARCore's own camera altitude so the grid still appears (logged below).
+        // Both modes use WGS84 anchors at the spawn fix's ellipsoidal altitude (ARCore camera altitude
+        // as fallback): they track immediately, indoors too. Terrain mode then snaps each pin's
+        // RENDERED height to the ground/floor ARCore detects (GroundSnapper, see render()). Google's
+        // terrain anchors are only used if there is no altitude at all — they are bare-earth DEM
+        // heights (not the visible floor), a few metres off, and never resolve indoors.
         val terrain = useTerrain
-        val storedAlt: Double? = if (terrain) null else
+        val storedAlt: Double? =
             centerAltEllipsoidal ?: runCatching { earth.cameraGeospatialPose.altitude }.getOrNull()
         val altSource = when {
-            terrain -> "terrain"
             centerAltEllipsoidal != null -> "gnss_fix"
             storedAlt != null -> "arcore_camera"
             else -> "none"
         }
-        if (!terrain && storedAlt == null) {
+        if (storedAlt == null) {
             DiagnosticsLogger.w(ArFilamentRenderer.DIAG,
-                "Test grid: Stored mode has no altitude (no fix HAE, no camera pose) — using terrain")
+                "Test grid: no altitude (no fix HAE, no camera pose) — using terrain-model anchors")
         }
-        val useTerrainNow = terrain || storedAlt == null
+        val useTerrainNow = storedAlt == null
 
         val dLatPerM = 1.0 / 111_111.0
         val dLonPerM = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
@@ -316,11 +323,8 @@ class TestAnchorController(private val context: Context) {
                 val rgba   = floatArrayOf(bright, 0.85f * bright, 0.15f, 1f)
 
                 try {
-                    // Terrain: resolveAnchorOnTerrain places the anchor at altitudeAboveTerrain = 0.0
-                    // (exactly on the terrain surface); it starts PAUSED and becomes TRACKING once
-                    // ARCore resolves the terrain elevation. Stored: a WGS84 anchor at the spawn
-                    // fix's altitude — tracks immediately; the gap to the ground shows GNSS vs
-                    // terrain height difference.
+                    // WGS84 anchor at the spawn altitude (tracks immediately). Terrain-model anchor
+                    // only as a last resort when no altitude is available.
                     val anchor = if (useTerrainNow)
                         earth.resolveAnchorOnTerrain(lat, lon, 0.0, 0f, 0f, 0f, 1f)
                     else
@@ -339,7 +343,11 @@ class TestAnchorController(private val context: Context) {
         }
 
         isActive = true
-        activeMode = if (useTerrainNow) "TERRAIN" else "STORED"
+        activeMode = when {
+            useTerrainNow -> "TERRAIN_MODEL"
+            terrain -> "GROUND_SNAP"
+            else -> "STORED"
+        }
         DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
             "Test grid spawned: $created/$total ${activeMode} anchors spacing=${GRID_SPACING_M}m " +
             "at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)} " +
