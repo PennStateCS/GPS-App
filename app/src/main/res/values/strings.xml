@@ -235,6 +235,8 @@
     <string name="bbox_off">Show Bounding Box</string>
     <string name="grid_on">Hide Grid Plane</string>
     <string name="grid_off">Show Grid Plane</string>
+    <string name="overlay_top_on">Let Model Cover Overlays</string>
+    <string name="overlay_top_off">Draw Overlays On Top</string>
 
     <!-- Model diagnostics dialog -->
     <string name="model_diag_ar_readiness">AR Readiness: %1$s</string>
