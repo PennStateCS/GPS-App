@@ -69,34 +69,12 @@ class RmcParser : SentenceParser<RMC> {
     }
 
     /** Latitude in ddmm.mmmm and hemisphere N/S → decimal degrees. */
-    private fun ddmmToDecimal(ddmm: String?, hemisphere: String?): Double? {
-        val v = ddmm?.trim().orEmpty()
-        if (v.isEmpty() || v.length < 4) return null
-        val deg = v.substring(0, 2).toIntOrNull() ?: return null
-        val min = v.substring(2).toDoubleOrNull() ?: return null
-        var value = deg + (min / 60.0)
-        when (hemisphere) {
-            "S" -> value = -value
-            "N", null -> { /* keep + */ }
-            else -> return null
-        }
-        return value
-    }
+    private fun ddmmToDecimal(ddmm: String?, hemisphere: String?): Double? =
+        NmeaCoordinateUtils.toDecimalDegrees(ddmm, hemisphere, isLatitude = true)
 
-    /** Longitude in dddmm.mmmm and hemisphere E/W → decimal degrees. */
-    private fun dddmmToDecimal(dddmm: String?, hemisphere: String?): Double? {
-        val v = dddmm?.trim().orEmpty()
-        if (v.isEmpty() || v.length < 5) return null
-        val deg = v.substring(0, 3).toIntOrNull() ?: return null
-        val min = v.substring(3).toDoubleOrNull() ?: return null
-        var value = deg + (min / 60.0)
-        when (hemisphere) {
-            "W" -> value = -value
-            "E", null -> { /* keep + */ }
-            else -> return null
-        }
-        return value
-    }
+    /** Longitude in (d)ddmm.mmmm and hemisphere E/W → decimal degrees (tolerates no leading zero). */
+    private fun dddmmToDecimal(dddmm: String?, hemisphere: String?): Double? =
+        NmeaCoordinateUtils.toDecimalDegrees(dddmm, hemisphere, isLatitude = false)
 
     private fun String?.toDoubleOrNullSafe(): Double? =
         this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()

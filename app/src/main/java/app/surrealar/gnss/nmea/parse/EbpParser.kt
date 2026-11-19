@@ -26,23 +26,9 @@ class EbpParser : SentenceParser<EBP> {
         return EBP(talker = talker, baseLat = lat, baseLon = lon, baseAltM = altM)
     }
 
-    private fun ddmmToDecimal(ddmm: String?, hemisphere: String?): Double? {
-        val v = ddmm?.trim().orEmpty()
-        if (v.length < 4) return null
-        val deg = v.substring(0, 2).toIntOrNull() ?: return null
-        val min = v.substring(2).toDoubleOrNull() ?: return null
-        var value = deg + (min / 60.0)
-        when (hemisphere) { "S" -> value = -value; "N", null -> {}; else -> return null }
-        return value
-    }
+    private fun ddmmToDecimal(ddmm: String?, hemisphere: String?): Double? =
+        NmeaCoordinateUtils.toDecimalDegrees(ddmm, hemisphere, isLatitude = true)
 
-    private fun dddmmToDecimal(dddmm: String?, hemisphere: String?): Double? {
-        val v = dddmm?.trim().orEmpty()
-        if (v.length < 5) return null
-        val deg = v.substring(0, 3).toIntOrNull() ?: return null
-        val min = v.substring(3).toDoubleOrNull() ?: return null
-        var value = deg + (min / 60.0)
-        when (hemisphere) { "W" -> value = -value; "E", null -> {}; else -> return null }
-        return value
-    }
+    private fun dddmmToDecimal(dddmm: String?, hemisphere: String?): Double? =
+        NmeaCoordinateUtils.toDecimalDegrees(dddmm, hemisphere, isLatitude = false)
 }

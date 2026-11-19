@@ -35,6 +35,37 @@ object NmeaCoordinateUtils {
     }
 
     /**
+     * Lenient (d)ddmm.mmmm → decimal degrees used by the sentence parsers (GGA/RMC/EBP).
+     *
+     * The degrees/minutes split is found from the DECIMAL POINT (minutes are always the two digits
+     * before it), not from a fixed degree width. Some receivers — e.g. the internal GNSS on Samsung
+     * SM-X940 — omit the leading zero on longitude ("7601.3509" instead of "07601.3509"); a fixed
+     * 3-digit split read that as 760° 1.35' → −760.02°. Results outside the valid range
+     * (minutes ≥ 60, |lat| > 90, |lon| > 180) return null rather than an impossible coordinate.
+     *
+     * @param hemisphere N/S (latitude) or E/W (longitude); null is treated as positive (N/E), any
+     *   other value returns null — matching the parsers' historical behaviour.
+     */
+    fun toDecimalDegrees(raw: String?, hemisphere: String?, isLatitude: Boolean): Double? {
+        val v = raw?.trim().orEmpty()
+        if (v.isEmpty()) return null
+        val dot = v.indexOf('.').let { if (it < 0) v.length else it }
+        if (dot < 3) return null // need at least d + mm
+        val deg = v.substring(0, dot - 2).toIntOrNull() ?: return null
+        val min = v.substring(dot - 2).toDoubleOrNull() ?: return null
+        if (deg < 0 || min < 0.0 || min >= 60.0) return null
+        var value = deg + min / 60.0
+        if (value > (if (isLatitude) 90.0 else 180.0)) return null
+        val (pos, neg) = if (isLatitude) "N" to "S" else "E" to "W"
+        when (hemisphere) {
+            neg -> value = -value
+            pos, null -> { /* keep + */ }
+            else -> return null
+        }
+        return value
+    }
+
+    /**
      * Generic function to parse NMEA coordinate format to decimal degrees.
      *
      * @param coordinateRaw Raw coordinate string in (d)ddmm.mmmm format
