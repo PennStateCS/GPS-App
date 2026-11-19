@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.util.Log
 import app.surrealar.R
 import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.model.MapColorScheme
 import com.google.android.gms.maps.model.MapStyleOptions
 
 /**
@@ -27,6 +28,10 @@ object MapThemeHelper {
      * custom styling (Normal and Terrain). Satellite and Hybrid imagery is never styled.
      */
     fun applyTheme(context: Context, map: GoogleMap, mapType: Int = GoogleMap.MAP_TYPE_NORMAL) {
+        // Maps SDK 20.1+ follows the system dark setting by default. Pin the base scheme to LIGHT so
+        // our own dark JSON style (below) stays the only source of night styling, as before.
+        map.setMapColorScheme(MapColorScheme.LIGHT)
+
         val isNight = (context.resources.configuration.uiMode and
                 Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 

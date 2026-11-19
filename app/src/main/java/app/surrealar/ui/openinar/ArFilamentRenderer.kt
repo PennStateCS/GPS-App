@@ -203,7 +203,7 @@ class ArFilamentRenderer {
 
         // Transparent clear — the GLSurfaceView camera background shows through.
         renderer.clearOptions = Renderer.ClearOptions().apply {
-            clearColor[0] = 0f; clearColor[1] = 0f; clearColor[2] = 0f; clearColor[3] = 0f
+            clearColor = doubleArrayOf(0.0, 0.0, 0.0, 0.0)
             clear = true
         }
         scene.skybox = null  // no opaque background layer
@@ -636,7 +636,7 @@ class ArFilamentRenderer {
         anchorAssets.clear()
 
         if (sunEntity != 0) {
-            runCatching { scene.removeEntity(sunEntity) }
+            runCatching { scene.remove(sunEntity) }
             runCatching { engine.lightManager.destroy(sunEntity) }
             runCatching { EntityManager.get().destroy(sunEntity) }
             sunEntity = 0

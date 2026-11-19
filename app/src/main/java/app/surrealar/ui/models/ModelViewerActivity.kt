@@ -309,7 +309,7 @@ class ModelViewerActivity : AppCompatActivity() {
             // renderer.clearOptions returns a *copy* of the struct; mutating it with .apply
             // without re-assigning is a no-op — the renderer never sees the change.
             viewer.renderer.clearOptions = Renderer.ClearOptions().apply {
-                clearColor[0] = 1f; clearColor[1] = 1f; clearColor[2] = 1f; clearColor[3] = 1f
+                clearColor = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
                 clear = true
             }
 
@@ -1262,7 +1262,7 @@ class ModelViewerActivity : AppCompatActivity() {
             viewer.scene.addEntity(gizmoEntity)
             controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_on))
         } else {
-            viewer.scene.removeEntity(gizmoEntity)
+            viewer.scene.remove(gizmoEntity)
             controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_off))
         }
         Log.d("ModelViewerActivity", "gizmoVisible set to $gizmoVisible")
@@ -1277,7 +1277,7 @@ class ModelViewerActivity : AppCompatActivity() {
             viewer.scene.addEntity(offsetMarkerEntity)
             controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_on))
         } else {
-            viewer.scene.removeEntity(offsetMarkerEntity)
+            viewer.scene.remove(offsetMarkerEntity)
             controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_off))
         }
         Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
@@ -1292,7 +1292,7 @@ class ModelViewerActivity : AppCompatActivity() {
             viewer.scene.addEntity(boundingBoxEntity)
             controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_on))
         } else {
-            viewer.scene.removeEntity(boundingBoxEntity)
+            viewer.scene.remove(boundingBoxEntity)
             controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_off))
         }
         Log.d("ModelViewerActivity", "boundingBoxVisible set to $boundingBoxVisible")
@@ -1307,7 +1307,7 @@ class ModelViewerActivity : AppCompatActivity() {
             viewer.scene.addEntity(gridEntity)
             controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_on))
         } else {
-            viewer.scene.removeEntity(gridEntity)
+            viewer.scene.remove(gridEntity)
             controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_off))
         }
         Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
@@ -1512,35 +1512,35 @@ class ModelViewerActivity : AppCompatActivity() {
             // Remove and destroy the dynamic sun light before the model, so the
             // scene has no dangling references when destroyModel() runs.
 //            if (sunLightEntity != 0) {
-//                viewer.scene.removeEntity(sunLightEntity)
+//                viewer.scene.remove(sunLightEntity)
 //                viewer.engine.lightManager.destroy(sunLightEntity)
 //                EntityManager.get().destroy(sunLightEntity)
 //                sunLightEntity = 0
 //            }
 
             if (gizmoEntity != 0) {
-                viewer.scene.removeEntity(gizmoEntity)
+                viewer.scene.remove(gizmoEntity)
                 viewer.engine.destroyEntity(gizmoEntity)
                 EntityManager.get().destroy(gizmoEntity)
                 gizmoEntity = 0
             }
 
             if (offsetMarkerEntity != 0) {
-                viewer.scene.removeEntity(offsetMarkerEntity)
+                viewer.scene.remove(offsetMarkerEntity)
                 viewer.engine.destroyEntity(offsetMarkerEntity)
                 EntityManager.get().destroy(offsetMarkerEntity)
                 offsetMarkerEntity = 0
             }
 
             if (boundingBoxEntity != 0) {
-                viewer.scene.removeEntity(boundingBoxEntity)
+                viewer.scene.remove(boundingBoxEntity)
                 viewer.engine.destroyEntity(boundingBoxEntity)
                 EntityManager.get().destroy(boundingBoxEntity)
                 boundingBoxEntity = 0
             }
 
             if (gridEntity != 0) {
-                viewer.scene.removeEntity(gridEntity)
+                viewer.scene.remove(gridEntity)
                 viewer.engine.destroyEntity(gridEntity)
                 EntityManager.get().destroy(gridEntity)
                 gridEntity = 0

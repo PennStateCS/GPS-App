@@ -8,8 +8,8 @@ plugins {
     alias(libs.plugins.android.application)   // ✅ apply in this module
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.dokka)
     // Developer API reference docs (Dokka Gradle Plugin v2). HTML, published to GitHub Pages by CI.
-    id("org.jetbrains.dokka") version "2.2.0"
 }
 
 // ── Git / build metadata ──────────────────────────────────────────────────────
@@ -50,12 +50,12 @@ val sharedDebugKeystore = rootProject.file("keystores/shared-debug.keystore")
 
 android {
     namespace = "app.surrealar"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "app.surrealar"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0-dev"
 
@@ -157,13 +157,13 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.lifecycle.livedata.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation("com.google.android.gms:play-services-maps:18.2.0")
+    implementation(libs.play.services.maps)
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
 
     // 3D rendering (Filament)
-    implementation("com.google.android.filament:filament-android:1.68.3")
-    implementation("com.google.android.filament:filament-utils-android:1.68.3")
+    implementation(libs.filament.android)
+    implementation(libs.filament.utils.android)
 
     // Room (KSP)
     implementation(libs.androidx.room.runtime)
@@ -171,7 +171,6 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.play.services.location)
-    implementation(libs.osmdroid)
     implementation(libs.arcore)
     implementation(libs.androidx.swiperefreshlayout)
 
@@ -184,38 +183,33 @@ dependencies {
     // kspTest(libs.hilt.compiler)
 
     // Coroutines / DataStore / misc
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("org.jmdns:jmdns:3.5.8")
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.jmdns)
 
-    // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts)
-    // RS2+ firmware runs socket.io v2 (EIO=3); client 2.x uses EIO=4 and is incompatible.
-    implementation("io.socket:socket.io-client:1.0.1") {
+    // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts).
+    // Upgraded to the CVE-fixed 2.x line; validate RS2+ protocol compatibility in field tests.
+    implementation(libs.socket.io.client) {
         exclude(group = "org.json", module = "json")
     }
 
     // Desugaring
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // --- Testing ---
     testImplementation(libs.junit)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
-    testImplementation("org.robolectric:robolectric:4.12.1")
-    testImplementation("androidx.test:core:1.5.0")
-    testImplementation("androidx.test.ext:junit:1.1.5")
-    testImplementation("org.mockito:mockito-core:5.24.0")
-    debugImplementation("androidx.fragment:fragment-testing:1.6.1")
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.junit)
+    testImplementation(libs.mockito.core)
+    debugImplementation(libs.androidx.fragment.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     // Room migration testing (MigrationTestHelper)
-    androidTestImplementation("androidx.room:room-testing:2.7.2")
+    androidTestImplementation(libs.androidx.room.testing)
 
-    // Optional guard for compileSdk 35
-    constraints {
-        implementation("androidx.core:core:1.15.0") { because("compileSdk 35") }
-        implementation("androidx.core:core-ktx:1.15.0") { because("compileSdk 35") }
-    }
 }
 
 // KSP args

@@ -3,7 +3,6 @@ package app.surrealar
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.content.Context
 import android.os.Build
 import android.util.Log
 import app.surrealar.data.settings.datastore.SettingsLocalDataSource
@@ -23,7 +22,6 @@ import app.surrealar.util.DiagnosticsLogger
 import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-import org.osmdroid.config.Configuration
 
 /** Hilt entry point for accessing Hilt singletons from non-injected Application code. */
 @EntryPoint
@@ -42,8 +40,7 @@ interface SurRealApplicationEntryPoint {
 /**
  * Hilt [Application] and process-startup entry point. In `onCreate` it builds the settings DataStore
  * early (so startup reads don't race), applies the saved theme, restores the last GNSS source, kicks
- * off a one-time UTM backfill, starts the mock-location publisher, and initializes the Maps renderer
- * and osmdroid config.
+ * off a one-time UTM backfill, starts the mock-location publisher, and initializes the Maps renderer.
  *
  * The companion exposes a few process-wide singletons ([settingsRepo], [mockLocationPublisher]) and
  * map-diagnostic state ([activeMapsRenderer], [mapLoadStatus]). Prefer Hilt injection (via
@@ -122,26 +119,7 @@ class SurRealApplication : Application() {
             Log.e("GlobalCrash", "Uncaught exception on thread ${thread.name}", throwable)
             previousCrashHandler?.uncaughtException(thread, throwable)
         }
-        // Configure osmdroid user agent (improves tile server courtesy + analytics separation)
-        try {
-            val ctx = applicationContext
-            val prefs = ctx.getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
-            Configuration.getInstance().load(ctx, prefs)
-            val currentUA = Configuration.getInstance().userAgentValue
-            if (currentUA == null || currentUA == "osmdroid") {
-                val pkg = ctx.packageName
-                val versionName = try {
-                    val pm = ctx.packageManager
-                    val pInfo = pm.getPackageInfo(pkg, 0)
-                    pInfo.versionName ?: "0"
-                } catch (e: Exception) { "0" }
-                Configuration.getInstance().userAgentValue = "$pkg/$versionName (SurveyingApp)"
-            }
-            Log.d("SurRealApplication","osmdroid UA set to ${Configuration.getInstance().userAgentValue}")
-        } catch (e: Exception) {
-            Log.w("SurRealApplication","Failed to set osmdroid user agent: ${e.message}")
-        }
-        Log.d("SurRealApplication","Application started; global crash handler & osmdroid config done")
+        Log.d("SurRealApplication","Application started; global crash handler installed")
 
         setupSettings()
         applyThemeFromSettings()

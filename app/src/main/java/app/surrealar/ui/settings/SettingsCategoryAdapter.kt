@@ -78,7 +78,7 @@ class SettingsCategoryAdapter(
                 } catch (_: Exception) {}
             }
 
-            val selectedColor = MaterialColors.getColor(ctx, com.google.android.material.R.attr.colorPrimary, 0)
+            val selectedColor = MaterialColors.getColor(ctx, androidx.appcompat.R.attr.colorPrimary, 0)
             val unselectedColor = MaterialColors.getColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant, 0)
             val iconColor = if (isSelected) selectedColor else unselectedColor
             ImageViewCompat.setImageTintList(holder.icon, ColorStateList.valueOf(iconColor))

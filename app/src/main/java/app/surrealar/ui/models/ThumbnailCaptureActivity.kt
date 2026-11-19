@@ -182,11 +182,10 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             viewer.view.bloomOptions = viewer.view.bloomOptions.apply { enabled = false }
 
             val opts = viewer.renderer.clearOptions
-            opts.clearColor[0] = 0f
-            opts.clearColor[1] = 0f
-            opts.clearColor[2] = 0f
-            opts.clearColor[3] = 0f
+            opts.clearColor = doubleArrayOf(0.0, 0.0, 0.0, 0.0)
             opts.clear = true
+            // Must re-assign: mutating the returned ClearOptions alone never reaches the renderer.
+            viewer.renderer.clearOptions = opts
 
 
             // NOTE: If we want a solid background, uncomment the code below

@@ -1092,7 +1092,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             text = sectionTitle
             textSize = 14f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorPrimary))
+            setTextColor(resolveAttrColor(ctx, androidx.appcompat.R.attr.colorPrimary))
             setPadding(dp(20f), dp(16f), dp(20f), dp(8f))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         }

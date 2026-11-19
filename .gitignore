@@ -49,6 +49,10 @@ AGENTS.md
 
 # Claude Code — local only
 .claude
+CLAUDE.local.md
+CLAUDE.md
+**/CLAUDE.md
+**/CLAUDE.local.md
 
 # Extracted Filament AAR artifacts — managed by Gradle, not source
 tmp_filament/
