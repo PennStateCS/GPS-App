@@ -181,6 +181,13 @@ class OpenInARViewModel @Inject constructor(
     fun togglePlanes()     { _showPlanes.update { !it } }
     fun togglePointCloud() { _showPointCloud.update { !it } }
 
+    // ── Depth occlusion (runtime, off by default each session) ────────────────
+    // Off by default: with occlusion on, the real ground also hides anything modelled BELOW it
+    // (e.g. buried utilities), which is often exactly what a surveyor wants to see.
+    private val _occlusionEnabled = MutableStateFlow(false)
+    val occlusionEnabled: StateFlow<Boolean> = _occlusionEnabled.asStateFlow()
+    fun toggleOcclusion() { _occlusionEnabled.update { !it } }
+
     // ── High-accuracy GPS preference ──────────────────────────────────────────
 
     /**

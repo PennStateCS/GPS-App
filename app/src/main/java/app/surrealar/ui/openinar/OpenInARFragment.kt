@@ -342,6 +342,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var arDebugToolsEnabled: Boolean = false
     @Volatile private var arShowPlanes: Boolean = false
     @Volatile private var arShowPointCloud: Boolean = false
+    /** User toggle (toolbar): hide model parts that are behind real surfaces. Off by default. */
+    @Volatile private var arOcclusionEnabled: Boolean = false
+    /** True once the session was configured with ARCore depth (device supports it). */
+    @Volatile private var depthEnabled: Boolean = false
+    /** Builds the occlusion mesh from ARCore depth images. GL-thread only. */
+    private val depthOcclusionSampler = DepthOcclusionSampler()
 
     /**
      * Edge margin in pixels for off-screen arrow indicators.
@@ -369,6 +375,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // preload() is called — even before ARCore anchors start tracking or the
             // Filament TextureView surface has been fully created.
             filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys)
+            filamentRenderer?.updateOcclusion(snapshot?.occlusion)
             // Keep rendering while any model is visible — a visible model whose anchor briefly stopped
             // tracking has no pose this frame but stays in the scene holding its last transform.
             val hasModels = currentPoses.isNotEmpty() || currentVisibleKeys.isNotEmpty()
@@ -383,7 +390,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             val vm = snapshot?.viewMatrix ?: return
             val pm = snapshot.projMatrix
-            filamentRenderer?.renderFrame(frameTimeNs, vm, pm)
+            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, hideModels = !snapshot.cameraTracking)
             // Update only after a successful render so we retry the clear frame if
             // camera matrices were unavailable this tick.
             choreoPrevHadModels = hasModels
@@ -401,7 +408,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val viewMatrix: FloatArray,
         val projMatrix: FloatArray,
         val modelPoses: List<ArFilamentRenderer.ModelPose>,
-        val visibleKeys: Set<String>
+        val visibleKeys: Set<String>,
+        /** False once ARCore camera tracking is lost — the matrices above are stale; hide models. */
+        val cameraTracking: Boolean = true,
+        /** Real-world depth occluder for this frame; null when occlusion is off or no depth yet. */
+        val occlusion: OcclusionFrame? = null
     )
     @Volatile private var arRenderSnapshot: ArRenderSnapshot? = null
 
@@ -439,7 +450,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Track previous brightness so we can restore it on pause
     private var previousBrightness = -1f
     // Mirrors ViewModel's debugVisible StateFlow; initialised to false to match the ViewModel default.
-    private var debugOverlayVisible = false
+    // Also read on the GL thread (to decide whether to count planes/points), hence @Volatile.
+    @Volatile private var debugOverlayVisible = false
 
     // Whether the floating toolbar is currently visible.
     private var toolbarVisible = false
@@ -551,6 +563,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         binding.btnTogglePlanes.setOnClickListener {
             DiagnosticsLogger.i(DIAG, "AR planes overlay ${if (!arShowPlanes) "ON" else "OFF"} (user)")
             viewModel.togglePlanes()
+        }
+
+        binding.btnToggleOcclusion.setOnClickListener {
+            DiagnosticsLogger.i(DIAG, "AR depth occlusion ${if (!arOcclusionEnabled) "ON" else "OFF"} (user)")
+            viewModel.toggleOcclusion()
         }
 
         binding.btnTogglePointCloud.setOnClickListener {
@@ -693,6 +710,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // Sync depth occlusion toggle from ViewModel.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.occlusionEnabled.collect { on ->
+                    arOcclusionEnabled = on
+                    val tint = if (on) requireContext().getColor(R.color.app_info)
+                               else    requireContext().getColor(android.R.color.white)
+                    binding.iconToggleOcclusion.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
+                    binding.txtToggleOcclusion.text = if (on) "Occlude ✓" else "Occlude"
+                }
+            }
+        }
+
         // React to high-accuracy GPS preference changes from the ViewModel.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -713,9 +743,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.arDisplaySettings.collect { ar ->
                     val terrain = ar.altitudeMode == "TERRAIN"
+                    // Test grid follows the same toggle (it used to be terrain-only, so the button
+                    // appeared to do nothing when only test pins were on screen).
+                    testAnchorController.useTerrain = terrain
                     if (terrain != useTerrainAltitude) {
                         useTerrainAltitude = terrain
                         shouldRebuildAnchors = true
+                        testAnchorController.requestRespawn()
                         _binding?.txtAltitudeMode?.text = if (terrain) "Terrain" else "Stored"
                     }
                     arModelScale = ar.modelScale
@@ -724,6 +758,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     arDebugToolsEnabled = ar.showArDebugTools
                     _binding?.arDebugToolsGroup?.visibility =
                         if (ar.showArDebugTools) View.VISIBLE else View.GONE
+                    // The debug-panel toggle must be reachable whenever the panel can be open — including
+                    // "Show Debug Overlay by Default" with Debug Tools off (previously the panel opened
+                    // with no way to close it, because the toggle lived inside the hidden tools group).
+                    _binding?.debugOverlayToggleGroup?.visibility =
+                        if (ar.showArDebugTools || ar.showDebugOverlay) View.VISIBLE else View.GONE
                     if (!ar.showArDebugTools) {
                         // Force debug visuals off when the master switch is disabled
                         arShowPlanes = false
@@ -929,6 +968,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         filamentRenderer?.destroy()
         filamentRenderer = null
         arRenderSnapshot  = null
+        depthOcclusionSampler.reset()
         pinScreenCache = emptyList()
         lastPostedLabels = emptyList()
         lastPostedArrows = emptyList()
@@ -1019,6 +1059,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     /**
+     * Diagnostics only (no behaviour change): logs every camera config ARCore offers on this device
+     * and which one the session is using. The selected config's GPU texture size/crop determines how
+     * "zoomed in" the AR camera view looks — the session currently leaves selection to ARCore.
+     */
+    private fun logCameraConfigs(ses: Session) {
+        runCatching {
+            val current = ses.cameraConfig
+            fun desc(c: com.google.ar.core.CameraConfig) =
+                "id=${c.cameraId} img=${c.imageSize.width}x${c.imageSize.height} " +
+                "tex=${c.textureSize.width}x${c.textureSize.height} fps=${c.fpsRange.lower}-${c.fpsRange.upper} " +
+                "depthSensor=${c.depthSensorUsage} stereo=${c.stereoCameraUsage}"
+            val all = ses.getSupportedCameraConfigs(com.google.ar.core.CameraConfigFilter(ses))
+            DiagnosticsLogger.i(DIAG, "AR_CAMERA_CONFIG selected ${desc(current)} (of ${all.size} supported)")
+            all.forEachIndexed { i, c -> DiagnosticsLogger.i(DIAG, "  camera_config[$i] ${desc(c)}") }
+        }.onFailure { DiagnosticsLogger.w(DIAG, "camera config listing failed: ${it.message}") }
+    }
+
+    /**
      * Configure ARCore session with geospatial and other features
      */
     private fun configureSession() {
@@ -1027,6 +1085,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // geo-anchor silently fails — the #1 cause of "AR doesn't work" reports — so all three outcomes
         // are recorded in the diagnostic export (not just logcat), and the unavailable case is surfaced.
         var geoEnabled = false
+        var depthRequested = false
         val config = Config(ses).apply {
             if (ses.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) {
                 try {
@@ -1045,8 +1104,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
             focusMode = Config.FocusMode.AUTO
             lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+            // Depth (hardware ToF/IR sensor when present, otherwise depth-from-motion) — enabled only
+            // where supported; it powers the optional "Occlude" toggle.
             if (ses.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
                 depthMode = Config.DepthMode.AUTOMATIC
+                depthRequested = true
+            } else {
+                depthMode = Config.DepthMode.DISABLED
             }
             instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
         }
@@ -1054,7 +1118,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             ses.configure(config)
             if (backgroundRenderer != null) ses.setCameraTextureName(backgroundRenderer!!.textureId)
             geospatialAvailable = geoEnabled
-            DiagnosticsLogger.i(DIAG, "AR session configured successfully (geospatial=$geoEnabled)")
+            depthEnabled = depthRequested
+            DiagnosticsLogger.i(DIAG, "AR session configured successfully (geospatial=$geoEnabled, depth=$depthRequested)")
+            logCameraConfigs(ses)
+            // The occlusion toggle is only offered on devices with ARCore depth.
+            _binding?.root?.post {
+                _binding?.occlusionGroup?.visibility = if (depthRequested) View.VISIBLE else View.GONE
+            }
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "Error configuring AR session: ${e.message}", e)
             setArStatus("AR config error: ${e.message}")
@@ -1140,19 +1210,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             return
         }
 
-        // Determine horizontal accuracy for gating.
-        // Prefer GST-derived hAccM; fall back to a HDOP-based estimate so the gate
-        // always has a value when GST sentences are absent (common with phone GPS).
-        // UERE (User Equivalent Range Error) constants per fix quality:
-        //   RTK FIX ≈ 0.02m/HDOP, RTK FLOAT ≈ 0.1m/HDOP, DGPS ≈ 0.5m/HDOP, SINGLE ≈ 3.0m/HDOP
-        val accuracyM: Double? = gnssFix.hAccM ?: gnssFix.hDop?.let { hdop ->
-            when (gnssFix.rtkStatus) {
-                app.surrealar.gnss.model.RtkStatus.FIX    -> hdop * 0.02
-                app.surrealar.gnss.model.RtkStatus.FLOAT  -> hdop * 0.1
-                app.surrealar.gnss.model.RtkStatus.DGPS   -> hdop * 0.5
-                else                                                  -> hdop * 3.0
-            }
-        }
+        // Determine horizontal accuracy for gating (GST hAccM, else HDOP × UERE estimate).
+        val accuracyM: Double? = gnssGateAccuracyM(gnssFix)
         if (accuracyM != null && accuracyM > MAX_GNSS_ACCURACY_M) {
             // Log once per blocked period — this method runs every GL frame until anchors exist.
             if (!loggedAccuracyGate) {
@@ -1259,13 +1318,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // altEllipsoidalM (WGS84 HAE) is required because ARCore's createAnchor() expects it.
         // If ellipsoidal alt is unavailable, derive it from MSL + geoid separation.
         // Never use raw altMslM alone — omitting geoid separation causes ±15–85m errors.
-        val fallbackAlt = gnssFix.altEllipsoidalM
-            ?: run {
-                val msl   = gnssFix.altMslM
-                val geoid = gnssFix.geoidSeparationM
-                if (msl != null && geoid != null) msl + geoid else null
-            }
-            ?: 0.0
+        val fallbackAlt = fixEllipsoidalAltM(gnssFix) ?: 0.0
 
         // Record the RTK status at the time of anchor creation for auto re-anchor logic.
         lastAnchorRtkStatus = gnssFix.rtkStatus
@@ -1496,8 +1549,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
 
-                pointCount = if (arDebugToolsEnabled && arShowPointCloud) pointCloudRenderer?.draw(frame, vp) ?: 0 else 0
-                planeCount = if (arDebugToolsEnabled && arShowPlanes) planeVisualizer?.drawAllPlanes(s, vp) ?: 0 else 0
+                // Counts used to come only from drawing the overlays, so the debug panel read
+                // "Planes=0 Points=0" while tracking whenever the overlays were off. Count without
+                // drawing while the panel is open.
+                pointCount = when {
+                    arDebugToolsEnabled && arShowPointCloud -> pointCloudRenderer?.draw(frame, vp) ?: 0
+                    debugOverlayVisible -> PointCloudRenderer.count(frame)
+                    else -> 0
+                }
+                planeCount = when {
+                    arDebugToolsEnabled && arShowPlanes -> planeVisualizer?.drawAllPlanes(s, vp) ?: 0
+                    debugOverlayVisible -> PlaneVisualizer.count(s)
+                    else -> 0
+                }
 
                 val margin        = edgeMarginPx
                 val pinPositions  = mutableListOf<PinScreenEntry>()
@@ -1510,19 +1574,44 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses)
 
                 pinScreenCache = pinPositions
+                // Depth occlusion mesh (world space) from this frame's depth image, when enabled.
+                val occlusion = if (arOcclusionEnabled && depthEnabled) {
+                    depthOcclusionSampler.update(frame, view, proj)
+                } else {
+                    depthOcclusionSampler.reset()
+                    null
+                }
                 // Publish a single atomic snapshot so the Choreographer always reads a camera matrix
                 // and model poses from the SAME ARCore frame — see ArRenderSnapshot kdoc.
                 arRenderSnapshot = ArRenderSnapshot(
                     viewMatrix  = view.copyOf(),
                     projMatrix  = proj.copyOf(),
                     modelPoses  = newModelPoses,
-                    visibleKeys = modelVisibleKeys
+                    visibleKeys = modelVisibleKeys,
+                    occlusion   = occlusion
                 )
                 postOverlayUpdates(labelEntries, arrowEntries)
+            } else {
+                // Camera tracking lost: there is no valid view matrix this frame. Previously the last
+                // snapshot kept being rendered by the Choreographer, so 3-D models stayed frozen on
+                // screen at the old camera pose (no longer world-locked) while the camera moved, and
+                // labels/arrows/tap targets stayed at stale screen positions. Flag the snapshot so
+                // Filament draws a transparent frame instead (models stay cached and in the scene —
+                // nothing is removed or reloaded) and clear the 2-D overlays until tracking resumes.
+                pinScreenCache = emptyList()
+                arRenderSnapshot?.let { prev ->
+                    if (prev.cameraTracking) arRenderSnapshot = prev.copy(cameraTracking = false)
+                }
+                postOverlayUpdates(emptyList(), emptyList())
             }
 
             // 4) Status bar, debug panel, model progress chip (posted to main thread)
-            postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount)
+            val featuresCounted = camera.trackingState == TrackingState.TRACKING &&
+                (debugOverlayVisible || (arDebugToolsEnabled && (arShowPointCloud || arShowPlanes)))
+            val camFailure = if (debugOverlayVisible)
+                runCatching { camera.trackingFailureReason?.name }.getOrNull() else null
+            val optics = if (debugOverlayVisible) computeOptics(camera) else null
+            postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount, featuresCounted, camFailure, optics)
 
         } catch (_: CameraNotAvailableException) {
         } catch (e: Exception) {
@@ -1637,9 +1726,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 }
 
                 rebuildGeoAnchorsIfNeeded(earth)
+                // Never spawn the test grid from an impossible fix (e.g. lon −760°): the anchors could
+                // never resolve. The request stays pending and the debug panel names the blocker.
                 val fix = currentGnssFix
-                if (fix != null) {
-                    testAnchorController.processActionIfNeeded(earth, fix.latDeg, fix.lonDeg)
+                if (fix != null && app.surrealar.domain.coordinates.CoordinateValidator.isValidLatLon(fix.latDeg, fix.lonDeg)) {
+                    testAnchorController.processActionIfNeeded(earth, fix.latDeg, fix.lonDeg, fixEllipsoidalAltM(fix))
                 }
                 if (awaitingLocalization) "Geo: Localizing…" else "Geo: TRACKING"
             }
@@ -1789,7 +1880,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val tracking: Boolean,
         val distM: Double,
         val bear: Double,
-        val hasModel: Boolean
+        val hasModel: Boolean,
+        val terrainState: String?
     )
 
     /**
@@ -1802,7 +1894,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         earth: Earth?,
         earthStatus: String,
         planeCount: Int,
-        pointCount: Int
+        pointCount: Int,
+        featuresCounted: Boolean,
+        cameraFailureReason: String?,
+        optics: ArDebugReport.Optics?
     ) {
         // Extract all ARCore earth values NOW on the GL thread before posting (one pose read, reused
         // for both the debug snapshot and the AR-view-quality indicator).
@@ -1861,9 +1956,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 tracking = entry.anchor.trackingState == TrackingState.TRACKING,
                 distM    = distM,
                 bear     = bear,
-                hasModel = entry.modelFilePath != null
+                hasModel = entry.modelFilePath != null,
+                terrainState = if (debugOverlayVisible) terrainStateName(entry.anchor) else null
             )
         }
+
+        // Debug-panel-only ARCore reads (GL thread), skipped while the panel is closed.
+        val panelArState: PanelArState? = if (debugOverlayVisible) {
+            PanelArState(
+                earthTracking = earth?.trackingState?.name,
+                earthState    = runCatching { earth?.earthState?.name }.getOrNull(),
+                hAccM = qHAcc, vAccM = qVAcc, yawDeg = qYaw,
+                cameraTracking = lastCameraTrackingLogged,
+                cameraFailureReason = cameraFailureReason,
+                featuresCounted = featuresCounted,
+                planes = planeCount, points = pointCount,
+                testSpawnPending = testAnchorController.isSpawnPending,
+                testGrid = testAnchorController.debugInfo(),
+                optics = optics,
+            )
+        } else null
 
         _binding?.textArStatus?.post {
             val gnssFix   = currentGnssFix
@@ -1904,59 +2016,149 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
 
             // Only build the debug string (and pay its allocation cost) when the panel is visible.
-            if (debugOverlayVisible) {
-                val debugLines = buildDebugText(snapshot, earthStatus, planeCount, pointCount, gnssFix, anchorDebug)
-                _binding?.textArDebug?.text  = debugLines
+            if (debugOverlayVisible && panelArState != null) {
+                _binding?.textArDebug?.text = buildDebugText(snapshot, panelArState, gnssFix, anchorDebug)
             }
 
             updateModelProgressChip()
         }
     }
 
-    /** Builds the multi-line debug panel string. Must be called on the main thread. */
+    /** ARCore state read on the GL thread for the debug panel (plain data, safe on main thread). */
+    private data class PanelArState(
+        val earthTracking: String?,
+        val earthState: String?,
+        val hAccM: Double?,
+        val vAccM: Double?,
+        val yawDeg: Double?,
+        val cameraTracking: String?,
+        val cameraFailureReason: String?,
+        val featuresCounted: Boolean,
+        val planes: Int,
+        val points: Int,
+        val testSpawnPending: Boolean,
+        val testGrid: ArDebugReport.TestGridInfo?,
+        val optics: ArDebugReport.Optics?,
+    )
+
+    private val opticsProj = FloatArray(16)
+
+    /**
+     * Camera FOV (from the GPU texture intrinsics) vs. the FOV of ARCore's projection matrix, i.e.
+     * what is actually on screen after ARCore crops the image to the display aspect. GL thread only.
+     */
+    private fun computeOptics(camera: com.google.ar.core.Camera): ArDebugReport.Optics? = runCatching {
+        val ti = camera.textureIntrinsics
+        val (fx, fy) = ti.focalLength.let { it[0].toDouble() to it[1].toDouble() }
+        val (w, h) = ti.imageDimensions.let { it[0] to it[1] }
+        if (fx <= 0 || fy <= 0 || w <= 0 || h <= 0) return@runCatching null
+        var camH = Math.toDegrees(2 * kotlin.math.atan(w / (2 * fx)))
+        var camV = Math.toDegrees(2 * kotlin.math.atan(h / (2 * fy)))
+        camera.getProjectionMatrix(opticsProj, 0, NEAR_CLIP, FAR_CLIP)
+        val scrH = Math.toDegrees(2 * kotlin.math.atan(1.0 / opticsProj[0]))
+        val scrV = Math.toDegrees(2 * kotlin.math.atan(1.0 / opticsProj[5]))
+        // The camera texture is always landscape; swap when the screen is portrait.
+        if (scrV > scrH && camH > camV) { val t = camH; camH = camV; camV = t }
+        ArDebugReport.Optics(w, h, camH, camV, scrH, scrV)
+    }.getOrNull()
+
+    /**
+     * WGS84 ellipsoidal altitude (HAE) of a fix, as ARCore's createAnchor() expects: altEllipsoidalM,
+     * else MSL + geoid separation. Never raw MSL alone (±15–85 m error). Null when unavailable.
+     */
+    private fun fixEllipsoidalAltM(fix: Fix): Double? = fix.altEllipsoidalM ?: run {
+        val msl = fix.altMslM
+        val geoid = fix.geoidSeparationM
+        if (msl != null && geoid != null) msl + geoid else null
+    }
+
+    /** TerrainAnchorState name, or null for non-terrain (WGS84) anchors. GL thread only. */
+    @Suppress("DEPRECATION")
+    private fun terrainStateName(anchor: com.google.ar.core.Anchor): String? =
+        runCatching { anchor.terrainAnchorState.name }.getOrNull()?.takeIf { it != "NONE" }
+
+    /**
+     * Horizontal accuracy the anchor gate uses: GST-derived hAccM, else a HDOP × UERE estimate so
+     * the gate always has a value when GST sentences are absent (common with phone GPS).
+     * UERE per fix quality: RTK FIX ≈ 0.02 m/HDOP, FLOAT ≈ 0.1, DGPS ≈ 0.5, SINGLE ≈ 3.0.
+     */
+    private fun gnssGateAccuracyM(fix: Fix): Double? = fix.hAccM ?: fix.hDop?.let { hdop ->
+        when (fix.rtkStatus) {
+            app.surrealar.gnss.model.RtkStatus.FIX   -> hdop * 0.02
+            app.surrealar.gnss.model.RtkStatus.FLOAT -> hdop * 0.1
+            app.surrealar.gnss.model.RtkStatus.DGPS  -> hdop * 0.5
+            else                                     -> hdop * 3.0
+        }
+    }
+
+    /** Builds the debug panel text via [ArDebugReport]. Must be called on the main thread. */
     private fun buildDebugText(
         snapshot: EarthDebugSnapshot?,
-        earthStatus: String,
-        planeCount: Int,
-        pointCount: Int,
+        ar: PanelArState,
         gnssFix: Fix?,
         anchorDebug: List<AnchorDebugEntry>
-    ): String = buildString {
-        val providerText = when (gnssFix?.provider) {
-            app.surrealar.gnss.model.Provider.INTERNAL    -> "Internal GPS"
-            app.surrealar.gnss.model.Provider.RS2_EXTERNAL -> "RS2+ (${gnssFix.rtkStatus})"
-            null  -> "Waiting"
-            else  -> gnssFix.provider.toString()
+    ): String {
+        val items = geoItems
+        val renderPoses = arRenderSnapshot?.modelPoses ?: emptyList()
+        val renderer = filamentRenderer
+        val fixInfo = gnssFix?.let { f ->
+            ArDebugReport.FixInfo(
+                provider = when (f.provider) {
+                    app.surrealar.gnss.model.Provider.INTERNAL     -> "Internal"
+                    app.surrealar.gnss.model.Provider.RS2_EXTERNAL -> "RS2+"
+                    else -> f.provider.toString()
+                },
+                rtk      = f.rtkStatus.name,
+                sats     = f.satsUsed,
+                hAccM    = f.hAccM,
+                gateAccM = gnssGateAccuracyM(f),
+                ageMs    = runCatching { System.currentTimeMillis() - f.timeUtc.toEpochMilli() }.getOrNull(),
+                lat      = f.latDeg,
+                lon      = f.lonDeg,
+            )
         }
-        val accText = gnssFix?.hAccM?.let { "±%.1fm".format(it) } ?: "N/A"
-
-        appendLine("🌍 Earth: $earthStatus  [${snapshot?.earthStateName}]")
-        appendLine("🧭 AR: Planes=$planeCount  Points=$pointCount")
-        appendLine("📡 GPS: $providerText  Acc=$accText")
-        appendLine("⚓ Anchors: ${anchorDebug.size}  geoAnchorsCreated=$geoAnchorsCreated")
-        appendLine("📋 Items loaded: ${geoItems.size}")
-
-        val fix  = currentGnssFix
-        val accM = fix?.hAccM
-        appendLine("📡 GNSS fix: ${if (fix != null) "YES  hAccM=${accM?.let { "%.2f".format(it) } ?: "null (gate skipped)"}" else "NO FIX YET"}")
-        if (geoItems.isEmpty())          appendLine("⚠️  BLOCKER: geoItems is empty")
-        if (fix == null)                 appendLine("⚠️  BLOCKER: currentGnssFix is null")
-        if (accM != null && accM > MAX_GNSS_ACCURACY_M) appendLine("⚠️  BLOCKER: accuracy ${"%.1f".format(accM)}m > ${MAX_GNSS_ACCURACY_M.toInt()}m")
-        if (geoAnchorsCreated && anchorDebug.isEmpty()) appendLine("⚠️  geoAnchorsCreated=true but 0 anchors")
-
-        if (snapshot?.camLat != null) {
-            appendLine("📍 Cam: %.6f, %.6f  alt=%.1fm  hdg=%.0f°".format(
-                snapshot.camLat, snapshot.camLon, snapshot.camAlt, snapshot.camHeading))
-        }
-        anchorDebug.forEachIndexed { i, entry ->
-            val state = if (entry.hasModel)
-                filamentRenderer?.modelLoadState(entry.coordId)?.name ?: "NO_RENDERER"
-            else "GLES_PIN"
-            appendLine("[$i] ${entry.name}  tracking=${entry.tracking}" +
-                "  %.1fm @ %.0f°  model=$state".format(entry.distM, entry.bear))
-        }
-        if (anchorDebug.isEmpty()) appendLine("  → no anchors yet")
-    }.trimEnd()
+        return ArDebugReport.build(ArDebugReport.Input(
+            geospatialEnabled = geospatialAvailable,
+            depthEnabled      = depthEnabled,
+            cameraTracking    = ar.cameraTracking,
+            cameraFailureReason = ar.cameraFailureReason,
+            featuresCounted   = ar.featuresCounted,
+            planes            = ar.planes,
+            points            = ar.points,
+            earthTracking     = ar.earthTracking,
+            earthState        = ar.earthState,
+            earthHAccM        = ar.hAccM,
+            earthVAccM        = ar.vAccM,
+            earthYawDeg       = ar.yawDeg,
+            camLat            = snapshot?.camLat,
+            camLon            = snapshot?.camLon,
+            camAlt            = snapshot?.camAlt,
+            camHeading        = snapshot?.camHeading,
+            fix               = fixInfo,
+            gnssGateMaxM      = MAX_GNSS_ACCURACY_M,
+            items             = items.size,
+            itemsWithModels   = items.count { it.modelFilePath != null },
+            geoAnchorsCreated = geoAnchorsCreated,
+            awaitingLocalization = awaitingLocalization,
+            geoAnchors        = anchorDebug.map { e ->
+                ArDebugReport.AnchorRow(
+                    name       = e.name,
+                    tracking   = if (e.tracking) "TRACKING" else "not tracking",
+                    terrainState = e.terrainState,
+                    distM      = e.distM.takeIf { it >= 0 },
+                    bearingDeg = e.bear,
+                    model      = if (e.hasModel) renderer?.modelLoadState(e.coordId)?.name ?: "NO_RENDERER" else "PIN",
+                )
+            },
+            testSpawnPending  = ar.testSpawnPending,
+            testGrid          = ar.testGrid,
+            modelsInScene     = renderPoses.count {
+                renderer?.modelLoadState(it.key) == ArFilamentRenderer.ModelLoadState.IN_SCENE
+            },
+            modelPoses        = renderPoses.size,
+            optics            = ar.optics,
+        ))
+    }
 
     /** Updates the model-load-progress chip. Must be called on the main thread. */
     private fun updateModelProgressChip() {

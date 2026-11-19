@@ -353,6 +353,46 @@
                     android:gravity="center" />
             </LinearLayout>
 
+            <!-- Depth occlusion toggle: shown only when the device supports ARCore depth -->
+            <LinearLayout
+                android:id="@+id/occlusionGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <View android:layout_width="match_parent" android:layout_height="1dp"
+                    android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
+
+                <LinearLayout
+                    android:id="@+id/btnToggleOcclusion"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="8dp"
+                    android:background="@drawable/ripple_ar_toolbar_btn"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="Hide models behind real objects (depth occlusion)">
+                    <ImageView
+                        android:id="@+id/iconToggleOcclusion"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_layers_24"
+                        android:importantForAccessibility="no" />
+                    <TextView
+                        android:id="@+id/txtToggleOcclusion"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="3dp"
+                        android:text="Occlude"
+                        android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                        android:gravity="center" />
+                </LinearLayout>
+            </LinearLayout>
+
             <!-- Debug tools group: hidden unless AR Debug Tools setting is on -->
             <LinearLayout
                 android:id="@+id/arDebugToolsGroup"
@@ -424,6 +464,18 @@
                         android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
                         android:gravity="center" />
                 </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- Debug Overlay toggle: its own group (not inside arDebugToolsGroup) so the panel can
+                 always be closed when "Show Debug Overlay by Default" is on but Debug Tools are off.
+                 Shown when either setting is enabled. -->
+            <LinearLayout
+                android:id="@+id/debugOverlayToggleGroup"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
                 <View android:layout_width="match_parent" android:layout_height="1dp"
                     android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />

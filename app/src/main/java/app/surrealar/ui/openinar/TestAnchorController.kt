@@ -31,7 +31,7 @@ class TestAnchorController(private val context: Context) {
         val rgba: FloatArray
     )
 
-    private enum class Action { NONE, SPAWN, CLEAR }
+    private enum class Action { NONE, SPAWN, RESPAWN, CLEAR }
 
     // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -62,6 +62,22 @@ class TestAnchorController(private val context: Context) {
 
     /** Written on main thread (IO coroutine result); read on GL thread. */
     @Volatile var pinModelFilePath: String? = null
+
+    /**
+     * Mirrors the AR screen's Stored/Terrain altitude toggle. Terrain: pins are resolved onto the
+     * ground via `resolveAnchorOnTerrain`. Stored: WGS84 anchors at the spawn fix's ellipsoidal
+     * altitude (test points have no surveyed altitude of their own). Written on main thread.
+     */
+    @Volatile var useTerrain: Boolean = true
+
+    /** Grid centre captured at spawn so a mode switch re-creates the SAME grid. GL thread only. */
+    private var centerLat = 0.0
+    private var centerLon = 0.0
+    private var centerAltEllipsoidal: Double? = null
+
+    /** Mode the current grid was built with ("TERRAIN"/"STORED"), for the debug panel. */
+    @Volatile var activeMode: String? = null
+        private set
 
     // ── Main-thread API ───────────────────────────────────────────────────────
 
@@ -106,23 +122,59 @@ class TestAnchorController(private val context: Context) {
         }
     }
 
+    /** True while a spawn request is waiting for Earth TRACKING + a valid GNSS fix. */
+    val isSpawnPending: Boolean get() = action == Action.SPAWN || action == Action.RESPAWN
+
+    /**
+     * Snapshot for the debug panel: how many test anchors track, and their terrain-anchor states
+     * (the only signal that says WHY a terrain anchor never resolves). GL thread only.
+     */
+    @Suppress("DEPRECATION")
+    internal fun debugInfo(): ArDebugReport.TestGridInfo? {
+        if (anchors.isEmpty()) return null
+        val states = anchors
+            .groupingBy { runCatching { it.anchor.terrainAnchorState.name }.getOrDefault("UNKNOWN") }
+            .eachCount()
+        return ArDebugReport.TestGridInfo(
+            total = anchors.size,
+            tracking = anchors.count { it.anchor.trackingState == TrackingState.TRACKING },
+            terrainStates = states,
+            mode = activeMode,
+        )
+    }
+
     /** Signal that the test grid should be spawned on the next GL frame. */
     fun requestSpawn() { action = Action.SPAWN }
 
     /** Signal that the test grid should be cleared on the next GL frame. */
     fun requestClear() { action = Action.CLEAR }
 
+    /**
+     * Rebuild the existing grid (same centre) in the current [useTerrain] mode — call after the
+     * altitude toggle changes. No-op when no grid is active.
+     */
+    fun requestRespawn() { if (isActive && action == Action.NONE) action = Action.RESPAWN }
+
     // ── GL-thread API ─────────────────────────────────────────────────────────
 
     /**
      * Must be called from the GL thread (inside `onDrawFrame`).
      * Processes any pending spawn/clear request using [earth] and the current GNSS position.
+     *
+     * @param gnssAltEllipsoidal the fix's WGS84 ellipsoidal altitude (HAE), used by Stored mode.
      */
-    fun processActionIfNeeded(earth: Earth, gnssLat: Double, gnssLon: Double) {
+    fun processActionIfNeeded(earth: Earth, gnssLat: Double, gnssLon: Double, gnssAltEllipsoidal: Double?) {
         when (action) {
             Action.SPAWN -> {
                 action = Action.NONE
-                spawnGrid(earth, gnssLat, gnssLon)
+                centerLat = gnssLat
+                centerLon = gnssLon
+                centerAltEllipsoidal = gnssAltEllipsoidal
+                spawnGrid(earth)
+            }
+            Action.RESPAWN -> {
+                action = Action.NONE
+                spawnGrid(earth)
             }
             Action.CLEAR -> {
                 action = Action.NONE
@@ -217,8 +269,27 @@ class TestAnchorController(private val context: Context) {
 
     // ── Private ───────────────────────────────────────────────────────────────
 
-    private fun spawnGrid(earth: Earth, lat0: Double, lon0: Double) {
+    private fun spawnGrid(earth: Earth) {
         clearGrid()
+        val lat0 = centerLat
+        val lon0 = centerLon
+
+        // Stored mode needs an altitude. Prefer the spawn fix's ellipsoidal altitude; otherwise
+        // fall back to ARCore's own camera altitude so the grid still appears (logged below).
+        val terrain = useTerrain
+        val storedAlt: Double? = if (terrain) null else
+            centerAltEllipsoidal ?: runCatching { earth.cameraGeospatialPose.altitude }.getOrNull()
+        val altSource = when {
+            terrain -> "terrain"
+            centerAltEllipsoidal != null -> "gnss_fix"
+            storedAlt != null -> "arcore_camera"
+            else -> "none"
+        }
+        if (!terrain && storedAlt == null) {
+            DiagnosticsLogger.w(ArFilamentRenderer.DIAG,
+                "Test grid: Stored mode has no altitude (no fix HAE, no camera pose) — using terrain")
+        }
+        val useTerrainNow = terrain || storedAlt == null
 
         val dLatPerM = 1.0 / 111_111.0
         val dLonPerM = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
@@ -237,10 +308,15 @@ class TestAnchorController(private val context: Context) {
                 val rgba   = floatArrayOf(bright, 0.85f * bright, 0.15f, 1f)
 
                 try {
-                    // resolveAnchorOnTerrain places the anchor at altitudeAboveTerrain = 0.0
-                    // (exactly on the terrain surface). The anchor starts as TrackingState.PAUSED
-                    // and transitions to TRACKING once ARCore resolves the terrain elevation.
-                    val anchor = earth.resolveAnchorOnTerrain(lat, lon, 0.0, 0f, 0f, 0f, 1f)
+                    // Terrain: resolveAnchorOnTerrain places the anchor at altitudeAboveTerrain = 0.0
+                    // (exactly on the terrain surface); it starts PAUSED and becomes TRACKING once
+                    // ARCore resolves the terrain elevation. Stored: a WGS84 anchor at the spawn
+                    // fix's altitude — tracks immediately; the gap to the ground shows GNSS vs
+                    // terrain height difference.
+                    val anchor = if (useTerrainNow)
+                        earth.resolveAnchorOnTerrain(lat, lon, 0.0, 0f, 0f, 0f, 1f)
+                    else
+                        earth.createAnchor(lat, lon, storedAlt!!, 0f, 0f, 0f, 1f)
                     anchors += TestAnchorEntry(
                         anchor   = anchor,
                         modelKey = if (pinPath != null) gridKey(latOff, lonOff) else null,
@@ -249,21 +325,24 @@ class TestAnchorController(private val context: Context) {
                     )
                     created++
                 } catch (e: Exception) {
-                    Log.e(TAG, "resolveAnchorOnTerrain failed for $label", e)
+                    Log.e(TAG, "Test anchor creation failed for $label (terrain=$useTerrainNow)", e)
                 }
             }
         }
 
         isActive = true
+        activeMode = if (useTerrainNow) "TERRAIN" else "STORED"
         DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
-            "Test grid spawned: $created/$total terrain anchors spacing=${GRID_SPACING_M}m " +
-            "at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)}")
+            "Test grid spawned: $created/$total ${activeMode} anchors spacing=${GRID_SPACING_M}m " +
+            "at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)} " +
+            "altM=${storedAlt?.let { "%.2f".format(it) } ?: "terrain"} altSource=$altSource")
     }
 
     private fun clearGrid() {
         for (te in anchors) try { te.anchor.detach() } catch (_: Exception) {}
         anchors.clear()
         isActive = false
+        activeMode = null
     }
 }
 

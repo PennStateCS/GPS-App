@@ -113,18 +113,32 @@ class ArFilamentRenderer {
          */
         var correctionMatrix: FloatArray? = null,
         /** Per-coordinate placement (scale/rotation/offset) folded into [correctionMatrix]. */
-        val placement: ModelPlacement = ModelPlacement()
+        val placement: ModelPlacement = ModelPlacement(),
+        /**
+         * True once the asset has been in the scene at least once. A hidden asset
+         * (addedToScene=false) that was previously shown has already finished its upload and
+         * must not be re-submitted to [ResourceLoader.asyncBeginLoad].
+         */
+        var everAddedToScene: Boolean = false
     )
 
     private lateinit var engine: Engine
     private lateinit var renderer: Renderer
     private lateinit var scene: Scene
+    /**
+     * Scene with no entities, swapped into [view] by [renderFrame] when `hideModels` is set (camera
+     * tracking lost) so a transparent frame is drawn without removing/destroying any cached asset.
+     */
+    private lateinit var emptyScene: Scene
     private lateinit var view: View
     private lateinit var camera: Camera
     private var cameraEntity: Int = 0
     private var sunEntity: Int = 0
 
     private var swapChain: SwapChain? = null
+
+    /** Depth-only renderable for real-world occlusion; null if it failed to initialise. */
+    private var occluder: FilamentDepthOccluder? = null
 
     /**
      * [UiHelper] manages EGL surface creation for the [TextureView].
@@ -192,6 +206,7 @@ class ArFilamentRenderer {
         engine   = Engine.create()
         renderer = engine.createRenderer()
         scene    = engine.createScene()
+        emptyScene = engine.createScene()
 
         cameraEntity = EntityManager.get().create()
         camera = engine.createCamera(cameraEntity)
@@ -216,6 +231,11 @@ class ArFilamentRenderer {
             .castShadows(false)
             .build(engine, sunEntity)
         scene.addEntity(sunEntity)
+
+        // Depth occluder (optional): failure only disables occlusion, never the renderer.
+        occluder = runCatching { FilamentDepthOccluder(engine, textureView.context.assets) }
+            .onFailure { DiagnosticsLogger.w(DIAG, "depth occluder init failed — occlusion unavailable: ${it.message}", it) }
+            .getOrNull()
 
         // GLB loading infrastructure.
         assetLoader    = AssetLoader(engine, UbershaderProvider(engine), EntityManager.get())
@@ -377,7 +397,7 @@ class ArFilamentRenderer {
             // in the ResourceLoader's upload queue. Calling destroyAsset() on an asset
             // that is currently being uploaded triggers a PreconditionPanic — cancel all
             // pending loads first, then re-start loads for non-stale unfinished assets.
-            val anyStillLoading = staleTestKeys.any { !anchorAssets[it]!!.addedToScene }
+            val anyStillLoading = staleTestKeys.any { anchorAssets[it]?.everAddedToScene == false }
             if (anyStillLoading) {
                 resourceLoader.asyncCancelLoad()
             }
@@ -392,8 +412,11 @@ class ArFilamentRenderer {
             }
             if (anyStillLoading) {
                 // Re-start uploads for non-stale assets whose loads were interrupted above.
+                // Only assets that never reached the scene: a model the user merely HID
+                // (addedToScene=false) already finished uploading, and re-submitting it to
+                // asyncBeginLoad would re-upload its resources.
                 for ((_, cached) in anchorAssets) {
-                    if (!cached.addedToScene) {
+                    if (!cached.everAddedToScene) {
                         runCatching { resourceLoader.asyncBeginLoad(cached.asset) }
                     }
                 }
@@ -437,6 +460,7 @@ class ArFilamentRenderer {
                 }
                 val reason = if (readyByProgress) "progress=1.0" else "ticks=${cached.ticksSinceLoad}"
                 cached.addedToScene = true
+                cached.everAddedToScene = true
                 scene.addEntities(cached.asset.entities)
                 val bb = cached.asset.boundingBox
                 val bbc = bb.center
@@ -555,6 +579,15 @@ class ArFilamentRenderer {
     }
 
     /**
+     * Shows the real-world depth occluder built from [frame], or removes it when [frame] is null
+     * (occlusion off / no depth yet). Main thread; call each Choreographer frame before [renderFrame].
+     */
+    internal fun updateOcclusion(frame: OcclusionFrame?) {
+        if (!initialized) return
+        occluder?.update(scene, frame)
+    }
+
+    /**
      * Render one frame. Call from [android.view.Choreographer.FrameCallback.doFrame].
      *
      * Asset loading/management is handled separately in [tickAndApplyLoads], which must be
@@ -564,11 +597,15 @@ class ArFilamentRenderer {
      * @param frameTimeNs Choreographer frame time (nanoseconds).
      * @param viewMatrix  ARCore view matrix (world → camera, column-major float[16]).
      * @param projMatrix  ARCore projection matrix (column-major float[16]).
+     * @param hideModels  When true (ARCore camera not tracking — [viewMatrix] is stale), render a
+     *                    transparent frame instead of drawing models at an out-of-date camera pose.
+     *                    Assets stay cached and in [scene]; they reappear on the next normal frame.
      */
     fun renderFrame(
         frameTimeNs: Long,
         viewMatrix: FloatArray,
         projMatrix: FloatArray,
+        hideModels: Boolean = false,
     ) {
         if (!initialized) return
 
@@ -596,6 +633,9 @@ class ArFilamentRenderer {
             DoubleArray(16) { i -> projMatrix[i].toDouble() },
             NEAR_PLANE, FAR_PLANE
         )
+
+        val targetScene = if (hideModels) emptyScene else scene
+        if (view.scene !== targetScene) view.scene = targetScene
 
         if (renderer.beginFrame(sc, frameTimeNs)) {
             renderer.render(view)
@@ -635,6 +675,9 @@ class ArFilamentRenderer {
         }
         anchorAssets.clear()
 
+        occluder?.destroy(scene)
+        occluder = null
+
         if (sunEntity != 0) {
             runCatching { scene.remove(sunEntity) }
             runCatching { engine.lightManager.destroy(sunEntity) }
@@ -656,6 +699,7 @@ class ArFilamentRenderer {
         runCatching { engine.destroyCameraComponent(cameraEntity) }
         runCatching { EntityManager.get().destroy(cameraEntity) }
         runCatching { engine.destroyScene(scene) }
+        runCatching { engine.destroyScene(emptyScene) }
 
         // Defer engine.destroy() so any queued Filament main-thread messages
         // (e.g. from UiHelper's DisplayHelper) can run while the engine is still alive.

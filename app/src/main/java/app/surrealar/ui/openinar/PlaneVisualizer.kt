@@ -83,6 +83,11 @@ internal class PlaneVisualizer {
     }
 
     companion object {
+        /** Number of tracked, non-subsumed planes this frame, without drawing them. */
+        fun count(session: Session): Int =
+            session.getAllTrackables(Plane::class.java)
+                .count { it.trackingState == TrackingState.TRACKING && it.subsumedBy == null }
+
         private const val VS = """#version 300 es
             uniform mat4 uMvp;
             in vec3 aPos;

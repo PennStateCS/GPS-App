@@ -31,13 +31,20 @@ internal class PointCloudRenderer {
     }
 
     fun draw(frame: Frame, vp: FloatArray): Int {
+        // Always release: ARCore allows only a few acquired point clouds at once and throws
+        // ResourceExhaustedException if any are leaked (e.g. by an exception mid-draw).
         val pointCloud = frame.acquirePointCloud()
-        val pts = pointCloud.points
+        try {
+            return drawPoints(pointCloud.points, vp)
+        } finally {
+            pointCloud.release()
+        }
+    }
+
+    private fun drawPoints(pts: FloatBuffer, vp: FloatArray): Int {
         val totalFloats = pts.limit()
         val count = totalFloats / 4
-        if (count <= 0) {
-            pointCloud.release(); return 0
-        }
+        if (count <= 0) return 0
 
         val xyz = FloatArray(count * 3)
         pts.rewind()
@@ -73,11 +80,20 @@ internal class PointCloudRenderer {
         GLES30.glDisableVertexAttribArray(attribPos)
         GLES30.glUseProgram(0)
 
-        pointCloud.release()
         return count
     }
 
     companion object {
+        /** Number of feature points ARCore is tracking this frame, without drawing them. */
+        fun count(frame: Frame): Int {
+            val pointCloud = frame.acquirePointCloud()
+            try {
+                return pointCloud.points.limit() / 4
+            } finally {
+                pointCloud.release()
+            }
+        }
+
         private const val VS = """#version 300 es
             uniform mat4 uMvp;
             uniform float uPointSize;
