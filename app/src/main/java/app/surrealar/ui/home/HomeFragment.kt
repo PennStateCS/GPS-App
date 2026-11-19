@@ -210,8 +210,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         .conflate()
                         .sample(500)
                         .collect { (fix, source) ->
-                            if (fix == null) return@collect            // no current-source fix yet
-                            if (!fixMatchesSource(source, fix)) { logMapIgnore("wrong-provider"); return@collect }
+                            // No live position from the GNSS feed (acquiring, signal lost, source
+                            // switch): hide the dot instead of leaving it frozen where it last was.
+                            if (fix == null) { setLiveDotVisible(false); return@collect }
+                            if (!fixMatchesSource(source, fix)) {
+                                setLiveDotVisible(false); logMapIgnore("wrong-provider"); return@collect
+                            }
                             if (isFixStale(fix)) { logMapIgnore("stale"); return@collect }
                             if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
                                 logMapIgnore("invalid-coords"); return@collect
@@ -539,6 +543,22 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         return result[0] >= 5f
     }
 
+    /**
+     * Shows/hides Google Maps' My Location dot. The dot's position comes ONLY from the GNSS feed
+     * (custom [LocationSource]); a LocationSource cannot "clear" a position, so hiding the layer is
+     * the only way to stop showing a dot when the feed has no live fix. Requires location permission.
+     */
+    private fun setLiveDotVisible(visible: Boolean) {
+        val map = googleMap ?: return
+        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED) return
+        try {
+            if (map.isMyLocationEnabled != visible) map.isMyLocationEnabled = visible
+        } catch (e: SecurityException) {
+            android.util.Log.w(TAG, "My Location layer toggle failed", e)
+        }
+    }
+
     private fun updateMapLocation(fix: Fix?) {
         try {
             if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}")
@@ -546,6 +566,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             if (fix != null && googleMap != null) {
                 if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
                 val locationForDot = fixToLocation(fix)
+                setLiveDotVisible(true)
                 onLocationChangedListener?.onLocationChanged(locationForDot)
 
                 // Log RTK status transitions (not every fix)
@@ -695,8 +716,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                android.util.Log.d(TAG, "onMapReady: location permission granted — enabling My Location layer")
-                map.isMyLocationEnabled = true
+                android.util.Log.d(TAG, "onMapReady: location permission granted — My Location layer fed by GNSS")
+                // Shown once the GNSS feed has a live fix (setLiveDotVisible); hidden until then so
+                // the map never shows a dot from any other source or a frozen position.
+                map.isMyLocationEnabled = fixSwitchboard.currentFix.value != null
                 map.uiSettings.isMyLocationButtonEnabled = false
                 map.uiSettings.isZoomControlsEnabled = false
                 map.uiSettings.isMapToolbarEnabled = false

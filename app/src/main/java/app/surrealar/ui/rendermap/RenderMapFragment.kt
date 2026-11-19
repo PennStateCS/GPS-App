@@ -110,6 +110,9 @@ class RenderMapFragment : Fragment() {
     lateinit var sourceSettings: app.surrealar.gnss.source.SourceSettings
 
     @Inject
+    lateinit var locationSourceRepo: app.surrealar.domain.repository.LocationSourceSettingsRepository
+
+    @Inject
     lateinit var modelRepository: app.surrealar.domain.repository.ModelRepository
 
     @Inject
@@ -615,10 +618,19 @@ class RenderMapFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
-                    fixSwitchboard.fixes
+                    // Live position from the GNSS feed, only when it comes from the SELECTED source
+                    // (same rule as the toolbar and Home map): during the External connecting window
+                    // the live provider can still be Internal, and the map must not show that as the
+                    // receiver's position.
+                    kotlinx.coroutines.flow.combine(fixSwitchboard.fixes, locationSourceRepo.locationSource) { fix, src -> fix to src }
                         .conflate()
                         .sample(250)
-                        .collect { fix: Fix -> updateLiveTracking(fix) }
+                        .collect { (fix, src) ->
+                            val matches = if (src == app.surrealar.domain.model.LocationSourceType.INTERNAL)
+                                fix.provider == app.surrealar.gnss.model.Provider.INTERNAL
+                            else fix.provider != app.surrealar.gnss.model.Provider.INTERNAL
+                            if (matches) updateLiveTracking(fix) else clearLiveMarker()
+                        }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
                     Log.w(TAG, "Error collecting fixes", e)
@@ -629,16 +641,20 @@ class RenderMapFragment : Fragment() {
         // leaving a frozen position on the map that looks current. It reappears with the next fix.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                fixSwitchboard.fixStale.collect { stale ->
-                    if (!stale) return@collect
-                    clearAccuracyCircle()
-                    currentMarker?.remove(); currentMarker = null
-                    removeHeadingIndicator()
-                    currentFix = null
-                    lastCurrentMarkerHue = null
-                }
+                fixSwitchboard.fixStale.collect { stale -> if (stale) clearLiveMarker() }
             }
         }
+    }
+
+    /** Removes the live-position overlays (they come back with the next matching GNSS fix). */
+    private fun clearLiveMarker() {
+        if (currentMarker == null && currentFix == null && lastFixLatLng == null) return
+        clearAccuracyCircle()
+        currentMarker?.remove(); currentMarker = null
+        removeHeadingIndicator()
+        currentFix = null
+        lastFixLatLng = null   // recenter must not jump to a position that is no longer live
+        lastCurrentMarkerHue = null
     }
 
     private fun updateLiveTracking(fix: Fix) {
