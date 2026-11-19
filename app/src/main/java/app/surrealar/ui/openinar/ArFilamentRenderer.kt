@@ -365,7 +365,15 @@ class ArFilamentRenderer {
      *              and (b) call `scene.addEntities` / [TransformManager.setTransform] for each
      *              asset that has just finished uploading.
      */
-    fun tickAndApplyLoads(poses: List<ModelPose>, visibleKeys: Set<String> = poses.mapTo(HashSet()) { it.key }) {
+    fun tickAndApplyLoads(
+        poses: List<ModelPose>,
+        visibleKeys: Set<String> = poses.mapTo(HashSet()) { it.key },
+        /**
+         * Test-grid keys whose anchors still exist even if not tracking this frame. Their assets are
+         * kept; only keys absent from both [poses] and this set are treated as cleared.
+         */
+        liveTestKeys: Set<String> = emptySet(),
+    ) {
         if (!initialized) return
 
         tickCount++
@@ -386,9 +394,11 @@ class ArFilamentRenderer {
                     if (anchorAssets.isNotEmpty()) "  assets=[$states]" else "  assets=[]")
         }
 
-        // Remove stale test-grid assets when their keys are no longer present.
-        // This is required so "Clear Tests" actually removes already-added entities.
-        val activeKeys    = poses.asSequence().map { it.key }.toHashSet()
+        // Remove stale test-grid assets when their anchors are gone (so "Clear Tests" actually
+        // removes already-added entities). A key with no pose this frame but a live anchor is NOT
+        // stale: right after a Stored/Terrain respawn the new anchors are not tracking yet, and
+        // deleting the assets then left the grid's labels with no models (they were never reloaded).
+        val activeKeys    = poses.asSequence().map { it.key }.toHashSet().apply { addAll(liveTestKeys) }
         val staleTestKeys = anchorAssets.keys.filter {
             it.startsWith(TEST_GRID_KEY_PREFIX) && it !in activeKeys
         }

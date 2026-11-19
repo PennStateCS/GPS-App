@@ -143,6 +143,14 @@ class TestAnchorController(private val context: Context) {
         )
     }
 
+    /**
+     * Model keys of every test anchor that currently EXISTS, tracking or not. A freshly respawned
+     * grid (e.g. after the Stored/Terrain toggle) has no tracking anchors for a while — terrain
+     * anchors resolve asynchronously — so "has a pose this frame" must not be used to decide that a
+     * test model is gone. GL thread only.
+     */
+    fun liveModelKeys(): Set<String> = anchors.mapNotNullTo(HashSet()) { it.modelKey }
+
     /** Signal that the test grid should be spawned on the next GL frame. */
     fun requestSpawn() { action = Action.SPAWN }
 

@@ -373,7 +373,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Always pump asset loading / scene management so models load as soon as
             // preload() is called — even before ARCore anchors start tracking or the
             // Filament TextureView surface has been fully created.
-            filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys)
+            filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys, snapshot?.liveTestKeys ?: emptySet())
             filamentRenderer?.updateOcclusion(snapshot?.occlusion)
             // Keep rendering while any model is visible — a visible model whose anchor briefly stopped
             // tracking has no pose this frame but stays in the scene holding its last transform.
@@ -408,6 +408,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val projMatrix: FloatArray,
         val modelPoses: List<ArFilamentRenderer.ModelPose>,
         val visibleKeys: Set<String>,
+        /** Test-grid model keys whose anchors still exist (tracking or not) — keep their assets loaded. */
+        val liveTestKeys: Set<String> = emptySet(),
         /** False once ARCore camera tracking is lost — the matrices above are stale; hide models. */
         val cameraTracking: Boolean = true,
         /** Real-world depth occluder for this frame; null when occlusion is off or no depth yet. */
@@ -759,6 +761,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     if (terrain != useTerrainAltitude) {
                         useTerrainAltitude = terrain
                         shouldRebuildAnchors = true
+                        // Same as the Spawn button: make sure the grid's models are loaded (no-op
+                        // for keys already cached) so the respawned pins always get their models.
+                        if (testAnchorController.isActive) {
+                            filamentRenderer?.let { testAnchorController.preloadModelKeys(it, viewLifecycleOwner.lifecycleScope) }
+                        }
                         testAnchorController.requestRespawn()
                         _binding?.txtAltitudeMode?.text = if (terrain) "Terrain" else "Stored"
                     }
@@ -1604,6 +1611,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     projMatrix  = proj.copyOf(),
                     modelPoses  = newModelPoses,
                     visibleKeys = modelVisibleKeys,
+                    liveTestKeys = testAnchorController.liveModelKeys(),
                     occlusion   = occlusion
                 )
                 postOverlayUpdates(labelEntries, arrowEntries)
