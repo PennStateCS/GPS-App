@@ -57,7 +57,7 @@ class GnssToolbarStateMapperTest {
 
     // 1 — Internal active, no fix yet → waiting
     @Test fun `internal no fix shows waiting blank`() {
-        val s = render(GnssToolbarStateMapper.map(LocationSourceType.INTERNAL, null, SkySnapshot(), now))
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.INTERNAL, null, SkySnapshot()))
         assertEquals("Internal", s.sourceText)
         assertTrue(s.isWaiting)
         assertEquals("--", s.fixText)
@@ -74,7 +74,7 @@ class GnssToolbarStateMapperTest {
             GnssToolbarStateMapper.map(
                 LocationSourceType.INTERNAL,
                 fix(Provider.INTERNAL, RtkStatus.FIX, satsUsed = 9, satsVisible = 12),
-                SkySnapshot(), now
+                SkySnapshot()
             )
         )
         assertEquals("Internal", s.sourceText)
@@ -89,7 +89,7 @@ class GnssToolbarStateMapperTest {
 
     // 3 — External selected/active, no current fix yet → waiting
     @Test fun `external no fix shows waiting with RS2 label`() {
-        val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL, null, SkySnapshot(), now))
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL, null, SkySnapshot()))
         assertEquals("RS2+", s.sourceText)
         assertTrue(s.isWaiting)
         assertEquals("Waiting", s.fixText)
@@ -105,7 +105,7 @@ class GnssToolbarStateMapperTest {
             GnssToolbarStateMapper.map(
                 LocationSourceType.EXTERNAL,
                 fix(Provider.RS2_TCP, RtkStatus.FLOAT, hAccM = 0.18, satsUsed = 20, satsVisible = 28),
-                SkySnapshot(), now
+                SkySnapshot()
             )
         )
         assertEquals("RS2+", s.sourceText)
@@ -122,7 +122,7 @@ class GnssToolbarStateMapperTest {
             GnssToolbarStateMapper.map(
                 LocationSourceType.EXTERNAL,
                 fix(Provider.RS2_TCP, RtkStatus.FIX, hAccM = 0.015),
-                SkySnapshot(), now
+                SkySnapshot()
             )
         )
         assertEquals("Fixed", s.fixText)
@@ -143,7 +143,7 @@ class GnssToolbarStateMapperTest {
     // 7 — Wrong-provider fixes are ignored
     @Test fun `internal active ignores external fix`() {
         val r = GnssToolbarStateMapper.map(
-            LocationSourceType.INTERNAL, fix(Provider.RS2_TCP, RtkStatus.FIX), SkySnapshot(), now
+            LocationSourceType.INTERNAL, fix(Provider.RS2_TCP, RtkStatus.FIX), SkySnapshot()
         )
         assertTrue(r is ToolbarMapResult.Ignore)
         assertEquals("wrong-provider", (r as ToolbarMapResult.Ignore).reason)
@@ -151,32 +151,40 @@ class GnssToolbarStateMapperTest {
 
     @Test fun `external active ignores internal fix`() {
         val r = GnssToolbarStateMapper.map(
-            LocationSourceType.EXTERNAL, fix(Provider.INTERNAL, RtkStatus.SINGLE), SkySnapshot(), now
+            LocationSourceType.EXTERNAL, fix(Provider.INTERNAL, RtkStatus.SINGLE), SkySnapshot()
         )
         assertTrue(r is ToolbarMapResult.Ignore)
         assertEquals("wrong-provider", (r as ToolbarMapResult.Ignore).reason)
     }
 
-    // 8 — Stale fix is ignored
-    @Test fun `stale fix is ignored`() {
-        val r = GnssToolbarStateMapper.map(
+    // 8 — A skewed device clock must not freeze the toolbar: liveness comes from the GNSS feed
+    // (currentFix goes null when fixes stop), not from comparing GNSS time with the tablet clock.
+    @Test fun `fix with GNSS time far from device clock still renders`() {
+        val s = render(GnssToolbarStateMapper.map(
             LocationSourceType.EXTERNAL,
-            fix(Provider.RS2_TCP, RtkStatus.FIX, ageMs = 20_000L), // older than 15s gate
-            SkySnapshot(), now
-        )
-        assertTrue(r is ToolbarMapResult.Ignore)
-        assertEquals("stale", (r as ToolbarMapResult.Ignore).reason)
+            fix(Provider.RS2_TCP, RtkStatus.FIX, ageMs = 120_000L),
+            SkySnapshot()
+        ))
+        assertEquals("Fixed", s.fixText)
+        assertFalse(s.isWaiting)
     }
 
-    // bonus — invalid coordinates are ignored
-    @Test fun `invalid coordinates are ignored`() {
-        val r = GnssToolbarStateMapper.map(
+    // bonus — invalid coordinates render waiting (never leave older values on screen)
+    @Test fun `invalid coordinates render waiting`() {
+        val s = render(GnssToolbarStateMapper.map(
             LocationSourceType.EXTERNAL,
             fix(Provider.RS2_TCP, RtkStatus.FIX, lat = 200.0, lon = 0.0),
-            SkySnapshot(), now
-        )
-        assertTrue(r is ToolbarMapResult.Ignore)
-        assertEquals("invalid-coords", (r as ToolbarMapResult.Ignore).reason)
+            SkySnapshot()
+        ))
+        assertTrue(s.isWaiting)
+        assertEquals("--", s.latLonText)
+    }
+
+    // accuracy falls back to a DOP × UERE estimate, marked "~", when the receiver reports none
+    @Test fun `estimated accuracy is shown with tilde when not reported`() {
+        val f = fix(Provider.INTERNAL, RtkStatus.SINGLE, hAccM = null).copy(hDop = 1.0)
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.INTERNAL, f, SkySnapshot()))
+        assertTrue("was ${s.accuracyText}", s.accuracyText!!.startsWith("~±"))
     }
 
     // sats fall back to fix counts when sky is empty; hidden when both are zero
@@ -185,7 +193,7 @@ class GnssToolbarStateMapperTest {
             GnssToolbarStateMapper.map(
                 LocationSourceType.EXTERNAL,
                 fix(Provider.RS2_TCP, RtkStatus.FIX, satsUsed = 0, satsVisible = 0),
-                SkySnapshot(), now
+                SkySnapshot()
             )
         )
         assertNull(s.satelliteText)
@@ -197,7 +205,7 @@ class GnssToolbarStateMapperTest {
             GnssToolbarStateMapper.map(
                 LocationSourceType.EXTERNAL,
                 fix(Provider.RS2_TCP, RtkStatus.FIX, hAccM = null),
-                SkySnapshot(), now
+                SkySnapshot()
             )
         )
         assertNull(s.accuracyText)

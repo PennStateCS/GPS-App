@@ -68,7 +68,8 @@ class DevelopmentViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            fixSwitchboard.fixes.collect { fix -> _latestFix.value = fix }
+            // currentFix clears on a provider switch / lost signal, so the panel never shows a frozen fix.
+            fixSwitchboard.currentFix.collect { fix -> _latestFix.value = fix }
         }
     }
 

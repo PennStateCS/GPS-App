@@ -22,13 +22,6 @@
             android:paddingBottom="8dp" />
 
         <androidx.appcompat.widget.SwitchCompat
-            android:id="@+id/switch_high_accuracy"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="High Accuracy Location"
-            android:layout_marginBottom="8dp" />
-
-        <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/switch_allow_bg_logging"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

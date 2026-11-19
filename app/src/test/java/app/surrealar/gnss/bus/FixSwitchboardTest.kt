@@ -253,4 +253,30 @@ class FixSwitchboardTest {
         assertEquals(Provider.RS2_EXTERNAL, sb.currentFix.value?.provider)
         assertEquals(ProviderChoice.EXTERNAL_TCP, src.activeProvider.value)
     }
+
+    // ── Liveness (receive-time watchdog) ──────────────────────────────────────────────────────
+
+    @Test fun `current fix clears when the provider stops producing fixes and recovers on the next`() =
+        runTest(UnconfinedTestDispatcher()) {
+            val (_, src) = settings(ProviderChoice.INTERNAL)
+            val internal = FakeSourceAdapter()
+            var nowMs = 1_000L
+            val sb = FixSwitchboard(backgroundScope, src, mapOf(ProviderChoice.INTERNAL to internal),
+                fixStaleAfterMs = 10_000L, monotonicNowMs = { nowMs })
+            sb.start(); advanceUntilIdle()
+
+            internal.emit(fix(Provider.INTERNAL)); advanceUntilIdle()
+            nowMs += 5_000; testScheduler.advanceTimeBy(5_000); testScheduler.runCurrent()
+            assertTrue("still live within the window", sb.currentFix.value != null)
+
+            nowMs += 6_000; testScheduler.advanceTimeBy(6_000); testScheduler.runCurrent()
+            assertNull("frozen position must not stay live", sb.currentFix.value)
+            assertTrue(sb.fixStale.value)
+            assertTrue("late subscribers get no frozen replay", sb.fixes.replayCache.isEmpty())
+
+            val f = fix(Provider.INTERNAL)
+            internal.emit(f); advanceUntilIdle()
+            assertEquals(f, sb.currentFix.value)
+            assertEquals(false, sb.fixStale.value)
+        }
 }

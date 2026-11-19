@@ -43,11 +43,19 @@ import javax.inject.Singleton
  * [restoreSavedSourceOnStartup] is the one method that orchestrates a small read-decide-activate
  * flow; the `activate…Provider` methods are pure one-line provider flips.
  */
+/** Lets the coordinator force the external receiver connection to re-read the saved host/port. */
+interface ExternalReconnectable {
+    fun reconnectNow(reason: String)
+}
+
 @Singleton
 class GnssSourceCoordinator @Inject constructor(
     private val sourceSettings: SourceSettings,
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val externalReconnect: ExternalReconnectable
 ) {
+    /** host:port the external provider was last activated for (null = not activated this process). */
+    @Volatile private var activeExternalTarget: Pair<String, Int>? = null
 
     /**
      * Called once per process at app launch. Restores the live provider from the persisted selected
@@ -116,6 +124,19 @@ class GnssSourceCoordinator @Inject constructor(
      */
     fun activateExternalTcpProvider(host: String, port: Int, reason: String) {
         DiagnosticsLogger.i("Receiver", "Activate external provider for $host:$port ($reason)")
+        val target = host to port
+        if (sourceSettings.activeProvider.value == ProviderChoice.EXTERNAL_TCP) {
+            // Already External: setting the same provider is a no-op for the switchboard, so the
+            // existing socket would keep streaming from the PREVIOUS host/port. Reconnect so the
+            // newly saved receiver takes effect — but only when the target actually changed, so
+            // re-validating the same receiver (e.g. reopening Settings) never drops a live stream.
+            if (target != activeExternalTarget) {
+                activeExternalTarget = target
+                externalReconnect.reconnectNow("receiver changed to $host:$port")
+            }
+            return
+        }
+        activeExternalTarget = target
         sourceSettings.setActiveProvider(ProviderChoice.EXTERNAL_TCP)
         DiagnosticsLogger.i("GNSS", "External provider activated from $reason; EXTERNAL_TCP set (validation delegated to external adapter)")
     }

@@ -12,7 +12,9 @@ data class GSA(
     val usedSvids: List<Int>,
     val pdop: Double?,
     val hdop: Double?,
-    val vdop: Double?
+    val vdop: Double?,
+    /** NMEA 4.10+ GNSS System ID (1=GPS, 2=GLONASS, 3=Galileo, 4=BeiDou, 5=QZSS, 6=NavIC); null if absent. */
+    val systemId: Int? = null
 ) : NmeaSentence {
     override val tag: String = "GSA"
 }

@@ -188,16 +188,6 @@ class OpenInARViewModel @Inject constructor(
     val occlusionEnabled: StateFlow<Boolean> = _occlusionEnabled.asStateFlow()
     fun toggleOcclusion() { _occlusionEnabled.update { !it } }
 
-    // ── High-accuracy GPS preference ──────────────────────────────────────────
-
-    /**
-     * Reflects the user's "high accuracy" GPS preference from SettingsRepository (DataStore).
-     * Emits immediately with the current value and again whenever it changes.
-     */
-    val highAccuracyEnabled: StateFlow<Boolean> = gnssReceiverRepo.gnssReceiverSettings
-        .map { it.highAccuracy }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
-
     // ── AR Display settings ───────────────────────────────────────────────────
 
     val arDisplaySettings: StateFlow<ArDisplaySettings> = arDisplayRepo.arDisplaySettings
@@ -233,9 +223,9 @@ class OpenInARViewModel @Inject constructor(
     val arVisibilityCustomized: StateFlow<Boolean> = arVisibilityRepo.arVisibilityCustomized
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** Current device position (lat, lon) for row distances; null until a fix arrives. */
-    private val position: StateFlow<DoubleArray?> = fixSwitchboard.fixes
-        .map { doubleArrayOf(it.latDeg, it.lonDeg) }
+    /** Current device position (lat, lon) for row distances; null with no live fix (switch / signal lost). */
+    private val position: StateFlow<DoubleArray?> = fixSwitchboard.currentFix
+        .map { fix -> fix?.let { doubleArrayOf(it.latDeg, it.lonDeg) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**

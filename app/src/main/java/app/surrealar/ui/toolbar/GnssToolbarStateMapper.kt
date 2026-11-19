@@ -1,17 +1,14 @@
 package app.surrealar.ui.toolbar
 
 import app.surrealar.domain.model.LocationSourceType
+import app.surrealar.gnss.accuracy.AccuracyEstimator
+import app.surrealar.gnss.accuracy.UereTable
 import app.surrealar.gnss.format.GnssStatusFormatter
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.RtkStatus
 import app.surrealar.gnss.model.SkySnapshot
-import java.time.Duration
-import java.time.Instant
 import java.util.Locale
-
-/** Max age of a fix before the toolbar treats it as stale and ignores it. */
-const val TOOLBAR_FIX_MAX_AGE_MS = 15_000L
 
 /** Result of mapping live GNSS inputs: either render a state, or ignore this fix (with a reason). */
 sealed interface ToolbarMapResult {
@@ -26,11 +23,16 @@ sealed interface ToolbarMapResult {
  *
  * Source-switch protections live here too:
  *  - wrong-provider fixes (internal fix while RS2+ selected during the connecting window) → Ignore
- *  - stale fixes (older than [TOOLBAR_FIX_MAX_AGE_MS]) → Ignore
- *  - invalid coordinates → Ignore
+ *  - invalid coordinates → Render(waiting) (never leave older values on screen)
  *  - no current-provider fix → Render(waiting)
+ *
+ * Liveness is NOT judged here by comparing the fix's GNSS timestamp with the device clock (a skewed
+ * tablet clock froze the toolbar). The input is `FixSwitchboard.currentFix`, which the GNSS feed
+ * sets to null when fixes stop arriving (receive-time watchdog) — that null renders "waiting".
  */
 object GnssToolbarStateMapper {
+
+    private val uereTable = UereTable()
 
     fun fixMatchesSource(source: LocationSourceType, fix: Fix): Boolean =
         if (source == LocationSourceType.INTERNAL) fix.provider == Provider.INTERNAL
@@ -63,17 +65,12 @@ object GnssToolbarStateMapper {
         selectedSource: LocationSourceType,
         fix: Fix?,
         sky: SkySnapshot,
-        nowMs: Long,
         externalLabel: String = "RS2+"
     ): ToolbarMapResult {
         if (fix == null) return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
-        val ageMs = try {
-            Duration.between(fix.timeUtc, Instant.ofEpochMilli(nowMs)).toMillis()
-        } catch (_: Exception) { 0L }
-        if (ageMs > TOOLBAR_FIX_MAX_AGE_MS) return ToolbarMapResult.Ignore("stale")
         if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
-            return ToolbarMapResult.Ignore("invalid-coords")
+            return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
         }
 
         val isInternal = selectedSource == LocationSourceType.INTERNAL
@@ -103,11 +100,16 @@ object GnssToolbarStateMapper {
         val satelliteText = if (used > 0 || vis > 0) GnssStatusFormatter.formatSatellites(used, vis) else null
 
         // --- ACCURACY ---
-        val hAcc = fix.hAccM
+        // Receiver-reported (GST / platform) when available; otherwise the same DOP × UERE estimate
+        // capture uses, marked with "~" so it is never mistaken for a reported value. Many phones'
+        // NMEA has no GST, so without this the internal source never showed an accuracy.
+        val reportedH = fix.hAccM
+        val hAcc = reportedH ?: AccuracyEstimator.estimate1SigmaMeters(fix, uereTable).horizontalMeters
+        val estimated = reportedH == null
         val accuracyText: String?
         val accuracyLevel: GnssStatusLevel
         if (hAcc != null && hAcc in 0.0..9999.0) {
-            accuracyText = GnssStatusFormatter.formatAccuracyMeters(hAcc)
+            accuracyText = (if (estimated) "~" else "") + GnssStatusFormatter.formatAccuracyMeters(hAcc)
             accuracyLevel = when {
                 hAcc <= 0.05 -> GnssStatusLevel.SUCCESS
                 hAcc <= 0.30 -> GnssStatusLevel.SUCCESS

@@ -3,11 +3,15 @@ package app.surrealar.gnss.internal
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.GnssStatus
+import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.location.OnNmeaMessageListener
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import app.surrealar.gnss.bus.PermissionRetryable
 import app.surrealar.gnss.bus.adapters.GsvMessage
@@ -79,16 +83,100 @@ class InternalNmeaSource(
                 DiagnosticsLogger.i("SOURCE", "internal GPS: first fix received " +
                     "(provider=INTERNAL rtk=${fix.rtkStatus} sats=${fix.satsUsed ?: "?"})")
             }
-            scope.launch {
-                _fixes.emit(fix)
-            }
+            lastNmeaFixAtMs = SystemClock.elapsedRealtime()
+            val fix = fillEllipsoidalHeight(fix)
+            // tryEmit keeps receive order (a coroutine per fix on the multi-threaded app scope could
+            // reorder them); the DROP_OLDEST buffer means it never fails.
+            _fixes.tryEmit(fix)
         },
         onGsv = { gsv ->
-            scope.launch {
-                _gsv.emit(gsv)
-            }
+            lastNmeaGsvAtMs = SystemClock.elapsedRealtime()
+            _gsv.tryEmit(gsv)
         }
     )
+
+    // ── Platform fallback (devices without usable NMEA) — see PlatformFallback ──
+    @Volatile private var registeredAtMs = 0L
+    @Volatile private var lastNmeaFixAtMs = 0L
+    @Volatile private var lastNmeaGsvAtMs = 0L
+    @Volatile private var fallbackFixLogged = false
+    @Volatile private var fallbackSkyLogged = false
+    /** Latest distinct used/visible counts from GnssStatus (null until the first callback). */
+    @Volatile private var platformSatsUsed: Int? = null
+    @Volatile private var platformSatsVisible: Int? = null
+
+    private val gnssStatusCallback = object : GnssStatus.Callback() {
+        override fun onSatelliteStatusChanged(status: GnssStatus) = onPlatformStatus(status)
+    }
+    private var gnssStatusRegistered = false
+
+    /** Latest non-mock platform Location from the same GNSS chip (for same-epoch enrichment). */
+    @Volatile private var lastPlatformLocation: PlatformLocation? = null
+
+    /** Fills fields the NMEA lacked from the same epoch's platform Location (see [PlatformFallback.enrich]). */
+    private fun fillEllipsoidalHeight(fix: Fix): Fix = PlatformFallback.enrich(fix, lastPlatformLocation)
+
+    private fun onPlatformLocation(loc: Location) {
+        // Never feed our own mock publisher's output (external fixes injected into GPS_PROVIDER)
+        // back in as an internal fix.
+        val isMock = if (Build.VERSION.SDK_INT >= 31) loc.isMock else @Suppress("DEPRECATION") loc.isFromMockProvider
+        if (isMock) return
+        val snapshot = PlatformLocation(
+            timeMs = loc.time,
+            latDeg = loc.latitude,
+            lonDeg = loc.longitude,
+            altEllipsoidalM = if (loc.hasAltitude()) loc.altitude else null,
+            altMslM = if (Build.VERSION.SDK_INT >= 34 && loc.hasMslAltitude()) loc.mslAltitudeMeters else null,
+            hAccM = if (loc.hasAccuracy()) loc.accuracy.toDouble() else null,
+            vAccM = if (Build.VERSION.SDK_INT >= 26 && loc.hasVerticalAccuracy()) loc.verticalAccuracyMeters.toDouble() else null,
+            speedMps = if (loc.hasSpeed()) loc.speed.toDouble() else null,
+            bearingDeg = if (loc.hasBearing()) loc.bearing.toDouble() else null,
+            satellitesExtra = loc.extras?.getInt("satellites", -1)?.takeIf { it >= 0 },
+        )
+        lastPlatformLocation = snapshot
+        if (!PlatformFallback.nmeaSilent(SystemClock.elapsedRealtime(), registeredAtMs, lastNmeaFixAtMs)) return
+        if (!fallbackFixLogged) {
+            fallbackFixLogged = true
+            DiagnosticsLogger.w("SOURCE", "internal GPS: no NMEA fixes from this device — using platform Location fallback")
+        }
+        val fix = PlatformFallback.toFix(snapshot, platformSatsUsed, platformSatsVisible)
+        if (!firstFixLogged) {
+            firstFixLogged = true
+            DiagnosticsLogger.i("SOURCE", "internal GPS: first fix received (platform fallback, sats=${fix.satsUsed})")
+        }
+        _fixes.tryEmit(fix)
+    }
+
+    private fun onPlatformStatus(status: GnssStatus) {
+        val sats = (0 until status.satelliteCount).map { i ->
+            PlatformSatellite(
+                constellation = when (status.getConstellationType(i)) {
+                    GnssStatus.CONSTELLATION_GPS -> "GP"
+                    GnssStatus.CONSTELLATION_GLONASS -> "GL"
+                    GnssStatus.CONSTELLATION_GALILEO -> "GA"
+                    GnssStatus.CONSTELLATION_BEIDOU -> "GB"
+                    GnssStatus.CONSTELLATION_QZSS -> "GQ"
+                    GnssStatus.CONSTELLATION_SBAS -> "SBAS"
+                    GnssStatus.CONSTELLATION_IRNSS -> "GI"
+                    else -> "UNKNOWN"
+                },
+                svid = status.getSvid(i),
+                elevationDeg = status.getElevationDegrees(i),
+                azimuthDeg = status.getAzimuthDegrees(i),
+                cn0DbHz = status.getCn0DbHz(i),
+                usedInFix = status.usedInFix(i),
+            )
+        }
+        val (used, visible) = PlatformFallback.counts(sats)
+        platformSatsUsed = used
+        platformSatsVisible = visible
+        if (!PlatformFallback.nmeaSilent(SystemClock.elapsedRealtime(), registeredAtMs, lastNmeaGsvAtMs)) return
+        if (!fallbackSkyLogged) {
+            fallbackSkyLogged = true
+            DiagnosticsLogger.w("SOURCE", "internal GPS: no NMEA GSV from this device — using platform GnssStatus for satellites")
+        }
+        PlatformFallback.toGsvMessages(sats).forEach { _gsv.tryEmit(it) }
+    }
 
     private var started = false
     private var nmeaListener: OnNmeaMessageListener? = null
@@ -111,7 +199,10 @@ class InternalNmeaSource(
      * location request on the GPS provider; addNmeaListener() alone is insufficient
      * on some devices and OS versions.
      */
-    private val gpsActivationListener = LocationListener { /* position arrives via NMEA listener */ }
+    private val gpsActivationListener = LocationListener { loc ->
+        // Position normally arrives via the NMEA listener; this is only used when NMEA is silent.
+        onPlatformLocation(loc)
+    }
 
     override fun start() {
         if (started) return
@@ -145,10 +236,15 @@ class InternalNmeaSource(
      */
     private fun registerListeners() {
         firstFixLogged = false
+        registeredAtMs = SystemClock.elapsedRealtime()
+        lastNmeaFixAtMs = 0L; lastNmeaGsvAtMs = 0L
+        fallbackFixLogged = false; fallbackSkyLogged = false
+        platformSatsUsed = null; platformSatsVisible = null
 
         // Defensive cleanup so retries can never accumulate duplicate listeners.
         nmeaListener?.let { runCatching { lm.removeNmeaListener(it) } }
         runCatching { lm.removeUpdates(gpsActivationListener) }
+        unregisterGnssStatus()
         nmeaListener = null
 
         /*
@@ -199,7 +295,58 @@ class InternalNmeaSource(
             runCatching { lm.removeUpdates(gpsActivationListener) }
             nmeaListener = null
             markWaiting("addNmeaListener blocked by permission", e)
+            return
+        } catch (e: Exception) {
+            // Some OEM builds reject/omit NMEA support. The Location + GnssStatus fallback still works.
+            nmeaListener = null
+            started = true
+            awaitingPermission = false
+            DiagnosticsLogger.w("SOURCE", "internal GPS: addNmeaListener failed " +
+                "(${e.javaClass.simpleName} ${e.message}); running on platform Location fallback")
         }
+
+        // Satellite status for the fallback sky view and the fallback fix's satellite counts.
+        try {
+            if (hasLocationPermission()) {
+                gnssStatusRegistered = lm.registerGnssStatusCallback(gnssStatusCallback, Handler(Looper.getMainLooper()))
+            }
+        } catch (e: Exception) {
+            DiagnosticsLogger.w("SOURCE", "internal GPS: GnssStatus callback unavailable (${e.javaClass.simpleName})")
+        }
+
+        requestFullGnssTracking()
+    }
+
+    /**
+     * Highest internal accuracy: by default many chipsets DUTY-CYCLE GNSS tracking between fixes to
+     * save power, which degrades accuracy (and on dual-frequency phones can drop L5). Android 12+
+     * lets an app request FULL tracking (no duty cycling, all constellations/frequencies) by
+     * registering a raw-measurement listener with `setFullTracking(true)` — the same effect as the
+     * "Force full GNSS measurements" developer option. Only active while the internal source runs.
+     * Older Android has no API for this; the chip's default mode is used.
+     */
+    private fun requestFullGnssTracking() {
+        if (Build.VERSION.SDK_INT < 31 || !hasLocationPermission()) return
+        try {
+            val request = android.location.GnssMeasurementRequest.Builder().setFullTracking(true).build()
+            fullTrackingRegistered = lm.registerGnssMeasurementsCallback(
+                request, ContextCompat.getMainExecutor(appContext), fullTrackingCallback
+            )
+            DiagnosticsLogger.i("SOURCE", "internal GPS: full GNSS tracking requested (registered=$fullTrackingRegistered)")
+        } catch (e: Exception) {
+            DiagnosticsLogger.w("SOURCE", "internal GPS: full GNSS tracking unavailable (${e.javaClass.simpleName} ${e.message})")
+        }
+    }
+
+    /** Measurements themselves are unused; the registration is what keeps tracking at full duty. */
+    private val fullTrackingCallback = object : android.location.GnssMeasurementsEvent.Callback() {}
+    private var fullTrackingRegistered = false
+
+    private fun unregisterGnssStatus() {
+        if (gnssStatusRegistered) runCatching { lm.unregisterGnssStatusCallback(gnssStatusCallback) }
+        gnssStatusRegistered = false
+        if (fullTrackingRegistered) runCatching { lm.unregisterGnssMeasurementsCallback(fullTrackingCallback) }
+        fullTrackingRegistered = false
     }
 
     /** Records the blocked-on-permission WAITING state so a later retry can recover. */
@@ -234,6 +381,7 @@ class InternalNmeaSource(
         }
 
         runCatching { lm.removeUpdates(gpsActivationListener) }
+        unregisterGnssStatus()
 
         nmeaListener = null
         started = false

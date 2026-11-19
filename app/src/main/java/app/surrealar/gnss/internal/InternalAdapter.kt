@@ -81,7 +81,6 @@ class InternalAdapter(
              * stale-satellite handling for the sky view.
              */
             nmea.gsvStream()
-                .conflate()
                 .collect { gsv ->
                     _sky.value = inv.consume(gsv)
                 }

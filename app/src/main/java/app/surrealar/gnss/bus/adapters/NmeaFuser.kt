@@ -85,15 +85,39 @@ class NmeaFuser(
         val satellites: MutableList<GSVSatellite>
     )
 
+    /**
+     * Latest completed GSV sequence per talker, keyed by signal ID ([NO_SIGNAL] when the receiver
+     * sends no signal ID). Multi-frequency receivers send one sequence per signal (L1, L5, …) for
+     * the same constellation; these are merged so the sky view shows each satellite once with a
+     * stable (lowest-signal, i.e. L1) SNR instead of flip-flopping between bands.
+     */
+    private val gsvSignalsByTalker: MutableMap<String, MutableMap<Int, CompletedGsv>> = mutableMapOf()
+
+    private data class CompletedGsv(val atMs: Long, val satellites: List<GSVSatellite>, val totalSatellites: Int?)
+
+    /**
+     * True once a GGA has been processed since the last GSA. The first GSA after a GGA starts a new
+     * epoch, so the used-satellite set is rebuilt each epoch. (A pure wall-clock timeout never fired
+     * at ≥0.5 Hz output, so satellites that left the solution stayed "used" forever and satsUsed
+     * only ever grew.)
+     */
+    private var ggaSinceLastGsa = false
+
+    /** Wall-clock time the last GSA arrived, for DOP staleness. */
+    private var lastGsaAtMs: Long = 0L
+
+    /** Guards all state: the internal source feeds from the main looper, stop()/reset() and stats readers run elsewhere. */
+    private val lock = Any()
+
     /** Feed one raw NMEA line into the fuser. Silently ignores unparseable lines. */
     fun accept(line: String) {
         val sentence = try { registry.parse(line) } catch (_: Exception) { return } ?: return
-        handle(sentence)
+        synchronized(lock) { handle(sentence) }
     }
 
     private fun handle(sentence: NmeaSentence) {
         when (sentence) {
-            is GGA -> { ggaCount++; lastGga = sentence; maybeEmitFix() }
+            is GGA -> { ggaCount++; lastGga = sentence; ggaSinceLastGsa = true; maybeEmitFix() }
             is RMC -> { rmcCount++; lastRmc = sentence }  // Enrich speed/course; does not trigger a fix
             is GSA -> handleGsa(sentence)
             is GSV -> handleGsv(sentence)
@@ -125,7 +149,7 @@ class NmeaFuser(
 
     /** Read-only view of EBP/ETC activity seen by this fuser (diagnostics). */
     val nmeaCustomStats: NmeaCustomStats
-        get() = NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc, etcOrientationSeen)
+        get() = synchronized(lock) { NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc, etcOrientationSeen) }
 
     /** Where the last fix's horizontal accuracy came from. */
     enum class AccuracySource { RECEIVER_GST, DOP_ESTIMATE, UNKNOWN }
@@ -175,9 +199,11 @@ class NmeaFuser(
 
     /** Snapshot of sentence/fix counts, last-fix summary, and the date source of the last fix. */
     val timingStats: FuserTimingStats
-        get() = FuserTimingStats(ggaCount, rmcCount, zdaCount, gstCount, emittedFixCount, lastTimestampSource,
-            lastRtkStatus, lastSatsUsed, lastSatsVisible, lastAltMslM, lastGeoidSepM, lastHAccM, lastAccuracySource,
-            gsaCountByTalker.toMap(), gsvCountByTalker.toMap())
+        get() = synchronized(lock) {
+            FuserTimingStats(ggaCount, rmcCount, zdaCount, gstCount, emittedFixCount, lastTimestampSource,
+                lastRtkStatus, lastSatsUsed, lastSatsVisible, lastAltMslM, lastGeoidSepM, lastHAccM, lastAccuracySource,
+                gsaCountByTalker.toMap(), gsvCountByTalker.toMap())
+        }
 
     private fun handleZda(zda: ZDA) {
         val epochMs = zda.epochMillis
@@ -201,24 +227,49 @@ class NmeaFuser(
         gsaCountByTalker[gsa.talker] = (gsaCountByTalker[gsa.talker] ?: 0) + 1
 
         val now = System.currentTimeMillis()
-        if (now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
+        // New epoch: first GSA after a GGA, or a long gap (receiver paused / GSA-only stream).
+        if (ggaSinceLastGsa || now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
             gsaUsedSatIds.clear()
+            ggaSinceLastGsa = false
         }
         lastGsaUpdateMs = now
+        lastGsaAtMs = now
 
-        // Add SVIDs from this constellation's GSA to the combined set
+        // With a combined "GN" talker, NMEA 4.10 identifies the constellation via the system ID;
+        // without it, GPS #5 and Galileo #5 would collapse into one entry and undercount satsUsed.
+        val key = gsaConstellationKey(gsa)
         gsa.usedSvids.forEach { svid ->
-            gsaUsedSatIds.add(SatId(gsa.talker, svid))
+            gsaUsedSatIds.add(SatId(key, svid))
         }
     }
 
+    /** Constellation key for a GSA: its talker, or the system-ID constellation for a combined "GN" GSA. */
+    private fun gsaConstellationKey(gsa: GSA): String {
+        val talker = normalizeTalker(gsa.talker)
+        if (talker != "GN") return talker
+        return when (gsa.systemId) {
+            1 -> "GP"; 2 -> "GL"; 3 -> "GA"; 4 -> "GB"; 5 -> "GQ"; 6 -> "GI"
+            else -> "GN"
+        }
+    }
+
+    /** Folds alternate talker spellings onto one key (BeiDou "BD" → "GB", QZSS "QZ" → "GQ"). */
+    private fun normalizeTalker(talker: String): String = when (talker.uppercase()) {
+        "BD" -> "GB"
+        "QZ" -> "GQ"
+        else -> talker.uppercase()
+    }
+
     private fun handleGsv(gsv: GSV) {
-        val talker = gsv.talker
+        val talker = normalizeTalker(gsv.talker)
         gsvCountByTalker[talker] = (gsvCountByTalker[talker] ?: 0) + 1
         val total = gsv.totalMessages ?: 1
         val num   = gsv.messageNumber ?: total
+        val signal = gsv.signalId ?: NO_SIGNAL
+        // Each signal (L1, L5, …) is its own paginated sequence; accumulate them separately.
+        val pendingKey = "$talker#$signal"
 
-        val pending = pendingGsvByTalker.getOrPut(talker) {
+        val pending = pendingGsvByTalker.getOrPut(pendingKey) {
             PendingGsvEpoch(totalMessages = total, satellites = mutableListOf())
         }
 
@@ -231,8 +282,16 @@ class NmeaFuser(
         pending.satellites.addAll(gsv.satellites)
 
         if (num >= total) {
-            // Last message in the sequence — build the final entries list
-            val entries = pending.satellites.mapNotNull { s ->
+            // Last message in this signal's sequence. Store it, then merge every fresh signal for
+            // this talker so one constellation = one list of satellites.
+            val now = System.currentTimeMillis()
+            val signals = gsvSignalsByTalker.getOrPut(talker) { sortedMapOf() }
+            signals[signal] = CompletedGsv(now, pending.satellites.toList(), gsv.totalSatellites)
+            signals.entries.removeIf { now - it.value.atMs > GSV_SIGNAL_STALE_MS }
+            pendingGsvByTalker.remove(pendingKey)
+
+            val merged = mergeSignals(signals.values)
+            val entries = merged.mapNotNull { s ->
                 s.svid?.let { svid ->
                     val satId = SatId(talker, svid)
                     /*
@@ -251,25 +310,45 @@ class NmeaFuser(
                     )
                 }
             }
-            val nullSvidCount = pending.satellites.count { it.svid == null }
-            if (nullSvidCount > 0) {
-                android.util.Log.w("NmeaFuser", "GSV epoch complete ($talker): $nullSvidCount satellites skipped due to null SVID")
-            }
-
-            val visibleCount = gsv.totalSatellites ?: pending.satellites.size
+            // One signal (legacy receivers): trust the sentence's own total. Several signals: the
+            // per-signal totals overlap, so count the distinct satellites across them instead.
+            val visibleCount = signals.values.singleOrNull()?.let { it.totalSatellites ?: it.satellites.size }
+                ?: merged.size
             gsvVisibleByTalker[talker] = visibleCount
 
             val label = if (entries.isEmpty()) "UNKNOWN" else talker
             onGsv(GsvMessage(label, entries))
-
-            pendingGsvByTalker.remove(talker)
         }
+    }
+
+    /**
+     * Merges per-signal satellite lists (iterated in ascending signal ID, so L1 comes first): each SVID
+     * appears once, taking the lowest signal's values and filling any blank elevation/azimuth/SNR
+     * from the other signals.
+     */
+    private fun mergeSignals(signals: Collection<CompletedGsv>): List<GSVSatellite> {
+        if (signals.size == 1) return signals.first().satellites.filter { it.svid != null }
+        val bySvid = LinkedHashMap<Int, GSVSatellite>()
+        for (sig in signals) for (s in sig.satellites) {
+            val svid = s.svid ?: continue
+            val prev = bySvid[svid]
+            bySvid[svid] = if (prev == null) s else prev.copy(
+                elevationDeg = prev.elevationDeg ?: s.elevationDeg,
+                azimuthDeg   = prev.azimuthDeg ?: s.azimuthDeg,
+                snrDb        = prev.snrDb ?: s.snrDb
+            )
+        }
+        return bySvid.values.toList()
     }
 
     private fun maybeEmitFix() {
         val gga = lastGga ?: return
         val lat = gga.lat ?: return
         val lon = gga.lon ?: return
+        // Quality 0 = "fix not valid". Some chipsets keep repeating the last coordinates with
+        // quality 0 after losing lock; publishing those would show (and let users capture) a frozen
+        // position as if it were live. A blank quality field is still accepted (tolerant parsing).
+        if (gga.fixQuality == 0) return
 
         // Epoch time: the GGA UTC time-of-day is the authoritative (up to 5 Hz) clock; the date is
         // supplied by the most recent ZDA/RMC (or the current UTC date as a fallback). This lets each
@@ -286,15 +365,18 @@ class NmeaFuser(
         val altEllipsoidal = sumIfFinite(gga.altMsl, gga.geoidSeparation)
 
         val rtk = when (gga.fixQuality) {
-            1    -> RtkStatus.SINGLE
+            1, 3 -> RtkStatus.SINGLE          // 3 = PPS fix: a valid standalone solution
             2    -> RtkStatus.DGPS
             4    -> RtkStatus.FIX
             5    -> RtkStatus.FLOAT
+            6    -> RtkStatus.DEAD_RECKONING
             else -> RtkStatus.NONE
         }
 
-        // Prefer the accumulated constellation-aware count; fall back to GGA's field
-        val satsUsed = if (gsaUsedSatIds.isNotEmpty()) gsaUsedSatIds.size else (gga.satsUsed ?: 0)
+        // Constellation-aware GSA count vs. GGA's own field: take the larger. GSA lists at most 12
+        // SVIDs per sentence (so it undercounts big multi-GNSS solutions on some receivers), while
+        // some receivers cap GGA's field at 12 or report GPS-only there.
+        val satsUsed = maxOf(gsaUsedSatIds.size, gga.satsUsed ?: 0)
 
         // Sum visible satellites across all constellations seen this epoch.
         // Guard: if the sum is less than satsUsed the GSV data is from a prior epoch
@@ -306,11 +388,17 @@ class NmeaFuser(
         // Horizontal accuracy from GST: prefer the error-ellipse semi-axes; otherwise fall back to the
         // lat/lon standard deviations — Emlid Reach (RS2+/RS4) leaves the semi-major/minor fields
         // empty and populates lat/lon instead. Null when GST carried neither — never fabricated as 0.0.
-        val hAccM = horizontalAccuracyFromGst(lastGst)
-        val vAccM = lastGst?.stdDevAlt
-        val stdDevEastM = lastGst?.stdDevLon
-        val stdDevNorthM = lastGst?.stdDevLat
-        val stdDevUpM = lastGst?.stdDevAlt
+        // Enrichment sentences only apply if they belong to (roughly) this epoch. Otherwise a receiver
+        // that stops sending GST/RMC/GSA would leave the last accuracy/speed/DOP frozen on every fix.
+        val gst = lastGst?.takeIf { sameEpoch(it.timeRaw, gga.timeRaw) }
+        val rmc = lastRmc?.takeIf { sameEpoch(it.timeRaw, gga.timeRaw) }
+        val gsa = lastGsa?.takeIf { System.currentTimeMillis() - lastGsaAtMs <= GSA_STALE_MS }
+
+        val hAccM = horizontalAccuracyFromGst(gst)
+        val vAccM = gst?.stdDevAlt
+        val stdDevEastM = gst?.stdDevLon
+        val stdDevNorthM = gst?.stdDevLat
+        val stdDevUpM = gst?.stdDevAlt
 
         emittedFixCount++
         lastRtkStatus = rtk
@@ -337,8 +425,8 @@ class NmeaFuser(
                 altMslM             = gga.altMsl,
                 geoidSeparationM    = gga.geoidSeparation,
                 hDop                = gga.hdop,
-                vDop                = lastGsa?.vdop,
-                pDop                = lastGsa?.pdop,
+                vDop                = gsa?.vdop,
+                pDop                = gsa?.pdop,
                 hAccM               = hAccM,
                 vAccM               = vAccM,
                 stdDevEastM         = stdDevEastM,
@@ -348,8 +436,8 @@ class NmeaFuser(
                 satsUsed            = satsUsed,
                 satsVisible         = satsVisible,
                 diffAgeS            = gga.diffAge,
-                speedMps            = lastRmc?.speedKnots?.let { it * 0.514444 },
-                courseDeg           = lastRmc?.courseDeg,
+                speedMps            = rmc?.speedKnots?.let { it * 0.514444 },
+                courseDeg           = rmc?.courseDeg,
                 correctionStationId = gga.stationId
             )
         )
@@ -391,7 +479,8 @@ class NmeaFuser(
     }
 
     /** Clears all accumulated sentence state. Call when the underlying GNSS source is stopped. */
-    fun reset() {
+    fun reset() = synchronized(lock) {
+        gsvSignalsByTalker.clear(); ggaSinceLastGsa = false; lastGsaAtMs = 0L
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
         lastEmittedGgaTimeUtc = null; lastTimestampSource = null
         ggaCount = 0; rmcCount = 0; zdaCount = 0; gstCount = 0; emittedFixCount = 0
@@ -421,6 +510,28 @@ class NmeaFuser(
         val lon = gst.stdDevLon
         if (lat != null && lon != null) return Math.sqrt((lat * lat + lon * lon) / 2.0)
         return null
+    }
+
+    /**
+     * True when two NMEA time-of-day stamps are within [ENRICHMENT_WINDOW_MS] of each other (midnight-
+     * aware). If either time is missing/unparseable the sentence is accepted, as before.
+     */
+    private fun sameEpoch(timeRaw: String?, ggaTimeRaw: String?): Boolean {
+        val a = NmeaDateTimeUtils.parseNmeaTime(timeRaw) ?: return true
+        val b = NmeaDateTimeUtils.parseNmeaTime(ggaTimeRaw) ?: return true
+        val diff = Math.abs(a.toNanoOfDay() - b.toNanoOfDay()) / 1_000_000L
+        return minOf(diff, DAY_MS - diff) <= ENRICHMENT_WINDOW_MS
+    }
+
+    private companion object {
+        /** GSV signal key used when the receiver sends no NMEA 4.10 signal ID. */
+        const val NO_SIGNAL = -1
+        /** A signal's GSV list is dropped once no new sequence for it has arrived for this long. */
+        const val GSV_SIGNAL_STALE_MS = 10_000L
+        /** GSA DOP values older than this are not attached to fixes. */
+        const val GSA_STALE_MS = 5_000L
+        /** GST/RMC must be within this of the GGA time to enrich it (covers 1 Hz RMC with 5 Hz GGA). */
+        const val ENRICHMENT_WINDOW_MS = 2_500L
     }
 
     private fun sumIfFinite(a: Double?, b: Double?): Double? =

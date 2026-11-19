@@ -305,9 +305,7 @@ class CoordinatesFragment : Fragment() {
             }
 
             try {
-                val highAcc = runCatching { settingsRepository.gnssReceiverSettings.first().highAccuracy }.getOrDefault(true)
                 val dialog = AddCoordinateDialogFragment(
-                    highAccuracy = highAcc,
                     dbModels = models
                 ) { coordinate ->
                     viewModel.addCoordinate(coordinate)

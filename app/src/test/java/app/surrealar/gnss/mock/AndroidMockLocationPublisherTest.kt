@@ -104,19 +104,26 @@ class AndroidMockLocationPublisherTest {
         assertFalse(publisher.isStale(externalFix(timeUtc = Instant.now())))
     }
 
-    @Test fun `fix older than MAX_FIX_AGE_MS is stale`() {
-        val old = Instant.now().minusMillis(AndroidMockLocationPublisher.MAX_FIX_AGE_MS + 1_000)
+    @Test fun `tablet clock far off GNSS time does not make a live stream stale`() {
+        // GNSS time 2 minutes ahead of the tablet clock (both directions used to block publishing).
+        val base = Instant.now().plusSeconds(120)
+        repeat(5) { i -> assertFalse(publisher.isStale(externalFix(timeUtc = base.plusMillis(i * 10L)))) }
+    }
+
+    @Test fun `fix whose GNSS time jumps backwards beyond the window is stale`() {
+        val now = Instant.now()
+        assertFalse(publisher.isStale(externalFix(timeUtc = now)))
+        val old = now.minusMillis(AndroidMockLocationPublisher.MAX_FIX_AGE_MS + 1_000)
         assertTrue(publisher.isStale(externalFix(timeUtc = old)))
     }
 
-    @Test fun `fix from the future beyond clock skew is stale`() {
-        val future = Instant.now().plusMillis(AndroidMockLocationPublisher.MAX_CLOCK_SKEW_MS + 1_000)
-        assertTrue(publisher.isStale(externalFix(timeUtc = future)))
-    }
-
-    @Test fun `fix within clock skew in the future is not stale`() {
-        val nearFuture = Instant.now().plusMillis(AndroidMockLocationPublisher.MAX_CLOCK_SKEW_MS - 500)
-        assertFalse(publisher.isStale(externalFix(timeUtc = nearFuture)))
+    @Test fun `repeated stale fixes rebuild the baseline so publishing recovers`() {
+        val now = Instant.now()
+        assertFalse(publisher.isStale(externalFix(timeUtc = now)))
+        val old = now.minusMillis(AndroidMockLocationPublisher.MAX_FIX_AGE_MS + 5_000)
+        repeat(AndroidMockLocationPublisher.STALE_RESET_COUNT) { assertTrue(publisher.isStale(externalFix(timeUtc = old))) }
+        // Baseline rebuilt: the new timeline is accepted.
+        assertFalse(publisher.isStale(externalFix(timeUtc = old.plusMillis(100))))
     }
 
     // ── isValid ───────────────────────────────────────────────────────────────
@@ -254,7 +261,9 @@ class AndroidMockLocationPublisherTest {
     }
 
     @Test fun `stale internal fix is doubly rejected`() {
-        val old = Instant.now().minusMillis(AndroidMockLocationPublisher.MAX_FIX_AGE_MS + 5_000)
+        val now = Instant.now()
+        assertFalse(publisher.isStale(externalFix(timeUtc = now)))
+        val old = now.minusMillis(AndroidMockLocationPublisher.MAX_FIX_AGE_MS + 5_000)
         val fix = externalFix(provider = Provider.INTERNAL, timeUtc = old)
         assertFalse(publisher.isExternalFix(fix))
         assertTrue(publisher.isStale(fix))

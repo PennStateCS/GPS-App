@@ -625,6 +625,20 @@ class RenderMapFragment : Fragment() {
                 }
             }
         }
+        // Fixes stopped (signal lost / receiver disconnected): remove the live marker instead of
+        // leaving a frozen position on the map that looks current. It reappears with the next fix.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fixSwitchboard.fixStale.collect { stale ->
+                    if (!stale) return@collect
+                    clearAccuracyCircle()
+                    currentMarker?.remove(); currentMarker = null
+                    removeHeadingIndicator()
+                    currentFix = null
+                    lastCurrentMarkerHue = null
+                }
+            }
+        }
     }
 
     private fun updateLiveTracking(fix: Fix) {

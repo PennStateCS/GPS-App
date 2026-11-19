@@ -74,8 +74,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private val viewModel: OpenInARViewModel by viewModels()
 
     // Current GNSS fix from switchboard (surveying-grade GPS)
-    @Volatile
-    private var currentGnssFix: Fix? = null
+    @Volatile private var currentGnssFix: Fix? = null
     /** Last logged GNSS provider — used to suppress repeated identical fix logs. */
     private var lastLoggedProvider: app.surrealar.gnss.model.Provider? = null
 
@@ -615,8 +614,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Observe GNSS fixes from switchboard for current GPS location.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                fixSwitchboard.fixes.collect { fix ->
+                // currentFix (not the fixes replay buffer) goes null on a provider switch and when
+                // fixes stop, so AR never anchors/gates against a frozen position.
+                fixSwitchboard.currentFix.collect { fix ->
                     currentGnssFix = fix
+                    if (fix == null) {
+                        _binding?.chipArGnssStatus?.let {
+                            it.text = "Waiting for GNSS"
+                            it.setTextColor(requireContext().getColor(R.color.app_error))
+                        }
+                        return@collect
+                    }
                     logArSessionHeaderOnce()
                     updateArGnssChip(fix)
                     // Only log when the provider changes — fixes arrive at up to 10Hz
@@ -625,6 +633,23 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         lastLoggedProvider = fix.provider
                         android.util.Log.d(TAG, "GNSS provider changed: ${fix.provider}, lat=${fix.latDeg}, lon=${fix.lonDeg}")
                     }
+                }
+            }
+        }
+
+        // If mock publishing can't start (app not chosen as the mock location app in Developer
+        // Options), AR anchors fall back to the phone's own location — tell the user once.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                val publisher = runCatching { app.surrealar.SurRealApplication.mockLocationPublisher }.getOrNull()
+                    ?: return@repeatOnLifecycle
+                var shown = false
+                publisher.errorEvents.collect {
+                    if (shown) return@collect
+                    shown = true
+                    android.widget.Toast.makeText(requireContext(),
+                        "AR can't use the external receiver: select SurReal AR as the mock location app in Developer Options",
+                        android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -719,21 +744,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                                else    requireContext().getColor(android.R.color.white)
                     binding.iconToggleOcclusion.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
                     binding.txtToggleOcclusion.text = if (on) "Occlude ✓" else "Occlude"
-                }
-            }
-        }
-
-        // React to high-accuracy GPS preference changes from the ViewModel.
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.highAccuracyEnabled.collect { wantHigh ->
-                    if (!isAdded || _binding == null) return@collect
-                    if (wantHigh) {
-                        val lm = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                        if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                            binding.textArStatus.text = "Enable GPS for high accuracy AR positioning"
-                        }
-                    }
                 }
             }
         }
@@ -841,6 +851,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     override fun onResume() {
         super.onResume()
         android.util.Log.d(TAG, "onResume called")
+        // ARCore Geospatial localizes from Android location: with an external receiver selected,
+        // publish its fixes as mock locations while AR is open so anchors follow the RS2+. The
+        // publisher only acts when the selected source is External; Internal is unaffected.
+        runCatching { app.surrealar.SurRealApplication.mockLocationPublisher.setArSessionActive(true) }
 
         displayRotation = readDisplayRotation()
         android.util.Log.d(TAG, "Display rotation: $displayRotation")
@@ -927,6 +941,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onPause() {
         super.onPause()
+        // Release the AR auto-enable; publishing continues only if the user's Settings toggle is on.
+        runCatching { app.surrealar.SurRealApplication.mockLocationPublisher.setArSessionActive(false) }
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         sessionReady = false
@@ -1753,7 +1769,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         newModelPoses: MutableList<ArFilamentRenderer.ModelPose>
     ) {
         if (earth?.trackingState != TrackingState.TRACKING) return
+        // "Where is the user" comes from the GNSS feed (internal or external receiver), the same
+        // position the bottom-sheet distances use, so the in-range filter and the list agree. ARCore's
+        // camera pose is only a stand-in while the feed has no live fix. (Anchor/camera TRANSFORMS
+        // still come from ARCore below — that is rendering, not the user's location.)
+        val feedFix = currentGnssFix
         val camGeoPose = earth.cameraGeospatialPose
+        val userLat = feedFix?.latDeg ?: camGeoPose.latitude
+        val userLon = feedFix?.lonDeg ?: camGeoPose.longitude
         val filterM    = distanceFilterM
         val distanceSkipped = mutableSetOf<String>()
         val mode = arVisibilityModeMirror
@@ -1763,8 +1786,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         for (entry in geoAnchors) {
             val coord = entry.coordWithModel.coordinate
             val entryModelFilePath = entry.modelFilePath
-            val distM = haversineM(camGeoPose.latitude, camGeoPose.longitude,
-                coord.latitude, coord.longitude)
+            val distM = haversineM(userLat, userLon, coord.latitude, coord.longitude)
             // Model-visibility decision (shared with the bottom sheet via ArVisibilityLogic): eligibility
             // (has model + in range unless ALL) AND selection (SELECTED mode). Computed regardless of this
             // anchor's tracking so a visible-but-not-tracking model stays in the Filament scene (no
@@ -1804,8 +1826,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
             }
 
-            val bearing = bearingDeg(camGeoPose.latitude, camGeoPose.longitude,
-                coord.latitude, coord.longitude)
+            val bearing = bearingDeg(userLat, userLon, coord.latitude, coord.longitude)
             val subtext = "${formatDist(distM)} ${bearingToCompass(bearing)}"
 
             val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)

@@ -101,7 +101,26 @@ class GnssSourceCoordinatorTest {
     ): Pair<GnssSourceCoordinator, Pair<SourceSettings, FakeSettingsRepository>> {
         val ss = sourceSettings(initialProvider)
         val repo = FakeSettingsRepository(source, host, port)
-        return GnssSourceCoordinator(ss, repo) to (ss to repo)
+        return GnssSourceCoordinator(ss, repo, object : ExternalReconnectable { override fun reconnectNow(reason: String) {} }) to (ss to repo)
+    }
+
+    // ── Receiver change while External is already active ─────────────────────────
+
+    @Test fun `changing receiver while external is active reconnects only when host or port differ`() {
+        val reconnects = mutableListOf<String>()
+        val ss = sourceSettings(ProviderChoice.INTERNAL)
+        val c = GnssSourceCoordinator(ss, FakeSettingsRepository(LocationSourceType.EXTERNAL, null, null),
+            object : ExternalReconnectable { override fun reconnectNow(reason: String) { reconnects += reason } })
+
+        c.activateExternalTcpProvider("192.168.42.1", 9001, "first")   // provider switch, no reconnect
+        assertEquals(0, reconnects.size)
+        c.activateExternalTcpProvider("192.168.42.1", 9001, "revalidate") // same receiver: keep stream
+        assertEquals(0, reconnects.size)
+        c.activateExternalTcpProvider("192.168.42.7", 9001, "new receiver")
+        assertEquals(1, reconnects.size)
+        c.activateExternalTcpProvider("192.168.42.7", 9002, "new port")
+        assertEquals(2, reconnects.size)
+        assertEquals(ProviderChoice.EXTERNAL_TCP, ss.activeProvider.value)
     }
 
     // ── Task 3: provider activation methods ──────────────────────────────────────

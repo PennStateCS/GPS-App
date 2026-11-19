@@ -2,7 +2,9 @@ package app.surrealar.gnss.settings
 
 /**
  * Receiver tuning preferences.
- * - [highAccuracy] requests the high-accuracy location mode where available.
+ * - [highAccuracy] is RETIRED (2026-11-19): it only set the Google fused-location priority, which
+ *   the app no longer uses (all location comes from the GNSS feed). Kept so stored settings still
+ *   round-trip; nothing reads it and the Settings toggle was removed.
  * - [antennaHeightM] is the vertical offset (metres) of the EXTERNAL receiver's antenna phase centre
  *   above the survey mark — the pole/tripod height (plus any antenna-reference-point→phase-centre
  *   delta). Applied to external-receiver captures.

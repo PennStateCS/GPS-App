@@ -30,6 +30,12 @@ interface NmeaSource : Startable {
     fun nmeaTimingStats(): NmeaFuser.FuserTimingStats
     /** Emlid EBP/ETC activity seen by this source's fuser (diagnostics). */
     fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats
+
+    /**
+     * False once the underlying connection has ended (remote closed, connect failed, stopped).
+     * Sources without a connection concept keep the default `true`.
+     */
+    fun isConnectionActive(): Boolean = true
 }
 
 /**

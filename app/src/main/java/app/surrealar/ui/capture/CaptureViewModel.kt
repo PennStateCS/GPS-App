@@ -48,8 +48,15 @@ class CaptureViewModel @Inject constructor(
     init {
         // Monitor fixes and update okToCapture based on FixAcceptanceSettings
         viewModelScope.launch {
-            fixSwitchboard.fixes.collect { fix ->
-                updateOkToCapture(fix)
+            // currentFix goes null on a provider switch or when fixes stop arriving, so the
+            // "OK to capture" indicator can't stay green on a frozen position.
+            fixSwitchboard.currentFix.collect { fix ->
+                if (fix == null) {
+                    satisfyingStartTime = null
+                    _okToCapture.value = false
+                } else {
+                    updateOkToCapture(fix)
+                }
             }
         }
         // Cancel any in-progress averaging session when the provider switches.
@@ -129,8 +136,11 @@ class CaptureViewModel @Inject constructor(
         // fixes so internal GPS fixes can never be averaged into an external capture — even if the
         // required quality is lowered to Single/DGPS, and even during the window where External is
         // selected but the live provider is still Internal (reconnecting).
+        // Also skip the fix replayed from before this session started (the fixes flow replays its
+        // last value to new subscribers) — only fixes that arrive during the session are averaged.
+        val replayedBeforeStart = fixSwitchboard.fixes.replayCache.lastOrNull()
         val externalFixes = fixSwitchboard.fixes.filter {
-            it.provider != app.surrealar.gnss.model.Provider.INTERNAL
+            it !== replayedBeforeStart && it.provider != app.surrealar.gnss.model.Provider.INTERNAL
         }
         val s = ObservationSession(viewModelScope, externalFixes, policy)
         session = s

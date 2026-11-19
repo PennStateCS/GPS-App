@@ -46,7 +46,10 @@ class GsaParser : SentenceParser<GSA> {
             usedSvids = used,
             pdop = pDop,
             hdop = hDop,
-            vdop = vDop
+            vdop = vDop,
+            // NMEA 4.10+ appends a GNSS System ID (field 18). With a combined "GN" talker it is the
+            // only way to tell which constellation the SVIDs belong to.
+            systemId = fields.getOrNull(18).toIntOrNullSafe()
         )
     }
 

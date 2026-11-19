@@ -343,17 +343,19 @@ class LogZip(
                 appendLine("GPS Enabled: $gpsEnabled")
                 appendLine("Network Location Enabled: $networkEnabled")
 
-                val lastKnownGps = try {
-                    locationManager?.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
-                } catch (e: SecurityException) {
-                    null
-                }
+                // Report the app's GNSS feed (the single location authority — internal or external
+                // receiver), not Android's last-known location, which may come from another source.
+                val feedFix = runCatching {
+                    dagger.hilt.android.EntryPointAccessors.fromApplication(
+                        context.applicationContext, app.surrealar.SurRealApplicationEntryPoint::class.java
+                    ).fixSwitchboard().currentFix.value
+                }.getOrNull()
 
-                if (lastKnownGps != null) {
-                    appendLine("Last GPS Fix: ${SimpleDateFormat("MM-dd HH:mm:ss", Locale.US).format(Date(lastKnownGps.time))}")
-                    appendLine("GPS Accuracy: ${lastKnownGps.accuracy}m")
+                if (feedFix != null) {
+                    appendLine("Last GNSS Fix: ${feedFix.timeUtc} (${feedFix.provider}, ${feedFix.rtkStatus})")
+                    appendLine("GNSS Accuracy: ${feedFix.hAccM?.let { "%.2fm".format(Locale.US, it) } ?: "unknown"}")
                 } else {
-                    appendLine("Last GPS Fix: None available")
+                    appendLine("Last GNSS Fix: None (no live fix from the GNSS feed)")
                 }
             } catch (e: Exception) {
                 appendLine("Location Services: Unable to retrieve (${e.message})")

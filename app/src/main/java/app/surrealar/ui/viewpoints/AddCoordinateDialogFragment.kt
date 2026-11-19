@@ -48,10 +48,6 @@ import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.util.GlbGeoreferenceDetector
 import app.surrealar.util.UtmConverter
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
@@ -75,6 +71,8 @@ private const val DEFAULT_COORDINATE_COLOR = 0xFF155DA8.toInt()
 
 /** Dev/emulator-only fallback position (Googleplex). Never used in production — see
  *  [AddCoordinateDialogFragment.allowDevLocationFallback]. */
+/** How long Internal capture waits for a live internal fix from the GNSS feed (cold start can be slow). */
+private const val INTERNAL_FIX_WAIT_MS = 15_000L
 private const val DEV_FALLBACK_LAT = 37.4219999
 private const val DEV_FALLBACK_LON = -122.0840575
 
@@ -84,7 +82,6 @@ private const val DEV_FALLBACK_LON = -122.0840575
  */
 @AndroidEntryPoint
 class AddCoordinateDialogFragment(
-    private val highAccuracy: Boolean = true,
     private val dbModels: List<Model> = emptyList(),
     private val onPointAdded: (Coordinate) -> Unit
 ) : DialogFragment() {
@@ -630,47 +627,40 @@ class AddCoordinateDialogFragment(
 
         locationText?.text = getString(R.string.fetching_location)  // "Waiting for location…"
 
-        val fused: FusedLocationProviderClient =
-            LocationServices.getFusedLocationProviderClient(requireActivity())
-        val cts = CancellationTokenSource()
-        val priority = if (fineGranted && highAccuracy)
-            Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
-
-        // 1) Fresh one-shot fix.
-        val result = withTimeoutOrNull(6_000L) {
-            @Suppress("MissingPermission")
-            fused.getCurrentLocation(priority, cts.token).awaitSafe()
+        // The GNSS feed (FixSwitchboard) is the app's single location authority. Take the next live
+        // INTERNAL fix from it — the same position the toolbar/map show — instead of asking Google's
+        // fused provider (which could differ, or hand back an old cached last-known location).
+        // currentFix is liveness-gated: it is null whenever fixes have stopped, so this never
+        // captures a frozen position. Altitude must be ellipsoidal (as the fused Location altitude
+        // was); a fix without it is skipped rather than saving an MSL/zero height.
+        val fix = withTimeoutOrNull(INTERNAL_FIX_WAIT_MS) {
+            fixSwitchboard.currentFix.first { f ->
+                f != null && f.provider == Provider.INTERNAL &&
+                    CoordinateValidator.isValidLatLon(f.latDeg, f.lonDeg) && f.altEllipsoidalM != null
+            }
         }
-        // Require a real altitude: Location.getAltitude() returns 0.0 when hasAltitude() is false,
-        // and saving that fake zero would be indistinguishable from a true sea-level measurement.
-        if (result != null && CoordinateValidator.isValidLatLon(result.latitude, result.longitude) &&
-            result.hasAltitude()) {
+        if (fix != null) {
+            // The fix carries full quality metadata (the fused Location did not) — keep it.
+            rtkStatusStr = fix.rtkStatus.name
+            satsUsedVal = fix.satsUsed
+            satsVisibleVal = fix.satsVisible
+            hdopVal = fix.hDop; vDopVal = fix.vDop; pDopVal = fix.pDop
+            altitudeMslVal = fix.altMslM
+            geoidSeparationVal = fix.geoidSeparationM
+            speedMpsVal = fix.speedMps; courseDegVal = fix.courseDeg
+            timestampSourceStr = fix.timestampSource.name
+            stdLatVal = fix.stdDevNorthM; stdLonVal = fix.stdDevEastM; stdAltVal = fix.stdDevUpM
             acceptInternalLocation(
-                result.latitude, result.longitude, result.altitude,
-                hAcc = if (result.hasAccuracy()) result.accuracy.toDouble() else null,
-                vAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && result.hasVerticalAccuracy())
-                    result.verticalAccuracyMeters.toDouble() else null,
-                modeLabel = if (highAccuracy && fineGranted) "INTERNAL-HIGH" else "INTERNAL",
+                fix.latDeg, fix.lonDeg, fix.altEllipsoidalM!!,
+                hAcc = fix.hAccM, vAcc = fix.vAccM,
+                modeLabel = "INTERNAL",
                 method = CaptureMethod.INTERNAL_GPS
             )
+            DiagnosticsLogger.i("Capture", "Internal capture from GNSS feed rtk=${fix.rtkStatus} sats=${fix.satsUsed}")
             return
         }
-
-        // 2) Last-known fix (only if it is itself valid).
-        val last = try {
-            @Suppress("MissingPermission") fused.lastLocation.awaitSafe()
-        } catch (_: Exception) { null }
-        if (last != null && CoordinateValidator.isValidLatLon(last.latitude, last.longitude) &&
-            last.hasAltitude()) {
-            acceptInternalLocation(
-                last.latitude, last.longitude, last.altitude,
-                hAcc = if (last.hasAccuracy()) last.accuracy.toDouble() else null,
-                vAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && last.hasVerticalAccuracy())
-                    last.verticalAccuracyMeters.toDouble() else null,
-                modeLabel = "LAST-KNOWN", method = CaptureMethod.INTERNAL_GPS, suffix = " (fallback)"
-            )
-            return
-        }
+        DiagnosticsLogger.w("Capture", "Internal capture: no live internal fix within ${INTERNAL_FIX_WAIT_MS}ms " +
+            "(activeProvider=${sourceSettings.activeProvider.value})")
 
         // 3) Developer/emulator-only fallback. NEVER runs in production: gated to debug builds
         //    on an emulator, and tagged as a SIMULATOR capture so it is clearly not field data.
@@ -722,6 +712,10 @@ class AddCoordinateDialogFragment(
                     settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }
                         ?: settingsRepo.externalReceiverProfile.first().label
                 }.getOrNull() ?: "External GNSS"
+                // Settings → receiver antenna (pole) height: subtracted so the stored altitude is
+                // the ground mark, not the antenna. (Previously never applied on this save path.)
+                val poleHeightM = runCatching { settingsRepo.gnssReceiverSettings.first().antennaHeightM }
+                    .getOrDefault(0.0)
 
                 val coordinate = CoordinateFactory.fromCaptureResult(
                     id            = UUID.randomUUID().toString(),
@@ -734,18 +728,25 @@ class AddCoordinateDialogFragment(
                     captureMethod = CaptureMethod.EXTERNAL_GNSS.storageValue,
                     sourceDevice  = sourceDevice,
                     modelId       = linkedModelId,
-                    iconKey       = builtinIconKey
+                    iconKey       = builtinIconKey,
+                    antennaHeightM = poleHeightM
                 )
                 if (persistIfValid(coordinate)) dismissAllowingStateLoss()
             }
-        } else {
+        } else viewLifecycleOwner.lifecycleScope.launch {
+            // Settings → internal antenna height (tablet on a pole/bracket), subtracted so the stored
+            // altitude is the ground mark — same rule as external captures. The developer emulator
+            // fallback (SIMULATOR) has no antenna.
+            val internalHeightM = if (captureMethodStr == CaptureMethod.SIMULATOR.storageValue) 0.0
+                else runCatching { settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM }.getOrDefault(0.0)
             val utm = try { UtmConverter.latLonToUtm(latitude, longitude) } catch (_: Exception) { null }
             val coordinate = Coordinate(
                 id                  = UUID.randomUUID().toString(),
                 name                = name,
                 latitude            = latitude,
                 longitude           = longitude,
-                altitude            = altitude,
+                altitude            = altitude - internalHeightM,
+                antennaHeightM      = internalHeightM.takeIf { it != 0.0 },
                 timestamp           = capturedTimestampMs,
                 icon                = legacyIcon,
                 color               = DEFAULT_COORDINATE_COLOR,
@@ -765,7 +766,7 @@ class AddCoordinateDialogFragment(
                 courseDeg           = courseDegVal,
                 timestampSource     = timestampSourceStr,
                 multipathIndex      = multipathIndexVal,
-                altitudeMsl         = altitudeMslVal,
+                altitudeMsl         = altitudeMslVal?.let { it - internalHeightM },
                 geoidSeparationM    = geoidSeparationVal,
                 crsEpsg             = crsEpsgVal,
                 easting             = utm?.easting,
@@ -911,13 +912,4 @@ class AddCoordinateDialogFragment(
             }
         }
     }
-
-    // ── Helper ────────────────────────────────────────────────────────────────
-
-    private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitSafe(): T? =
-        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            addOnSuccessListener { if (cont.isActive) cont.resume(it) }
-            addOnFailureListener { if (cont.isActive) cont.resume(null) }
-            addOnCanceledListener { if (cont.isActive) cont.resume(null) }
-        }
 }

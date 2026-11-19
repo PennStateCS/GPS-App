@@ -11,12 +11,14 @@ import android.util.Log
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
+import app.surrealar.gnss.capture.FixFreshnessGate
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
 import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
@@ -76,15 +78,31 @@ class AndroidMockLocationPublisher(
      */
     val errorEvents: SharedFlow<MockLocationError> = _errorEvents.asSharedFlow()
 
+    /**
+     * True while the AR screen is open. ARCore Geospatial localizes from Android location, so with an
+     * external receiver selected AR publishes the receiver's fixes as mock locations automatically,
+     * even when the user has not turned on the Settings toggle. In-memory only (never persisted).
+     */
+    private val arSessionActive = MutableStateFlow(false)
+
+    /** Called by the AR screen on resume (true) / pause (false). */
+    fun setArSessionActive(active: Boolean) {
+        if (arSessionActive.value != active) {
+            DiagnosticsLogger.i("MockLoc", "AR session ${if (active) "active — auto-enabling" else "inactive — releasing"} mock publishing")
+        }
+        arSessionActive.value = active
+    }
+
     /** Start observing the fix stream and publishing mock locations while enabled. */
     fun start(scope: CoroutineScope) {
         if (publishJob?.isActive == true) return
         publishJob = scope.launch {
             combine(
                 settingsRepo.mockLocationEnabled,
+                arSessionActive,
                 settingsRepo.locationSource,
                 fixSwitchboard.fixes
-            ) { mockEnabled, locationSource, fix -> Triple(mockEnabled, locationSource, fix) }
+            ) { userEnabled, arActive, locationSource, fix -> Triple(userEnabled || arActive, locationSource, fix) }
             .collect { (mockEnabled, locationSource, fix) ->
                 if (!mockEnabled || locationSource != LocationSourceType.EXTERNAL) {
                     if (providerAdded) {
@@ -113,9 +131,32 @@ class AndroidMockLocationPublisher(
 
     internal fun isExternalFix(fix: Fix): Boolean = fix.provider != Provider.INTERNAL
 
+    /**
+     * Skew-tolerant staleness (see [FixFreshnessGate]): a fix is stale when it arrives more than
+     * [MAX_FIX_AGE_MS] later than the stream's normal delivery delay, or its GNSS time goes backwards.
+     * The tablet clock vs GNSS time no longer matters — a skewed tablet clock previously made EVERY
+     * fix "stale", so nothing was published (and AR silently ignored the external receiver).
+     * After [STALE_RESET_COUNT] consecutive rejections the baseline is rebuilt, so a tablet clock
+     * that jumps mid-session (network time sync) cannot block publishing permanently.
+     */
     internal fun isStale(fix: Fix): Boolean {
-        val ageMs = ChronoUnit.MILLIS.between(fix.timeUtc, Instant.now())
-        return ageMs > MAX_FIX_AGE_MS || ageMs < -MAX_CLOCK_SKEW_MS
+        if (freshness.isFresh(fix)) {
+            consecutiveStale = 0
+            return false
+        }
+        if (++consecutiveStale >= STALE_RESET_COUNT) {
+            DiagnosticsLogger.w("MockLoc", "Fix timing baseline reset after $consecutiveStale stale fixes (clock change?)")
+            resetFreshness()
+        }
+        return true
+    }
+
+    private var freshness = FixFreshnessGate(MAX_FIX_AGE_MS)
+    private var consecutiveStale = 0
+
+    private fun resetFreshness() {
+        freshness = FixFreshnessGate(MAX_FIX_AGE_MS)
+        consecutiveStale = 0
     }
 
     internal fun isValid(fix: Fix): Boolean =
@@ -255,6 +296,7 @@ class AndroidMockLocationPublisher(
         } finally {
             providerAdded = false
             MockInjectionStatus.providerActive = false
+            resetFreshness()  // the next publishing session builds its own timing baseline
         }
     }
 
@@ -279,10 +321,10 @@ class AndroidMockLocationPublisher(
         /** Minimum spacing between per-injection export logs (status still updates every fix). */
         private const val INJECT_LOG_INTERVAL_MS = 3_000L
 
-        /** Drop fixes older than 10 seconds. */
+        /** Drop fixes delivered more than 10 seconds later than the stream's normal delay. */
         internal const val MAX_FIX_AGE_MS = 10_000L
 
-        /** Allow up to 5 seconds of clock skew between fix timestamp and device clock. */
-        internal const val MAX_CLOCK_SKEW_MS = 5_000L
+        /** Consecutive stale fixes after which the timing baseline is rebuilt (clock jump recovery). */
+        internal const val STALE_RESET_COUNT = 5
     }
 }

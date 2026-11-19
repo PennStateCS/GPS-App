@@ -85,7 +85,7 @@ class GnssSourceCoordinatorMismatchTest {
     ): Pair<GnssSourceCoordinator, Pair<SourceSettings, MutableSettingsRepo>> {
         val ss = SourceSettings(MutableStateFlow(initialProvider), MutableStateFlow(emptyList()), MutableStateFlow(null))
         val repo = MutableSettingsRepo(source, host, port)
-        return GnssSourceCoordinator(ss, repo) to (ss to repo)
+        return GnssSourceCoordinator(ss, repo, object : ExternalReconnectable { override fun reconnectNow(reason: String) {} }) to (ss to repo)
     }
 
     // ── Selected vs active reported distinctly + no masquerade ──────────────────────────────────

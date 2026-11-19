@@ -182,6 +182,12 @@ object GnssModule {
         inv   = externalInventory
     )
 
+    /** Lets GnssSourceCoordinator reconnect the external receiver when its saved host/port change. */
+    @Provides
+    @Singleton
+    fun provideExternalReconnectable(externalAdapter: ExternalAdapter): app.surrealar.gnss.source.ExternalReconnectable =
+        externalAdapter
+
     // --- Switchboard (single point to select/internal/external and expose flows) ---
     @Provides
     @Singleton

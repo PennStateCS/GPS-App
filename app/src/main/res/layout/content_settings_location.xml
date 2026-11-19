@@ -752,44 +752,6 @@
                         android:textAppearance="?attr/textAppearanceLabelLarge"
                         android:textColor="?attr/colorPrimary" />
 
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:minHeight="64dp"
-                        android:paddingHorizontal="20dp"
-                        android:paddingVertical="@dimen/settings_content_row_padding_v">
-
-                        <LinearLayout
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:paddingEnd="16dp">
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:text="High Accuracy Location"
-                                android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:alpha="0.7"
-                                android:text="Use the device's most precise location mode combining GPS and other sensors. May increase battery usage."
-                                android:textAppearance="?attr/textAppearanceBodyMedium" />
-                        </LinearLayout>
-
-                        <com.google.android.material.materialswitch.MaterialSwitch
-                            android:id="@+id/switch_high_accuracy"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content" />
-
-                    </LinearLayout>
-
                     <!-- Tablet / internal-GNSS antenna height. Set when the tablet is pole/bracket
                          mounted at a known height; subtracted from internal-GPS captured altitude.
                          Styled to match the Capture settings rows. -->

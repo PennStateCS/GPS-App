@@ -47,7 +47,7 @@ class ExternalAdapter(
     private val scope: CoroutineScope,
     private val nmea: NmeaSource,
     private val inv: SatelliteInventory
-) : SourceAdapter, SkyProvider, Startable, RawNmeaProvider {
+) : SourceAdapter, SkyProvider, Startable, RawNmeaProvider, app.surrealar.gnss.source.ExternalReconnectable {
 
     companion object {
         private const val TAG = "ExternalAdapter"
@@ -55,7 +55,7 @@ class ExternalAdapter(
         private const val INITIAL_DELAY_MS = 1000L
         private const val MAX_JITTER_MS = 500L
         private const val CONNECT_TIMEOUT_MS = 10_000L
-        private const val HEALTH_INTERVAL_MS = 5_000L
+        private const val HEALTH_INTERVAL_MS = 1_000L
         private const val HEALTH_DATA_TIMEOUT_MS = 30_000L
     }
 
@@ -99,6 +99,19 @@ class ExternalAdapter(
         _connectionState.value = ConnectionState.CONNECTING
         _attemptCount.value = 0
         reconnectJob = scope.launch { startWithReconnect() }
+    }
+
+    /**
+     * Drops the current connection and reconnects using the CURRENT saved host/port. Used when the
+     * user connects to a different receiver while External is already active — the provider does not
+     * change, so the switchboard would not rebind and the old socket would stay up. No-op when the
+     * adapter is not running (it reads the saved settings on its next start anyway).
+     */
+    override fun reconnectNow(reason: String) {
+        if (reconnectJob == null) return
+        DiagnosticsLogger.i("Receiver", "Reconnecting external receiver now ($reason)")
+        stop()
+        start()
     }
 
     override fun stop() {
@@ -175,7 +188,6 @@ class ExternalAdapter(
 
         gsvJob = scope.launch {
             nmea.gsvStream()
-                .conflate()
                 .onEach {
                     firstDataArrived = true
                     lastDataTimeMs = System.currentTimeMillis()
@@ -196,20 +208,32 @@ class ExternalAdapter(
         val start = System.currentTimeMillis()
         while (coroutineContext.isActive && System.currentTimeMillis() - start < CONNECT_TIMEOUT_MS) {
             if (firstDataArrived) return
+            // Connect refused / host unreachable / no host configured: retry on the backoff
+            // schedule now rather than sitting out the full connect timeout.
+            if (!nmea.isConnectionActive()) {
+                DiagnosticsLogger.w("Receiver", "External connection ended before any NMEA data Ã¢â‚¬â€ will retry")
+                throw IllegalStateException("Connection ended before data")
+            }
             delay(250)
         }
-        DiagnosticsLogger.w("Receiver", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry")
+        DiagnosticsLogger.w("Receiver", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms Ã¢â‚¬â€ will retry")
         throw IllegalStateException("Timeout: no data within ${CONNECT_TIMEOUT_MS} ms")
     }
 
     private suspend fun monitorConnectionHealth() {
         while (coroutineContext.isActive) {
             delay(HEALTH_INTERVAL_MS)
+            // Socket closed by the receiver (reboot, Wi-Fi drop, another client took the slot):
+            // reconnect immediately instead of waiting for the no-data timeout.
+            if (!nmea.isConnectionActive()) {
+                DiagnosticsLogger.w("Receiver", "External connection ended Ã¢â‚¬â€ triggering reconnect")
+                throw IllegalStateException("Connection ended")
+            }
             val last = lastDataTimeMs
             if (last == 0L) continue
             val staleFor = System.currentTimeMillis() - last
             if (staleFor > HEALTH_DATA_TIMEOUT_MS) {
-                DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
+                DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms Ã¢â‚¬â€ triggering reconnect")
                 throw IllegalStateException("No data for ${HEALTH_DATA_TIMEOUT_MS} ms")
             }
         }

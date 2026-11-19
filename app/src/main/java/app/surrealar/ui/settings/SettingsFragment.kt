@@ -49,6 +49,7 @@ import app.surrealar.ui.common.BaseTwoPaneFragment
 import app.surrealar.util.ReachNameResolver
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import java.io.BufferedReader
@@ -794,7 +795,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     private fun setupLocationSourceUi(view: View) {
         val radioGroup = view.findViewById<RadioGroup>(R.id.radio_location_source)
         val internalGpsGroup = view.findViewById<LinearLayout>(R.id.group_internal_gps)
-        val switchHighAccuracy = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_high_accuracy)
         val rs2OptionsLayout = view.findViewById<LinearLayout>(R.id.layout_rs2_options)
         val editHost = view.findViewById<EditText>(R.id.edit_host)
         val editPort = view.findViewById<EditText>(R.id.edit_port)
@@ -1307,7 +1307,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             viewLifecycleOwner.lifecycleScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     try {
-                        fixSwitchboard.fixes.collect { fix ->
+                        // currentFix, not the fixes replay buffer: re-entering Settings replayed the last
+                        // fix and stamped it 'now', briefly showing STREAMING for a dead stream.
+                        fixSwitchboard.currentFix.filterNotNull().collect { fix ->
                             if (fix.provider == Provider.INTERNAL) return@collect
                             if (!currentExternalActive()) return@collect
                             lastExternalFixTimeMs = System.currentTimeMillis()
@@ -1337,26 +1339,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
         textDeviceStatus?.text = ""
 
-
-        switchHighAccuracy?.apply {
-            lifecycleScope.launch {
-                try {
-                    isChecked = settingsRepo.gnssReceiverSettings.first().highAccuracy
-                } catch (e: Exception) {
-                    Log.e("SettingsFragment", "high accuracy initial load error", e)
-                }
-            }
-            setOnCheckedChangeListener { _, v ->
-                lifecycleScope.launch {
-                    try {
-                        val current = settingsRepo.gnssReceiverSettings.first()
-                        settingsRepo.setGnssReceiverSettings(current.copy(highAccuracy = v))
-                    } catch (e: Exception) {
-                        Log.e("SettingsFragment", "high accuracy save error", e)
-                    }
-                }
-            }
-        }
 
         // Antenna / pole vertical offset (metres). Subtracted from the captured altitude for
         // external-receiver captures so the stored altitude is the ground mark, not the antenna.

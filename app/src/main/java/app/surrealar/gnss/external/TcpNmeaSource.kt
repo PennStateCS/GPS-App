@@ -82,11 +82,22 @@ class TcpNmeaSource(
     private val fuser = NmeaFuser(
         provider = provider,
         registry = registry,
-        onFix    = { fix -> scope.launch { _fixes.emit(fix) } },
-        onGsv    = { gsv -> scope.launch { _gsv.emit(gsv) } }
+        // tryEmit (never fails: DROP_OLDEST buffers) keeps fixes in receive order. A coroutine per
+        // fix on the multi-threaded app scope could deliver an older fix after a newer one.
+        onFix    = { fix -> _fixes.tryEmit(fix) },
+        onGsv    = { gsv -> _gsv.tryEmit(gsv) }
     )
 
     private var connectionJob: Job? = null
+    /** Open socket, so [stop] can close it and unblock a pending readLine() immediately. */
+    @Volatile private var activeSocket: Socket? = null
+
+    /**
+     * True while a connection attempt or open stream is in progress. False once the remote closed the
+     * socket, the connect failed, or [stop] ran — lets [ExternalAdapter] reconnect right away instead
+     * of waiting for its no-data timeout.
+     */
+    override fun isConnectionActive(): Boolean = connectionJob?.isActive == true
     @Volatile private var started = false
     @Volatile private var firstDataLogged = false
 
@@ -118,6 +129,8 @@ class TcpNmeaSource(
             } catch (ce: CancellationException) {
                 throw ce
             } catch (e: Exception) {
+                // stop() closes the socket, which surfaces here as "Socket closed" — not an error.
+                if (!isActive) return@launch
                 Log.e(TAG, "Connection error: ${e.message}")
                 DiagnosticsLogger.e("Receiver", "TCP connection error: ${e.message}")
                 started = false
@@ -132,6 +145,10 @@ class TcpNmeaSource(
         firstDataLogged = false
         connectionJob?.cancel()
         connectionJob = null
+        // Closing the socket unblocks readLine() now, so the old reader can't keep feeding the
+        // fuser (or hold a receiver client slot) for up to SOCKET_TIMEOUT_MS after a stop/reconnect.
+        activeSocket?.let { runCatching { it.close() } }
+        activeSocket = null
         fuser.reset()
         /*
          * Drop the replay=1 buffered fix so a later reconnect doesn't immediately
@@ -144,7 +161,7 @@ class TcpNmeaSource(
         var socket: Socket? = null
         var reader: BufferedReader? = null
         try {
-            socket = Socket().apply {
+            socket = Socket().also { activeSocket = it }.apply {
                 soTimeout = SOCKET_TIMEOUT_MS
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
@@ -175,10 +192,12 @@ class TcpNmeaSource(
                 }
             }
         } finally {
-            withContext(Dispatchers.IO) {
-                runCatching { reader?.close() }
-                runCatching { socket?.close() }
-            }
+            // Close directly (already on Dispatchers.IO). The previous withContext(...) threw
+            // immediately in a cancelled coroutine without running its block, leaking the socket
+            // on every stop/reconnect.
+            runCatching { reader?.close() }
+            runCatching { socket?.close() }
+            if (activeSocket === socket) activeSocket = null
             Log.d(TAG, "Disconnected from $host:$port")
             DiagnosticsLogger.i("Receiver", "TCP disconnected from $host:$port")
         }

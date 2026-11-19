@@ -8,6 +8,7 @@ import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -27,8 +28,16 @@ import java.time.Instant
 class FixSwitchboard(
     private val scope: CoroutineScope,
     private val sourceSettings: SourceSettings,
-    private val adapters: Map<ProviderChoice, SourceAdapter>
+    private val adapters: Map<ProviderChoice, SourceAdapter>,
+    /** No fix for this long â‡’ [currentFix] is cleared (the position is no longer live). */
+    private val fixStaleAfterMs: Long = DEFAULT_FIX_STALE_MS,
+    private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L }
 ) : FixBus, SkyBus {
+
+    companion object {
+        const val DEFAULT_FIX_STALE_MS = 10_000L
+        private const val LIVENESS_CHECK_MS = 1_000L
+    }
 
     private val EmptySky = SkySnapshot(
         satellites = emptyList(),
@@ -74,7 +83,19 @@ class FixSwitchboard(
     private var currentFixCollector: Job? = null
     private var skyJob: Job? = null
     private var rawNmeaJob: Job? = null
+    private var livenessJob: Job? = null
     private var currentAdapter: SourceAdapter? = null
+
+    /** Monotonic receive time (ms) of the last fix from the bound provider; 0 = none yet. */
+    @Volatile private var lastFixReceivedAtMs = 0L
+
+    /**
+     * True while [currentFix] was cleared because the bound provider stopped producing fixes (signal
+     * lost, receiver disconnected, GGA quality 0). Liveness is judged by RECEIVE time on a monotonic
+     * clock â€” never by the fix's GNSS timestamp vs. the device clock, which can be skewed.
+     */
+    private val _fixStale = MutableStateFlow(false)
+    val fixStale: StateFlow<Boolean> = _fixStale.asStateFlow()
 
     /*
      * Monotonic token bumped on every rebind. Each fix collector captures the generation it
@@ -129,7 +150,7 @@ class FixSwitchboard(
     /**
      * Nudges the currently-bound source to retry a start that was blocked waiting for a runtime
      * permission (e.g. INTERNAL started before location permission was granted at cold launch).
-     * Safe to call repeatedly — it is a no-op when the source is already active or not waiting, so
+     * Safe to call repeatedly â€” it is a no-op when the source is already active or not waiting, so
      * it never creates duplicate listeners. Called on app resume and when permission is granted.
      */
     fun retryActiveSourceIfStalled(reason: String) {
@@ -172,6 +193,11 @@ class FixSwitchboard(
         rawNmeaJob?.cancel()
         rawNmeaJob = null
 
+        livenessJob?.cancel()
+        livenessJob = null
+        lastFixReceivedAtMs = 0L
+        _fixStale.value = false
+
         (currentAdapter as? Startable)?.stop()
         currentAdapter = next
 
@@ -181,10 +207,10 @@ class FixSwitchboard(
 
         /*
          * Clear all live state from the OUTGOING provider:
-         *  - currentFix → null, so a guaranteed-current-only consumer reads "no fix yet"
+         *  - currentFix â†’ null, so a guaranteed-current-only consumer reads "no fix yet"
          *    until the new provider emits (never the previous source's coordinates).
          *  - the replay=1 fix buffer, so late SharedFlow subscribers don't replay the old fix.
-         *  - sky → EmptySky, so satellite counts don't carry over.
+         *  - sky â†’ EmptySky, so satellite counts don't carry over.
          */
         _currentFix.value = null
         _fixes.resetReplayCache()
@@ -204,8 +230,31 @@ class FixSwitchboard(
             next.fixes.conflate().collect { fix ->
                 // Drop emissions from a superseded binding (see bindGeneration).
                 if (generation != bindGeneration) return@collect
+                lastFixReceivedAtMs = monotonicNowMs()
+                if (_fixStale.value) {
+                    _fixStale.value = false
+                    DiagnosticsLogger.i("GNSS", "Fixes resumed from ${next::class.simpleName}")
+                }
                 _currentFix.value = fix
                 _fixes.emit(fix)
+            }
+        }
+
+        livenessJob = scope.launch {
+            while (true) {
+                delay(LIVENESS_CHECK_MS)
+                if (generation != bindGeneration) break
+                val last = lastFixReceivedAtMs
+                if (last == 0L || _fixStale.value) continue
+                if (monotonicNowMs() - last > fixStaleAfterMs) {
+                    // Stop presenting the last position as live. Pages watching currentFix show
+                    // "waiting"; late subscribers to fixes don't get the frozen fix replayed.
+                    _fixStale.value = true
+                    _currentFix.value = null
+                    _fixes.resetReplayCache()
+                    DiagnosticsLogger.w("GNSS", "No fix for ${fixStaleAfterMs}ms from " +
+                        "${next::class.simpleName}; cleared current fix")
+                }
             }
         }
 

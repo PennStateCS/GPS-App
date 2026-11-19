@@ -126,6 +126,7 @@ class ObservationSession(
          */
         val xs = RunningStats(); val ys = RunningStats(); val zs = RunningStats()
         var samples = 0
+        val freshness = FixFreshnessGate(maxAgeMs = policy.maxFixAgeSec * 1_000L)
 
         job = scope.launch {
             fixes
@@ -139,7 +140,8 @@ class ObservationSession(
                      * - Ellipsoidal height exists so the fix can be converted to ECEF.
                      */
                     val okMode = fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus)
-                    val freshFix = Duration.between(fix.timeUtc, Instant.now()).seconds <= policy.maxFixAgeSec
+                    // Skew-tolerant (see FixFreshnessGate): tablet clock vs GNSS time no longer matters.
+                    val freshFix = freshness.isFresh(fix)
                     val freshCorr = fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true
                     okMode && freshFix && freshCorr && fix.altEllipsoidalM != null
                 }

@@ -276,13 +276,13 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             fix.provider != Provider.INTERNAL
         }
 
-    /** True when [fix] is older than the live-display window (stale replay buffer guard). */
-    private fun isFixStale(fix: Fix): Boolean =
-        try {
-            java.time.Duration.between(fix.timeUtc, java.time.Instant.now()).toMillis() > MAP_FIX_MAX_AGE_MS
-        } catch (_: Exception) {
-            false
-        }
+    /**
+     * Staleness is now enforced upstream: [app.surrealar.gnss.bus.FixSwitchboard.currentFix] goes null
+     * when fixes stop arriving (judged by receive time on a monotonic clock). Comparing the fix's GNSS
+     * timestamp with the tablet clock hid a perfectly live dot whenever the device clock was skewed.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun isFixStale(fix: Fix): Boolean = false
 
     private fun setupFixBadgeObservers() {
         // Observe fix snapshot for GNSS quality indicators

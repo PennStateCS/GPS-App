@@ -58,8 +58,18 @@ class GsvParser : SentenceParser<GSV> {
             totalMessages = totalMessages,
             messageNumber = messageNumber,
             totalSatellites = totalSatellites,
-            satellites = satellites
+            satellites = satellites,
+            signalId = parseSignalId(fields)
         )
+    }
+
+    /**
+     * NMEA 4.10+ appends a single signal-ID field after the satellite quartets, so the field count
+     * past the 4-field header is 4n + 1. The ID is a hex digit (1–F).
+     */
+    private fun parseSignalId(fields: List<String>): Int? {
+        if (fields.size < 5 || (fields.size - 4) % 4 != 1) return null
+        return fields.last().trim().takeIf { it.isNotEmpty() }?.toIntOrNull(16)
     }
 
     private fun String?.toIntOrNullSafe(): Int? =

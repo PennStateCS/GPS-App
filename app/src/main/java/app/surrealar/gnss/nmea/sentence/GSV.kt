@@ -25,7 +25,13 @@ data class GSV(
     val totalMessages: Int?,
     val messageNumber: Int?,
     val totalSatellites: Int?,
-    val satellites: List<GSVSatellite>
+    val satellites: List<GSVSatellite>,
+    /**
+     * NMEA 4.10+ signal ID (e.g. 1 = GPS L1 C/A, 8 = GPS L5). Receivers that track several signals
+     * (Android dual-frequency chips, Emlid Reach) emit one GSV sequence PER SIGNAL for the same
+     * talker; null on older receivers that send a single sequence.
+     */
+    val signalId: Int? = null
 ) : NmeaSentence {
     override val tag: String = "GSV"
 }

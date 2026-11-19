@@ -59,9 +59,6 @@ object SettingsSnapshotCollector {
                 else java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(switchAt)))
         }.onFailure { sb.appendLine("Active provider         : (unavailable: ${it.message})") }
         sb.appendLine("Mock location enabled   : ${runCatching { repo.mockLocationEnabled.first() }.getOrNull()}")
-        runCatching { repo.gnssReceiverSettings.first() }.getOrNull()?.let {
-            sb.appendLine("Internal high-accuracy  : ${it.highAccuracy}")
-        }
         sb.appendLine()
 
         // ── External receiver (host/port OK to include) ────────────────────────────

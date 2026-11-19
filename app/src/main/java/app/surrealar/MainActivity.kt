@@ -69,6 +69,9 @@ private const val NAV_DRAWER_CLOSE_DELAY_MS = 120L
  * fragments under the `NavHostFragment`; this activity only wires chrome, navigation, and the
  * foreground [LocationService]/permission prompts around them.
  */
+/** Toolbar refresh period for live GNSS data. */
+private const val TOOLBAR_REFRESH_MS = 250L
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
@@ -647,6 +650,10 @@ class MainActivity : AppCompatActivity() {
                 ) { fix, sky, source ->
                     Triple(fix, sky, source)
                 }
+                    // Newest state at most every 250 ms: current within a quarter second, without
+                    // re-rendering on every epoch of a 5–10 Hz receiver. A lost fix (currentFix →
+                    // null from the feed's watchdog) still reaches the toolbar on the next tick.
+                    .sample(TOOLBAR_REFRESH_MS)
                     .catch { e ->
                         android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
                         consecutiveErrors++
@@ -670,7 +677,7 @@ class MainActivity : AppCompatActivity() {
 
                         // All display decisions live in the mapper. MainActivity only collects,
                         // maps, and renders — it no longer contains GNSS toolbar logic.
-                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, System.currentTimeMillis(), externalReceiverLabel)) {
+                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, externalReceiverLabel)) {
                             is ToolbarMapResult.Ignore -> {
                                 // Wrong-provider / stale / invalid fix: keep the existing
                                 // placeholders untouched (throttled diagnostics only).
