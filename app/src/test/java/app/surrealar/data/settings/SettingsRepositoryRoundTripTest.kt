@@ -27,6 +27,7 @@ import app.surrealar.settings.model.StakeoutSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -62,7 +63,7 @@ class SettingsRepositoryRoundTripTest {
 
     @After
     fun tearDown() {
-        scope.cancel()
+        runBlocking { scope.coroutineContext[Job]?.cancelAndJoin() }
         tempDir.deleteRecursively()
     }
 

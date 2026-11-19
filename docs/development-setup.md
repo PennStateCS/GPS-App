@@ -175,6 +175,24 @@ For AR and geospatial testing, use a physical device with:
 
 ## Troubleshooting
 
+### Build fails after Android Studio / AGP upgrade
+
+If builds fail with Kotlin daemon cache errors or `transformDebugClassesWithAsm` directory/output errors, use the project default stable mode first:
+
+```bash
+gradlew.bat :app:assembleDebug --no-daemon --no-configuration-cache
+```
+
+This repository keeps Gradle configuration cache disabled by default in `gradle.properties` (`org.gradle.configuration-cache=false`) for stability on current AGP/Kotlin tooling.
+
+You can still opt in locally when testing performance:
+
+```bash
+gradlew.bat :app:assembleDebug --configuration-cache
+```
+
+If you test with configuration cache enabled, treat failures there as non-blocking unless your team has explicitly re-enabled it as the required default.
+
 ### The map does not load
 
 Check the following:

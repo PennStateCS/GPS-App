@@ -142,7 +142,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:src="@drawable/ic_edit_24"
-                    android:tint="?attr/colorPrimary"
+                    app:tint="?attr/colorPrimary"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Edit Model"
                     android:padding="6dp" />
@@ -161,7 +161,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:src="@drawable/ic_delete"
-                    android:tint="?attr/colorError"
+                    app:tint="?attr/colorError"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Delete Model"
                     android:padding="6dp" />

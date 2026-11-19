@@ -1,5 +1,6 @@
 package app.surrealar.gnss.mock
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Criteria
 import android.location.Location
@@ -210,6 +211,7 @@ class AndroidMockLocationPublisher(
         }
     }
 
+    @SuppressLint("WrongConstant")
     private fun ensureProviderAdded() {
         if (providerAdded) return
         try {

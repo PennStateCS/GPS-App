@@ -6,14 +6,11 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)   // ✅ apply in this module
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
     // Developer API reference docs (Dokka Gradle Plugin v2). HTML, published to GitHub Pages by CI.
     id("org.jetbrains.dokka") version "2.2.0"
 }
-
-kotlin { jvmToolchain(17) }
 
 // ── Git / build metadata ──────────────────────────────────────────────────────
 // Uses providers.exec{} — the configuration-cache-safe API for external processes.
@@ -124,8 +121,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
-    kotlinOptions { jvmTarget = "17" }
-
     buildFeatures { viewBinding = true; buildConfig = true }
 
     bundle {
@@ -144,8 +139,14 @@ android {
     // Expose the exported Room schemas to instrumented tests so MigrationTestHelper can load them.
     sourceSets {
         getByName("androidTest") {
-            assets.srcDir("$projectDir/schemas")
+            assets.directories.add("$projectDir/schemas")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -203,7 +204,7 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.12.1")
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("androidx.test.ext:junit:1.1.5")
-    testImplementation("org.mockito:mockito-core:5.2.0")
+    testImplementation("org.mockito:mockito-core:5.24.0")
     debugImplementation("androidx.fragment:fragment-testing:1.6.1")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -273,4 +274,3 @@ dokka {
         footerMessage.set("Generated from the main branch. Developer reference only.")
     }
 }
-

@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -1062,11 +1061,10 @@ class ModelViewerActivity : AppCompatActivity() {
             // does NOT include the SurfaceView content — SurfaceView renders behind the
             // window by default, so window-level capture returns a white/blank frame.
             // Direct surface PixelCopy reads the actual Filament-rendered pixels.
-            val srcRect = Rect(0, 0, w, h)
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             try {
                 @Suppress("DEPRECATION")
-                PixelCopy.request(surfaceView, srcRect, bmp, { result ->
+                PixelCopy.request(surfaceView, bmp, { result ->
                     if (result != PixelCopy.SUCCESS) {
                         Log.e("ModelViewerActivity", "Thumb: PixelCopy failed result=$result; retrying")
                         bmp.recycle()

@@ -2,6 +2,7 @@ package app.surrealar.util
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.pm.PackageInfoCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -238,7 +239,7 @@ class LogZip(
             try {
                 val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
                 appendLine("App Version: ${packageInfo.versionName}")
-                appendLine("Version Code: ${packageInfo.longVersionCode}")
+                appendLine("Version Code: ${PackageInfoCompat.getLongVersionCode(packageInfo)}")
                 appendLine("Package: ${packageInfo.packageName}")
             } catch (e: Exception) {
                 appendLine("App Version: Unable to retrieve (${e.message})")

@@ -285,7 +285,7 @@
             android:layout_width="24dp"
             android:layout_height="24dp"
             android:src="@drawable/ic_list_coordinates"
-            android:tint="@color/ar_overlay_text"
+            app:tint="@color/ar_overlay_text"
             android:importantForAccessibility="no" />
 
         <TextView
@@ -303,7 +303,7 @@
             android:layout_height="20dp"
             android:layout_marginTop="2dp"
             android:src="@drawable/ic_chevron_right"
-            android:tint="@color/ar_overlay_text"
+            app:tint="@color/ar_overlay_text"
             android:importantForAccessibility="no" />
 
     </LinearLayout>
@@ -365,7 +365,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_layers_24"
-                    android:tint="@color/ar_overlay_text"
+                    app:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:id="@+id/txt_map_type"
@@ -397,7 +397,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_person_pin_circle_24"
-                    android:tint="@color/ar_overlay_text"
+                    app:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:layout_width="wrap_content"
@@ -428,7 +428,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_my_location_24"
-                    android:tint="@color/ar_overlay_text"
+                    app:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:layout_width="wrap_content"
@@ -459,7 +459,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_grid_24"
-                    android:tint="@color/ar_overlay_text"
+                    app:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:id="@+id/txt_map_grid"
@@ -491,7 +491,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_label_24"
-                    android:tint="@color/ar_overlay_text"
+                    app:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:id="@+id/txt_map_labels"
@@ -523,7 +523,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_fit_screen_24"
-                    android:tint="@color/ar_overlay_text"
+                    app:tint="@color/ar_overlay_text"
                     android:importantForAccessibility="no" />
                 <TextView
                     android:layout_width="wrap_content"
