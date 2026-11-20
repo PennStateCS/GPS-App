@@ -31,7 +31,9 @@ class FixSwitchboard(
     private val adapters: Map<ProviderChoice, SourceAdapter>,
     /** No fix for this long ⇒ [currentFix] is cleared (the position is no longer live). */
     private val fixStaleAfterMs: Long = DEFAULT_FIX_STALE_MS,
-    private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L }
+    private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    /** Applied to every fix before it is published (datum normalisation; see FeedDatum). */
+    private val fixTransform: (Fix) -> Fix = { it },
 ) : FixBus, SkyBus {
 
     companion object {
@@ -258,8 +260,12 @@ class FixSwitchboard(
                     _fixStale.value = false
                     DiagnosticsLogger.i("GNSS", "Fixes resumed from ${next::class.simpleName}")
                 }
-                _currentFix.value = fix
-                _fixes.emit(fix)
+                // Datum normalisation (NAD83(2011) receiver output → WGS84) before anyone sees it.
+                val out = runCatching { fixTransform(fix) }.getOrElse {
+                    DiagnosticsLogger.e("GNSS", "fix transform failed; publishing untransformed fix", it); fix
+                }
+                _currentFix.value = out
+                _fixes.emit(out)
             }
         }
 

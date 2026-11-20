@@ -26,21 +26,21 @@ class CoordinateSystemService @Inject constructor(@ApplicationContext context: C
 
     private val converter = CoordinateConverter { lat, lon -> geoid?.undulation(lat, lon) }
 
-    /** Datum the receiver output is in: internal GNSS is always WGS84/ITRF; external per setting. */
-    fun fixIsNad83(fix: Fix, s: CoordinateSystemSettings): Boolean =
-        fix.provider != Provider.INTERNAL && s.externalReceiverDatum == ReceiverDatum.NAD83_2011
+    /**
+     * EPSG code to store in Coordinate.crsEpsg for a capture. Fixes on the GNSS feed are always
+     * WGS84: NAD83(2011) receiver output is normalised as it enters FixSwitchboard (FeedDatum),
+     * so captures are stored in WGS84 and converted back to NAD83 on display.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun storedDatumEpsg(provider: Provider, s: CoordinateSystemSettings): Int = StoredDatum.WGS84_3D
 
-    /** EPSG code to store in Coordinate.crsEpsg for a capture from [provider]. */
-    fun storedDatumEpsg(provider: Provider, s: CoordinateSystemSettings): Int =
-        if (provider != Provider.INTERNAL && s.externalReceiverDatum == ReceiverDatum.NAD83_2011)
-            StoredDatum.NAD83_2011_3D else StoredDatum.WGS84_3D
-
+    /** Live fix (always WGS84 on the feed — see [storedDatumEpsg]) → configured system. */
     fun convertFix(fix: Fix, s: CoordinateSystemSettings): ConvertedPosition =
         converter.convert(
             SourcePosition(
                 latDeg = fix.latDeg, lonDeg = fix.lonDeg,
                 ellipsoidalHeightM = fix.altEllipsoidalM, receiverMslM = fix.altMslM,
-                isNad83 = fixIsNad83(fix, s),
+                isNad83 = false,
                 epochYear = Itrf2014ToNad83.decimalYear(fix.timeUtc.toEpochMilli()),
             ), s,
         )

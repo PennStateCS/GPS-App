@@ -28,6 +28,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.SharingStarted
 import javax.inject.Singleton
 
 /**
@@ -199,15 +202,27 @@ object GnssModule {
         appScope: CoroutineScope,
         sourceSettings: SourceSettings,
         internalAdapter: InternalAdapter,
-        externalAdapter: ExternalAdapter
-    ): FixSwitchboard = FixSwitchboard(
-        scope          = appScope,
-        sourceSettings = sourceSettings,
-        adapters       = mapOf(
-            ProviderChoice.INTERNAL     to internalAdapter,
-            ProviderChoice.EXTERNAL_TCP to externalAdapter
-        )
-    ).also { it.start() }
+        externalAdapter: ExternalAdapter,
+        coordinateSettings: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository,
+    ): FixSwitchboard {
+        // Settings → Coordinates → External Receiver Datum. Internal GNSS is always WGS84.
+        val rxDatum = coordinateSettings.coordinateSystemSettings
+            .map { it.externalReceiverDatum }
+            .stateIn(appScope, SharingStarted.Eagerly, app.surrealar.settings.model.ReceiverDatum.ITRF2014)
+        return FixSwitchboard(
+            scope          = appScope,
+            sourceSettings = sourceSettings,
+            adapters       = mapOf(
+                ProviderChoice.INTERNAL     to internalAdapter,
+                ProviderChoice.EXTERNAL_TCP to externalAdapter
+            ),
+            fixTransform   = { fix ->
+                if (fix.provider != app.surrealar.gnss.model.Provider.INTERNAL &&
+                    rxDatum.value == app.surrealar.settings.model.ReceiverDatum.NAD83_2011
+                ) app.surrealar.coords.FeedDatum.nad83ToWgs84(fix) else fix
+            },
+        ).also { it.start() }
+    }
 
     /**
      * Exposes [FixSwitchboard] as [FixBus] so ViewModels and other consumers can
