@@ -171,6 +171,27 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setAutoIncrementCoordinateNames(settings.autoIncrementNames)
     }
 
+    // Coordinate system (expression of coordinates; unset keys → model defaults)
+    override val coordinateSystemSettings: Flow<app.surrealar.settings.model.CoordinateSystemSettings> = combine(
+        local.coordHorizontalSystem, local.coordOutputDatum, local.coordLinearUnit,
+        local.coordVerticalReference, local.coordExternalRxDatum,
+    ) { h, d, u, v, rx ->
+        app.surrealar.settings.model.CoordinateSystemSettings(
+            horizontal = app.surrealar.settings.model.HorizontalSystem.fromPrefKey(h),
+            datum = app.surrealar.settings.model.OutputDatum.fromPrefKey(d),
+            unit = app.surrealar.settings.model.LinearUnit.fromPrefKey(u),
+            vertical = app.surrealar.settings.model.VerticalReference.fromPrefKey(v),
+            externalReceiverDatum = app.surrealar.settings.model.ReceiverDatum.fromPrefKey(rx),
+        )
+    }
+
+    override suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {
+        local.setCoordinateSystem(
+            settings.horizontal.prefKey, settings.datum.prefKey, settings.unit.prefKey,
+            settings.vertical.prefKey, settings.externalReceiverDatum.prefKey,
+        )
+    }
+
     // Mock location publishing
     override val mockLocationEnabled: Flow<Boolean> = local.mockLocationEnabled
     override suspend fun setMockLocationEnabled(enabled: Boolean) { local.setMockLocationEnabled(enabled) }

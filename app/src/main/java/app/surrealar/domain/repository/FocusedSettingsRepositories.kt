@@ -63,6 +63,11 @@ interface ArDisplaySettingsRepository {
 interface CoordinateDisplaySettingsRepository {
     val coordinateDisplaySettings: Flow<CoordinateDisplaySettings>
     suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings)
+
+    /** Coordinate system / datum / units / height reference used to express coordinates. */
+    val coordinateSystemSettings: Flow<app.surrealar.settings.model.CoordinateSystemSettings>
+        get() = kotlinx.coroutines.flow.flowOf(app.surrealar.settings.model.CoordinateSystemSettings())
+    suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {}
 }
 
 /** Mock-location publishing toggle. */

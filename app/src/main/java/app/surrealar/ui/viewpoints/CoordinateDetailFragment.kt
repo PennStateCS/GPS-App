@@ -83,6 +83,7 @@ class CoordinateDetailFragment : Fragment() {
 
     @Inject lateinit var modelRepository: ModelRepository
     @Inject lateinit var settingsRepository: CoordinateDisplaySettingsRepository
+    @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
 
     private lateinit var viewModel: CoordinatesViewModel
     private var currentId: String? = null
@@ -308,7 +309,18 @@ class CoordinateDetailFragment : Fragment() {
                 }
             }
         }
+        // Coordinate system (Settings → Coordinates): re-express the point when it changes.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                settingsRepository.coordinateSystemSettings.collect { s ->
+                    coordSystemSettings = s
+                    lastCoordinate?.let { bindCoordinate(it) }
+                }
+            }
+        }
     }
+
+    private var coordSystemSettings = app.surrealar.settings.model.CoordinateSystemSettings()
 
     // ── Show-list header control ─────────────────────────────────────────────────
 
@@ -577,6 +589,22 @@ class CoordinateDetailFragment : Fragment() {
         val northing = c.northing ?: derived?.northing
         val naText = "Not available"
 
+        // The point in the user's coordinate system (Settings → Coordinates): datum, grid or
+        // geographic position, and height in the chosen reference and units.
+        runCatching { coordinateSystemService.convertCoordinate(c, coordSystemSettings) }.getOrNull()?.let { p ->
+            val rows = mutableListOf(DetailRow("Coordinate system", app.surrealar.coords.CoordinateFormat.systemSummary(p)))
+            if (p.easting != null && p.northing != null) {
+                val d = app.surrealar.coords.CoordinateFormat.linearDecimals(p.unit)
+                rows += DetailRow("Northing", String.format(Locale.US, "%,.${d}f %s", p.northing, p.unit.suffix))
+                rows += DetailRow("Easting", String.format(Locale.US, "%,.${d}f %s", p.easting, p.unit.suffix))
+            } else {
+                rows += DetailRow("Lat / Lon (${p.datum.label})", app.surrealar.coords.CoordinateFormat.horizontal(p))
+            }
+            rows += DetailRow("Height (${p.vertical.label})",
+                p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } ?: (p.heightUnavailableReason ?: naText))
+            renderPlainFieldRow(container, rows)
+        }
+
         // Keep the visible Location card focused on values users act on. Latitude/longitude are
         // already WGS84 geographic coordinates in this app, so the repeated "Geographic position"
         // row adds noise here. Preserve CRS details in export/diagnostics/advanced views, but make
@@ -756,10 +784,13 @@ class CoordinateDetailFragment : Fragment() {
         val container = locationTiles ?: return
         container.removeAllViews()
         val inflater = LayoutInflater.from(requireContext())
+        // The stored measurement, in the datum it was captured in (WGS84, or NAD83(2011) for an
+        // external receiver on NAD83 corrections). The Location card below re-expresses it.
+        val stored = if (app.surrealar.coords.StoredDatum.isNad83(c.crsEpsg)) "NAD83" else "WGS84"
         val tiles = listOf(
-            DetailRow("Latitude", "${fmt6(c.latitude)}°"),
-            DetailRow("Longitude", "${fmt6(c.longitude)}°"),
-            DetailRow("Altitude", fmtM2(c.altitude)),
+            DetailRow("Latitude ($stored)", "${fmt6(c.latitude)}°"),
+            DetailRow("Longitude ($stored)", "${fmt6(c.longitude)}°"),
+            DetailRow("Ellipsoidal height", fmtM2(c.altitude)),
         )
         tiles.forEach { t ->
             val tile = inflater.inflate(R.layout.item_gnss_stat_tile, container, false)

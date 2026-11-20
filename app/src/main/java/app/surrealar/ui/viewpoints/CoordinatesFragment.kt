@@ -38,6 +38,7 @@ import app.surrealar.databinding.FragmentCoordinatesBinding
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.lifecycle.repeatOnLifecycle
 import android.graphics.Rect
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.ModelRepository
@@ -53,6 +54,7 @@ class CoordinatesFragment : Fragment() {
 
     @Inject lateinit var modelRepository: ModelRepository
     @Inject lateinit var settingsRepository: SettingsRepository
+    @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
 
     companion object {
         private const val PREF_LAST_OPENED_ID = "last_coord_opened_id"
@@ -162,6 +164,21 @@ class CoordinatesFragment : Fragment() {
             recycler.layoutManager = GridLayoutManager(requireContext(), spanCount)
         }
         recycler.adapter = adapter
+        // Rows show each point in the configured coordinate system (Settings → Coordinates).
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                settingsRepository.coordinateSystemSettings.collect { s ->
+                    adapter.positionFormatter = { c ->
+                        runCatching {
+                            val p = coordinateSystemService.convertCoordinate(c, s)
+                            "${app.surrealar.coords.CoordinateFormat.horizontal(p, latLonDecimals = 6)} · " +
+                                app.surrealar.coords.CoordinateFormat.height(p)
+                        }.getOrElse { CoordinateListFormatter.latLonLine(c) }
+                    }
+                    adapter.notifyDataSetChanged()
+                }
+            }
+        }
         recycler.setHasFixedSize(true)
         recycler.itemAnimator = null
         recycler.setPadding(0, recycler.paddingTop, 0, recycler.paddingBottom)

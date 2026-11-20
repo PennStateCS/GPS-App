@@ -26,5 +26,7 @@ data class GnssToolbarState(
     val statusLevel: GnssStatusLevel,  // overall level (mirrors fixLevel today)
     val isExternal: Boolean,
     val isWaiting: Boolean,            // no current-provider fix yet (acquiring/reconnecting)
-    val isStale: Boolean
+    val isStale: Boolean,
+    val coordLabel: String = "LL",     // "LL" for lat/lon, "NE" for grid coordinates
+    val altitudeLabel: String = "ALT"  // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
 )

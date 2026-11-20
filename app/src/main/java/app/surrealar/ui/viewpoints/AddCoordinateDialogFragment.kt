@@ -81,6 +81,7 @@ class AddCoordinateDialogFragment(
 ) : DialogFragment() {
 
     @Inject lateinit var fixSwitchboard: FixSwitchboard
+    @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var sourceSettings: SourceSettings
     @Inject lateinit var coordinateRepository: CoordinateRepository
@@ -670,6 +671,12 @@ class AddCoordinateDialogFragment(
                         ?: settingsRepo.externalReceiverProfile.first().label
                 }.getOrNull() ?: "External GNSS"
 
+                // Record the datum the averaged position is in (internal GNSS → WGS84; external per
+                // Settings → Coordinates → External receiver datum) so it is converted correctly later.
+                val coordSettings = runCatching { settingsRepo.coordinateSystemSettings.first() }
+                    .getOrDefault(app.surrealar.settings.model.CoordinateSystemSettings())
+                val datumEpsg = coordinateSystemService.storedDatumEpsg(
+                    if (isExternalMode) Provider.RS2_EXTERNAL else Provider.INTERNAL, coordSettings)
                 val coordinate = CoordinateFactory.fromCaptureResult(
                     id            = UUID.randomUUID().toString(),
                     name          = name,
@@ -682,7 +689,8 @@ class AddCoordinateDialogFragment(
                     sourceDevice  = sourceDevice,
                     modelId       = linkedModelId,
                     iconKey       = builtinIconKey,
-                    antennaHeightM = antennaHeightM
+                    antennaHeightM = antennaHeightM,
+                    crsEpsg       = datumEpsg
                 )
                 if (persistIfValid(coordinate)) dismissAllowingStateLoss()
             }

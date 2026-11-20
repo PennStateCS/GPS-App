@@ -116,7 +116,9 @@ object CoordinateFactory {
         sourceDevice: String? = null,
         modelId: String? = null,
         iconKey: String? = null,
-        antennaHeightM: Double = 0.0
+        antennaHeightM: Double = 0.0,
+        /** EPSG of the datum the result's lat/lon/height are in (4979/4326 WGS84, 6319 NAD83(2011)). */
+        crsEpsg: Int = 4326
     ): Coordinate {
         // These strings MUST stay in sync with DbConstants / CoordinateMappers so a captured
         // coordinate round-trips through the DB without its provider degrading. In particular
@@ -166,7 +168,7 @@ object CoordinateFactory {
             stdLatM             = result.stdDevNorthM,
             stdLonM             = result.stdDevEastM,
             stdAltM             = result.stdDevUpM,
-            crsEpsg             = 4326,
+            crsEpsg             = crsEpsg,
             easting             = utm?.easting,
             northing            = utm?.northing,
             utmZone             = utm?.utmZone,

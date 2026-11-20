@@ -84,7 +84,9 @@ object GnssToolbarStateMapper {
         selectedSource: LocationSourceType,
         fix: Fix?,
         sky: SkySnapshot,
-        externalLabel: String = "RS2+"
+        externalLabel: String = "RS2+",
+        /** The fix expressed in the user's coordinate system (null = legacy lat/lon + MSL display). */
+        coords: app.surrealar.coords.ConvertedPosition? = null,
     ): ToolbarMapResult {
         if (fix == null) return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
@@ -136,16 +138,33 @@ object GnssToolbarStateMapper {
         }
 
         // --- COORDINATES ---
-        val latLonText = "${String.format(Locale.US, "%.6f", fix.latDeg)}, " +
-            String.format(Locale.US, "%.6f", fix.lonDeg)
-
-        // --- ALTITUDE: prefer MSL, else ellipsoidal, validate range ---
-        val altMsl = fix.altMslM
-        val altEllip = fix.altEllipsoidalM
-        val altitudeText = when {
-            altMsl != null && altMsl in -500.0..10000.0 -> String.format(Locale.US, "%.2f m", altMsl)
-            altEllip != null && altEllip in -500.0..10000.0 -> String.format(Locale.US, "%.2f m", altEllip)
-            else -> "--"
+        // --- COORDINATES / HEIGHT: in the user's coordinate system when provided ---
+        val latLonText: String
+        val altitudeText: String
+        var coordLabel = "LL"
+        var altitudeLabel = "ALT"
+        if (coords != null) {
+            latLonText = if (coords.easting != null && coords.northing != null) {
+                coordLabel = "NE"
+                app.surrealar.coords.CoordinateFormat.horizontal(coords)
+            } else {
+                app.surrealar.coords.CoordinateFormat.horizontal(coords, latLonDecimals = 6)
+            }
+            altitudeLabel = coords.vertical.shortLabel.uppercase(Locale.US)
+            altitudeText = coords.height?.let {
+                String.format(Locale.US, "%,.2f %s", it, coords.unit.suffix)
+            } ?: "--"
+        } else {
+            latLonText = "${String.format(Locale.US, "%.6f", fix.latDeg)}, " +
+                String.format(Locale.US, "%.6f", fix.lonDeg)
+            // --- ALTITUDE: prefer MSL, else ellipsoidal, validate range ---
+            val altMsl = fix.altMslM
+            val altEllip = fix.altEllipsoidalM
+            altitudeText = when {
+                altMsl != null && altMsl in -500.0..10000.0 -> String.format(Locale.US, "%.2f m", altMsl)
+                altEllip != null && altEllip in -500.0..10000.0 -> String.format(Locale.US, "%.2f m", altEllip)
+                else -> "--"
+            }
         }
 
         return ToolbarMapResult.Render(
@@ -164,7 +183,9 @@ object GnssToolbarStateMapper {
                 statusLevel = fixLevel,
                 isExternal = !isInternal,
                 isWaiting = false,
-                isStale = false
+                isStale = false,
+                coordLabel = coordLabel,
+                altitudeLabel = altitudeLabel
             )
         )
     }

@@ -81,11 +81,13 @@ class GnssToolbarRenderer(
         batt.icon.contentDescription = if (state.isExternal) "receiver battery" else "device battery"
         onBatteryVisibilityChanged(state.batteryVisible)
 
-        // Coordinates
+        // Coordinates ("LL" lat/lon or "NE" grid, per Settings → Coordinates)
+        coord.label.text = state.coordLabel
         coord.value.text = state.latLonText
         coord.root.isVisible = true
 
-        // Altitude (always visible with a placeholder)
+        // Altitude (always visible with a placeholder); label names the height reference
+        alt.label.text = state.altitudeLabel
         alt.value.text = state.altitudeText
         alt.root.isVisible = true
     }

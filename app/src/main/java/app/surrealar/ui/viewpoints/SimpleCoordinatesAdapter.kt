@@ -39,6 +39,12 @@ class SimpleCoordinatesAdapter(
     private val onEdit: (Coordinate) -> Unit = {} // edit callback
 ) : RecyclerView.Adapter<SimpleCoordinatesAdapter.Holder>() {
 
+    /**
+     * Position line for each row. Defaults to stored lat/lon; the host sets it to the configured
+     * coordinate system (Settings → Coordinates) and calls [notifyDataSetChanged] when that changes.
+     */
+    var positionFormatter: (Coordinate) -> String = CoordinateListFormatter::latLonLine
+
     companion object {
         /** Target icon size in the list (px). Bitmaps are scaled to this before caching. */
         private const val ICON_SIZE_PX = 96
@@ -157,7 +163,7 @@ class SimpleCoordinatesAdapter(
         // Line 2: source · fix · accuracy summary.  Line 3: lat/lon. (pure CoordinateListFormatter)
         holder.coords.visibility = View.VISIBLE
         holder.coords.text = CoordinateListFormatter.summaryLine(p, modelNameMap[p.linkedModelId])
-        holder.latlon.text = CoordinateListFormatter.latLonLine(p)
+        holder.latlon.text = positionFormatter(p)
 
         // Trailing indicator when a 3D model is linked to this coordinate
         val linkedModelId = p.linkedModelId

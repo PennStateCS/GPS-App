@@ -89,6 +89,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var modelRepository: app.surrealar.domain.repository.ModelRepository
     @Inject lateinit var exportBackup: app.surrealar.domain.usecase.ExportCoordinateBackupUseCase
+    @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var importBackup: app.surrealar.domain.usecase.ImportCoordinateBackupUseCase
 
     // Selected device for TCP connection (class scope)
@@ -123,6 +124,11 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private val exportBackupLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri -> if (uri != null) writeBackupTo(uri) }
+
+    // Survey points CSV export (configured coordinate system). A null uri means cancelled.
+    private val exportPointsCsvLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri -> if (uri != null) writePointsCsvTo(uri) }
 
     // Coordinate backup import: system "open document" picker. A null uri means cancelled.
     private val importBackupLauncher = registerForActivityResult(
@@ -341,6 +347,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     exportBackupLauncher.launch("coordinates_backup_${System.currentTimeMillis()}.json")
                 } catch (e: Exception) { Log.e("SettingsFragment", "export launch failed", e) }
+            }
+            view.findViewById<Button>(R.id.btn_export_points_csv)?.setOnClickListener {
+                try {
+                    exportPointsCsvLauncher.launch("survey_points_${System.currentTimeMillis()}.csv")
+                } catch (e: Exception) { Log.e("SettingsFragment", "points CSV export launch failed", e) }
             }
             view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener {
                 try {
@@ -581,8 +592,86 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         return view
     }
 
+    /**
+     * Settings → Coordinates → Coordinate System: five dropdowns (system, datum, units, height,
+     * external receiver datum), each saved immediately, plus a live preview of the current position
+     * in the chosen system. State Plane forces NAD83(2011), so the datum dropdown is disabled then.
+     */
+    private fun setupCoordinateSystemCard(view: View) {
+        val m = app.surrealar.settings.model.CoordinateSystemSettings::class
+        val spinnerH = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal) ?: return
+        val spinnerD = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum)
+        val spinnerU = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_unit)
+        val spinnerV = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_vertical)
+        val spinnerR = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_rx_datum)
+        val preview = view.findViewById<android.widget.TextView>(R.id.text_coord_preview)
+
+        val hs = app.surrealar.settings.model.HorizontalSystem.entries
+        val ds = app.surrealar.settings.model.OutputDatum.entries
+        val us = app.surrealar.settings.model.LinearUnit.entries
+        val vs = app.surrealar.settings.model.VerticalReference.entries
+        val rs = app.surrealar.settings.model.ReceiverDatum.entries
+        fun adapter(labels: List<String>) = ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, labels)
+        spinnerH.setAdapter(adapter(hs.map { it.label }))
+        spinnerD?.setAdapter(adapter(ds.map { it.label }))
+        spinnerU?.setAdapter(adapter(us.map { it.label }))
+        spinnerV?.setAdapter(adapter(vs.map { it.label }))
+        spinnerR?.setAdapter(adapter(rs.map { it.label }))
+
+        var current = app.surrealar.settings.model.CoordinateSystemSettings()
+
+        fun showPreview() {
+            val fix = fixSwitchboard.currentFix.value
+            preview?.text = if (fix == null) "Current position: waiting for GNSS" else runCatching {
+                val p = coordinateSystemService.convertFix(fix, current)
+                "Current position: ${app.surrealar.coords.CoordinateFormat.horizontal(p)} · " +
+                    "${app.surrealar.coords.CoordinateFormat.height(p)}\n${app.surrealar.coords.CoordinateFormat.systemSummary(p)}"
+            }.getOrElse { "Current position: conversion unavailable (${it.message})" }
+        }
+
+        fun bind(s: app.surrealar.settings.model.CoordinateSystemSettings) {
+            current = s
+            spinnerH.setText(s.horizontal.label, false)
+            spinnerD?.setText(s.effectiveDatum.label, false)
+            spinnerU?.setText(s.unit.label, false)
+            spinnerV?.setText(s.vertical.label, false)
+            spinnerR?.setText(s.externalReceiverDatum.label, false)
+            // State Plane is defined on NAD83(2011): the datum choice does not apply.
+            spinnerD?.isEnabled = !s.horizontal.isStatePlane
+            (spinnerD?.parent?.parent as? com.google.android.material.textfield.TextInputLayout)?.alpha =
+                if (s.horizontal.isStatePlane) 0.5f else 1f
+            showPreview()
+        }
+
+        fun save(s: app.surrealar.settings.model.CoordinateSystemSettings) {
+            bind(s)
+            viewLifecycleOwner.lifecycleScope.launch {
+                runCatching { settingsRepo.setCoordinateSystemSettings(s) }
+                    .onFailure { Log.e("SettingsFragment", "Failed to save coordinate system", it) }
+            }
+        }
+
+        spinnerH.setOnItemClickListener { _, _, pos, _ -> hs.getOrNull(pos)?.let { save(current.copy(horizontal = it)) } }
+        spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { save(current.copy(datum = it)) } }
+        spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { save(current.copy(unit = it)) } }
+        spinnerV?.setOnItemClickListener { _, _, pos, _ -> vs.getOrNull(pos)?.let { save(current.copy(vertical = it)) } }
+        spinnerR?.setOnItemClickListener { _, _, pos, _ -> rs.getOrNull(pos)?.let { save(current.copy(externalReceiverDatum = it)) } }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            runCatching { bind(settingsRepo.coordinateSystemSettings.first()) }
+                .onFailure { Log.e("SettingsFragment", "Failed to load coordinate system", it) }
+        }
+        // Keep the preview live while the page is open.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fixSwitchboard.currentFix.collect { showPreview() }
+            }
+        }
+    }
+
     private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
+        try { setupCoordinateSystemCard(view) } catch (e: Exception) { Log.e("SettingsFragment", "coordinate system card failed", e) }
         try {
             val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
             val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
@@ -1848,6 +1937,29 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 result.coordinateCount
             }.onSuccess { n ->
                 showSettingsMessage("JSON backup exported: $n coordinates", Snackbar.LENGTH_LONG)
+            }.onFailure { e ->
+                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
+            }
+        }
+    }
+
+    /** Writes all points as CSV in the configured coordinate system, units and height reference. */
+    private fun writePointsCsvTo(uri: Uri) {
+        lifecycleScope.launch {
+            runCatching {
+                val coordSettings = settingsRepo.coordinateSystemSettings.first()
+                val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                val csv = app.surrealar.data.export.PointsCsvExporter.build(points) {
+                    coordinateSystemService.convertCoordinate(it, coordSettings)
+                }
+                withContext(Dispatchers.IO) {
+                    requireContext().contentResolver.openOutputStream(uri)?.use {
+                        it.write(csv.toByteArray(StandardCharsets.UTF_8))
+                    } ?: error("Unable to open output stream")
+                }
+                points.size
+            }.onSuccess { n ->
+                showSettingsMessage("Points CSV exported: $n points", Snackbar.LENGTH_LONG)
             }.onFailure { e ->
                 showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
             }

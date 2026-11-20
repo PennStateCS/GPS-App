@@ -110,6 +110,14 @@ class RenderMapFragment : Fragment() {
     lateinit var locationSourceRepo: app.surrealar.domain.repository.LocationSourceSettingsRepository
 
     @Inject
+    lateinit var coordinateSettingsRepo: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository
+
+    @Inject
+    lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
+
+    private var coordSystemSettings = app.surrealar.settings.model.CoordinateSystemSettings()
+
+    @Inject
     lateinit var modelRepository: app.surrealar.domain.repository.ModelRepository
 
     @Inject
@@ -531,6 +539,15 @@ class RenderMapFragment : Fragment() {
                 stakeoutSettingsRepo.stakeoutSettings.collect {
                     stakeoutSettings = it
                     reconcileGuidanceResources()
+                }
+            }
+        }
+        // Coordinate system (Settings → Coordinates) for elevation labels.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                coordinateSettingsRepo.coordinateSystemSettings.collect {
+                    coordSystemSettings = it
+                    if (pointLabelMode == PointLabelMode.ELEVATION) runCatching { applyPointLabels() }
                 }
             }
         }
@@ -2128,7 +2145,12 @@ class RenderMapFragment : Fragment() {
             if (visibilityMap[id] != true) continue
             val dist = if (distanceMode && live != null)
                 calculateDistance(live, LatLng(coord.latitude, coord.longitude)) else null
-            val text = PointLabel.labelText(pointLabelMode, coord.name, coord.altitude, dist) ?: continue
+            // Elevation in the configured height reference and units (Settings → Coordinates).
+            val elevText = if (pointLabelMode == PointLabelMode.ELEVATION) runCatching {
+                coordinateSystemService.convertCoordinate(coord, coordSystemSettings)
+                    .let { p -> p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } }
+            }.getOrNull() else null
+            val text = PointLabel.labelText(pointLabelMode, coord.name, coord.altitude, dist, elevText) ?: continue
             val descriptor = buildLabelDescriptor(text, cache = !distanceMode) ?: continue
             val pos = LatLng(coord.latitude, coord.longitude)
             val existing = labelMarkers[id]

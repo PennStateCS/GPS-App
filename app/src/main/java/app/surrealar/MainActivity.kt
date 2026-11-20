@@ -72,6 +72,14 @@ private const val NAV_DRAWER_CLOSE_DELAY_MS = 120L
 /** Toolbar refresh period for live GNSS data. */
 private const val TOOLBAR_REFRESH_MS = 250L
 
+/** One toolbar update: live fix, sky, selected source, and the fix in the user's coordinate system. */
+private data class ToolbarInputs(
+    val fix: app.surrealar.gnss.model.Fix?,
+    val sky: app.surrealar.gnss.model.SkySnapshot,
+    val source: app.surrealar.domain.model.LocationSourceType,
+    val coords: app.surrealar.coords.ConvertedPosition?,
+)
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
@@ -96,6 +104,7 @@ class MainActivity : AppCompatActivity() {
 
     // Hilt injected GNSS components
     @Inject lateinit var switchboard: FixSwitchboard
+    @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var externalAdapter: ExternalAdapter
     @Inject lateinit var nmeaRegistry: NmeaRegistry
     @Inject lateinit var fixAccumulator: FixAccumulator
@@ -621,9 +630,12 @@ class MainActivity : AppCompatActivity() {
                 combine(
                     switchboard.currentFix,
                     switchboard.sky,
-                    settingsRepository.locationSource
-                ) { fix, sky, source ->
-                    Triple(fix, sky, source)
+                    settingsRepository.locationSource,
+                    settingsRepository.coordinateSystemSettings
+                ) { fix, sky, source, coordSettings ->
+                    // Express the fix in the user's coordinate system (Settings → Coordinates).
+                    val coords = fix?.let { runCatching { coordinateSystemService.convertFix(it, coordSettings) }.getOrNull() }
+                    ToolbarInputs(fix, sky, source, coords)
                 }
                     // Newest state at most every 250 ms: current within a quarter second, without
                     // re-rendering on every epoch of a 5–10 Hz receiver. A lost fix (currentFix →
@@ -647,12 +659,12 @@ class MainActivity : AppCompatActivity() {
                         delay(5000)
                         emitAll(flowOf())
                     }
-                    .collectLatest { (fix, sky, source) ->
+                    .collectLatest { (fix, sky, source, coords) ->
                         consecutiveErrors = 0 // Reset error counter on success
 
                         // All display decisions live in the mapper. MainActivity only collects,
                         // maps, and renders — it no longer contains GNSS toolbar logic.
-                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, externalReceiverLabel)) {
+                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, externalReceiverLabel, coords)) {
                             is ToolbarMapResult.Ignore -> {
                                 app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.ignore.${result.reason}", "toolbar") {
                                     "fix ignored (${result.reason}): selected=$source fixProvider=${fix?.provider}"
