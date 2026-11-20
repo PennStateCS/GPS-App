@@ -93,17 +93,24 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.gnssCaptureMinDurationSec,
         local.gnssCaptureMaxDurationSec,
         local.gnssCaptureMinSamples,
-        combine(local.gnssCaptureMaxFixAgeSec, local.gnssCaptureMaxDiffAgeSec) { fix, diff -> fix to diff }
-    ) { rtkStr, minDur, maxDur, minSamples, (maxFix, maxDiff) ->
+        combine(
+            local.gnssCaptureMaxFixAgeSec, local.gnssCaptureMaxDiffAgeSec,
+            local.gnssCapturePreset, local.gnssCapturePrecisionTargetM
+        ) { fix, diff, preset, target -> CaptureExtras(fix, diff, preset, target) }
+    ) { rtkStr, minDur, maxDur, minSamples, x ->
         GnssCaptureSettings(
             requiredMinStatus = RtkStatus.fromPrefKey(rtkStr, default = RtkStatus.FIX),
             minDurationSec    = minDur,
             maxDurationSec    = maxDur,
             minSamples        = minSamples,
-            maxFixAgeSec      = maxFix,
-            maxDiffAgeSec     = maxDiff
+            maxFixAgeSec      = x.maxFix,
+            maxDiffAgeSec     = x.maxDiff,
+            preset            = app.surrealar.gnss.capture.CapturePreset.fromPrefKey(x.preset),
+            precisionTargetM  = x.target
         )
     }
+
+    private data class CaptureExtras(val maxFix: Int, val maxDiff: Int, val preset: String, val target: Double?)
 
     override suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings) {
         local.setGnssCaptureRtkStatus(settings.requiredMinStatus.prefKey)
@@ -112,6 +119,8 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setGnssCaptureMinSamples(settings.minSamples)
         local.setGnssCaptureMaxFixAgeSec(settings.maxFixAgeSec)
         local.setGnssCaptureMaxDiffAgeSec(settings.maxDiffAgeSec)
+        local.setGnssCapturePreset(settings.preset.prefKey)
+        local.setGnssCapturePrecisionTargetM(settings.precisionTargetM)
     }
 
     // AR Display

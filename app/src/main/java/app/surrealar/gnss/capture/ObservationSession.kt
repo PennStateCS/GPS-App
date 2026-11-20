@@ -61,7 +61,9 @@ class ObservationSession(
             val samples: Int,
             val rtkStatus: String,
             val hAccM: Double?,
-            val vAccM: Double?
+            val vAccM: Double?,
+            /** Measured horizontal spread of the samples so far (precision-based stop); null with < 2 samples. */
+            val spreadHorizontalM: Double? = null
         ) : State
 
         /**
@@ -79,6 +81,13 @@ class ObservationSession(
 
         /** Capture could not continue because the stream failed or became invalid. */
         data class Paused(val reason: String) : State
+    }
+
+    companion object {
+        /** [State.Paused] reason when the maximum duration passed without one accepted fix. */
+        const val TIMEOUT_NO_ACCEPTED_FIXES = "timeout_no_accepted_fixes"
+        /** Consecutive stale fixes after which the freshness baseline is rebuilt (clock step). */
+        internal const val STALE_RESET_COUNT = 5
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
@@ -130,9 +139,44 @@ class ObservationSession(
         var ref: Triple<Double, Double, Double>? = null      // first sample ECEF
         var refLatLon: Pair<Double, Double>? = null
         var samples = 0
-        val freshness = FixFreshnessGate(maxAgeMs = policy.maxFixAgeSec * 1_000L)
+        var freshness = FixFreshnessGate(maxAgeMs = policy.maxFixAgeSec * 1_000L)
+        var consecutiveStale = 0
+
+        fun spreadH() = if (samples > 1) kotlin.math.sqrt(es.variance() + ns.variance()) else null
+        fun spreadV() = if (samples > 1) us.stddev() else null
+
+        /**
+         * Completes the session when the requirements are met, or when the maximum duration is
+         * reached (requirementsMet = false → the UI reports a timeout and Save stays disabled).
+         * Returns true when the session ended. Called for every accepted fix AND once per second, so
+         * a capture still times out — or completes — when fixes stop being accepted.
+         */
+        fun evaluate(elapsed: Int): Boolean {
+            val target = policy.horizontalPrecisionTargetM
+            val reachedPrecision = target == null || (spreadH()?.let { it <= target } == true)
+            val requirementsMet = elapsed >= policy.minDurationSec && samples >= policy.minSamples && reachedPrecision
+            if (!requirementsMet && elapsed < policy.maxDurationSec) return false
+            if (samples == 0) {
+                // Timed out without a single accepted fix: nothing to average.
+                job?.cancel(); job = null
+                _state.value = State.Paused(TIMEOUT_NO_ACCEPTED_FIXES)
+                return true
+            }
+            finalize(start, xs, ys, zs, samples, requirementsMet, spreadH(), spreadV())
+            return true
+        }
 
         job = scope.launch {
+            // Wall-clock tick: keeps the elapsed timer moving and enforces the timeout even when no
+            // fix is being accepted (RTK dropped to Float, receiver disconnected, …).
+            launch {
+                while (true) {
+                    kotlinx.coroutines.delay(1_000L)
+                    val elapsed = Duration.between(start, Instant.now()).seconds.toInt()
+                    (_state.value as? State.Capturing)?.let { _state.value = it.copy(elapsedSec = elapsed) }
+                    if (evaluate(elapsed)) break
+                }
+            }
             fixes
                 .filter { fix ->
                     /*
@@ -146,6 +190,13 @@ class ObservationSession(
                     val okMode = fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus)
                     // Skew-tolerant (see FixFreshnessGate): tablet clock vs GNSS time no longer matters.
                     val freshFix = freshness.isFresh(fix)
+                    // A tablet clock step (e.g. network time sync) would make every later fix look
+                    // late against the old baseline; rebuild it after a run of stale fixes.
+                    if (freshFix) consecutiveStale = 0
+                    else if (++consecutiveStale >= STALE_RESET_COUNT) {
+                        freshness = FixFreshnessGate(maxAgeMs = policy.maxFixAgeSec * 1_000L)
+                        consecutiveStale = 0
+                    }
                     val freshCorr = fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true
                     okMode && freshFix && freshCorr && fix.altEllipsoidalM != null
                 }
@@ -192,26 +243,16 @@ class ObservationSession(
                         samples = samples,
                         rtkStatus = fix.rtkStatus.name,
                         hAccM = h,
-                        vAccM = v
+                        vAccM = v,
+                        spreadHorizontalM = spreadH()
                     )
 
-                    val reachedDuration = elapsed >= policy.minDurationSec
-                    val reachedSamples = samples >= policy.minSamples
-                    val capDuration = elapsed >= policy.maxDurationSec
-
                     /*
-                     * Finish when both minimum quality gates are satisfied, or when the
-                     * maximum duration is reached. The maximum duration prevents a session
-                     * from running indefinitely if the sample count is slow. When the cap
-                     * forces the finish without meeting the minimums, requirementsMet is
-                     * false so the UI can flag the capture as a timeout.
+                     * Finish when all requirements are satisfied (minimum time, minimum fixes, and the
+                     * precision target when one is set), or when the maximum duration is reached (then
+                     * requirementsMet is false: the UI flags a timeout and the capture cannot be saved).
                      */
-                    val requirementsMet = reachedDuration && reachedSamples
-                    if (requirementsMet || capDuration) {
-                        val spreadH = if (samples > 1) kotlin.math.sqrt(es.variance() + ns.variance()) else null
-                        val spreadV = if (samples > 1) us.stddev() else null
-                        finalize(start, xs, ys, zs, samples, requirementsMet, spreadH, spreadV)
-                    }
+                    evaluate(elapsed)
                 }
                 .catch { e -> _state.value = State.Paused("error: ${e.message}") }
                 .collect()

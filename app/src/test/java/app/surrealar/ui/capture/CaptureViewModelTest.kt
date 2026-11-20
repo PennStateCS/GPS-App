@@ -160,6 +160,34 @@ class CaptureViewModelTest {
     }
 
     @Test
+    fun precisionTarget_blocksCompletionUntilSpreadIsWithinTarget() = runBlocking {
+        val vm = vm()
+        vm.start(policy(minSamples = 2).copy(horizontalPrecisionTargetM = 0.01))
+        // Two samples ~2.2 m apart: time/fixes met, precision not → keeps capturing.
+        push(fix().copy(latDeg = 41.0))
+        push(fix().copy(latDeg = 41.00002))
+        assertTrue("was ${vm.state.value}", vm.state.value is ObservationSession.State.Capturing)
+    }
+
+    @Test
+    fun precisionTarget_met_completes() = runBlocking {
+        val vm = vm()
+        vm.start(policy(minSamples = 2).copy(horizontalPrecisionTargetM = 0.01))
+        push(fix()); push(fix())   // identical positions → spread 0
+        val s = vm.state.value as ObservationSession.State.Complete
+        assertTrue(s.requirementsMet)
+    }
+
+    @Test
+    fun precisionTarget_notMetByTimeout_cannotBeSaved() = runBlocking {
+        val vm = vm()
+        vm.start(policy(maxDur = 0, minSamples = 1).copy(horizontalPrecisionTargetM = 0.001))
+        push(fix().copy(latDeg = 41.0))
+        val s = vm.state.value as ObservationSession.State.Complete
+        assertFalse(s.requirementsMet)
+    }
+
+    @Test
     fun cancel_returnsToIdle() = runBlocking {
         val vm = vm()
         vm.start(policy(minSamples = 10))

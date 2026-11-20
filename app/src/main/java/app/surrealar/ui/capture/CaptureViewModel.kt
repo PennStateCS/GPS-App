@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.capture.toAveragingPolicy
+import app.surrealar.gnss.capture.resolvePolicy
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.capture.AveragingPolicy
 import app.surrealar.gnss.capture.ObservationSession
@@ -58,20 +59,21 @@ class CaptureViewModel @Inject constructor(
      * Loads the saved GNSS Capture settings and starts an averaging session with that policy.
      * Falls back to safe defaults if settings cannot be read.
      */
-    fun startWithSavedPolicy() {
+    fun startWithSavedPolicy(internal: Boolean = false) {
         viewModelScope.launch {
-            val policy = runCatching {
-                settingsRepository.gnssCaptureSettings.first().toAveragingPolicy()
-            }.getOrDefault(AveragingPolicy())
-            start(policy)
+            // Saved preset (or Custom fields) for this mode. Fallback = the same defaults the Settings
+            // screen shows, so a failed read never silently applies a different policy.
+            val settings = runCatching { settingsRepository.gnssCaptureSettings.first() }
+                .getOrDefault(app.surrealar.gnss.capture.GnssCaptureSettings())
+            start(settings.resolvePolicy(internal), internal)
         }
     }
 
     /**
-     * Starts an INTERNAL (phone/tablet GNSS) averaged capture with [AveragingPolicy.INTERNAL].
+     * Starts an INTERNAL (device GNSS) averaged capture with the saved preset's internal policy.
      * Only internal-provider fixes are averaged.
      */
-    fun startInternal() = start(AveragingPolicy.INTERNAL, internal = true)
+    fun startInternal() = startWithSavedPolicy(internal = true)
 
     /**
      * Starts an averaging session. [internal] selects which provider's fixes are averaged: false =

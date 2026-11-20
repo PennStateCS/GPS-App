@@ -21,7 +21,11 @@ data class GnssCaptureSettings(
     val maxDurationSec: Int = 120,
     val minSamples: Int = 150,
     val maxFixAgeSec: Int = 3,
-    val maxDiffAgeSec: Int = 10
+    val maxDiffAgeSec: Int = 10,
+    /** Selected preset; [CapturePreset.CUSTOM] uses the fields above. */
+    val preset: CapturePreset = CapturePreset.DEFAULT,
+    /** Custom precision-based stop target (horizontal spread, metres); null = off. Custom preset only. */
+    val precisionTargetM: Double? = null,
 )
 
 /**
@@ -40,6 +44,7 @@ fun GnssCaptureSettings.toAveragingPolicy(): AveragingPolicy {
         minSamples        = minSamples.coerceAtLeast(1),
         requiredMinStatus = requiredMinStatus,
         maxFixAgeSec      = maxFixAgeSec.coerceAtLeast(1),
-        maxDiffAgeSec     = maxDiffAgeSec.coerceAtLeast(1)
+        maxDiffAgeSec     = maxDiffAgeSec.coerceAtLeast(1),
+        horizontalPrecisionTargetM = precisionTargetM?.takeIf { it > 0.0 && it.isFinite() }
     )
 }

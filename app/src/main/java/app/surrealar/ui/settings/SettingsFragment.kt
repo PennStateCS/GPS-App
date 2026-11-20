@@ -728,7 +728,37 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val editSamples = view.findViewById<EditText>(R.id.edit_min_samples)
             val editFixAge  = view.findViewById<EditText>(R.id.edit_max_fix_age)
             val editDiffAge = view.findViewById<EditText>(R.id.edit_max_diff_age)
+            val spinnerPreset = view.findViewById<AutoCompleteTextView>(R.id.spinner_capture_preset)
+            val textPresetSummary = view.findViewById<android.widget.TextView>(R.id.text_capture_preset_summary)
+            val editPrecision = view.findViewById<EditText>(R.id.edit_precision_target)
+            val tilPrecision = editPrecision?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
+            val presets = app.surrealar.gnss.capture.CapturePreset.entries
+            spinnerPreset?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, presets.map { it.label }))
+            var currentPreset = app.surrealar.gnss.capture.CapturePreset.DEFAULT
 
+            /** One line per mode describing what the selected preset will do. */
+            fun describe(p: app.surrealar.gnss.capture.AveragingPolicy): String {
+                val q = app.surrealar.gnss.format.GnssStatusFormatter.formatCaptureFixStatus(p.requiredMinStatus.name)
+                val precision = p.horizontalPrecisionTargetM?.let { " · spread ≤ ${"%.3f".format(java.util.Locale.US, it).trimEnd('0').trimEnd('.')} m" } ?: ""
+                return "${p.minDurationSec}–${p.maxDurationSec} s · ${p.minSamples} fixes · $q+$precision"
+            }
+            fun applyPresetUi(preset: app.surrealar.gnss.capture.CapturePreset) {
+                currentPreset = preset
+                val custom = preset == app.surrealar.gnss.capture.CapturePreset.CUSTOM
+                textPresetSummary?.text = if (custom)
+                    "Custom: external receiver uses the rules below. Device GNSS: ${describe(app.surrealar.gnss.capture.AveragingPolicy.INTERNAL)}."
+                else
+                    "External receiver: ${describe(preset.external!!)}\nDevice GNSS: ${describe(preset.internal!!)}"
+                // The detailed fields only apply to Custom; show them read-only otherwise.
+                val fields = listOf<View?>(spinner, editMinDur, editMaxDur, editSamples, editFixAge, editDiffAge, editPrecision)
+                fields.forEach { f ->
+                    f?.isEnabled = custom
+                    (f?.parent?.parent as? com.google.android.material.textfield.TextInputLayout)?.let { til ->
+                        til.isEnabled = custom
+                        til.alpha = if (custom) 1f else 0.5f
+                    }
+                }
+            }
 
             val tilMinDur  = editMinDur?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
             val tilMaxDur  = editMaxDur?.parent?.parent  as? com.google.android.material.textfield.TextInputLayout
@@ -763,7 +793,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     "Max Fix Age must be at least 1 second." else null
                 tilDiffAge?.error = if (diffAge == null || diffAge < 1)
                     "Max Correction Age must be at least 1 second." else null
+                // Precision target: blank = off; otherwise 0.001–10 m.
+                val precisionText = editPrecision?.text?.toString()?.trim().orEmpty()
+                val precision = precisionText.toDoubleOrNull()
+                val precisionValid = precisionText.isEmpty() || (precision != null && precision > 0.0 && precision <= 10.0)
+                tilPrecision?.error = if (precisionValid) null else "Precision Target must be between 0.001 and 10 m, or blank."
 
+                if (!precisionValid) return
                 if (minDur == null || minDur !in 1..600) return
                 if (maxDur == null || maxDur !in 1..600 || maxDur < minDur) return
                 if (samples == null || samples < 1) return
@@ -776,7 +812,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     maxDurationSec    = maxDur,
                     minSamples        = samples,
                     maxFixAgeSec      = fixAge,
-                    maxDiffAgeSec     = diffAge
+                    maxDiffAgeSec     = diffAge,
+                    preset            = currentPreset,
+                    precisionTargetM  = if (precisionText.isEmpty()) null else precision
                 )
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
@@ -796,13 +834,28 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     editSamples?.setText(saved.minSamples.toString())
                     editFixAge?.setText(saved.maxFixAgeSec.toString())
                     editDiffAge?.setText(saved.maxDiffAgeSec.toString())
+                    editPrecision?.setText(saved.precisionTargetM?.toString().orEmpty())
+                    spinnerPreset?.setText(saved.preset.label, false)
+                    applyPresetUi(saved.preset)
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "Failed to load GNSS capture settings", e)
                 }
             }
 
+            spinnerPreset?.setOnItemClickListener { _, _, pos, _ ->
+                val chosen = presets.getOrNull(pos) ?: return@setOnItemClickListener
+                applyPresetUi(chosen)
+                // Save just the preset (stored Custom values are kept as-is), independent of whether
+                // the Custom fields currently validate.
+                viewLifecycleOwner.lifecycleScope.launch {
+                    runCatching {
+                        val stored = settingsRepo.gnssCaptureSettings.first()
+                        settingsRepo.setGnssCaptureSettings(stored.copy(preset = chosen))
+                    }.onFailure { Log.e("SettingsFragment", "Failed to save capture preset", it) }
+                }
+            }
             spinner?.setOnItemClickListener { _, _, _, _ -> trySave() }
-            listOf(editMinDur, editMaxDur, editSamples, editFixAge, editDiffAge).forEach { edit ->
+            listOf(editMinDur, editMaxDur, editSamples, editFixAge, editDiffAge, editPrecision).forEach { edit ->
                 edit?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) trySave() }
                 edit?.setOnEditorActionListener { _, _, _ -> trySave(); false }
             }

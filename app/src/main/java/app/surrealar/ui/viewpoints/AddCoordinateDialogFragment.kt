@@ -43,6 +43,7 @@ import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.capture.GnssCaptureSettings
 import app.surrealar.gnss.source.SourceSettings
 import app.surrealar.gnss.capture.toAveragingPolicy
+import app.surrealar.gnss.capture.resolvePolicy
 import app.surrealar.ui.capture.CaptureViewModel
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.ui.models.ModelPickerActivity
@@ -113,6 +114,8 @@ class AddCoordinateDialogFragment(
     // ── State ─────────────────────────────────────────────────────────────────
     private var selectedIconKey: String? = null
     private var capturePolicy: AveragingPolicy? = null
+    /** Name of the preset the current capture uses (for the rules line). */
+    private var capturePresetLabel: String? = null
     private var isExternalMode = false
     /** False until the selected source has been read; live/session updates wait for it. */
     private var modeResolved = false
@@ -239,7 +242,7 @@ class AddCoordinateDialogFragment(
         btnSave?.setOnClickListener { handleSave() }
 
         // Determine source. Capture MODE follows the user's selected source; BOTH modes are averaged
-        // captures (Internal uses AveragingPolicy.INTERNAL, External the saved GNSS Capture settings)
+        // captures using the saved GNSS Capture preset (separate internal / external rules)
         // and share the averaging UI. Provider filtering (averaging input and live preview) keeps the
         // other source's fixes out, so e.g. an External capture started while the receiver is still
         // reconnecting shows a waiting state instead of internal data.
@@ -338,21 +341,12 @@ class AddCoordinateDialogFragment(
 
     // ── External GNSS averaging ───────────────────────────────────────────────
 
-    private fun startExternalAveraging() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            val settings = runCatching {
-                settingsRepo.gnssCaptureSettings.first()
-            }.getOrDefault(GnssCaptureSettings())
-            capturePolicy = settings.toAveragingPolicy()
-            renderCaptureRequirements(capturePolicy!!)
-            captureVm.startWithSavedPolicy()
-        }
-    }
+    private fun startExternalAveraging() = startAveraging(internal = false)
 
     /**
-     * Internal (phone/tablet GNSS) capture: an averaged session over internal fixes from the GNSS
-     * feed using [AveragingPolicy.INTERNAL]. Averaging removes single-epoch jumps and per-fix jitter
-     * and yields a measured spread; the saved point is the mean, like external captures.
+     * Internal (device GNSS) capture: an averaged session over internal fixes from the GNSS feed,
+     * using the saved preset's internal policy. Averaging removes single-epoch jumps and per-fix
+     * jitter and yields a measured spread; the saved point is the mean, like external captures.
      */
     private fun startInternalAveraging() {
         val fine = ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) ==
@@ -362,24 +356,44 @@ class AddCoordinateDialogFragment(
             btnSave?.isEnabled = false
             return
         }
-        capturePolicy = AveragingPolicy.INTERNAL
-        renderCaptureRequirements(AveragingPolicy.INTERNAL)
-        captureVm.startInternal()
+        startAveraging(internal = true)
+    }
+
+    /**
+     * Resolves the policy ONCE from the saved preset (Settings → GNSS Capture) and uses that same
+     * policy for both the on-screen rules and the session, so they can never disagree.
+     */
+    private fun startAveraging(internal: Boolean) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val settings = runCatching { settingsRepo.gnssCaptureSettings.first() }.getOrDefault(GnssCaptureSettings())
+            val policy = settings.resolvePolicy(internal)
+            capturePolicy = policy
+            capturePresetLabel = settings.preset.label
+            renderCaptureRequirements(policy)
+            captureVm.start(policy, internal)
+        }
     }
 
     /**
      * Fills the capture-requirements summary from the active [policy] (display only — it never
-     * changes capture rules). Shows the minimum sampling time, accepted-fix count, and required fix
-     * quality, plus the timeout. The required-quality clause is omitted when no minimum is enforced.
+     * changes capture rules): preset, minimum time, accepted fixes, required quality, precision
+     * target, and timeout. The quality clause is omitted when no minimum is enforced.
      */
     private fun renderCaptureRequirements(policy: AveragingPolicy) {
         val qualityClause =
             if (policy.requiredMinStatus.name == "NONE") ""
             else " · ${shortFix(policy.requiredMinStatus.name)}+"
+        val precisionClause = policy.horizontalPrecisionTargetM
+            ?.let { " · spread ≤ ${formatMeters(it)}" } ?: ""
+        val presetClause = capturePresetLabel?.let { "$it · " } ?: ""
         tvRequirements?.text =
-            "Rules: ${policy.minDurationSec} sec min · ${policy.minSamples} fixes$qualityClause · " +
-                "${policy.maxDurationSec} sec timeout"
+            "Rules: $presetClause${policy.minDurationSec} sec min · ${policy.minSamples} fixes$qualityClause" +
+                "$precisionClause · ${policy.maxDurationSec} sec timeout"
     }
+
+    /** Metres with cm precision below 1 m ("0.02 m"), one decimal above ("1.5 m"). */
+    private fun formatMeters(m: Double): String =
+        if (m < 1.0) String.format(Locale.US, "%.2f m", m) else String.format(Locale.US, "%.1f m", m)
 
     /**
      * Drives the session-progress parts of the external UI: progress bar, Time row,
@@ -407,7 +421,12 @@ class AddCoordinateDialogFragment(
                     (elapsed.toFloat() / policy.minDurationSec).coerceIn(0f, 1f) else 1f
                 val fixProgress = if (policy.minSamples > 0)
                     (samples.toFloat() / policy.minSamples).coerceIn(0f, 1f) else 1f
-                progressCapture?.progress = (min(timeProgress, fixProgress) * 100).roundToInt()
+                // While waiting only on the precision target, hold just short of 100 % so the bar
+                // never claims "done" before the spread is within the target.
+                val pct = (min(timeProgress, fixProgress) * 100).roundToInt()
+                val target = policy.horizontalPrecisionTargetM
+                val precisionMet = target == null || (state.spreadHorizontalM?.let { it <= target } == true)
+                progressCapture?.progress = if (precisionMet) pct else pct.coerceAtMost(95)
 
                 // Compact grid cells: "18 / 25 sec", "7 / 10".
                 tvElapsed?.text = "$elapsed / ${policy.minDurationSec} sec"
@@ -445,13 +464,25 @@ class AddCoordinateDialogFragment(
                     tvSamplingStatus?.text = "Ready to save"
                     btnSave?.isEnabled = true
                 } else {
-                    tvSamplingStatus?.text =
+                    // Say WHICH requirement was missed: fixes, or the precision target.
+                    val target = policy.horizontalPrecisionTargetM
+                    val spread = result.spreadHorizontalM
+                    val missedPrecision = target != null && result.samples >= policy.minSamples &&
+                        (spread == null || spread > target)
+                    tvSamplingStatus?.text = if (missedPrecision)
+                        "Timed out · spread ±${spread?.let { formatMeters(it) } ?: "—"} (target ±${formatMeters(target!!)})" +
+                            " · try again or choose another preset"
+                    else
                         "Timed out · ${result.samples}/${policy.minSamples} fixes · try again or adjust settings"
                     btnSave?.isEnabled = false
                 }
             }
             is ObservationSession.State.Paused -> {
-                tvSamplingStatus?.text = "Receiver error — check connection and try again."
+                tvSamplingStatus?.text =
+                    if (state.reason == ObservationSession.TIMEOUT_NO_ACCEPTED_FIXES)
+                        "Timed out · no fixes met the rules (quality / corrections) · try again or choose another preset"
+                    else
+                        "Receiver error — check connection and try again."
                 btnSave?.isEnabled = false
             }
             is ObservationSession.State.Idle -> {
@@ -507,7 +538,11 @@ class AddCoordinateDialogFragment(
                 val timeComplete = state.elapsedSec >= policy.minDurationSec
                 val fixesComplete = state.samples >= policy.minSamples
                 val remaining = (policy.minSamples - state.samples).coerceAtLeast(0)
+                val target = policy.horizontalPrecisionTargetM
                 when {
+                    timeComplete && fixesComplete && target != null ->
+                        "Waiting for precision · spread ±${state.spreadHorizontalM?.let { formatMeters(it) } ?: "—"}" +
+                            " (target ±${formatMeters(target)})"
                     timeComplete && !fixesComplete ->
                         "Waiting for $remaining more accepted ${if (remaining == 1) "fix" else "fixes"}"
                     !timeComplete && fixesComplete ->

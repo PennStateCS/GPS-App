@@ -213,9 +213,17 @@ class InternalNmeaSource(
      * location request on the GPS provider; addNmeaListener() alone is insufficient
      * on some devices and OS versions.
      */
-    private val gpsActivationListener = LocationListener { loc ->
+    private val gpsActivationListener = object : LocationListener {
         // Position normally arrives via the NMEA listener; this is only used when NMEA is silent.
-        onPlatformLocation(loc)
+        override fun onLocationChanged(location: Location) = onPlatformLocation(location)
+
+        // Must be overridden explicitly: on API 24–29 these are ABSTRACT in the framework (defaults
+        // only arrived in API 30), so a lambda listener crashes with AbstractMethodError the first
+        // time Android calls one (e.g. the user turns Location off).
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
     }
 
     override fun start() {

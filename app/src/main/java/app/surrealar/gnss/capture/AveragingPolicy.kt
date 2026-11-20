@@ -45,14 +45,23 @@ data class AveragingPolicy(
      * Stale corrections can make an RTK solution unreliable even when the reported
      * RTK status still looks acceptable.
      */
-    val maxDiffAgeSec: Int = 10
+    val maxDiffAgeSec: Int = 10,
+
+    /**
+     * Precision-based stop: when set, a capture is complete only once the measured horizontal spread
+     * of the accepted samples (sqrt(σE² + σN²), metres) is at or below this — after the minimum time
+     * and fix count. Not reached by [maxDurationSec] → completes as NOT met (cannot be saved).
+     * Null = no precision requirement (time + fixes only).
+     */
+    val horizontalPrecisionTargetM: Double? = null,
 ) {
     companion object {
         /**
-         * Averaging rules for INTERNAL (phone/tablet) GNSS captures. Phone GNSS never reaches RTK, so
-         * standalone (SINGLE) quality is accepted. 30 s / 20 fixes averages out per-fix jitter and
-         * single-epoch jumps; most of a phone's error is slowly varying (multipath, atmosphere), so
-         * much longer sessions give diminishing returns for a field workflow. Phones send no
+         * Averaging rules for INTERNAL (device / tablet) GNSS captures — the Standard preset's
+         * internal policy and the Custom preset's internal fallback. Device GNSS never reaches RTK,
+         * so standalone (SINGLE) quality is accepted. 30 s / 20 fixes averages out per-fix jitter and
+         * single-epoch jumps; most device GNSS error is slowly varying (multipath, atmosphere), so
+         * much longer sessions give diminishing returns for a field workflow. Device GNSS sends no
          * correction age, so that gate never applies.
          */
         val INTERNAL = AveragingPolicy(
