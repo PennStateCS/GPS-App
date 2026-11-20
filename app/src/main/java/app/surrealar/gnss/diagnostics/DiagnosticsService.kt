@@ -46,6 +46,27 @@ class DiagnosticsService @Inject constructor() {
     private var lastLineCount = 0L
 
     private val maxHistorySize = 20
+    private val metricsLock = Any()
+
+    /*
+     * The rate used to be recomputed only when a line arrived, so when the stream stopped
+     * (receiver disconnected, signal lost) linesPerSecond froze at its last value on the FixBadge and
+     * in Developer Tools. A 1 s daemon tick recomputes it with no new lines → 0/s. It only publishes
+     * when something changed, so an idle app does not emit every second.
+     */
+    private val ticker = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "nmea-diagnostics-tick").apply { isDaemon = true }
+    }.also { exec ->
+        exec.scheduleWithFixedDelay({ runCatching { tick() } }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
+    private fun tick() {
+        val total = lineCount.get()
+        synchronized(metricsLock) {
+            if (total == lastLineCount && _diagnosticData.value.linesPerSecond == 0.0) return
+        }
+        updateMetrics(total)
+    }
 
     /**
      * Records one successfully received NMEA line and updates throughput stats.
@@ -82,7 +103,7 @@ class DiagnosticsService @Inject constructor() {
         updateMetrics(lines)
     }
 
-    private fun updateMetrics(totalLines: Long) {
+    private fun updateMetrics(totalLines: Long) = synchronized(metricsLock) {
         val currentTime = System.currentTimeMillis()
         val timeDiff = currentTime - lastCalculationTime
 
@@ -120,7 +141,7 @@ class DiagnosticsService @Inject constructor() {
     }
 
     /** Clears all counters and empties the sentence history. */
-    fun reset() {
+    fun reset() = synchronized(metricsLock) {
         lineCount.set(0)
         errorCount.set(0)
         lastCalculationTime = System.currentTimeMillis()

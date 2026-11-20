@@ -35,21 +35,33 @@ class DiagnosticsServiceTest {
         val svc = DiagnosticsService()
         repeat(24) { svc.recordLine("  \$GNGGA,line$it  ") }
         svc.recordParseError("\$GNBAD,oops")
-        waitForNextPublishWindow()
-        svc.recordLine("\$GNRMC,last")   // triggers the publish
+        svc.recordLine("\$GNRMC,last")
+        // The 1 s background tick publishes without needing another line.
+        Thread.sleep(1_500)
 
         val d = svc.diagnosticData.value
         assertEquals(26L, d.totalLinesProcessed)       // parse errors count as lines too
         assertEquals(1L, d.totalParseErrors)
         assertEquals(100.0 / 26.0, d.parseErrorRate, 1e-9)
         assertTrue("rate should be > 0, was ${d.linesPerSecond}", d.linesPerSecond > 0.0)
-        assertTrue("rate should be < 26/s, was ${d.linesPerSecond}", d.linesPerSecond < 26.0)
+        assertTrue("rate should be <= 26/s, was ${d.linesPerSecond}", d.linesPerSecond <= 26.0)
 
         assertEquals(20, d.lastTwentySentences.size)
         assertEquals("\$GNRMC,last", d.lastTwentySentences.last())
         assertTrue(d.lastTwentySentences.none { it.startsWith(" ") || it.endsWith(" ") })  // trimmed
         assertTrue(d.lastTwentySentences.any { it.contains("\$GNBAD,oops") && !it.startsWith("\$") })  // error marked
         assertTrue(d.lastTwentySentences.none { it.endsWith("line0") })  // oldest evicted
+    }
+
+    @Test
+    fun rateDropsToZeroWhenTheStreamStops() {
+        val svc = DiagnosticsService()
+        repeat(10) { svc.recordLine("\$GNGGA,$it") }
+        Thread.sleep(1_500)
+        assertTrue(svc.diagnosticData.value.linesPerSecond > 0.0)
+        Thread.sleep(1_500)   // no new lines: the tick must not leave the last rate frozen
+        assertEquals(0.0, svc.diagnosticData.value.linesPerSecond, 0.0)
+        assertEquals(10L, svc.diagnosticData.value.totalLinesProcessed)
     }
 
     @Test

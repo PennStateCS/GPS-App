@@ -93,12 +93,26 @@ class ExternalAdapter(
     @Volatile private var lastDataTimeMs: Long = 0L
 
     // ---- Startable ----
-    override fun start() {
+    /*
+     * start/stop/reconnectNow run on the caller's thread while the reconnect loop runs on the app
+     * scope. They share one lock with the loop's connection (re)start, so a stop can never land
+     * half-way through startInternalConnection() (which left a second set of collectors running —
+     * every fix delivered twice — or the source restarted after stop).
+     */
+    private val lifecycleLock = Any()
+
+    override fun start() = synchronized(lifecycleLock) { startLocked() }
+
+    private fun startLocked() {
         if (reconnectJob != null) return
         Log.d(TAG, "start()")
         _connectionState.value = ConnectionState.CONNECTING
         _attemptCount.value = 0
-        reconnectJob = scope.launch { startWithReconnect() }
+        // LAZY + start() after assignment: the loop checks `reconnectJob` to know it is the live one,
+        // so it must not run before the field is set (immediate dispatchers would otherwise do that).
+        val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) { startWithReconnect() }
+        reconnectJob = job
+        job.start()
     }
 
     /**
@@ -107,14 +121,16 @@ class ExternalAdapter(
      * change, so the switchboard would not rebind and the old socket would stay up. No-op when the
      * adapter is not running (it reads the saved settings on its next start anyway).
      */
-    override fun reconnectNow(reason: String) {
-        if (reconnectJob == null) return
+    override fun reconnectNow(reason: String) = synchronized(lifecycleLock) {
+        if (reconnectJob == null) return@synchronized
         DiagnosticsLogger.i("Receiver", "Reconnecting external receiver now ($reason)")
-        stop()
-        start()
+        stopLocked()
+        startLocked()
     }
 
-    override fun stop() {
+    override fun stop() = synchronized(lifecycleLock) { stopLocked() }
+
+    private fun stopLocked() {
         Log.d(TAG, "stop()")
         DiagnosticsLogger.i("Receiver", "External adapter stopped")
         reconnectJob?.cancel(); reconnectJob = null
@@ -138,7 +154,15 @@ class ExternalAdapter(
                 _connectionState.value = if (attempts == 1) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
                 if (attempts > 1) DiagnosticsLogger.w("Receiver", "Reconnecting external receiver attempt #$attempts")
 
-                startInternalConnection()
+                // Under the lifecycle lock, and only if this loop is still the live one (a stop()
+                // that won the lock has already cancelled us).
+                val thisJob = coroutineContext[Job]
+                synchronized(lifecycleLock) {
+                    if (thisJob == null || thisJob !== reconnectJob || !thisJob.isActive) {
+                        throw CancellationException("external adapter stopped")
+                    }
+                    startInternalConnection()
+                }
 
                 waitForFirstDataOrTimeout()
                 _connectionState.value = ConnectionState.CONNECTED
@@ -156,7 +180,7 @@ class ExternalAdapter(
                 Log.w(TAG, "connection attempt #$attempts failed: ${e.message}", e)
                 DiagnosticsLogger.w("Receiver", "Connection attempt #$attempts failed: ${e.message}")
                 _connectionState.value = ConnectionState.ERROR
-                stopInternalJobs()
+                synchronized(lifecycleLock) { stopInternalJobs() }
                 if (!coroutineContext.isActive) break
                 val backoff = calculateBackoffDelay(attempts)
                 app.surrealar.gnss.debug.GnssDebugLog.event("external") {
@@ -221,12 +245,12 @@ class ExternalAdapter(
             // Connect refused / host unreachable / no host configured: retry on the backoff
             // schedule now rather than sitting out the full connect timeout.
             if (!nmea.isConnectionActive()) {
-                DiagnosticsLogger.w("Receiver", "External connection ended before any NMEA data Ã¢â‚¬â€ will retry")
+                DiagnosticsLogger.w("Receiver", "External connection ended before any NMEA data — will retry")
                 throw IllegalStateException("Connection ended before data")
             }
             delay(250)
         }
-        DiagnosticsLogger.w("Receiver", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms Ã¢â‚¬â€ will retry")
+        DiagnosticsLogger.w("Receiver", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry")
         throw IllegalStateException("Timeout: no data within ${CONNECT_TIMEOUT_MS} ms")
     }
 
@@ -236,14 +260,14 @@ class ExternalAdapter(
             // Socket closed by the receiver (reboot, Wi-Fi drop, another client took the slot):
             // reconnect immediately instead of waiting for the no-data timeout.
             if (!nmea.isConnectionActive()) {
-                DiagnosticsLogger.w("Receiver", "External connection ended Ã¢â‚¬â€ triggering reconnect")
+                DiagnosticsLogger.w("Receiver", "External connection ended — triggering reconnect")
                 throw IllegalStateException("Connection ended")
             }
             val last = lastDataTimeMs
             if (last == 0L) continue
             val staleFor = System.currentTimeMillis() - last
             if (staleFor > HEALTH_DATA_TIMEOUT_MS) {
-                DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms Ã¢â‚¬â€ triggering reconnect")
+                DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
                 throw IllegalStateException("No data for ${HEALTH_DATA_TIMEOUT_MS} ms")
             }
         }

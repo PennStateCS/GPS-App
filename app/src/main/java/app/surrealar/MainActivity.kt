@@ -357,38 +357,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initGnss() {
-        // Idempotent
+        // The switchboard is started once by DI (GnssModule.provideFixSwitchboard). Calling start()
+        // again used to cancel and recreate its provider watcher, racing a startup provider switch;
+        // start() is now a no-op when already running, so this is only a safety net.
         try {
             switchboard.start()
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "Error starting GNSS switchboard: ", e)
-        }
-
-        lifecycleScope.launch {
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                // Routed fixes (follows provider choice)
-                launch {
-                    try {
-                        switchboard.fixes.collect { fix ->
-                            // TODO: push into VM / UI as needed
-                        }
-                    } catch (e: Exception) {
-                        if (e is kotlinx.coroutines.CancellationException) throw e
-                        android.util.Log.e("MainActivity", "Error collecting GNSS fixes: ", e)
-                    }
-                }
-                // Routed sky (follows provider choice)
-                launch {
-                    try {
-                        switchboard.sky.collect { sky ->
-                            // TODO: update sky UI
-                        }
-                    } catch (e: Exception) {
-                        if (e is kotlinx.coroutines.CancellationException) throw e
-                        android.util.Log.e("MainActivity", "Error collecting GNSS sky data: ", e)
-                    }
-                }
-            }
         }
     }
 

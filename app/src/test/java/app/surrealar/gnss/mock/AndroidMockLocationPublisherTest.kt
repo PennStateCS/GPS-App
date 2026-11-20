@@ -167,9 +167,19 @@ class AndroidMockLocationPublisherTest {
 
     @Test fun `older timestamp after newer is duplicate`() {
         val newer = Instant.ofEpochMilli(2_000_000)
-        val older = Instant.ofEpochMilli(1_000_000)
+        val older = Instant.ofEpochMilli(1_999_000)   // 1 s older: re-delivered / out of order
         publisher.isDuplicate(externalFix(timeUtc = newer))
         assertTrue(publisher.isDuplicate(externalFix(timeUtc = older)))
+    }
+
+    @Test fun `time jumping back beyond the window resets the duplicate check`() {
+        // First fix dated a day ahead (wrong tablet date before RMC/ZDA arrived), then real GNSS time:
+        // the real fixes must publish instead of being dropped as duplicates for the whole session.
+        val wrongDay = Instant.ofEpochMilli(2_000_000).plusSeconds(86_400)
+        publisher.isDuplicate(externalFix(timeUtc = wrongDay))
+        val real = Instant.ofEpochMilli(2_000_000)
+        assertFalse(publisher.isDuplicate(externalFix(timeUtc = real)))
+        assertFalse(publisher.isDuplicate(externalFix(timeUtc = real.plusSeconds(1))))
     }
 
     @Test fun `strictly later timestamp advances and is not duplicate`() {

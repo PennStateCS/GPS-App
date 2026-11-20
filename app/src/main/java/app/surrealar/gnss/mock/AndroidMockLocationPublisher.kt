@@ -96,6 +96,7 @@ class AndroidMockLocationPublisher(
     /** Start observing the fix stream and publishing mock locations while enabled. */
     fun start(scope: CoroutineScope) {
         if (publishJob?.isActive == true) return
+        removeLeftoverTestProvider()
         publishJob = scope.launch {
             combine(
                 settingsRepo.mockLocationEnabled,
@@ -183,6 +184,14 @@ class AndroidMockLocationPublisher(
         fix.latDeg in -90.0..90.0 && fix.lonDeg in -180.0..180.0
 
     internal fun isDuplicate(fix: Fix): Boolean {
+        // A fix far BEHIND the last published one is a time jump, not a duplicate: e.g. the first fix
+        // after connect was dated from a wrong tablet date (no RMC/ZDA yet) a day ahead. Without this,
+        // every later fix would be dropped as a "duplicate" for the rest of the session.
+        if (fix.timeUtc.isBefore(lastPublishedUtc.minusSeconds(TIME_JUMP_RESET_SEC))) {
+            DiagnosticsLogger.w(DIAG, "Mock duplicate check reset: fix time jumped back from $lastPublishedUtc")
+            lastPublishedUtc = fix.timeUtc
+            return false
+        }
         if (!fix.timeUtc.isAfter(lastPublishedUtc)) return true
         lastPublishedUtc = fix.timeUtc
         return false
@@ -304,6 +313,28 @@ class AndroidMockLocationPublisher(
         }
     }
 
+    /**
+     * [providerAdded] lives only in memory. If the previous process died while the GPS test provider
+     * was registered (killed in the background, crash), Android can keep GPS_PROVIDER mocked with no
+     * one injecting — internal GNSS would then sit on "waiting" until reboot. Remove any leftover
+     * provider once at start; it is re-added on demand if publishing is needed. Failures are expected
+     * (no leftover → IllegalArgumentException; app not the mock-location app → SecurityException).
+     */
+    private fun removeLeftoverTestProvider() {
+        try {
+            locationManager.removeTestProvider(LocationManager.GPS_PROVIDER)
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_CLEANUP — removed a leftover GPS test provider from a previous run")
+        } catch (_: IllegalArgumentException) {
+            // No leftover provider — the normal case.
+        } catch (_: SecurityException) {
+            // Not selected as the mock location app: this app could not have left one behind.
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_CLEANUP failed: ${e.message}")
+        }
+        providerAdded = false
+        MockInjectionStatus.providerActive = false
+    }
+
     private fun teardownProvider() {
         if (!providerAdded) return
         try {
@@ -317,6 +348,7 @@ class AndroidMockLocationPublisher(
             providerAdded = false
             MockInjectionStatus.providerActive = false
             resetFreshness()  // the next publishing session builds its own timing baseline
+            lastPublishedUtc = Instant.EPOCH  // …and its own duplicate check
         }
     }
 
@@ -346,5 +378,8 @@ class AndroidMockLocationPublisher(
 
         /** Consecutive stale fixes after which the timing baseline is rebuilt (clock jump recovery). */
         internal const val STALE_RESET_COUNT = 5
+
+        /** A fix this far (s) behind the last published one resets the duplicate check (time jump). */
+        internal const val TIME_JUMP_RESET_SEC = 60L
     }
 }

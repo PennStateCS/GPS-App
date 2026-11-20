@@ -29,7 +29,7 @@ class FixSwitchboard(
     private val scope: CoroutineScope,
     private val sourceSettings: SourceSettings,
     private val adapters: Map<ProviderChoice, SourceAdapter>,
-    /** No fix for this long â‡’ [currentFix] is cleared (the position is no longer live). */
+    /** No fix for this long ⇒ [currentFix] is cleared (the position is no longer live). */
     private val fixStaleAfterMs: Long = DEFAULT_FIX_STALE_MS,
     private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L }
 ) : FixBus, SkyBus {
@@ -96,7 +96,7 @@ class FixSwitchboard(
     /**
      * True while [currentFix] was cleared because the bound provider stopped producing fixes (signal
      * lost, receiver disconnected, GGA quality 0). Liveness is judged by RECEIVE time on a monotonic
-     * clock â€” never by the fix's GNSS timestamp vs. the device clock, which can be skewed.
+     * clock — never by the fix's GNSS timestamp vs. the device clock, which can be skewed.
      */
     private val _fixStale = MutableStateFlow(false)
     val fixStale: StateFlow<Boolean> = _fixStale.asStateFlow()
@@ -117,13 +117,15 @@ class FixSwitchboard(
     /**
      * Starts watching the selected provider and binds to the matching adapter.
      *
-     * This is expected to be called once during app startup. Calling it again
-     * replaces the provider watcher instead of creating a second collector.
+     * This is expected to be called once during app startup. Calling it again while it is
+     * running is a no-op (after [stop] it starts fresh).
      */
     fun start() {
+        // Idempotent: restarting the watcher while it runs could interleave two rebinds (a cancelled
+        // collector still inside rebindTo while the new one enters), orphaning jobs.
+        if (providerCollectJob?.isActive == true) return
         android.util.Log.d("FixSwitchboard", "Starting switchboard")
 
-        providerCollectJob?.cancel()
         providerCollectJob = scope.launch {
             var previousChoice: ProviderChoice? = null
             sourceSettings.activeProvider.collect { choice ->
@@ -154,7 +156,7 @@ class FixSwitchboard(
     /**
      * Nudges the currently-bound source to retry a start that was blocked waiting for a runtime
      * permission (e.g. INTERNAL started before location permission was granted at cold launch).
-     * Safe to call repeatedly â€” it is a no-op when the source is already active or not waiting, so
+     * Safe to call repeatedly — it is a no-op when the source is already active or not waiting, so
      * it never creates duplicate listeners. Called on app resume and when permission is granted.
      */
     fun retryActiveSourceIfStalled(reason: String) {
@@ -211,10 +213,10 @@ class FixSwitchboard(
 
         /*
          * Clear all live state from the OUTGOING provider:
-         *  - currentFix â†’ null, so a guaranteed-current-only consumer reads "no fix yet"
+         *  - currentFix → null, so a guaranteed-current-only consumer reads "no fix yet"
          *    until the new provider emits (never the previous source's coordinates).
          *  - the replay=1 fix buffer, so late SharedFlow subscribers don't replay the old fix.
-         *  - sky â†’ EmptySky, so satellite counts don't carry over.
+         *  - sky → EmptySky, so satellite counts don't carry over.
          */
         _currentFix.value = null
         _fixes.resetReplayCache()

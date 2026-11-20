@@ -108,7 +108,7 @@ class HomeViewModel @Inject constructor(
 
     /**
      * NMEA stream health for the FixBadge. Sourced from [DiagnosticsService] (the live feed both
-     * sources record into) â€” [NmeaLogger] is never fed in production, so it always read 0/s.
+     * sources record into) — [NmeaLogger] is never fed in production, so it always read 0/s.
      */
     val nmeaStats: StateFlow<NmeaLogStats> = diagnosticsService.diagnosticData
         .map { d -> NmeaLogStats(totalLines = d.totalLinesProcessed, linesPerSecond = d.linesPerSecond, parseErrors = d.totalParseErrors) }
@@ -121,7 +121,7 @@ class HomeViewModel @Inject constructor(
     /**
      * Live NMEA throughput/parse stats from the same [DiagnosticsService] singleton that both
      * [app.surrealar.gnss.external.TcpNmeaSource] and the internal source feed (and that
-     * Developer Tools reads). This is the *real* live stream rate â€” unlike [NmeaLogger], whose
+     * Developer Tools reads). This is the *real* live stream rate — unlike [NmeaLogger], whose
      * logging path is not wired into the production NMEA flow. Used by the Home Field Status card.
      */
     val diagnosticData: StateFlow<DiagnosticData> = diagnosticsService.diagnosticData.stateIn(
@@ -131,7 +131,7 @@ class HomeViewModel @Inject constructor(
     )
 
     /**
-     * Live sky snapshot (satellite counts) following the active provider â€” the same source the
+     * Live sky snapshot (satellite counts) following the active provider — the same source the
      * app-wide GNSS toolbar uses, so the Field Status "Sats" chip matches the toolbar exactly.
      */
     val sky: StateFlow<SkySnapshot> = fixSwitchboard.sky.stateIn(

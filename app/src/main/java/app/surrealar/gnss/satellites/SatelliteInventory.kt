@@ -69,6 +69,20 @@ class SatelliteInventory(
             )
         }
 
+        // A GSV epoch lists every satellite currently in view for its constellation, so one of this
+        // constellation's satellites missing from it is not being tracked now — it cannot be "used".
+        // Clear the flag immediately (it used to stay true until eviction, up to a minute, inflating
+        // the toolbar's used count after satellites set). It stays in the visible list until evicted,
+        // so sparse/partial updates don't make the sky view flicker.
+        if (gsv.entries.isNotEmpty()) {
+            val present = gsv.entries.mapTo(HashSet()) { it.svid }
+            geometryBySat.entries.forEach { (id, g) ->
+                if (id.c == const && id.svid !in present && g.usedInFix) {
+                    geometryBySat[id] = g.copy(usedInFix = false)
+                }
+            }
+        }
+
         // Evict satellites that have not been seen recently
         val cutoff = t - evictionSeconds
         val beforeEvict = geometryBySat.size

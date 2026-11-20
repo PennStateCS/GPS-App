@@ -84,9 +84,19 @@ class TcpNmeaSource(
         registry = registry,
         // tryEmit (never fails: DROP_OLDEST buffers) keeps fixes in receive order. A coroutine per
         // fix on the multi-threaded app scope could deliver an older fix after a newer one.
-        onFix    = { fix -> _fixes.tryEmit(fix) },
-        onGsv    = { gsv -> _gsv.tryEmit(gsv) }
+        // Dropped if the connection that parsed it has been stopped (see [generation]).
+        onFix    = { fix -> if (readerGeneration.get() == generation) _fixes.tryEmit(fix) },
+        onGsv    = { gsv -> if (readerGeneration.get() == generation) _gsv.tryEmit(gsv) }
     )
+
+    /**
+     * Bumped by every [stop]. Each reader records the generation it started under (thread-local:
+     * the read loop never suspends, so it stays on one thread) and stops feeding the fuser — and its
+     * fixes are dropped — once [stop] has advanced it. Otherwise a sentence in flight during a stop
+     * (e.g. switching receivers) could put one fix from the OLD receiver into the replay cache.
+     */
+    @Volatile private var generation = 0L
+    private val readerGeneration = ThreadLocal<Long>()
 
     /** Debug builds: periodic raw-sentence samples from the receiver (logcat only). Reader thread only. */
     private val debugSampler = app.surrealar.gnss.debug.NmeaDebugSampler("nmea-ext")
@@ -144,6 +154,7 @@ class TcpNmeaSource(
 
     override fun stop() {
         Log.d(TAG, "Stopping TCP NMEA source")
+        generation++            // first: an in-flight sentence from the old reader is now discarded
         started = false
         firstDataLogged = false
         connectionJob?.cancel()
@@ -152,6 +163,8 @@ class TcpNmeaSource(
         // fuser (or hold a receiver client slot) for up to SOCKET_TIMEOUT_MS after a stop/reconnect.
         activeSocket?.let { runCatching { it.close() } }
         activeSocket = null
+        // reset() takes the fuser's lock, so it waits for any accept() already in progress; the replay
+        // cache is cleared AFTER that, so no fix from the old connection can survive in it.
         fuser.reset()
         /*
          * Drop the replay=1 buffered fix so a later reconnect doesn't immediately
@@ -163,6 +176,8 @@ class TcpNmeaSource(
     private suspend fun connectAndRead(host: String, port: Int) {
         var socket: Socket? = null
         var reader: BufferedReader? = null
+        val myGeneration = generation
+        readerGeneration.set(myGeneration)
         try {
             socket = Socket().also { activeSocket = it }.apply {
                 soTimeout = SOCKET_TIMEOUT_MS
@@ -180,6 +195,7 @@ class TcpNmeaSource(
                         DiagnosticsLogger.w("Receiver", "TCP connection closed by remote ($host:$port)")
                         break
                     }
+                    if (myGeneration != generation) break   // stopped while reading this line
                     val clean = line.trim()
                     if (clean.isNotEmpty() && clean[0] == '$') {
                         if (!firstDataLogged) {
@@ -202,6 +218,7 @@ class TcpNmeaSource(
             runCatching { reader?.close() }
             runCatching { socket?.close() }
             if (activeSocket === socket) activeSocket = null
+            readerGeneration.remove()
             Log.d(TAG, "Disconnected from $host:$port")
             DiagnosticsLogger.i("Receiver", "TCP disconnected from $host:$port")
         }
