@@ -106,7 +106,11 @@ class SatelliteInventory(
 
         app.surrealar.gnss.debug.GnssDebugLog.every("sky.summary.$debugName", "sky") {
             val staleSec = geometryBySat.values.count { t - it.lastSeen > 5.0 }
+            // withGeom/withSnr: how many can be drawn (skyplot/charts need az+el and SNR).
+            val withGeom = geometryBySat.values.count { it.azDeg != null && it.elDeg != null }
+            val withSnr = geometryBySat.keys.count { snrBySat[it] != null }
             "$debugName visible=${geometryBySat.size} used=${geometryBySat.values.count { it.usedInFix }} " +
+                "withGeom=$withGeom withSnr=$withSnr " +
                 "visibleBy=$visibleByConstellation usedBy=$usedByConstellation " +
                 "(last msg ${gsv.constellation}: ${gsv.entries.size} sats; $staleSec held from >5 s ago)"
         }

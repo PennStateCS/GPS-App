@@ -36,9 +36,11 @@ class GsvParser : SentenceParser<GSV> {
         var i = start
         while (i + 3 < endExclusive) {
             val svid      = fields.getOrNull(i    ).toIntOrNullSafe()
-            val elevDeg   = fields.getOrNull(i + 1).toIntOrNullSafe()
-            val azimDeg   = fields.getOrNull(i + 2).toIntOrNullSafe()
-            val snrDb     = fields.getOrNull(i + 3).toIntOrNullSafe()
+            // Elevation/azimuth/SNR may carry decimals on some chipsets (e.g. Samsung tablets send
+            // "25.3" dB-Hz); integer-only parsing dropped every SNR there, blanking the skyplot.
+            val elevDeg   = fields.getOrNull(i + 1).toDoubleOrNullSafe()?.let { kotlin.math.round(it).toInt() }
+            val azimDeg   = fields.getOrNull(i + 2).toDoubleOrNullSafe()?.let { kotlin.math.round(it).toInt() }
+            val snrDb     = fields.getOrNull(i + 3).toDoubleOrNullSafe()
 
             if (svid != null) {
                 satellites.add(
@@ -71,6 +73,9 @@ class GsvParser : SentenceParser<GSV> {
         if (fields.size < 5 || (fields.size - 4) % 4 != 1) return null
         return fields.last().trim().takeIf { it.isNotEmpty() }?.toIntOrNull(16)
     }
+
+    private fun String?.toDoubleOrNullSafe(): Double? =
+        this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()?.takeIf { it.isFinite() }
 
     private fun String?.toIntOrNullSafe(): Int? =
         this?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()

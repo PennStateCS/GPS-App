@@ -33,22 +33,22 @@ class GsvParserTest {
         assertEquals(1, satellites[0].svid)
         assertEquals(40, satellites[0].elevationDeg)
         assertEquals(83, satellites[0].azimuthDeg)
-        assertEquals(46, satellites[0].snrDb)
+        assertEquals(46.0, satellites[0].snrDb!!, 0.0)
 
         assertEquals(2, satellites[1].svid)
         assertEquals(17, satellites[1].elevationDeg)
         assertEquals(308, satellites[1].azimuthDeg)
-        assertEquals(41, satellites[1].snrDb)
+        assertEquals(41.0, satellites[1].snrDb!!, 0.0)
 
         assertEquals(12, satellites[2].svid)
         assertEquals(7, satellites[2].elevationDeg)
         assertEquals(344, satellites[2].azimuthDeg)
-        assertEquals(39, satellites[2].snrDb)
+        assertEquals(39.0, satellites[2].snrDb!!, 0.0)
 
         assertEquals(14, satellites[3].svid)
         assertEquals(22, satellites[3].elevationDeg)
         assertEquals(228, satellites[3].azimuthDeg)
-        assertEquals(45, satellites[3].snrDb)
+        assertEquals(45.0, satellites[3].snrDb!!, 0.0)
     }
 
     @Test
@@ -68,7 +68,7 @@ class GsvParserTest {
         assertEquals(18, satellites[0].svid)
         assertEquals(9, satellites[0].elevationDeg)
         assertEquals(67, satellites[0].azimuthDeg)
-        assertEquals(40, satellites[0].snrDb)
+        assertEquals(40.0, satellites[0].snrDb!!, 0.0)
     }
 
     @Test
@@ -102,7 +102,7 @@ class GsvParserTest {
         assertEquals(65, satellites[0].svid) // GLONASS satellite IDs start at 65
         assertEquals(79, satellites[0].elevationDeg)
         assertEquals(42, satellites[0].azimuthDeg)
-        assertEquals(33, satellites[0].snrDb)
+        assertEquals(33.0, satellites[0].snrDb!!, 0.0)
     }
 
     @Test
@@ -134,7 +134,7 @@ class GsvParserTest {
         assertNull("SNR should be null when not provided", satellites[0].snrDb)
 
         assertEquals(2, satellites[1].svid)
-        assertEquals(41, satellites[1].snrDb)
+        assertEquals(41.0, satellites[1].snrDb!!, 0.0)
 
         assertEquals(12, satellites[2].svid)
         assertNull("SNR should be null when not provided", satellites[2].snrDb)
@@ -190,4 +190,25 @@ class GsvParserTest {
         assertNotNull("Should parse sentence without checksum", result)
         assertEquals(4, result?.satellites?.size)
     }
-}
+
+    @Test
+    fun `decimal SNR from Samsung chipsets is parsed`() {
+        // Real sentence from a Galaxy Tab S10 (SM-X940): SNR has one decimal, one satellite has none.
+        val fields = "GLGSV,3,1,9,88,57,024,28.3,65,41,106,23.5,79,39,289,,81,36,298,19.8,1".split(",")
+        val gsv = GsvParser().parse("GL", fields)!!
+        assertEquals(4, gsv.satellites.size)
+        assertEquals(28.3, gsv.satellites[0].snrDb!!, 1e-9)
+        assertEquals(57, gsv.satellites[0].elevationDeg)
+        assertEquals(24, gsv.satellites[0].azimuthDeg)
+        assertNull(gsv.satellites[2].snrDb)
+        assertEquals(19.8, gsv.satellites[3].snrDb!!, 1e-9)
+        assertEquals(1, gsv.signalId)
+    }
+
+    @Test
+    fun `decimal elevation and azimuth are rounded to whole degrees`() {
+        val gsv = GsvParser().parse("GP", "GPGSV,1,1,1,11,66.6,291.4,25".split(","))!!
+        assertEquals(67, gsv.satellites[0].elevationDeg)
+        assertEquals(291, gsv.satellites[0].azimuthDeg)
+        assertEquals(25.0, gsv.satellites[0].snrDb!!, 0.0)
+    }}

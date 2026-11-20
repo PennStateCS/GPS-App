@@ -309,7 +309,7 @@ class NmeaFuser(
                         svid         = svid,
                         elevationDeg = s.elevationDeg,
                         azimuthDeg   = s.azimuthDeg,
-                        snrDbHz      = s.snrDb?.toDouble(),
+                        snrDbHz      = s.snrDb,
                         usedInFix    = isUsed
                     )
                 }

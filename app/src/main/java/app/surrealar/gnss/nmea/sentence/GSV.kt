@@ -9,7 +9,7 @@ data class GSVSatellite(
     val svid: Int?,
     val elevationDeg: Int?,
     val azimuthDeg: Int?,
-    val snrDb: Int?
+    val snrDb: Double?   // C/N0 dB-Hz; some chipsets send decimals ("25.3")
 )
 
 /**
