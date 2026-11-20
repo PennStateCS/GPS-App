@@ -67,6 +67,8 @@ class AndroidMockLocationPublisher(
     private var publishJob: Job? = null
     private var providerAdded = false
     private var lastPublishedUtc: Instant = Instant.EPOCH
+    /** Settings → AR Display → Antenna Height Above Tablet (m); subtracted from the injected altitude. */
+    @Volatile private var antennaAboveCameraM: Double = 0.0
     /** Throttle for the per-injection export log — status is updated every injection, file log is not. */
     private var lastInjectionLogMs: Long = 0L
 
@@ -102,8 +104,12 @@ class AndroidMockLocationPublisher(
                 settingsRepo.mockLocationEnabled,
                 arSessionActive,
                 settingsRepo.locationSource,
+                settingsRepo.arDisplaySettings,
                 fixSwitchboard.fixes
-            ) { userEnabled, arActive, locationSource, fix -> Triple(userEnabled || arActive, locationSource, fix) }
+            ) { userEnabled, arActive, locationSource, ar, fix ->
+                antennaAboveCameraM = ar.antennaAboveCameraM.toDouble()
+                Triple(userEnabled || arActive, locationSource, fix)
+            }
             .collect { (mockEnabled, locationSource, fix) ->
                 if (!mockEnabled || locationSource != LocationSourceType.EXTERNAL) {
                     if (providerAdded) {
@@ -121,7 +127,7 @@ class AndroidMockLocationPublisher(
                 }
                 debugCountMock(drop)
                 if (drop != "") return@collect
-                publishLocation(fix, fixToLocation(fix))
+                publishLocation(fix, fixToLocation(fix, antennaAboveCameraM))
             }
         }
     }
@@ -203,30 +209,60 @@ class AndroidMockLocationPublisher(
      * Converts a GNSS [Fix] to an Android [Location] stamped with [LocationManager.GPS_PROVIDER].
      * All optional Fix fields (altitude, accuracy, speed, course) are set when present.
      */
-    internal fun fixToLocation(fix: Fix): Location =
+    internal fun fixToLocation(
+        fix: Fix,
+        /** Antenna phase centre above the tablet camera (m): the injected height is the CAMERA's. */
+        antennaAboveCameraM: Double = 0.0,
+        nowWallMs: Long = System.currentTimeMillis(),
+        nowElapsedNanos: Long = SystemClock.elapsedRealtimeNanos(),
+    ): Location =
         Location(LocationManager.GPS_PROVIDER).apply {
             latitude  = fix.latDeg
             longitude = fix.lonDeg
 
-            fix.altEllipsoidalM?.let { altitude = it }
+            // Android Location.altitude is WGS84 ellipsoidal (what ARCore expects). The fix is the
+            // antenna; ARCore treats the location as the device, so lower it to the camera.
+            fix.altEllipsoidalM?.let { altitude = it - antennaAboveCameraM }
             fix.speedMps?.let       { speed = it.toFloat() }
             fix.courseDeg?.let      { bearing = it.toFloat() }
 
-            // accuracy is mandatory — setTestProviderLocation throws IllegalArgumentException
-            // if it is unset (0f). Fall back to a conservative 5 m estimate when GST-derived
-            // hAccM is absent so the location object is always valid.
-            accuracy = fix.hAccM?.toFloat()?.takeIf { it > 0f } ?: 5.0f
+            // accuracy is mandatory — setTestProviderLocation throws if it is unset (0f). Without a
+            // receiver estimate (no GST), use one matching the solution type: a flat 5 m placeholder
+            // told ARCore to distrust an RTK FIX, the best position it can get.
+            accuracy = fix.hAccM?.toFloat()?.takeIf { it > 0f } ?: fallbackHorizontalAccuracyM(fix.rtkStatus)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 fix.vAccM?.let { verticalAccuracyMeters = it.toFloat() }
             }
 
-            // time must be a real wall-clock millisecond value; elapsedRealtimeNanos must
-            // also be set. Both are required fields on modern Android.
+            // time = the fix's GNSS epoch. elapsedRealtimeNanos is the monotonic clock fusion engines
+            // (FLP/ARCore) use to align samples: back-date it by the fix's age so a fix that took
+            // ~0.1–0.3 s to arrive isn't treated as current (≈0.2–0.4 m lag while walking). Only
+            // plausible ages are trusted (device-clock skew must never move it into the future or far
+            // past); otherwise arrival time is used, as before.
             val epochMs = fix.timeUtc.toEpochMilli()
-            time = if (epochMs > 0L) epochMs else System.currentTimeMillis()
-            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+            time = if (epochMs > 0L) epochMs else nowWallMs
+            val ageMs = plausibleFixAgeMs(epochMs, nowWallMs)
+            elapsedRealtimeNanos = nowElapsedNanos - (ageMs ?: 0L) * 1_000_000L
         }
+
+    /**
+     * Placeholder horizontal accuracy (m, ~68%) by solution type when the receiver sends no GST.
+     * Conservative for each class: RTK fixed is cm-level, float decimetres, DGPS ~1 m.
+     */
+    internal fun fallbackHorizontalAccuracyM(status: app.surrealar.gnss.model.RtkStatus): Float = when (status) {
+        app.surrealar.gnss.model.RtkStatus.FIX   -> 0.05f
+        app.surrealar.gnss.model.RtkStatus.FLOAT -> 0.5f
+        app.surrealar.gnss.model.RtkStatus.DGPS  -> 1.5f
+        else -> 5.0f
+    }
+
+    /** Fix age (ms) when it is plausible (0…[MAX_TRUSTED_FIX_AGE_MS]); null = don't back-date. */
+    internal fun plausibleFixAgeMs(fixEpochMs: Long, nowWallMs: Long): Long? {
+        if (fixEpochMs <= 0L) return null
+        val age = nowWallMs - fixEpochMs
+        return age.takeIf { it in 0L..MAX_TRUSTED_FIX_AGE_MS }
+    }
 
     // ── Publishing ────────────────────────────────────────────────────────────
 
@@ -260,10 +296,14 @@ class AndroidMockLocationPublisher(
             // every one would flood the rolling log). The in-memory status above updates every fix.
             if (appRecvMs - lastInjectionLogMs >= INJECT_LOG_INTERVAL_MS) {
                 lastInjectionLogMs = appRecvMs
+                val backdatedMs = plausibleFixAgeMs(fixTimeMs, appRecvMs)
                 DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_INJECTED sourceProvider=${fix.provider} " +
                     "fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
+                    "backdatedMs=${backdatedMs ?: "none(implausible age)"} " +
                     "lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)} " +
                     "altM=${fix.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
+                    "injectedAltM=${if (location.hasAltitude()) "%.2f".format(location.altitude) else "none"} " +
+                    "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +
                     "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
                     (if (hAccWasFallback) "(placeholder ${location.accuracy}m injected)" else "") +
                     " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus} " +
@@ -372,6 +412,8 @@ class AndroidMockLocationPublisher(
         private const val DIAG = "MOCK"
         /** Minimum spacing between per-injection export logs (status still updates every fix). */
         private const val INJECT_LOG_INTERVAL_MS = 3_000L
+        /** Fix ages beyond this (or negative = device clock ahead) are treated as clock skew, not latency. */
+        internal const val MAX_TRUSTED_FIX_AGE_MS = 1_000L
 
         /** Drop fixes delivered more than 10 seconds later than the stream's normal delay. */
         internal const val MAX_FIX_AGE_MS = 10_000L

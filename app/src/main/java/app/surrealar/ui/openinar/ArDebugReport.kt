@@ -97,6 +97,10 @@ internal object ArDebugReport {
         val modelsInScene: Int,
         val modelPoses: Int,
         val optics: Optics? = null,
+        /** ARCore camera position vs the GNSS fix (live AR accuracy); null until both exist. */
+        val arVsGnss: ArVsGnss? = null,
+        /** Gate profile in use ("STANDARD"/"RTK") and its thresholds, for the anchor-gate line. */
+        val gateProfile: String? = null,
     )
 
     /** Max per-anchor rows listed; the rest are summarised so the panel can't cover the screen. */
@@ -156,6 +160,19 @@ internal object ArDebugReport {
             appendLine("           ${"%.7f".format(f.lat)}, ${"%.7f".format(f.lon)}" +
                 if (f.coordsValid) "" else "  ⚠ INVALID COORDS")
         }
+
+        // ARCore ↔ GNSS agreement: the live accuracy of where models are drawn.
+        i.arVsGnss?.let { c ->
+            val mark = when (c.grade) { "GOOD" -> OK; "FAIR" -> WAIT; else -> FAIL }
+            val v = c.verticalM?.let { " V ${"%+.2f".format(it)}m" } ?: ""
+            val moving = if ((c.speedMps ?: 0.0) > 0.5) "  (moving — stand still to judge)" else ""
+            appendLine("$mark AR↔GNSS  H ${"%.2f".format(c.horizontalM)}m → ${"%.0f".format(c.bearingDeg)}°$v  ${c.grade}$moving")
+            if (c.expectedErrAtFarthestM != null && c.farthestModelM != null) {
+                appendLine("           expected error at ${"%.0f".format(c.farthestModelM)}m point ≈ ±${"%.1f".format(c.expectedErrAtFarthestM)}m " +
+                    "(AR H${acc(c.arHAccM)} yaw${deg(c.arYawAccDeg)})")
+            }
+        }
+        i.gateProfile?.let { appendLine("$NA Gate     $it") }
 
         // Anchor gate + coordinate anchors
         val tracked = i.geoAnchors.count { it.tracking == "TRACKING" }

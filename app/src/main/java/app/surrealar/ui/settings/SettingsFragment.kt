@@ -409,6 +409,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val switchDebug      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_overlay)
             val switchDebugTools = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_tools)
             val editScale        = view.findViewById<EditText>(R.id.edit_ar_model_scale)
+            val editAntenna      = view.findViewById<EditText>(R.id.edit_ar_antenna_above_camera)
+            val tilAntenna       = editAntenna?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
+            var lastValidAntenna = 0f
             view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
 
             val altitudeModes   = listOf("Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
@@ -431,6 +434,15 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tilScale?.error = "Must be 0.1 – 10.0"
                     lastValidScale
                 }
+                val typedAntenna = editAntenna?.text?.toString()?.trim()?.let { if (it.isEmpty()) 0f else it.toFloatOrNull() }
+                val antenna = if (typedAntenna != null && typedAntenna in -3f..3f) {
+                    tilAntenna?.error = null
+                    lastValidAntenna = typedAntenna
+                    typedAntenna
+                } else {
+                    tilAntenna?.error = "Must be −3 – 3 m"
+                    lastValidAntenna
+                }
                 val settings = ArDisplaySettings(
                     altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "STORED"),
                     distanceFilterIndex = distanceIdx ?: distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
@@ -438,7 +450,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     showLabels          = switchLabels?.isChecked ?: true,
                     showOffscreenArrows = switchArrows?.isChecked ?: true,
                     modelScale          = scale,
-                    showArDebugTools    = switchDebugTools?.isChecked ?: false
+                    showArDebugTools    = switchDebugTools?.isChecked ?: false,
+                    antennaAboveCameraM = antenna,
                 )
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
@@ -462,6 +475,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     switchDebugTools?.isChecked = s.showArDebugTools
                     editScale?.setText(s.modelScale.toString())
                     lastValidScale = s.modelScale
+                    editAntenna?.setText(s.antennaAboveCameraM.toString())
+                    lastValidAntenna = s.antennaAboveCameraM
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
@@ -481,6 +496,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             switchDebugTools?.setOnCheckedChangeListener { _, _ -> if (!isBinding) saveAll() }
             editScale?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
             editScale?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
+            editAntenna?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
+            editAntenna?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupARDisplayContent failed", e)
         }

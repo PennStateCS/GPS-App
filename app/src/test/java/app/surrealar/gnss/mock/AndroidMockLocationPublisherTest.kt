@@ -283,4 +283,37 @@ class AndroidMockLocationPublisherTest {
         assertFalse(publisher.isValid(externalFix(lat = Double.NaN, lon = 0.0)))
         assertFalse(publisher.isValid(externalFix(lat = 0.0, lon = Double.NaN)))
     }
-}
+
+    // ── AR accuracy: antenna offset, accuracy fallback, back-dated timestamps ─────────────
+
+    @Test fun `altitude is lowered by the antenna height above the tablet camera`() {
+        val loc = publisher.fixToLocation(externalFix(altM = 150.5), antennaAboveCameraM = 0.6)
+        assertEquals(149.9, loc.altitude, 1e-9)
+    }
+
+    @Test fun `missing accuracy falls back by solution type, not a flat 5 m`() {
+        assertEquals(0.05f, publisher.fallbackHorizontalAccuracyM(RtkStatus.FIX), 0f)
+        assertEquals(0.5f, publisher.fallbackHorizontalAccuracyM(RtkStatus.FLOAT), 0f)
+        assertEquals(1.5f, publisher.fallbackHorizontalAccuracyM(RtkStatus.DGPS), 0f)
+        assertEquals(5.0f, publisher.fallbackHorizontalAccuracyM(RtkStatus.SINGLE), 0f)
+        val loc = publisher.fixToLocation(externalFix(hAccM = null))   // externalFix is RTK FIX
+        assertEquals(0.05f, loc.accuracy, 0f)
+    }
+
+    @Test fun `elapsed realtime is back-dated by a plausible fix age`() {
+        val fixMs = 1_800_000_000_000L
+        val loc = publisher.fixToLocation(externalFix(timeUtc = Instant.ofEpochMilli(fixMs)),
+            nowWallMs = fixMs + 250, nowElapsedNanos = 10_000_000_000L)
+        assertEquals(10_000_000_000L - 250_000_000L, loc.elapsedRealtimeNanos)
+        assertEquals(fixMs, loc.time)
+    }
+
+    @Test fun `implausible fix ages (clock skew) are not back-dated`() {
+        val fixMs = 1_800_000_000_000L
+        val future = publisher.fixToLocation(externalFix(timeUtc = Instant.ofEpochMilli(fixMs)),
+            nowWallMs = fixMs - 500, nowElapsedNanos = 10_000_000_000L)    // device clock behind
+        assertEquals(10_000_000_000L, future.elapsedRealtimeNanos)
+        val old = publisher.fixToLocation(externalFix(timeUtc = Instant.ofEpochMilli(fixMs)),
+            nowWallMs = fixMs + 5_000, nowElapsedNanos = 10_000_000_000L)  // 5 s: skew, not latency
+        assertEquals(10_000_000_000L, old.elapsedRealtimeNanos)
+    }}

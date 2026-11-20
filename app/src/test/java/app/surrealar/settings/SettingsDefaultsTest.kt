@@ -35,7 +35,7 @@ class SettingsDefaultsTest {
     @Test
     fun `grouped AR and display defaults are stable`() {
         assertEquals("STORED", SettingsDefaults.arDisplay.altitudeMode)
-        assertEquals(2.0f, SettingsDefaults.arDisplay.modelScale, 1e-6f)
+        assertEquals(1.0f, SettingsDefaults.arDisplay.modelScale, 1e-6f)   // true scale (was 2.0)
         assertEquals(true, SettingsDefaults.arDisplay.showLabels)
         assertEquals("Point", SettingsDefaults.coordinateDisplay.defaultNamePrefix)
         assertEquals(true, SettingsDefaults.coordinateDisplay.autoIncrementNames)

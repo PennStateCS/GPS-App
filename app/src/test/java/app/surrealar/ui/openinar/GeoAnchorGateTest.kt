@@ -3,6 +3,7 @@ package app.surrealar.ui.openinar
 import app.surrealar.ui.openinar.GeoAnchorGate.Decision
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -60,11 +61,52 @@ class GeoAnchorGateTest {
     }
 
     @Test fun `does not re-anchor when accuracy is not meaningfully better`() {
-        // Halved but only 1.5 m improvement (< 2 m min) → skip.
-        assertFalse(GeoAnchorGate.shouldReanchorOnImprovement(3.0, 1.5, cooldownElapsed = true))
+        // Halved but only 0.25 m improvement (< 0.3 m min) → skip.
+        assertFalse(GeoAnchorGate.shouldReanchorOnImprovement(0.5, 0.25, cooldownElapsed = true))
+    }
+
+    @Test fun `re-anchors on an RTK-scale improvement`() {
+        // 3.0 → 1.5 m used to be ignored (2 m minimum); with RTK that is exactly the gain that matters.
+        assertTrue(GeoAnchorGate.shouldReanchorOnImprovement(3.0, 1.5, cooldownElapsed = true))
     }
 
     @Test fun `does not re-anchor when accuracy got worse`() {
         assertFalse(GeoAnchorGate.shouldReanchorOnImprovement(4.0, 9.0, cooldownElapsed = true))
+    }
+
+    // ── RTK profile ──────────────────────────────────────────────────────────────────────────
+
+    @Test fun `RTK profile only for an external receiver in FIX or FLOAT`() {
+        assertEquals(GeoAnchorGate.Profile.RTK, GeoAnchorGate.profileFor(isExternal = true, rtkFixOrFloat = true))
+        assertEquals(GeoAnchorGate.Profile.STANDARD, GeoAnchorGate.profileFor(isExternal = true, rtkFixOrFloat = false))
+        assertEquals(GeoAnchorGate.Profile.STANDARD, GeoAnchorGate.profileFor(isExternal = false, rtkFixOrFloat = true))
+    }
+
+    @Test fun `RTK profile waits for a 5 degree heading that STANDARD would accept`() {
+        assertEquals(Decision.PLACE_LOCALIZED, GeoAnchorGate.decide(2.0, 10.0, 1_000, GeoAnchorGate.Profile.STANDARD))
+        assertEquals(Decision.WAIT, GeoAnchorGate.decide(2.0, 10.0, 1_000, GeoAnchorGate.Profile.RTK))
+        assertEquals(Decision.PLACE_LOCALIZED, GeoAnchorGate.decide(2.0, 4.0, 1_000, GeoAnchorGate.Profile.RTK))
+    }
+
+    @Test fun `RTK profile waits longer before the timeout fallback`() {
+        assertEquals(Decision.WAIT, GeoAnchorGate.decide(8.0, 20.0, 30_000, GeoAnchorGate.Profile.RTK))
+        assertEquals(Decision.PLACE_TIMEOUT, GeoAnchorGate.decide(8.0, 20.0, 45_000, GeoAnchorGate.Profile.RTK))
+    }
+
+    // ── Heading re-anchor ────────────────────────────────────────────────────────────────────
+
+    @Test fun `re-anchors when heading accuracy halves even if horizontal is unchanged`() {
+        assertEquals(GeoAnchorGate.ReanchorReason.HEADING,
+            GeoAnchorGate.reanchorReason(1.0, 1.0, cooldownElapsed = true, yawAtCreationDeg = 12.0, currentYawDeg = 4.0))
+    }
+
+    @Test fun `small heading gains do not re-anchor`() {
+        assertNull(GeoAnchorGate.reanchorReason(1.0, 1.0, true, yawAtCreationDeg = 3.0, currentYawDeg = 1.5))   // only 1.5°
+        assertNull(GeoAnchorGate.reanchorReason(1.0, 1.0, false, yawAtCreationDeg = 12.0, currentYawDeg = 4.0)) // cooldown
+    }
+
+    @Test fun `expected error is horizontal accuracy plus the heading lever`() {
+        assertEquals(1.0 + 20.0 * kotlin.math.tan(Math.toRadians(5.0)), GeoAnchorGate.expectedErrorM(1.0, 5.0, 20.0)!!, 1e-9)
+        assertNull(GeoAnchorGate.expectedErrorM(Double.NaN, 5.0, 20.0))
     }
 }

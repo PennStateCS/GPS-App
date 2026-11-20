@@ -129,16 +129,23 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.arDistanceFilterIndex,
         local.arShowDebugOverlay,
         local.arShowLabels,
-        combine(local.arShowOffscreenArrows, local.arModelScale, local.arDebugToolsEnabled) { arrows, scale, debug -> Triple(arrows, scale, debug) }
-    ) { altitude, filterIdx, debug, labels, (arrows, scale, debugTools) ->
+        combine(local.arShowOffscreenArrows, local.arModelScale, local.arDebugToolsEnabled, local.arAntennaAboveCameraM) {
+            arrows, scale, debug, antenna -> listOf<Any>(arrows, scale, debug, antenna)
+        }
+    ) { altitude, filterIdx, debug, labels, rest ->
+        val arrows = rest[0] as Boolean
+        val scale = rest[1] as String
+        val debugTools = rest[2] as Boolean
+        val antenna = rest[3] as String
         ArDisplaySettings(
             altitudeMode         = altitude,
             distanceFilterIndex  = filterIdx.coerceIn(0, 3),
             showDebugOverlay     = debug,
             showLabels           = labels,
             showOffscreenArrows  = arrows,
-            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: 2.0f,
-            showArDebugTools     = debugTools
+            modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: ArDisplaySettings().modelScale,
+            showArDebugTools     = debugTools,
+            antennaAboveCameraM  = antenna.toFloatOrNull()?.coerceIn(-3f, 3f) ?: 0f,
         )
     }
 
@@ -150,6 +157,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setArShowOffscreenArrows(settings.showOffscreenArrows)
         local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
         local.setArDebugToolsEnabled(settings.showArDebugTools)
+        local.setArAntennaAboveCameraM(settings.antennaAboveCameraM.coerceIn(-3f, 3f).toString())
     }
 
     // Coordinate display

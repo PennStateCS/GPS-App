@@ -14,7 +14,7 @@ class ArDisplaySettingsTest {
         assertFalse(s.showDebugOverlay)
         assertTrue(s.showLabels)
         assertTrue(s.showOffscreenArrows)
-        assertEquals(2.0f, s.modelScale, 0.0001f)
+        assertEquals(1.0f, s.modelScale, 0.0001f)   // true scale (was 2.0)
     }
 
     // ── Altitude mode ─────────────────────────────────────────────────────────

@@ -63,7 +63,10 @@ object SettingsKeys {
     val AR_SHOW_DEBUG_OVERLAY          = booleanPreferencesKey("ar_show_debug_overlay")
     val AR_SHOW_LABELS                 = booleanPreferencesKey("ar_show_labels")
     val AR_SHOW_OFFSCREEN_ARROWS       = booleanPreferencesKey("ar_show_offscreen_arrows")
-    val AR_MODEL_SCALE                 = stringPreferencesKey("ar_model_scale")
+    // v2: the default changed 2.0 → 1.0 (true scale). A new key so devices that stored the old
+// default ("2.0" — every AR settings save wrote it) start at true scale instead of keeping 2×.
+val AR_MODEL_SCALE                 = stringPreferencesKey("ar_model_scale_v2")
+val AR_ANTENNA_ABOVE_CAMERA_M      = stringPreferencesKey("ar_antenna_above_camera_m")
     val AR_DEBUG_TOOLS_ENABLED         = booleanPreferencesKey("ar_debug_tools_enabled")
 
     // GNSS receiver
@@ -151,6 +154,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val arShowOffscreenArrows:    Flow<Boolean> = dataStore.data.map { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  ?: SettingsDefaults.arDisplay.showOffscreenArrows }
     val arModelScale:             Flow<String>  = dataStore.data.map { it[SettingsKeys.AR_MODEL_SCALE]            ?: SettingsDefaults.arDisplay.modelScale.toString() }
     val arDebugToolsEnabled:      Flow<Boolean> = dataStore.data.map { it[SettingsKeys.AR_DEBUG_TOOLS_ENABLED]   ?: SettingsDefaults.arDisplay.showArDebugTools }
+val arAntennaAboveCameraM:    Flow<String>  = dataStore.data.map { it[SettingsKeys.AR_ANTENNA_ABOVE_CAMERA_M] ?: SettingsDefaults.arDisplay.antennaAboveCameraM.toString() }
 
     // GNSS receiver
     val highAccuracy: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.HIGH_ACCURACY] ?: SettingsDefaults.gnssReceiver.highAccuracy }
@@ -226,6 +230,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     suspend fun setArShowOffscreenArrows(v: Boolean)    { dataStore.edit { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  = v } }
     suspend fun setArModelScale(v: String)              { dataStore.edit { it[SettingsKeys.AR_MODEL_SCALE]            = v } }
     suspend fun setArDebugToolsEnabled(v: Boolean)      { dataStore.edit { it[SettingsKeys.AR_DEBUG_TOOLS_ENABLED]   = v } }
+suspend fun setArAntennaAboveCameraM(v: String)     { dataStore.edit { it[SettingsKeys.AR_ANTENNA_ABOVE_CAMERA_M] = v } }
 
     // GNSS receiver setter
     suspend fun setHighAccuracy(enabled: Boolean) { dataStore.edit { it[SettingsKeys.HIGH_ACCURACY] = enabled } }

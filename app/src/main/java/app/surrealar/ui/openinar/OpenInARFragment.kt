@@ -272,6 +272,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Throttle for the per-frame Earth-accuracy improvement check. GL-thread only. */
     private var lastImprovementCheckMs: Long = 0L
 
+    /** ARCore yaw accuracy (°) when the current anchors were created — for heading re-anchoring. GL thread. */
+    private var earthYawAccAtCreationDeg: Double? = null
+
+    /** Gate profile last used (STANDARD / RTK) — shown in the debug panel and logs. */
+    @Volatile private var currentGateProfile: GeoAnchorGate.Profile = GeoAnchorGate.Profile.STANDARD
+
+    /** Settings → AR Display → Antenna Height Above Tablet (m), for the AR↔GNSS vertical comparison. */
+    @Volatile private var arAntennaAboveCameraM: Double = 0.0
+
+    /** Throttle for the AR_VS_GNSS export log (GL thread). */
+    private var lastArVsGnssLogMs: Long = 0L
+
+    /** AR_SETTINGS is logged once per session (then on change), so every export records scale/offset. */
+    private var loggedArSettings = false
+
     /**
      * Volatile snapshot of the ViewModel's distanceFilterM — updated via StateFlow collection
      * on the main thread, read on the GL thread each frame.
@@ -326,6 +341,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
          * in rapid succession after switching to an external receiver like the RS2+.
          */
         private const val REANCHOR_COOLDOWN_MS = 30_000L
+        /** AR_VS_GNSS export-log cadence. */
+        private const val AR_VS_GNSS_LOG_INTERVAL_MS = 5_000L
     }
 
     /**
@@ -773,6 +790,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         testAnchorController.requestRespawn()
                         _binding?.txtAltitudeMode?.text = if (terrain) "Terrain" else "Stored"
                     }
+                    if (!loggedArSettings || ar.modelScale != arModelScale || ar.antennaAboveCameraM.toDouble() != arAntennaAboveCameraM) {
+                        loggedArSettings = true
+                        // Anything but 1.0 draws every model the wrong size at its coordinates.
+                        val msg = "AR_SETTINGS modelScale=${ar.modelScale}${if (ar.modelScale != 1f) " (NOT true scale)" else ""} " +
+                            "antennaAboveCameraM=${ar.antennaAboveCameraM} altitudeMode=${ar.altitudeMode}"
+                        if (ar.modelScale != 1f) DiagnosticsLogger.w(DIAG, msg) else DiagnosticsLogger.i(DIAG, msg)
+                    }
+                    arAntennaAboveCameraM = ar.antennaAboveCameraM.toDouble()
                     arModelScale = ar.modelScale
                     arShowLabels = ar.showLabels
                     arShowOffscreenArrows = ar.showOffscreenArrows
@@ -1011,7 +1036,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         lastAnchorRtkStatus = null
         lastReanchorTimeMs = 0L
         earthTrackingSinceMs = 0L
-        earthAccuracyAtCreationM = null
+        earthAccuracyAtCreationM = null; earthYawAccAtCreationDeg = null
         awaitingLocalization = false
         loggedLocalizationWait = false
         lastPlacedVia = null
@@ -1261,14 +1286,27 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val arHAcc = camAccPose?.horizontalAccuracy ?: Double.POSITIVE_INFINITY
         val arYawAcc = camAccPose?.orientationYawAccuracy ?: Double.POSITIVE_INFINITY
         val trackingElapsed = System.currentTimeMillis() - earthTrackingSinceMs
-        val gate = GeoAnchorGate.decide(arHAcc, arYawAcc, trackingElapsed)
+        // RTK receiver → position is no longer the limit, heading is: demand ≤5° yaw (and wait longer).
+        val profile = GeoAnchorGate.profileFor(
+            isExternal = gnssFix.provider != app.surrealar.gnss.model.Provider.INTERNAL,
+            rtkFixOrFloat = gnssFix.rtkStatus == app.surrealar.gnss.model.RtkStatus.FIX ||
+                gnssFix.rtkStatus == app.surrealar.gnss.model.RtkStatus.FLOAT,
+        )
+        if (profile != currentGateProfile) {
+            DiagnosticsLogger.i(DIAG, "anchor gate profile ${currentGateProfile} → $profile " +
+                "(maxH=${profile.maxHorizontalM}m maxYaw=${profile.maxYawDeg}° timeout=${profile.timeoutMs}ms " +
+                "fix=${gnssFix.provider}/${gnssFix.rtkStatus})")
+            currentGateProfile = profile
+        }
+        val gate = GeoAnchorGate.decide(arHAcc, arYawAcc, trackingElapsed, profile)
         if (gate == GeoAnchorGate.Decision.WAIT) {
             awaitingLocalization = true
             if (!loggedLocalizationWait) {
                 loggedLocalizationWait = true
-                DiagnosticsLogger.w(DIAG, "anchor waiting reason=\"ar_localizing\" " +
-                    "arHAccM=${"%.1f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} " +
-                    "elapsedMs=$trackingElapsed items=${geoItems.size}")
+                DiagnosticsLogger.w(DIAG, "anchor waiting reason=\"ar_localizing\" profile=$profile " +
+                    "arHAccM=${"%.1f".format(arHAcc)} (max ${profile.maxHorizontalM}) " +
+                    "arYawDeg=${"%.1f".format(arYawAcc)} (max ${profile.maxYawDeg}) " +
+                    "elapsedMs=$trackingElapsed timeoutMs=${profile.timeoutMs} items=${geoItems.size}")
             }
             return
         }
@@ -1276,6 +1314,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         loggedLocalizationWait = false
         // Remember the accuracy we committed at, so a later improvement can trigger a re-anchor.
         earthAccuracyAtCreationM = arHAcc.takeIf { it.isFinite() }
+        earthYawAccAtCreationDeg = arYawAcc.takeIf { it.isFinite() }
+        // Expected sideways error at the farthest model right now (h + d·tan yaw) — the number that
+        // says whether this placement can be trusted at range.
+        // Every anchored point (pins too — a pin placed wrong is as misleading as a model).
+        val farthestM = geoItems.maxOfOrNull { haversineM(gnssFix.latDeg, gnssFix.lonDeg, it.lat, it.lng) }
+        val expErr = farthestM?.let { GeoAnchorGate.expectedErrorM(arHAcc, arYawAcc, it) }
+        DiagnosticsLogger.i(DIAG, "anchor gate passed decision=$gate profile=$profile " +
+            "arHAccM=${"%.2f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} elapsedMs=$trackingElapsed " +
+            "farthestPointM=${farthestM?.let { "%.1f".format(it) } ?: "n/a"} " +
+            "expectedErrAtFarthestM=${expErr?.let { "%.2f".format(it) } ?: "n/a"}")
         val placedVia = if (gate == GeoAnchorGate.Decision.PLACE_TIMEOUT) "timeout" else "localized"
 
         // ── Diagnostics: the exact placement INPUTS (fix + Earth pose + mock/source state) ──────────
@@ -1677,7 +1725,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             lastAnchorRtkStatus = null
             lastReanchorTimeMs = System.currentTimeMillis()
             loggedAccuracyGate = false
-            earthAccuracyAtCreationM = null
+            earthAccuracyAtCreationM = null; earthYawAccAtCreationDeg = null
             ArSessionDiagnostics.reanchorAttempts++
             DiagnosticsLogger.i(DIAG, "Re-anchor (manual) — anchors cleared for rebuild")
         }
@@ -1729,7 +1777,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         lastAnchorRtkStatus = null
                         lastReanchorTimeMs = System.currentTimeMillis()
                         loggedAccuracyGate = false
-                        earthAccuracyAtCreationM = null
+                        earthAccuracyAtCreationM = null; earthYawAccAtCreationDeg = null
                     }
                 }
 
@@ -1740,18 +1788,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val committedAcc = earthAccuracyAtCreationM
                 if (geoAnchorsCreated && committedAcc != null && nowMs - lastImprovementCheckMs >= 2_000L) {
                     lastImprovementCheckMs = nowMs
-                    val curAcc = runCatching { earth.cameraGeospatialPose.horizontalAccuracy }.getOrNull()
+                    val curPose = runCatching { earth.cameraGeospatialPose }.getOrNull()
+                    val curAcc = curPose?.horizontalAccuracy
+                    val curYaw = curPose?.orientationYawAccuracy
                     val cooldownElapsed = nowMs - lastReanchorTimeMs >= REANCHOR_COOLDOWN_MS
-                    if (curAcc != null &&
-                        GeoAnchorGate.shouldReanchorOnImprovement(committedAcc, curAcc, cooldownElapsed)) {
+                    val reason = if (curAcc == null) null else GeoAnchorGate.reanchorReason(
+                        committedAcc, curAcc, cooldownElapsed,
+                        yawAtCreationDeg = earthYawAccAtCreationDeg ?: Double.NaN,
+                        currentYawDeg = curYaw ?: Double.NaN,
+                    )
+                    if (reason != null) {
                         ArSessionDiagnostics.reanchorAttempts++
                         ArSessionDiagnostics.anchorsRebuiltAfterInitial++
-                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) reason=ar_localization_improved " +
-                            "${"%.1f".format(committedAcc)} → ${"%.1f".format(curAcc)} m — clearing ${geoAnchors.size} anchors")
+                        DiagnosticsLogger.i(DIAG, "Re-anchor (auto) reason=ar_localization_improved kind=$reason " +
+                            "H ${"%.2f".format(committedAcc)} → ${curAcc?.let { "%.2f".format(it) }} m, " +
+                            "yaw ${earthYawAccAtCreationDeg?.let { "%.1f".format(it) } ?: "?"} → ${curYaw?.let { "%.1f".format(it) } ?: "?"}° " +
+                            "— clearing ${geoAnchors.size} anchors")
                         for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
                         geoAnchors.clear()
                         geoAnchorsCreated = false
-                        earthAccuracyAtCreationM = null
+                        earthAccuracyAtCreationM = null; earthYawAccAtCreationDeg = null
                         lastReanchorTimeMs = nowMs
                         loggedAccuracyGate = false
                     }
@@ -2001,6 +2057,30 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             )
         }
 
+        // ARCore ↔ GNSS agreement (live AR accuracy). Computed every frame it's possible (cheap), logged
+        // to the export every 5 s so field sessions record how well AR matched the receiver.
+        val feedFix = currentGnssFix
+        val farthestModelM = anchorDebug.filter { it.distM >= 0 }.maxOfOrNull { it.distM }   // pins and models
+        val arVsGnss = if (camGeo != null && feedFix != null) ArVsGnss.compute(
+            arLat = camGeo.latitude, arLon = camGeo.longitude, arAlt = camGeo.altitude,
+            gnssLat = feedFix.latDeg, gnssLon = feedFix.lonDeg, gnssEllipsoidalM = fixEllipsoidalAltM(feedFix),
+            antennaAboveCameraM = arAntennaAboveCameraM,
+            arHAccM = qHAcc, arYawAccDeg = qYaw, farthestModelM = farthestModelM, speedMps = feedFix.speedMps,
+        ) else null
+        val nowLogMs = System.currentTimeMillis()
+        if (arVsGnss != null && nowLogMs - lastArVsGnssLogMs >= AR_VS_GNSS_LOG_INTERVAL_MS) {
+            lastArVsGnssLogMs = nowLogMs
+            DiagnosticsLogger.i(DIAG, "AR_VS_GNSS grade=${arVsGnss.grade} horizM=${"%.2f".format(arVsGnss.horizontalM)} " +
+                "bearingDeg=${"%.0f".format(arVsGnss.bearingDeg)} vertM=${arVsGnss.verticalM?.let { "%+.2f".format(it) } ?: "n/a"} " +
+                "arHAccM=${arVsGnss.arHAccM?.let { "%.2f".format(it) } ?: "n/a"} " +
+                "arYawDeg=${arVsGnss.arYawAccDeg?.let { "%.1f".format(it) } ?: "n/a"} " +
+                "farthestPointM=${farthestModelM?.let { "%.1f".format(it) } ?: "n/a"} " +
+                "expectedErrM=${arVsGnss.expectedErrAtFarthestM?.let { "%.2f".format(it) } ?: "n/a"} " +
+                "fix=${feedFix?.provider}/${feedFix?.rtkStatus} fixHAccM=${feedFix?.hAccM?.let { "%.3f".format(it) } ?: "n/a"} " +
+                "speedMps=${feedFix?.speedMps?.let { "%.2f".format(it) } ?: "n/a"} " +
+                "antennaAboveCameraM=$arAntennaAboveCameraM profile=$currentGateProfile anchors=${geoAnchors.size}")
+        }
+
         // Debug-panel-only ARCore reads (GL thread), skipped while the panel is closed.
         val panelArState: PanelArState? = if (debugOverlayVisible) {
             PanelArState(
@@ -2014,6 +2094,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 testSpawnPending = testAnchorController.isSpawnPending,
                 testGrid = testAnchorController.debugInfo(),
                 optics = optics,
+                arVsGnss = arVsGnss,
             )
         } else null
 
@@ -2079,6 +2160,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val testSpawnPending: Boolean,
         val testGrid: ArDebugReport.TestGridInfo?,
         val optics: ArDebugReport.Optics?,
+        val arVsGnss: ArVsGnss? = null,
     )
 
     private val opticsProj = FloatArray(16)
@@ -2192,6 +2274,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             },
             testSpawnPending  = ar.testSpawnPending,
             testGrid          = ar.testGrid,
+            arVsGnss          = ar.arVsGnss,
+            gateProfile       = currentGateProfile.let { p ->
+                "$p  H≤${"%.0f".format(p.maxHorizontalM)}m yaw≤${"%.0f".format(p.maxYawDeg)}° timeout ${p.timeoutMs / 1000}s"
+            },
             modelsInScene     = renderPoses.count {
                 renderer?.modelLoadState(it.key) == ArFilamentRenderer.ModelLoadState.IN_SCENE
             },

@@ -476,8 +476,9 @@ class ArFilamentRenderer {
                 val bbc = bb.center
                 val bbh = bb.halfExtent
                 val maxHalfExtent = maxOf(bbh[0], bbh[1], bbh[2])
-                // Normalize scale: compress models whose halfExtent implies non-metric units
-                // (e.g. exported in feet, cm, or with absolute coords baked in).
+                // Normalize scale ONLY for implausibly large models (wrong units, e.g. mm, or absolute
+                // projected coordinates baked into the vertices). Real site/building models of a few
+                // hundred metres must stay true scale — the old 50 m threshold shrank them to 1 m.
                 val ns = if (maxHalfExtent > BB_NORMALIZE_THRESHOLD_M)
                     1.0f / (maxHalfExtent * 2f) else 1.0f
                 // Center: pull models whose geometry is far from their local origin back
@@ -554,6 +555,21 @@ class ArFilamentRenderer {
                         Matrix.translateM(trans, 0, nudgeX, nudgeY, nudgeZ)
                         FloatArray(16).also { Matrix.multiplyMM(it, 0, trans, 0, rc, 0) }
                     }
+
+                    // Scale audit: what the model will actually measure in the world. "trueScale" is the
+                    // only correct state for real-world placement; anything else is called out so a
+                    // too-big/too-small model can be traced to its cause from the export alone.
+                    val worldSizeM = maxHalfExtent * 2f * effScale
+                    val scaleCause = when {
+                        ns != 1f -> "unit_normalized(halfExtent=${f(maxHalfExtent)}>${f(BB_NORMALIZE_THRESHOLD_M)})"
+                        pose.coordScale != 1f -> "global_model_scale=${f(pose.coordScale)}"
+                        placement.scale != 1f -> "per_model_scale=${f(placement.scale)}"
+                        else -> "trueScale"
+                    }
+                    val scaleMsg = "MODEL_SCALE model=$fileName coordId=${pose.key} fileSizeM=${f(maxHalfExtent * 2f)} " +
+                        "worldSizeM=${f(worldSizeM)} effScale=${f(effScale)} ns=${"%.6f".format(ns)} " +
+                        "perModel=${f(placement.scale)} global=${f(pose.coordScale)} state=$scaleCause"
+                    if (scaleCause == "trueScale") DiagnosticsLogger.i(DIAG, scaleMsg) else DiagnosticsLogger.w(DIAG, scaleMsg)
 
                     DiagnosticsLogger.i(DIAG, "MODEL_PLACEMENT model=$fileName coordId=${pose.key} origin=$origin " +
                         "anchorPoint=(${f(ap.x)},${f(ap.y)},${f(ap.z)}) " +
@@ -744,11 +760,13 @@ class ArFilamentRenderer {
          */
         private const val MIN_TICKS_BEFORE_SCENE_ADD = 5
         /**
-         * Bounding-box half-extent threshold (metres) above which the model is assumed to be
-         * in non-metric units and is normalised to a 1-metre reference size.
-         * Models like survey pins exported in cm/feet/absolute-coords trigger this.
+         * Bounding-box half-extent threshold (metres) above which the model is assumed to be in
+         * non-metric units (mm/cm) or to carry absolute projected coordinates, and is normalised to a
+         * 1-metre reference size. 2 km (a 4 km model) is far beyond any real site or building, so
+         * true-scale models are never shrunk; the old 50 m threshold shrank anything over 100 m.
+         * Every load logs MODEL_SCALE with the resulting world size and the cause of any non-1 scale.
          */
-        private const val BB_NORMALIZE_THRESHOLD_M = 50.0f
+        private const val BB_NORMALIZE_THRESHOLD_M = 2000.0f
         /**
          * Bounding-box centre threshold (metres) above which the model's geometry is considered
          * offset from its local origin and the centre is snapped to the anchor position.
