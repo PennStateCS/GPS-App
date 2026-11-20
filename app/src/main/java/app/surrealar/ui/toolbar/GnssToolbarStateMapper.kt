@@ -150,7 +150,7 @@ object GnssToolbarStateMapper {
             } else {
                 app.surrealar.coords.CoordinateFormat.horizontal(coords, latLonDecimals = 6)
             }
-            altitudeLabel = coords.vertical.shortLabel.uppercase(Locale.US)
+            altitudeLabel = coords.verticalLabel.uppercase(Locale.US)
             altitudeText = coords.height?.let {
                 String.format(Locale.US, "%,.2f %s", it, coords.unit.suffix)
             } ?: "--"

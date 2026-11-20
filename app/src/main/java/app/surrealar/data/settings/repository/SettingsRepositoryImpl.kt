@@ -176,8 +176,10 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.coordHorizontalSystem, local.coordOutputDatum, local.coordLinearUnit,
         local.coordVerticalReference, local.coordExternalRxDatum,
     ) { h, d, u, v, rx ->
+        val (horizontal, zone) = app.surrealar.settings.model.CoordinateSystemSettings.parseHorizontal(h)
         app.surrealar.settings.model.CoordinateSystemSettings(
-            horizontal = app.surrealar.settings.model.HorizontalSystem.fromPrefKey(h),
+            horizontal = horizontal,
+            spcsZoneEpsg = zone,
             datum = app.surrealar.settings.model.OutputDatum.fromPrefKey(d),
             unit = app.surrealar.settings.model.LinearUnit.fromPrefKey(u),
             vertical = app.surrealar.settings.model.VerticalReference.fromPrefKey(v),
@@ -187,7 +189,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     override suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {
         local.setCoordinateSystem(
-            settings.horizontal.prefKey, settings.datum.prefKey, settings.unit.prefKey,
+            settings.horizontalPrefValue, settings.datum.prefKey, settings.unit.prefKey,
             settings.vertical.prefKey, settings.externalReceiverDatum.prefKey,
         )
     }

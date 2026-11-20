@@ -16,6 +16,29 @@ object StoredDatum {
     const val NAD83_2011_2D = 6318
 
     fun isNad83(epsg: Int?) = epsg == NAD83_2011_3D || epsg == NAD83_2011_2D
+
+    /**
+     * A stored point as WGS84 (ITRF2014) for placement on Google Maps / ARCore Geospatial, which work
+     * in WGS84. Points already in WGS84 come back unchanged (the same instance); NAD83(2011) points
+     * (imports, or captures from before the feed normalised receiver output) are transformed at
+     * their capture epoch. Use for plotting only, not for re-saving over the stored record.
+     */
+    fun toWgs84(c: app.surrealar.domain.model.Coordinate): app.surrealar.domain.model.Coordinate {
+        if (!isNad83(c.crsEpsg)) return c
+        val w = Itrf2014ToNad83.inverse(GeodeticPosition(c.latitude, c.longitude, c.altitude),
+            Itrf2014ToNad83.decimalYear(c.timestamp))
+        return c.copy(latitude = w.latDeg, longitude = w.lonDeg, altitude = w.heightM,
+            crsEpsg = if (c.crsEpsg == NAD83_2011_2D) WGS84_2D else WGS84_3D)
+    }
+
+    /** [toWgs84] for the Room entity (AR loads entities directly). */
+    fun toWgs84(e: app.surrealar.data.local.entity.CoordinateEntity): app.surrealar.data.local.entity.CoordinateEntity {
+        if (!isNad83(e.crsEpsg)) return e
+        val w = Itrf2014ToNad83.inverse(GeodeticPosition(e.latitude, e.longitude, e.altitude),
+            Itrf2014ToNad83.decimalYear(e.timestamp))
+        return e.copy(latitude = w.latDeg, longitude = w.lonDeg, altitude = w.heightM,
+            crsEpsg = if (e.crsEpsg == NAD83_2011_2D) WGS84_2D else WGS84_3D)
+    }
 }
 
 /** A measured position as stored/received, plus what is needed to convert it correctly. */
@@ -43,13 +66,17 @@ data class ConvertedPosition(
     /** Grid coordinates in [unit]; null for GEOGRAPHIC. */
     val easting: Double?,
     val northing: Double?,
-    /** e.g. "PA N (3701)", "UTM 18N"; null for GEOGRAPHIC. */
+    /** e.g. "SPCS 3701", "UTM 18N"; null for GEOGRAPHIC. */
     val zoneLabel: String?,
     val vertical: VerticalReference,
     /** Height in [unit] for [vertical]; null when unavailable (no height, outside GEOID18 grid…). */
     val height: Double?,
     /** Why [height] is null, when it is. */
     val heightUnavailableReason: String? = null,
+    /** State Plane only: the position lies outside the selected zone's area of use (wrong zone?). */
+    val outsideZone: Boolean = false,
+    /** Short height-datum label: "NAVD88" (or PRVD02/VIVD09 from GEOID18 in PR/VI), "Ellip", "MSL". */
+    val verticalLabel: String = vertical.shortLabel,
 )
 
 /**
@@ -70,6 +97,7 @@ class CoordinateConverter(private val geoidN: (latDeg: Double, lonDeg: Double) -
         val unit = s.unit
 
         var easting: Double? = null; var northing: Double? = null; var zone: String? = null
+        var spcsZone: SpcsZone? = null
         when (s.horizontal) {
             HorizontalSystem.GEOGRAPHIC -> Unit
             HorizontalSystem.UTM -> {
@@ -77,13 +105,12 @@ class CoordinateConverter(private val geoidN: (latDeg: Double, lonDeg: Double) -
                 easting = unit.fromMeters(u.easting); northing = unit.fromMeters(u.northing)
                 zone = "UTM ${u.zone}${if (geo.latDeg >= 0) "N" else "S"}"
             }
-            HorizontalSystem.SPCS_PA_NORTH -> {
-                val (e, n) = LambertConformalConic.PA_NORTH.forward(nad.latDeg, nad.lonDeg)
-                easting = unit.fromMeters(e); northing = unit.fromMeters(n); zone = "PA N (3701)"
-            }
-            HorizontalSystem.SPCS_PA_SOUTH -> {
-                val (e, n) = LambertConformalConic.PA_SOUTH.forward(nad.latDeg, nad.lonDeg)
-                easting = unit.fromMeters(e); northing = unit.fromMeters(n); zone = "PA S (3702)"
+            HorizontalSystem.STATE_PLANE -> {
+                val z = SpcsZones.byEpsg(s.spcsZoneEpsg)
+                    ?: SpcsZones.byEpsg(CoordinateSystemSettings.DEFAULT_SPCS_ZONE_EPSG)!!
+                val (e, n) = z.projection.forward(nad.latDeg, nad.lonDeg)
+                easting = unit.fromMeters(e); northing = unit.fromMeters(n); zone = "SPCS ${z.zoneCode}"
+                spcsZone = z
             }
         }
 
@@ -106,6 +133,9 @@ class CoordinateConverter(private val geoidN: (latDeg: Double, lonDeg: Double) -
             easting = easting, northing = northing, zoneLabel = zone,
             vertical = s.vertical, height = heightM?.let { unit.fromMeters(it) },
             heightUnavailableReason = reason,
+            outsideZone = spcsZone?.contains(nad.latDeg, nad.lonDeg) == false,
+            verticalLabel = if (s.vertical == VerticalReference.NAVD88_GEOID18)
+                Geoid18Grid.verticalDatumName(nad.latDeg, nad.lonDeg) else s.vertical.shortLabel,
         )
     }
 }
@@ -128,9 +158,10 @@ object CoordinateFormat {
 
     /** "1,286.74 ftUS NAVD88", or "—" with no height. */
     fun height(p: ConvertedPosition): String =
-        p.height?.let { "${grouped(it, linearDecimals(p.unit))} ${p.unit.suffix} ${p.vertical.shortLabel}" } ?: "—"
+        p.height?.let { "${grouped(it, linearDecimals(p.unit))} ${p.unit.suffix} ${p.verticalLabel}" } ?: "—"
 
-    /** Short system description: "NAD83(2011) · PA N (3701) · ftUS · NAVD88". */
+    /** Short system description: "NAD83(2011) · SPCS 3701 · ftUS · NAVD88" (+ an outside-zone warning). */
     fun systemSummary(p: ConvertedPosition): String =
-        listOfNotNull(p.datum.label, p.zoneLabel, p.unit.suffix, p.vertical.shortLabel).joinToString(" · ")
+        listOfNotNull(p.datum.label, p.zoneLabel, p.unit.suffix, p.verticalLabel,
+            if (p.outsideZone) "outside zone" else null).joinToString(" · ")
 }

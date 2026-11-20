@@ -27,7 +27,8 @@ class ObserveArCoordinateModelsUseCase @Inject constructor(
 ) {
     operator fun invoke(): Flow<List<CoordWithModel>> =
         coordinateDao.observeAll()
-            .map { entities -> prepare(entities, modelDao.getAllModelsList()) }
+            // ARCore Geospatial anchors are WGS84: NAD83(2011)-stored points are converted first.
+            .map { entities -> prepare(entities.map(app.surrealar.coords.StoredDatum::toWgs84), modelDao.getAllModelsList()) }
             // A DB read/query failure here would otherwise propagate through the ViewModel's stateIn
             // and crash the AR screen. Degrade to "no coordinates" and record why, so AR still opens.
             .catch { e ->

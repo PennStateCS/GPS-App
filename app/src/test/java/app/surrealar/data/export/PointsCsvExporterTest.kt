@@ -24,7 +24,7 @@ class PointsCsvExporterTest {
     }
 
     @Test fun `PNEZD in PA North US feet with NAVD88`() {
-        val s = CoordinateSystemSettings(HorizontalSystem.SPCS_PA_NORTH, unit = LinearUnit.US_SURVEY_FEET,
+        val s = CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, unit = LinearUnit.US_SURVEY_FEET,
             vertical = VerticalReference.NAVD88_GEOID18)
         val lines = PointsCsvExporter.build(listOf(point("CP1", "iron pin, found")), convert(s)).trim().lines()
         assertEquals("Point,Northing (ftUS),Easting (ftUS),Elevation (ftUS NAVD88),Description,System", lines[0])

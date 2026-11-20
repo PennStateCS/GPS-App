@@ -1,0 +1,79 @@
+package app.surrealar.coords
+
+import app.surrealar.settings.model.CoordinateSystemSettings
+import app.surrealar.settings.model.HorizontalSystem
+import app.surrealar.settings.model.LinearUnit
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+import kotlin.math.abs
+
+class SpcsZonesTest {
+
+    @Test fun `all 118 official SPCS83 zones are present with unique EPSG codes and zone numbers`() {
+        assertEquals(118, SpcsZones.all.size)
+        assertEquals(118, SpcsZones.all.map { it.epsg }.toSet().size)
+        assertEquals(118, SpcsZones.all.map { it.ngsZone }.toSet().size)
+        assertEquals("Pennsylvania North (3701)", SpcsZones.byEpsg(6562)!!.label)
+        assertEquals("Kentucky North (1601)", SpcsZones.byEpsg(6470)!!.label)
+        assertEquals("Alabama East (0101)", SpcsZones.byEpsg(6355)!!.label)
+    }
+
+    /**
+     * Every zone against PROJ 9.8.1 (pyproj 3.8.0): 9 points spread over each zone's area of use,
+     * NAD83(2011) geographic → zone metres. Covers all three projection methods (LCC 2SP, TM, HOM A).
+     */
+    @Test fun `every zone matches PROJ to a millimetre`() {
+        val lines = File("src/test/resources/coords/spcs83_vectors.csv").readLines().drop(1).filter { it.isNotBlank() }
+        assertEquals(118 * 9, lines.size)
+        var worst = 0.0; var worstAt = ""
+        for (line in lines) {
+            val f = line.split(",")
+            val zone = SpcsZones.byEpsg(f[0].toInt())
+            assertNotNull("zone ${f[0]}", zone)
+            val (e, n) = zone!!.projection.forward(f[1].toDouble(), f[2].toDouble())
+            val err = maxOf(abs(e - f[3].toDouble()), abs(n - f[4].toDouble()))
+            if (err > worst) { worst = err; worstAt = "${zone.label} @ ${f[1]}, ${f[2]}" }
+        }
+        assertTrue("worst error ${"%.4f".format(worst)} m at $worstAt", worst < 0.001)
+    }
+
+    // Areas of use are bounding boxes, so near a state line the suggestion is only a hint (the UI says
+    // so): e.g. Philadelphia falls inside New Jersey's box. Points away from borders are unambiguous.
+    @Test fun `zone suggestion picks the zone covering the point`() {
+        assertEquals(3701, SpcsZone.suggestFor(41.3477, -76.0226)!!.ngsZone)   // Wilkes-Barre
+        assertEquals(3702, SpcsZone.suggestFor(40.2732, -76.8867)!!.ngsZone)   // Harrisburg
+        assertEquals(405, SpcsZone.suggestFor(34.0522, -118.2437)!!.ngsZone)   // Los Angeles → CA 5
+        assertEquals(5200, SpcsZone.suggestFor(18.4655, -66.1057)!!.ngsZone)   // San Juan
+        assertEquals(null, SpcsZone.suggestFor(51.5, -0.1))
+    }
+
+    @Test fun `converter uses the selected zone and flags a point outside it`() {
+        val conv = CoordinateConverter { _, _ -> null }
+        val src = SourcePosition(34.0522, -118.2437, 100.0, null, isNad83 = true, epochYear = 2026.9)
+        val ca5 = SpcsZones.all.first { it.ngsZone == 405 }
+        val ok = conv.convert(src, CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, spcsZoneEpsg = ca5.epsg))
+        val (e, n) = ca5.projection.forward(34.0522, -118.2437)
+        assertEquals(e, ok.easting!!, 1e-9); assertEquals(n, ok.northing!!, 1e-9)
+        assertEquals("SPCS 0405", ok.zoneLabel)
+        assertFalse(ok.outsideZone)
+
+        val wrong = conv.convert(src, CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, spcsZoneEpsg = 6562,
+            unit = LinearUnit.US_SURVEY_FEET))
+        assertTrue(wrong.outsideZone)
+        assertTrue(CoordinateFormat.systemSummary(wrong).endsWith("outside zone"))
+    }
+
+    @Test fun `horizontal setting persists the zone and reads the earlier PA-only values`() {
+        val s = CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, spcsZoneEpsg = 6417)
+        assertEquals("spcs83:6417", s.horizontalPrefValue)
+        assertEquals(HorizontalSystem.STATE_PLANE to 6417, CoordinateSystemSettings.parseHorizontal("spcs83:6417"))
+        assertEquals(HorizontalSystem.STATE_PLANE to 6564, CoordinateSystemSettings.parseHorizontal("spcs83_pa_south"))
+        assertEquals(HorizontalSystem.UTM, CoordinateSystemSettings.parseHorizontal("utm").first)
+        assertEquals(HorizontalSystem.GEOGRAPHIC, CoordinateSystemSettings.parseHorizontal(null).first)
+        assertEquals("utm", CoordinateSystemSettings(HorizontalSystem.UTM).horizontalPrefValue)
+    }
+}

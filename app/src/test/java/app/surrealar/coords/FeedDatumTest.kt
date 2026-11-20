@@ -44,6 +44,20 @@ class FeedDatumTest {
         assertEquals(w.altEllipsoidalM!! - 391.6, w.geoidSeparationM!!, 1e-9)
     }
 
+    @Test fun `stored NAD83 point plots at the same place as the WGS84 feed fix it came from`() {
+        val nadFix = fix(41.3477, -76.0226, 360.0, 391.6)
+        val feed = FeedDatum.nad83ToWgs84(nadFix)
+        val stored = app.surrealar.domain.model.Coordinate(
+            id = "p", name = "p", latitude = 41.3477, longitude = -76.0226, altitude = 360.0,
+            timestamp = nadFix.timeUtc.toEpochMilli(), icon = "", color = 0, crsEpsg = StoredDatum.NAD83_2011_3D)
+        val plotted = StoredDatum.toWgs84(stored)
+        assertEquals(feed.latDeg, plotted.latitude, 1e-12)
+        assertEquals(feed.lonDeg, plotted.longitude, 1e-12)
+        assertEquals(StoredDatum.WGS84_3D, plotted.crsEpsg)
+        val wgs = stored.copy(crsEpsg = StoredDatum.WGS84_3D)
+        assert(StoredDatum.toWgs84(wgs) === wgs) { "WGS84 points are returned unchanged" }
+    }
+
     @Test fun `missing ellipsoidal height stays missing`() {
         val w = FeedDatum.nad83ToWgs84(fix(41.3477, -76.0226, null, 391.6))
         assertNull(w.altEllipsoidalM)

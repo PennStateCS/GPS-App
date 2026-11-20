@@ -593,18 +593,25 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     }
 
     /**
-     * Settings → Coordinates → Coordinate System: five dropdowns (system, datum, units, height,
-     * external receiver datum), each saved immediately, plus a live preview of the current position
-     * in the chosen system. State Plane forces NAD83(2011), so the datum dropdown is disabled then.
+     * Settings → Coordinates → Coordinate System: dropdowns for system, State Plane zone (all 118
+     * SPCS83 zones, filterable), datum, units, height and external receiver datum, each saved
+     * immediately, plus a live preview of the current position in the chosen system. State Plane
+     * forces NAD83(2011), so the datum dropdown is disabled then.
      */
     private fun setupCoordinateSystemCard(view: View) {
-        val m = app.surrealar.settings.model.CoordinateSystemSettings::class
         val spinnerH = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal) ?: return
         val spinnerD = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum)
         val spinnerU = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_unit)
         val spinnerV = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_vertical)
         val spinnerR = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_rx_datum)
         val preview = view.findViewById<android.widget.TextView>(R.id.text_coord_preview)
+        val zoneRow = view.findViewById<View>(R.id.row_coord_spcs_zone)
+        val spinnerZ = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
+        val zoneHint = view.findViewById<android.widget.TextView>(R.id.text_coord_zone_hint)
+        val zones = app.surrealar.coords.SpcsZones.all.sortedBy { it.label }
+        val zoneByLabel = zones.associateBy { it.label }
+        val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter."
+        var suggestedZoneEpsg: Int? = null
 
         val hs = app.surrealar.settings.model.HorizontalSystem.entries
         val ds = app.surrealar.settings.model.OutputDatum.entries
@@ -617,6 +624,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         spinnerU?.setAdapter(adapter(us.map { it.label }))
         spinnerV?.setAdapter(adapter(vs.map { it.label }))
         spinnerR?.setAdapter(adapter(rs.map { it.label }))
+        // Editable so typing filters the 118 zones (ArrayAdapter matches word prefixes: "Tex", "north").
+        spinnerZ?.setAdapter(adapter(zones.map { it.label }))
 
         var current = app.surrealar.settings.model.CoordinateSystemSettings()
 
@@ -636,6 +645,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             spinnerU?.setText(s.unit.label, false)
             spinnerV?.setText(s.vertical.label, false)
             spinnerR?.setText(s.externalReceiverDatum.label, false)
+            val zone = app.surrealar.coords.SpcsZones.byEpsg(s.spcsZoneEpsg)
+            zoneRow?.visibility = if (s.horizontal.isStatePlane) View.VISIBLE else View.GONE
+            if (spinnerZ?.hasFocus() != true) spinnerZ?.setText(zone?.label.orEmpty(), false)
+            // Hint: suggestion notice, or a warning when the live position is outside the chosen zone.
+            val fix = fixSwitchboard.currentFix.value
+            zoneHint?.text = when {
+                zone != null && suggestedZoneEpsg == zone.epsg ->
+                    "Suggested from your position. Check it: zone areas overlap near state lines."
+                zone != null && fix != null && !zone.contains(fix.latDeg, fix.lonDeg) ->
+                    "Your current position is outside this zone."
+                else -> defaultZoneHint
+            }
             // State Plane is defined on NAD83(2011): the datum choice does not apply.
             spinnerD?.isEnabled = !s.horizontal.isStatePlane
             (spinnerD?.parent?.parent as? com.google.android.material.textfield.TextInputLayout)?.alpha =
@@ -651,7 +672,31 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
         }
 
-        spinnerH.setOnItemClickListener { _, _, pos, _ -> hs.getOrNull(pos)?.let { save(current.copy(horizontal = it)) } }
+        spinnerH.setOnItemClickListener { _, _, pos, _ ->
+            val h = hs.getOrNull(pos) ?: return@setOnItemClickListener
+            var next = current.copy(horizontal = h)
+            // Switching to State Plane: if the saved zone doesn't cover the live position, suggest one.
+            val fix = fixSwitchboard.currentFix.value
+            if (h.isStatePlane && fix != null &&
+                app.surrealar.coords.SpcsZones.byEpsg(current.spcsZoneEpsg)?.contains(fix.latDeg, fix.lonDeg) != true
+            ) {
+                app.surrealar.coords.SpcsZone.suggestFor(fix.latDeg, fix.lonDeg)?.let {
+                    next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg
+                }
+            }
+            save(next)
+        }
+        spinnerZ?.setOnItemClickListener { parent, _, pos, _ ->
+            // Positions refer to the FILTERED list: resolve by label, not index.
+            val z = zoneByLabel[parent.getItemAtPosition(pos) as? String] ?: return@setOnItemClickListener
+            suggestedZoneEpsg = null
+            spinnerZ.clearFocus()
+            save(current.copy(spcsZoneEpsg = z.epsg))
+        }
+        // Leaving the field without picking restores the saved zone's name.
+        spinnerZ?.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) spinnerZ.setText(app.surrealar.coords.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
+        }
         spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { save(current.copy(datum = it)) } }
         spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { save(current.copy(unit = it)) } }
         spinnerV?.setOnItemClickListener { _, _, pos, _ -> vs.getOrNull(pos)?.let { save(current.copy(vertical = it)) } }

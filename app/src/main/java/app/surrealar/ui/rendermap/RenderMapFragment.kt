@@ -1164,8 +1164,10 @@ class RenderMapFragment : Fragment() {
         // factory resolves the Hilt factory (this fragment is @AndroidEntryPoint), matching how
         // CoordinatesFragment / CoordinateDetailFragment obtain the same ViewModel.
         val vm = ViewModelProvider(this)[CoordinatesViewModel::class.java]
-        vm.allCoordinates.observe(viewLifecycleOwner) { points ->
+        vm.allCoordinates.observe(viewLifecycleOwner) { stored ->
             if (googleMap == null) return@observe
+            // Google Maps is WGS84: NAD83(2011)-stored points are converted for plotting (no-op for WGS84).
+            val points = stored.map(app.surrealar.coords.StoredDatum::toWgs84)
             try {
                 if (points.isEmpty()) {
                     markerMap.values.forEach { it.remove() }

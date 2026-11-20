@@ -10,6 +10,11 @@ package app.surrealar.settings.model
  */
 data class CoordinateSystemSettings(
     val horizontal: HorizontalSystem = HorizontalSystem.GEOGRAPHIC,
+    /**
+     * SPCS83 zone used when [horizontal] is STATE_PLANE: EPSG code of the zone's NAD83(2011) metre CRS
+     * (see app.surrealar.coords.SpcsZones). Default Pennsylvania North (3701).
+     */
+    val spcsZoneEpsg: Int = DEFAULT_SPCS_ZONE_EPSG,
     /** Datum for Geographic/UTM output. State Plane is always NAD83(2011). */
     val datum: OutputDatum = OutputDatum.WGS84,
     val unit: LinearUnit = LinearUnit.METERS,
@@ -24,13 +29,31 @@ data class CoordinateSystemSettings(
     /** Datum the horizontal output is expressed in (State Plane forces NAD83(2011)). */
     val effectiveDatum: OutputDatum
         get() = if (horizontal.isStatePlane) OutputDatum.NAD83_2011 else datum
+
+    /** Persisted form of the horizontal system: "geographic", "utm", or "spcs83:<zone EPSG>". */
+    val horizontalPrefValue: String
+        get() = if (horizontal == HorizontalSystem.STATE_PLANE) "$SPCS_PREFIX$spcsZoneEpsg" else horizontal.prefKey
+
+    companion object {
+        const val DEFAULT_SPCS_ZONE_EPSG = 6562   // SPCS83 Pennsylvania North (3701)
+        private const val SPCS_PREFIX = "spcs83:"
+
+        /** Inverse of [horizontalPrefValue]; also reads the earlier PA-only values. */
+        fun parseHorizontal(v: String?): Pair<HorizontalSystem, Int> = when {
+            v == null -> HorizontalSystem.GEOGRAPHIC to DEFAULT_SPCS_ZONE_EPSG
+            v.startsWith(SPCS_PREFIX) ->
+                HorizontalSystem.STATE_PLANE to (v.removePrefix(SPCS_PREFIX).toIntOrNull() ?: DEFAULT_SPCS_ZONE_EPSG)
+            v == "spcs83_pa_north" -> HorizontalSystem.STATE_PLANE to 6562
+            v == "spcs83_pa_south" -> HorizontalSystem.STATE_PLANE to 6564
+            else -> HorizontalSystem.fromPrefKey(v) to DEFAULT_SPCS_ZONE_EPSG
+        }
+    }
 }
 
 enum class HorizontalSystem(val prefKey: String, val label: String, val isStatePlane: Boolean = false) {
     GEOGRAPHIC("geographic", "Latitude / Longitude"),
     UTM("utm", "UTM (auto zone)"),
-    SPCS_PA_NORTH("spcs83_pa_north", "State Plane PA North (3701)", isStatePlane = true),
-    SPCS_PA_SOUTH("spcs83_pa_south", "State Plane PA South (3702)", isStatePlane = true);
+    STATE_PLANE("spcs83", "State Plane (SPCS83)", isStatePlane = true);
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: GEOGRAPHIC }
 }
@@ -44,7 +67,7 @@ enum class OutputDatum(val prefKey: String, val label: String) {
 
 enum class LinearUnit(val prefKey: String, val label: String, val metersPerUnit: Double, val suffix: String) {
     METERS("m", "Meters", 1.0, "m"),
-    /** 1200/3937 m — the legal unit for Pennsylvania SPCS83 coordinates. */
+    /** 1200/3937 m — the legal SPCS83 unit in Pennsylvania and many other states. */
     US_SURVEY_FEET("ftus", "US survey feet", 1200.0 / 3937.0, "ftUS"),
     INTERNATIONAL_FEET("ft", "International feet", 0.3048, "ft");
 

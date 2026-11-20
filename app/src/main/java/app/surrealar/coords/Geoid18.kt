@@ -2,55 +2,110 @@ package app.surrealar.coords
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.Inflater
 import kotlin.math.floor
 
 /**
- * NGS GEOID18 grid (NAVD88 = NAD83(2011) ellipsoid height − N). Reads the NGS ".bin" layout in its
- * big-endian ("unix") form: a 44-byte header — south latitude, west longitude (0–360 °E), latitude
- * spacing, longitude spacing (real*8), rows, columns, kind (int*4) — then rows of real*4 values from
- * south to north, each row west to east.
+ * NGS GEOID18 (orthometric height = NAD83(2011) ellipsoid height − N): NAVD88 in CONUS, PRVD02 in
+ * Puerto Rico, VIVD09 in the US Virgin Islands. Alaska, Hawaii and the Pacific territories are not
+ * covered by GEOID18 (they use GEOID12B) and return null.
  *
- * The app bundles a Pennsylvania subgrid (39–43 °N, 81.5–74 °W) cut from NGS g2018u0.bin
- * (Format_unix, unaffected by the 2019 little-endian/ASCII distribution error). Values are
- * bilinearly interpolated; spot checks match NGS's own geoid service to < 1 cm.
+ * The bundled asset packs the two NGS GEOID18 grids — g2018u0 (CONUS, 24–58 °N, 130–60 °W) and
+ * g2018p0 (PR/VI, 15–21 °N, 69–64 °W), both 1′ and taken from the Format_unix (big-endian) files —
+ * into 1°×1° tiles of integer millimetres, zlib-compressed (5 MB instead of 34 MB). Tiles are
+ * inflated on first use and cached. Rounding to mm adds ≤ 0.5 mm; interpolation is bilinear, as in
+ * NGS's own tools. Format: see scripts/pack_geoid.py ("SRGT" v1).
  *
- * @return N in metres, or null outside the grid.
+ * Thread-safe: tile decoding is synchronised; decoded tiles are immutable.
  */
-class Geoid18Grid(bytes: ByteArray) {
-    private val south: Double
-    private val westE: Double
-    private val dLat: Double
-    private val dLon: Double
-    private val rows: Int
-    private val cols: Int
-    private val data: FloatArray
+class Geoid18Grid(private val bytes: ByteArray) {
+
+    private class Region(
+        val south: Double, val westE: Double, val dLat: Double, val dLon: Double,
+        val rows: Int, val cols: Int, val tileCells: Int, val tileRows: Int, val tileCols: Int,
+        val offsets: IntArray, val lengths: IntArray,
+    ) {
+        val tiles = arrayOfNulls<IntArray>(tileRows * tileCols)
+    }
+
+    private val regions: List<Region>
 
     init {
         val b = ByteBuffer.wrap(bytes).order(ByteOrder.BIG_ENDIAN)
-        south = b.double; westE = b.double; dLat = b.double; dLon = b.double
-        rows = b.int; cols = b.int
-        val kind = b.int
-        require(kind == 1) { "GEOID18: expected real*4 grid (kind=1), got $kind" }
-        require(bytes.size == HEADER_BYTES + 4 * rows * cols) { "GEOID18: size ${bytes.size} != header-declared grid" }
-        data = FloatArray(rows * cols) { b.float }
+        val magic = ByteArray(4).also { b.get(it) }
+        require(String(magic, Charsets.US_ASCII) == "SRGT") { "GEOID18: not an SRGT tile file" }
+        val version = b.int
+        require(version == 1) { "GEOID18: unsupported tile format v$version" }
+        regions = List(b.int) {
+            val south = b.double; val westE = b.double; val dLat = b.double; val dLon = b.double
+            val rows = b.int; val cols = b.int; val t = b.int; val tr = b.int; val tc = b.int
+            val off = IntArray(tr * tc); val len = IntArray(tr * tc)
+            for (i in 0 until tr * tc) { off[i] = b.int; len[i] = b.int }
+            Region(south, westE, dLat, dLon, rows, cols, t, tr, tc, off, len)
+        }
     }
 
+    /** N in metres at the point, or null outside GEOID18 coverage. */
     fun undulation(latDeg: Double, lonDeg: Double): Double? {
         val lonE = if (lonDeg < 0) lonDeg + 360 else lonDeg
-        val fr = (latDeg - south) / dLat
-        val fc = (lonE - westE) / dLon
-        if (fr < 0 || fc < 0 || fr > rows - 1 || fc > cols - 1) return null
-        val r = floor(fr).toInt().coerceAtMost(rows - 2)
-        val c = floor(fc).toInt().coerceAtMost(cols - 2)
-        val tr = fr - r; val tc = fc - c
-        fun v(rr: Int, cc: Int) = data[rr * cols + cc].toDouble()
-        val sw = v(r, c); val se = v(r, c + 1); val nw = v(r + 1, c); val ne = v(r + 1, c + 1)
-        if (listOf(sw, se, nw, ne).any { it.isNaN() || it < -999 }) return null   // NGS no-data marker
-        return (sw * (1 - tc) + se * tc) * (1 - tr) + (nw * (1 - tc) + ne * tc) * tr
+        for (r in regions) {
+            val fr = (latDeg - r.south) / r.dLat
+            val fc = (lonE - r.westE) / r.dLon
+            if (fr < 0 || fc < 0 || fr > r.rows - 1 || fc > r.cols - 1) continue
+            val row = floor(fr).toInt().coerceAtMost(r.rows - 2)
+            val col = floor(fc).toInt().coerceAtMost(r.cols - 2)
+            val tr = row / r.tileCells; val tc = col / r.tileCells
+            val tile = tile(r, tr * r.tileCols + tc)
+            val i = row - tr * r.tileCells; val j = col - tc * r.tileCells
+            val w = r.tileCells + 1
+            fun v(ii: Int, jj: Int) = tile[ii * w + jj] / 1000.0
+            val t = fr - row; val u = fc - col
+            val sw = v(i, j); val se = v(i, j + 1); val nw = v(i + 1, j); val ne = v(i + 1, j + 1)
+            return (sw * (1 - u) + se * u) * (1 - t) + (nw * (1 - u) + ne * u) * t
+        }
+        return null
+    }
+
+    @Synchronized
+    private fun tile(r: Region, index: Int): IntArray {
+        r.tiles[index]?.let { return it }
+        val w = r.tileCells + 1
+        val raw = ByteArray(4 + 2 * w * w)
+        val inflater = Inflater()
+        try {
+            inflater.setInput(bytes, r.offsets[index], r.lengths[index])
+            var n = 0
+            while (n < raw.size) {
+                val k = inflater.inflate(raw, n, raw.size - n)
+                if (k == 0 && (inflater.finished() || inflater.needsInput())) break
+                n += k
+            }
+            check(n == raw.size) { "GEOID18: tile $index truncated ($n of ${raw.size} bytes)" }
+        } finally { inflater.end() }
+        val b = ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN)
+        val base = b.int
+        val v = IntArray(w * w)
+        for (i in 0 until w) for (j in 0 until w) {
+            val pred = when {
+                i == 0 && j == 0 -> base
+                i == 0 -> v[j - 1]
+                j == 0 -> v[(i - 1) * w]
+                else -> v[i * w + j - 1] + v[(i - 1) * w + j] - v[(i - 1) * w + j - 1]
+            }
+            v[i * w + j] = pred + b.short
+        }
+        r.tiles[index] = v
+        return v
     }
 
     companion object {
-        const val HEADER_BYTES = 44
-        const val ASSET_PATH = "geoid/geoid18_pa.bin"
+        const val ASSET_PATH = "geoid/geoid18.srgt"
+
+        /** Name of the orthometric datum GEOID18 yields at a point (labels only). */
+        fun verticalDatumName(latDeg: Double, lonDeg: Double): String = when {
+            latDeg >= 24.0 -> "NAVD88"
+            lonDeg >= -65.15 -> "VIVD09"   // St Thomas / St John / St Croix lie east of Culebra
+            else -> "PRVD02"
+        }
     }
 }

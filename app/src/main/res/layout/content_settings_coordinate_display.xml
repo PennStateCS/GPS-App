@@ -104,6 +104,59 @@
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
+                <!-- State Plane zone (shown only for State Plane); type to filter, e.g. "Tex" -->
+                <LinearLayout
+                    android:id="@+id/row_coord_spcs_zone"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="@dimen/settings_content_row_padding_v"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="State Plane Zone"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:id="@+id/text_coord_zone_hint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="All 118 SPCS83 zones. Type a state name to filter."
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                        android:layout_width="280dp"
+                        android:layout_height="wrap_content"
+                        android:hint="Zone">
+
+                        <AutoCompleteTextView
+                            android:id="@+id/spinner_coord_spcs_zone"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:completionThreshold="1"
+                            android:imeOptions="actionDone"
+                            android:inputType="textNoSuggestions"
+                            android:singleLine="true"
+                            android:popupBackground="@drawable/bg_dropdown_menu" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
@@ -190,7 +243,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Units for grid coordinates and heights. Pennsylvania State Plane is legally defined in US survey feet."
+                            android:text="Units for grid coordinates and heights. Check your state's legal SPCS83 unit: most use US survey feet (Pennsylvania does); some use international feet or meters."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -243,7 +296,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="NAVD88 uses the GEOID18 model (bundled for Pennsylvania). Receiver MSL is the height the receiver reports."
+                            android:text="NAVD88 uses the bundled GEOID18 model (lower 48 states; PRVD02/VIVD09 in Puerto Rico and the Virgin Islands; not Alaska or Hawaii). Receiver MSL is the height the receiver reports."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
