@@ -29,6 +29,8 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
         private const val KEY_PROVIDER = "provider"
         private const val KEY_MODEL_ID = "model_id"
         private const val KEY_TIMESTAMP= "timestamp"
+        private const val KEY_POS_TEXT = "pos_text"
+        private const val KEY_HGT_TEXT = "hgt_text"
 
         fun show(
             fm: FragmentManager,
@@ -40,7 +42,10 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
             rtkStatus: String?,
             provider: String,
             modelId: String?,
-            timestamp: Long
+            timestamp: Long,
+            /** Position/height already formatted in the user's coordinate system (Settings → Coordinates). */
+            positionText: String? = null,
+            heightText: String? = null,
         ) {
             // Dismiss any existing instance before showing a new one
             (fm.findFragmentByTag(TAG) as? PinInspectBottomSheet)?.dismiss()
@@ -56,6 +61,8 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
                     putString(KEY_PROVIDER, provider)
                     putString(KEY_MODEL_ID, modelId ?: "")
                     putLong(KEY_TIMESTAMP, timestamp)
+                    putString(KEY_POS_TEXT, positionText)
+                    putString(KEY_HGT_TEXT, heightText)
                 }
             }.show(fm, TAG)
         }
@@ -88,10 +95,11 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
         view.findViewById<TextView>(R.id.pinTimestamp).text = dateStr
 
         view.findViewById<TextView>(R.id.pinLatLon).text =
-            "%.6f,  %.6f".format(lat, lon)
+            arguments?.getString(KEY_POS_TEXT) ?: "%.7f,  %.7f".format(Locale.US, lat, lon)
 
         view.findViewById<TextView>(R.id.pinAlt).text =
-            "Altitude:  %.3f m (ellipsoidal)".format(alt)
+            arguments?.getString(KEY_HGT_TEXT)?.let { "Height:  $it" }
+                ?: "Altitude:  %.3f m (ellipsoidal)".format(Locale.US, alt)
 
         view.findViewById<TextView>(R.id.pinAccuracy).text =
             if (hAcc != null) "H. Accuracy:  ±%.2f m".format(hAcc) else "H. Accuracy:  —"

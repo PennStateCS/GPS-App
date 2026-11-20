@@ -755,12 +755,8 @@ class RenderMapFragment : Fragment() {
             // Distance + bearing use the EXISTING haversine/great-circle helpers — unchanged math.
             val distance = calculateDistance(currentPos, target)
             val bearing = calculateBearing(currentPos, target)
-            val distanceText = when {
-                distance < 1.0  -> String.format(Locale.getDefault(), "%.2f m", distance)
-                distance < 10.0 -> String.format(Locale.getDefault(), "%.1f m", distance)
-                else            -> String.format(Locale.getDefault(), "%.0f m", distance)
-            }
-            txtStakeoutDistance?.text = distanceText
+            // Distance in the units chosen under Settings → Coordinates.
+            txtStakeoutDistance?.text = coordinateSystemService.distanceText(distance)
             // Bearing shown with an 8-point compass label, e.g. "NE 42°".
             txtStakeoutBearing?.text =
                 String.format(Locale.getDefault(), "%s %.0f°", compassPoint(bearing), bearing)
@@ -773,10 +769,10 @@ class RenderMapFragment : Fragment() {
             txtStakeoutDistance?.setTextColor(color)
             txtStakeoutBearing?.setTextColor(color)
 
-            // Display-only north/east offsets (metres).
+            // Display-only north/east offsets (true north, local tangent plane) in the chosen units.
             val (dN, dE) = northEastDeltaMeters(currentPos, target)
             txtStakeoutDelta?.text =
-                String.format(Locale.getDefault(), "ΔN %+.2f m    ΔE %+.2f m", dN, dE)
+                "ΔN ${coordinateSystemService.deltaText(dN, 2)}    ΔE ${coordinateSystemService.deltaText(dE, 2)}"
 
             // State line: within tolerance vs. which way to move.
             txtStakeoutStatus?.text =
@@ -864,8 +860,7 @@ class RenderMapFragment : Fragment() {
         btnStakeoutGuidance?.text = "Stop Guidance"
         imgStakeoutArrow?.visibility = View.VISIBLE
         txtStakeoutTolerance?.visibility = View.VISIBLE
-        txtStakeoutTolerance?.text =
-            String.format(Locale.getDefault(), "Tolerance: %.2f m", stakeoutSettings.toleranceMeters)
+        txtStakeoutTolerance?.text = "Tolerance: " + coordinateSystemService.lengthText(stakeoutSettings.toleranceMeters, 2)
         syncCompass()
         if (stakeoutSettings.enableAudio) ensureToneGenerator()
         if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
@@ -916,8 +911,7 @@ class RenderMapFragment : Fragment() {
         syncCompass()
         if (!stakeoutSettings.enableAudio) releaseToneGenerator()
         setKeepScreenOn(stakeoutSettings.keepScreenOnDuringStakeout)
-        txtStakeoutTolerance?.text =
-            String.format(Locale.getDefault(), "Tolerance: %.2f m", stakeoutSettings.toleranceMeters)
+        txtStakeoutTolerance?.text = "Tolerance: " + coordinateSystemService.lengthText(stakeoutSettings.toleranceMeters, 2)
     }
 
     /** Pause feedback (audio/screen/ticker) but keep the active target — for backgrounding. Compass
@@ -1695,8 +1689,9 @@ class RenderMapFragment : Fragment() {
     private fun showSelectedCoordinateCard(coord: Coordinate) {
         selectedCoordinateCard?.visibility = View.VISIBLE
         txtSelectedName?.text = coord.name.ifBlank { "—" }
-        txtSelectedCoords?.text = String.format(Locale.US, "%.6f, %.6f", coord.latitude, coord.longitude)
-        txtSelectedElevation?.text = String.format(Locale.getDefault(), "Elev: %.2f m", coord.altitude)
+        // Position and height in the system chosen under Settings → Coordinates.
+        txtSelectedCoords?.text = coordinateSystemService.positionText(coord, latLonDecimals = 7)
+        txtSelectedElevation?.text = "Elev: " + coordinateSystemService.heightText(coord)
         loadCoordinateIconIntoView(coord, imgSelectedIcon)
 
         // Live relationship (distance + bearing from the current position) — uses the existing map
@@ -1729,7 +1724,10 @@ class RenderMapFragment : Fragment() {
             if (sourceText != null || accText != null) View.VISIBLE else View.GONE
     }
 
-    private fun formatDistanceMeters(d: Double): String = when {
+    private fun formatDistanceMeters(d: Double): String = coordinateSystemService.distanceText(d)
+
+    @Suppress("unused")
+    private fun formatDistanceMetersLegacy(d: Double): String = when {
         d < 1.0  -> String.format(Locale.getDefault(), "%.2f m", d)
         d < 10.0 -> String.format(Locale.getDefault(), "%.1f m", d)
         else     -> String.format(Locale.getDefault(), "%.0f m", d)
@@ -1765,7 +1763,7 @@ class RenderMapFragment : Fragment() {
      */
     private fun buildRowMeta(p: Coordinate): String {
         val parts = mutableListOf<String>()
-        parts += String.format(Locale.getDefault(), "Elev %.1f m", p.altitude)
+        parts += "Elev " + coordinateSystemService.heightText(p)
         p.rtkStatus?.takeIf { it.isNotBlank() }?.let { parts += friendlyFix(it) }
         friendlySource(p.provider)?.let { parts += it }
         if (p.hasLinkedModel) parts += "Model"
@@ -2152,7 +2150,8 @@ class RenderMapFragment : Fragment() {
                 coordinateSystemService.convertCoordinate(coord, coordSystemSettings)
                     .let { p -> p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } }
             }.getOrNull() else null
-            val text = PointLabel.labelText(pointLabelMode, coord.name, coord.altitude, dist, elevText) ?: continue
+            val text = PointLabel.labelText(pointLabelMode, coord.name, coord.altitude, dist, elevText,
+                distanceText = dist?.let { coordinateSystemService.distanceText(it) }) ?: continue
             val descriptor = buildLabelDescriptor(text, cache = !distanceMode) ?: continue
             val pos = LatLng(coord.latitude, coord.longitude)
             val existing = labelMarkers[id]
@@ -2238,16 +2237,26 @@ class RenderMapFragment : Fragment() {
             val coordinate = coordinateId?.let { coordinateMap[it] }
             @Suppress("InflateParams")
             val view = layoutInflater.inflate(R.layout.custom_info_window, null)
+            // Non-point markers without a title are the live position dot.
             view.findViewById<TextView>(R.id.info_window_title).text =
-                coordinate?.name ?: marker.title ?: "Unknown"
+                coordinate?.name ?: marker.title ?: "Current position"
             view.findViewById<TextView>(R.id.info_window_content).text = buildString {
                 if (coordinate != null) {
-                    append("Lat: ${String.format(Locale.getDefault(), "%.6f", coordinate.latitude)}\n")
-                    append("Lon: ${String.format(Locale.getDefault(), "%.6f", coordinate.longitude)}")
-                    append("\nElevation: ${String.format(Locale.getDefault(), "%.2f", coordinate.altitude)}m")
+                    append(coordinateSystemService.positionText(coordinate, latLonDecimals = 7))
+                    append("\nElevation: ${coordinateSystemService.heightText(coordinate)}")
                     if (!coordinate.note.isNullOrBlank()) append("\n${coordinate.note}")
                 } else {
-                    append("Position: ${marker.position.latitude}, ${marker.position.longitude}")
+                    // Live position (or another non-point marker): in the chosen system, not raw doubles.
+                    val fix = fixSwitchboard.currentFix.value
+                    val p = runCatching {
+                        if (fix != null) coordinateSystemService.convertFix(fix, coordSystemSettings) else null
+                    }.getOrNull()
+                    if (p != null && marker.title == null) {
+                        append(app.surrealar.coords.CoordinateFormat.horizontal(p, latLonDecimals = 7))
+                        append("\nElevation: ${app.surrealar.coords.CoordinateFormat.height(p)}")
+                    } else {
+                        append(String.format(Locale.US, "%.7f, %.7f", marker.position.latitude, marker.position.longitude))
+                    }
                 }
             }
             view

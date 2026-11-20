@@ -66,6 +66,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Inject GNSS switchboard for current GPS location
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
+    @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
 
     /** Read-only access to the selected GNSS source and mock-location setting for AR diagnostics. */
     @Inject
@@ -1845,7 +1846,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
 
             val bearing = bearingDeg(userLat, userLon, coord.latitude, coord.longitude)
-            val subtext = "${formatDist(distM)} ${bearingToCompass(bearing)}"
+            val subtext = "${coordinateSystemService.distanceText(distM)} ${bearingToCompass(bearing)}"   // units per Settings → Coordinates
 
             val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
             val screenProj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
@@ -2389,6 +2390,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     if (dx * dx + dy * dy <= threshSq) {
                         // CoordWithModel is embedded in PinScreenEntry — no geoAnchors access needed
                         val coord = hit.coordWithModel.coordinate
+                        // Position/height in the user's coordinate system (AR coordinates are WGS84).
+                        val p = runCatching {
+                            coordinateSystemService.convertWgs84(coord.latitude, coord.longitude, coord.altitude, coord.timestamp)
+                        }.getOrNull()
                         // Touch listeners always run on the main thread — no runOnUiThread needed.
                         PinInspectBottomSheet.show(
                             childFragmentManager,
@@ -2400,7 +2405,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             rtkStatus = coord.rtkStatus?.name,
                             provider  = coord.provider.name,
                             modelId   = hit.coordWithModel.modelId,
-                            timestamp = coord.timestamp
+                            timestamp = coord.timestamp,
+                            positionText = p?.let { app.surrealar.coords.CoordinateFormat.horizontal(it, latLonDecimals = 7) },
+                            heightText   = p?.let { app.surrealar.coords.CoordinateFormat.height(it) },
                         )
                         v.performClick()
                         return@setOnTouchListener true

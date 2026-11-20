@@ -79,7 +79,14 @@ class EditCoordinateDialogFragment(
         val iconButton = view.findViewById<MaterialButton>(R.id.button_icon)
         // Read-only saved-location summary (this dialog does not edit position).
         val locationText = view.findViewById<TextView>(R.id.text_location)
-        locationText.text = CoordinateDetailFormatter.locationSummary(coordinate)
+        // In the system chosen under Settings → Coordinates (falls back to stored lat/lon).
+        locationText.text = runCatching {
+            val svc = app.surrealar.coords.CoordinateSystemService.from(requireContext())
+            val p = svc.convert(coordinate)
+            "${app.surrealar.coords.CoordinateFormat.horizontal(p, latLonDecimals = 7)}\n" +
+                "Height: ${app.surrealar.coords.CoordinateFormat.height(p)}\n" +
+                app.surrealar.coords.CoordinateFormat.systemSummary(p)
+        }.getOrElse { CoordinateDetailFormatter.locationSummary(coordinate) }
 
         editTextRef = nameEdit
         iconButtonRef = iconButton
@@ -281,7 +288,9 @@ class EditCoordinateDialogFragment(
         modelName: String?,
         thumbnailPath: String?
     ) {
-        val altStr = embedded.altitudeMeters?.let { String.format(Locale.US, "%.2f m", it) } ?: "—"
+        val altStr = embedded.altitudeMeters?.let {
+            app.surrealar.coords.CoordinateSystemService.from(requireContext()).lengthText(it, 2)
+        } ?: "—"
         val confidenceNote = when (embedded.confidence) {
             ModelLocationConfidence.HIGH   -> ""
             ModelLocationConfidence.MEDIUM -> "\n(Confidence: medium)"

@@ -48,6 +48,8 @@ object PointLabel {
         distanceMeters: Double?,
         /** Pre-formatted elevation in the user's height reference/units ("1,286.74 ftUS NAVD88"); wins over [elevationMeters]. */
         elevationText: String? = null,
+        /** Pre-formatted distance in the user's units ("13.7 ftUS"); wins over [distanceMeters]'s metre format. */
+        distanceText: String? = null,
     ): String? {
         val displayName = name.ifBlank { FALLBACK_NAME }
         return when (mode) {
@@ -59,7 +61,7 @@ object PointLabel {
                 else -> displayName
             }
             PointLabelMode.DISTANCE ->
-                if (distanceMeters != null) "$displayName\n${formatDistance(distanceMeters)}" else displayName
+                if (distanceMeters != null) "$displayName\n${distanceText ?: formatDistance(distanceMeters)}" else displayName
         }
     }
 

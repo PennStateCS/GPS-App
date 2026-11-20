@@ -164,4 +164,46 @@ object CoordinateFormat {
     fun systemSummary(p: ConvertedPosition): String =
         listOfNotNull(p.datum.label, p.zoneLabel, p.unit.suffix, p.verticalLabel,
             if (p.outsideZone) "outside zone" else null).joinToString(" · ")
+
+    /** Copyable text: "N 435037.47, E 2442754.19 ftUS (NAD83(2011) SPCS 3701)" or "lat, lon". No grouping commas. */
+    fun copyText(p: ConvertedPosition): String =
+        if (p.easting == null || p.northing == null)
+            String.format(Locale.US, "%.8f, %.8f", p.latDeg, p.lonDeg)
+        else {
+            val d = linearDecimals(p.unit)
+            String.format(Locale.US, "N %.${d}f, E %.${d}f %s (%s %s)", p.northing, p.easting, p.unit.suffix,
+                p.datum.label, p.zoneLabel.orEmpty()).trimEnd()
+        }
+
+    /** A length in [unit] with a fixed precision: "12.346 m", "40.50 ftUS". */
+    fun length(meters: Double, unit: LinearUnit, decimals: Int = linearDecimals(unit)): String =
+        "${grouped(unit.fromMeters(meters), decimals)} ${unit.suffix}"
+
+    /** Signed length ("+0.42 ftUS", "−1.250 m") for stakeout deltas. */
+    fun delta(meters: Double, unit: LinearUnit, decimals: Int = linearDecimals(unit)): String {
+        val v = unit.fromMeters(meters)
+        val s = String.format(Locale.US, "%.${decimals}f", kotlin.math.abs(v))
+        return (if (v < 0 && s.any { it in '1'..'9' }) "−" else "+") + s + " " + unit.suffix
+    }
+
+    /**
+     * A distance with precision that falls off with size (walking/stakeout readouts). Metres:
+     * "0.42 m", "4.2 m", "42 m", "1.2 km". Feet: "1.37 ftUS", "13.7 ftUS", "137 ftUS", "1.20 mi"
+     * (statute mile beyond 5,280 ft).
+     */
+    fun distance(meters: Double, unit: LinearUnit): String {
+        if (unit == LinearUnit.METERS) return when {
+            meters < 1.0 -> String.format(Locale.US, "%.2f m", meters)
+            meters < 10.0 -> String.format(Locale.US, "%.1f m", meters)
+            meters < 1000.0 -> String.format(Locale.US, "%.0f m", meters)
+            else -> String.format(Locale.US, "%.1f km", meters / 1000.0)
+        }
+        val ft = unit.fromMeters(meters)
+        return when {
+            ft < 10.0 -> String.format(Locale.US, "%.2f %s", ft, unit.suffix)
+            ft < 100.0 -> String.format(Locale.US, "%.1f %s", ft, unit.suffix)
+            ft < 5280.0 -> String.format(Locale.US, "%,.0f %s", ft, unit.suffix)
+            else -> String.format(Locale.US, "%.2f mi", meters / 1609.344)
+        }
+    }
 }

@@ -153,7 +153,7 @@ class CoordinateDetailFragment : Fragment() {
     private var btnCopyUtm: View? = null
     /** Resolved (zone, easting, northing) for the current coordinate — stored values or a UTM
      *  derivation from lat/lon. Non-null only when all three are available, gating Copy UTM. */
-    private var copyableUtm: Triple<String, Double, Double>? = null
+
 
     // Capture quality note
     private var textCaptureQualityNote: TextView? = null
@@ -244,20 +244,25 @@ class CoordinateDetailFragment : Fragment() {
 
         btnCopyLatLng?.setOnClickListener {
             lastCoordinate?.let { c ->
-                val text = "${fmt6(c.latitude)}, ${fmt6(c.longitude)}"
+                // Latitude/longitude in the output datum chosen under Settings → Coordinates.
+                val p = runCatching { coordinateSystemService.convertCoordinate(c, coordSystemSettings) }.getOrNull()
+                val text = if (p != null) String.format(Locale.US, "%.8f, %.8f", p.latDeg, p.lonDeg)
+                           else "${fmt6(c.latitude)}, ${fmt6(c.longitude)}"
                 val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("Lat/Lon", text))
-                Toast.makeText(requireContext(), "Coordinates copied", Toast.LENGTH_SHORT).show()
+                Toast.makeText(requireContext(), "Lat/Lon copied${p?.let { " (${it.datum.label})" } ?: ""}", Toast.LENGTH_SHORT).show()
             }
         }
 
         btnCopyUtm?.setOnClickListener {
-            // Copies the resolved UTM (stored or derived) shown in the Projected coordinates section.
-            copyableUtm?.let { (zone, e, n) ->
-                val text = "$zone ${String.format(Locale.US, "%.3f", e)} ${String.format(Locale.US, "%.3f", n)}"
+            // Copies the grid position (UTM or State Plane) in the configured system and units.
+            lastCoordinate?.let { c ->
+                val text = runCatching {
+                    app.surrealar.coords.CoordinateFormat.copyText(coordinateSystemService.convertCoordinate(c, coordSystemSettings))
+                }.getOrNull() ?: return@let
                 val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                cm.setPrimaryClip(ClipData.newPlainText("UTM", text))
-                Toast.makeText(requireContext(), "UTM coordinates copied", Toast.LENGTH_SHORT).show()
+                cm.setPrimaryClip(ClipData.newPlainText("Grid coordinates", text))
+                Toast.makeText(requireContext(), "Grid coordinates copied", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -275,7 +280,13 @@ class CoordinateDetailFragment : Fragment() {
 
         v.findViewById<View>(R.id.btn_copy_coordinates)?.setOnClickListener {
             lastCoordinate?.let { c ->
-                val text = "${fmt6(c.latitude)}, ${fmt6(c.longitude)}"
+                // Position in the configured system plus height, e.g.
+                // "N 435037.47, E 2442754.19 ftUS (NAD83(2011) SPCS 3701), 1286.74 ftUS NAVD88".
+                val text = runCatching {
+                    val p = coordinateSystemService.convertCoordinate(c, coordSystemSettings)
+                    app.surrealar.coords.CoordinateFormat.copyText(p) +
+                        (p.height?.let { ", " + app.surrealar.coords.CoordinateFormat.height(p).replace(",", "") } ?: "")
+                }.getOrElse { "${fmt6(c.latitude)}, ${fmt6(c.longitude)}" }
                 val cm = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 cm.setPrimaryClip(ClipData.newPlainText("Coordinates", text))
                 Toast.makeText(requireContext(), "Coordinates copied", Toast.LENGTH_SHORT).show()
@@ -579,15 +590,9 @@ class CoordinateDetailFragment : Fragment() {
         container?.removeAllViews()
         container?.visibility = View.VISIBLE
 
-        // Resolve the projected position: prefer stored fields, fall back to deriving UTM from
-        // lat/lon with the app's existing UtmConverter (display fallback — no EPSG is invented).
-        // Per-field fallback so partially-stored data still fills in cleanly.
-        val derived = if (c.latitude.isFinite() && c.longitude.isFinite() && c.latitude in -80.0..84.0)
-            runCatching { UtmConverter.latLonToUtm(c.latitude, c.longitude) }.getOrNull() else null
-        val utmZone  = c.utmZone?.takeIf { it.isNotBlank() } ?: derived?.utmZone
-        val easting  = c.easting  ?: derived?.easting
-        val northing = c.northing ?: derived?.northing
         val naText = "Not available"
+        val unit = coordSystemSettings.unit
+        fun len(m: Double, d: Int) = app.surrealar.coords.CoordinateFormat.length(m, unit, d)
 
         // The point in the user's coordinate system (Settings → Coordinates): datum, grid or
         // geographic position, and height in the chosen reference and units.
@@ -605,29 +610,19 @@ class CoordinateDetailFragment : Fragment() {
             renderPlainFieldRow(container, rows)
         }
 
-        // Keep the visible Location card focused on values users act on. Latitude/longitude are
-        // already WGS84 geographic coordinates in this app, so the repeated "Geographic position"
-        // row adds noise here. Preserve CRS details in export/diagnostics/advanced views, but make
-        // the main card show the projected position compactly as plain label/value fields.
-        if (utmZone != null || easting != null || northing != null) {
-            renderPlainFieldRow(container, listOf(
-                DetailRow("Projected position", utmZone?.let { "UTM Zone $it" } ?: naText),
-                DetailRow("Easting", easting?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
-                DetailRow("Northing", northing?.let { String.format(Locale.US, "%.3f m", it) } ?: naText),
-            ))
-        }
+        // The separate UTM rows were removed: the rows above show the point in the system chosen
+        // under Settings → Coordinates (UTM included), so the card never shows two disagreeing grids.
+        // The grid copy button copies that grid; it is hidden for latitude/longitude output.
+        btnCopyUtm?.visibility =
+            if (coordSystemSettings.horizontal == app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC) View.GONE else View.VISIBLE
+        (btnCopyUtm as? TextView)?.text = if (coordSystemSettings.horizontal.isStatePlane) "Copy N/E" else "Copy UTM"
 
-        // Copy UTM is enabled only when a full, copyable UTM triple is available.
-        copyableUtm = if (utmZone != null && easting != null && northing != null)
-            Triple(utmZone, easting, northing) else null
-        btnCopyUtm?.visibility = if (copyableUtm != null) View.VISIBLE else View.GONE
-
-        // Altitude details are supporting values. Keep them compact and only show them when present.
+        // Altitude details are supporting values (in the chosen units). Only shown when present.
         val altRows = mutableListOf<DetailRow>()
-        c.altitudeMsl?.let { altRows += DetailRow("Altitude (MSL)", fmtM2(it)) }
-        c.geoidSeparationM?.let { altRows += DetailRow("Geoid separation", fmtM3(it)) }
+        c.altitudeMsl?.let { altRows += DetailRow("Receiver MSL height", len(it, 2)) }
+        c.geoidSeparationM?.let { altRows += DetailRow("Receiver geoid separation", len(it, 3)) }
         // Antenna/pole offset applied at capture — shown so the user can see what it was set to.
-        c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", fmtM2(it)) }
+        c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", len(it, 3)) }
         if (altRows.isNotEmpty()) {
             renderStackedColumns(container, altRows)
         }
@@ -790,7 +785,8 @@ class CoordinateDetailFragment : Fragment() {
         val tiles = listOf(
             DetailRow("Latitude ($stored)", "${fmt6(c.latitude)}°"),
             DetailRow("Longitude ($stored)", "${fmt6(c.longitude)}°"),
-            DetailRow("Ellipsoidal height", fmtM2(c.altitude)),
+            DetailRow("Ellipsoidal height ($stored)",
+                app.surrealar.coords.CoordinateFormat.length(c.altitude, coordSystemSettings.unit, 2)),
         )
         tiles.forEach { t ->
             val tile = inflater.inflate(R.layout.item_gnss_stat_tile, container, false)
@@ -1041,7 +1037,7 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     private fun showModelLocationDialog(embedded: EmbeddedModelLocation, modelId: String) {
-        val altStr = embedded.altitudeMeters?.let { String.format(Locale.US, "%.2f m", it) } ?: "—"
+        val altStr = embedded.altitudeMeters?.let { coordinateSystemService.lengthText(it, 2) } ?: "—"
         val confidenceNote = when (embedded.confidence) {
             ModelLocationConfidence.HIGH   -> ""
             ModelLocationConfidence.MEDIUM -> "\n(Confidence: medium)"

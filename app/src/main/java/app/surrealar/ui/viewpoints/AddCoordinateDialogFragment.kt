@@ -808,7 +808,7 @@ class AddCoordinateDialogFragment(
         modelName: String?,
         thumbnailPath: String?
     ) {
-        val altStr = embedded.altitudeMeters?.let { String.format(Locale.US, "%.2f m", it) } ?: "—"
+        val altStr = embedded.altitudeMeters?.let { coordinateSystemService.lengthText(it, 2) } ?: "—"
         val confidenceNote = when (embedded.confidence) {
             ModelLocationConfidence.HIGH   -> ""
             ModelLocationConfidence.MEDIUM -> "\n(Confidence: medium)"
@@ -831,9 +831,12 @@ class AddCoordinateDialogFragment(
                 altitude = embedded.altitudeMeters ?: altitude
                 providerStr = "model"
                 captureMethodStr = CaptureMethod.MODEL_EMBEDDED.storageValue
-                locationText?.text = String.format(
-                    Locale.US, "From model: %.6f, %.6f, %.2fm", latitude, longitude, altitude
-                )
+                // Model files carry WGS84; shown in the user's system and height reference.
+                locationText?.text = runCatching {
+                    val p = coordinateSystemService.convertWgs84(latitude, longitude, altitude, System.currentTimeMillis())
+                    "From model: ${app.surrealar.coords.CoordinateFormat.horizontal(p, latLonDecimals = 7)} · " +
+                        app.surrealar.coords.CoordinateFormat.height(p)
+                }.getOrElse { String.format(Locale.US, "From model: %.7f, %.7f, %.2f m", latitude, longitude, altitude) }
                 // Internal mode: the model's location replaces the averaged capture — stop the
                 // session, show the chosen location, and allow Save.
                 if (!isExternalMode) {
