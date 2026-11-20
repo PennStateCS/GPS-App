@@ -107,6 +107,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
 
     // Repositories — injected via Hilt (domain interfaces), no longer constructed from AppDatabase.
     @Inject lateinit var coordinateRepository: CoordinateRepository
+    @Inject lateinit var lastKnownPositionStore: app.surrealar.gnss.lastknown.LastKnownPositionStore
     @Inject lateinit var modelRepository: ModelRepository
     @Inject lateinit var settingsRepo: SettingsRepository
 
@@ -212,9 +213,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         .collect { (fix, source) ->
                             // No live position from the GNSS feed (acquiring, signal lost, source
                             // switch): hide the dot instead of leaving it frozen where it last was.
-                            if (fix == null) { setLiveDotVisible(false); return@collect }
+                            if (fix == null) {
+                                setLiveDotVisible(false); showGnssWaitingIfNoLiveFix(); return@collect
+                            }
                             if (!fixMatchesSource(source, fix)) {
-                                setLiveDotVisible(false); logMapIgnore("wrong-provider"); return@collect
+                                setLiveDotVisible(false); showGnssWaitingIfNoLiveFix()
+                                logMapIgnore("wrong-provider"); return@collect
                             }
                             if (isFixStale(fix)) { logMapIgnore("stale"); return@collect }
                             if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
@@ -567,6 +571,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
                 val locationForDot = fixToLocation(fix)
                 setLiveDotVisible(true)
+                showGnssStatusChip(null)   // live position: no waiting chip
                 onLocationChangedListener?.onLocationChanged(locationForDot)
 
                 // Log RTK status transitions (not every fix)
@@ -606,6 +611,93 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "updateMapLocation failed", e)
+        }
+    }
+
+    /**
+     * Positions the camera before the first live fix. The camera is moved instantly (no animation)
+     * so the map never visibly starts somewhere unrelated; the first live fix then animates to the
+     * user as before ([hasCenteredCamera] stays false for non-live choices).
+     */
+    private fun applyInitialCamera(map: GoogleMap) {
+        val live = fixSwitchboard.currentFix.value
+            ?.takeIf { it.latDeg in -90.0..90.0 && it.lonDeg in -180.0..180.0 }
+            ?.let { it.latDeg to it.lonDeg }
+        val lastKnown = runCatching { lastKnownPositionStore.get() }.getOrNull()
+        // Saved points are only needed when there is neither a live fix nor a last position.
+        if (live != null || lastKnown != null) {
+            moveToInitial(map, HomeInitialCamera.choose(live, lastKnown, emptyList()))
+            return
+        }
+        moveToInitial(map, HomeInitialCamera.Overview)   // instant placeholder while points load
+        viewLifecycleOwner.lifecycleScope.launch {
+            val points = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    coordinateRepository.getAllCoordinatesList().map { it.latitude to it.longitude }
+                }
+            }.getOrDefault(emptyList())
+            // A live fix may have arrived meanwhile — don't pull the camera away from it.
+            if (!hasCenteredCamera && googleMap === map) {
+                moveToInitial(map, HomeInitialCamera.choose(null, null, points))
+            }
+        }
+    }
+
+    private fun moveToInitial(map: GoogleMap, choice: HomeInitialCamera) {
+        try {
+            when (choice) {
+                is HomeInitialCamera.Live -> {
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(choice.lat, choice.lon), desiredFollowZoom))
+                    hasCenteredCamera = true
+                    lastCameraLocation = LatLng(choice.lat, choice.lon)
+                    lastCameraMoveMs = System.currentTimeMillis()
+                }
+                is HomeInitialCamera.LastKnown ->
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(choice.lat, choice.lon), desiredFollowZoom))
+                is HomeInitialCamera.SavedPoints -> {
+                    if (choice.points.size == 1) {
+                        val (lat, lon) = choice.points.first()
+                        map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(lat, lon), 16f))
+                    } else {
+                        val bounds = com.google.android.gms.maps.model.LatLngBounds.builder().apply {
+                            choice.points.forEach { (lat, lon) -> include(LatLng(lat, lon)) }
+                        }.build()
+                        // newLatLngBounds(bounds, w, h, padding) works before the map is laid out.
+                        val w = mapView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+                        val h = mapView.height.takeIf { it > 0 } ?: (220 * resources.displayMetrics.density).toInt()
+                        map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, w, h, (32 * resources.displayMetrics.density).toInt()))
+                    }
+                }
+                HomeInitialCamera.Overview ->
+                    map.moveCamera(CameraUpdateFactory.newLatLngZoom(
+                        LatLng(HomeInitialCamera.Overview.LAT, HomeInitialCamera.Overview.LON), HomeInitialCamera.Overview.ZOOM))
+            }
+            showGnssStatusChip(choice.waitingText)
+            DiagnosticsLogger.i("HomeMap", "Initial camera: ${choice::class.simpleName}")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "applyInitialCamera failed", e)
+        }
+    }
+
+    /**
+     * No live fix from the selected source (acquiring, signal lost, source switch): say so on the map.
+     * Keeps the more specific "Last known position" text if the camera is still parked there.
+     */
+    private fun showGnssWaitingIfNoLiveFix() {
+        if (googleMap == null) return
+        val chip = _binding?.chipMapGnssStatus ?: return
+        if (chip.visibility == View.VISIBLE && !hasCenteredCamera) return
+        showGnssStatusChip(if (hasCenteredCamera) "GNSS signal lost · waiting…" else "Waiting for GNSS…")
+    }
+
+    /** Shows [text] on the map's GNSS status chip, or hides it when null. */
+    private fun showGnssStatusChip(text: String?) {
+        val chip = _binding?.chipMapGnssStatus ?: return
+        if (text == null) {
+            chip.visibility = View.GONE
+        } else {
+            chip.text = text
+            chip.visibility = View.VISIBLE
         }
     }
 
@@ -670,10 +762,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             android.util.Log.d(TAG, "onMapReady: mapType=${map.mapType} nightMode=$nightMode, applying theme")
             MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
-            // Set default camera position (will be overridden when fix arrives)
-            val defaultLocation = LatLng(40.7963, -77.8570)
-            map.moveCamera(CameraUpdateFactory.newLatLngZoom(defaultLocation, 15f))
-            android.util.Log.d(TAG, "onMapReady: default camera set at Penn State zoom=15")
+            // Opening camera (replaces the old hardcoded campus position): live fix → last GNSS
+            // position → saved points → regional overview. See HomeInitialCamera.
+            applyInitialCamera(map)
 
             // Log when tiles finish loading — a very short elapsed time (<100ms) means tiles
             // came back empty/gray rather than being fetched from the network.

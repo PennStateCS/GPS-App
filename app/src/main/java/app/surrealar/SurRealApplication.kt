@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.first
 @InstallIn(SingletonComponent::class)
 interface SurRealApplicationEntryPoint {
     fun fixSwitchboard(): FixSwitchboard
+    fun lastKnownPositionStore(): app.surrealar.gnss.lastknown.LastKnownPositionStore
     fun sourceSettings(): app.surrealar.gnss.source.SourceSettings
     fun gnssSourceCoordinator(): app.surrealar.gnss.source.GnssSourceCoordinator
     /** The external TCP NMEA source (for reading its fuser's diagnostics stats). */
@@ -226,6 +227,13 @@ class SurRealApplication : Application() {
             mockLocationPublisher.start(appScope)
         } catch (e: Exception) {
             Log.e("SurRealApplication", "Failed to start mock location publisher", e)
+        }
+        // Remember the last GNSS position so the Home map can open there while waiting for a fix.
+        try {
+            val entryPoint = EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
+            entryPoint.lastKnownPositionStore().start(appScope, entryPoint.fixSwitchboard())
+        } catch (e: Exception) {
+            Log.e("SurRealApplication", "Failed to start last-known position store", e)
         }
     }
 
