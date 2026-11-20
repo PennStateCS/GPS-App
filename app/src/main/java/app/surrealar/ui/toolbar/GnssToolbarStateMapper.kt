@@ -34,6 +34,25 @@ object GnssToolbarStateMapper {
 
     private val uereTable = UereTable()
 
+    /**
+     * Accuracy colour. External receivers are graded for survey work (RTK: green ≤ 0.30 m, amber
+     * ≤ 1 m). Internal phone/tablet GNSS can never reach that, so grading it the same way made it
+     * permanently red; it gets phone-scale thresholds instead (green ≤ 5 m, amber ≤ 15 m).
+     */
+    internal fun accuracyLevel(hAccM: Double, isInternal: Boolean): GnssStatusLevel =
+        if (isInternal) when {
+            hAccM <= INTERNAL_GOOD_M -> GnssStatusLevel.SUCCESS
+            hAccM <= INTERNAL_FAIR_M -> GnssStatusLevel.WARNING
+            else                     -> GnssStatusLevel.ERROR
+        } else when {
+            hAccM <= 0.30 -> GnssStatusLevel.SUCCESS
+            hAccM <= 1.0  -> GnssStatusLevel.WARNING
+            else          -> GnssStatusLevel.ERROR
+        }
+
+    internal const val INTERNAL_GOOD_M = 5.0
+    internal const val INTERNAL_FAIR_M = 15.0
+
     fun fixMatchesSource(source: LocationSourceType, fix: Fix): Boolean =
         if (source == LocationSourceType.INTERNAL) fix.provider == Provider.INTERNAL
         else fix.provider != Provider.INTERNAL
@@ -110,12 +129,7 @@ object GnssToolbarStateMapper {
         val accuracyLevel: GnssStatusLevel
         if (hAcc != null && hAcc in 0.0..9999.0) {
             accuracyText = (if (estimated) "~" else "") + GnssStatusFormatter.formatAccuracyMeters(hAcc)
-            accuracyLevel = when {
-                hAcc <= 0.05 -> GnssStatusLevel.SUCCESS
-                hAcc <= 0.30 -> GnssStatusLevel.SUCCESS
-                hAcc <= 1.0  -> GnssStatusLevel.WARNING
-                else         -> GnssStatusLevel.ERROR
-            }
+            accuracyLevel = accuracyLevel(hAcc, isInternal = selectedSource == LocationSourceType.INTERNAL)
         } else {
             accuracyText = null
             accuracyLevel = GnssStatusLevel.NONE

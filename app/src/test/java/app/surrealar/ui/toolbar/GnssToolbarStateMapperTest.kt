@@ -180,6 +180,16 @@ class GnssToolbarStateMapperTest {
         assertEquals("--", s.latLonText)
     }
 
+    // internal GNSS is graded on a phone scale; external stays survey-graded
+    @Test fun `accuracy colour uses phone thresholds for internal and survey thresholds for external`() {
+        assertEquals(GnssStatusLevel.SUCCESS, GnssToolbarStateMapper.accuracyLevel(3.0, isInternal = true))
+        assertEquals(GnssStatusLevel.WARNING, GnssToolbarStateMapper.accuracyLevel(10.9, isInternal = true))
+        assertEquals(GnssStatusLevel.ERROR, GnssToolbarStateMapper.accuracyLevel(20.0, isInternal = true))
+        assertEquals(GnssStatusLevel.SUCCESS, GnssToolbarStateMapper.accuracyLevel(0.02, isInternal = false))
+        assertEquals(GnssStatusLevel.WARNING, GnssToolbarStateMapper.accuracyLevel(0.5, isInternal = false))
+        assertEquals(GnssStatusLevel.ERROR, GnssToolbarStateMapper.accuracyLevel(3.0, isInternal = false))
+    }
+
     // accuracy falls back to a DOP × UERE estimate, marked "~", when the receiver reports none
     @Test fun `estimated accuracy is shown with tilde when not reported`() {
         val f = fix(Provider.INTERNAL, RtkStatus.SINGLE, hAccM = null).copy(hDop = 1.0)

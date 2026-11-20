@@ -47,7 +47,7 @@ class HomeFieldStatusMapperTest {
         assertEquals(State.WAITING, s.state)
         assertEquals(Severity.NEUTRAL, s.severity)
         assertEquals(Action.OPEN_MAP, s.actionDestination)
-        assertEquals("Android device location", s.receiverDetail)
+        assertEquals("Tablet GNSS receiver", s.receiverDetail)
         assertEquals(listOf("No fix"), chipLabels(s))
     }
 
@@ -73,7 +73,7 @@ class HomeFieldStatusMapperTest {
         )
         assertEquals(State.INTERNAL_GPS, s.state)
         assertEquals("Internal · GPS · H ±3.40 m", s.primaryDetail) // no V for internal
-        assertEquals("Android device location", s.receiverDetail)
+        assertEquals("Tablet GNSS receiver", s.receiverDetail)
         // Sats matches the toolbar: visible unknown → "used/used".
         assertEquals(listOf("Sats 12/12", "Device GPS"), chipLabels(s))
     }

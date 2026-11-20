@@ -24,7 +24,9 @@ import kotlin.math.max
 class SatelliteInventory(
     private val halfLifeSeconds: Double = 10.0,
     private val evictionSeconds: Double = 30.0,
-    private val nowSeconds: () -> Double = { System.nanoTime() / 1e9 }
+    private val nowSeconds: () -> Double = { System.nanoTime() / 1e9 },
+    /** Label for debug-build tracing ("internal" / "external"). */
+    private val debugName: String = "sky"
 ) {
     /** Namespaced key to avoid SVID collisions across constellations (GPS and GLONASS can share numbers). */
     private data class SatId(val c: Constellation, val svid: Int)
@@ -69,10 +71,14 @@ class SatelliteInventory(
 
         // Evict satellites that have not been seen recently
         val cutoff = t - evictionSeconds
+        val beforeEvict = geometryBySat.size
         val evictedSnr = snrBySat.entries.removeIf { (_, v) -> v.second < cutoff }
         val evictedGeom = geometryBySat.entries.removeIf { (_, g) -> g.lastSeen < cutoff }
         if (evictedSnr || evictedGeom) {
             android.util.Log.d("SatelliteInventory", "Evicted stale satellites (older than ${evictionSeconds}s)")
+            app.surrealar.gnss.debug.GnssDebugLog.every("sky.evict.$debugName", "sky") {
+                "$debugName evicted ${beforeEvict - geometryBySat.size} satellite(s) not seen for ${evictionSeconds}s"
+            }
         }
 
         // Rebuild per-constellation tallies from the current geometry map
@@ -84,6 +90,13 @@ class SatelliteInventory(
             if (g.usedInFix) {
                 usedByConstellation[g.id.c] = (usedByConstellation[g.id.c] ?: 0) + 1
             }
+        }
+
+        app.surrealar.gnss.debug.GnssDebugLog.every("sky.summary.$debugName", "sky") {
+            val staleSec = geometryBySat.values.count { t - it.lastSeen > 5.0 }
+            "$debugName visible=${geometryBySat.size} used=${geometryBySat.values.count { it.usedInFix }} " +
+                "visibleBy=$visibleByConstellation usedBy=$usedByConstellation " +
+                "(last msg ${gsv.constellation}: ${gsv.entries.size} sats; $staleSec held from >5 s ago)"
         }
 
         // Build the SatInfo list for the SkySnapshot

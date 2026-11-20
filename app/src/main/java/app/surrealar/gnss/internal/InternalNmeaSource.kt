@@ -114,7 +114,17 @@ class InternalNmeaSource(
     @Volatile private var lastPlatformLocation: PlatformLocation? = null
 
     /** Fills fields the NMEA lacked from the same epoch's platform Location (see [PlatformFallback.enrich]). */
-    private fun fillEllipsoidalHeight(fix: Fix): Fix = PlatformFallback.enrich(fix, lastPlatformLocation)
+    private fun fillEllipsoidalHeight(fix: Fix): Fix {
+        val out = PlatformFallback.enrich(fix, lastPlatformLocation)
+        if (out !== fix) app.surrealar.gnss.debug.GnssDebugLog.every("internal.enrich", "internal") {
+            "same-epoch fill from platform Location: " +
+                (if (fix.hAccM == null && out.hAccM != null) "hAcc=${out.hAccM} " else "") +
+                (if (fix.vAccM == null && out.vAccM != null) "vAcc=${out.vAccM} " else "") +
+                (if (fix.altEllipsoidalM == null && out.altEllipsoidalM != null)
+                    "ellH=${out.altEllipsoidalM} (msl=${fix.altMslM} → N=${out.geoidSeparationM})" else "")
+        }
+        return out
+    }
 
     private fun onPlatformLocation(loc: Location) {
         // Never feed our own mock publisher's output (external fixes injected into GPS_PROVIDER)
@@ -140,6 +150,10 @@ class InternalNmeaSource(
             DiagnosticsLogger.w("SOURCE", "internal GPS: no NMEA fixes from this device — using platform Location fallback")
         }
         val fix = PlatformFallback.toFix(snapshot, platformSatsUsed, platformSatsVisible)
+        app.surrealar.gnss.debug.GnssDebugLog.every("internal.fallbackFix", "internal") {
+            "platform-Location fallback fix (NMEA silent): lat=${fix.latDeg} lon=${fix.lonDeg} " +
+                "ellH=${fix.altEllipsoidalM} msl=${fix.altMslM} hAcc=${fix.hAccM} sats=${fix.satsUsed}/${fix.satsVisible}"
+        }
         if (!firstFixLogged) {
             firstFixLogged = true
             DiagnosticsLogger.i("SOURCE", "internal GPS: first fix received (platform fallback, sats=${fix.satsUsed})")
@@ -276,6 +290,7 @@ class InternalNmeaSource(
             // Diagnostics records the raw receiver stream before fusion.
             diagnostics?.recordLine(message)
             fuser.accept(message)
+            debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
         }
 
         try {
@@ -341,6 +356,9 @@ class InternalNmeaSource(
     /** Measurements themselves are unused; the registration is what keeps tracking at full duty. */
     private val fullTrackingCallback = object : android.location.GnssMeasurementsEvent.Callback() {}
     private var fullTrackingRegistered = false
+
+    /** Debug builds: periodic raw-sentence samples with Android's own satellite counts (logcat only). */
+    private val debugSampler = app.surrealar.gnss.debug.NmeaDebugSampler("nmea-int")
 
     private fun unregisterGnssStatus() {
         if (gnssStatusRegistered) runCatching { lm.unregisterGnssStatusCallback(gnssStatusCallback) }

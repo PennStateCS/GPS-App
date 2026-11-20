@@ -88,6 +88,9 @@ class TcpNmeaSource(
         onGsv    = { gsv -> _gsv.tryEmit(gsv) }
     )
 
+    /** Debug builds: periodic raw-sentence samples from the receiver (logcat only). Reader thread only. */
+    private val debugSampler = app.surrealar.gnss.debug.NmeaDebugSampler("nmea-ext")
+
     private var connectionJob: Job? = null
     /** Open socket, so [stop] can close it and unblock a pending readLine() immediately. */
     @Volatile private var activeSocket: Socket? = null
@@ -186,6 +189,7 @@ class TcpNmeaSource(
                         diagnostics?.recordLine(clean)
                         _rawNmea.tryEmit(Unit)
                         fuser.accept(clean)
+                        debugSampler.accept(clean) { "$host:$port" }
                     }
                 } catch (_: SocketTimeoutException) {
                     if (!coroutineContext.isActive) break

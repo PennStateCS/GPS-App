@@ -49,7 +49,7 @@ object HomeFieldStatusMapper {
         val headline: String,
         /** Always present. e.g. "RS2+ · Float · H ±0.04 m · V ±0.06 m". */
         val primaryDetail: String,
-        /** Always present. e.g. "Reach6 · 192.168.2.174:9000" or "Android device location". */
+        /** Always present. e.g. "Reach6 · 192.168.2.174:9000" or "Tablet GNSS receiver". */
         val receiverDetail: String,
         /** Ordered compact chips; never empty (a placeholder/"No fix" chip is used when bare). */
         val chips: List<Chip>,
@@ -148,7 +148,8 @@ object HomeFieldStatusMapper {
     }
 
     private fun buildReceiverDetail(i: Inputs): String {
-        if (i.isInternal) return "Android device location"
+        // The tablet's own GNSS chip, read directly through the GNSS feed (not Android location services).
+        if (i.isInternal) return "Tablet GNSS receiver"
         val name = i.receiverName?.takeIf { it.isNotBlank() }
         val addr = i.connectionAddress?.takeIf { it.isNotBlank() }
         return when {

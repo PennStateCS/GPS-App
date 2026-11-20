@@ -400,7 +400,13 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 nmeaParseErrors = diag.totalParseErrors,
                 hasRecentFix = hasRecentFix,
             )
-        )
+        ).also { status ->
+            app.surrealar.gnss.debug.GnssDebugLog.every("home.fieldStatus", "toolbar") {
+                "Home Field Status: '${status.headline}' / '${status.primaryDetail}' / '${status.receiverDetail}' " +
+                    "chips=${status.chips.map { it.label }} | sky=${sky.totalUsed}/${sky.totalVisible} " +
+                    "nmea=${"%.1f".format(diag.linesPerSecond)}/s errors=${diag.totalParseErrors}"
+            }
+        }
     }
 
     private fun renderFieldStatus(

@@ -143,6 +143,9 @@ class ExternalAdapter(
                 waitForFirstDataOrTimeout()
                 _connectionState.value = ConnectionState.CONNECTED
                 DiagnosticsLogger.i("Receiver", "External receiver connected (attempt #$attempts)")
+                app.surrealar.gnss.debug.GnssDebugLog.event("external") {
+                    "CONNECTED after $attempts attempt(s); fuser stats ${nmea.nmeaTimingStats()}"
+                }
                 attempts = 0 // reset after a successful connect
 
                 monitorConnectionHealth()
@@ -155,7 +158,14 @@ class ExternalAdapter(
                 _connectionState.value = ConnectionState.ERROR
                 stopInternalJobs()
                 if (!coroutineContext.isActive) break
-                delay(calculateBackoffDelay(attempts))
+                val backoff = calculateBackoffDelay(attempts)
+                app.surrealar.gnss.debug.GnssDebugLog.event("external") {
+                    "attempt #$attempts failed (${e.javaClass.simpleName}: ${e.message}); " +
+                        "connectionActive=${nmea.isConnectionActive()} firstData=$firstDataArrived " +
+                        "lastDataAgo=${if (lastDataTimeMs == 0L) "-" else "${System.currentTimeMillis() - lastDataTimeMs}ms"} " +
+                        "retry in ${backoff}ms"
+                }
+                delay(backoff)
             }
         }
     }

@@ -147,7 +147,8 @@ object GnssModule {
     @Singleton
     @InternalSatellites
     fun provideInternalSatelliteInventory(): SatelliteInventory = SatelliteInventory(
-        evictionSeconds = 60.0  // Increased from default 30s to prevent premature eviction of sparse GLONASS updates
+        evictionSeconds = 60.0,  // Increased from default 30s to prevent premature eviction of sparse GLONASS updates
+        debugName = "internal"
     )
 
     /**
@@ -158,7 +159,8 @@ object GnssModule {
     @Singleton
     @ExternalSatellites
     fun provideExternalSatelliteInventory(): SatelliteInventory = SatelliteInventory(
-        evictionSeconds = 60.0
+        evictionSeconds = 60.0,
+        debugName = "external"
     )
 
     @Provides

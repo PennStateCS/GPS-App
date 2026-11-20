@@ -348,7 +348,12 @@ class NmeaFuser(
         // Quality 0 = "fix not valid". Some chipsets keep repeating the last coordinates with
         // quality 0 after losing lock; publishing those would show (and let users capture) a frozen
         // position as if it were live. A blank quality field is still accepted (tolerant parsing).
-        if (gga.fixQuality == 0) return
+        if (gga.fixQuality == 0) {
+            app.surrealar.gnss.debug.GnssDebugLog.every("fuser.q0.$provider", "fuser") {
+                "$provider GGA quality 0 with coordinates — not published (time=${gga.timeRaw})"
+            }
+            return
+        }
 
         // Epoch time: the GGA UTC time-of-day is the authoritative (up to 5 Hz) clock; the date is
         // supplied by the most recent ZDA/RMC (or the current UTC date as a fallback). This lets each
@@ -399,6 +404,8 @@ class NmeaFuser(
         val stdDevEastM = gst?.stdDevLon
         val stdDevNorthM = gst?.stdDevLat
         val stdDevUpM = gst?.stdDevAlt
+
+        debugTrace(gga, epochMs, tsSource, rtk, satsUsed, rawVisible, satsVisible, gst, rmc, gsa, hAccM, altEllipsoidal)
 
         emittedFixCount++
         lastRtkStatus = rtk
@@ -510,6 +517,49 @@ class NmeaFuser(
         val lon = gst.stdDevLon
         if (lat != null && lon != null) return Math.sqrt((lat * lat + lon * lon) / 2.0)
         return null
+    }
+
+    /**
+     * Debug builds: a periodic summary of the fix this fuser produced (and from which inputs), plus
+     * throttled notes whenever an input was dropped or overridden — so a wrong value on screen can be
+     * traced back to the sentence that caused it. Logcat only (see GnssDebugLog).
+     */
+    private fun debugTrace(
+        gga: GGA, epochMs: Long, tsSource: TimestampSource, rtk: RtkStatus,
+        satsUsed: Int, rawVisible: Int?, satsVisible: Int?,
+        gst: GST?, rmc: RMC?, gsa: GSA?, hAccM: Double?, altEllipsoidal: Double?,
+    ) {
+        val log = app.surrealar.gnss.debug.GnssDebugLog
+        if (!log.enabled) return
+        log.every("fuser.fix.$provider", "fuser") {
+            "$provider fix t=${gga.timeRaw} epoch=${Instant.ofEpochMilli(epochMs)} ($tsSource) q=${gga.fixQuality}→$rtk " +
+                "lat=${gga.lat} lon=${gga.lon} msl=${gga.altMsl} N=${gga.geoidSeparation} ellH=$altEllipsoidal " +
+                "sats used=$satsUsed (gsaSet=${gsaUsedSatIds.size} gga=${gga.satsUsed}) visible=$satsVisible " +
+                "(gsv by talker=$gsvVisibleByTalker) hdop=${gga.hdop} pdop=${gsa?.pdop} vdop=${gsa?.vdop} " +
+                "hAcc=${hAccM ?: "none (GST ${if (lastGst == null) "absent" else "stale"})"} " +
+                "speed=${rmc?.speedKnots} diffAge=${gga.diffAge} station=${gga.stationId}"
+        }
+        if (lastGst != null && gst == null) log.every("fuser.staleGst.$provider", "fuser") {
+            "$provider GST t=${lastGst?.timeRaw} not attached to GGA t=${gga.timeRaw} (outside ${ENRICHMENT_WINDOW_MS} ms)"
+        }
+        if (lastRmc != null && rmc == null) log.every("fuser.staleRmc.$provider", "fuser") {
+            "$provider RMC t=${lastRmc?.timeRaw} not attached to GGA t=${gga.timeRaw}"
+        }
+        if (lastGsa != null && gsa == null) log.every("fuser.staleGsa.$provider", "fuser") {
+            "$provider GSA older than ${GSA_STALE_MS} ms — DOP not attached"
+        }
+        if (rawVisible != null && satsVisible == null) log.every("fuser.visDropped.$provider", "fuser") {
+            "$provider visible=$rawVisible < used=$satsUsed — GSV from an older epoch, visible left unknown"
+        }
+        val ggaSats = gga.satsUsed
+        if (ggaSats != null && gsaUsedSatIds.isNotEmpty() && kotlin.math.abs(ggaSats - gsaUsedSatIds.size) > 3) {
+            log.every("fuser.satsMismatch.$provider", "fuser") {
+                "$provider sats disagree: GGA=$ggaSats GSA set=${gsaUsedSatIds.size} ($gsaUsedSatIds) — showing max"
+            }
+        }
+        if (gga.altMsl != null && gga.geoidSeparation == null) log.every("fuser.noGeoid.$provider", "fuser") {
+            "$provider GGA has MSL height but no geoid separation — ellipsoidal height unknown from NMEA"
+        }
     }
 
     /**

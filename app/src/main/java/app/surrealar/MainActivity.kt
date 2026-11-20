@@ -679,12 +679,23 @@ class MainActivity : AppCompatActivity() {
                         // maps, and renders — it no longer contains GNSS toolbar logic.
                         when (val result = GnssToolbarStateMapper.map(source, fix, sky, externalReceiverLabel)) {
                             is ToolbarMapResult.Ignore -> {
+                                app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.ignore.${result.reason}", "toolbar") {
+                                    "fix ignored (${result.reason}): selected=$source fixProvider=${fix?.provider}"
+                                }
                                 // Wrong-provider / stale / invalid fix: keep the existing
                                 // placeholders untouched (throttled diagnostics only).
                                 logToolbarIgnore(result.reason)
                             }
                             is ToolbarMapResult.Render -> {
                                 val state = result.state
+                                app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.render", "toolbar") {
+                                    "shown: src=${state.sourceText} sol=${state.fixText} sats=${state.satelliteText} " +
+                                        "acc=${state.accuracyText} (${state.accuracyLevel}) ll=${state.latLonText} " +
+                                        "alt=${state.altitudeText} waiting=${state.isWaiting} | from fix: " +
+                                        (fix?.let { "${it.provider} msl=${it.altMslM} ellH=${it.altEllipsoidalM} " +
+                                            "hAcc=${it.hAccM} sats=${it.satsUsed}/${it.satsVisible} t=${it.timeUtc}" } ?: "none") +
+                                        " | sky used=${sky.totalUsed} visible=${sky.totalVisible}"
+                                }
                                 if (state.isWaiting) {
                                     if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
                                         loggedExternalWaiting = true

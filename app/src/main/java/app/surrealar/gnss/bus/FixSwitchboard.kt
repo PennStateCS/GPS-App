@@ -86,6 +86,10 @@ class FixSwitchboard(
     private var livenessJob: Job? = null
     private var currentAdapter: SourceAdapter? = null
 
+    // Debug-build fix-rate accounting (see GnssDebugLog). Collector coroutine only.
+    private var debugFixesInWindow = 0
+    private var debugWindowStartMs = 0L
+
     /** Monotonic receive time (ms) of the last fix from the bound provider; 0 = none yet. */
     @Volatile private var lastFixReceivedAtMs = 0L
 
@@ -215,6 +219,11 @@ class FixSwitchboard(
         _currentFix.value = null
         _fixes.resetReplayCache()
         _sky.value = EmptySky
+        debugFixesInWindow = 0
+        debugWindowStartMs = monotonicNowMs()
+        app.surrealar.gnss.debug.GnssDebugLog.event("switchboard") {
+            "rebind → ${next?.let { it::class.simpleName } ?: "none"} (generation=$generation); current fix and sky cleared"
+        }
 
         if (next == null) {
             return
@@ -230,7 +239,19 @@ class FixSwitchboard(
             next.fixes.conflate().collect { fix ->
                 // Drop emissions from a superseded binding (see bindGeneration).
                 if (generation != bindGeneration) return@collect
-                lastFixReceivedAtMs = monotonicNowMs()
+                val now = monotonicNowMs()
+                if (app.surrealar.gnss.debug.GnssDebugLog.enabled) {
+                    debugFixesInWindow++
+                    app.surrealar.gnss.debug.GnssDebugLog.every("switchboard.rate", "switchboard") {
+                        val windowS = ((now - debugWindowStartMs).coerceAtLeast(1)) / 1000.0
+                        val rate = debugFixesInWindow / windowS
+                        debugFixesInWindow = 0; debugWindowStartMs = now
+                        "bound=${next::class.simpleName} fix rate=${"%.1f".format(rate)}/s " +
+                            "last: ${fix.provider} ${fix.rtkStatus} sats=${fix.satsUsed}/${fix.satsVisible} " +
+                            "hAcc=${fix.hAccM} gnssTime=${fix.timeUtc} gap=${if (lastFixReceivedAtMs == 0L) "-" else "${now - lastFixReceivedAtMs}ms"}"
+                    }
+                }
+                lastFixReceivedAtMs = now
                 if (_fixStale.value) {
                     _fixStale.value = false
                     DiagnosticsLogger.i("GNSS", "Fixes resumed from ${next::class.simpleName}")
@@ -252,6 +273,9 @@ class FixSwitchboard(
                     _fixStale.value = true
                     _currentFix.value = null
                     _fixes.resetReplayCache()
+                    app.surrealar.gnss.debug.GnssDebugLog.event("switchboard") {
+                        "STALE: no fix for ${monotonicNowMs() - last} ms from ${next::class.simpleName} — currentFix cleared"
+                    }
                     DiagnosticsLogger.w("GNSS", "No fix for ${fixStaleAfterMs}ms from " +
                         "${next::class.simpleName}; cleared current fix")
                 }

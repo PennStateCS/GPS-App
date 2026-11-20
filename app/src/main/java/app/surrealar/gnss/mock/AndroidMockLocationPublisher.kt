@@ -111,12 +111,32 @@ class AndroidMockLocationPublisher(
                     teardownProvider()
                     return@collect
                 }
-                if (!isExternalFix(fix))  return@collect
-                if (isStale(fix))         return@collect
-                if (!isValid(fix))        return@collect
-                if (isDuplicate(fix))     return@collect
+                val drop = when {
+                    !isExternalFix(fix) -> "internal fix"
+                    isStale(fix)        -> "stale (late vs stream)"
+                    !isValid(fix)       -> "invalid coords"
+                    isDuplicate(fix)    -> null   // normal (same epoch re-delivered); not worth logging
+                    else -> ""
+                }
+                debugCountMock(drop)
+                if (drop != "") return@collect
                 publishLocation(fix, fixToLocation(fix))
             }
+        }
+    }
+
+    // Debug-build accounting: what happened to the fixes reaching the publisher (see GnssDebugLog).
+    private var debugPublished = 0
+    private val debugDropped = mutableMapOf<String, Int>()
+
+    /** [drop] = "" published, null duplicate (ignored), else the drop reason. */
+    private fun debugCountMock(drop: String?) {
+        if (!app.surrealar.gnss.debug.GnssDebugLog.enabled || drop == null) return
+        if (drop.isEmpty()) debugPublished++ else debugDropped[drop] = (debugDropped[drop] ?: 0) + 1
+        app.surrealar.gnss.debug.GnssDebugLog.every("mock.summary", "mock") {
+            val line = "published=$debugPublished dropped=$debugDropped arActive=${arSessionActive.value} provider=$providerAdded"
+            debugPublished = 0; debugDropped.clear()
+            line
         }
     }
 
