@@ -12,6 +12,8 @@ class CoordinatesActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_coordinates)
+        // Edge-to-edge: keep the list/detail panes clear of the status and navigation bars.
+        app.surrealar.ui.common.SystemBarInsets.apply(findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0))
 
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()

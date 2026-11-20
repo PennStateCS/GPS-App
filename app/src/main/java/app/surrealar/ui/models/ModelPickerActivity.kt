@@ -43,6 +43,7 @@ class ModelPickerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityModelPickerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        app.surrealar.ui.common.SystemBarInsets.apply(binding.root, binding.toolbar)   // edge-to-edge
 
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Select a Model"
         setupToolbar(title)

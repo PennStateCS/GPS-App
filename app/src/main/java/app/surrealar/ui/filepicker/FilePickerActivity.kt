@@ -75,6 +75,8 @@ class FilePickerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityFilePickerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // Edge-to-edge: keep the title off the status bar and Cancel above the navigation bar.
+        app.surrealar.ui.common.SystemBarInsets.apply(binding.root, binding.toolbar)
 
         filterMode = intent.getStringExtra(EXTRA_FILTER_MODE) ?: FILTER_MODE_CUSTOM
         allowedExtensions = getExtensionsForMode(filterMode)

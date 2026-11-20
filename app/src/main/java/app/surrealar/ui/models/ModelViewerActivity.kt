@@ -169,6 +169,7 @@ class ModelViewerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityModelViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        app.surrealar.ui.common.SystemBarInsets.apply(binding.root, binding.toolbar)   // edge-to-edge
 
         // Check if the device supports Filament for 3D rendering; if not, show an error message and skip setup.
         if (!supportsFilamentViewer()) {
