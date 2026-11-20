@@ -14,7 +14,7 @@ import kotlin.math.floor
  * g2018p0 (PR/VI, 15–21 °N, 69–64 °W), both 1′ and taken from the Format_unix (big-endian) files —
  * into 1°×1° tiles of integer millimetres, zlib-compressed (5 MB instead of 34 MB). Tiles are
  * inflated on first use and cached. Rounding to mm adds ≤ 0.5 mm; interpolation is bilinear, as in
- * NGS's own tools. Format: see scripts/pack_geoid.py ("SRGT" v1).
+ * NGS's own tools. Format and generator: tools/coords/pack_geoid.py ("SRGT" v1).
  *
  * Thread-safe: tile decoding is synchronised; decoded tiles are immutable.
  */
