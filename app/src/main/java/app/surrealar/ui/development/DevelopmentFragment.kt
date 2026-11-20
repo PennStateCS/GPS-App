@@ -737,6 +737,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
         // ── Position ──────────────────────────────────────────────────────────
         val posSection = buildSection("Position", listOf(
+            "Datum",
             "Latitude",
             "Longitude",
             "Mean Sea Level Altitude",
@@ -923,7 +924,12 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             }
             sourceSection.values["UTC Timestamp"]?.text = utcFmt.format(Date(fix.timeUtc.toEpochMilli()))
             sourceSection.values["Timestamp Source"]?.text = fix.timestampSource.name.replace('_', ' ')
-            // Position
+            // Position. The feed is always WGS84; say when it was converted from receiver NAD83(2011).
+            posSection.values["Datum"]?.text =
+                if (fix.provider != app.surrealar.gnss.model.Provider.INTERNAL &&
+                    viewModel.receiverDatum.value == app.surrealar.settings.model.ReceiverDatum.NAD83_2011)
+                    "WGS84 (converted from receiver NAD83(2011) at fix epoch)"
+                else "WGS84 / ITRF (as received)"
             posSection.values["Latitude"]?.text = fmtDeg(fix.latDeg)
             posSection.values["Longitude"]?.text = fmtDeg(fix.lonDeg)
             posSection.values["Mean Sea Level Altitude"]?.text = fmtM(fix.altMslM)
@@ -945,7 +951,8 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             // Use SkySnapshot data for satellite counts (from GSV sentences) for consistency with Satellite Sky section
             val sky = latestSkySnapshot
             qualitySection.values["Satellites Used"]?.text = sky?.totalUsed?.toString() ?: fix.satsUsed.toString()
-            qualitySection.values["Satellites Visible"]?.text = sky?.totalVisible?.toString() ?: (fix.satsVisible?.toString() ?: "--")
+            // Same fallback as the toolbar (HomeFieldStatusMapper): visible = satsVisible ?: used.
+            qualitySection.values["Satellites Visible"]?.text = sky?.totalVisible?.toString() ?: (fix.satsVisible ?: fix.satsUsed).toString()
             // Correction Age and Station ID come from Fix (NMEA GGA)
             correctionsSection.values["Correction Age"]?.text = fix.diffAgeS?.let { "%.1f s".format(it) } ?: "--"
             correctionsSection.values["Correction Station ID"]?.text = fix.correctionStationId ?: "--"

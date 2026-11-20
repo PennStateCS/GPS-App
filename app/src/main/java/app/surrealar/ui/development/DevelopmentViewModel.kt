@@ -32,8 +32,17 @@ class DevelopmentViewModel @Inject constructor(
     private val skyBus: SkyBus,
     private val sourceSettings: SourceSettings,
     private val diagnosticsService: DiagnosticsService,
-    private val reachDeviceRepository: ReachDeviceRepository
+    private val reachDeviceRepository: ReachDeviceRepository,
+    coordinateSystemService: app.surrealar.coords.CoordinateSystemService,
 ) : ViewModel() {
+
+    /**
+     * External receiver datum (Settings → Coordinates). When NAD83(2011), external fixes are
+     * converted to WGS84 as they enter the feed, so the panel's lat/lon differ from the receiver's.
+     */
+    val receiverDatum: StateFlow<app.surrealar.settings.model.ReceiverDatum> = coordinateSystemService.settingsFlow
+        .map { it.externalReceiverDatum }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, coordinateSystemService.settings.externalReceiverDatum)
 
     /** Latest fix from the active GNSS bus. Null until the first fix arrives. */
     private val _latestFix = MutableStateFlow<Fix?>(null)
