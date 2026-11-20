@@ -887,6 +887,15 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         fun fmtDeg(d: Double?) = d?.let { "%.8f°".format(it) } ?: "--"
         fun fmt2(d: Double?) = d?.let { "%.2f".format(it) } ?: "--"
 
+        // Fields the current source has sent at least once. A null field never seen from this source
+        // reads "Not reported by this receiver" (e.g. σE/σN/σU need GST, which the tablet's internal
+        // GNSS never sends); one that was reporting and briefly drops keeps "--". Reset on source change.
+        val seenFields = HashSet<String>()
+        val notReported = "Not reported by this receiver"
+        fun <T> field(key: String, value: T?, format: (T) -> String): String =
+            if (value != null) { seenFields += key; format(value) }
+            else if (key in seenFields) "--" else notReported
+
         var latestProviderLabel = "Unknown"
         var latestSkySnapshot: SkySnapshot? = null
 
@@ -932,30 +941,35 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 else "WGS84 / ITRF (as received)"
             posSection.values["Latitude"]?.text = fmtDeg(fix.latDeg)
             posSection.values["Longitude"]?.text = fmtDeg(fix.lonDeg)
-            posSection.values["Mean Sea Level Altitude"]?.text = fmtM(fix.altMslM)
-            posSection.values["Ellipsoidal Altitude"]?.text = fmtM(fix.altEllipsoidalM)
-            posSection.values["Geoid Separation"]?.text = fmtM(fix.geoidSeparationM)
-            posSection.values["Horizontal Accuracy (1σ)"]?.text = fix.hAccM?.let { "%.3f m".format(it) } ?: "--"
-            posSection.values["Vertical Accuracy (1σ)"]?.text = fix.vAccM?.let { "%.3f m".format(it) } ?: "--"
-            posSection.values["East Precision (σE)"]?.text = fix.stdDevEastM?.let { "%.3f m".format(it) } ?: "--"
-            posSection.values["North Precision (σN)"]?.text = fix.stdDevNorthM?.let { "%.3f m".format(it) } ?: "--"
-            posSection.values["Up Precision (σU)"]?.text = fix.stdDevUpM?.let { "%.3f m".format(it) } ?: "--"
+            val m3: (Double) -> String = { "%.3f m".format(it) }
+            posSection.values["Mean Sea Level Altitude"]?.text = field("msl", fix.altMslM, m3)
+            posSection.values["Ellipsoidal Altitude"]?.text = field("ellH", fix.altEllipsoidalM, m3)
+            posSection.values["Geoid Separation"]?.text = field("sep", fix.geoidSeparationM, m3)
+            posSection.values["Horizontal Accuracy (1σ)"]?.text = field("hAcc", fix.hAccM, m3)
+            posSection.values["Vertical Accuracy (1σ)"]?.text = field("vAcc", fix.vAccM, m3)
+            posSection.values["East Precision (σE)"]?.text = field("sdE", fix.stdDevEastM, m3)
+            posSection.values["North Precision (σN)"]?.text = field("sdN", fix.stdDevNorthM, m3)
+            posSection.values["Up Precision (σU)"]?.text = field("sdU", fix.stdDevUpM, m3)
             // Motion
-            val knots = fix.speedMps?.let { it * 1.94384 }
-            motionSection.values["Speed"]?.text = fix.speedMps?.let { "%.2f m/s  (%.1f kn)".format(it, knots!!) } ?: "--"
-            motionSection.values["Course Over Ground"]?.text = fix.courseDeg?.let { "%.1f°".format(it) } ?: "--"
+            motionSection.values["Speed"]?.text = field("speed", fix.speedMps) { "%.2f m/s  (%.1f kn)".format(it, it * 1.94384) }
+            // Receivers leave course blank when stationary (RMC "…,0.000,,…"): say so rather than "--".
+            motionSection.values["Course Over Ground"]?.text = when {
+                fix.courseDeg != null -> { seenFields += "course"; "%.1f°".format(fix.courseDeg) }
+                fix.speedMps != null && fix.speedMps < 0.5 -> "Not moving"
+                else -> field("course", null as Double?) { "" }
+            }
             // Quality
-            qualitySection.values["Horizontal Dilution of Precision"]?.text = fmt2(fix.hDop)
-            qualitySection.values["Vertical Dilution of Precision"]?.text = fmt2(fix.vDop)
-            qualitySection.values["Position Dilution of Precision"]?.text = fmt2(fix.pDop)
+            qualitySection.values["Horizontal Dilution of Precision"]?.text = field("hdop", fix.hDop) { "%.2f".format(it) }
+            qualitySection.values["Vertical Dilution of Precision"]?.text = field("vdop", fix.vDop) { "%.2f".format(it) }
+            qualitySection.values["Position Dilution of Precision"]?.text = field("pdop", fix.pDop) { "%.2f".format(it) }
             // Use SkySnapshot data for satellite counts (from GSV sentences) for consistency with Satellite Sky section
             val sky = latestSkySnapshot
             qualitySection.values["Satellites Used"]?.text = sky?.totalUsed?.toString() ?: fix.satsUsed.toString()
             // Same fallback as the toolbar (HomeFieldStatusMapper): visible = satsVisible ?: used.
             qualitySection.values["Satellites Visible"]?.text = sky?.totalVisible?.toString() ?: (fix.satsVisible ?: fix.satsUsed).toString()
             // Correction Age and Station ID come from Fix (NMEA GGA)
-            correctionsSection.values["Correction Age"]?.text = fix.diffAgeS?.let { "%.1f s".format(it) } ?: "--"
-            correctionsSection.values["Correction Station ID"]?.text = fix.correctionStationId ?: "--"
+            correctionsSection.values["Correction Age"]?.text = field("diffAge", fix.diffAgeS) { "%.1f s".format(it) }
+            correctionsSection.values["Correction Station ID"]?.text = field("station", fix.correctionStationId) { it }
         }
 
         fun applyBattery(b: app.surrealar.gnss.external.model.ReachBatteryInfo?) {
@@ -1048,6 +1062,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             launch { viewModel.deviceInfo.collect { d -> applyDevice(d) } }
             launch {
                 viewModel.activeProviderLabel.collect { providerLabel ->
+                    if (providerLabel != latestProviderLabel) seenFields.clear()   // new source: start over
                     latestProviderLabel = providerLabel
                     sourceSection.values["GNSS Source"]?.text = providerLabel
                     setExternalSectionVisibility(providerLabel)
