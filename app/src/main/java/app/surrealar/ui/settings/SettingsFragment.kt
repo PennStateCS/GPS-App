@@ -407,13 +407,19 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             spinnerAltitude?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, altitudeModes.map { it.first }))
             spinnerFilter?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, distanceOptions.map { it.first }))
 
+            // Last valid model scale. An invalid scale entry must not block saving the OTHER AR
+            // settings (it used to return early, silently dropping switch/spinner changes).
+            var lastValidScale = ArDisplaySettings().modelScale
             fun saveAll(altitudeMode: String? = null, distanceIdx: Int? = null) {
-                val scale = editScale?.text?.toString()?.toFloatOrNull()
-                if (scale == null || scale !in 0.1f..10.0f) {
+                val typed = editScale?.text?.toString()?.toFloatOrNull()
+                val scale = if (typed != null && typed in 0.1f..10.0f) {
+                    tilScale?.error = null
+                    lastValidScale = typed
+                    typed
+                } else {
                     tilScale?.error = "Must be 0.1 – 10.0"
-                    return
+                    lastValidScale
                 }
-                tilScale?.error = null
                 val settings = ArDisplaySettings(
                     altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "STORED"),
                     distanceFilterIndex = distanceIdx ?: distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
@@ -444,6 +450,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     switchDebug?.isChecked      = s.showDebugOverlay
                     switchDebugTools?.isChecked = s.showArDebugTools
                     editScale?.setText(s.modelScale.toString())
+                    lastValidScale = s.modelScale
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
@@ -994,14 +1001,16 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         // Prefill inline inputs with last used values. The host is left blank on first use (no
-        // hardcoded device address), and the port defaults to 9000 (the most common Reach/RS2+ TCP
-        // port). Nothing is persisted here — settings are only saved when the user connects.
+        // hardcoded device address); with no saved port, use the selected receiver profile's default
+        // (Reach = 9001). Nothing is persisted here — settings are only saved when the user connects.
         lifecycleScope.launch {
             val lastHost = settingsRepo.externalTcpHost.first()
             val lastPort = settingsRepo.externalTcpPort.first()
+            val profilePort = runCatching { settingsRepo.externalReceiverProfile.first().defaultPort }
+                .getOrDefault(SettingsDefaults.externalTcpPort)
 
             editHost?.setText(lastHost.orEmpty())
-            editPort?.setText(lastPort?.toString() ?: SettingsDefaults.externalTcpPort.toString())
+            editPort?.setText((lastPort ?: profilePort).toString())
         }
 
         // Observe stored TCP host/port and auto-diagnose on new device
@@ -1466,7 +1475,10 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             if (storedPort != null) {
                 editPort?.setText(storedPort.toString())
             } else {
-                editPort?.setText(getString(R.string.default_port))
+                // Same rule as the prefill above: the selected profile's default port.
+                val profilePort = runCatching { settingsRepo.externalReceiverProfile.first().defaultPort }
+                    .getOrDefault(SettingsDefaults.externalTcpPort)
+                editPort?.setText(profilePort.toString())
             }
             val source = settingsRepo.locationSource.first()
             val sel = if (source == LocationSourceType.EXTERNAL) R.id.radio_es2_tcp else R.id.radio_internal

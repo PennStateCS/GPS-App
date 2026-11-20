@@ -85,6 +85,18 @@ class SettingsRepositoryRoundTripTest {
     }
 
     @Test
+    fun `switching to a different receiver without a name clears the old receiver name`() = runBlocking {
+        repo.setExternalTcp("192.168.42.1", 9001, "Reach RS2+ A")
+        assertEquals("Reach RS2+ A", repo.externalTcpName.first())
+        // Same host re-saved without a name (e.g. reconnect): keep the known name.
+        repo.setExternalTcp("192.168.42.1", 9001)
+        assertEquals("Reach RS2+ A", repo.externalTcpName.first())
+        // New receiver, name not resolved yet: the old name must not carry over.
+        repo.setExternalTcp("192.168.42.7", 9001)
+        assertEquals("", repo.externalTcpName.first())
+    }
+
+    @Test
     fun `externalConnType default is TCP for a fresh install`() = runBlocking {
         // No value saved → defaults to TCP (the only implemented external transport).
         assertEquals(ExternalConnectionType.TCP, repo.externalConnType.first())

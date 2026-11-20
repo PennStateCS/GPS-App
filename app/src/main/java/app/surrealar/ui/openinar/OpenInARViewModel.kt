@@ -112,18 +112,6 @@ class OpenInARViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    // ── Init: read persisted AR display defaults ──────────────────────────────
-
-    init {
-        viewModelScope.launch {
-            runCatching {
-                val ar = arDisplayRepo.arDisplaySettings.first()
-                _distanceFilterIndex.value = ar.distanceFilterIndex.coerceIn(0, DISTANCE_FILTER_STEPS.lastIndex)
-                _debugVisible.value = ar.showDebugOverlay
-            }
-        }
-    }
-
     // ── Distance filter ───────────────────────────────────────────────────────
 
     /** Defaults to index 1 (50 m) until the persisted setting is loaded in init. */
@@ -169,6 +157,25 @@ class OpenInARViewModel @Inject constructor(
 
     /** Toggle debug overlay on/off. */
     fun toggleDebug() { _debugVisible.update { !it } }
+
+    // ── Persisted AR display defaults (distance filter, debug overlay) ────────
+    // Declared AFTER _distanceFilterIndex/_debugVisible: init blocks run in declaration order, and
+    // the old init (above them) only worked because the DataStore read happened to suspend first.
+    // Applied on open and again whenever the value changes in Settings (distinctUntilChanged), so a
+    // Settings change reaches an AR screen still on the back stack without overriding in-AR choices.
+    init {
+        viewModelScope.launch {
+            runCatching {
+                arDisplayRepo.arDisplaySettings
+                    .map { it.distanceFilterIndex to it.showDebugOverlay }
+                    .distinctUntilChanged()
+                    .collect { (filterIndex, debug) ->
+                        _distanceFilterIndex.value = filterIndex.coerceIn(0, DISTANCE_FILTER_STEPS.lastIndex)
+                        _debugVisible.value = debug
+                    }
+            }
+        }
+    }
 
     // ── AR debug visual toggles (runtime, reset each session) ─────────────────
 

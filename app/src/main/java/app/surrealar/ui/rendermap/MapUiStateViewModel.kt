@@ -47,11 +47,19 @@ class MapUiStateViewModel : ViewModel() {
     var seededFromDefaults: Boolean = false
         private set
 
+    /** The defaults the session was last seeded from; a different value means Settings changed. */
+    private var lastSeededDefaults: MapSettings? = null
+
     fun update(transform: (MapUiState) -> MapUiState) { state = transform(state) }
 
-    /** One-time seed of session state from durable defaults (only on the first map open of a session). */
+    /**
+     * Seeds session state from durable defaults on the first map open of a session, and again
+     * whenever those defaults have CHANGED in Settings since the last seed — so a new default takes
+     * effect the next time the map opens. Otherwise the user's in-session choices are kept.
+     */
     fun seedFromDefaults(s: MapSettings) {
-        if (seededFromDefaults) return
+        if (s == lastSeededDefaults) return
+        lastSeededDefaults = s
         state = state.copy(
             mapType = s.defaultMapType,
             gridMode = s.defaultGridMode,

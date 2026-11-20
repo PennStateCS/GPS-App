@@ -214,10 +214,10 @@ class AddCoordinateDialogFragment(
             val coordSettings = settingsRepo.coordinateDisplaySettings.first()
             val prefix = coordSettings.defaultNamePrefix
             val proposedName = if (coordSettings.autoIncrementNames) {
-                val count = withContext(Dispatchers.IO) {
-                    coordinateRepository.count()
+                val names = withContext(Dispatchers.IO) {
+                    runCatching { coordinateRepository.getAllCoordinatesList().map { it.name } }.getOrDefault(emptyList())
                 }
-                "$prefix ${count + 1}"
+                PointNameSuggester.next(prefix, names)
             } else {
                 prefix
             }

@@ -14,6 +14,7 @@ import app.surrealar.settings.model.AppearanceSettings
 import app.surrealar.gnss.settings.GnssReceiverSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -72,9 +73,14 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setExternalTcp(host: String, port: Int, name: String) {
+        val previousHost = runCatching { local.externalTcpHost.first() }.getOrNull()
         local.setExternalTcp(host, port)
         if (name.isNotBlank()) {
             local.setExternalTcpName(name)
+        } else if (previousHost != null && !previousHost.equals(host, ignoreCase = true)) {
+            // Different receiver and no name yet: drop the old receiver's name so it can't be shown
+            // on Home or stamped into saved points' source device until the new one is resolved.
+            local.setExternalTcpName("")
         }
     }
 

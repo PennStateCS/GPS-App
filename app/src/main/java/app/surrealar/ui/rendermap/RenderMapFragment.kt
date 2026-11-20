@@ -87,13 +87,10 @@ class RenderMapFragment : Fragment() {
         private const val MIN_DISTANCE_METERS = 0.5
         private const val MIN_HEADING_CHANGE_DEGREES = 5.0
         private const val MAX_TRAIL_POINTS = 1000
-        private const val STAKEOUT_GREEN_THRESHOLD = 0.10
-        private const val STAKEOUT_AMBER_THRESHOLD = 0.25
-        // Display-only thresholds (no persisted setting, no effect on calculations):
-        //  • within "tolerance" reuses the existing green distance threshold (10 cm).
-        //  • low-accuracy warning when the live horizontal accuracy is worse than this.
-        private const val STAKEOUT_TOLERANCE_THRESHOLD_M = STAKEOUT_GREEN_THRESHOLD
-        private const val STAKEOUT_LOW_ACCURACY_M = 0.30
+        // Stakeout thresholds come from Settings → Stakeout (toleranceMeters = green / "Within
+        // tolerance", warningAccuracyMeters = low-accuracy warning). Amber spans out to this multiple
+        // of the tolerance (the previous fixed 0.10 / 0.25 m pair had the same 2.5× ratio).
+        private const val STAKEOUT_AMBER_FACTOR = 2.5
         // Guidance falls back to the "waiting" state if no live fix arrives within this window.
         private const val STAKEOUT_STALE_FIX_MS = 5000L
         private const val STAKEOUT_STALE_TICK_MS = 1500L
@@ -311,10 +308,9 @@ class RenderMapFragment : Fragment() {
         // defaults (default map type/grid/labels, show-my-location, tools/drawer). After that, the
         // session ViewModel preserves the user's in-session choices across navigation. The DataStore
         // read is fast/cached; SurRealApplication uses the same runBlocking pattern for the startup theme.
-        if (!mapUiVm.seededFromDefaults) {
-            runCatching { kotlinx.coroutines.runBlocking { mapSettingsRepo.mapSettings.first() } }
-                .getOrNull()?.let { mapUiVm.seedFromDefaults(it) }
-        }
+        // Re-read every open: the VM re-seeds only if the defaults changed in Settings since last time.
+        runCatching { kotlinx.coroutines.runBlocking { mapSettingsRepo.mapSettings.first() } }
+            .getOrNull()?.let { mapUiVm.seedFromDefaults(it) }
 
         // Restore transient map UI state into the working fields BEFORE views/map are wired, so the
         // toolbar labels, map type, grid, and My Location come back as the user left them. The map
@@ -751,10 +747,11 @@ class RenderMapFragment : Fragment() {
             // Bearing shown with an 8-point compass label, e.g. "NE 42°".
             txtStakeoutBearing?.text =
                 String.format(Locale.getDefault(), "%s %.0f°", compassPoint(bearing), bearing)
+            val tol = stakeoutSettings.toleranceMeters
             val color = when {
-                distance < STAKEOUT_GREEN_THRESHOLD -> 0xFF4CAF50.toInt()
-                distance < STAKEOUT_AMBER_THRESHOLD -> 0xFFFF9800.toInt()
-                else                                -> 0xFFF44336.toInt()
+                distance < tol                         -> 0xFF4CAF50.toInt()
+                distance < tol * STAKEOUT_AMBER_FACTOR -> 0xFFFF9800.toInt()
+                else                                   -> 0xFFF44336.toInt()
             }
             txtStakeoutDistance?.setTextColor(color)
             txtStakeoutBearing?.setTextColor(color)
@@ -766,7 +763,7 @@ class RenderMapFragment : Fragment() {
 
             // State line: within tolerance vs. which way to move.
             txtStakeoutStatus?.text =
-                if (distance < STAKEOUT_TOLERANCE_THRESHOLD_M) "Within tolerance"
+                if (distance < tol) "Within tolerance"
                 else "Move ${compassDirectionWord(bearing)}"
 
             updateStakeoutAccuracy()
@@ -799,7 +796,7 @@ class RenderMapFragment : Fragment() {
         val acc = currentFix?.hAccM
         if (acc == null || acc <= 0.0) { tv.visibility = View.GONE; return }
         tv.visibility = View.VISIBLE
-        if (acc > STAKEOUT_LOW_ACCURACY_M) {
+        if (acc > stakeoutSettings.warningAccuracyMeters) {
             tv.text = String.format(
                 Locale.getDefault(), "Accuracy ±%.2f m · Low accuracy — stakeout may be unreliable", acc
             )
@@ -1027,10 +1024,11 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun updateStakeoutMarkerColor(distance: Double) {
+        val tol = stakeoutSettings.toleranceMeters
         val hue = when {
-            distance < STAKEOUT_GREEN_THRESHOLD -> BitmapDescriptorFactory.HUE_GREEN
-            distance < STAKEOUT_AMBER_THRESHOLD -> BitmapDescriptorFactory.HUE_ORANGE
-            else                                -> BitmapDescriptorFactory.HUE_RED
+            distance < tol                         -> BitmapDescriptorFactory.HUE_GREEN
+            distance < tol * STAKEOUT_AMBER_FACTOR -> BitmapDescriptorFactory.HUE_ORANGE
+            else                                   -> BitmapDescriptorFactory.HUE_RED
         }
         if (hue != lastStakeoutMarkerHue) {
             stakeoutMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
