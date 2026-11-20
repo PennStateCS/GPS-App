@@ -78,6 +78,7 @@ object NmeaStreamDiagnosticsFormatter {
 
     private fun accuracySourceLabel(src: NmeaFuser.AccuracySource): String = when (src) {
         NmeaFuser.AccuracySource.RECEIVER_GST  -> "receiver_gst (GST std-dev)"
+        NmeaFuser.AccuracySource.RECEIVER_PROPRIETARY -> "receiver_proprietary (\$..ACCURACY, MediaTek)"
         NmeaFuser.AccuracySource.DOP_ESTIMATE  -> "dop_estimate (HDOP × UERE, downstream)"
         NmeaFuser.AccuracySource.UNKNOWN       -> "unknown"
     }

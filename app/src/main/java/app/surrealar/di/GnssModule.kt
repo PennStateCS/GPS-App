@@ -78,6 +78,8 @@ object GnssModule {
             "GSV" to GsvParser(),
             "ZDA" to ZdaParser(),
             "GST" to GstParser(),  // accuracy error statistics
+            // MediaTek proprietary accuracy (e.g. Samsung SM-X940 internal GNSS) — fallback when no GST.
+            "ACCURACY" to AccuracyParser(),
             // Emlid Reach RS4 / RS4 Pro custom messages (diagnostics only; do not affect fixes).
             "EBP" to EbpParser(),
             "ETC" to EtcParser()

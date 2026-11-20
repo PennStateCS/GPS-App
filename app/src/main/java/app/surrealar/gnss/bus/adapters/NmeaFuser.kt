@@ -45,6 +45,8 @@ class NmeaFuser(
     private var lastGsa: GSA? = null
     private var lastZda: ZDA? = null
     private var lastGst: GST? = null   // GPS Error Statistics (accuracy ellipse)
+    private var lastAccuracy: ACCURACY? = null   // MediaTek $..ACCURACY (fallback when no GST)
+    private var lastAccuracyAtMs: Long = 0L
 
     // Epoch deduplication: the epoch (date + GGA time-of-day) of the most recently emitted fix.
     private var lastEmittedGgaTimeUtc: Long? = null
@@ -123,6 +125,8 @@ class NmeaFuser(
             is GSV -> handleGsv(sentence)
             is ZDA -> { zdaCount++; handleZda(sentence) }
             is GST -> { gstCount++; lastGst = sentence }  // accuracy ellipse; used in next fix emission
+            // MediaTek proprietary accuracy: no timestamp, so freshness is judged by arrival time.
+            is ACCURACY -> { lastAccuracy = sentence; lastAccuracyAtMs = System.currentTimeMillis() }
             is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
             is ETC -> { etcCount++; lastEtc = sentence   // Emlid orientation/IMU — diagnostics only
                         if (sentence.hasOrientationData) etcOrientationSeen = true }
@@ -152,7 +156,7 @@ class NmeaFuser(
         get() = synchronized(lock) { NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc, etcOrientationSeen) }
 
     /** Where the last fix's horizontal accuracy came from. */
-    enum class AccuracySource { RECEIVER_GST, DOP_ESTIMATE, UNKNOWN }
+    enum class AccuracySource { RECEIVER_GST, RECEIVER_PROPRIETARY, DOP_ESTIMATE, UNKNOWN }
 
     // ── Sentence/fix rate diagnostics (cumulative counts; consumers compute rates from deltas) ──
     private var ggaCount = 0
@@ -399,8 +403,14 @@ class NmeaFuser(
         val rmc = lastRmc?.takeIf { sameEpoch(it.timeRaw, gga.timeRaw) }
         val gsa = lastGsa?.takeIf { System.currentTimeMillis() - lastGsaAtMs <= GSA_STALE_MS }
 
-        val hAccM = horizontalAccuracyFromGst(gst)
-        val vAccM = gst?.stdDevAlt
+        // Receiver-reported accuracy: standard GST first; otherwise the receiver's proprietary
+        // $..ACCURACY (MediaTek) if it arrived recently — it follows GGA in each burst, so it belongs
+        // to this or the previous epoch. Downstream, a still-missing value is filled from Android's
+        // Location (internal source) or estimated from DOP × UERE.
+        val acc = lastAccuracy?.takeIf { System.currentTimeMillis() - lastAccuracyAtMs <= ENRICHMENT_WINDOW_MS }
+        val gstH = horizontalAccuracyFromGst(gst)
+        val hAccM = gstH ?: acc?.hAccM
+        val vAccM = gst?.stdDevAlt ?: acc?.vAccM
         val stdDevEastM = gst?.stdDevLon
         val stdDevNorthM = gst?.stdDevLat
         val stdDevUpM = gst?.stdDevAlt
@@ -417,7 +427,8 @@ class NmeaFuser(
         // hAccM is only ever set from GST here; a null GST accuracy is filled downstream by
         // AccuracyEstimator (DOP × UERE) when HDOP is available, else it stays unknown.
         lastAccuracySource = when {
-            hAccM != null    -> AccuracySource.RECEIVER_GST
+            gstH != null     -> AccuracySource.RECEIVER_GST
+            hAccM != null    -> AccuracySource.RECEIVER_PROPRIETARY
             gga.hdop != null -> AccuracySource.DOP_ESTIMATE
             else             -> AccuracySource.UNKNOWN
         }
@@ -488,6 +499,7 @@ class NmeaFuser(
     /** Clears all accumulated sentence state. Call when the underlying GNSS source is stopped. */
     fun reset() = synchronized(lock) {
         gsvSignalsByTalker.clear(); ggaSinceLastGsa = false; lastGsaAtMs = 0L
+        lastAccuracy = null; lastAccuracyAtMs = 0L
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
         lastEmittedGgaTimeUtc = null; lastTimestampSource = null
         ggaCount = 0; rmcCount = 0; zdaCount = 0; gstCount = 0; emittedFixCount = 0
@@ -536,7 +548,12 @@ class NmeaFuser(
                 "lat=${gga.lat} lon=${gga.lon} msl=${gga.altMsl} N=${gga.geoidSeparation} ellH=$altEllipsoidal " +
                 "sats used=$satsUsed (gsaSet=${gsaUsedSatIds.size} gga=${gga.satsUsed}) visible=$satsVisible " +
                 "(gsv by talker=$gsvVisibleByTalker) hdop=${gga.hdop} pdop=${gsa?.pdop} vdop=${gsa?.vdop} " +
-                "hAcc=${hAccM ?: "none (GST ${if (lastGst == null) "absent" else "stale"})"} " +
+                "hAcc=${hAccM ?: "none"} vAcc=${gst?.stdDevAlt ?: lastAccuracy?.vAccM} " +
+                "accSource=${when {
+                    gst != null && horizontalAccuracyFromGst(gst) != null -> "GST"
+                    hAccM != null -> "\$..ACCURACY (age ${System.currentTimeMillis() - lastAccuracyAtMs} ms)"
+                    else -> "none (GST ${if (lastGst == null) "absent" else "stale"}, ACCURACY ${if (lastAccuracy == null) "absent" else "stale"})"
+                }} " +
                 "speed=${rmc?.speedKnots} diffAge=${gga.diffAge} station=${gga.stationId}"
         }
         if (lastGst != null && gst == null) log.every("fuser.staleGst.$provider", "fuser") {

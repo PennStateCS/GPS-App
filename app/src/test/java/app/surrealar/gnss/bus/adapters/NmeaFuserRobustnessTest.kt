@@ -71,6 +71,23 @@ class NmeaFuserRobustnessTest {
         assertNull(fixes.last().hAccM)
     }
 
+    @Test fun `MediaTek ACCURACY sentence fills accuracy when there is no GST`() {
+        fuser.accept("\$GNACCURACY,10.5,0.0,0.2,12.4*15")
+        fuser.accept(gga("120000.00", quality = 1))
+        assertEquals(10.5, fixes.last().hAccM!!, 0.0)
+        assertEquals(12.4, fixes.last().vAccM!!, 0.0)
+        assertEquals(NmeaFuser.AccuracySource.RECEIVER_PROPRIETARY, fuser.timingStats.lastAccuracySource)
+    }
+
+    @Test fun `GST takes priority over the ACCURACY sentence`() {
+        fuser.accept("\$GNACCURACY,10.5,0.0,0.2,12.4")
+        fuser.accept("\$GNGST,120000.00,0.5,,,,0.010,0.012,0.020")
+        fuser.accept(gga("120000.00"))
+        assertTrue(fixes.last().hAccM!! < 0.1)
+        assertEquals(0.020, fixes.last().vAccM!!, 0.0)
+        assertEquals(NmeaFuser.AccuracySource.RECEIVER_GST, fuser.timingStats.lastAccuracySource)
+    }
+
     @Test fun `RMC speed is applied only near its own epoch`() {
         fuser.accept("\$GNRMC,120000.00,A,4807.038,N,01131.000,E,2.0,90.0,220620,,,A")
         fuser.accept(gga("120000.40"))
