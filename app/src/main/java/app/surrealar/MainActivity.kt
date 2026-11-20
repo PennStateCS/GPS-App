@@ -262,6 +262,30 @@ class MainActivity : AppCompatActivity() {
         appBarConfiguration = AppBarConfiguration(initialTopLevel, drawerLayout)
         setupActionBarWithNavController(navController, appBarConfiguration)
 
+        // Drawer header: edge-to-edge (enforced on Android 15+) draws the drawer behind the status
+        // bar, so the header's logo/title collided with the clock. Push the header content below the
+        // status bar (and any display cutout) by adding that inset to its own top padding.
+        navView.getHeaderView(0)?.let { header ->
+            val baseTop = header.paddingTop
+            fun topOf(insets: androidx.core.view.WindowInsetsCompat?): Int = insets?.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.statusBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout()
+            )?.top ?: 0
+            fun applyTop(insets: androidx.core.view.WindowInsetsCompat?) {
+                // NavigationView consumes the inset before dispatching (the header then sees 0), so take
+                // the larger of the dispatched and the window's root insets — never let a 0 undo it.
+                val top = maxOf(topOf(insets), topOf(androidx.core.view.ViewCompat.getRootWindowInsets(header)))
+                if (top == 0) return
+                if (header.paddingTop != baseTop + top) {
+                    header.setPadding(header.paddingLeft, baseTop + top, header.paddingRight, header.paddingBottom)
+                }
+            }
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(header) { _, insets -> applyTop(insets); insets }
+            // NavigationView may consume insets before they reach the header; fall back to the
+            // window's root insets once the header is attached.
+            header.post { applyTop(androidx.core.view.ViewCompat.getRootWindowInsets(header)) }
+        }
+
         // Keep checked-state sync; handle item taps ourselves for immediate navigation.
         navView.setupWithNavController(navController)
         navView.setNavigationItemSelectedListener { menuItem ->

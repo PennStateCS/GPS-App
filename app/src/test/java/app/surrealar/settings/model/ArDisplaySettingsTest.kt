@@ -9,7 +9,7 @@ class ArDisplaySettingsTest {
 
     @Test fun `defaults are sane`() {
         val s = ArDisplaySettings()
-        assertEquals("STORED", s.altitudeMode)
+        assertEquals("AUTO", s.altitudeMode)
         assertEquals(1,        s.distanceFilterIndex)
         assertFalse(s.showDebugOverlay)
         assertTrue(s.showLabels)

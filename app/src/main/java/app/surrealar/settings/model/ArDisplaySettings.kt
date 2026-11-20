@@ -14,9 +14,10 @@ package app.surrealar.settings.model
  * - GNSS capture quality rules
  */
 data class ArDisplaySettings(
-    /** Altitude source used when placing AR anchors: "STORED" uses the recorded ellipsoidal
-     *  height; "TERRAIN" requests terrain-relative altitude from the Geospatial API. */
-    val altitudeMode: String = "STORED",
+    /** Altitude source used when placing AR anchors (see AltitudePolicy): "AUTO" (default) uses
+     *  each point's stored ellipsoidal height when it is RTK-grade and terrain otherwise; "STORED"
+     *  always uses the stored height; "TERRAIN" always uses terrain from the Geospatial API. */
+    val altitudeMode: String = "AUTO",
 
     /** Index into the distance-filter step list [null, 50m, 100m, 500m].
      *  0 = show all, 1 = 50 m, 2 = 100 m, 3 = 500 m. */

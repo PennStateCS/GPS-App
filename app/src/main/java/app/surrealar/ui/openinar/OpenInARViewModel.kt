@@ -207,11 +207,11 @@ class OpenInARViewModel @Inject constructor(
      * flag that the collector silently reverted on the next emission. runCatching so a DataStore write
      * failure can never crash the toggle.
      */
-    fun setAltitudeMode(terrain: Boolean) {
+    fun setAltitudeMode(mode: String) {
         viewModelScope.launch {
             runCatching {
                 arDisplayRepo.setArDisplaySettings(
-                    arDisplaySettings.value.copy(altitudeMode = if (terrain) "TERRAIN" else "STORED")
+                    arDisplaySettings.value.copy(altitudeMode = AltitudePolicy.normalize(mode))
                 )
             }
         }

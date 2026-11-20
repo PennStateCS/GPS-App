@@ -58,7 +58,9 @@ object SettingsKeys {
     val GNSS_CAPTURE_PRECISION_TARGET_M = doublePreferencesKey("gnss_capture_precision_target_m")
 
     // AR Display settings
-    val AR_ALTITUDE_MODE               = stringPreferencesKey("ar_altitude_mode")
+    // v2: default became AUTO (per point: RTK-grade stored height, else terrain). New key so devices that
+// had STORED/TERRAIN saved start on AUTO.
+val AR_ALTITUDE_MODE               = stringPreferencesKey("ar_altitude_mode_v2")
     val AR_DISTANCE_FILTER_INDEX       = intPreferencesKey("ar_distance_filter_index")
     val AR_SHOW_DEBUG_OVERLAY          = booleanPreferencesKey("ar_show_debug_overlay")
     val AR_SHOW_LABELS                 = booleanPreferencesKey("ar_show_labels")

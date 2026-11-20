@@ -85,7 +85,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Stored uses the recorded ellipsoidal height. Terrain places pins at ground level using the Geospatial API"
+                            android:text="Automatic uses each point's measured height when it is RTK-accurate (vertical ≤ 0.5 m) and places other points on the ground. Stored always uses measured heights; Terrain always uses the ground."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 

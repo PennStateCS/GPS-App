@@ -414,7 +414,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             var lastValidAntenna = 0f
             view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
 
-            val altitudeModes   = listOf("Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
+            val altitudeModes   = listOf("Automatic (recommended)" to "AUTO", "Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
             val distanceOptions = listOf("All distances" to -1, "50 m" to 0, "100 m" to 1, "500 m" to 2)
             val tilScale = editScale?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
 
@@ -444,7 +444,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     lastValidAntenna
                 }
                 val settings = ArDisplaySettings(
-                    altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "STORED"),
+                    altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "AUTO"),
                     distanceFilterIndex = distanceIdx ?: distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
                     showDebugOverlay    = switchDebug?.isChecked ?: false,
                     showLabels          = switchLabels?.isChecked ?: true,

@@ -163,7 +163,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private class AnchorEntry(
         val anchor: Anchor,
-        val coordWithModel: CoordWithModel
+        val coordWithModel: CoordWithModel,
+        /** Anchored on terrain (snapped to the detected ground) rather than at its stored height. */
+        val onTerrain: Boolean = false,
     ) {
         /** Pre-computed normalised RGBA for GLES pin rendering. */
         val rgba: FloatArray = argbIntToRgba(coordWithModel.coordinate.color)
@@ -346,13 +348,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     /**
-     * When false (default): real coordinate anchors are placed at their stored ellipsoidal altitude.
-     * When true (terrain mode): all anchors are resolved onto the detected ground via
-     * `earth.resolveAnchorOnTerrain(lat, lng, 0.0, …)` (ARCore downloads the terrain elevation and
-     * self-updates the anchor to TRACKING), ignoring stored altitudes.
-     * Written on the main thread (button click); read on the GL thread (rebuildGeoAnchorsIfNeeded).
+     * Altitude mode (see [AltitudePolicy]): AUTO (default) anchors each point at its stored
+     * ellipsoidal height when that height is RTK-grade and on terrain otherwise; STORED / TERRAIN
+     * force one or the other. Written on the main thread (settings/toolbar); read on the GL thread.
      */
-    @Volatile private var useTerrainAltitude: Boolean = false
+    @Volatile private var altitudeMode: String = AltitudePolicy.AUTO
     @Volatile private var arModelScale: Float = MODEL_SCALE
     @Volatile private var arShowLabels: Boolean = true
     @Volatile private var arShowOffscreenArrows: Boolean = true
@@ -618,11 +618,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         binding.btnAltitudeMode.setOnClickListener {
             // Persist through the ViewModel so the choice survives pause/resume and stays in sync with
-            // the Settings screen; the arDisplaySettings collector then applies it (updates the flag,
-            // the button text, and triggers a rebuild). Previously this flipped a transient local flag
-            // that the collector silently reverted on the next settings emission.
-            val next = !useTerrainAltitude
-            DiagnosticsLogger.i(DIAG, "Altitude mode set to ${if (next) "TERRAIN" else "STORED"} by user")
+            // the Settings screen; the arDisplaySettings collector then applies it (updates the mode,
+            // the button text, and triggers a rebuild). Cycles Auto → Stored → Terrain.
+            val next = AltitudePolicy.next(altitudeMode)
+            DiagnosticsLogger.i(DIAG, "Altitude mode set to $next by user (was $altitudeMode)")
             viewModel.setAltitudeMode(next)
         }
 
@@ -775,12 +774,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.arDisplaySettings.collect { ar ->
-                    val terrain = ar.altitudeMode == "TERRAIN"
+                    val mode = AltitudePolicy.normalize(ar.altitudeMode)
                     // Test grid follows the same toggle (it used to be terrain-only, so the button
                     // appeared to do nothing when only test pins were on screen).
-                    testAnchorController.useTerrain = terrain
-                    if (terrain != useTerrainAltitude) {
-                        useTerrainAltitude = terrain
+                    testAnchorController.useTerrain = mode == AltitudePolicy.TERRAIN
+                    if (mode != altitudeMode || _binding?.txtAltitudeMode?.text?.toString() != AltitudePolicy.label(mode)) {
+                        if (mode != altitudeMode) shouldRebuildAnchors = true
+                        altitudeMode = mode
                         shouldRebuildAnchors = true
                         // Same as the Spawn button: make sure the grid's models are loaded (no-op
                         // for keys already cached) so the respawned pins always get their models.
@@ -788,7 +788,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             filamentRenderer?.let { testAnchorController.preloadModelKeys(it, viewLifecycleOwner.lifecycleScope) }
                         }
                         testAnchorController.requestRespawn()
-                        _binding?.txtAltitudeMode?.text = if (terrain) "Terrain" else "Stored"
+                        _binding?.txtAltitudeMode?.text = AltitudePolicy.label(mode)
                     }
                     if (!loggedArSettings || ar.modelScale != arModelScale || ar.antennaAboveCameraM.toDouble() != arAntennaAboveCameraM) {
                         loggedArSettings = true
@@ -1330,7 +1330,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Lets a future export distinguish a good geospatial estimate from a low-confidence timeout,
         // and see which location source (incl. mock injection) was feeding ARCore. Missing accuracy is
         // logged as "unknown" — never 0.0. Runs once per (re)anchor, not per frame.
-        val anchorMode = if (useTerrainAltitude) "TERRAIN" else "WGS84"
+        val anchorMode = altitudeMode
         val replacedPrevious = geoAnchors.isNotEmpty()
         val fixAgeMs = System.currentTimeMillis() - gnssFix.timeUtc.toEpochMilli()
         val earthVAcc = camAccPose?.verticalAccuracy?.takeIf { it.isFinite() }
@@ -1403,58 +1403,46 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val items = geoItems
 
         val earthStateName = earth.earthState?.name ?: "null"
-        if (useTerrainAltitude) {
-            // Terrain mode: resolveAnchorOnTerrain places each anchor at altitudeAboveTerrain=0.0
-            // (exactly on the terrain surface at that lat/lon). The anchor starts with
-            // TrackingState.PAUSED and self-updates to TRACKING once ARCore downloads the
-            // terrain elevation for that location — no manual polling required.
-            var failed = 0
-            for (item in items) {
-                try {
-                    val anchor = earth.resolveAnchorOnTerrain(
-                        item.lat, item.lng, 0.0, 0f, 0f, 0f, 1f)
-                    geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
-                } catch (e: Exception) {
-                    failed++
-                    if (item.coordWithModel.modelFilePath != null)
-                        ArSessionDiagnostics.setStatus(item.coordWithModel.coordinate.id,
-                            ArSessionDiagnostics.ModelStatus.FAILED, "anchor_failed")
-                    DiagnosticsLogger.w(DIAG, "anchor failed coordinateId=${item.coordWithModel.coordinate.id} " +
-                        "name=\"${item.coordWithModel.coordinate.name}\" mode=TERRAIN reason=\"${e.message}\"", e)
+        // Per point (AltitudePolicy): stored ellipsoidal height when it is trustworthy (RTK-grade), else
+        // terrain. Terrain anchors (resolveAnchorOnTerrain at 0 m above terrain) start PAUSED and turn
+        // TRACKING once ARCore has the terrain elevation; they are then snapped to the detected ground.
+        val mode = altitudeMode
+        var failed = 0
+        var stored = 0
+        var terrain = 0
+        for (item in items) {
+            val c = item.coordWithModel.coordinate
+            val choice = AltitudePolicy.choose(mode, item.alt, c.verticalAccuracyM, c.rtkStatus)
+            try {
+                val anchor = if (choice.onTerrain) {
+                    earth.resolveAnchorOnTerrain(item.lat, item.lng, 0.0, 0f, 0f, 0f, 1f)
+                } else {
+                    earth.createAnchor(item.lat, item.lng, item.alt ?: fallbackAlt, 0f, 0f, 0f, 1f)
                 }
+                geoAnchors.add(AnchorEntry(anchor, item.coordWithModel, onTerrain = choice.onTerrain))
+                if (choice.onTerrain) terrain++ else stored++
+                // One line per point: which height it got and why (the "it's floating" question).
+                DiagnosticsLogger.i(DIAG, "anchor height coordinateId=${c.id} name=\"${c.name}\" mode=$mode " +
+                    "choice=$choice storedAltM=${item.alt?.let { "%.2f".format(it) } ?: "none"} " +
+                    "vAccM=${c.verticalAccuracyM?.let { "%.2f".format(it) } ?: "none"} rtk=${c.rtkStatus ?: "none"} " +
+                    "anchoredAt=${if (choice.onTerrain) "terrain" else "%.2f".format(item.alt ?: fallbackAlt)}" +
+                    (if (!choice.onTerrain && item.alt == null) " (no stored height: user's height used)" else ""))
+            } catch (e: Exception) {
+                failed++
+                if (item.coordWithModel.modelFilePath != null)
+                    ArSessionDiagnostics.setStatus(c.id, ArSessionDiagnostics.ModelStatus.FAILED, "anchor_failed")
+                DiagnosticsLogger.w(DIAG, "anchor failed coordinateId=${c.id} name=\"${c.name}\" mode=$mode " +
+                    "choice=$choice reason=\"${e.message}\"", e)
             }
-            DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=TERRAIN " +
-                "anchorType=TERRAIN transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
-                "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
-                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
-                "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
-                "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} — will appear as terrain resolves")
-            recordAnchorOutcome(items.size, geoAnchors.size, failed)
-        } else {
-            // Stored-altitude mode: create WGS84 anchors at each coordinate's recorded altitude.
-            var failed = 0
-            for (item in items) {
-                val altToUse = item.alt ?: fallbackAlt
-                try {
-                    val anchor = earth.createAnchor(item.lat, item.lng, altToUse, 0f, 0f, 0f, 1f)
-                    geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
-                } catch (e: Exception) {
-                    failed++
-                    if (item.coordWithModel.modelFilePath != null)
-                        ArSessionDiagnostics.setStatus(item.coordWithModel.coordinate.id,
-                            ArSessionDiagnostics.ModelStatus.FAILED, "anchor_failed")
-                    DiagnosticsLogger.w(DIAG, "anchor failed coordinateId=${item.coordWithModel.coordinate.id} " +
-                        "name=\"${item.coordWithModel.coordinate.name}\" mode=STORED reason=\"${e.message}\"", e)
-                }
-            }
-            DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=STORED " +
-                "anchorType=WGS84 transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
-                "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
-                "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
-                "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
-                "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"}")
-            recordAnchorOutcome(items.size, geoAnchors.size, failed)
         }
+        DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=$mode " +
+            "stored=$stored terrain=$terrain transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
+            "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
+            "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
+            "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
+            "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"}" +
+            (if (terrain > 0) " — terrain anchors appear as terrain resolves" else ""))
+        recordAnchorOutcome(items.size, geoAnchors.size, failed)
 
         lastPlacedVia = placedVia
         geoAnchorsCreated = true
@@ -1645,7 +1633,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
 
                 // Detected ground/floor for Terrain mode (snaps content to the surface ARCore sees).
-                if (useTerrainAltitude) groundSnapper.update(s, camera.pose) else groundSnapper.reset()
+                if (geoAnchors.any { it.onTerrain } || altitudeMode == AltitudePolicy.TERRAIN) groundSnapper.update(s, camera.pose)
+                else groundSnapper.reset()
 
                 collectGeoAnchors(earth, vp, margin, pinPositions, labelEntries, arrowEntries, newModelPoses)
                 testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
@@ -1880,7 +1869,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             entry.anchor.pose.toMatrix(model, 0)
             // Terrain mode: put the model on the ground/floor ARCore detected under (or near) it.
             // Far models with no detected surface keep their terrain-anchor height.
-            if (useTerrainAltitude) groundSnapper.groundY(model[12], model[14])?.let { model[13] = it }
+            if (entry.onTerrain) groundSnapper.groundY(model[12], model[14])?.let { model[13] = it }
             System.arraycopy(model, 0, modelScaled, 0, 16)
 
             if (entryModelFilePath != null) {
