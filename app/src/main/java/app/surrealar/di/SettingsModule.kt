@@ -13,7 +13,6 @@ import app.surrealar.domain.repository.MockLocationSettingsRepository
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.domain.repository.MapSettingsRepository
 import app.surrealar.domain.repository.StakeoutSettingsRepository
-import app.surrealar.gnss.capture.FixAcceptanceSettings
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -45,12 +44,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object SettingsModule {
-
-    @Provides
-    @Singleton
-    fun provideFixAcceptanceSettings(): FixAcceptanceSettings {
-        return FixAcceptanceSettings()
-    }
 
     /**
      * Provides [SettingsRepository] from the [SurRealApplication] application singleton.

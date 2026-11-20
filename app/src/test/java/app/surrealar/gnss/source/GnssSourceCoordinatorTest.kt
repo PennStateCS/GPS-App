@@ -50,7 +50,6 @@ class GnssSourceCoordinatorTest {
 
         // Unused by the coordinator — empty flows / no-op setters.
         override val externalConnType: Flow<ExternalConnectionType> = emptyFlow()
-        override val externalBtAddress: Flow<String?> = emptyFlow()
         override val externalTcpName: Flow<String?> = emptyFlow()
         override val externalReceiverProfile: Flow<app.surrealar.settings.model.ExternalReceiverProfile> = emptyFlow()
         override val externalReceiverSettings: Flow<app.surrealar.settings.model.ExternalReceiverSettings> = emptyFlow()

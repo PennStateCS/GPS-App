@@ -33,7 +33,6 @@ interface LocationSourceSettingsRepository {
 /** External GNSS receiver configuration (profile, transport, TCP host/port/name). */
 interface ExternalReceiverSettingsRepository {
     val externalConnType: Flow<ExternalConnectionType>
-    val externalBtAddress: Flow<String?>
     val externalTcpHost: Flow<String?>
     val externalTcpPort: Flow<Int?>
     val externalTcpName: Flow<String?>

@@ -10,7 +10,6 @@ import app.surrealar.gnss.capture.AveragingPolicy
 import app.surrealar.gnss.capture.ObservationSession
 import app.surrealar.gnss.model.Fix
 import app.surrealar.domain.repository.SettingsRepository
-import app.surrealar.gnss.capture.FixAcceptanceSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -20,15 +19,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
 /**
- * Drives the standalone capture screen: runs an `ObservationSession` against the active GNSS source
- * under the injected `FixAcceptanceSettings`, exposes capture progress/state, and saves the averaged
- * result via the repository. A capture only completes with a real averaged fix (position + altitude).
+ * Runs averaged GNSS captures for the Add Coordinate dialog: an `ObservationSession` over the
+ * selected mode's provider (internal or external), exposing capture progress/state. A capture only
+ * completes with a real averaged fix (position + altitude).
  */
 @HiltViewModel
 class CaptureViewModel @Inject constructor(
     private val fixSwitchboard: FixSwitchboard,
     private val captureCoordinate: app.surrealar.domain.usecase.CaptureCoordinateUseCase,
-    private val fixAcceptance: FixAcceptanceSettings,
     private val sourceSettings: app.surrealar.gnss.source.SourceSettings,
     private val settingsRepository: SettingsRepository
 ) : ViewModel() {
@@ -39,26 +37,7 @@ class CaptureViewModel @Inject constructor(
     private val _state = MutableStateFlow<ObservationSession.State>(ObservationSession.State.Idle)
     val state: StateFlow<ObservationSession.State> = _state.asStateFlow()
 
-    // Track when fixes start satisfying capture settings
-    private var satisfyingStartTime: Long? = null
-
-    private val _okToCapture = MutableStateFlow(false)
-    val okToCapture: StateFlow<Boolean> = _okToCapture.asStateFlow()
-
     init {
-        // Monitor fixes and update okToCapture based on FixAcceptanceSettings
-        viewModelScope.launch {
-            // currentFix goes null on a provider switch or when fixes stop arriving, so the
-            // "OK to capture" indicator can't stay green on a frozen position.
-            fixSwitchboard.currentFix.collect { fix ->
-                if (fix == null) {
-                    satisfyingStartTime = null
-                    _okToCapture.value = false
-                } else {
-                    updateOkToCapture(fix)
-                }
-            }
-        }
         // Cancel any in-progress averaging session when the provider switches.
         // A session collecting RS2+ fixes must not continue under Internal GPS and vice versa.
         viewModelScope.launch {
@@ -69,42 +48,11 @@ class CaptureViewModel @Inject constructor(
                         DiagnosticsLogger.i("Capture", "Capture canceled/reset due to provider switch $previousProvider -> $provider")
                         cancel()
                     }
-                    // Reset readiness state so a stale fix from the old provider can't keep
-                    // the "OK to capture" indicator green after the source changes. The new
-                    // provider must satisfy the dwell window again from scratch.
-                    satisfyingStartTime = null
-                    _okToCapture.value = false
                 }
                 previousProvider = provider
             }
         }
     }
-
-    private fun updateOkToCapture(fix: Fix) {
-        val currentTime = System.currentTimeMillis()
-
-        // Check if fix satisfies capture settings
-        val satisfiesSettings = checkFixSatisfiesSettings(fix)
-
-        if (satisfiesSettings) {
-            // If this is the first satisfying fix, record the start time
-            if (satisfyingStartTime == null) {
-                satisfyingStartTime = currentTime
-            }
-
-            // Required dwell in ms from Duration (minDwellSec -> minDwell)
-            val dwellTimeMs = currentTime - (satisfyingStartTime ?: currentTime)
-            val requiredDwellMs = fixAcceptance.minDwell.inWholeMilliseconds
-
-            _okToCapture.value = dwellTimeMs >= requiredDwellMs
-        } else {
-            // Fix doesn't satisfy settings, reset
-            satisfyingStartTime = null
-            _okToCapture.value = false
-        }
-    }
-
-    private fun checkFixSatisfiesSettings(fix: Fix): Boolean = fixAcceptance.accepts(fix)
 
     /**
      * Loads the saved GNSS Capture settings and starts an averaging session with that policy.

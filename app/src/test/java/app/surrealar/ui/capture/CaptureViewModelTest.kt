@@ -7,7 +7,6 @@ import app.surrealar.domain.usecase.FakeCoordinateRepository
 import app.surrealar.domain.usecase.ValidateCoordinateForSaveUseCase
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.capture.AveragingPolicy
-import app.surrealar.gnss.capture.FixAcceptanceSettings
 import app.surrealar.gnss.capture.ObservationSession
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
@@ -78,7 +77,6 @@ class CaptureViewModelTest {
 
     private fun vm(
         settingsRepo: SettingsRepository = settings(),
-        minDwell: Duration = Duration.ZERO,
     ): CaptureViewModel {
         val switchboard = Mockito.mock(FixSwitchboard::class.java)
         Mockito.`when`(switchboard.fixes).thenReturn(fixes)
@@ -86,7 +84,6 @@ class CaptureViewModelTest {
         return CaptureViewModel(
             fixSwitchboard = switchboard,
             captureCoordinate = CaptureCoordinateUseCase(repo, ValidateCoordinateForSaveUseCase()),
-            fixAcceptance = FixAcceptanceSettings(minDwell = minDwell),
             sourceSettings = sourceSettings,
             settingsRepository = settingsRepo,
         )
@@ -119,48 +116,17 @@ class CaptureViewModelTest {
         assertTrue((s as ObservationSession.State.Complete).requirementsMet)
     }
 
-    // ── OK-to-capture gate ───────────────────────────────────────────────────
+    // ── Provider switch ──────────────────────────────────────────────────────
 
     @Test
-    fun okToCapture_followsAcceptance() = runBlocking {
+    fun providerSwitch_cancelsCapture() = runBlocking {
         val vm = vm()
-        assertFalse(vm.okToCapture.value)
-        push(fix())
-        assertTrue(vm.okToCapture.value)
-        push(fix(sats = 3))   // below minSats
-        assertFalse(vm.okToCapture.value)
-        push(fix(rtk = RtkStatus.SINGLE))
-        assertFalse(vm.okToCapture.value)
-    }
-
-    @Test
-    fun okToCapture_waitsForDwell() = runBlocking {
-        val vm = vm(minDwell = 1.hours)
-        repeat(3) { push(fix()) }
-        assertFalse(vm.okToCapture.value)
-    }
-
-    @Test
-    fun okToCapture_clearsWhenFeedLosesFix() = runBlocking {
-        val vm = vm()
-        push(fix())
-        assertTrue(vm.okToCapture.value)
-        currentFix.value = null   // switchboard liveness watchdog: fixes stopped
-        assertFalse(vm.okToCapture.value)
-    }
-
-    @Test
-    fun providerSwitch_resetsReadinessAndCancelsCapture() = runBlocking {
-        val vm = vm()
-        push(fix())
-        assertTrue(vm.okToCapture.value)
         vm.start(policy(minSamples = 10))
         push(fix())
         assertTrue(vm.state.value !is ObservationSession.State.Idle)
 
         providerFlow.value = ProviderChoice.INTERNAL
 
-        assertFalse(vm.okToCapture.value)
         assertEquals(ObservationSession.State.Idle, vm.state.value)
     }
 

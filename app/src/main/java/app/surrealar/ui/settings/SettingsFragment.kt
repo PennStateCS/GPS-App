@@ -513,17 +513,22 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val switchCompass = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_stakeout_compass)
             val switchKeepOn  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_stakeout_keep_screen_on)
             var currentStakeout = app.surrealar.settings.SettingsDefaults.stakeout
+            // Only positive numbers are accepted; a blank/partial entry ("", "0.") keeps the saved value.
+            fun positiveOrNull(e: EditText?): Double? =
+                e?.text?.toString()?.trim()?.toDoubleOrNull()?.takeIf { it > 0.0 && it.isFinite() }
             fun persistStakeout() {
                 val updated = currentStakeout.copy(
-                    toleranceMeters = editTolerance?.text?.toString()?.trim()?.toDoubleOrNull() ?: currentStakeout.toleranceMeters,
-                    warningAccuracyMeters = editWarnAcc?.text?.toString()?.trim()?.toDoubleOrNull() ?: currentStakeout.warningAccuracyMeters,
+                    toleranceMeters = positiveOrNull(editTolerance) ?: currentStakeout.toleranceMeters,
+                    warningAccuracyMeters = positiveOrNull(editWarnAcc) ?: currentStakeout.warningAccuracyMeters,
                     enableHaptics = switchHaptics?.isChecked ?: currentStakeout.enableHaptics,
                     enableAudio = switchAudio?.isChecked ?: currentStakeout.enableAudio,
                     guidanceUsesCompassHeading = switchCompass?.isChecked ?: currentStakeout.guidanceUsesCompassHeading,
                     keepScreenOnDuringStakeout = switchKeepOn?.isChecked ?: currentStakeout.keepScreenOnDuringStakeout,
                 )
+                if (updated == currentStakeout) return
                 currentStakeout = updated
-                viewLifecycleOwner.lifecycleScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) } }
+                // Fragment scope (not the view's): a save started as the user leaves the screen still completes.
+                lifecycleScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) } }
             }
 
             viewLifecycleOwner.lifecycleScope.launch {
@@ -555,8 +560,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     switchAudio?.setOnCheckedChangeListener { _, _ -> persistStakeout() }
                     switchCompass?.setOnCheckedChangeListener { _, _ -> persistStakeout() }
                     switchKeepOn?.setOnCheckedChangeListener { _, _ -> persistStakeout() }
-                    editTolerance?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persistStakeout() }
-                    editWarnAcc?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persistStakeout() }
+                    // Save as soon as the box holds a valid value (and on Done / focus loss), so leaving
+                    // the screen right after typing never loses the edit.
+                    for (edit in listOfNotNull(editTolerance, editWarnAcc)) {
+                        edit.addTextChangedListener(object : android.text.TextWatcher {
+                            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                            override fun afterTextChanged(s: android.text.Editable?) { persistStakeout() }
+                        })
+                        edit.setOnEditorActionListener { _, _, _ -> persistStakeout(); false }
+                        edit.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persistStakeout() }
+                    }
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "Failed to load map settings", e)
                 }

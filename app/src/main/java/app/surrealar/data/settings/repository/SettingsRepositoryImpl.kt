@@ -34,7 +34,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
 
     override val locationSource: Flow<LocationSourceType> = sourceFlow
     override val externalConnType: Flow<ExternalConnectionType> = connTypeFlow
-    override val externalBtAddress = local.externalBtAddress
     override val externalTcpHost = local.externalTcpHost
     override val externalTcpPort = local.externalTcpPort
     override val externalTcpName = local.externalTcpName

@@ -27,7 +27,6 @@ val Context.appDataStore by preferencesDataStore(name = DATASTORE_NAME)
 object SettingsKeys {
     val LOCATION_SOURCE = stringPreferencesKey("location_source")
     val EXTERNAL_CONN_TYPE = stringPreferencesKey("external_connection_type")
-    val EXTERNAL_BT_ADDR = stringPreferencesKey("external_bt_device_address")
     val EXTERNAL_TCP_HOST = stringPreferencesKey("external_tcp_host")
     val EXTERNAL_TCP_PORT = intPreferencesKey("external_tcp_port")
     val EXTERNAL_TCP_NAME = stringPreferencesKey("external_tcp_name")
@@ -107,7 +106,6 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     val locationSourceRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.LOCATION_SOURCE] }
     val externalConnTypeRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_CONN_TYPE] }
-    val externalBtAddress: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_BT_ADDR] }
     val externalTcpHost: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_HOST] }
     val externalTcpPort: Flow<Int?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_PORT] }
     val externalTcpName: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_NAME] }
@@ -178,7 +176,6 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     suspend fun setExternalReceiverProfile(prefKey: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] = prefKey } }
     suspend fun clearExternalTcp() { dataStore.edit { prefs ->
         prefs.remove(SettingsKeys.EXTERNAL_TCP_HOST); prefs.remove(SettingsKeys.EXTERNAL_TCP_PORT); prefs.remove(SettingsKeys.EXTERNAL_TCP_NAME) } }
-    suspend fun setExternalBtAddress(address: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_BT_ADDR] = address } }
 
     // Coordinate display setters
     suspend fun setDefaultCoordinateNamePrefix(prefix: String) { dataStore.edit { it[SettingsKeys.DEFAULT_COORDINATE_NAME_PREFIX] = prefix } }
