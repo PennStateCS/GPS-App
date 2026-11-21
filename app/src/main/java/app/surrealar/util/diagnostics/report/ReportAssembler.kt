@@ -24,6 +24,7 @@ object ReportAssembler {
                     .getOrElse { "=== First look ===\n(failed: ${it.message})\n\n" }
                 first + src.summary()
             }
+            z.textSafe("timeline.txt") { TimelineCollector.render(idx) }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
             z.textSafe("permissions-status.txt") { src.permissions() }
             z.textSafe("app-state-summary.txt") { src.appState() }
