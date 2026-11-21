@@ -141,6 +141,10 @@ android {
         getByName("androidTest") {
             assets.directories.add("$projectDir/schemas")
         }
+        // The NMEA fixtures live with gnss-core; ReplayAdapterTest and AndroidGnssLoggerTest replay them too.
+        getByName("test") {
+            resources.directories.add("$rootDir/gnss-core/src/test/resources")
+        }
     }
 }
 

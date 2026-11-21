@@ -27,7 +27,8 @@ object FeedDatum {
         val src = GeodeticPosition(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM ?: 0.0)
         val w = Itrf2014ToNad83.inverse(src, epoch)
         val ellH = fix.altEllipsoidalM?.let { w.heightM }
-        val sep = if (ellH != null && fix.altMslM != null) ellH - fix.altMslM else fix.geoidSeparationM
+        val msl = fix.altMslM   // local copy: Fix lives in gnss-core, so no smart cast across modules
+        val sep = if (ellH != null && msl != null) ellH - msl else fix.geoidSeparationM
         return fix.copy(latDeg = w.latDeg, lonDeg = w.lonDeg, altEllipsoidalM = ellH, geoidSeparationM = sep)
     }
 }

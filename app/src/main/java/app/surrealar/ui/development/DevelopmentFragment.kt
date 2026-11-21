@@ -955,7 +955,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             // Receivers leave course blank when stationary (RMC "…,0.000,,…"): say so rather than "--".
             motionSection.values["Course Over Ground"]?.text = when {
                 fix.courseDeg != null -> { seenFields += "course"; "%.1f°".format(fix.courseDeg) }
-                fix.speedMps != null && fix.speedMps < 0.5 -> "Not moving"
+                fix.speedMps?.let { it < 0.5 } == true -> "Not moving"
                 else -> field("course", null as Double?) { "" }
             }
             // Quality

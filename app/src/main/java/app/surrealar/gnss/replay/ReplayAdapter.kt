@@ -2,7 +2,7 @@ package app.surrealar.gnss.replay
 
 import app.surrealar.gnss.bus.SkyProvider
 import app.surrealar.gnss.bus.SourceAdapter
-import app.surrealar.gnss.bus.Startable
+import app.surrealar.gnss.bus.adapters.Startable
 import app.surrealar.gnss.bus.adapters.NmeaFuser
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider

@@ -7,7 +7,7 @@ import app.surrealar.gnss.bus.adapters.NmeaSource
 import app.surrealar.gnss.bus.adapters.RawNmeaProvider
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.gnss.bus.SkyProvider
-import app.surrealar.gnss.bus.Startable
+import app.surrealar.gnss.bus.adapters.Startable
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.SkySnapshot
 import app.surrealar.gnss.satellites.SatelliteInventory

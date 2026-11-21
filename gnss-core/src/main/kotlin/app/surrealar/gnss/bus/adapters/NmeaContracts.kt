@@ -1,6 +1,5 @@
 package app.surrealar.gnss.bus.adapters
 
-import app.surrealar.gnss.bus.Startable
 import app.surrealar.gnss.model.Fix
 import kotlinx.coroutines.flow.SharedFlow
 
@@ -9,6 +8,15 @@ import kotlinx.coroutines.flow.SharedFlow
  * adapters. Kept in this neutral `gnss.bus.adapters` package (alongside [NmeaFuser]) so that
  * `gnss.internal` and `gnss.external` depend on a common contract rather than on each other.
  */
+
+/**
+ * Optional contract for adapters that need explicit lifecycle control. (Moved here from
+ * gnss.bus/FixSwitchboard.kt when this package became part of gnss-core; unchanged.)
+ */
+interface Startable {
+    fun start()
+    fun stop()
+}
 
 /**
  * Contract for an NMEA data pipeline that wraps a physical or virtual connection.

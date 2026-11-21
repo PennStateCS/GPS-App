@@ -43,10 +43,13 @@ object CoordinateFactory {
         sourceDevice: String? = null,
         appVersion: String? = null
     ): Coordinate {
-        val (utmEasting, utmNorthing, utmZone) = if (fix.lat != null && fix.lon != null &&
-            !fix.lat.isNaN() && !fix.lon.isNaN()) {
+        // Local copies: FixSnapshot lives in gnss-core, so its properties can't be smart-cast here.
+        val fixLat = fix.lat
+        val fixLon = fix.lon
+        val (utmEasting, utmNorthing, utmZone) = if (fixLat != null && fixLon != null &&
+            !fixLat.isNaN() && !fixLon.isNaN()) {
             try {
-                val utmCoord = Utm.forward(fix.lat, fix.lon)
+                val utmCoord = Utm.forward(fixLat, fixLon)
                 Triple(utmCoord.eastingM, utmCoord.northingM, utmCoord.zoneLabel)
             } catch (e: Exception) {
                 Triple(null, null, null)

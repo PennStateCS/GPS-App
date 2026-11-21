@@ -1,6 +1,7 @@
 package app.surrealar.gnss.bus
 
 import app.surrealar.gnss.bus.adapters.RawNmeaProvider
+import app.surrealar.gnss.bus.adapters.Startable
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.SkySnapshot
 import app.surrealar.gnss.source.SourceSettings
@@ -320,14 +321,6 @@ interface SourceAdapter {
  */
 interface SkyProvider {
     val sky: StateFlow<SkySnapshot>
-}
-
-/**
- * Optional contract for adapters that need explicit lifecycle control.
- */
-interface Startable {
-    fun start()
-    fun stop()
 }
 
 /**

@@ -1,4 +1,4 @@
-package app.surrealar.gnss.settings
+package app.surrealar.gnss.capture
 
 import app.surrealar.gnss.capture.GnssCaptureSettings
 import app.surrealar.gnss.capture.toAveragingPolicy
