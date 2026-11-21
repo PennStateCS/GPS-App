@@ -17,6 +17,8 @@ import java.time.Instant
 class AccuracyEstimatorTest {
 
     private val tol = 1e-9
+    /** RMS → 68 % radius: 1.515 / √2 ≈ 1.071 (HDOP × UERE is already a horizontal RMS). */
+    private val R68 = 1.515 / Math.sqrt(2.0)
 
     private fun fix(
         provider: Provider = Provider.INTERNAL,
@@ -57,7 +59,7 @@ class AccuracyEstimatorTest {
             fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 1.5, vDop = 2.0),
             UereTable()
         )
-        assertEquals(1.515 * 1.5 * 4.0, r.horizontalMeters!!, tol)   // 68 % radius: 1.515 × HDOP × internal[SINGLE]
+        assertEquals(R68 * 1.5 * 4.0, r.horizontalMeters!!, tol)   // HDOP × UERE is a horizontal RMS → ×1.071 for the 68 % radius
         assertEquals(2.0 * 4.0, r.verticalMeters!!, tol)
     }
 
@@ -74,14 +76,23 @@ class AccuracyEstimatorTest {
         val r = AccuracyEstimator.estimate1SigmaMeters(
             fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 0.8), UereTable()
         )
-        assertEquals(1.515 * 0.8 * 2.5, r.horizontalMeters!!, tol)
+        assertEquals(R68 * 0.8 * 2.5, r.horizontalMeters!!, tol)
+    }
+
+    @Test fun `DOP fallback examples - Emlid first fix and SM-X940`() {
+        val emlid = AccuracyEstimator.estimate1SigmaMeters(
+            fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 1.0), UereTable())
+        assertEquals(2.68, emlid.horizontalMeters!!, 0.005)        // HDOP 1.0 × 2.5 m × 1.071
+        val tablet = AccuracyEstimator.estimate1SigmaMeters(
+            fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 1.2), UereTable())
+        assertEquals(5.14, tablet.horizontalMeters!!, 0.005)       // HDOP 1.2 × 4 m × 1.071
     }
 
     @Test fun `RS2 RTK fixed uses the tight rs2 UERE`() {
         val r = AccuracyEstimator.estimate1SigmaMeters(
             fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.FIX, hDop = 0.8), UereTable()
         )
-        assertEquals(1.515 * 0.8 * 0.02, r.horizontalMeters!!, tol)   // rs2[FIX] = 0.02, ×1.515 → 68 % radius
+        assertEquals(R68 * 0.8 * 0.02, r.horizontalMeters!!, tol)   // rs2[FIX] = 0.02, ×1.071 → 68 % radius
         assertNull(r.verticalMeters)                          // no vDop → no vertical estimate
     }
 
@@ -100,7 +111,7 @@ class AccuracyEstimatorTest {
         val r = AccuracyEstimator.estimate1SigmaMeters(
             fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 50.0), UereTable()
         )
-        assertEquals(1.515 * 200.0, r.horizontalMeters!!, tol)
+        assertEquals(R68 * 200.0, r.horizontalMeters!!, tol)
     }
 
     // ── UereTable mapping + fallbacks ─────────────────────────────────────────────────────────
