@@ -89,7 +89,7 @@ class SurRealApplication : Application() {
         // Surfaced for tester support: in debug builds Room is allowed to wipe & recreate the
         // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
         // coordinates/models. Release builds keep data via real migrations.
-        DiagnosticsLogger.i("DB", "Destructive migration allowed: ${BuildConfig.DEBUG}")
+        DiagnosticsLogger.i("DATA", "Destructive migration allowed: ${BuildConfig.DEBUG}")
         app.surrealar.util.diagnostics.ExitReasonRecorder.recordAtStartup(this)
 
         // Explicitly select the Maps renderer before any MapView is created.
@@ -100,7 +100,7 @@ class SurRealApplication : Application() {
         MapsInitializer.initialize(this, preferredRenderer) { renderer ->
             activeMapsRenderer = renderer.name
             Log.d("SurRealApplication", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
-            DiagnosticsLogger.i("App", "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
+            DiagnosticsLogger.i("APP", "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
         // Global crash guard. Persists a SANITIZED crash record to DiagnosticsLogger so it lands in
         // the exported diagnostic ZIP (timestamp + thread + exception type/message + stack trace +

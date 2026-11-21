@@ -423,7 +423,7 @@ class RenderMapFragment : Fragment() {
             map.setOnMapLoadedCallback {
                 if (!cameraInitialized && lastLatLngs.isNotEmpty()) updateCamera(lastLatLngs)
                 app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update { it.copy(mapLoaded = true) }
-                logMapEvent("MapLifecycle", "map loaded (tiles drawn)")
+                logMapEvent("MAP", "map loaded (tiles drawn)")
             }
             // Redraw the meter grid when the camera settles so Auto spacing adapts to zoom/pan.
             // Idle fires only after movement stops (not continuously), so this stays cheap.
@@ -439,7 +439,7 @@ class RenderMapFragment : Fragment() {
             app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
                 it.copy(cameraRestored = savedCam != null)
             }
-            logMapEvent("MapLifecycle", "map ready type=${mapTypeLabel(currentMapType)} cameraRestored=${savedCam != null}")
+            logMapEvent("MAP", "map ready type=${mapTypeLabel(currentMapType)} cameraRestored=${savedCam != null}")
         }
 
         // Map Tools overlay wiring. The toggle slides the panel in/out (AR pattern); each row
@@ -716,7 +716,7 @@ class RenderMapFragment : Fragment() {
         val panel = mapToolsPanel ?: return
         mapToolsVisible = open
         mapUiVm.update { it.copy(isMapToolsOpen = open) }
-        if (animate) logMapEvent("MapControls", "map tools=${if (open) "open" else "closed"}")
+        if (animate) logMapEvent("MAP", "map tools=${if (open) "open" else "closed"}")
         if (open) {
             mapToolsToggle?.contentDescription = "Hide map tools"
             if (animate) {
@@ -860,7 +860,7 @@ class RenderMapFragment : Fragment() {
         if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
         startStaleWatcher()
         refreshStakeout()
-        logMapEvent("MapStakeout", "guidance started")
+        logMapEvent("STAKEOUT", "guidance started")
     }
 
     private fun stopGuidance() {
@@ -874,7 +874,7 @@ class RenderMapFragment : Fragment() {
         releaseToneGenerator()
         setKeepScreenOn(false)
         feedbackGate.reset()
-        logMapEvent("MapStakeout", "guidance stopped")
+        logMapEvent("STAKEOUT", "guidance stopped")
     }
 
     /**
@@ -1246,7 +1246,7 @@ class RenderMapFragment : Fragment() {
                 // from details). Clears the selection if that coordinate no longer exists.
                 restoreSelectedCard()
                 applyPointLabels()
-                logMapEvent("MapMarkers", "markersLoaded total=${points.size} visible=${latLngsVisible.size} hidden=${points.size - latLngsVisible.size}")
+                logMapEvent("MAP", "markersLoaded total=${points.size} visible=${latLngsVisible.size} hidden=${points.size - latLngsVisible.size}")
             } catch (e: Exception) {
                 MapRuntimeDiagnostics.update { it.copy(lastError = "observer: ${e.javaClass.simpleName}: ${e.message}") }
                 Log.e(TAG, "Error in data binding observer", e)
@@ -1396,7 +1396,7 @@ class RenderMapFragment : Fragment() {
         updateMyLocationRowState()
         applyCurrentLocationVisibility()
         syncCompass()   // My Location heading shares the one compass listener
-        logMapEvent("MapControls", "my location overlay=${if (showCurrentLocationOnMap) "on" else "off"}")
+        logMapEvent("MAP", "my location overlay=${if (showCurrentLocationOnMap) "on" else "off"}")
         showSnackbar(if (showCurrentLocationOnMap) "Showing my location" else "Hiding my location")
     }
 
@@ -1527,7 +1527,7 @@ class RenderMapFragment : Fragment() {
         googleMap?.let { MapThemeHelper.applyTheme(requireContext(), it, type) }
         isSatellite = type == GoogleMap.MAP_TYPE_HYBRID || type == GoogleMap.MAP_TYPE_SATELLITE
         updateMapTypeButton()
-        logMapEvent("MapControls", "map type=${mapTypeLabel(type)}")
+        logMapEvent("MAP", "map type=${mapTypeLabel(type)}")
     }
 
     /** Shows the current map type on the toolbar row and announces the next one for accessibility. */
@@ -1663,7 +1663,7 @@ class RenderMapFragment : Fragment() {
         mapUiVm.update { it.copy(selectedCoordinateId = id) }
         toggleAdapter.setSelectedId(id)
         showSelectedCoordinateCard(coord)
-        logMapEvent("MapControls", "selected point opened")
+        logMapEvent("MAP", "selected point opened")
         // Center map on selection, keeping zoom at least 16
         googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(
             LatLng(coord.latitude, coord.longitude),
@@ -1851,7 +1851,7 @@ class RenderMapFragment : Fragment() {
         lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
 
         refreshStakeout()
-        logMapEvent("MapStakeout", "stakeout started")
+        logMapEvent("STAKEOUT", "stakeout started")
         showSnackbar("Stakeout started: ${coord.name}")
         dismissSelectedCoordinate()
     }
@@ -1868,7 +1868,7 @@ class RenderMapFragment : Fragment() {
         showStakeoutWaiting()
         stakeoutMarker?.remove(); stakeoutMarker = null; lastStakeoutMarkerHue = null
         stakeoutLine?.remove(); stakeoutLine = null
-        logMapEvent("MapStakeout", "stakeout stopped")
+        logMapEvent("STAKEOUT", "stakeout stopped")
         showSnackbar("Stakeout stopped")
     }
 
@@ -2001,7 +2001,7 @@ class RenderMapFragment : Fragment() {
         gridMode = gridMode.next()
         mapUiVm.update { it.copy(gridMode = gridMode) }
         redrawGrid()
-        logMapEvent("MapControls", "grid mode=${gridMode.label}")
+        logMapEvent("MAP", "grid mode=${gridMode.label}")
         showSnackbar("Grid: ${MapGrid.buttonLabel(gridMode, currentGridSpacingM)}")
     }
 
@@ -2105,7 +2105,7 @@ class RenderMapFragment : Fragment() {
         labelDescriptorCache.clear()
         updateLabelsButton()
         applyPointLabels()
-        logMapEvent("MapControls", "point labels=${pointLabelMode.label}")
+        logMapEvent("MAP", "point labels=${pointLabelMode.label}")
         showSnackbar("Labels: ${pointLabelMode.label}")
     }
 

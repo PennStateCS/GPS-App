@@ -90,7 +90,7 @@ class AndroidMockLocationPublisher(
     /** Called by the AR screen on resume (true) / pause (false). */
     fun setArSessionActive(active: Boolean) {
         if (arSessionActive.value != active) {
-            DiagnosticsLogger.i("MockLoc", "AR session ${if (active) "active — auto-enabling" else "inactive — releasing"} mock publishing")
+            DiagnosticsLogger.i("GNSS", "AR session ${if (active) "active — auto-enabling" else "inactive — releasing"} mock publishing")
         }
         arSessionActive.value = active
     }
@@ -172,7 +172,7 @@ class AndroidMockLocationPublisher(
             return false
         }
         if (++consecutiveStale >= STALE_RESET_COUNT) {
-            DiagnosticsLogger.w("MockLoc", "Fix timing baseline reset after $consecutiveStale stale fixes (clock change?)")
+            DiagnosticsLogger.w("GNSS", "Fix timing baseline reset after $consecutiveStale stale fixes (clock change?)")
             resetFreshness()
         }
         return true
@@ -419,7 +419,7 @@ class AndroidMockLocationPublisher(
     companion object {
         private const val TAG = "MockLocPublisher"
         /** Diagnostic export tag for all mock-location lifecycle/injection events. */
-        private const val DIAG = "MOCK"
+        private const val DIAG = "GNSS"
         /** Minimum spacing between per-injection export logs (status still updates every fix). */
         private const val INJECT_LOG_INTERVAL_MS = 3_000L
         /** Fix ages beyond this (or negative = device clock ahead) are treated as clock skew, not latency. */

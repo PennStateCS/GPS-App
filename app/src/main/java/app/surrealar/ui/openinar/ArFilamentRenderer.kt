@@ -744,7 +744,7 @@ class ArFilamentRenderer {
     companion object {
         private const val TAG        = "ArFilamentRenderer"
         /** Dedicated tag for model-loading diagnostics — filter logcat by this tag. */
-        const val DIAG               = "AR_MDL"
+        const val DIAG               = "AR"
         /** Must match the near/far values used in ARCore's getProjectionMatrix() call. */
         private const val NEAR_PLANE = 0.1
         private const val FAR_PLANE  = 2000.0

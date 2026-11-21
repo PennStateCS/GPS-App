@@ -51,7 +51,7 @@ class CoordinateSystemService @Inject constructor(
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             geoid = runCatching {
                 context.assets.open(Geoid18Grid.ASSET_PATH).use { Geoid18Grid(it.readBytes()) }
-            }.onFailure { DiagnosticsLogger.e("Coords", "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
+            }.onFailure { DiagnosticsLogger.e("COORD", "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
                 .getOrNull()
         }
     }

@@ -55,7 +55,7 @@ class InternalAdapter(
         if (collectJob != null) return
 
         android.util.Log.d(TAG, "Starting internal GNSS adapter")
-        DiagnosticsLogger.i("SOURCE", "internal GNSS adapter started")
+        DiagnosticsLogger.i("GNSS", "internal GNSS adapter started")
 
         /*
          * Clear the inventory before starting collection so satellites from a
@@ -85,7 +85,7 @@ class InternalAdapter(
                     // Guarded: one bad message must not end the collector or crash the app scope.
                     runCatching { inv.consume(gsv) }
                         .onSuccess { _sky.value = it }
-                        .onFailure { app.surrealar.util.DiagnosticsLogger.e("SOURCE", "GSV update failed; message skipped", it) }
+                        .onFailure { app.surrealar.util.DiagnosticsLogger.e("GNSS", "GSV update failed; message skipped", it) }
                 }
         }
     }
@@ -101,7 +101,7 @@ class InternalAdapter(
 
     override fun stop() {
         android.util.Log.d(TAG, "Stopping internal GNSS adapter")
-        DiagnosticsLogger.i("SOURCE", "internal GNSS adapter stopped")
+        DiagnosticsLogger.i("GNSS", "internal GNSS adapter stopped")
 
         collectJob?.cancel()
         collectJob = null

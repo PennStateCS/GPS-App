@@ -32,7 +32,7 @@ class ObserveArCoordinateModelsUseCase @Inject constructor(
             // A DB read/query failure here would otherwise propagate through the ViewModel's stateIn
             // and crash the AR screen. Degrade to "no coordinates" and record why, so AR still opens.
             .catch { e ->
-                DiagnosticsLogger.e("AR_MDL", "AR coordinate load failed — showing no coordinates", e)
+                DiagnosticsLogger.e("AR", "AR coordinate load failed — showing no coordinates", e)
                 emit(emptyList())
             }
 }

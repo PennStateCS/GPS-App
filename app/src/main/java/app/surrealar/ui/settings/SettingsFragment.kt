@@ -865,7 +865,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     val file = try {
                         app.surrealar.util.DiagnosticReportExporter.buildReport(requireContext())
                     } catch (ex: Exception) {
-                        app.surrealar.util.DiagnosticsLogger.e("DiagnosticExport", "Export error", ex)
+                        app.surrealar.util.DiagnosticsLogger.e("EXPORT", "Export error", ex)
                         null
                     }
                     btnExport.isEnabled = true
@@ -890,7 +890,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         startActivity(Intent.createChooser(shareIntent, "Share diagnostic report"))
                         showSettingsMessage("Diagnostic report ready.")
                     } catch (ex: Exception) {
-                        app.surrealar.util.DiagnosticsLogger.e("DiagnosticExport", "Share failed", ex)
+                        app.surrealar.util.DiagnosticsLogger.e("EXPORT", "Share failed", ex)
                         showSettingsMessage("Could not create diagnostic report.")
                     }
                 }

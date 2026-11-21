@@ -610,7 +610,7 @@ class MainActivity : AppCompatActivity() {
                     .onEach { frame -> renderToolbarFrame(frame) }
                     .retryForever { e, attempt ->
                         android.util.Log.e("MainActivity", "GNSS toolbar pipeline error (retry #${attempt + 1})", e)
-                        app.surrealar.util.DiagnosticsLogger.w("Toolbar", "toolbar pipeline error, retrying: ${e.javaClass.simpleName}")
+                        app.surrealar.util.DiagnosticsLogger.w("GNSS", "toolbar pipeline error, retrying: ${e.javaClass.simpleName}")
                         val source = runCatching { settingsRepository.locationSource.first() }.getOrDefault(LocationSourceType.INTERNAL)
                         toolbarRenderer.render(GnssToolbarStateMapper.error(source, externalReceiverLabel))
                     }
@@ -629,7 +629,7 @@ class MainActivity : AppCompatActivity() {
                         val isExternalLive =
                             provider == app.surrealar.gnss.source.SourceSettings.ProviderChoice.EXTERNAL_TCP
                         app.surrealar.util.DiagnosticsLogger.i(
-                            "Toolbar", "Reset due to provider switch $previousProvider -> $provider"
+                            "GNSS", "Reset due to provider switch $previousProvider -> $provider"
                         )
                         val liveSource = if (isExternalLive) LocationSourceType.EXTERNAL else LocationSourceType.INTERNAL
                         withContext(Dispatchers.Main) { resetStatusTokensForSource(liveSource) }
@@ -693,7 +693,7 @@ class MainActivity : AppCompatActivity() {
                 if (state.isWaiting) {
                     if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
                         loggedExternalWaiting = true
-                        app.surrealar.util.DiagnosticsLogger.i("Toolbar", "External selected, waiting for current fix")
+                        app.surrealar.util.DiagnosticsLogger.i("GNSS", "External selected, waiting for current fix")
                     }
                     latestSkySnapshot = null
                 } else {
@@ -701,7 +701,7 @@ class MainActivity : AppCompatActivity() {
                     if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
                         loggedFirstExternalToolbarFix = true
                         loggedExternalWaiting = false
-                        app.surrealar.util.DiagnosticsLogger.i("Toolbar", "First current external fix displayed after startup")
+                        app.surrealar.util.DiagnosticsLogger.i("GNSS", "First current external fix displayed after startup")
                     }
                 }
                 lastToolbarState = state
@@ -774,7 +774,7 @@ class MainActivity : AppCompatActivity() {
         if (!::navController.isInitialized) return
         runCatching {
             navController.navigate(destId, args, androidx.navigation.navOptions { launchSingleTop = true })
-        }.onFailure { app.surrealar.util.DiagnosticsLogger.w("Toolbar", "toolbar navigation failed: ${it.message}") }
+        }.onFailure { app.surrealar.util.DiagnosticsLogger.w("GNSS", "toolbar navigation failed: ${it.message}") }
     }
 
     /** Long-press on the coordinates: copy what's shown (position + height) to the clipboard. */
@@ -826,7 +826,7 @@ class MainActivity : AppCompatActivity() {
         if (reason != lastToolbarIgnoreReason || now - lastToolbarIgnoreLogMs >= 10_000L) {
             lastToolbarIgnoreLogMs = now
             lastToolbarIgnoreReason = reason
-            app.surrealar.util.DiagnosticsLogger.w("Toolbar", "Ignored $reason fix for live display")
+            app.surrealar.util.DiagnosticsLogger.w("GNSS", "Ignored $reason fix for live display")
         }
     }
 

@@ -55,7 +55,7 @@ class ReplayAdapter(
         onGsv = { gsv ->
             runCatching { inventory.consume(gsv) }
                 .onSuccess { _sky.value = it }
-                .onFailure { DiagnosticsLogger.e("SOURCE", "replay GSV update failed; message skipped", it) }
+                .onFailure { DiagnosticsLogger.e("GNSS", "replay GSV update failed; message skipped", it) }
         },
     )
 
@@ -72,7 +72,7 @@ class ReplayAdapter(
         val src = source ?: return
         if (playJob != null) return
         inventory.reset()
-        DiagnosticsLogger.i("SOURCE", "replay started: ${src.name}")
+        DiagnosticsLogger.i("GNSS", "replay started: ${src.name}")
         // Same 300 ms GST-hold cap as the live sources — only while the file plays. Started first so a
         // file that ends at once still finds it to cancel.
         val tick = scope.launch(dispatcher) {
@@ -84,7 +84,7 @@ class ReplayAdapter(
                 src.lines().collect { line ->
                     if (line.isNotEmpty() && line[0] == '$') {
                         runCatching { fuser.accept(line) }
-                            .onFailure { DiagnosticsLogger.e("SOURCE", "replay line rejected by the fuser", it) }
+                            .onFailure { DiagnosticsLogger.e("GNSS", "replay line rejected by the fuser", it) }
                     }
                 }
             } finally {
@@ -101,7 +101,7 @@ class ReplayAdapter(
         fuser.reset()
         _fixes.resetReplayCache()
         _sky.value = SkySnapshot()
-        DiagnosticsLogger.i("SOURCE", "replay stopped")
+        DiagnosticsLogger.i("GNSS", "replay stopped")
     }
 
     /** True while the GST-hold ticker runs (tests: it must stop when the file ends). */

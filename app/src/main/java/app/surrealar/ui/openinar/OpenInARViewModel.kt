@@ -272,7 +272,7 @@ class OpenInARViewModel @Inject constructor(
     fun logArVisibilityState(trigger: String) {
         val rows = arModelRows.value
         val customized = arVisibilityCustomized.value
-        DiagnosticsLogger.i("AR_MDL", "AR_VISIBILITY_STATE trigger=$trigger mode=${arVisibilityMode.value} " +
+        DiagnosticsLogger.i("AR", "AR_VISIBILITY_STATE trigger=$trigger mode=${arVisibilityMode.value} " +
             "customized=$customized derivedFromMap=${!customized} visibleIds=${effectiveVisibleIds.value.size} " +
             "rangeM=${distanceFilterM.value?.toInt() ?: "all"} eligible=${rows.count { it.inRange }} " +
             "rendered=${rows.count { it.renderable }}")
@@ -289,7 +289,7 @@ class OpenInARViewModel @Inject constructor(
     }
 
     private fun logVisibility(msg: String) = DiagnosticsLogger.i(
-        "AR_MDL", "AR_VISIBILITY $msg mode=${arVisibilityMode.value} " +
+        "AR", "AR_VISIBILITY $msg mode=${arVisibilityMode.value} " +
             "eligible=${arModelRows.value.count { it.inRange }} total=${arModelRows.value.size}")
 
     fun setArVisibilityMode(mode: ArVisibilityMode) = viewModelScope.launch {

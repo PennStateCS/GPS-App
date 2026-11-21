@@ -69,7 +69,7 @@ object DiagnosticReportExporter {
 
             // Gather app data once; never let a single failing section abort the whole export.
             val data = runCatching { gatherDiagData(context) }.getOrElse {
-                DiagnosticsLogger.w("DiagnosticExport", "gatherDiagData failed: ${it.message}", it)
+                DiagnosticsLogger.w("EXPORT", "gatherDiagData failed: ${it.message}", it)
                 DiagData(null, null, false, emptyList(), emptyList())
             }
             val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())
@@ -103,7 +103,7 @@ object DiagnosticReportExporter {
 
             zipFile
         } catch (e: Exception) {
-            DiagnosticsLogger.e("DiagnosticExport", "Failed to build report", e)
+            DiagnosticsLogger.e("EXPORT", "Failed to build report", e)
             null
         }
     }
@@ -204,7 +204,7 @@ object DiagnosticReportExporter {
         }
         if (missing > 0) add("MODEL: $missing coordinate(s) link a model whose file is missing or unresolved — models will not render")
         // Pointers for AR/model issues that can only be reconstructed from the event/error logs.
-        add("Note: AR session, Earth-tracking, anchor and model-load outcomes are in app-log-*.txt (tags AR / AR_MDL); crashes are in app-errors-*.txt.")
+        add("Note: AR session, Earth-tracking, anchor and model-load outcomes are in app-log-*.txt (tags AR / MODEL); crashes are in app-errors-*.txt.")
     }
 
     // ── section builders ───────────────────────────────────────────────────────
@@ -442,7 +442,7 @@ object DiagnosticReportExporter {
     /** Like [addText] but never lets one failing section abort the export — writes the error instead. */
     private suspend fun ZipOutputStream.addTextSafe(name: String, build: suspend () -> String) {
         val content = runCatching { build() }.getOrElse {
-            DiagnosticsLogger.w("DiagnosticExport", "section $name failed: ${it.message}", it)
+            DiagnosticsLogger.w("EXPORT", "section $name failed: ${it.message}", it)
             "Section failed to generate: ${it.message}"
         }
         addText(name, content)

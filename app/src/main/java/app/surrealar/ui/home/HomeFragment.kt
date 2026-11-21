@@ -226,7 +226,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                             }
                             if (!loggedFirstMapFix) {
                                 loggedFirstMapFix = true
-                                DiagnosticsLogger.i("HomeMap", "First current-source fix applied to map" +
+                                DiagnosticsLogger.i("MAP", "First current-source fix applied to map" +
                                     " provider=${fix.provider} lat=%.6f lon=%.6f".format(fix.latDeg, fix.lonDeg))
                             }
                             updateMapLocation(fix)
@@ -246,7 +246,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 var previousProvider: app.surrealar.gnss.source.SourceSettings.ProviderChoice? = null
                 sourceSettings.activeProvider.collect { provider ->
                     if (previousProvider != null && previousProvider != provider) {
-                        DiagnosticsLogger.i("HomeMap", "Live location reset due to provider switch $previousProvider -> $provider")
+                        DiagnosticsLogger.i("MAP", "Live location reset due to provider switch $previousProvider -> $provider")
                         resetMapLiveLocation()
                     }
                     previousProvider = provider
@@ -272,7 +272,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         val now = System.currentTimeMillis()
         if (now - lastMapIgnoreLogMs >= 10_000L) {
             lastMapIgnoreLogMs = now
-            DiagnosticsLogger.w("HomeMap", "Ignored $reason fix for live map")
+            DiagnosticsLogger.w("MAP", "Ignored $reason fix for live map")
         }
     }
 
@@ -583,7 +583,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 // Log RTK status transitions (not every fix)
                 if (fix.rtkStatus != lastRtkStatus) {
                     val prev = lastRtkStatus?.name ?: "NONE"
-                    DiagnosticsLogger.i("Fix", "Status $prev → ${fix.rtkStatus.name} sats=${fix.satsUsed} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "unknown"}")
+                    DiagnosticsLogger.i("GNSS", "Status $prev → ${fix.rtkStatus.name} sats=${fix.satsUsed} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "unknown"}")
                     lastRtkStatus = fix.rtkStatus
                 }
 
@@ -593,7 +593,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     if (!hasCenteredCamera) {
                         android.util.Log.d(TAG, "First fix to map: hAcc=${fix.hAccM} status=${fix.rtkStatus} sats=${fix.satsUsed}")
                         // Privacy: do not log exact live coordinates to the persistent diagnostic ZIP.
-                        DiagnosticsLogger.i("HomeMap", "First fix applied to map status=${fix.rtkStatus} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} sats=${fix.satsUsed}")
+                        DiagnosticsLogger.i("MAP", "First fix applied to map status=${fix.rtkStatus} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} sats=${fix.satsUsed}")
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                         hasCenteredCamera = true
                         lastCameraMoveMs = System.currentTimeMillis()
@@ -679,7 +679,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         LatLng(HomeInitialCamera.Overview.LAT, HomeInitialCamera.Overview.LON), HomeInitialCamera.Overview.ZOOM))
             }
             showGnssStatusChip(choice.waitingText)
-            DiagnosticsLogger.i("HomeMap", "Initial camera: ${choice::class.simpleName}")
+            DiagnosticsLogger.i("MAP", "Initial camera: ${choice::class.simpleName}")
         } catch (e: Exception) {
             android.util.Log.w(TAG, "applyInitialCamera failed", e)
         }
@@ -731,7 +731,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     override fun onMapReady(map: GoogleMap) {
         try {
             android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${app.surrealar.SurRealApplication.activeMapsRenderer}")
-            DiagnosticsLogger.i("HomeMap", "MAP_READY mapsRenderer=${SurRealApplication.activeMapsRenderer}")
+            DiagnosticsLogger.i("MAP", "MAP_READY mapsRenderer=${SurRealApplication.activeMapsRenderer}")
             SurRealApplication.reportMapLoadStatus("MAP_READY")
             googleMap = map
 
@@ -755,9 +755,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 android.util.Log.d(TAG, "onMapReady: network transport=$transport internet=$hasInternet validated=$hasValidated")
                 if (hasInternet && !hasValidated) {
                     android.util.Log.w(TAG, "onMapReady: network not validated — likely receiver WiFi; map tiles may not load")
-                    DiagnosticsLogger.w("Network", "internet=true validated=false transport=$transport — tiles may not load (receiver WiFi?)")
+                    DiagnosticsLogger.w("SYSTEM", "internet=true validated=false transport=$transport — tiles may not load (receiver WiFi?)")
                 }
-                DiagnosticsLogger.i("HomeMap", "Network transport=$transport internet=$hasInternet validated=$hasValidated")
+                DiagnosticsLogger.i("MAP", "Network transport=$transport internet=$hasInternet validated=$hasValidated")
             }
 
             // Set map type to Normal (shows streets/terrain instead of blank)
@@ -782,14 +782,14 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val cam = map.cameraPosition
                 android.util.Log.d(TAG, "Map tiles loaded: ${elapsed}ms after onMapReady, " +
                     "zoom=${cam.zoom}, lat=${cam.target.latitude}, lon=${cam.target.longitude}")
-                DiagnosticsLogger.i("HomeMap", "MAP_LOADED elapsed=${elapsed}ms zoom=%.1f".format(cam.zoom))
+                DiagnosticsLogger.i("MAP", "MAP_LOADED elapsed=${elapsed}ms zoom=%.1f".format(cam.zoom))
                 SurRealApplication.reportMapLoadStatus("MAP_LOADED (${elapsed}ms)")
             }
             // Warn if tiles never load within 10 s (blank/gray map scenario)
             viewLifecycleOwner.lifecycleScope.launch {
                 delay(10_000)
                 if (!mapTilesLoaded) {
-                    DiagnosticsLogger.w("HomeMap", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
+                    DiagnosticsLogger.w("MAP", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
                     SurRealApplication.reportMapLoadStatus("MAP_READY but MAP_LOADED did not fire (10s)")
                 }
             }
