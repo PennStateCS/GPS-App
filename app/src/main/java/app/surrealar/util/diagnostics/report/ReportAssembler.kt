@@ -26,6 +26,9 @@ object ReportAssembler {
             }
             z.textSafe("timeline.txt") { TimelineCollector.render(idx) }
             z.textSafe("sessions.txt") { SessionsCollector.render(idx) }
+            val traces = runCatching { src.exitTraceFiles() }.getOrDefault(emptyList())
+            z.textSafe("exits.txt") { ExitsCollector.render(idx, traces.map { it.name }) }
+            traces.forEach { z.file("exits/${it.name}", it) }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
             z.textSafe("permissions-status.txt") { src.permissions() }
             z.textSafe("app-state-summary.txt") { src.appState() }

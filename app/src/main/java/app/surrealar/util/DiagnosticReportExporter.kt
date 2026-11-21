@@ -119,6 +119,8 @@ object DiagnosticReportExporter {
                 freeStorageBytes = runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrNull(),
             )
         }
+        override fun exitTraceFiles(): List<File> =
+            app.surrealar.util.diagnostics.ExitReasonRecorder.exitsDir(context).listFiles()?.filter { it.isFile }?.sortedBy { it.name }.orEmpty()
         override fun logFiles() = DiagnosticsLogger.logFiles()
         override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }

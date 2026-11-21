@@ -23,6 +23,9 @@ open class FakeReportSources(
 
     override fun liveState() = LiveState("EXTERNAL_TCP", "FIX", "CONNECTED", 1.2, "receiving station=PAWB age=1.2s", 12L * 1024 * 1024 * 1024)
 
+    override fun exitTraceFiles(): List<File> =
+        listOf(File(dir, "20261121-133000-ANR.txt").apply { writeText("----- pid 123 at 2026-11-21 13:30:00 -----\n\"main\" prio=5 tid=1 Blocked\n") })
+
     override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) })
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
 

@@ -49,4 +49,15 @@ class LogCollectorsTest {
         """.trimIndent() + "\n", SessionsCollector.render(idx()))
     }
 
+    @Test fun `golden exits`() {
+        assertEquals("""
+            === Process exits ===
+            Why earlier app processes ended, as recorded by Android (API 30+) at the next start.
+
+            2026-11-21T13:31:01.000-05:00 W APP [diag-exits] Previous process exit: reason=CRASH status=0 importance=100 pss=1000kB rss=2000kB at=2026-11-21T13:30:00.100-05:00 description=crash
+
+            --- Saved traces (exits/) ---
+            exits/20261121-133000-ANR.txt
+        """.trimIndent() + "\n", ExitsCollector.render(idx(), listOf("20261121-133000-ANR.txt")))
+    }
 }
