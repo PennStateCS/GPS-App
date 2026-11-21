@@ -683,6 +683,7 @@ class MainActivity : AppCompatActivity() {
             }
             is ToolbarMapResult.Render -> {
                 val state = result.state
+                app.surrealar.ui.toolbar.ToolbarLinkLog.onState(state)
                 app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.render", "toolbar") {
                     "shown: src=${state.sourceText} sol=${state.fixText} sats=${state.satelliteText} " +
                         "acc=${state.accuracyText} (${state.accuracyLevel}) ll=${state.latLonText} " +
