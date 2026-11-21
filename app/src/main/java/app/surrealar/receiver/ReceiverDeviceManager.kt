@@ -100,6 +100,8 @@ class ReceiverDeviceManager(
                 Target(ext, p, h?.trim()?.takeIf { it.isNotEmpty() })
             }.distinctUntilChanged().collect(::apply)
         }
+        // Diagnostics only: corrections link up/down and station changes (no base position).
+        scope.launch { corrections.collect { app.surrealar.util.diagnostics.GnssFeedLogger.onCorrections(it) } }
     }
 
     private fun apply(t: Target) {

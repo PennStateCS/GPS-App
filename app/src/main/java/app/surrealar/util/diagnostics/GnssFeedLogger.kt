@@ -56,6 +56,9 @@ class GnssFeedLogger @Inject constructor(
     companion object {
         const val HEARTBEAT_MS = 60_000L
         /** Set once started; the report reads live stats from it. */
+        /** Set by ReceiverDeviceManager so its corrections flow reaches [link] without an early inject. */
+        fun onCorrections(c: io.github.pennstatecs.geokit.gnss.receiver.ReceiverCorrections?) { instance?.link?.onCorrections(c) }
+
         @Volatile var instance: GnssFeedLogger? = null
             private set
 
