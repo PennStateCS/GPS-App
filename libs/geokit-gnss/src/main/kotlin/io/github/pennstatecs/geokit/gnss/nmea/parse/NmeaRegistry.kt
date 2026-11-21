@@ -14,8 +14,9 @@ import java.util.concurrent.atomic.AtomicLong
  *                        checksum. Set to false for dev/replay scenarios where test data may
  *                        omit checksums.
  *
- * Diagnostics: per-sentence parse failures are counted (never logged individually — that would be
- * per-sentence spam). A compact summary is emitted to [GnssLog.diagnostic] at most once per
+ * Diagnostics: per-sentence parse failures are counted. Checksum failures also get a debug-build line
+ * with the sentence id (talker + type) and the running count — never the payload, which can hold a
+ * position. A compact summary is emitted to [GnssLog.diagnostic] at most once per
  * [SUMMARY_INTERVAL_MS] when there were failures, and on demand via [logParseSummary] (e.g. when a
  * source stops). Summaries carry counts and recent failed sentence TYPES only — never raw payloads.
  */
@@ -60,14 +61,15 @@ public class NmeaRegistry(
                 val csHex = trimmed.substring(starIdx + 1, starIdx + 3)
                 val expected = csHex.toIntOrNull(16) ?: run { wChecksum.incrementAndGet(); return null }
                 if (xorChecksum(payload) != expected) {
-                    GnssLog.w("NmeaRegistry", "Checksum mismatch: $trimmed")
-                    wChecksum.incrementAndGet()
+                    val n = wChecksum.incrementAndGet()
+                    // Sentence id and count only — the payload can hold a position (debug builds only).
+                    GnssLog.d("NmeaRegistry") { "Checksum mismatch: ${sentenceId(payload)} (#$n this window)" }
                     return null
                 }
             } else if (requireChecksum) {
                 // Checksum missing but required: reject sentence
-                GnssLog.w("NmeaRegistry", "Missing required checksum: $trimmed")
-                wChecksum.incrementAndGet()
+                val n = wChecksum.incrementAndGet()
+                GnssLog.d("NmeaRegistry") { "Missing required checksum: ${sentenceId(payload)} (#$n this window)" }
                 return null
             }
             // else: checksum missing but not required; allow sentence
@@ -150,4 +152,8 @@ public class NmeaRegistry(
         const val SUMMARY_INTERVAL_MS = 60_000L
         const val MAX_RECENT_TYPES = 8
     }
+
+    /** Talker + sentence type (e.g. "GNGGA") from a payload, for logs that must not carry the data. */
+    private fun sentenceId(payload: String): String =
+        payload.substringBefore(',').take(16).filter { it.isLetterOrDigit() }.ifEmpty { "?" }
 }

@@ -43,16 +43,27 @@ class AndroidGnssLoggerTest {
 
     private fun logs(tag: String) = ShadowLog.getLogsForTag(tag).map { it.type to it.msg }
 
-    @Test fun `registry checksum warnings go to logcat with the same tag and text`() {
+    // Checksum failures used to log the whole sentence (a position) as a warning on every failure.
+    // Now: same tag, sentence id + running count only, and only in debug builds.
+    @Test fun `registry checksum failures log the sentence id and count, never the payload`() {
+        GnssDebugLog.enabled = true
         val registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true)
         val bad = "\$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*00"
         val missing = "\$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,"
         registry.parse(bad)
         registry.parse(missing)
         assertEquals(
-            listOf(Log.WARN to "Checksum mismatch: $bad", Log.WARN to "Missing required checksum: $missing"),
+            listOf(Log.DEBUG to "Checksum mismatch: GPGGA (#1 this window)",
+                Log.DEBUG to "Missing required checksum: GPGGA (#2 this window)"),
             logs("NmeaRegistry"),
         )
+    }
+
+    @Test fun `release builds log nothing for checksum failures`() {
+        GnssDebugLog.enabled = false
+        val registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true)
+        registry.parse("\$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*00")
+        assertEquals(emptyList<Pair<Int, String>>(), logs("NmeaRegistry"))
     }
 
     @Test fun `diagnostic goes through DiagnosticsLogger (info on logcat)`() {

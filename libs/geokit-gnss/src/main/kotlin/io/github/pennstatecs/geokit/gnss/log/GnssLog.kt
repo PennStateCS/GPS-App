@@ -88,8 +88,43 @@ public object GnssLog {
     /** True when debug traces are produced (see [GnssLogger.enabled]). */
     public val enabled: Boolean get() = logger.enabled
 
-    /** See [GnssLogger.d]. */
-    public fun d(tag: String, message: String): Unit = logger.d(tag, message)
+    /**
+     * Debug message — written only while [enabled] (debug builds / developer tracing), so release
+     * logcat never gets debug lines. See [GnssLogger.d].
+     */
+    public fun d(tag: String, message: String) {
+        val l = logger
+        if (l.enabled) l.d(tag, message)
+    }
+
+    /** Debug message built only while [enabled]: nothing is formatted in release. */
+    public inline fun d(tag: String, message: () -> String) {
+        val l = logger
+        if (l.enabled) l.d(tag, message())
+    }
+
+    /** Info message built and written only while [enabled] (detail that release builds don't need). */
+    public inline fun i(tag: String, message: () -> String) {
+        val l = logger
+        if (l.enabled) l.i(tag, message())
+    }
+
+    /** Warning built and written only while [enabled] (detail that release builds don't need). */
+    public inline fun w(tag: String, message: () -> String) {
+        val l = logger
+        if (l.enabled) l.w(tag, message())
+    }
+
+    /**
+     * Throttled debug message under [tag]: at most once per [intervalMs] for [key], and only while
+     * [enabled]. For per-message detail (e.g. receiver broadcasts) that would otherwise flood logcat.
+     */
+    public inline fun dEvery(tag: String, key: String, intervalMs: Long = DEFAULT_INTERVAL_MS, message: () -> String) {
+        val l = logger
+        if (!l.enabled) return
+        if (!l.isDue(key, intervalMs)) return
+        l.d(tag, message())
+    }
 
     /** See [GnssLogger.i]. */
     public fun i(tag: String, message: String): Unit = logger.i(tag, message)

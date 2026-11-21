@@ -297,10 +297,13 @@ class AndroidMockLocationPublisher(
             if (appRecvMs - lastInjectionLogMs >= INJECT_LOG_INTERVAL_MS) {
                 lastInjectionLogMs = appRecvMs
                 val backdatedMs = plausibleFixAgeMs(fixTimeMs, appRecvMs)
+                // No lat/lon here: this line reaches release logcat and the exportable diagnostics log.
+                app.surrealar.gnss.debug.GnssDebugLog.event("mock") {
+                    "injected lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)}"
+                }
                 DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_INJECTED sourceProvider=${fix.provider} " +
                     "fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
                     "backdatedMs=${backdatedMs ?: "none(implausible age)"} " +
-                    "lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)} " +
                     "altM=${fix.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
                     "injectedAltM=${if (location.hasAltitude()) "%.2f".format(location.altitude) else "none"} " +
                     "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +

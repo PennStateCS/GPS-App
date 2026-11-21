@@ -51,4 +51,21 @@ class GnssLogTest {
         GnssLog.every("k3", "sky") { evaluations++; "three" }
         assertEquals(2, evaluations)
     }
+    @Test fun `debug lines and lambda overloads are written only while enabled`() {
+        val r = Recording(enabled = false).also { GnssLog.install(it) }
+        var built = 0
+        GnssLog.d("T", "plain")
+        GnssLog.d("T") { built++; "lazy d" }
+        GnssLog.i("T") { built++; "lazy i" }
+        GnssLog.w("T") { built++; "lazy w" }
+        GnssLog.dEvery("T", "k") { built++; "every" }
+        GnssLog.w("T", "plain warning")              // plain-string i/w/e are unconditional
+        assertEquals(listOf("W/T: plain warning"), r.lines)
+        assertEquals("nothing formatted while disabled", 0, built)
+
+        r.enabled = true
+        GnssLog.d("T", "plain"); GnssLog.d("T") { "lazy d" }; GnssLog.i("T") { "lazy i" }; GnssLog.w("T") { "lazy w" }
+        repeat(3) { GnssLog.dEvery("T", "k2") { "every" } }
+        assertEquals(listOf("W/T: plain warning", "D/T: plain", "D/T: lazy d", "I/T: lazy i", "W/T: lazy w", "D/T: every"), r.lines)
+    }
 }

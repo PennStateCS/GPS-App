@@ -161,13 +161,13 @@ internal class ReachCorrectionsService(
     private fun onBroadcast(args: Array<out Any?>) {
         val payload = args.firstOrNull() as? JSONObject ?: run {
             // Some socket.io broadcasts arrive as plain strings (handshake/other events) — expected.
-            GnssLog.d(TAG, "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}")
+            GnssLog.d(TAG) { "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}" }
             return
         }
         val name = payload.optString("name", "")
         val data = payload.optJSONObject("payload") ?: run {
             // Broadcasts we don't consume (e.g. time_marks) may omit a payload object — expected.
-            GnssLog.d(TAG, "broadcast '$name': no payload object (ignored)")
+            GnssLog.d(TAG) { "broadcast '$name': no payload object (ignored)" }
             return
         }
 
@@ -183,13 +183,16 @@ internal class ReachCorrectionsService(
     // ── Payload handlers ──────────────────────────────────────────────────────
 
     private fun handleNavigation(data: JSONObject) {
-        GnssLog.d(TAG, "navigation broadcast: ${data.toString().take(300)}")
+        // Per-broadcast detail (raw JSON, base position) only in debug builds, at most every 15 s.
+        GnssLog.dEvery(TAG, "corrections.nav.raw") { "navigation broadcast: ${data.toString().take(300)}" }
 
         val nav = parseNavigation(data)
         cachedNav = nav
 
-        GnssLog.d(TAG, "navigation parsed: aod=${nav.aod} sol=${nav.solution} baseline=${nav.baseline} " +
-                "satsBase=${nav.satsBase} baseLat=${nav.baseLat} baseLon=${nav.baseLon} baseH=${nav.baseH}")
+        GnssLog.dEvery(TAG, "corrections.nav.parsed") {
+            "navigation parsed: aod=${nav.aod} sol=${nav.solution} baseline=${nav.baseline} " +
+                "satsBase=${nav.satsBase} baseLat=${nav.baseLat} baseLon=${nav.baseLon} baseH=${nav.baseH}"
+        }
 
         // Log only when the RTK solution state changes (navigation broadcasts arrive continuously).
         // Base-station lat/lon are intentionally omitted to avoid coordinate spam in the export.
@@ -217,14 +220,16 @@ internal class ReachCorrectionsService(
     }
 
     private fun handleStreamStatus(data: JSONObject) {
-        GnssLog.d(TAG, "stream_status broadcast: ${data.toString().take(300)}")
+        GnssLog.dEvery(TAG, "corrections.stream.raw") { "stream_status broadcast: ${data.toString().take(300)}" }
 
         val parsed = parseStreamStatus(data)
         if (parsed != null) {
             cachedIsReceiving = parsed.isReceiving
             cachedChannel     = parsed.channel
 
-            GnssLog.d(TAG, "stream_status parsed: state=${parsed.state} connected=${parsed.isReceiving} channel=${parsed.channel}")
+            GnssLog.dEvery(TAG, "corrections.stream.parsed") {
+                "stream_status parsed: state=${parsed.state} connected=${parsed.isReceiving} channel=${parsed.channel}"
+            }
 
             // Log only on a change of the correction-input state/channel.
             val streamKey = "${parsed.state}|${parsed.isReceiving}|${parsed.channel}"

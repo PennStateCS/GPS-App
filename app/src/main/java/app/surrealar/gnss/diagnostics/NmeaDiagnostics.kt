@@ -82,9 +82,10 @@ class NmeaDiagnostics(private val context: Context) {
             nmeaCount++
             if (firstNmea == null && message.isNotEmpty()) {
                 firstNmea = message.trim()
-                Log.d(TAG, "First NMEA received: $firstNmea")
+                // Raw sentences can hold the position: debug builds only.
+                if (app.surrealar.gnss.debug.GnssDebugLog.enabled) Log.d(TAG, "First NMEA received: $firstNmea")
             }
-            if (nmeaCount <= 5) {
+            if (nmeaCount <= 5 && app.surrealar.gnss.debug.GnssDebugLog.enabled) {
                 Log.d(TAG, "NMEA #$nmeaCount: $message")
             }
         }
