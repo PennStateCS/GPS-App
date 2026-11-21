@@ -108,6 +108,17 @@ object DiagnosticReportExporter {
             ?: "No AR session has been recorded yet.\n"
         override suspend fun mapDiagnostics() = app.surrealar.util.diagnostics.MapDiagnosticCollector.collect(context)
         override suspend fun nmeaStream() = app.surrealar.util.diagnostics.NmeaStreamDiagnosticsCollector.collect(context)
+        override fun liveState(): app.surrealar.util.diagnostics.report.LiveState {
+            val g = app.surrealar.util.diagnostics.GnssFeedLogger.instance
+            return app.surrealar.util.diagnostics.report.LiveState(
+                source = g?.feed?.currentSource(),
+                rtk = g?.feed?.currentRtk()?.name,
+                receiverLink = g?.link?.lastLinkState,
+                correctionAgeS = g?.feed?.currentCorrectionAgeS(),
+                corrections = g?.link?.correctionsSummary,
+                freeStorageBytes = runCatching { android.os.StatFs(context.filesDir.path).availableBytes }.getOrNull(),
+            )
+        }
         override fun logFiles() = DiagnosticsLogger.logFiles()
         override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }

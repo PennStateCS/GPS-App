@@ -21,6 +21,8 @@ open class FakeReportSources(
     override suspend fun mapDiagnostics() = "=== Map ===\n"
     override suspend fun nmeaStream() = "=== NMEA Stream Diagnostics ===\n"
 
+    override fun liveState() = LiveState("EXTERNAL_TCP", "FIX", "CONNECTED", 1.2, "receiving station=PAWB age=1.2s", 12L * 1024 * 1024 * 1024)
+
     override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) })
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
 

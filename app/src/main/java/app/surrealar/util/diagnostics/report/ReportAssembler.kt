@@ -16,9 +16,14 @@ object ReportAssembler {
         runCatching(flush)
         return ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             val z = ZipBuilder(zos)
+            val idx = runCatching { LogIndex.build(src.logFiles() + src.errorFiles(), src.nowMs) }.getOrElse { LogIndex(src.nowMs) }
             z.textSafe("README.txt") { ReadmeCollector.render(src.reportId, logsTruncatedTo24h = false) }
             // ── Compact summaries (current state at export time) ──
-            z.textSafe("diagnostic-summary.txt") { src.summary() }
+            z.textSafe("diagnostic-summary.txt") {
+                val first = runCatching { FirstLookCollector.render(src.reportId, idx, src.liveState()) }
+                    .getOrElse { "=== First look ===\n(failed: ${it.message})\n\n" }
+                first + src.summary()
+            }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
             z.textSafe("permissions-status.txt") { src.permissions() }
             z.textSafe("app-state-summary.txt") { src.appState() }

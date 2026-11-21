@@ -20,6 +20,8 @@ interface ReportSources {
     suspend fun mapDiagnostics(): String
     suspend fun nmeaStream(): String
 
+    fun liveState(): LiveState
+
     fun logFiles(): List<File>
     fun errorFiles(): List<File>
 }
