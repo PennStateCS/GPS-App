@@ -126,4 +126,22 @@ class GgaParserTest {
         assertEquals("GP", result?.talker)
         assertEquals(48.1173, result?.lat ?: 0.0, 0.0001)
     }
+
+    @Test
+    fun `blank unit fields keep altitude and geoid separation (assumed meters)`() {
+        val result = registry.parse("\$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,395.5,,-33.1,,,") as? GGA
+
+        assertNotNull(result)
+        assertEquals(395.5, result!!.altMsl!!, 1e-9)
+        assertEquals(-33.1, result.geoidSeparation!!, 1e-9)
+    }
+
+    @Test
+    fun `explicit non-meter unit still rejects the value`() {
+        val result = registry.parse("\$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,1297.6,F,-108.6,F,,") as? GGA
+
+        assertNotNull(result)
+        assertNull(result!!.altMsl)
+        assertNull(result.geoidSeparation)
+    }
 }

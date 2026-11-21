@@ -162,7 +162,7 @@ class ReachDeviceRepository @Inject constructor(
                     model                = device?.model.blankToNull(),
                     firmware             = device?.firmware.blankToNull(),
                     serial               = device?.serial.blankToNull(),
-                    uptimeSec            = parseUptimeToSeconds(device?.uptime),
+                    uptimeSec            = device?.uptimeSec,
                     uptime               = device?.uptime.blankToNull(),
                     gnssReceiverFirmware = device?.gnssReceiverFirmware.blankToNull(),
                     hostname             = device?.hostname.blankToNull(),
@@ -172,36 +172,6 @@ class ReachDeviceRepository @Inject constructor(
                 )
             }
             delay(30_000) // Poll every 30 seconds
-        }
-    }
-
-    /**
-     * Parses RS2+ uptime string "2 days, 1:08:08" into seconds.
-     * Returns null if parsing fails.
-     */
-    private fun parseUptimeToSeconds(uptimeStr: String?): Long? {
-        if (uptimeStr == null) return null
-        return try {
-            var totalSeconds = 0L
-
-            // Handle days (e.g., "2 days, ")
-            val daysMatch = Regex("""(\d+)\s+days?""").find(uptimeStr)
-            if (daysMatch != null) {
-                totalSeconds += daysMatch.groupValues[1].toLong() * 86400
-            }
-
-            // Handle time portion (e.g., "1:08:08")
-            val timeMatch = Regex("""(\d+):(\d+):(\d+)""").find(uptimeStr)
-            if (timeMatch != null) {
-                val hours = timeMatch.groupValues[1].toLong()
-                val minutes = timeMatch.groupValues[2].toLong()
-                val seconds = timeMatch.groupValues[3].toLong()
-                totalSeconds += hours * 3600 + minutes * 60 + seconds
-            }
-
-            totalSeconds
-        } catch (e: Exception) {
-            null
         }
     }
 

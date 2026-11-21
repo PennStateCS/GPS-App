@@ -65,7 +65,7 @@ class GeoJsonExporter {
             properties.put("provider", fix.provider.name)
             properties.put("timestampSource", fix.timestampSource.name)
             properties.put("rtkStatus", fix.rtkStatus.name)
-            properties.put("satsUsed", fix.satsUsed)
+            fix.satsUsed?.let { properties.put("satsUsed", it) }
 
             fix.altMslM?.let { properties.put("altitudeMSL", it) }
             fix.geoidSeparationM?.let { properties.put("geoidSeparation", it) }

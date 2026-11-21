@@ -105,7 +105,7 @@ internal object PlatformFallback {
             stdDevNorthM = null,
             stdDevUpM = null,
             rtkStatus = RtkStatus.SINGLE,
-            satsUsed = satsUsed ?: loc.satellitesExtra ?: 0,
+            satsUsed = satsUsed ?: loc.satellitesExtra,   // null = unknown, never 0
             satsVisible = satsVisible?.takeIf { it >= (satsUsed ?: 0) },
             diffAgeS = null,
             speedMps = loc.speedMps,

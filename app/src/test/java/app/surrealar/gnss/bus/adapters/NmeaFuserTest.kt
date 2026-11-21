@@ -73,7 +73,7 @@ class NmeaFuserTest {
         val fix = emittedFixes[0]
 
         // Should count satellites from both constellations
-        assertTrue("Should accumulate satellites from multiple GSA sentences", fix.satsUsed >= 8)
+        assertTrue("Should accumulate satellites from multiple GSA sentences", (fix.satsUsed ?: 0) >= 8)
     }
 
     @Test
@@ -170,6 +170,32 @@ class NmeaFuserTest {
         // Same GGA should emit again (dedup cleared)
         fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,4,08,0.9,545.4,M,46.9,M,2.0,0001")
         assertEquals("After reset, same fix should emit again", 2, emittedFixes.size)
+    }
+
+    @Test
+    fun `missing satellite count is unknown, not zero`() {
+        val fuser = NmeaFuser(
+            provider = Provider.RS2_EXTERNAL,
+            registry = registry,
+            onFix = { emittedFixes.add(it) },
+            onGsv = { emittedGsvMessages.add(it) }
+        )
+        // GGA with an empty numSV field and no GSA → nothing reported a count.
+        fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,1,,0.9,545.4,M,46.9,M,,")
+        assertEquals(1, emittedFixes.size)
+        assertNull(emittedFixes[0].satsUsed)
+    }
+
+    @Test
+    fun `GGA satellite count is used when no GSA arrived`() {
+        val fuser = NmeaFuser(
+            provider = Provider.RS2_EXTERNAL,
+            registry = registry,
+            onFix = { emittedFixes.add(it) },
+            onGsv = { emittedGsvMessages.add(it) }
+        )
+        fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,1,14,0.9,545.4,M,46.9,M,,")
+        assertEquals(14, emittedFixes[0].satsUsed)
     }
 }
 

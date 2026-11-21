@@ -47,9 +47,11 @@ class GgaParser : SentenceParser<GGA> {
 
         // Altitude MSL and Geoid separation (meters)
         val altMslVal   = fields.getOrNull(9).toDoubleOrNullSafe()
-        val altMslUnit  = fields.getOrNull(10)?.uppercase()
+        // A blank unit field ("…,395.5,,-33.1,,…") is the same as a missing one: assume meters.
+        // Only an explicit non-meter unit rejects the value.
+        val altMslUnit  = fields.getOrNull(10)?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
         val geoidVal    = fields.getOrNull(11).toDoubleOrNullSafe()
-        val geoidUnit   = fields.getOrNull(12)?.uppercase()
+        val geoidUnit   = fields.getOrNull(12)?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
 
         val altMsl = if (altMslVal != null && (altMslUnit == null || altMslUnit == "M")) altMslVal else null
         val geoidSeparation = if (geoidVal != null && (geoidUnit == null || geoidUnit == "M")) geoidVal else null

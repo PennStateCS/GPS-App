@@ -64,7 +64,7 @@ class CsvExporter {
             fix.hAccM?.toString() ?: "",
             fix.vAccM?.toString() ?: "",
             fix.rtkStatus.name,
-            fix.satsUsed.toString(),
+            fix.satsUsed?.toString() ?: "",
             fix.satsVisible?.toString() ?: "",
             fix.diffAgeS?.toString() ?: "",
             fix.speedMps?.toString() ?: "",

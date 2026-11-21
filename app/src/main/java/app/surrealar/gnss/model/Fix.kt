@@ -24,7 +24,7 @@ data class Fix(
     val stdDevNorthM: Double?,                      // North standard deviation (meters, 1-sigma); from GST stdDevLat
     val stdDevUpM: Double?,                         // Up standard deviation (meters, 1-sigma); from GST stdDevAlt
     val rtkStatus: RtkStatus,                       // RTK status: NONE, DGPS, FLOAT, FIX
-    val satsUsed: Int,                              // Number of satellites used in solution
+    val satsUsed: Int?,                             // Number of satellites used in solution; null = not reported (never 0 for unknown)
     val satsVisible: Int?,                          // Total satellites in view (if known)
     val diffAgeS: Double?,                          // Age of differential correction (seconds, if known)
     val speedMps: Double?,                          // Speed over ground (meters/second); from RMC or fused

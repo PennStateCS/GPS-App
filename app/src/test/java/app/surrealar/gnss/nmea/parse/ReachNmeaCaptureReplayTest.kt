@@ -54,7 +54,7 @@ class ReachNmeaCaptureReplayTest {
         // Rover position (GGA), not the EBP base (~85 m south). 4118.4448800,N → 41.30741.
         assertEquals("rover latitude from GGA", 41.30741, f.latDeg, 1e-4)
         assertEquals("rover longitude from GGA (W → negative)", -76.01717, f.lonDeg, 1e-4)
-        assertTrue("satellites used should be parsed", (f.satsUsed) > 0)
+        assertTrue("satellites used should be parsed", (f.satsUsed ?: 0) > 0)
         assertNotNull("MSL altitude parsed", f.altMslM)
         assertEquals(395.539, f.altMslM!!, 0.01)
         assertNotNull("geoid separation parsed", f.geoidSeparationM)
@@ -74,7 +74,7 @@ class ReachNmeaCaptureReplayTest {
         assertTrue("accuracy must never be a fake 0.0", hacc > 0.0)
 
         // satsVisible (GSV) never below satsUsed (no cross-constellation double-count blowup).
-        fixes.forEach { fx -> fx.satsVisible?.let { assertTrue("visible >= used", it >= fx.satsUsed) } }
+        fixes.forEach { fx -> fx.satsVisible?.let { assertTrue("visible >= used", it >= (fx.satsUsed ?: 0)) } }
 
         // Vendor/custom sentences seen but non-fatal.
         assertTrue("EBP seen", fuser.nmeaCustomStats.ebpSeen)

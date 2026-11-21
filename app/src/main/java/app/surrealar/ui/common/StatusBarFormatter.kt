@@ -16,7 +16,7 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
     // sats: prefer Fix, else GnssStatus
     val satsUsed = fix.satsUsed // satellites used in the current solution
     val satsVis = fix.satsVisible ?: gnssStatus?.satelliteCount // visible satellites (fallback to GNSS status)
-    val satsPart = if (satsUsed > 0 && satsVis != null && satsVis > 0) "$satsUsed/$satsVis sats" else null
+    val satsPart = if (satsUsed != null && satsUsed > 0 && satsVis != null && satsVis > 0) "$satsUsed/$satsVis sats" else null
 
     // Age (prefer monotonic if you carry it; wall-clock fallback here)
     val ageSec = safeAgeSeconds(fix.timeUtc, Instant.now()) // seconds since fix

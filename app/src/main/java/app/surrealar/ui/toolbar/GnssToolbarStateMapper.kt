@@ -116,7 +116,7 @@ object GnssToolbarStateMapper {
         }
 
         // --- SATS ---
-        val used = if (sky.totalUsed > 0) sky.totalUsed else fix.satsUsed.coerceIn(0, 100)
+        val used = if (sky.totalUsed > 0) sky.totalUsed else (fix.satsUsed ?: 0).coerceIn(0, 100)
         val vis = if (sky.totalVisible > 0) sky.totalVisible else (fix.satsVisible ?: used).coerceIn(used, 100)
         val satelliteText = if (used > 0 || vis > 0) GnssStatusFormatter.formatSatellites(used, vis) else null
 

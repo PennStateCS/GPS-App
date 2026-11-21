@@ -385,14 +385,20 @@ class NmeaFuser(
         // Constellation-aware GSA count vs. GGA's own field: take the larger. GSA lists at most 12
         // SVIDs per sentence (so it undercounts big multi-GNSS solutions on some receivers), while
         // some receivers cap GGA's field at 12 or report GPS-only there.
-        val satsUsed = maxOf(gsaUsedSatIds.size, gga.satsUsed ?: 0)
+        // Null when neither source reported a count — "unknown" must not be recorded as 0 satellites.
+        val gsaCount = gsaUsedSatIds.size.takeIf { it > 0 }
+        val satsUsed: Int? = when {
+            gsaCount == null      -> gga.satsUsed
+            gga.satsUsed == null  -> gsaCount
+            else                  -> maxOf(gsaCount, gga.satsUsed)
+        }
 
         // Sum visible satellites across all constellations seen this epoch.
         // Guard: if the sum is less than satsUsed the GSV data is from a prior epoch
         // (GSV sentences for some constellations had not yet arrived when GGA triggered
         // this fix). Treat the count as absent rather than storing an impossible value.
         val rawVisible = gsvVisibleByTalker.values.sum().takeIf { it > 0 }
-        val satsVisible = rawVisible?.takeIf { it >= satsUsed }
+        val satsVisible = rawVisible?.takeIf { it >= (satsUsed ?: 0) }
 
         // Horizontal accuracy from GST: prefer the error-ellipse semi-axes; otherwise fall back to the
         // lat/lon standard deviations — Emlid Reach (RS2+/RS4) leaves the semi-major/minor fields
@@ -538,7 +544,7 @@ class NmeaFuser(
      */
     private fun debugTrace(
         gga: GGA, epochMs: Long, tsSource: TimestampSource, rtk: RtkStatus,
-        satsUsed: Int, rawVisible: Int?, satsVisible: Int?,
+        satsUsed: Int?, rawVisible: Int?, satsVisible: Int?,
         gst: GST?, rmc: RMC?, gsa: GSA?, hAccM: Double?, altEllipsoidal: Double?,
     ) {
         val log = app.surrealar.gnss.debug.GnssDebugLog

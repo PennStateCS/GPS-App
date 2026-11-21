@@ -75,4 +75,9 @@ class PlatformFallbackTest {
         assertTrue(msgs.getValue("GP").entries[0].usedInFix)
         assertEquals(1 to 2, PlatformFallback.counts(sats))
     }
+
+    @Test fun `no satellite count anywhere stays unknown instead of becoming 0`() {
+        val fix = PlatformFallback.toFix(loc().copy(satellitesExtra = null), satsUsed = null, satsVisible = null)
+        assertNull(fix.satsUsed)
+    }
 }

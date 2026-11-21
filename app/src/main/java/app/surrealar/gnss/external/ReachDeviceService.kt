@@ -20,7 +20,9 @@ data class ReachDeviceInfoDto(
     val storageFreeMb: Long?,        // storage.free  (MB)
     val hostname: String?,           // device.local_address e.g. "Reach6.local"
     /** First 300 chars of the raw HTTP body – used for diagnostics in dev tools. */
-    val rawResponse: String? = null
+    val rawResponse: String? = null,
+    /** Uptime in seconds; null when absent or in a text form that couldn't be parsed. */
+    val uptimeSec: Long? = null
 )
 
 private const val TAG = "ReachDeviceService"
@@ -93,16 +95,19 @@ class ReachDeviceService(private val client: ReachHttpClient) {
                   ?: generalObj?.str("serial_number", "serial", "sn")
                   ?: root.str("serial_number", "serial", "sn", "device_serial")
 
-        val uptime: String? = run {
-            val raw = deviceObj?.str("uptime")
-                   ?: generalObj?.str("uptime")
-                   ?: root.str("uptime")
-            if (raw != null) return@run raw
-            val sec = deviceObj?.optLong("uptime", -1L)?.takeIf { it >= 0 }
-                   ?: generalObj?.optLong("uptime", -1L)?.takeIf { it >= 0 }
-                   ?: root.optLong("uptime", -1L).takeIf { it >= 0 }
-            sec?.let { formatUptimeSeconds(it) }
+        // Uptime arrives either as a number of seconds (86400) or as text ("2 days, 1:08:08").
+        // Check for a JSON number first: optString() would turn 86400 into "86400", which the
+        // text parser can't read.
+        fun JSONObject.uptimeNumber(): Long? =
+            (opt("uptime") as? Number)?.toLong()?.takeIf { it >= 0 }
+        val uptimeText = listOfNotNull(deviceObj, generalObj, root).firstNotNullOfOrNull { o ->
+            o.takeIf { it.opt("uptime") !is Number }?.str("uptime")
         }
+        val uptimeSec: Long? = deviceObj?.uptimeNumber()
+            ?: generalObj?.uptimeNumber()
+            ?: root.uptimeNumber()
+            ?: uptimeText?.let { parseUptimeTextToSeconds(it) }
+        val uptime: String? = uptimeText ?: uptimeSec?.let { formatUptimeSeconds(it) }
 
         val gnssReceiverFw = gnssObj?.str("firmware_version", "version")
                           ?: root.str("gnss_firmware", "gnss_receiver_firmware",
@@ -144,8 +149,29 @@ class ReachDeviceService(private val client: ReachHttpClient) {
             storageTotalMb       = storageTotalMb,
             storageFreeMb        = storageFreeMb,
             hostname             = hostname,
-            rawResponse          = text.take(300)
+            rawResponse          = text.take(300),
+            uptimeSec            = uptimeSec
         )
+    }
+
+    internal companion object {
+        /**
+         * Parses uptime text into seconds: "2 days, 1:08:08", "1:08:08", or a bare number "86400".
+         * Returns null — not 0 — when the text matches none of these forms.
+         */
+        internal fun parseUptimeTextToSeconds(text: String): Long? {
+            val s = text.trim()
+            s.toLongOrNull()?.let { return it.takeIf { v -> v >= 0 } }
+            val days = Regex("""(\d+)\s+days?""").find(s)?.groupValues?.get(1)?.toLongOrNull()
+            val hms = Regex("""(\d+):(\d+):(\d+)""").find(s)
+            if (days == null && hms == null) return null
+            var total = (days ?: 0L) * 86400
+            if (hms != null) {
+                val (h, m, sec) = hms.destructured
+                total += h.toLong() * 3600 + m.toLong() * 60 + sec.toLong()
+            }
+            return total
+        }
     }
 
     private fun formatUptimeSeconds(sec: Long): String {

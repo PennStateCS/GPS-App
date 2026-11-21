@@ -51,23 +51,8 @@ class ReachBatteryService(private val client: ReachHttpClient) {
             return null
         }
 
-        fun soc(): Int {
-            val raw = j.opt("state_of_charge")
-            return when (raw) {
-                is Number -> raw.toDouble()
-                is String -> raw.removeSuffix("%").toDoubleOrNull() ?: Double.NaN
-                else      -> Double.NaN
-            }.let { v ->
-                when {
-                    v.isNaN() -> return@let -1      // sentinel: field absent
-                    v <= 1.0  -> (v * 100).toInt()
-                    else      -> v.toInt()
-                }.coerceIn(0, 100)
-            }
-        }
-
-        val percent = soc()
-        if (percent < 0) return null          // field not present in this endpoint/layout
+        val percent = parseStateOfCharge(j.opt("state_of_charge"))
+            ?: return null                    // field not present in this endpoint/layout
 
         val chargerStatus = j.optString("charger_status").takeIf { it.isNotBlank() }
         val isCharging = chargerStatus
@@ -87,5 +72,25 @@ class ReachBatteryService(private val client: ReachHttpClient) {
             usbChargerCurrentA = anyDouble("usb_charger_current"),
             usbChargerVoltageV = anyDouble("usb_charger_voltage")
         )
+    }
+
+    internal companion object {
+        /**
+         * Converts a raw `state_of_charge` value to a 0–100 percent, or null when absent/unparseable.
+         *
+         * Firmware reports whole percentages (`100`, `"45%"`). A value strictly between 0 and 1
+         * (e.g. `0.45`) is treated as a fraction. Whole values — including `1` / `1.0` — are
+         * percentages: misreading 1 % as a fraction would show a full battery on a dying receiver.
+         */
+        internal fun parseStateOfCharge(raw: Any?): Int? {
+            val v = when (raw) {
+                is Number -> raw.toDouble()
+                is String -> raw.trim().removeSuffix("%").trim().toDoubleOrNull()
+                else      -> null
+            } ?: return null
+            if (!v.isFinite()) return null
+            val pct = if (v > 0.0 && v < 1.0) v * 100.0 else v
+            return pct.toInt().coerceIn(0, 100)
+        }
     }
 }

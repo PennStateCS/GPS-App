@@ -88,4 +88,29 @@ class ReachDeviceServiceParseTest {
     @Test fun `empty response returns null`() {
         assertNull(parse(""))
     }
+
+    @Test fun `numeric uptime is read as seconds, not as text`() {
+        val dto = parse("""{"device":{"name":"Reach6","uptime":90061}}""")!!
+        assertEquals(90061L, dto.uptimeSec)          // 1 d 1 h 1 m 1 s
+        assertEquals("1d 1h 1m", dto.uptime)
+    }
+
+    @Test fun `text uptime is parsed to seconds`() {
+        val dto = parse("""{"device":{"name":"Reach6","uptime":"2 days, 1:08:08"}}""")!!
+        assertEquals(2 * 86400L + 3600 + 8 * 60 + 8, dto.uptimeSec)
+        assertEquals("2 days, 1:08:08", dto.uptime)
+    }
+
+    @Test fun `unparseable uptime text is unknown, not zero`() {
+        val dto = parse("""{"device":{"name":"Reach6","uptime":"a while"}}""")!!
+        assertNull(dto.uptimeSec)
+        assertEquals("a while", dto.uptime)
+    }
+
+    @Test fun `uptime text parser forms`() {
+        assertEquals(86400L, ReachDeviceService.parseUptimeTextToSeconds("86400"))
+        assertEquals(4088L, ReachDeviceService.parseUptimeTextToSeconds("1:08:08"))
+        assertEquals(86400L, ReachDeviceService.parseUptimeTextToSeconds("1 day"))
+        assertNull(ReachDeviceService.parseUptimeTextToSeconds(""))
+    }
 }
