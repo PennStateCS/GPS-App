@@ -25,6 +25,7 @@ object ReportAssembler {
                 first + src.summary()
             }
             z.textSafe("timeline.txt") { TimelineCollector.render(idx) }
+            z.textSafe("sessions.txt") { SessionsCollector.render(idx) }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
             z.textSafe("permissions-status.txt") { src.permissions() }
             z.textSafe("app-state-summary.txt") { src.appState() }

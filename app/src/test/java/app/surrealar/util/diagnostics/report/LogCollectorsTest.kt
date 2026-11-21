@@ -40,4 +40,13 @@ class LogCollectorsTest {
         """.trimIndent().replace("\n\n2026", "\n\n2026") + "\n", TimelineCollector.render(idx()).trimEnd() + "\n\n")
     }
 
+    @Test fun `golden sessions`() {
+        assertEquals("""
+            === Sessions ===
+            started                        session       version        how it ended
+            2026-11-21T13:00:00.000-05:00  aaa111        1.4 (14)       CRASH at 2026-11-21T13:30:00.000-05:00
+            2026-11-21T13:31:00.000-05:00  bbb222        1.4 (14)       running (this report)
+        """.trimIndent() + "\n", SessionsCollector.render(idx()))
+    }
+
 }
