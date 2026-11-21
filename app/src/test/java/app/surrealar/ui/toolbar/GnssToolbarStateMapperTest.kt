@@ -27,7 +27,7 @@ class GnssToolbarStateMapperTest {
         lat: Double = 40.7963,
         lon: Double = -77.8570,
         hAccM: Double? = 0.02,
-        satsUsed: Int = 10,
+        satsUsed: Int? = 10,
         satsVisible: Int? = 14,
         ageMs: Long = 0L,
         altMslM: Double? = 300.0
@@ -66,6 +66,17 @@ class GnssToolbarStateMapperTest {
         assertNull(s.accuracyText)
         assertFalse("internal hides receiver battery", s.batteryVisible)
         assertFalse(s.isExternal)
+    }
+
+    @Test fun `unknown satellite count shows no satellite text rather than 0`() {
+        val s = render(
+            GnssToolbarStateMapper.map(
+                LocationSourceType.INTERNAL,
+                fix(Provider.INTERNAL, RtkStatus.SINGLE, satsUsed = null, satsVisible = null),
+                SkySnapshot()
+            )
+        )
+        assertNull(s.satelliteText)
     }
 
     // 2 — Internal active, valid internal fix

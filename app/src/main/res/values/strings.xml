@@ -215,7 +215,7 @@
     <string name="dev_gnss_no_data">(no NMEA data yet)</string>
 
     <!-- FixBadge component strings -->
-    <string name="fix_badge_satellites">🛰️ %1$d/%2$d sats</string>
+    <string name="fix_badge_satellites">🛰️ %1$s/%2$s sats</string>
     <string name="fix_badge_hdop">HDOP: %1$s</string>
     <string name="fix_badge_hdop_na">HDOP: N/A</string>
     <string name="fix_badge_stream_health">📊 %1$d/s • %2$s%% err</string>

@@ -964,9 +964,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             qualitySection.values["Position Dilution of Precision"]?.text = field("pdop", fix.pDop) { "%.2f".format(it) }
             // Use SkySnapshot data for satellite counts (from GSV sentences) for consistency with Satellite Sky section
             val sky = latestSkySnapshot
-            qualitySection.values["Satellites Used"]?.text = sky?.totalUsed?.toString() ?: fix.satsUsed.toString()
+            qualitySection.values["Satellites Used"]?.text =
+                sky?.totalUsed?.toString() ?: field("satsUsed", fix.satsUsed) { it.toString() }
             // Same fallback as the toolbar (HomeFieldStatusMapper): visible = satsVisible ?: used.
-            qualitySection.values["Satellites Visible"]?.text = sky?.totalVisible?.toString() ?: (fix.satsVisible ?: fix.satsUsed).toString()
+            qualitySection.values["Satellites Visible"]?.text =
+                sky?.totalVisible?.toString() ?: field("satsVisible", fix.satsVisible ?: fix.satsUsed) { it.toString() }
             // Correction Age and Station ID come from Fix (NMEA GGA)
             correctionsSection.values["Correction Age"]?.text = field("diffAge", fix.diffAgeS) { "%.1f s".format(it) }
             correctionsSection.values["Correction Station ID"]?.text = field("station", fix.correctionStationId) { it }

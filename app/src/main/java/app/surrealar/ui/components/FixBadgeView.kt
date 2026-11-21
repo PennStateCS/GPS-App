@@ -65,11 +65,14 @@ class FixBadgeView @JvmOverloads constructor(
      */
     fun updateFixData(fixSnapshot: FixSnapshot) {
         // Update satellite count and general fix status
-        val satsUsed = fixSnapshot.satsUsed ?: 0
-        val satsInView = fixSnapshot.satellitesInView ?: 0
+        // Unknown counts show "?" (grey), never a fake 0.
+        val satsUsed = fixSnapshot.satsUsed
+        val satsInView = fixSnapshot.satellitesInView
 
-        fixQualityText.text = context.getString(R.string.fix_badge_satellites, satsUsed, satsInView)
-        fixQualityText.setTextColor(getSatelliteColor(satsUsed))
+        fixQualityText.text = context.getString(
+            R.string.fix_badge_satellites, satsUsed?.toString() ?: "?", satsInView?.toString() ?: "?"
+        )
+        fixQualityText.setTextColor(getSatelliteColor(satsUsed ?: 0))
 
         // Update timestamp with source badge
         timestampText.text = formatTimestampWithCompactBadge(
