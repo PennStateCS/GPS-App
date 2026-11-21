@@ -32,8 +32,8 @@ row live in `geo-core/src/test` unless noted.
 |---|---|---|
 | SPCS83, all 118 zones (LCC 2SP, TM, HOM A) | worst 1.5 × 10⁻⁷ m (< 1 µm) | `SpcsZonesTest`: 9 points per zone vs PROJ (`spcs83_vectors.csv`) |
 | UTM forward / inverse / round trip | 1.8 × 10⁻⁷ / 5.0 × 10⁻⁸ / 1.6 × 10⁻⁷ m (< 1 mm required) | `UtmProjTest`: 1 134 PROJ vectors, 9 zones, both hemispheres, zone edges (`tools/utm/gen_utm_vectors.py`) |
-| ITRF2014 → NAD83(2011) Helmert | ≈ 1 × 10⁻⁹ m vs PROJ (audit 2026-11-20); test tolerance 2 × 10⁻⁹ ° / 1 mm height | app `CoordinateSystemReferenceTest` |
-| GEOID18 | ≤ 1 mm vs the raw NGS grids at 600 points; ≤ 5 mm vs NGS service spot checks (< 2 mm typical) | app `CoordinateSystemReferenceTest`, `Geoid18GridTest` |
+| ITRF2014 → NAD83(2011) Helmert | worst 1.9 × 10⁻⁹ m vs PROJ at 5 US sites (PA, CA, WA, FL, AK), epochs 2020–2030 | app `CoordinateSystemReferenceTest` (PROJ point + round trip) |
+| GEOID18 | worst 0.46 mm on the 600 grid vectors (`geoid18_vectors.csv`); within 1.3 mm of the 4 NGS geoid-service points | app `CoordinateSystemReferenceTest`, `Geoid18GridTest` |
 | ECEF (GRS80 / WGS84) | NCAT XYZ to 1 mm (NCAT's rounding); merged code within 7.2 × 10⁻⁷ m of the previous implementations | app `CoordinateSystemReferenceTest`, `LegacyEllipsoidComparisonTest` |
 | Geodesic distance / bearing | GeographicLib (Karney): nanometre-level; stakeout ENU agreement 0.5 mm at 5 km | `GeodesicTest` |
 
