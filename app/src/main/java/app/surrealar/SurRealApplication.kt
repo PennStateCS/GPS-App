@@ -86,6 +86,7 @@ class SurRealApplication : Application() {
         DiagnosticsLogger.init(this)
         // SESSION_START: session + install IDs, version, device, locale/zone, last session clean?
         app.surrealar.util.diagnostics.SessionTracker.startProcess(this)
+        app.surrealar.util.diagnostics.LifecycleLogger.install(this)
         // Surfaced for tester support: in debug builds Room is allowed to wipe & recreate the
         // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
         // coordinates/models. Release builds keep data via real migrations.
