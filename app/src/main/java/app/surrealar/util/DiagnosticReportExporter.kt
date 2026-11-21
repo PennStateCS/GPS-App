@@ -121,6 +121,7 @@ object DiagnosticReportExporter {
         }
         override fun exitTraceFiles(): List<File> =
             app.surrealar.util.diagnostics.ExitReasonRecorder.exitsDir(context).listFiles()?.filter { it.isFile }?.sortedBy { it.name }.orEmpty()
+        override fun deviceHealth() = app.surrealar.util.diagnostics.report.AppReportReaders.deviceHealth(context)
         override fun logFiles() = DiagnosticsLogger.logFiles()
         override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }

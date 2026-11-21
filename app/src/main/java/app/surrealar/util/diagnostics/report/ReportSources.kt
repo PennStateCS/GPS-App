@@ -23,6 +23,7 @@ interface ReportSources {
     fun liveState(): LiveState
     /** Saved ANR / native-crash traces (diagnostics/exits). */
     fun exitTraceFiles(): List<File>
+    fun deviceHealth(): DeviceHealth
 
     fun logFiles(): List<File>
     fun errorFiles(): List<File>

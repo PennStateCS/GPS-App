@@ -26,10 +26,20 @@ open class FakeReportSources(
     override fun exitTraceFiles(): List<File> =
         listOf(File(dir, "20261121-133000-ANR.txt").apply { writeText("----- pid 123 at 2026-11-21 13:30:00 -----\n\"main\" prio=5 tid=1 Blocked\n") })
 
+    override fun deviceHealth() = FAKE_HEALTH
+
     override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) })
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
 
     companion object {
+        val FAKE_HEALTH = DeviceHealth(
+            batteryPercent = 57, charging = false, powerSave = false, thermal = "LIGHT",
+            storageFreeBytes = 12L * 1024 * 1024 * 1024, storageTotalBytes = 128L * 1024 * 1024 * 1024, appDataBytes = 350L * 1024 * 1024,
+            ramAvailBytes = 3L * 1024 * 1024 * 1024, ramTotalBytes = 8L * 1024 * 1024 * 1024, lowMemory = false,
+            network = "Wi-Fi validated=false", gpsProvider = true, networkProvider = false,
+            permissions = linkedMapOf("Fine location" to true, "Camera" to false),
+            batteryOptimizationIgnored = false, mockLocationApp = "not this app",
+        )
         val DEFAULT_EVENT_LOG = """
             2026-11-21T13:00:00.000-05:00 I APP [main] SESSION_START session=aaa111 install=i-1 version=1.4 code=14 build=debug commit=abc device="Samsung SM-X940" android=15 sdk=35 locale=en-US tz=America/New_York lastSessionClean=unknown(first run) previous=none
             2026-11-21T13:05:00.000-05:00 I LIFECYCLE [main] App foreground

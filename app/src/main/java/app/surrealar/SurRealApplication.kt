@@ -39,6 +39,7 @@ interface SurRealApplicationEntryPoint {
     fun coordinateRepository(): app.surrealar.domain.repository.CoordinateRepository
     fun modelRepository(): app.surrealar.domain.repository.ModelRepository
     fun gnssFeedLogger(): app.surrealar.util.diagnostics.GnssFeedLogger
+    fun diagnosticsService(): app.surrealar.gnss.diagnostics.DiagnosticsService
 }
 
 /**
