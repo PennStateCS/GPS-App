@@ -37,16 +37,12 @@ import app.surrealar.service.LocationService
 import app.surrealar.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.ClipDrawable
-import android.os.SystemClock
-import app.surrealar.gnss.external.ReachBatteryService
-import app.surrealar.gnss.external.ReachHttpClient
 import app.surrealar.gnss.replay.NmeaReplayController
 import app.surrealar.gnss.replay.AssetNmeaReplaySource
 import app.surrealar.gnss.accumulator.FixAccumulator
@@ -92,7 +88,9 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var coordinateRepository: app.surrealar.domain.repository.CoordinateRepository
     @Inject lateinit var modelRepository: app.surrealar.domain.repository.ModelRepository
 
-    private var batteryJob: Job? = null
+    @Inject lateinit var reachDeviceRepository: app.surrealar.gnss.external.repository.ReachDeviceRepository
+    // True while the selected source is external, i.e. the battery token may be shown.
+    private var batteryShouldShow = false
 
     // Track last GNSS data update time for stale detection
     @Volatile
@@ -231,6 +229,16 @@ class MainActivity : AppCompatActivity() {
         tokenBatt.icon.isVisible = true
         moveBatteryIconToRight()
         tokenBatt.root.isVisible = false
+
+        // Battery comes from ReachDeviceRepository — the single poller, shared with Settings and
+        // the Developer page. It publishes null while the receiver is unreachable or not selected.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                reachDeviceRepository.batteryInfo.collect { b ->
+                    if (batteryShouldShow) updateBatteryIcon(b?.percent, b?.isCharging)
+                }
+            }
+        }
 
         // Trailing separators (managed dynamically in renderGnssToolbarState)
         tokenSats.separator?.isVisible = false
@@ -406,7 +414,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        batteryJob?.cancel()
         replayController?.stop()
     }
 
@@ -843,16 +850,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateBatteryVisibility(shouldShow: Boolean) {
+        batteryShouldShow = shouldShow
         if (shouldShow) {
-            // External source: poll the receiver for battery. The token stays hidden until real
-            // battery data arrives — updateBatteryIcon() reveals it (and its separator) once we
-            // have a percentage, and hides it again if the data is lost.
-            if (batteryJob == null) startBatteryPolling()
+            // External source: render the repository's latest reading. The token stays hidden
+            // until real battery data arrives — updateBatteryIcon() reveals it (and its separator)
+            // once there is a percentage, and hides it again if the data is lost.
+            val b = reachDeviceRepository.batteryInfo.value
+            updateBatteryIcon(b?.percent, b?.isCharging)
         } else {
-            // Internal source (or no receiver): hide the token + its separator and stop polling.
+            // Internal source (or no receiver): hide the token + its separator.
             tokenAlt.separator?.isVisible = false
             tokenBatt.root.isVisible = false
-            batteryJob?.cancel(); batteryJob = null
         }
     }
 
@@ -909,8 +917,10 @@ class MainActivity : AppCompatActivity() {
 
         batteryFillClip?.level = (percentage.coerceIn(0, 100) * 100)
 
+        // Charging turns the fill green, except below 20 %: a critical level keeps its warning
+        // color and only gains the bolt, so plugging in never hides a nearly-dead battery.
         val fillColor = when {
-            charging == true -> 0xFF4CAF50.toInt()
+            charging == true && percentage >= 20 -> 0xFF4CAF50.toInt()
             percentage <= 15 -> 0xFFF44336.toInt()
             percentage <= 30 -> 0xFFFFC107.toInt()
             else -> 0xFF4CAF50.toInt()
@@ -944,140 +954,6 @@ class MainActivity : AppCompatActivity() {
         batteryLayer?.invalidateSelf()
         tokenBatt.icon.invalidate()
     }
-
-    private fun startBatteryPolling() {
-        batteryJob?.cancel()
-        batteryJob = lifecycleScope.launch {
-            var consecutiveFailures = 0
-            var lastLoggedFailure = 0L
-            var batteryHidden = false
-            var hideStartTime = 0L
-
-            var lastIp: String? = null
-            var client: ReachHttpClient? = null
-            var service: ReachBatteryService? = null
-
-            // Counts how many consecutive iterations returned a blank IP.
-            // setActiveProvider(EXTERNAL_TCP) fires before settingsRepo.setExternalTcp()
-            // completes its DataStore write, so the first few reads can return null.
-            // Retry quickly until the write propagates, then back off to 60 s.
-            var blankIpCount = 0
-
-            android.util.Log.d("MainActivity", "Battery polling started")
-
-            while (true) {
-                try {
-                    // Get configured IP from settings
-                    val ip = runCatching {
-                        settingsRepository.externalTcpHost.first()
-                    }.getOrNull()
-
-                    // No IP configured - hide battery and wait
-                    if (ip.isNullOrBlank()) {
-                        if (!batteryHidden) {
-                            android.util.Log.d("MainActivity", "No IP configured, hiding battery")
-                            updateBatteryIcon(null)
-                            batteryHidden = true
-                            hideStartTime = SystemClock.elapsedRealtime()
-                            consecutiveFailures = 0
-                        }
-                        // Retry quickly on the first few misses to handle the race where
-                        // setActiveProvider fires before externalTcpHost is persisted.
-                        delay(if (blankIpCount++ < 5) 1_000L else 60_000L)
-                        continue
-                    }
-                    blankIpCount = 0
-
-                    // IP changed - reinitialize client
-                    if (ip != lastIp) {
-                        android.util.Log.d("MainActivity", "Battery IP changed to: $ip")
-
-                        try {
-                            // Short timeouts: /battery may not exist on all firmware versions.
-                            // A 1.5 s timeout means the fallback to /status costs at most 3 s
-                            // instead of the default 8 s, so battery appears quickly on connect.
-                            client = ReachHttpClient(ip, connectTimeoutMs = 1500, readTimeoutMs = 1500)
-                            service = ReachBatteryService(client)
-                            lastIp = ip
-                            consecutiveFailures = 0 // Reset failures on new IP
-                        } catch (e: Exception) {
-                            android.util.Log.e("MainActivity", "Error initializing battery service for $ip", e)
-                            updateBatteryIcon(null)
-                            delay(30_000)
-                            continue
-                        }
-                    }
-
-                    // Auto-unhide after 60 seconds if hidden
-                    if (batteryHidden && SystemClock.elapsedRealtime() - hideStartTime >= 60_000) {
-                        android.util.Log.d("MainActivity", "Auto-unhiding battery after timeout")
-                        batteryHidden = false
-                        consecutiveFailures = 0
-                    }
-
-                    // Skip fetch if hidden (waiting for timeout)
-                    if (batteryHidden) {
-                        delay(15_000)
-                        continue
-                    }
-
-                    // Fetch battery data
-                    val batt = try {
-                        withContext(Dispatchers.IO) {
-                            runCatching { service?.read() }.getOrNull()
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("MainActivity", "Error reading battery data", e)
-                        null
-                    }
-
-                    // Process battery data
-                    if (batt?.percent != null) {
-                        consecutiveFailures = 0
-                        val isCharging = batt.chargerStatus?.contains("charg", ignoreCase = true) ?: false
-                        updateBatteryIcon(batt.percent, isCharging)
-                        delay(15_000)
-                    } else {
-                        // Failed to get battery data
-                        consecutiveFailures++
-                        val now = SystemClock.elapsedRealtime()
-
-                        // Log failure periodically
-                        if (now - lastLoggedFailure >= 60_000) {
-                            android.util.Log.w("MainActivity", "Battery fetch failed for $ip (failure #$consecutiveFailures)")
-                            lastLoggedFailure = now
-                        }
-
-                        // Hide after 3 consecutive failures
-                        if (consecutiveFailures >= 3 && !batteryHidden) {
-                            android.util.Log.w("MainActivity", "Hiding battery after $consecutiveFailures consecutive failures")
-                            updateBatteryIcon(null)
-                            batteryHidden = true
-                            hideStartTime = SystemClock.elapsedRealtime()
-                        }
-
-                        // Progressive backoff: retry quickly on first miss (receiver may
-                        // not have served the HTTP API yet), then slow down.
-                        val delayMs = when (consecutiveFailures) {
-                            1 -> 5_000L
-                            2 -> 15_000L
-                            else -> 30_000L
-                        }
-                        delay(delayMs)
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Battery polling error", e)
-                    if (!batteryHidden) {
-                        updateBatteryIcon(null)
-                        batteryHidden = true
-                        hideStartTime = SystemClock.elapsedRealtime()
-                    }
-                    delay(60_000)
-                }
-            }
-        }
-    }
-
 
     /**
      * Binds the Coordinates / Models drawer rows' [app:actionLayout] badges to the live count

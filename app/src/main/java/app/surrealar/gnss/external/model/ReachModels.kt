@@ -18,7 +18,9 @@ data class ReachBatteryInfo(
     val chargerStatus: String?,
     val otg: Boolean? = null,
     val usbChargerCurrentA: Double? = null,
-    val usbChargerVoltageV: Double? = null
+    val usbChargerVoltageV: Double? = null,
+    /** Strict charging flag decided by `ReachBatteryService` — use this, never chargerStatus text. */
+    val isCharging: Boolean = false
 )
 
 data class ReachDeviceInfo(

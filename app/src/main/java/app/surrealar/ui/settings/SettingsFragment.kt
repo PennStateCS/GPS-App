@@ -1499,9 +1499,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         tv.text = "—"
                         tv.setTextColor(clr(android.R.color.darker_gray))
                     } else {
-                        val chargeSuffix = bat.chargerStatus?.let { s ->
-                            if (s.lowercase().let { it.contains("charging") && !it.contains("not") }) " ⚡" else ""
-                        } ?: ""
+                        val chargeSuffix = if (bat.isCharging) " ⚡" else ""
                         tv.text = "${bat.percent}%$chargeSuffix"
                         tv.setTextColor(clr(when {
                             bat.percent < 20 -> android.R.color.holo_red_dark
@@ -1514,9 +1512,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     if (bat == null) {
                         chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) }
                     } else {
-                        val chargeSuffix = bat.chargerStatus?.let { s ->
-                            if (s.lowercase().let { it.contains("charging") && !it.contains("not") }) "⚡" else ""
-                        } ?: ""
+                        val chargeSuffix = if (bat.isCharging) "⚡" else ""
                         chip.text = "${bat.percent}%$chargeSuffix"
                         chip.chipBackgroundColor = chipClr(when {
                             bat.percent < 20 -> R.color.app_error

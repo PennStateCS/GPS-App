@@ -11,11 +11,16 @@ import app.surrealar.gnss.external.model.ReachConnectionStatus
 import app.surrealar.gnss.external.model.ReachCorrectionsInfo
 import app.surrealar.gnss.external.model.ReachDeviceInfo
 import app.surrealar.gnss.external.model.ReachStorageInfo
+import android.util.Log
 import app.surrealar.gnss.source.SourceSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -27,6 +32,8 @@ import javax.inject.Singleton
  * Polls/exposes device data on an IO scope; it does not handle the NMEA fix stream (that is the
  * external NMEA source). Network failures surface as state rather than throwing.
  */
+private const val TAG = "ReachDeviceRepo"
+
 @Singleton
 class ReachDeviceRepository @Inject constructor(
     private val sourceSettings: SourceSettings,
@@ -53,7 +60,11 @@ class ReachDeviceRepository @Inject constructor(
     private val _isDiscovering = MutableStateFlow(false)
     val isDiscovering: StateFlow<Boolean> = _isDiscovering.asStateFlow()
 
-    private var isPolling = false
+    // Poll loops are held as Jobs so stopPolling() actually ends them (a loop sleeping in delay()
+    // would otherwise outlive a quick EXTERNAL → INTERNAL → EXTERNAL switch and run twice).
+    private var pollBatteryJob: Job? = null
+    private var pollDeviceJob: Job? = null
+    private val isPolling: Boolean get() = pollBatteryJob?.isActive == true
     private var reconnectAttempts = 0
     private val maxReconnectAttempts = 3
     private var correctionsService: ReachCorrectionsService? = null
@@ -72,15 +83,20 @@ class ReachDeviceRepository @Inject constructor(
         }
     }
 
-    private suspend fun startPolling() {
-        isPolling = true
-        scope.launch { pollBattery() }
-        scope.launch { pollDevice() }
+    private fun startPolling() {
+        if (isPolling) return                      // already running — never start a second loop
+        Log.d(TAG, "Reach polling started")
+        pollBatteryJob = scope.launch { pollBattery() }
+        if (pollDeviceJob?.isActive != true) pollDeviceJob = scope.launch { pollDevice() }
         startCorrectionsSocket()
     }
 
     private fun stopPolling() {
-        isPolling = false
+        if (pollBatteryJob?.isActive == true || pollDeviceJob?.isActive == true) {
+            Log.d(TAG, "Reach polling stopped")
+        }
+        pollBatteryJob?.cancel(); pollBatteryJob = null
+        pollDeviceJob?.cancel(); pollDeviceJob = null
         stopCorrectionsSocket()
         _batteryInfo.value = null
         _deviceInfo.value = null
@@ -110,34 +126,80 @@ class ReachDeviceRepository @Inject constructor(
         correctionsService = null
     }
 
+    /**
+     * The app's only battery poller (toolbar, Settings and the Developer page all collect
+     * [batteryInfo]). 15 s between successful reads; on failure back off 5 s → 15 s → 30 s, and
+     * after 3 consecutive failures publish null (UI hides the battery) while retrying every 30 s.
+     */
     private suspend fun pollBattery() {
-        while (isPolling) {
+        var lastIp: String? = null
+        var service: ReachBatteryService? = null
+        var failures = 0
+        // setActiveProvider(EXTERNAL_TCP) can fire before the host's DataStore write lands, so the
+        // first reads may see no IP: retry every ~1 s for 5 misses, then every 60 s.
+        var blankIpCount = 0
+
+        while (currentCoroutineContext().isActive) {
             val ip = getReachIp()
             if (ip == null) {
                 _batteryInfo.value = null
-            } else {
-                val client = ReachHttpClient(ip)
-                val service = ReachBatteryService(client)
-                val battery = runCatching { service.read() }.getOrNull()
-                _batteryInfo.value = battery?.let {
-                    ReachBatteryInfo(
-                        percent           = it.percent,
-                        voltageV          = it.voltageV,
-                        currentA          = it.currentA,
-                        temperatureC      = it.temperatureC,
-                        chargerStatus     = it.chargerStatus,
-                        otg               = it.otg,
-                        usbChargerCurrentA = it.usbChargerCurrentA,
-                        usbChargerVoltageV = it.usbChargerVoltageV
-                    )
-                }
+                delay(if (blankIpCount++ < 5) 1_000L else 60_000L)
+                continue
             }
-            delay(15_000) // Poll every 15 seconds
+            blankIpCount = 0
+
+            if (ip != lastIp || service == null) {
+                // Short timeouts: /battery doesn't exist on all firmware, so the /status fallback
+                // costs at most ~3 s instead of the default 8 s per endpoint.
+                service = ReachBatteryService(
+                    ReachHttpClient(ip, connectTimeoutMs = 1500, readTimeoutMs = 1500)
+                )
+                if (lastIp != null) Log.d(TAG, "Battery IP changed to $ip")
+                lastIp = ip
+                failures = 0
+            }
+
+            val battery = try {
+                service.read()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            // A blocking HTTP read can finish after stopPolling() cancelled us — don't republish.
+            if (!currentCoroutineContext().isActive) return
+
+            if (battery != null) {
+                failures = 0
+                _batteryInfo.value = ReachBatteryInfo(
+                    percent            = battery.percent,
+                    voltageV           = battery.voltageV,
+                    currentA           = battery.currentA,
+                    temperatureC       = battery.temperatureC,
+                    chargerStatus      = battery.chargerStatus,
+                    otg                = battery.otg,
+                    usbChargerCurrentA = battery.usbChargerCurrentA,
+                    usbChargerVoltageV = battery.usbChargerVoltageV,
+                    isCharging         = battery.isCharging
+                )
+                delay(15_000)
+            } else {
+                failures++
+                if (failures == 3) Log.w(TAG, "Battery read failed 3 times for $ip — hiding battery")
+                if (failures >= 3) _batteryInfo.value = null
+                delay(
+                    when (failures) {
+                        1    -> 5_000L
+                        2    -> 15_000L
+                        else -> 30_000L
+                    }
+                )
+            }
         }
     }
 
     private suspend fun pollDevice() {
-        while (isPolling) {
+        while (currentCoroutineContext().isActive) {
             val ip = getReachIp()
             if (ip == null) {
                 _deviceInfo.value = null
