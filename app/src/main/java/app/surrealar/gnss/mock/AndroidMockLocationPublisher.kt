@@ -113,6 +113,8 @@ class AndroidMockLocationPublisher(
             .collect { (mockEnabled, locationSource, fix) ->
                 if (!mockEnabled || locationSource != LocationSourceType.EXTERNAL) {
                     if (providerAdded) {
+                        DiagnosticsLogger.i(DIAG, "Mock publishing off: " +
+                            if (locationSource != LocationSourceType.EXTERNAL) "source is $locationSource" else "turned off")
                         Log.i(TAG, "Stopping mock publishing — source=$locationSource mockEnabled=$mockEnabled")
                     }
                     teardownProvider()
@@ -311,8 +313,8 @@ class AndroidMockLocationPublisher(
                 DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_INJECTED sourceProvider=${fix.provider} " +
                     "fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
                     "backdatedMs=${backdatedMs ?: "none(implausible age)"} " +
-                    "altM=${fix.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
-                    "injectedAltM=${if (location.hasAltitude()) "%.2f".format(location.altitude) else "none"} " +
+                    // No heights either: they are coordinates.
+                    "altitude=${if (location.hasAltitude()) "set" else "none"} " +
                     "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +
                     "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
                     (if (hAccWasFallback) "(placeholder ${location.accuracy}m injected)" else "") +

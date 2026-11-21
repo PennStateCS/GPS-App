@@ -54,6 +54,11 @@ class LocationService : Service() {
         super.onCreate()
         isRunning = true
         ensureChannel()
+        val notificationsAllowed = runCatching {
+            androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
+        }.getOrDefault(false)
+        app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
+            "LocationService started (foreground notification ${if (notificationsAllowed) "allowed" else "NOT allowed - hidden"})")
         startForeground(NOTIF_ID, buildNotification())
     }
 
@@ -62,7 +67,10 @@ class LocationService : Service() {
             ACTION_START -> {
                 // Already started in onCreate; nothing else needed.
             }
+            null -> app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
+                "LocationService restarted by the system (sticky)")
             ACTION_STOP -> {
+                app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "LocationService stop requested")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -72,6 +80,7 @@ class LocationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "LocationService stopped")
         isRunning = false
     }
 
