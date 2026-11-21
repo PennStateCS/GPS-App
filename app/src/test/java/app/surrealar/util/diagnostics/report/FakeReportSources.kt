@@ -30,6 +30,7 @@ open class FakeReportSources(
     override fun capturesLog(): File? = File(dir, "captures.log").apply {
         writeText((1..55).joinToString("\n") { "2026-11-21T14:%02d:00.000-05:00 Capture saved name=\"P$it\" mode=EXTERNAL samples=150 duration=60s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=0/150".format(it % 60) } + "\n")
     }
+    override suspend fun gnssStats() = FAKE_GNSS
 
     override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) })
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
@@ -42,6 +43,13 @@ open class FakeReportSources(
             network = "Wi-Fi validated=false", gpsProvider = true, networkProvider = false,
             permissions = linkedMapOf("Fine location" to true, "Camera" to false),
             batteryOptimizationIgnored = false, mockLocationApp = "not this app",
+        )
+        val FAKE_GNSS = GnssStatsInput(
+            stats = app.surrealar.util.diagnostics.GnssFeedTracker.Stats(
+                timeInStatusMs = mapOf(io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX to 3_000_000L,
+                    io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT to 600_000L),
+                rtkDrops = 3, longestCorrectionAgeS = 31.0, sourceSwitches = 1, fixes = 18_000L),
+            reconnects = 2, nmeaLines = 120_000L, nmeaParseErrors = 4L, sentenceCounts = "GGA=3600 RMC=3600 GST=3600",
         )
         val DEFAULT_EVENT_LOG = """
             2026-11-21T13:00:00.000-05:00 I APP [main] SESSION_START session=aaa111 install=i-1 version=1.4 code=14 build=debug commit=abc device="Samsung SM-X940" android=15 sdk=35 locale=en-US tz=America/New_York lastSessionClean=unknown(first run) previous=none

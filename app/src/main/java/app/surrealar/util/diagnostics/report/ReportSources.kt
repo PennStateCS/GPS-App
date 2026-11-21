@@ -25,6 +25,7 @@ interface ReportSources {
     fun exitTraceFiles(): List<File>
     fun deviceHealth(): DeviceHealth
     fun capturesLog(): File?
+    suspend fun gnssStats(): GnssStatsInput
 
     fun logFiles(): List<File>
     fun errorFiles(): List<File>

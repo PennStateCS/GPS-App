@@ -22,7 +22,7 @@ class ReportAssemblerTest {
         val written = ReportAssembler.write(zip, FakeReportSources(tmp.newFolder("logs")), flush = {})
         val expected = listOf(
             "README.txt", "diagnostic-summary.txt", "timeline.txt", "sessions.txt", "exits.txt",
-            "exits/20261121-133000-ANR.txt", "device-health.txt", "captures.txt",
+            "exits/20261121-133000-ANR.txt", "device-health.txt", "captures.txt", "gnss-stats.txt",
             "settings-snapshot.txt", "permissions-status.txt", "app-state-summary.txt",
             "coordinates.txt", "model-integrity.txt", "ar-session-summary.txt", "map-diagnostics.txt",
             "nmea-stream-diagnostics.txt", "app-log-current.txt", "app-errors-current.txt",
@@ -39,6 +39,6 @@ class ReportAssemblerTest {
         ReportAssembler.write(zip, src, flush = {})
         val text = ZipFile(zip).use { z -> z.getInputStream(z.getEntry("model-integrity.txt")).reader().readText() }
         assertEquals("Section failed to generate: IllegalStateException: db closed\n", text)
-        assertEquals(18, names(zip).size)
+        assertEquals(19, names(zip).size)
     }
 }

@@ -123,6 +123,19 @@ object DiagnosticReportExporter {
             app.surrealar.util.diagnostics.ExitReasonRecorder.exitsDir(context).listFiles()?.filter { it.isFile }?.sortedBy { it.name }.orEmpty()
         override fun deviceHealth() = app.surrealar.util.diagnostics.report.AppReportReaders.deviceHealth(context)
         override fun capturesLog() = app.surrealar.util.diagnostics.CaptureLog.file()
+        override suspend fun gnssStats(): app.surrealar.util.diagnostics.report.GnssStatsInput {
+            val g = app.surrealar.util.diagnostics.GnssFeedLogger.instance
+            val nmea = runCatching {
+                dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext,
+                    app.surrealar.SurRealApplicationEntryPoint::class.java).diagnosticsService().diagnosticData.value
+            }.getOrNull()
+            return app.surrealar.util.diagnostics.report.GnssStatsInput(
+                stats = g?.feed?.stats(app.surrealar.util.diagnostics.GnssFeedLogger.now()),
+                reconnects = g?.link?.reconnects,
+                nmeaLines = nmea?.totalLinesProcessed, nmeaParseErrors = nmea?.totalParseErrors,
+                sentenceCounts = app.surrealar.util.diagnostics.report.GnssStatsCollector.sentenceCounts(nmeaStream()),
+            )
+        }
         override fun logFiles() = DiagnosticsLogger.logFiles()
         override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }

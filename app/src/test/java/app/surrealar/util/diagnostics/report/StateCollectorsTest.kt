@@ -42,4 +42,29 @@ class StateCollectorsTest {
         assertTrue(CapturesCollector.render(emptyList()).contains("(no captures recorded)"))
     }
 
+    @Test fun `golden gnss stats`() {
+        assertEquals("""
+            === GNSS stats (this app session) ===
+            --- Time in each RTK status ---
+            FLOAT          :      10m 00s   16.7%
+            FIX            :      50m 00s   83.3%
+            --- Events ---
+            RTK drops (left FIX)       : 3
+            Longest correction age     : 31.0 s
+            Source switches            : 1
+            Fixes received             : 18000
+            Receiver reconnects        : 2
+            --- NMEA ---
+            Lines processed            : 120000
+            Checksum/parse failures    : 4
+            Sentence counts (external receiver):
+              GGA=3600 RMC=3600 GST=3600
+        """.trimIndent() + "\n", GnssStatsCollector.render(FakeReportSources.FAKE_GNSS))
+    }
+
+    @Test fun `sentence counts are lifted from the NMEA section`() {
+        val nmea = "=== NMEA Stream Diagnostics ===\n--- Sentence counts (cumulative this session) ---\nGGA=10 RMC=10\nGSV GP=4\n\n--- Next ---\nx\n"
+        assertEquals("GGA=10 RMC=10\nGSV GP=4", GnssStatsCollector.sentenceCounts(nmea))
+    }
+
 }
