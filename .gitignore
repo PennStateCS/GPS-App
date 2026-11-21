@@ -30,7 +30,6 @@ google-services.json
 *.pfx
 .env
 .env.*
-!.env.example
 # Exception: the SHARED DEBUG keystore is intentionally committed so every developer
 # signs local debug builds with the same SHA-1 (required for the Google Maps API key
 # restriction). This is a debug-only key — never use it for release signing.
@@ -41,8 +40,10 @@ google-services.json
 *.aab
 *.ap_
 
-# Logs
+# Logs and captured build output
 *.log
+build.log
+build_output.txt
 
 # AI coding guide — local only
 AGENTS.md
