@@ -29,8 +29,9 @@ class AppScopeExceptionHandlerTest {
         scope.launch { stillAlive.complete(42) }
         assertEquals("sibling coroutines still run", 42, withTimeout(5_000) { stillAlive.await() })
 
-        val logged = ShadowLog.getLogsForTag("Coroutine")
-        assertTrue("logged: $logged", logged.any { it.type == Log.ERROR && it.throwable is IllegalStateException })
+        // Same synchronous crash path as the global handler (logcat tag GlobalCrash), marked not fatal.
+        val logged = ShadowLog.getLogsForTag("GlobalCrash")
+        assertTrue("logged: $logged", logged.any { it.type == Log.ERROR && it.throwable is IllegalStateException && it.msg.contains("not fatal") })
         scope.cancel()
     }
 }
