@@ -283,11 +283,28 @@ class RenderMapFragment : Fragment() {
             // Was getOrientation() azimuth = MAGNETIC north, screen-top only (≈11.6° off near Hazleton).
             val rotation = view?.display?.rotation ?: android.view.Surface.ROTATION_0
             compassHeadingDeg = headingProvider.trueHeadingDeg(event.values, rotation)
+            logHeadingSourceIfChanged(null)
             // Keep the on-map heading arrow following the compass between fixes (throttled). Delivered
             // on the main thread, so touching the map here is safe.
             updateHeadingIndicator()
         }
-        override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
+        override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {
+            app.surrealar.util.diagnostics.HeadingDiagnostics.onCompassAccuracy(accuracy)
+        }
+    }
+
+    // Diagnostics only: log the heading source when its parts change (enum compares, no allocation).
+    private var loggedDeclSource: Any? = null
+    private var loggedMagneticOnly: Boolean? = null
+    private var loggedStakeoutSource: Any? = null
+    private fun logHeadingSourceIfChanged(stakeoutSource: app.surrealar.stakeout.HeadingSource?) {
+        val decl = headingProvider.declinationSource
+        val mag = headingProvider.isMagneticOnly
+        val st = stakeoutSource ?: loggedStakeoutSource
+        if (decl == loggedDeclSource && mag == loggedMagneticOnly && st == loggedStakeoutSource) return
+        loggedDeclSource = decl; loggedMagneticOnly = mag; loggedStakeoutSource = st
+        app.surrealar.util.diagnostics.HeadingDiagnostics.onSource(
+            app.surrealar.util.diagnostics.HeadingDiagnostics.describe((st as? Enum<*>)?.name, decl.name, mag))
     }
 
     // Selected coordinate card
@@ -938,6 +955,7 @@ class RenderMapFragment : Fragment() {
         val relative = app.surrealar.stakeout.StakeoutGuidance.relativeBearing(bearingToTargetDeg, heading)
         // Arrow shows the relative direction when heading is known, else points at the map-north bearing.
         imgStakeoutArrow?.rotation = (relative ?: bearingToTargetDeg).toFloat()
+        logHeadingSourceIfChanged(source)
         if (source == app.surrealar.stakeout.HeadingSource.NORTH_UP) {
             txtStakeoutHeadingNote?.visibility = View.VISIBLE
             txtStakeoutHeadingNote?.text = "Arrow is north-up until heading is available."
