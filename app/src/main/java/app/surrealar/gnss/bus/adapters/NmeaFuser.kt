@@ -1,5 +1,6 @@
 package app.surrealar.gnss.bus.adapters
 
+import app.surrealar.gnss.log.GnssLog
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.RtkStatus
@@ -269,7 +270,7 @@ class NmeaFuser(
             lastZda = zda
             lastZdaAtMs = clock()
         } else {
-            android.util.Log.w("NmeaFuser", "ZDA ignored: time ${zda.timeRaw} doesn't match GGA/RMC $ref")
+            GnssLog.w("NmeaFuser", "ZDA ignored: time ${zda.timeRaw} doesn't match GGA/RMC $ref")
         }
     }
 
@@ -482,7 +483,7 @@ class NmeaFuser(
         // quality 0 after losing lock; publishing those would show (and let users capture) a frozen
         // position as if it were live. A blank quality field is still accepted (tolerant parsing).
         if (gga.fixQuality == 0) {
-            app.surrealar.gnss.debug.GnssDebugLog.every("fuser.q0.$provider", "fuser") {
+            GnssLog.every("fuser.q0.$provider", "fuser") {
                 "$provider GGA quality 0 with coordinates — not published (time=${gga.timeRaw})"
             }
             return
@@ -680,14 +681,14 @@ class NmeaFuser(
     /**
      * Debug builds: a periodic summary of the fix this fuser produced (and from which inputs), plus
      * throttled notes whenever an input was dropped or overridden — so a wrong value on screen can be
-     * traced back to the sentence that caused it. Logcat only (see GnssDebugLog).
+     * traced back to the sentence that caused it. Debug trace only (GnssLog.every; logcat in the app).
      */
     private fun debugTrace(
         gga: GGA, epochMs: Long, tsSource: TimestampSource, rtk: RtkStatus,
         satsUsed: Int?, rawVisible: Int?, satsVisible: Int?,
         gst: GST?, rmc: RMC?, gsa: GSA?, hAccM: Double?, altEllipsoidal: Double?,
     ) {
-        val log = app.surrealar.gnss.debug.GnssDebugLog
+        val log = GnssLog
         if (!log.enabled) return
         log.every("fuser.fix.$provider", "fuser") {
             "$provider fix t=${gga.timeRaw} epoch=${Instant.ofEpochMilli(epochMs)} ($tsSource) q=${gga.fixQuality}→$rtk " +

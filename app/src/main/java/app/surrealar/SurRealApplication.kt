@@ -18,6 +18,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import androidx.appcompat.app.AppCompatDelegate
 import app.surrealar.settings.model.AppThemeMode
+import app.surrealar.gnss.debug.AndroidGnssLogger
+import app.surrealar.gnss.log.GnssLog
 import app.surrealar.util.DiagnosticsLogger
 import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
@@ -75,6 +77,9 @@ class SurRealApplication : Application() {
     }
 
     override fun onCreate() {
+        // gnss-core logs through GnssLog; route it to logcat / DiagnosticsLogger / GnssDebugLog before
+        // Hilt (super.onCreate) builds any GNSS singleton.
+        GnssLog.install(AndroidGnssLogger)
         super.onCreate()
 
         // Init diagnostic file logger before anything else so startup events are captured.

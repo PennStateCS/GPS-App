@@ -1,5 +1,6 @@
 package app.surrealar.gnss.satellites
 
+import app.surrealar.gnss.log.GnssLog
 import app.surrealar.gnss.bus.adapters.GsvMessage
 import app.surrealar.gnss.model.SkySnapshot
 import app.surrealar.gnss.model.SatInfo
@@ -94,8 +95,8 @@ class SatelliteInventory(
         val evictedSnr = snrBySat.entries.removeIf { (_, v) -> v.second < cutoff }
         val evictedGeom = geometryBySat.entries.removeIf { (_, g) -> g.lastSeen < cutoff }
         if (evictedSnr || evictedGeom) {
-            android.util.Log.d("SatelliteInventory", "Evicted stale satellites (older than ${evictionSeconds}s)")
-            app.surrealar.gnss.debug.GnssDebugLog.every("sky.evict.$debugName", "sky") {
+            GnssLog.d("SatelliteInventory", "Evicted stale satellites (older than ${evictionSeconds}s)")
+            GnssLog.every("sky.evict.$debugName", "sky") {
                 "$debugName evicted ${beforeEvict - geometryBySat.size} satellite(s) not seen for ${evictionSeconds}s"
             }
         }
@@ -111,7 +112,7 @@ class SatelliteInventory(
             }
         }
 
-        app.surrealar.gnss.debug.GnssDebugLog.every("sky.summary.$debugName", "sky") {
+        GnssLog.every("sky.summary.$debugName", "sky") {
             val staleSec = geometryBySat.values.count { t - it.lastSeen > 5.0 }
             // withGeom/withSnr: how many can be drawn (skyplot/charts need az+el and SNR).
             val withGeom = geometryBySat.values.count { it.azDeg != null && it.elDeg != null }
@@ -148,7 +149,7 @@ class SatelliteInventory(
     fun reset() {
         snrBySat.clear()
         geometryBySat.clear()
-        android.util.Log.d("SatelliteInventory", "Reset: cleared all satellite state")
+        GnssLog.d("SatelliteInventory", "Reset: cleared all satellite state")
     }
 
     private fun mapConstellationName(name: String): Constellation =

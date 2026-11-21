@@ -1,7 +1,7 @@
 package app.surrealar.gnss.nmea.parse
 
 import app.surrealar.gnss.nmea.sentence.NmeaSentence
-import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.gnss.log.GnssLog
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
  *                        omit checksums.
  *
  * Diagnostics: per-sentence parse failures are counted (never logged individually — that would be
- * per-sentence spam). A compact summary is emitted to [DiagnosticsLogger] at most once per
+ * per-sentence spam). A compact summary is emitted to [GnssLog.diagnostic] at most once per
  * [SUMMARY_INTERVAL_MS] when there were failures, and on demand via [logParseSummary] (e.g. when a
  * source stops). Summaries carry counts and recent failed sentence TYPES only — never raw payloads.
  */
@@ -55,13 +55,13 @@ class NmeaRegistry(
                 val csHex = trimmed.substring(starIdx + 1, starIdx + 3)
                 val expected = csHex.toIntOrNull(16) ?: run { wChecksum.incrementAndGet(); return null }
                 if (xorChecksum(payload) != expected) {
-                    android.util.Log.w("NmeaRegistry", "Checksum mismatch: $trimmed")
+                    GnssLog.w("NmeaRegistry", "Checksum mismatch: $trimmed")
                     wChecksum.incrementAndGet()
                     return null
                 }
             } else if (requireChecksum) {
                 // Checksum missing but required: reject sentence
-                android.util.Log.w("NmeaRegistry", "Missing required checksum: $trimmed")
+                GnssLog.w("NmeaRegistry", "Missing required checksum: $trimmed")
                 wChecksum.incrementAndGet()
                 return null
             }
@@ -111,7 +111,7 @@ class NmeaRegistry(
     }
 
     private fun emitSummaryLocked(reason: String) {
-        drainSummaryLine(reason)?.let { DiagnosticsLogger.i("NMEA", it) }
+        drainSummaryLine(reason)?.let { GnssLog.diagnostic("NMEA", it) }
     }
 
     /**
