@@ -2002,8 +2002,11 @@ class RenderMapFragment : Fragment() {
         gridLines.clear()
     }
 
-    /** Map scale (metres per screen pixel) at the camera centre — Google Web-Mercator formula. */
-    private fun metersPerPixel(): Double {
+    /**
+     * Map scale at the camera centre in metres per **dp** — Google Web-Mercator formula. Android map
+     * tiles are 256 dp at zoom 0, so 156543.03392·cos(lat)/2^zoom is per dp, not per physical pixel.
+     */
+    private fun metersPerDp(): Double {
         val cam = googleMap?.cameraPosition ?: return Double.NaN
         return 156543.03392 * cos(Math.toRadians(cam.target.latitude)) / 2.0.pow(cam.zoom.toDouble())
     }
@@ -2019,7 +2022,7 @@ class RenderMapFragment : Fragment() {
             updateGridButton()
             return
         }
-        val auto = MapGrid.autoSpacingMeters(metersPerPixel())
+        val auto = MapGrid.autoSpacingMeters(metersPerDp())
         val spacing = MapGrid.spacingForMode(gridMode, auto)
         currentGridSpacingM = spacing
         if (spacing != null) drawMeterGrid(spacing)

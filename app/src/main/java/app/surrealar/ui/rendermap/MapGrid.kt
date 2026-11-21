@@ -44,15 +44,16 @@ object MapGrid {
     const val MAX_LINES_PER_AXIS = 80
 
     /**
-     * Auto spacing: the "nice" spacing whose on-screen gap is closest (in ratio) to [targetPx] pixels,
-     * so lines sit roughly [targetPx] apart — neither too dense nor too sparse. Clamped to the
+     * Auto spacing: the "nice" spacing whose on-screen gap is closest (in ratio) to [targetDp] dp,
+     * so lines sit roughly [targetDp] apart — neither too dense nor too sparse. Clamped to the
      * sequence ends.
      *
-     * @param metersPerPixel map scale at the view centre (156543.03 * cos(lat) / 2^zoom for Google Maps)
+     * @param metersPerDp map scale at the view centre in metres per dp (156543.03 * cos(lat) / 2^zoom
+     *   for Google Maps on Android, whose tiles are 256 dp)
      */
-    fun autoSpacingMeters(metersPerPixel: Double, targetPx: Double = 110.0): Double {
-        if (metersPerPixel <= 0.0 || metersPerPixel.isNaN()) return SPACINGS_M.first()
-        val desired = targetPx * metersPerPixel
+    fun autoSpacingMeters(metersPerDp: Double, targetDp: Double = 110.0): Double {
+        if (metersPerDp <= 0.0 || metersPerDp.isNaN()) return SPACINGS_M.first()
+        val desired = targetDp * metersPerDp
         return SPACINGS_M.minByOrNull { abs(ln(it / desired)) } ?: SPACINGS_M.first()
     }
 
