@@ -16,6 +16,7 @@ object ReportAssembler {
         runCatching(flush)
         return ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             val z = ZipBuilder(zos)
+            z.textSafe("README.txt") { ReadmeCollector.render(src.reportId, logsTruncatedTo24h = false) }
             // ── Compact summaries (current state at export time) ──
             z.textSafe("diagnostic-summary.txt") { src.summary() }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
