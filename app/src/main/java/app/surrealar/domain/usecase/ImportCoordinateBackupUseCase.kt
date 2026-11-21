@@ -30,7 +30,11 @@ class ImportCoordinateBackupUseCase @Inject constructor(
     private val validate: ValidateCoordinateForSaveUseCase,
 ) {
 
-    suspend operator fun invoke(raw: String, replace: Boolean): BackupImportPlan = withContext(Dispatchers.IO) {
+    suspend operator fun invoke(raw: String, replace: Boolean): BackupImportPlan =
+        app.surrealar.util.diagnostics.DataOpLog.run("Backup import", if (replace) "json/replace" else "json/merge",
+            { it.toInsert.size }) { plan(raw, replace) }
+
+    private suspend fun plan(raw: String, replace: Boolean): BackupImportPlan = withContext(Dispatchers.IO) {
         val existingIds = coordinateRepository.getAllCoordinatesList().mapTo(HashSet()) { it.id }
         // The backup carries model metadata but not the model files; missing-model detection checks
         // the LOCAL model database.

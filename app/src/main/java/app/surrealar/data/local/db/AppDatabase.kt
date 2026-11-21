@@ -74,6 +74,8 @@ abstract class AppDatabase : RoomDatabase() {
                     // entirely would crash dev installs coming from a pre-v2 database, so it is
                     // kept but confined to debug builds.
                     .also { if (BuildConfig.DEBUG) it.fallbackToDestructiveMigration(dropAllTables = true) }
+                    // Diagnostics only: logs open / migration / destructive reset (no schema change).
+                    .addCallback(app.surrealar.util.diagnostics.DbDiagnostics.callback(context))
                     .build().also { INSTANCE = it }
             }
         private const val DATABASE_NAME = "surveying_app.db"

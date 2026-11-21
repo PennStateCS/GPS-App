@@ -16,7 +16,10 @@ import java.time.format.DateTimeFormatter
  */
 class CsvExporter {
 
-    fun exportToCsv(context: Context, fixes: List<Fix>): File {
+    fun exportToCsv(context: Context, fixes: List<Fix>): File =
+        app.surrealar.util.diagnostics.DataOpLog.run("Export", "csv", { fixes.size }) { writeCsv(context, fixes) }
+
+    private fun writeCsv(context: Context, fixes: List<Fix>): File {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val fileName = "surveying_data_$timestamp.csv"
 

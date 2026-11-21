@@ -19,7 +19,10 @@ import java.time.format.DateTimeFormatter
  */
 class GeoJsonExporter {
 
-    fun exportToGeoJson(context: Context, fixes: List<Fix>): File {
+    fun exportToGeoJson(context: Context, fixes: List<Fix>): File =
+        app.surrealar.util.diagnostics.DataOpLog.run("Export", "geojson", { fixes.size }) { writeGeoJson(context, fixes) }
+
+    private fun writeGeoJson(context: Context, fixes: List<Fix>): File {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val fileName = "surveying_data_$timestamp.geojson"
 

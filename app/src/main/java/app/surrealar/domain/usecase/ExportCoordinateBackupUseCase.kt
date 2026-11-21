@@ -23,9 +23,11 @@ class ExportCoordinateBackupUseCase @Inject constructor(
     data class Result(val json: String, val coordinateCount: Int, val modelCount: Int)
 
     suspend operator fun invoke(appVersion: String?): Result = withContext(Dispatchers.IO) {
-        val coordinates = coordinateRepository.getAllCoordinatesList()
-        val models = modelRepository.getAllModels().first()
-        val json = CoordinateBackup.export(coordinates, models, appVersion)
-        Result(json = json, coordinateCount = coordinates.size, modelCount = models.size)
+        app.surrealar.util.diagnostics.DataOpLog.run("Backup export", "json", { it.coordinateCount }) {
+            val coordinates = coordinateRepository.getAllCoordinatesList()
+            val models = modelRepository.getAllModels().first()
+            val json = CoordinateBackup.export(coordinates, models, appVersion)
+            Result(json = json, coordinateCount = coordinates.size, modelCount = models.size)
+        }
     }
 }
