@@ -314,6 +314,7 @@ class MainActivity : AppCompatActivity() {
 
         setupDrawerCountBadges(navView)
 
+        navController.addOnDestinationChangedListener(app.surrealar.util.diagnostics.NavLogger)
         navController.addOnDestinationChangedListener { _, destination, _ ->
             val isAr = destination.id == R.id.nav_open_in_ar
             applyArModeChrome(isAr)
