@@ -8,7 +8,9 @@ import app.surrealar.gnss.model.RtkStatus
  * magnitude. [CUSTOM] uses the individual fields in [GnssCaptureSettings] for external captures and
  * [AveragingPolicy.INTERNAL] for internal ones (the behaviour before presets existed).
  *
- * Precision targets (horizontal spread of the accepted samples) apply to RTK receivers only. Device
+ * Spread targets (horizontal scatter of the individual accepted fixes — a conservative stop rule,
+ * not the accuracy of the averaged point; stored as `horizontalPrecisionTargetM` / the
+ * precision-target preference key, which keep their names) apply to RTK receivers only. Device
  * GNSS errors are dominated by slowly varying effects (multipath, atmosphere), so a tight spread over
  * a short occupation does not indicate accuracy there; internal presets use time + fix counts only.
  *

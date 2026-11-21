@@ -472,7 +472,7 @@ class AddCoordinateDialogFragment(
                     val missedPrecision = target != null && result.samples >= policy.minSamples &&
                         (spread == null || spread > target)
                     tvSamplingStatus?.text = if (missedPrecision)
-                        "Timed out · spread ±${spread?.let { formatMeters(it) } ?: "—"} (target ±${formatMeters(target!!)})" +
+                        "Timed out · spread ±${spread?.let { formatMeters(it) } ?: "—"} (spread target ±${formatMeters(target!!)})" +
                             " · try again or choose another preset"
                     else
                         "Timed out · ${result.samples}/${policy.minSamples} fixes · try again or adjust settings"
@@ -543,8 +543,8 @@ class AddCoordinateDialogFragment(
                 val target = policy.horizontalPrecisionTargetM
                 when {
                     timeComplete && fixesComplete && target != null ->
-                        "Waiting for precision · spread ±${state.spreadHorizontalM?.let { formatMeters(it) } ?: "—"}" +
-                            " (target ±${formatMeters(target)})"
+                        "Waiting for spread · ±${state.spreadHorizontalM?.let { formatMeters(it) } ?: "—"}" +
+                            " (spread target ±${formatMeters(target)})"
                     timeComplete && !fixesComplete ->
                         "Waiting for $remaining more accepted ${if (remaining == 1) "fix" else "fixes"}"
                     !timeComplete && fixesComplete ->

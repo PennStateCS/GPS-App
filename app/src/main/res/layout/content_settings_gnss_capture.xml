@@ -132,7 +132,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Precision Target (Custom)"
+                            android:text="Spread Target (Custom)"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -140,7 +140,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="External receiver captures finish only once the measured horizontal spread of the samples is at or below this, after the minimum time and fixes. Leave blank for no precision requirement."
+                            android:text="Stop when the spread of fixes is at or below this (external receiver, after the minimum time and fixes). Spread is the scatter of the individual fixes, not the accuracy of the averaged point, so it doesn't shrink with more samples. Leave blank for no spread requirement."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 

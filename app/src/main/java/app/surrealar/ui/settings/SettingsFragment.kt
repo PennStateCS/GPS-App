@@ -969,7 +969,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val precisionText = editPrecision?.text?.toString()?.trim().orEmpty()
                 val precision = precisionText.toDoubleOrNull()
                 val precisionValid = precisionText.isEmpty() || (precision != null && precision > 0.0 && precision <= 10.0)
-                tilPrecision?.error = if (precisionValid) null else "Precision Target must be between 0.001 and 10 m, or blank."
+                tilPrecision?.error = if (precisionValid) null else "Spread Target must be between 0.001 and 10 m, or blank."
 
                 if (!precisionValid) return
                 if (minDur == null || minDur !in 1..600) return
