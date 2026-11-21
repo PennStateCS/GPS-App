@@ -11,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 
 /**
@@ -30,6 +29,14 @@ import java.time.Instant
  *
  * Collection pauses by ignoring fixes that are stale, below the required RTK
  * quality, missing ellipsoidal height, or using stale correction data.
+ *
+ * **Time.** Minimum/maximum duration and the elapsed timer use [monotonicNowMs], so a tablet clock
+ * correction mid-capture changes nothing; the wall clock ([wallNow]) only stamps the result's
+ * startedAt/endedAt.
+ *
+ * **Threading.** Not thread-safe: call [start] and [cancel] from one thread, and give [scope] a
+ * single-threaded dispatcher (e.g. the main dispatcher or viewModelScope). A session may be started
+ * again after it completes or is cancelled; each start begins with a clean quality snapshot.
  */
 public class ObservationSession(
     private val scope: CoroutineScope,
@@ -38,7 +45,11 @@ public class ObservationSession(
     // so the averaging behavior is unchanged.
     private val fixes: Flow<Fix>,
     private val policy: AveragingPolicy,
-    private val uere: UereTable = UereTable()
+    private val uere: UereTable = UereTable(),
+    /** Wall clock, for the result's startedAt/endedAt. Injectable for tests. */
+    private val wallNow: () -> Instant = Instant::now,
+    /** Monotonic clock in milliseconds (never jumps with clock corrections). Injectable for tests. */
+    private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
 
     /**
@@ -129,7 +140,12 @@ public class ObservationSession(
      */
     public fun start() {
         if (job != null) return
-        val start = Instant.now()
+        val start = wallNow()
+        // Durations (min/max, the elapsed timer) use the monotonic clock: a wall-clock correction
+        // mid-capture must neither finish a capture early nor stop it timing out.
+        val startMonoMs = monotonicNowMs()
+        fun elapsedSec(): Int = ((monotonicNowMs() - startMonoMs) / 1_000L).toInt()
+        resetQualitySnapshot()
 
         /*
          * RunningStats keeps the mean and spread of each ECEF axis without storing
@@ -172,12 +188,12 @@ public class ObservationSession(
         }
 
         job = scope.launch {
-            // Wall-clock tick: keeps the elapsed timer moving and enforces the timeout even when no
+            // 1 s tick: keeps the elapsed timer moving and enforces the timeout even when no
             // fix is being accepted (RTK dropped to Float, receiver disconnected, …).
             launch {
                 while (true) {
                     kotlinx.coroutines.delay(1_000L)
-                    val elapsed = Duration.between(start, Instant.now()).seconds.toInt()
+                    val elapsed = elapsedSec()
                     (_state.value as? State.Capturing)?.let { _state.value = it.copy(elapsedSec = elapsed) }
                     if (evaluate(elapsed)) break
                 }
@@ -245,7 +261,7 @@ public class ObservationSession(
                     lastStdDevNorth = fix.stdDevNorthM
                     lastStdDevUp = fix.stdDevUpM
 
-                    val elapsed = Duration.between(start, Instant.now()).seconds.toInt()
+                    val elapsed = elapsedSec()
                     _state.value = State.Capturing(
                         startedAt = start,
                         elapsedSec = elapsed,
@@ -266,6 +282,14 @@ public class ObservationSession(
                 .catch { e -> _state.value = State.Paused("error: ${e.message}") }
                 .collect()
         }
+    }
+
+    /** Clears the quality snapshot so a reused session never reports a previous capture's values. */
+    private fun resetQualitySnapshot() {
+        lastRtk = null; lastSatsUsed = null; lastSatsVisible = null
+        lastHdop = null; lastVDop = null; lastPDop = null; lastHAcc = null; lastVAcc = null
+        lastDiffAge = null; lastCorrectionStationId = null; lastFixTimeUtc = null; lastTimestampSource = null
+        lastMultipathIndex = null; lastStdDevEast = null; lastStdDevNorth = null; lastStdDevUp = null
     }
 
     /**
@@ -296,7 +320,7 @@ public class ObservationSession(
 
         val result = CaptureResult(
             startedAt = start,
-            endedAt = Instant.now(),
+            endedAt = wallNow(),
             samples = samples,
             latDeg = lat,
             lonDeg = lon,
