@@ -676,8 +676,11 @@ class MainActivity : AppCompatActivity() {
                     settingsRepository.coordinateSystemSettings,
                     externalLabelFlow(),
                 ) { fix, sky, source, coordSettings, label -> ToolbarInputs(source, fix, sky, coordSettings, label) }
-                val inputs = combine(gnss, toolbarLinkFlow(), toolbarTickFlow(), receiverKeyFlow(), toolbarPreferLatLon) { g, link, tick, key, ll ->
-                    g.copy(link = link.copy(locationEnabled = tick.second), receiverKey = key, tick = tick.first, preferLatLon = ll)
+                val replayActive = sourceSettings.activeProvider.map { it == app.surrealar.gnss.source.SourceSettings.ProviderChoice.REPLAY }
+                val inputs = combine(gnss, toolbarLinkFlow(), toolbarTickFlow(), receiverKeyFlow(),
+                    combine(toolbarPreferLatLon, replayActive) { ll, rp -> ll to rp }) { g, link, tick, key, opts ->
+                    g.copy(link = link.copy(locationEnabled = tick.second), receiverKey = key, tick = tick.first,
+                        preferLatLon = opts.first, replayActive = opts.second)
                 }
                 ToolbarPipeline.frames(inputs, coordinateSystemService::convertFix,
                     nowMs = { android.os.SystemClock.elapsedRealtime() })

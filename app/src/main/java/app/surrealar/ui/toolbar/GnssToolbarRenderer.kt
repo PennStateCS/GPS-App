@@ -63,8 +63,10 @@ class GnssToolbarRenderer(
 
     fun render(state: GnssToolbarState) {
         lastState = state
-        // Source label
+        // Source label (+ replay icon while an NMEA log replays; no strip colour change)
         source.value.text = state.sourceText
+        if (state.isReplay) source.icon.setImageResource(app.surrealar.R.drawable.ic_replay_16)
+        source.icon.isVisible = state.isReplay
         source.separator?.isVisible = true
 
         // Fix / SOL (always shown)

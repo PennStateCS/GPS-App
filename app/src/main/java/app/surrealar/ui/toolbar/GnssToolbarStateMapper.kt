@@ -175,6 +175,13 @@ object GnssToolbarStateMapper {
 
     private fun seconds(ms: Long): Long = ms.coerceAtLeast(0L) / 1_000L
 
+    /** Source label while an NMEA log replays. */
+    const val REPLAY_LABEL = "REPLAY"
+
+    /** [s] marked as replay: REPLAY source, no receiver battery, no correction age. */
+    private fun replay(s: GnssToolbarState) = s.copy(
+        sourceText = REPLAY_LABEL, isReplay = true, batteryVisible = false, correctionAgeText = null)
+
     fun map(
         selectedSource: LocationSourceType,
         fix: Fix?,
@@ -190,8 +197,13 @@ object GnssToolbarStateMapper {
         nowMs: Long = 0L,
         /** Toolbar-only override: show lat/lon even when a grid system is configured (tap on LL/NE). */
         preferLatLon: Boolean = false,
+        /** The active provider is NMEA replay (even before its first fix). */
+        replayActive: Boolean = false,
     ): ToolbarMapResult {
-        if (fix == null) return ToolbarMapResult.Render(noFix(selectedSource, externalLabel, link, last, nowMs))
+        if (fix == null) {
+            val s = noFix(selectedSource, externalLabel, link, last, nowMs)
+            return ToolbarMapResult.Render(if (replayActive) replay(s).copy(fixText = "No fix", isStale = false) else s)
+        }
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
         if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
             return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
@@ -272,7 +284,7 @@ object GnssToolbarStateMapper {
             }
         }
 
-        val isReplay = fix.provider == Provider.REPLAY
+        val isReplay = fix.provider == Provider.REPLAY || replayActive
 
         // --- CORRECTION AGE (external receivers only) ---
         // TODO(colour update): grade the age — e.g. good < 2 s, warn < 5 s, bad at the capture gate
@@ -283,7 +295,7 @@ object GnssToolbarStateMapper {
 
         return ToolbarMapResult.Render(
             GnssToolbarState(
-                sourceText = if (isReplay) "Replay" else GnssStatusFormatter.formatSource(isInternal, externalLabel),
+                sourceText = if (isReplay) REPLAY_LABEL else GnssStatusFormatter.formatSource(isInternal, externalLabel),
                 fixText = fixText,
                 fixLevel = fixLevel,
                 satelliteText = satelliteText,
@@ -301,6 +313,7 @@ object GnssToolbarStateMapper {
                 coordLabel = coordLabel,
                 altitudeLabel = altitudeLabel,
                 coordToggleAvailable = gridConfigured,
+                isReplay = isReplay,
             )
         )
     }

@@ -30,4 +30,5 @@ data class GnssToolbarState(
     val coordLabel: String = "LL",     // "LL" for lat/lon, "NE" for grid coordinates
     val altitudeLabel: String = "ALT", // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
     val coordToggleAvailable: Boolean = false, // a grid system is configured: tapping LL/NE switches the display
+    val isReplay: Boolean = false,      // an NMEA log is replaying: source shows "REPLAY" with the replay icon
 )

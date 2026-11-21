@@ -34,6 +34,8 @@ data class ToolbarInputs(
     val tick: Long = 0L,
     /** Toolbar-only display override: lat/lon instead of the configured grid. */
     val preferLatLon: Boolean = false,
+    /** The active provider is NMEA replay. */
+    val replayActive: Boolean = false,
 )
 
 /** One toolbar update: the inputs it came from, the converted position, and what to show. */
@@ -76,7 +78,7 @@ object ToolbarPipeline {
                 val coords = i.fix?.let { runCatching { convert(it, i.coordSettings) }.getOrNull() }
                 val memory = prev.memory.next(i, coords, now)
                 val result = GnssToolbarStateMapper.map(
-                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now, i.preferLatLon)
+                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now, i.preferLatLon, i.replayActive)
                 Step(memory, ToolbarFrame(i, coords, result))
             }
             .mapNotNull { it.frame }
