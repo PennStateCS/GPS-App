@@ -141,9 +141,9 @@ android {
         getByName("androidTest") {
             assets.directories.add("$projectDir/schemas")
         }
-        // The NMEA fixtures live with gnss-core; ReplayAdapterTest and AndroidGnssLoggerTest replay them too.
+        // The NMEA fixtures live with geokit-gnss; ReplayAdapterTest and AndroidGnssLoggerTest replay them too.
         getByName("test") {
-            resources.directories.add("$rootDir/gnss-core/src/test/resources")
+            resources.directories.add("$rootDir/libs/geokit-gnss/src/test/resources")
         }
     }
 }
@@ -193,13 +193,13 @@ dependencies {
     implementation(libs.jmdns)
 
     // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts) now comes in
-    // through :receiver-emlid (CVE-fixed 2.x line, org.json excluded there).
+    // through :geokit-receiver-emlid (CVE-fixed 2.x line, org.json excluded there).
 
     // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
-    implementation(project(":geo-core"))
-    implementation(project(":gnss-core"))
+    implementation(project(":geokit-core"))
+    implementation(project(":geokit-gnss"))
     // Emlid Reach receiver status (HTTP API + socket.io) behind ReceiverDevice.
-    implementation(project(":receiver-emlid"))
+    implementation(project(":geokit-receiver-emlid"))
 
     // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)
