@@ -94,7 +94,6 @@ class ArchitectureGuardTest {
             // DEFERRED: these are Kotlin `object`s (no constructor/field injection). Converting them
             // means threading SettingsRepository through their function signatures — a future pass.
             "app/surrealar/util/DiagnosticReportExporter.kt",
-            "app/surrealar/util/diagnostics/SettingsSnapshotCollector.kt",
         )
         enforce(
             rule = "Direct service-locator access to SurRealApplication.settingsRepo",
