@@ -104,6 +104,9 @@ class RenderMapFragment : Fragment() {
     lateinit var fixSwitchboard: FixSwitchboard
 
     @Inject
+    lateinit var lastKnownPositionStore: app.surrealar.gnss.lastknown.LastKnownPositionStore
+
+    @Inject
     lateinit var sourceSettings: app.surrealar.gnss.source.SourceSettings
 
     @Inject
@@ -265,7 +268,11 @@ class RenderMapFragment : Fragment() {
     private var fragmentResumed = false
     private var toneGenerator: android.media.ToneGenerator? = null
     // TRUE heading (declination at the latest FixSwitchboard fix, display rotation, flat/upright).
-    private val headingProvider = HeadingProvider { currentFix }
+    private val headingProvider = HeadingProvider(
+        latestFix = { currentFix },
+        // Before the first fix: declination from the last known position (changes little over tens of km).
+        lastKnownPosition = { if (::lastKnownPositionStore.isInitialized) lastKnownPositionStore.get() else null },
+    )
     // Current-location heading indicator (a flat, rotating arrow shown under the My Location marker).
     private var headingMarker: Marker? = null
     private var headingDescriptor: BitmapDescriptor? = null
@@ -938,6 +945,10 @@ class RenderMapFragment : Fragment() {
         if (source == app.surrealar.stakeout.HeadingSource.NORTH_UP) {
             txtStakeoutHeadingNote?.visibility = View.VISIBLE
             txtStakeoutHeadingNote?.text = "Arrow is north-up until heading is available."
+        } else if (source == app.surrealar.stakeout.HeadingSource.COMPASS && headingProvider.isMagneticOnly) {
+            // No position at all yet → no declination: the compass heading is magnetic (~11.6° off here).
+            txtStakeoutHeadingNote?.visibility = View.VISIBLE
+            txtStakeoutHeadingNote?.text = "Magnetic heading (no position yet)"
         } else {
             txtStakeoutHeadingNote?.visibility = View.GONE
         }

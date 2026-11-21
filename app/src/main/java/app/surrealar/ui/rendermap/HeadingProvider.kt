@@ -3,6 +3,7 @@ package app.surrealar.ui.rendermap
 import android.hardware.GeomagneticField
 import android.hardware.SensorManager
 import app.surrealar.geo.HeadingMath
+import app.surrealar.gnss.lastknown.LastKnownPosition
 import app.surrealar.gnss.model.Fix
 
 /**
@@ -14,10 +15,23 @@ import app.surrealar.gnss.model.Fix
  * - Held flat, the heading is the screen's top edge; held upright (pole mount), it is the direction
  *   the BACK CAMERA faces.
  *
- * Without any fix yet the declination is unknown and the magnetic heading is returned
- * ([lastDeclinationDeg] stays null) — there is no map position to stake out from in that case.
+ * Declination position, in order: the live fix, else the last known position (declination barely
+ * changes over tens of km), else none — then the magnetic heading is returned and
+ * [isMagneticOnly] is true so the UI can say so.
  */
-class HeadingProvider(private val latestFix: () -> Fix?) {
+class HeadingProvider(
+    private val latestFix: () -> Fix?,
+    private val lastKnownPosition: () -> LastKnownPosition? = { null },
+) {
+
+    enum class DeclinationSource { LIVE_FIX, LAST_KNOWN_POSITION, NONE }
+
+    /** Where the applied declination came from. */
+    var declinationSource: DeclinationSource = DeclinationSource.NONE
+        private set
+
+    /** True when no position was available, so the heading is relative to MAGNETIC north. */
+    val isMagneticOnly: Boolean get() = lastDeclinationDeg == null
 
     private val r = FloatArray(9)
     private val remapped = FloatArray(9)
@@ -47,15 +61,27 @@ class HeadingProvider(private val latestFix: () -> Fix?) {
     }
 
     private fun declinationDeg(nowMs: Long): Double? {
-        val fix = latestFix()
-        if (fix != null && fix.latDeg.isFinite() && fix.lonDeg.isFinite() &&
-            HeadingMath.needsDeclinationUpdate(declLat, declLon, declTimeMs, fix.latDeg, fix.lonDeg, nowMs)) {
-            lastDeclinationDeg = declinationAt(fix.latDeg, fix.lonDeg,
-                HeadingMath.altitudeForDeclination(fix.altMslM, fix.altEllipsoidalM, fix.geoidSeparationM), nowMs)
-            declLat = fix.latDeg; declLon = fix.lonDeg; declTimeMs = nowMs
+        val fix = latestFix()?.takeIf { it.latDeg.isFinite() && it.lonDeg.isFinite() }
+        val known = if (fix == null) lastKnownPosition() else null
+        val (lat, lon, alt, source) = when {
+            fix != null -> Quad(fix.latDeg, fix.lonDeg,
+                HeadingMath.altitudeForDeclination(fix.altMslM, fix.altEllipsoidalM, fix.geoidSeparationM),
+                DeclinationSource.LIVE_FIX)
+            known != null -> Quad(known.latDeg, known.lonDeg, 0.0, DeclinationSource.LAST_KNOWN_POSITION)
+            else -> return lastDeclinationDeg
+        }
+        // Upgrading from the last known position to a live fix always refreshes the source label;
+        // the value itself is only recomputed after a > 10 km move or 5 minutes.
+        val upgrade = source == DeclinationSource.LIVE_FIX && declinationSource != DeclinationSource.LIVE_FIX
+        if (upgrade || HeadingMath.needsDeclinationUpdate(declLat, declLon, declTimeMs, lat, lon, nowMs)) {
+            lastDeclinationDeg = declinationAt(lat, lon, alt, nowMs)
+            declLat = lat; declLon = lon; declTimeMs = nowMs
+            declinationSource = source
         }
         return lastDeclinationDeg
     }
+
+    private data class Quad(val lat: Double, val lon: Double, val alt: Double, val source: DeclinationSource)
 
     companion object {
         /** Magnetic declination (degrees, east-positive) from Android's World Magnetic Model. */
