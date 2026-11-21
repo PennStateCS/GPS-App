@@ -47,7 +47,8 @@ data class ArDisplaySettings(
      * Height of the external receiver's antenna phase centre above the tablet camera, metres
      * (e.g. RS2+ on a pole with the tablet in a bracket ~0.5 m below it). The mock location ARCore
      * localizes from is lowered by this much, so ARCore's camera height is the tablet's, not the
-     * antenna's. 0 = no correction. Clamped to −3…+3 m.
+     * antenna's. 0 = no correction. Clamped to −3…+3 m. Double so 1.8 stays 1.8 (a Float read back
+     * as 1.7999999523).
      */
-    val antennaAboveCameraM: Float = 0f,
+    val antennaAboveCameraM: Double = 0.0,
 )

@@ -145,7 +145,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             showOffscreenArrows  = arrows,
             modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: ArDisplaySettings().modelScale,
             showArDebugTools     = debugTools,
-            antennaAboveCameraM  = antenna.toFloatOrNull()?.coerceIn(-3f, 3f) ?: 0f,
+            antennaAboveCameraM  = antenna.toDoubleOrNull()?.coerceIn(-3.0, 3.0) ?: 0.0,
         )
     }
 
@@ -157,7 +157,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setArShowOffscreenArrows(settings.showOffscreenArrows)
         local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
         local.setArDebugToolsEnabled(settings.showArDebugTools)
-        local.setArAntennaAboveCameraM(settings.antennaAboveCameraM.coerceIn(-3f, 3f).toString())
+        local.setArAntennaAboveCameraM(settings.antennaAboveCameraM.coerceIn(-3.0, 3.0).toString())
     }
 
     // Coordinate display

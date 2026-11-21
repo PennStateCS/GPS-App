@@ -432,7 +432,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val editScale        = view.findViewById<EditText>(R.id.edit_ar_model_scale)
             val editAntenna      = view.findViewById<EditText>(R.id.edit_ar_antenna_above_camera)
             val tilAntenna       = editAntenna?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
-            var lastValidAntenna = 0f
+            var lastValidAntenna = 0.0
             view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
 
             val altitudeModes   = listOf("Automatic (recommended)" to "AUTO", "Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
@@ -455,8 +455,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tilScale?.error = "Must be 0.1 – 10.0"
                     lastValidScale
                 }
-                val typedAntenna = editAntenna?.text?.toString()?.trim()?.let { if (it.isEmpty()) 0f else it.toFloatOrNull() }
-                val antenna = if (typedAntenna != null && typedAntenna in -3f..3f) {
+                val typedAntenna = editAntenna?.text?.toString()?.trim()?.let { if (it.isEmpty()) 0.0 else it.toDoubleOrNull() }
+                val antenna = if (typedAntenna != null && typedAntenna in -3.0..3.0) {
                     tilAntenna?.error = null
                     lastValidAntenna = typedAntenna
                     typedAntenna
