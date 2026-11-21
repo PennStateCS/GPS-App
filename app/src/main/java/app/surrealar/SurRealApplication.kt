@@ -38,6 +38,7 @@ interface SurRealApplicationEntryPoint {
     fun settingsRepository(): SettingsRepository
     fun coordinateRepository(): app.surrealar.domain.repository.CoordinateRepository
     fun modelRepository(): app.surrealar.domain.repository.ModelRepository
+    fun gnssFeedLogger(): app.surrealar.util.diagnostics.GnssFeedLogger
 }
 
 /**
@@ -89,6 +90,10 @@ class SurRealApplication : Application() {
         app.surrealar.util.diagnostics.LifecycleLogger.install(this)
         app.surrealar.util.diagnostics.SettingsChangeLogger.install(this)
         app.surrealar.util.diagnostics.SystemEventsLogger.install(this)
+        runCatching {
+            dagger.hilt.android.EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
+                .gnssFeedLogger().start()
+        }.onFailure { DiagnosticsLogger.w("GNSS", "GNSS feed log not started: ${it.message}") }
         // Surfaced for tester support: in debug builds Room is allowed to wipe & recreate the
         // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
         // coordinates/models. Release builds keep data via real migrations.

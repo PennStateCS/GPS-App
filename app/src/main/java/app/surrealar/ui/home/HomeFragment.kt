@@ -98,7 +98,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private val desiredFollowZoom = 18f
     private var lastCameraMoveMs = 0L
     private var lastCameraLocation: LatLng? = null
-    private var lastRtkStatus: RtkStatus? = null
     private var loggedFirstMapFix = false // logs the first current-source fix applied to the map
     private var lastMapIgnoreLogMs = 0L   // throttle for ignored-fix diagnostics
 
@@ -262,7 +261,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
      */
     private fun resetMapLiveLocation() {
         hasCenteredCamera = false
-        lastRtkStatus = null
         lastCameraLocation = null
         loggedFirstMapFix = false
     }
@@ -580,13 +578,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 showGnssStatusChip(null)   // live position: no waiting chip
                 onLocationChangedListener?.onLocationChanged(locationForDot)
 
-                // Log RTK status transitions (not every fix)
-                if (fix.rtkStatus != lastRtkStatus) {
-                    val prev = lastRtkStatus?.name ?: "NONE"
-                    DiagnosticsLogger.i("GNSS", "Status $prev → ${fix.rtkStatus.name} sats=${fix.satsUsed} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "unknown"}")
-                    lastRtkStatus = fix.rtkStatus
-                }
-
                 val location = LatLng(fix.latDeg, fix.lonDeg)
                 val map = googleMap
                 if (map != null) {
@@ -900,7 +891,6 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         googleMap = null
         onLocationChangedListener = null
         mapLocationSource = null
-        lastRtkStatus = null
         if (::mapView.isInitialized) mapView.onDestroy()
         super.onDestroyView()
         _binding = null
