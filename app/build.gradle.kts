@@ -68,6 +68,11 @@ android {
         buildConfigField("boolean", "BUILD_GIT_DIRTY",  "$gitDirty")
         buildConfigField("String",  "BUILD_TIME",       "\"$buildTime\"")
         buildConfigField("int",     "BUILD_NUMBER",     "$buildNumber")
+        // Where testers send diagnostic reports: -PDIAG_REPORT_EMAIL=… / gradle.properties / local.properties.
+        // Blank (default) leaves the email's To field empty.
+        val diagReportEmail = (providers.gradleProperty("DIAG_REPORT_EMAIL").orNull
+            ?: localProperties.getProperty("DIAG_REPORT_EMAIL", "")).trim().replace("\"", "")
+        buildConfigField("String",  "DIAG_REPORT_EMAIL", "\"$diagReportEmail\"")
 
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] =
             localProperties.getProperty("GOOGLE_MAPS_API_KEY", "YOUR_API_KEY_HERE")

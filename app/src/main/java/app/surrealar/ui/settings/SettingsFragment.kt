@@ -862,7 +862,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 btnExport.isEnabled = false
                 btnExport.text = "Exporting…"
                 viewLifecycleOwner.lifecycleScope.launch {
-                    val file = try {
+                    val report = try {
                         app.surrealar.util.DiagnosticReportExporter.buildReport(requireContext())
                     } catch (ex: Exception) {
                         app.surrealar.util.DiagnosticsLogger.e("EXPORT", "Export error", ex)
@@ -870,7 +870,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                     btnExport.isEnabled = true
                     btnExport.text = "Export Diagnostic Report"
-                    if (file == null) {
+                    if (report == null) {
                         showSettingsMessage("Could not create diagnostic report.")
                         return@launch
                     }
@@ -878,13 +878,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val uri = androidx.core.content.FileProvider.getUriForFile(
                             requireContext(),
                             "${requireContext().packageName}.fileprovider",
-                            file
+                            report.file
                         )
+                        val naming = app.surrealar.util.diagnostics.ReportNaming
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "application/zip"
                             putExtra(Intent.EXTRA_STREAM, uri)
-                            putExtra(Intent.EXTRA_SUBJECT, "SurReal AR Diagnostic Report")
-                            putExtra(Intent.EXTRA_TEXT, "Diagnostic report attached.")
+                            naming.recipients(app.surrealar.BuildConfig.DIAG_REPORT_EMAIL)
+                                .takeIf { it.isNotEmpty() }?.let { putExtra(Intent.EXTRA_EMAIL, it) }
+                            putExtra(Intent.EXTRA_SUBJECT, naming.subject(android.os.Build.MODEL ?: "device",
+                                app.surrealar.BuildConfig.VERSION_NAME, app.surrealar.BuildConfig.VERSION_CODE,
+                                System.currentTimeMillis()))
+                            putExtra(Intent.EXTRA_TEXT, naming.body(report.reportId))
                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         startActivity(Intent.createChooser(shareIntent, "Share diagnostic report"))

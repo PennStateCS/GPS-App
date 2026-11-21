@@ -54,7 +54,10 @@ object DiagnosticReportExporter {
         val models: List<app.surrealar.domain.model.Model>,
     )
 
-    suspend fun buildReport(context: Context): File? = withContext(Dispatchers.IO) {
+    /** A built report: the ZIP plus the short ID that is also in its summary and the email body. */
+    data class Report(val file: File, val reportId: String)
+
+    suspend fun buildReport(context: Context): Report? = withContext(Dispatchers.IO) {
         try {
             val exportDir = File(context.cacheDir, "diagnostic_exports").also { it.mkdirs() }
 
@@ -64,8 +67,9 @@ object DiagnosticReportExporter {
                 ?.drop(3)
                 ?.forEach { it.delete() }
 
-            val stamp = SimpleDateFormat("yyyy-MM-dd-HHmm", Locale.US).format(Date())
-            val zipFile = File(exportDir, "surreal-ar-diagnostic-$stamp.zip")
+            val reportId = app.surrealar.util.diagnostics.ReportNaming.newReportId()
+            val zipFile = File(exportDir, app.surrealar.util.diagnostics.ReportNaming.fileName(
+                Build.MODEL ?: "device", BuildConfig.VERSION_NAME, System.currentTimeMillis()))
 
             // Gather app data once; never let a single failing section abort the whole export.
             val data = runCatching { gatherDiagData(context) }.getOrElse {
@@ -77,7 +81,7 @@ object DiagnosticReportExporter {
 
             writeZip(zipFile) { zos ->
                 // ── Compact summaries (current state at export time) ──
-                zos.addText("diagnostic-summary.txt", buildSummary(context, warnings + permWarnings))
+                zos.addText("diagnostic-summary.txt", buildSummary(context, warnings + permWarnings, reportId))
                 zos.addTextSafe("settings-snapshot.txt") {
                     app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
                 }
@@ -101,7 +105,7 @@ object DiagnosticReportExporter {
                 DiagnosticsLogger.errorFiles().forEach { file -> zos.addFile(file.name, file) }
             }
 
-            zipFile
+            Report(zipFile, reportId)
         } catch (e: Exception) {
             DiagnosticsLogger.e("EXPORT", "Failed to build report", e)
             null
@@ -209,10 +213,11 @@ object DiagnosticReportExporter {
 
     // ── section builders ───────────────────────────────────────────────────────
 
-    private fun buildSummary(context: Context, warnings: List<String>): String {
+    private fun buildSummary(context: Context, warnings: List<String>, reportId: String): String {
         val now = SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", Locale.US).format(Date())
         val sb = StringBuilder()
         sb.appendLine("=== Diagnostic Summary ===")
+        sb.appendLine("Report ID        : $reportId")
         sb.appendLine("Report generated : $now")
         sb.appendLine()
         sb.appendLine("--- Important warnings ---")
