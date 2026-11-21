@@ -67,4 +67,16 @@ class StateCollectorsTest {
         assertEquals("GGA=10 RMC=10\nGSV GP=4", GnssStatsCollector.sentenceCounts(nmea))
     }
 
+    @Test fun `golden data health`() {
+        assertEquals("""
+            === Data health ===
+            Database version : 12
+            Last migration   : 2026-11-20T09:00:00.000-05:00 I DATA [io] Database migrated v11 → v12 (40ms from build to open)
+            Integrity check  : ok
+            --- Rows per table ---
+            coordinates         : 42
+            models              : 3
+        """.trimIndent() + "\n", DataHealthCollector.render(DataHealth(12, mapOf("models" to 3L, "coordinates" to 42L), "ok"),
+            "2026-11-20T09:00:00.000-05:00 I DATA [io] Database migrated v11 → v12 (40ms from build to open)"))
+    }
 }

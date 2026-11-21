@@ -32,6 +32,7 @@ object ReportAssembler {
             z.textSafe("device-health.txt") { DeviceHealthCollector.render(src.deviceHealth()) }
             z.textSafe("captures.txt") { CapturesCollector.render(CapturesCollector.read(src.capturesLog())) }
             z.textSafe("gnss-stats.txt") { GnssStatsCollector.render(src.gnssStats()) }
+            z.textSafe("data-health.txt") { DataHealthCollector.render(src.dataHealth(), idx.lastDbEvent?.raw) }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
             z.textSafe("permissions-status.txt") { src.permissions() }
             z.textSafe("app-state-summary.txt") { src.appState() }

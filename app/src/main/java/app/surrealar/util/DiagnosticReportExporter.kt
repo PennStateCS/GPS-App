@@ -136,6 +136,7 @@ object DiagnosticReportExporter {
                 sentenceCounts = app.surrealar.util.diagnostics.report.GnssStatsCollector.sentenceCounts(nmeaStream()),
             )
         }
+        override fun dataHealth() = app.surrealar.util.diagnostics.report.AppReportReaders.dataHealth(context)
         override fun logFiles() = DiagnosticsLogger.logFiles()
         override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }

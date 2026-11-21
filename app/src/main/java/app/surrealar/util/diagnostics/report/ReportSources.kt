@@ -26,6 +26,7 @@ interface ReportSources {
     fun deviceHealth(): DeviceHealth
     fun capturesLog(): File?
     suspend fun gnssStats(): GnssStatsInput
+    fun dataHealth(): DataHealth
 
     fun logFiles(): List<File>
     fun errorFiles(): List<File>

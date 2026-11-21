@@ -31,6 +31,7 @@ open class FakeReportSources(
         writeText((1..55).joinToString("\n") { "2026-11-21T14:%02d:00.000-05:00 Capture saved name=\"P$it\" mode=EXTERNAL samples=150 duration=60s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=0/150".format(it % 60) } + "\n")
     }
     override suspend fun gnssStats() = FAKE_GNSS
+    override fun dataHealth() = DataHealth(12, mapOf("coordinates" to 42L, "models" to 3L), "ok")
 
     override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) })
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
