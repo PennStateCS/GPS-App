@@ -32,7 +32,7 @@ class RtkStatusTest {
         assertFalse(RtkStatus.DGPS.meetsOrExceeds(RtkStatus.FLOAT))
         assertFalse(RtkStatus.DGPS.meetsOrExceeds(RtkStatus.FIX))
         assertTrue(RtkStatus.SINGLE.meetsOrExceeds(RtkStatus.DEAD_RECKONING))
-        assertTrue(RtkStatus.DEAD_RECKONING.meetsOrExceeds(RtkStatus.SINGLE))
+        assertFalse("DR is an estimate, never a capture-quality fix", RtkStatus.DEAD_RECKONING.meetsOrExceeds(RtkStatus.SINGLE))
         assertTrue(RtkStatus.NONE.meetsOrExceeds(RtkStatus.NONE))
         assertTrue(RtkStatus.NONE.meetsOrExceeds(RtkStatus.INVALID))
         assertFalse(RtkStatus.NONE.meetsOrExceeds(RtkStatus.SINGLE))

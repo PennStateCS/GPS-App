@@ -135,6 +135,28 @@ class ObservationSessionTest {
     }
 
     @Test
+    fun `dead-reckoned fixes never satisfy a capture requirement`() {
+        for (req in listOf(RtkStatus.SINGLE, RtkStatus.DGPS, RtkStatus.FIX, RtkStatus.NONE)) {
+            assertFalse("DR must not meet $req", RtkStatus.DEAD_RECKONING.meetsOrExceeds(req))
+        }
+        assertTrue(RtkStatus.SINGLE.meetsOrExceeds(RtkStatus.SINGLE))
+        assertEquals("rank unchanged for status displays", 1, RtkStatus.DEAD_RECKONING.qualityRank())
+    }
+
+    @Test
+    fun `single-or-better capture rejects quality 6 fixes`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val p = policy(minDur = 0, maxDur = 100, minSamples = 1).copy(requiredMinStatus = RtkStatus.SINGLE)
+        val session = ObservationSession(backgroundScope, fixes, p)
+        session.start(); runCurrent()
+        fixes.emit(validFix(rtk = RtkStatus.DEAD_RECKONING)); fixes.emit(validFix(rtk = RtkStatus.DEAD_RECKONING))
+        runCurrent()
+        assertTrue("DR fixes must not be averaged", session.state.value !is ObservationSession.State.Complete)
+        fixes.emit(validFix(rtk = RtkStatus.SINGLE)); runCurrent()
+        assertEquals(1, (session.state.value as ObservationSession.State.Complete).result.samples)
+    }
+
+    @Test
     fun `MSL height is the averaged ellipsoidal height minus the mean geoid separation`() = runTest {
         val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
         val session = ObservationSession(backgroundScope, fixes, policy(minDur = 0, maxDur = 100, minSamples = 2))

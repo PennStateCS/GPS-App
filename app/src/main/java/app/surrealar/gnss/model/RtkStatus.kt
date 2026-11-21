@@ -53,6 +53,11 @@ enum class RtkStatus(val prefKey: String) {
     /**
      * Returns true if this status has equal or better quality than [other].
      * Use this for capture policy comparisons instead of comparing enum ordinals.
+     *
+     * [DEAD_RECKONING] (GGA quality 6) never meets a requirement: it is an estimate with no
+     * satellite solution, so a "Single or better" capture must not average it. Its [qualityRank]
+     * stays 1 so status displays still treat it as a (degraded) position.
      */
-    fun meetsOrExceeds(other: RtkStatus): Boolean = qualityRank() >= other.qualityRank()
+    fun meetsOrExceeds(other: RtkStatus): Boolean =
+        this != DEAD_RECKONING && qualityRank() >= other.qualityRank()
 }
