@@ -41,10 +41,28 @@ class GnssToolbarRenderer(
     private val alt: ToolbarTokens,
     private val batt: ToolbarTokens,
     private val colorFor: (GnssStatusLevel) -> Int,
-    private val onBatteryVisibilityChanged: (Boolean) -> Unit
+    private val onBatteryVisibilityChanged: (Boolean) -> Unit,
+    /** The strip itself: its width decides which tokens fit on one line. Null = no width fitting. */
+    private val strip: View? = null,
 ) {
+    private var lastState: GnssToolbarState? = null
+    private var lastStripWidth = 0
+
+    init {
+        // Stable widths: each value view is at least as wide as its typical longest value (tabular
+        // digits are on in item_token), so ordinary value changes never change a token's width.
+        minWidthFor(fix.value, "Single")
+        minWidthFor(sats.value, "99/99")
+        minWidthFor(acc.value, "~±99.99 m")
+        minWidthFor(age.value, "99.9s")
+        // Re-fit when the available width changes (rotation, split screen).
+        strip?.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            if (v.width != lastStripWidth) { lastStripWidth = v.width; lastState?.let { v.post { render(it) } } }
+        }
+    }
 
     fun render(state: GnssToolbarState) {
+        lastState = state
         // Source label
         source.value.text = state.sourceText
         source.separator?.isVisible = true
@@ -91,6 +109,7 @@ class GnssToolbarRenderer(
         // Coordinates ("LL" lat/lon or "NE" grid, per Settings → Coordinates)
         coord.label.text = state.coordLabel
         coord.value.text = state.latLonText
+        ratchetWidth(coord.value, state.latLonText, key = "coord:${state.coordLabel}")
         // A lost link keeps the last position on screen, greyed (alpha, not a colour change).
         coord.value.alpha = if (state.isStale) STALE_ALPHA else 1f
         coord.root.isVisible = true
@@ -98,9 +117,56 @@ class GnssToolbarRenderer(
         // Altitude (always visible with a placeholder); label names the height reference
         alt.label.text = state.altitudeLabel
         alt.value.text = state.altitudeText
+        ratchetWidth(alt.value, state.altitudeText, key = "alt:${state.altitudeLabel}:${state.altitudeText.substringAfterLast(' ')}")
         alt.value.alpha = if (state.isStale) STALE_ALPHA else 1f
         alt.root.isVisible = true
+
+        fitToWidth()
     }
 
+    // ── Stable widths ──────────────────────────────────────────────────────────
+
+    private fun minWidthFor(view: TextView, template: String) {
+        view.minWidth = maxOf(view.minWidth, kotlin.math.ceil(view.paint.measureText(template)).toInt())
+    }
+
+    private val ratchetKeys = mutableMapOf<TextView, String>()
+
+    /**
+     * Coordinates and height: the minimum width follows the current format (every digit measured as
+     * '0'; all digits are the same width with tabular figures) and only grows, so a value that gains
+     * or loses a digit, or a sign, doesn't make the strip jump. Reset when the format changes
+     * (LL ↔ NE, height reference or unit).
+     */
+    private fun ratchetWidth(view: TextView, text: String, key: String) {
+        if (ratchetKeys[view] != key) { ratchetKeys[view] = key; view.minWidth = 0 }
+        if (text == "--") return
+        val template = text.replace(Regex("[0-9]"), "0")
+        minWidthFor(view, if (text.contains('-')) template else "-")
+    }
+
+    // ── One line, priority drop ───────────────────────────────────────────────
+
+    /**
+     * Never wrap onto a second line: when the visible tokens don't fit the strip, hide the lowest
+     * priority first — height, coordinates, battery, SATS, AGE, then ACC. SOL and the source are kept.
+     */
+    private fun fitToWidth() {
+        val s = strip ?: return
+        val available = s.width - s.paddingStart - s.paddingEnd
+        if (available <= 0) return                    // not laid out yet; the layout listener re-renders
+        val keep = listOf(source, fix)
+        val droppable = listOf(acc, age, sats, batt, coord, alt)   // highest priority first
+        val unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        fun width(t: ToolbarTokens): Int =
+            if (!t.root.isVisible) 0 else { t.root.measure(unspecified, unspecified); t.root.measuredWidth }
+        var total = (keep + droppable).sumOf { width(it) }
+        for (t in droppable.asReversed()) {
+            if (total <= available) break
+            if (!t.root.isVisible) continue
+            total -= width(t)
+            t.root.isVisible = false
+        }
+    }
     private companion object { const val STALE_ALPHA = 0.5f }
 }

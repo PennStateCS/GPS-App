@@ -202,7 +202,8 @@ class MainActivity : AppCompatActivity() {
             source = tokenSource, fix = tokenFix, sats = tokenSats, acc = tokenAcc, age = tokenAge,
             coord = tokenCoord, alt = tokenAlt, batt = tokenBatt,
             colorFor = ::levelColor,
-            onBatteryVisibilityChanged = ::updateBatteryVisibility
+            onBatteryVisibilityChanged = ::updateBatteryVisibility,
+            strip = findViewById(R.id.location_status_bar),
         )
 
         // Static labels
