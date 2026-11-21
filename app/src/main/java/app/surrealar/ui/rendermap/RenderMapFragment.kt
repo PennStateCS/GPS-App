@@ -264,8 +264,8 @@ class RenderMapFragment : Fragment() {
     private var compassRegistered = false
     private var fragmentResumed = false
     private var toneGenerator: android.media.ToneGenerator? = null
-    private val rotationMatrix = FloatArray(9)
-    private val orientationAngles = FloatArray(3)
+    // TRUE heading (declination at the latest FixSwitchboard fix, display rotation, flat/upright).
+    private val headingProvider = HeadingProvider { currentFix }
     // Current-location heading indicator (a flat, rotating arrow shown under the My Location marker).
     private var headingMarker: Marker? = null
     private var headingDescriptor: BitmapDescriptor? = null
@@ -273,10 +273,9 @@ class RenderMapFragment : Fragment() {
     private val rotationListener = object : android.hardware.SensorEventListener {
         override fun onSensorChanged(event: android.hardware.SensorEvent) {
             if (event.sensor.type != android.hardware.Sensor.TYPE_ROTATION_VECTOR) return
-            android.hardware.SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-            android.hardware.SensorManager.getOrientation(rotationMatrix, orientationAngles)
-            compassHeadingDeg =
-                app.surrealar.stakeout.StakeoutGuidance.normalize360(Math.toDegrees(orientationAngles[0].toDouble()))
+            // Was getOrientation() azimuth = MAGNETIC north, screen-top only (≈11.6° off near Hazleton).
+            val rotation = view?.display?.rotation ?: android.view.Surface.ROTATION_0
+            compassHeadingDeg = headingProvider.trueHeadingDeg(event.values, rotation)
             // Keep the on-map heading arrow following the compass between fixes (throttled). Delivered
             // on the main thread, so touching the map here is safe.
             updateHeadingIndicator()
