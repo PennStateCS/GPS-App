@@ -263,6 +263,19 @@ class CaptureViewModelTest {
     }
 
     @Test
+    fun antennaHeightChangedMidCapture_savedPointUsesTheValueFromCaptureStart() = runBlocking {
+        val receiverFlow = MutableStateFlow(GnssReceiverSettings(antennaHeightM = 1.8, internalAntennaHeightM = 0.5))
+        val repoSettings = settings().also { Mockito.`when`(it.gnssReceiverSettings).thenReturn(receiverFlow) }
+        val vm = vm(repoSettings)
+        vm.start(policy())
+        receiverFlow.value = GnssReceiverSettings(antennaHeightM = 2.5, internalAntennaHeightM = 0.5)   // edited mid-capture
+        push(fix(alt = 100.0)); push(fix(alt = 100.0))
+        vm.save("Pt", null, 0, "ic_pin")
+        assertEquals("altitude uses the 1.8 m pole height from capture start", 98.2, repo.store.single().altitude, 1e-9)
+        assertEquals(1.8, vm.settingsAtStart()!!.receiver!!.antennaHeightM, 0.0)
+    }
+
+    @Test
     fun save_simulator_appliesNoAntennaHeight() = runBlocking {
         val vm = vm(settings(source = LocationSourceType.SIMULATOR))
         completeCapture(vm, alt = 100.0)

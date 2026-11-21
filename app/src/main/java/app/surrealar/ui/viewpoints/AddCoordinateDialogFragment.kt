@@ -660,22 +660,23 @@ class AddCoordinateDialogFragment(
                 return
             }
             viewLifecycleOwner.lifecycleScope.launch {
-                val receiver = runCatching { settingsRepo.gnssReceiverSettings.first() }.getOrNull()
+                // Settings as they were when this capture STARTED (antenna height edited mid-capture
+                // must not change a point measured with the old pole).
+                val snap = captureVm.settingsAtStart()
+                val receiver = snap?.receiver
                 // Settings → antenna (pole) height for the antenna that produced the fixes, subtracted
                 // so the stored altitude is the ground mark, not the antenna.
                 val antennaHeightM = if (isExternalMode) receiver?.antennaHeightM ?: 0.0
                     else receiver?.internalAntennaHeightM ?: 0.0
                 // Prefer the user's device name; otherwise record the selected receiver profile
                 // (e.g. "Emlid Reach RS4") rather than a hardcoded "RS2+".
-                val sourceDevice = if (!isExternalMode) "Internal GPS" else runCatching {
-                    settingsRepo.externalTcpName.first()?.takeIf { it.isNotBlank() }
-                        ?: settingsRepo.externalReceiverProfile.first().label
-                }.getOrNull() ?: "External GNSS"
+                val sourceDevice = if (!isExternalMode) "Internal GPS" else
+                    snap?.externalTcpName?.takeIf { it.isNotBlank() } ?: snap?.externalProfileLabel ?: "External GNSS"
 
                 // Record the datum the averaged position is in (internal GNSS → WGS84; external per
                 // Settings → Coordinates → External receiver datum) so it is converted correctly later.
-                val coordSettings = runCatching { settingsRepo.coordinateSystemSettings.first() }
-                    .getOrDefault(app.surrealar.settings.model.CoordinateSystemSettings())
+                val coordSettings = snap?.coordinateSystemSettings
+                    ?: app.surrealar.settings.model.CoordinateSystemSettings()
                 val datumEpsg = coordinateSystemService.storedDatumEpsg(
                     if (isExternalMode) Provider.RS2_EXTERNAL else Provider.INTERNAL, coordSettings)
                 val coordinate = CoordinateFactory.fromCaptureResult(

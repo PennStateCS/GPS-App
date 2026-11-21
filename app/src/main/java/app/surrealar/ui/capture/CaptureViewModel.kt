@@ -13,6 +13,7 @@ import app.surrealar.gnss.model.Fix
 import app.surrealar.domain.repository.SettingsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import app.surrealar.util.DiagnosticsLogger
@@ -34,6 +35,34 @@ class CaptureViewModel @Inject constructor(
 
     private var session: ObservationSession? = null
     private var sessionForwardJob: Job? = null
+
+    /**
+     * Settings that affect the saved point, read when the capture STARTS. Saving uses these, so
+     * editing e.g. the antenna height mid-capture can't change a point measured with the old pole.
+     */
+    data class CaptureSettingsSnapshot(
+        val locationSource: LocationSourceType?,
+        val receiver: app.surrealar.gnss.settings.GnssReceiverSettings?,
+        val externalTcpName: String?,
+        val externalTcpHost: String?,
+        val externalProfileLabel: String?,
+        val coordinateSystemSettings: app.surrealar.settings.model.CoordinateSystemSettings?,
+    )
+
+    private var startSnapshot: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>? = null
+
+    private suspend fun readSnapshot() = CaptureSettingsSnapshot(
+        locationSource = runCatching { settingsRepository.locationSource.first() }.getOrNull(),
+        receiver = runCatching { settingsRepository.gnssReceiverSettings.first() }.getOrNull(),
+        externalTcpName = runCatching { settingsRepository.externalTcpName.first() }.getOrNull(),
+        externalTcpHost = runCatching { settingsRepository.externalTcpHost.first() }.getOrNull(),
+        externalProfileLabel = runCatching { settingsRepository.externalReceiverProfile.first().label }.getOrNull(),
+        coordinateSystemSettings = runCatching { settingsRepository.coordinateSystemSettings.first() }.getOrNull(),
+    )
+
+    /** The settings snapshot taken when the current capture started (read now if none was taken). */
+    suspend fun settingsAtStart(): CaptureSettingsSnapshot? =
+        runCatching { startSnapshot?.await() ?: readSnapshot() }.getOrNull()
 
     private val _state = MutableStateFlow<ObservationSession.State>(ObservationSession.State.Idle)
     val state: StateFlow<ObservationSession.State> = _state.asStateFlow()
@@ -88,6 +117,8 @@ class CaptureViewModel @Inject constructor(
         }
         stopSession()
         _state.value = ObservationSession.State.Idle
+        // Snapshot the settings that shape the saved point NOW (UNDISPATCHED: reads start immediately).
+        startSnapshot = viewModelScope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { readSnapshot() }
 
         val provider = sourceSettings.activeProvider.value
         DiagnosticsLogger.i("Capture", "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} " +
@@ -154,8 +185,10 @@ class CaptureViewModel @Inject constructor(
             return
         }
         val finished = completed.result
+        // Everything below comes from the settings as they were when the capture started.
+        val snap = settingsAtStart()
 
-        val src = settingsRepository.locationSource.first()
+        val src = snap?.locationSource ?: settingsRepository.locationSource.first()
         val provider = when (src) {
             LocationSourceType.INTERNAL  -> Provider.INTERNAL
             LocationSourceType.EXTERNAL  -> Provider.RS2_EXTERNAL
@@ -170,8 +203,8 @@ class CaptureViewModel @Inject constructor(
 
         val sourceDevice = when (src) {
             LocationSourceType.EXTERNAL -> {
-                val deviceName = settingsRepository.externalTcpName.first()?.takeIf { it.isNotBlank() }
-                val host = settingsRepository.externalTcpHost.first()
+                val deviceName = snap?.externalTcpName?.takeIf { it.isNotBlank() }
+                val host = snap?.externalTcpHost
                 deviceName ?: host ?: "External GNSS"
             }
             LocationSourceType.INTERNAL  -> "Internal GPS"
@@ -182,7 +215,7 @@ class CaptureViewModel @Inject constructor(
         // External and internal have separate heights (the RS2 antenna and the pole-mounted tablet
         // sit at different heights); simulator/replay has none.
         val antennaHeightM = runCatching {
-            val receiver = settingsRepository.gnssReceiverSettings.first()
+            val receiver = snap?.receiver ?: return@runCatching 0.0
             when (src) {
                 LocationSourceType.EXTERNAL  -> receiver.antennaHeightM
                 LocationSourceType.INTERNAL  -> receiver.internalAntennaHeightM
