@@ -79,37 +79,37 @@ object DiagnosticReportExporter {
             val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())
             val permWarnings = runCatching { computePermissionWarnings(context) }.getOrDefault(emptyList())
 
-            writeZip(zipFile) { zos ->
-                // ── Compact summaries (current state at export time) ──
-                zos.addText("diagnostic-summary.txt", buildSummary(context, warnings + permWarnings, reportId))
-                zos.addTextSafe("settings-snapshot.txt") {
-                    app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
-                }
-                zos.addTextSafe("permissions-status.txt") { buildPermissionsStatus(context) }
-                zos.addText("app-state-summary.txt", buildStateSummary(context))
-                zos.addTextSafe("coordinates.txt") { buildCoordinatesReport(data) }
-                zos.addTextSafe("model-integrity.txt") { buildModelsReport(data) }
-                // Most recent AR/model session (persisted file survives event-log rotation).
-                DiagnosticsLogger.sessionSummaryFile("ar-last-session.txt")
-                    ?.let { zos.addFile("ar-session-summary.txt", it) }
-                    ?: zos.addText("ar-session-summary.txt", "No AR session has been recorded yet.\n")
-                zos.addTextSafe("map-diagnostics.txt") {
-                    app.surrealar.util.diagnostics.MapDiagnosticCollector.collect(context)
-                }
-                zos.addTextSafe("nmea-stream-diagnostics.txt") {
-                    app.surrealar.util.diagnostics.NmeaStreamDiagnosticsCollector.collect(context)
-                }
-
-                // ── Rolling logs (event history + crashes) ──
-                DiagnosticsLogger.logFiles().forEach { file -> zos.addFile(file.name, file) }
-                DiagnosticsLogger.errorFiles().forEach { file -> zos.addFile(file.name, file) }
-            }
+            val sources = ContextSources(context, reportId, System.currentTimeMillis(), data, warnings + permWarnings)
+            app.surrealar.util.diagnostics.report.ReportAssembler.write(zipFile, sources)
 
             Report(zipFile, reportId)
         } catch (e: Exception) {
             DiagnosticsLogger.e("EXPORT", "Failed to build report", e)
             null
         }
+    }
+
+    /** The running app as [app.surrealar.util.diagnostics.report.ReportSources]. */
+    private class ContextSources(
+        private val context: Context,
+        override val reportId: String,
+        override val nowMs: Long,
+        private val data: DiagData,
+        private val warnings: List<String>,
+    ) : app.surrealar.util.diagnostics.report.ReportSources {
+        override suspend fun summary() = buildSummary(context, warnings, reportId)
+        override suspend fun settingsSnapshot() = app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
+        override suspend fun permissions() = buildPermissionsStatus(context)
+        override suspend fun appState() = buildStateSummary(context)
+        override suspend fun coordinates() = buildCoordinatesReport(data)
+        override suspend fun models() = buildModelsReport(data)
+        // Most recent AR/model session (persisted file survives event-log rotation).
+        override fun arSession() = DiagnosticsLogger.sessionSummaryFile("ar-last-session.txt")?.readText()
+            ?: "No AR session has been recorded yet.\n"
+        override suspend fun mapDiagnostics() = app.surrealar.util.diagnostics.MapDiagnosticCollector.collect(context)
+        override suspend fun nmeaStream() = app.surrealar.util.diagnostics.NmeaStreamDiagnosticsCollector.collect(context)
+        override fun logFiles() = DiagnosticsLogger.logFiles()
+        override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }
 
     // ── data gathering ─────────────────────────────────────────────────────────
