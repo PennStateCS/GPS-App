@@ -839,17 +839,9 @@ class RenderMapFragment : Fragment() {
         else -> "northwest"
     }
 
-    /**
-     * Display-only local north/east offsets (metres) from [from] to [to], using the same Earth
-     * radius as [calculateDistance]. Equirectangular approximation — adequate at stakeout distances.
-     * It does NOT feed the distance/bearing values shown, which keep their existing math.
-     */
-    private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> {
-        val r = 6371000.0
-        val dN = Math.toRadians(to.latitude - from.latitude) * r
-        val dE = Math.toRadians(to.longitude - from.longitude) * r * cos(Math.toRadians(from.latitude))
-        return dN to dE
-    }
+    /** Local north/east offsets (metres) from [from] to [to] — same WGS84 frame as distance/bearing. */
+    private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> =
+        app.surrealar.stakeout.StakeoutGeometry.northEast(from.latitude, from.longitude, to.latitude, to.longitude)
 
     // ── Stakeout guidance mode (display + feedback only) ───────────────────────
 
@@ -2271,27 +2263,16 @@ class RenderMapFragment : Fragment() {
 
     // ── Math helpers ───────────────────────────────────────────────────────────
 
-    private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double {
-        val R = 6371000.0
-        val lat1 = Math.toRadians(pos1.latitude); val lat2 = Math.toRadians(pos2.latitude)
-        val dLat = Math.toRadians(pos2.latitude - pos1.latitude)
-        val dLon = Math.toRadians(pos2.longitude - pos1.longitude)
-        val a = sin(dLat / 2).pow(2) + cos(lat1) * cos(lat2) * sin(dLon / 2).pow(2)
-        return R * 2 * atan2(sqrt(a), sqrt(1 - a))
-    }
+    // Ellipsoidal (WGS84 local ENU) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
+    private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double =
+        app.surrealar.stakeout.StakeoutGeometry.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
 
     private fun calculateHeadingChange(h1: Double, h2: Double): Double {
         val diff = abs(h2 - h1); return min(diff, 360.0 - diff)
     }
 
-    private fun calculateBearing(from: LatLng, to: LatLng): Double {
-        val lat1 = Math.toRadians(from.latitude); val lon1 = Math.toRadians(from.longitude)
-        val lat2 = Math.toRadians(to.latitude);   val lon2 = Math.toRadians(to.longitude)
-        val dLon = lon2 - lon1
-        val y = sin(dLon) * cos(lat2)
-        val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
-        return (Math.toDegrees(atan2(y, x)) + 360) % 360
-    }
+    private fun calculateBearing(from: LatLng, to: LatLng): Double =
+        app.surrealar.stakeout.StakeoutGeometry.bearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
 
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
