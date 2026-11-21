@@ -85,9 +85,11 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var coordinateRepository: app.surrealar.domain.repository.CoordinateRepository
     @Inject lateinit var modelRepository: app.surrealar.domain.repository.ModelRepository
 
-    @Inject lateinit var reachDeviceRepository: app.surrealar.gnss.external.repository.ReachDeviceRepository
+    @Inject lateinit var receiverDevices: app.surrealar.receiver.ReceiverDeviceManager
     // True while the selected source is external, i.e. the battery token may be shown.
     private var batteryShouldShow = false
+    /** What the source asked for (external selected); the receiver must also report a battery. */
+    private var batteryRequested = false
 
     // Track last GNSS data update time for stale detection
     @Volatile
@@ -228,13 +230,17 @@ class MainActivity : AppCompatActivity() {
         moveBatteryIconToRight()
         tokenBatt.root.isVisible = false
 
-        // Battery comes from ReachDeviceRepository — the single poller, shared with Settings and
-        // the Developer page. It publishes null while the receiver is unreachable or not selected.
+        // Battery comes from the active ReceiverDevice (one poller, shared with Settings and the
+        // Developer page). Null while the receiver is unreachable or not selected; the token is hidden
+        // entirely for receivers that don't report a battery.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                reachDeviceRepository.batteryInfo.collect { b ->
-                    if (batteryShouldShow) updateBatteryIcon(b?.percent, b?.isCharging)
+                launch {
+                    receiverDevices.battery.collect { b ->
+                        if (batteryShouldShow) updateBatteryIcon(b?.percent, b?.isCharging)
+                    }
                 }
+                launch { receiverDevices.capabilities.collect { updateBatteryVisibility(batteryRequested) } }
             }
         }
 
@@ -849,13 +855,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateBatteryVisibility(shouldShow: Boolean) {
+    private fun updateBatteryVisibility(requested: Boolean) {
+        batteryRequested = requested
+        val shouldShow = requested && receiverDevices.capabilities.value.hasBattery
         batteryShouldShow = shouldShow
         if (shouldShow) {
             // External source: render the repository's latest reading. The token stays hidden
             // until real battery data arrives — updateBatteryIcon() reveals it (and its separator)
             // once there is a percentage, and hides it again if the data is lost.
-            val b = reachDeviceRepository.batteryInfo.value
+            val b = receiverDevices.battery.value
             updateBatteryIcon(b?.percent, b?.isCharging)
         } else {
             // Internal source (or no receiver): hide the token + its separator.

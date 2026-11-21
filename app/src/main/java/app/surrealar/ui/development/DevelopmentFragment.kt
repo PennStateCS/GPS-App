@@ -902,9 +902,12 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         fun setExternalSectionVisibility(providerLabel: String) {
             val isExternal = providerLabel.contains("RS2+", ignoreCase = true) ||
                 providerLabel.contains("External", ignoreCase = true)
+            val caps = viewModel.receiverCapabilities.value
+            // Corrections age/station come from GGA, so that section shows for any external receiver;
+            // battery and device sections only when the receiver reports them.
             correctionsSection.container.visibility = if (isExternal) View.VISIBLE else View.GONE
-            batterySection.container.visibility = if (isExternal) View.VISIBLE else View.GONE
-            deviceSection.container.visibility = if (isExternal) View.VISIBLE else View.GONE
+            batterySection.container.visibility = if (isExternal && caps.hasBattery) View.VISIBLE else View.GONE
+            deviceSection.container.visibility = if (isExternal && caps.hasDeviceStatus) View.VISIBLE else View.GONE
         }
 
         fun applyFix(fix: Fix?) {
@@ -974,30 +977,27 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             correctionsSection.values["Correction Station ID"]?.text = field("station", fix.correctionStationId) { it }
         }
 
-        fun applyBattery(b: app.surrealar.gnss.external.model.ReachBatteryInfo?) {
+        fun applyBattery(b: app.surrealar.gnss.receiver.ReceiverBattery?) {
             batterySection.values["SoC"]?.text = b?.percent?.let { "$it%" } ?: "--"
             batterySection.values["Voltage"]?.text = b?.voltageV?.let { "%.2f V".format(it) } ?: "--"
             batterySection.values["Current"]?.text = b?.currentA?.let { "%.2f A".format(it) } ?: "--"
-            batterySection.values["USB Charger Current"]?.text = b?.usbChargerCurrentA?.let { "%.2f A".format(it) } ?: "--"
-            batterySection.values["USB Charger Voltage"]?.text = b?.usbChargerVoltageV?.let { "%.2f V".format(it) } ?: "--"
+            // Vendor extras arrive pre-formatted in details, keyed by the row label.
+            batterySection.values["USB Charger Current"]?.text = b?.details?.get("USB Charger Current") ?: "--"
+            batterySection.values["USB Charger Voltage"]?.text = b?.details?.get("USB Charger Voltage") ?: "--"
             batterySection.values["Temperature"]?.text = b?.temperatureC?.let { "%.1f °C".format(it) } ?: "--"
             batterySection.values["Charger Status"]?.text = b?.chargerStatus ?: "--"
-            batterySection.values["OTG Power"]?.text = when (b?.otg) {
-                true -> "Enabled"
-                false -> "Disabled"
-                null -> "--"
-            }
+            batterySection.values["OTG Power"]?.text = b?.details?.get("OTG Power") ?: "--"
         }
 
-        fun applyDevice(d: app.surrealar.gnss.external.model.ReachDeviceInfo?) {
-            deviceSection.values["IP"]?.text = d?.ip ?: "--"
+        fun applyDevice(d: app.surrealar.gnss.receiver.ReceiverDeviceInfo?) {
+            deviceSection.values["IP"]?.text = d?.host ?: "--"
             deviceSection.values["Hostname"]?.text = d?.hostname ?: "--"
             deviceSection.values["Name"]?.text = d?.name ?: "--"
             deviceSection.values["Model"]?.text = d?.model ?: "--"
             deviceSection.values["Firmware"]?.text = d?.firmware ?: "--"
-            deviceSection.values["GNSS Receiver FW"]?.text = d?.gnssReceiverFirmware ?: "--"
+            deviceSection.values["GNSS Receiver FW"]?.text = d?.details?.get("GNSS Receiver FW") ?: "--"
             deviceSection.values["Serial"]?.text = d?.serial ?: "--"
-            deviceSection.values["Uptime"]?.text = d?.uptime ?: d?.uptimeSec?.let {
+            deviceSection.values["Uptime"]?.text = d?.uptimeText ?: d?.uptimeS?.let {
                 val days = it / 86400; val h = (it % 86400) / 3600; val m = (it % 3600) / 60
                 when {
                     days > 0 -> "${days}d ${h}h ${m}m"
@@ -1007,7 +1007,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             } ?: "--"
             deviceSection.values["Storage"]?.text = d?.storage?.let { s ->
                 val usedPct = s.usagePercent
-                "${s.usedMB} MB used / ${s.totalMB} MB total (${usedPct}%  —  ${s.availableMB} MB free)"
+                "${s.usedMb} MB used / ${s.totalMb} MB total (${usedPct}%  —  ${s.availableMb} MB free)"
             } ?: "--"
         }
 
@@ -1062,6 +1062,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             launch { viewModel.diagnosticData.collect { data -> applyDiagnostics(data) } }
             launch { viewModel.batteryInfo.collect { b -> applyBattery(b) } }
             launch { viewModel.deviceInfo.collect { d -> applyDevice(d) } }
+            launch { viewModel.receiverCapabilities.collect { setExternalSectionVisibility(latestProviderLabel) } }
             launch {
                 viewModel.activeProviderLabel.collect { providerLabel ->
                     if (providerLabel != latestProviderLabel) seenFields.clear()   // new source: start over

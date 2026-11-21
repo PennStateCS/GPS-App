@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 /**
  * Raw battery readout parsed from the Reach device's HTTP/JSON response. Service-layer DTO — mapped
- * into the app-facing `ReachBatteryInfo` before use.
+ * into the receiver-neutral `ReceiverBattery` (EmlidMapping) before use.
  */
 data class BatteryStatus(
     val percent: Int,

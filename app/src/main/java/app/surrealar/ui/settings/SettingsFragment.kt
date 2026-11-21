@@ -21,6 +21,7 @@ import app.surrealar.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.Lifecycle
@@ -39,8 +40,8 @@ import app.surrealar.domain.model.SelfTest
 import app.surrealar.domain.model.TestStatus
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.settings.SettingsDefaults
-import app.surrealar.gnss.external.repository.ReachDeviceRepository
-import app.surrealar.gnss.external.ReachHttpClient
+import app.surrealar.receiver.ReceiverDeviceManager
+import app.surrealar.receiver.ReceiverHttpProbe
 import app.surrealar.service.LocationService
 import androidx.appcompat.app.AppCompatDelegate
 import app.surrealar.settings.model.AppThemeMode
@@ -78,7 +79,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     @Inject
     lateinit var gnssSourceCoordinator: app.surrealar.gnss.source.GnssSourceCoordinator
     @Inject
-    lateinit var reachDeviceRepository: ReachDeviceRepository
+    lateinit var receiverDevices: ReceiverDeviceManager
 
     // Comment out the SettingsViewModel injection for now since it may not exist
     // @Inject
@@ -1109,6 +1110,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val chipSats         = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_sats)
         val chipDataStream   = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_data_stream)
         val chipBattery      = view.findViewById<com.google.android.material.chip.Chip>(R.id.chip_battery)
+
+        // Show the receiver's battery / corrections / device-info controls only when the selected profile
+        // reports them (Emlid: all; Generic NMEA: none).
+        viewLifecycleOwner.lifecycleScope.launch {
+            receiverDevices.profileCapabilities.collect { caps ->
+                (tvBattery?.parent as? View)?.isVisible = caps.hasBattery
+                chipBattery?.isVisible = caps.hasBattery
+                (tvCorrections?.parent as? View)?.isVisible = caps.hasCorrectionsStatus
+                view.findViewById<View>(R.id.btn_refresh_device_info)?.isVisible = caps.hasDeviceStatus
+            }
+        }
         val defaultChipBg    = chipSource?.chipBackgroundColor
         val defaultChipTextColor = chipFix?.textColors
 
@@ -1117,9 +1129,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         btnRefreshDeviceInfo?.setOnClickListener {
             // The repository automatically polls device info when external source is active
             // Show current info or message if not available
-            val currentInfo = reachDeviceRepository.deviceInfo.value
+            val currentInfo = receiverDevices.deviceInfo.value
             if (currentInfo != null) {
-                // Convert ReachDeviceInfo to EmlidDeviceInfo for display
+                // Convert the receiver-neutral device info to EmlidDeviceInfo for display
                 currentDeviceInfo = convertToEmlidDeviceInfo(currentInfo)
                 updateDeviceInfoDisplay()
             } else {
@@ -1129,7 +1141,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         // Observe device info from repository
         viewLifecycleOwner.lifecycleScope.launch {
-            reachDeviceRepository.deviceInfo.collect { reachInfo ->
+            receiverDevices.deviceInfo.collect { reachInfo ->
                 try {
                     if (reachInfo != null) {
                         currentDeviceInfo = convertToEmlidDeviceInfo(reachInfo)
@@ -1393,7 +1405,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val nmeaAge = if (lastExternalRawNmeaTimeMs > 0L) now - lastExternalRawNmeaTimeMs else Long.MAX_VALUE
                 val fixAge  = if (lastExternalFixTimeMs > 0L)     now - lastExternalFixTimeMs     else Long.MAX_VALUE
                 val sky = fixSwitchboard.sky.value
-                val bat = reachDeviceRepository.batteryInfo.value
+                val bat = receiverDevices.battery.value
 
                 // Data Stream row + chip
                 tvDataStream?.let { tv ->
@@ -1499,13 +1511,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
                 // Corrections row (unchanged)
                 tvCorrections?.let { tv ->
-                    val info = reachDeviceRepository.correctionsInfo.value
+                    val info = receiverDevices.corrections.value
                     if (info == null) {
                         tv.text = "—"
                         tv.setTextColor(clr(android.R.color.darker_gray))
                     } else if (info.isReceiving) {
                         val ch = info.channel ?: "Connected"
-                        val age = info.ageSeconds?.let { " (${it.toInt()}s)" } ?: ""
+                        val age = info.ageS?.let { " (${it.toInt()}s)" } ?: ""
                         tv.text = "$ch$age"
                         tv.setTextColor(clr(android.R.color.holo_green_dark))
                     } else {
@@ -1740,7 +1752,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             // The collect observer may fire before currentContentView is set, causing
             // updateDeviceInfoDisplay() to return early — so we re-check here explicitly.
             if (currentDeviceInfo == null) {
-                reachDeviceRepository.deviceInfo.value?.let { cached ->
+                receiverDevices.deviceInfo.value?.let { cached ->
                     currentDeviceInfo = convertToEmlidDeviceInfo(cached)
                 }
             }
@@ -1868,12 +1880,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
      * /status is sufficient — the receiver is present even if no GNSS fix is available yet.
      */
     private suspend fun probeHttpReachable(host: String): Boolean = withContext(Dispatchers.IO) {
-        val client = ReachHttpClient(host, connectTimeoutMs = 3000, readTimeoutMs = 3000)
-        try { client.get("/info"); true }
-        catch (_: Exception) {
-            try { client.get("/status"); true }
-            catch (_: Exception) { false }
-        }
+        ReceiverHttpProbe.statusApiReachable(host)
     }
 
     private fun connectViaTcpFlow(host: String, port: Int) {
@@ -2424,17 +2431,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     }
 
     // ───────────────────────────── Model Conversion Helper ─────────────────────────────
-    private fun convertToEmlidDeviceInfo(reachInfo: app.surrealar.gnss.external.model.ReachDeviceInfo): EmlidDeviceInfo {
+    private fun convertToEmlidDeviceInfo(reachInfo: app.surrealar.gnss.receiver.ReceiverDeviceInfo): EmlidDeviceInfo {
         return EmlidDeviceInfo(
-            deviceName = reachInfo.name ?: reachInfo.ip ?: "Unknown Device",
-            ipAddress = reachInfo.ip ?: "Unknown IP",
-            selfTests = emptyList(), // ReachDeviceInfo doesn't include self tests
+            deviceName = reachInfo.name ?: reachInfo.host ?: "Unknown Device",
+            ipAddress = reachInfo.host ?: "Unknown IP",
+            selfTests = emptyList(), // ReceiverDeviceInfo doesn't include self tests
             firmwareVersion = reachInfo.firmware,
             serialNumber = reachInfo.serial,
             model = reachInfo.model,
-            uptime = reachInfo.uptimeSec?.let { "${it}s" }, // Convert seconds to string
-            temperature = null, // Not available in ReachDeviceInfo
-            batteryLevel = null // Battery info is handled separately in ReachBatteryInfo
+            uptime = reachInfo.uptimeS?.let { "${it}s" }, // Convert seconds to string
+            temperature = null, // Not available in ReceiverDeviceInfo
+            batteryLevel = null // Battery is shown separately (ReceiverBattery)
         )
     }
 }

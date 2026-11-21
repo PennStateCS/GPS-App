@@ -2,9 +2,10 @@ package app.surrealar.ui.development
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.surrealar.gnss.external.repository.ReachDeviceRepository
-import app.surrealar.gnss.external.model.ReachBatteryInfo
-import app.surrealar.gnss.external.model.ReachDeviceInfo
+import app.surrealar.gnss.receiver.ReceiverBattery
+import app.surrealar.gnss.receiver.ReceiverCapabilities
+import app.surrealar.gnss.receiver.ReceiverDeviceInfo
+import app.surrealar.receiver.ReceiverDeviceManager
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.bus.SkyBus
 import app.surrealar.gnss.diagnostics.DiagnosticData
@@ -32,7 +33,7 @@ class DevelopmentViewModel @Inject constructor(
     private val skyBus: SkyBus,
     private val sourceSettings: SourceSettings,
     private val diagnosticsService: DiagnosticsService,
-    private val reachDeviceRepository: ReachDeviceRepository,
+    private val receiverDevices: ReceiverDeviceManager,
     coordinateSystemService: app.surrealar.coords.CoordinateSystemService,
 ) : ViewModel() {
 
@@ -67,13 +68,16 @@ class DevelopmentViewModel @Inject constructor(
     val diagnosticData: StateFlow<DiagnosticData> = diagnosticsService.diagnosticData
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DiagnosticData())
 
-    /** RS2+ battery info (null when internal GPS is active or device unreachable). */
-    val batteryInfo: StateFlow<ReachBatteryInfo?> = reachDeviceRepository.batteryInfo
+    /** Receiver battery (null when internal GNSS is active, unsupported, or the device is unreachable). */
+    val batteryInfo: StateFlow<ReceiverBattery?> = receiverDevices.battery
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** RS2+ device info (null when internal GPS is active or device unreachable). */
-    val deviceInfo: StateFlow<ReachDeviceInfo?> = reachDeviceRepository.deviceInfo
+    /** Receiver device info (null when internal GNSS is active, unsupported, or unreachable). */
+    val deviceInfo: StateFlow<ReceiverDeviceInfo?> = receiverDevices.deviceInfo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** What the active receiver reports; drives which Developer sections are shown. */
+    val receiverCapabilities: StateFlow<ReceiverCapabilities> = receiverDevices.capabilities
 
 
     init {

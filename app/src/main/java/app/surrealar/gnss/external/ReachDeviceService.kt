@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /**
  * Raw device-info parsed from the Reach device's HTTP/JSON response. Service-layer DTO — mapped into
- * the app-facing `ReachDeviceInfo`.
+ * the receiver-neutral `ReceiverDeviceInfo` (EmlidMapping).
  */
 data class ReachDeviceInfoDto(
     val name: String?,
