@@ -87,7 +87,10 @@ object GnssModule {
             "EBP" to EbpParser(),
             "ETC" to EtcParser()
         )
-        return NmeaRegistry(parsers, verifyChecksum = true)
+        // Live sources (Emlid TCP, Android internal NMEA) always send "*CS". Requiring it rejects a
+        // partial line that readLine() returns when the socket drops mid-sentence. Replay builds its
+        // own lenient registry (MainActivity) so checksum-less log files still play.
+        return NmeaRegistry(parsers, verifyChecksum = true, requireChecksum = true)
     }
 
     // NMEA source for external RS2+ adapter (TCP NMEA stream)

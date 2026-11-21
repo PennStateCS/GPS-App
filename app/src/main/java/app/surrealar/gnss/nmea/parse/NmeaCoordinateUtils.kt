@@ -43,8 +43,8 @@ object NmeaCoordinateUtils {
      * 3-digit split read that as 760° 1.35' → −760.02°. Results outside the valid range
      * (minutes ≥ 60, |lat| > 90, |lon| > 180) return null rather than an impossible coordinate.
      *
-     * @param hemisphere N/S (latitude) or E/W (longitude); null is treated as positive (N/E), any
-     *   other value returns null — matching the parsers' historical behaviour.
+     * @param hemisphere N/S (latitude) or E/W (longitude). Required: a missing hemisphere returns
+     *   null (a truncated "…,07601" must not become +76° E), as does any other value.
      */
     fun toDecimalDegrees(raw: String?, hemisphere: String?, isLatitude: Boolean): Double? {
         val v = raw?.trim().orEmpty()
@@ -59,8 +59,8 @@ object NmeaCoordinateUtils {
         val (pos, neg) = if (isLatitude) "N" to "S" else "E" to "W"
         when (hemisphere) {
             neg -> value = -value
-            pos, null -> { /* keep + */ }
-            else -> return null
+            pos -> { /* keep + */ }
+            else -> return null   // includes null: no hemisphere, no coordinate
         }
         return value
     }

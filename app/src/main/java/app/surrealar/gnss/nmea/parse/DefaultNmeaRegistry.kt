@@ -13,7 +13,7 @@ import app.surrealar.gnss.nmea.sentence.NmeaSentence
  * and add it to the map here and in `GnssModule`.
  */
 object DefaultNmeaRegistry {
-    fun create(verifyChecksum: Boolean = true): NmeaRegistry {
+    fun create(verifyChecksum: Boolean = true, requireChecksum: Boolean = false): NmeaRegistry {
         val map: Map<String, SentenceParser<out NmeaSentence>> = mapOf(
             "GGA" to GgaParser(),
             "RMC" to RmcParser(),
@@ -27,6 +27,6 @@ object DefaultNmeaRegistry {
             "EBP" to EbpParser(),
             "ETC" to EtcParser(),
         )
-        return NmeaRegistry(map, verifyChecksum)
+        return NmeaRegistry(map, verifyChecksum, requireChecksum)
     }
 }

@@ -36,8 +36,9 @@ class NmeaToDecimalDegreesTest {
         assertEquals(-76.0166667, lon("07601")!!, 1e-6)
     }
 
-    @Test fun `null hemisphere keeps positive, unknown hemisphere rejects`() {
-        assertEquals(76.0225150, lon("07601.3509", null)!!, 1e-6)
+    @Test fun `missing or unknown hemisphere rejects`() {
+        // A missing hemisphere used to be read as N/E; a truncated "…,07601" then published +76° E.
+        assertNull(lon("07601.3509", null))
         assertNull(lon("07601.3509", "N"))
         assertNull(lat("4120.86641", "E"))
     }

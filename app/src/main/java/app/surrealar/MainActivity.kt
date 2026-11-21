@@ -46,7 +46,6 @@ import android.graphics.drawable.ClipDrawable
 import app.surrealar.gnss.replay.NmeaReplayController
 import app.surrealar.gnss.replay.AssetNmeaReplaySource
 import app.surrealar.gnss.accumulator.FixAccumulator
-import app.surrealar.gnss.nmea.parse.NmeaRegistry
 import app.surrealar.gnss.diagnostics.DiagnosticsService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -104,7 +103,6 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var switchboard: FixSwitchboard
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var externalAdapter: ExternalAdapter
-    @Inject lateinit var nmeaRegistry: NmeaRegistry
     @Inject lateinit var fixAccumulator: FixAccumulator
     @Inject lateinit var diagnosticsService: DiagnosticsService
     @Inject lateinit var sourceSettings: app.surrealar.gnss.source.SourceSettings
@@ -1109,7 +1107,11 @@ class MainActivity : AppCompatActivity() {
             replayController = NmeaReplayController(
                 scope = lifecycleScope,
                 source = replaySource,
-                registry = nmeaRegistry,
+                // Lenient registry: replay logs may omit checksums. (The injected live registry
+                // requires them so a truncated TCP line can't publish a fix.)
+                registry = app.surrealar.gnss.nmea.parse.DefaultNmeaRegistry.create(
+                    verifyChecksum = true, requireChecksum = false
+                ),
                 accumulator = fixAccumulator
             )
 
