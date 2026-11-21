@@ -36,6 +36,14 @@ class DiagnosticsLoggerTest {
         }
     }
 
+    @Test fun `every written line is in the new format`() {
+        DiagnosticsLogger.w("RECEIVER", "TCP: no data for 10000ms")
+        assertTrue(DiagnosticsLogger.flush())
+        val p = app.surrealar.util.diagnostics.LogLineFormat.parse(File(dir, "app-log-current.txt").readLines().last())!!
+        assertTrue(p.level == 'W' && p.tag == "RECEIVER" && p.message == "TCP: no data for 10000ms")
+        assertTrue(p.thread, p.thread.isNotBlank())
+    }
+
     @Test fun `coroutine crash is marked not fatal`() {
         DiagnosticsLogger.writeCrashSync(Thread.currentThread(), RuntimeException("x"), fatal = false)
         assertTrue(File(dir, "app-errors-current.txt").readText().contains("not fatal"))

@@ -9,9 +9,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import app.surrealar.util.diagnostics.LogLineFormat
 
 /**
  * Lightweight singleton logger that writes important app events to Logcat AND a rotating
@@ -67,7 +65,6 @@ object DiagnosticsLogger {
         Thread(r, "diag-log").apply { isDaemon = true }
     }
     private val lock = Any()
-    private val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
     @Volatile private var logDir: File? = null
     @Volatile private var currentSize: Long = 0L
@@ -112,7 +109,7 @@ object DiagnosticsLogger {
             " type=${throwable.javaClass.name}: ${throwable.message}"
         runCatching { Log.e("GlobalCrash", message, throwable) }
         val dir = logDir ?: return
-        val bytes = buildLogLine("ERROR", "ERROR", message, throwable).toByteArray(Charsets.UTF_8)
+        val bytes = buildLogLine('E', "ERROR", message, throwable, thread.name).toByteArray(Charsets.UTF_8)
         synchronized(lock) {
             try {
                 if (errorSize + bytes.size > MAX_ERROR_BYTES) rotateErrors(dir)
@@ -132,13 +129,13 @@ object DiagnosticsLogger {
     /** Info-level event. Always written to file (once initialized). */
     fun i(tag: String, message: String) {
         Log.i(tag, message)
-        writeAsync("INFO ", tag, message, null)
+        writeAsync('I', tag, message, null)
     }
 
     /** Warning-level event. Optional throwable appended as stack trace. */
     fun w(tag: String, message: String, throwable: Throwable? = null) {
         Log.w(tag, message, throwable)
-        writeAsync("WARN ", tag, message, throwable)
+        writeAsync('W', tag, message, throwable)
     }
 
     /**
@@ -148,14 +145,14 @@ object DiagnosticsLogger {
      */
     fun e(tag: String, message: String, throwable: Throwable? = null) {
         Log.e(tag, message, throwable)
-        writeAsync("ERROR", tag, message, throwable)
-        writeErrorAsync("ERROR", tag, message, throwable)
+        writeAsync('E', tag, message, throwable)
+        writeErrorAsync('E', tag, message, throwable)
     }
 
     /** Debug-level: written to file only in debug builds; always written to Logcat. */
     fun d(tag: String, message: String) {
         Log.d(tag, message)
-        if (BuildConfig.DEBUG) writeAsync("DEBUG", tag, message, null)
+        if (BuildConfig.DEBUG) writeAsync('D', tag, message, null)
     }
 
     /**
@@ -230,7 +227,7 @@ object DiagnosticsLogger {
         runCatching { writer.execute { synchronized(lock) { block() } } }
     }
 
-    private fun writeAsync(level: String, tag: String, message: String, t: Throwable?) {
+    private fun writeAsync(level: Char, tag: String, message: String, t: Throwable?) {
         val dir = logDir ?: return
         val line = buildLogLine(level, tag, message, t)   // built on the caller (its thread and time)
         submit {
@@ -245,7 +242,7 @@ object DiagnosticsLogger {
         }
     }
 
-    private fun writeErrorAsync(level: String, tag: String, message: String, t: Throwable?) {
+    private fun writeErrorAsync(level: Char, tag: String, message: String, t: Throwable?) {
         val dir = logDir ?: return
         val line = buildLogLine(level, tag, message, t)
         submit {
@@ -260,15 +257,13 @@ object DiagnosticsLogger {
         }
     }
 
-    private fun buildLogLine(level: String, tag: String, message: String, t: Throwable?): String =
+    /** One line in [LogLineFormat] (time, level, tag, [thread], message), then the stack trace if any. */
+    private fun buildLogLine(
+        level: Char, tag: String, message: String, t: Throwable?,
+        thread: String = Thread.currentThread().name,
+    ): String =
         buildString {
-            append(tsFormat.format(Date()))
-            append(' ')
-            append(level)
-            append(' ')
-            append(tag)
-            append(" - ")
-            appendLine(message)
+            appendLine(LogLineFormat.format(System.currentTimeMillis(), level, tag, thread, message.replace('\n', ' ')))
             if (t != null) {
                 appendLine(t.stackTraceToString().trimEnd())
             }
