@@ -84,4 +84,17 @@ class CoordinateBackupTest {
         assertEquals("good", result.coordinates.first().id)
         assertEquals(1, result.skippedInvalid.size)
     }
+
+    @Test
+    fun rowWithoutAltitude_isSkippedAndReported_notImportedAt0m() {
+        val json = """{"schemaVersion":2,"coordinates":[
+            {"id":"ok","name":"Has height","latitude":41.3,"longitude":-76.0,"altitude":363.4},
+            {"id":"noalt","name":"No height","latitude":41.3,"longitude":-76.0},
+            {"id":"nullalt","name":"Null height","latitude":41.3,"longitude":-76.0,"altitude":null}
+        ]}"""
+        val result = CoordinateBackup.parse(json)
+        assertEquals(listOf("ok"), result.coordinates.map { it.id })
+        assertEquals(2, result.skippedInvalid.size)
+        assertTrue(result.skippedInvalid.all { "no altitude" in it })
+    }
 }

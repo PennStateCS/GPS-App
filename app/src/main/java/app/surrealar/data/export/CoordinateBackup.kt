@@ -153,6 +153,13 @@ object CoordinateBackup {
         val arr = root.optJSONArray("coordinates") ?: JSONArray()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
+            // A row with no altitude is skipped and reported: importing it at 0.0 m would place the
+            // point ~360 m too low in PA (altitude is ellipsoidal and its column is non-null).
+            if (o.optDoubleN("altitude") == null) {
+                val label = o.optString("name").ifBlank { "entry #$i" }
+                skipped += "'$label' (${o.optString("id").ifBlank { "#$i" }}): no altitude in backup"
+                continue
+            }
             val c = jsonToCoord(o) ?: run {
                 skipped += "entry #$i: malformed"
                 null
@@ -183,7 +190,7 @@ object CoordinateBackup {
             name = name,
             latitude = lat,
             longitude = lon,
-            altitude = o.optDoubleN("altitude") ?: 0.0,
+            altitude = o.optDoubleN("altitude") ?: return null,   // parse() reports this case first
             timestamp = ts,
             icon = o.optString("icon", ""),
             color = o.optIntN("color") ?: 0xFF155DA8.toInt(),

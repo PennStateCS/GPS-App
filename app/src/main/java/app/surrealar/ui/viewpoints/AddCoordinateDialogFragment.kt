@@ -127,7 +127,8 @@ class AddCoordinateDialogFragment(
     // Internal GPS capture state (only used when isExternalMode == false)
     private var latitude = 0.0
     private var longitude = 0.0
-    private var altitude = 0.0
+    /** Altitude for a model-embedded location; null until one is known (never a fabricated 0.0). */
+    private var altitude: Double? = null
     private var providerStr = "fused"
     private var rtkStatusStr: String? = null
     private var satsUsedVal: Int? = null
@@ -697,6 +698,10 @@ class AddCoordinateDialogFragment(
         } else {
             // Model-embedded location: the model's own coordinates, not an antenna measurement, so
             // no antenna height is subtracted.
+            val altitude = altitude ?: run {
+                DiagnosticsLogger.w("Capture", "Save blocked: model location has no altitude")
+                return
+            }
             val utm = try { UtmConverter.latLonToUtm(latitude, longitude) } catch (_: Exception) { null }
             val coordinate = Coordinate(
                 id                  = UUID.randomUUID().toString(),
@@ -808,7 +813,15 @@ class AddCoordinateDialogFragment(
         modelName: String?,
         thumbnailPath: String?
     ) {
-        val altStr = embedded.altitudeMeters?.let { coordinateSystemService.lengthText(it, 2) } ?: "—"
+        // A model without an altitude takes the current fix's ellipsoidal height (said so below);
+        // with no live height either, "Use Model Location" is not offered.
+        val resolvedAlt = ModelAltitudeResolver.resolve(embedded.altitudeMeters, lastLiveFix?.altEllipsoidalM)
+        val altStr = when (resolvedAlt?.source) {
+            ModelAltitudeResolver.Source.MODEL -> coordinateSystemService.lengthText(resolvedAlt.altitudeM, 2)
+            ModelAltitudeResolver.Source.CURRENT_FIX ->
+                "— (not in model; current GNSS height ${coordinateSystemService.lengthText(resolvedAlt.altitudeM, 2)} will be used)"
+            null -> "— (not in model, and no live GNSS height yet)"
+        }
         val confidenceNote = when (embedded.confidence) {
             ModelLocationConfidence.HIGH   -> ""
             ModelLocationConfidence.MEDIUM -> "\n(Confidence: medium)"
@@ -822,13 +835,14 @@ class AddCoordinateDialogFragment(
             embedded.latitude, embedded.longitude, altStr, confidenceNote
         )
         if (!isAdded || activity == null) return
-        MaterialAlertDialogBuilder(requireContext())
+        val builder = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Model Location Detected")
             .setMessage(message)
-            .setPositiveButton("Use Model Location") { _, _ ->
+        if (resolvedAlt != null) builder.setPositiveButton("Use Model Location") { _, _ ->
                 latitude = embedded.latitude
                 longitude = embedded.longitude
-                altitude = embedded.altitudeMeters ?: altitude
+                val altitude = resolvedAlt.altitudeM
+                this.altitude = altitude
                 providerStr = "model"
                 captureMethodStr = CaptureMethod.MODEL_EMBEDDED.storageValue
                 // Model files carry WGS84; shown in the user's system and height reference.
@@ -836,7 +850,9 @@ class AddCoordinateDialogFragment(
                     val p = coordinateSystemService.convertWgs84(latitude, longitude, altitude, System.currentTimeMillis())
                     "From model: ${app.surrealar.coords.CoordinateFormat.horizontal(p, latLonDecimals = 7)} · " +
                         app.surrealar.coords.CoordinateFormat.height(p)
-                }.getOrElse { String.format(Locale.US, "From model: %.7f, %.7f, %.2f m", latitude, longitude, altitude) }
+                }.getOrElse { String.format(Locale.US, "From model: %.7f, %.7f, %.2f m", latitude, longitude, altitude) } +
+                    if (resolvedAlt.source == ModelAltitudeResolver.Source.CURRENT_FIX)
+                        "\nHeight from the current GNSS fix (the model has none)" else ""
                 // Internal mode: the model's location replaces the averaged capture — stop the
                 // session, show the chosen location, and allow Save.
                 if (!isExternalMode) {
@@ -847,6 +863,7 @@ class AddCoordinateDialogFragment(
                 }
                 applySelectedModel(modelId, modelName, thumbnailPath)
             }
+        builder
             .setNegativeButton("Use Current Coordinate") { _, _ ->
                 applySelectedModel(modelId, modelName, thumbnailPath)
             }
