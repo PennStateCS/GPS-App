@@ -111,6 +111,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tokenSats: ToolbarTokens
     private lateinit var tokenAcc: ToolbarTokens
     private lateinit var tokenAge: ToolbarTokens
+    /** Toolbar-only display override from tapping LL/NE (doesn't change Settings). */
+    private val toolbarPreferLatLon = MutableStateFlow(false)
+    /** Last state the toolbar rendered (tap actions read it; decisions stay in the mapper). */
+    private var lastToolbarState: app.surrealar.ui.toolbar.GnssToolbarState? = null
     private lateinit var tokenCoord: ToolbarTokens
     private lateinit var tokenAlt: ToolbarTokens
     private lateinit var tokenBatt: ToolbarTokens
@@ -205,6 +209,7 @@ class MainActivity : AppCompatActivity() {
             onBatteryVisibilityChanged = ::updateBatteryVisibility,
             strip = findViewById(R.id.location_status_bar),
         )
+        setupToolbarActions()
 
         // Static labels
         tokenSource.label.setText(R.string.status_token_src)
@@ -671,8 +676,8 @@ class MainActivity : AppCompatActivity() {
                     settingsRepository.coordinateSystemSettings,
                     externalLabelFlow(),
                 ) { fix, sky, source, coordSettings, label -> ToolbarInputs(source, fix, sky, coordSettings, label) }
-                val inputs = combine(gnss, toolbarLinkFlow(), toolbarTickFlow(), receiverKeyFlow()) { g, link, tick, key ->
-                    g.copy(link = link.copy(locationEnabled = tick.second), receiverKey = key, tick = tick.first)
+                val inputs = combine(gnss, toolbarLinkFlow(), toolbarTickFlow(), receiverKeyFlow(), toolbarPreferLatLon) { g, link, tick, key, ll ->
+                    g.copy(link = link.copy(locationEnabled = tick.second), receiverKey = key, tick = tick.first, preferLatLon = ll)
                 }
                 ToolbarPipeline.frames(inputs, coordinateSystemService::convertFix,
                     nowMs = { android.os.SystemClock.elapsedRealtime() })
@@ -795,6 +800,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 lastDataUpdateTime = System.currentTimeMillis()
+                lastToolbarState = state
                 toolbarRenderer.render(state)
                 tokenSource.value.alpha = 1.0f
             }
@@ -836,6 +842,59 @@ class MainActivity : AppCompatActivity() {
     private fun receiverKeyFlow(): Flow<String> =
         settingsRepository.externalReceiverSettings.map { "${it.profile.prefKey}@${it.tcpHost}:${it.tcpPort}" }
             .onStart { emit("") }.distinctUntilChanged()
+
+    // ── Toolbar tap actions (wiring only; what's available comes from the mapped state) ──
+
+    private fun setupToolbarActions() {
+        val openStatus = View.OnClickListener { openToolbarGnssStatus() }
+        tokenFix.root.setOnClickListener(openStatus)
+        tokenSats.root.setOnClickListener(openStatus)
+        tokenBatt.root.setOnClickListener { openReceiverDetails() }
+        tokenCoord.root.setOnClickListener {
+            // Lat/lon ↔ grid only when a grid system is configured; otherwise a no-op.
+            if (lastToolbarState?.coordToggleAvailable == true) toolbarPreferLatLon.value = !toolbarPreferLatLon.value
+        }
+        tokenCoord.root.setOnLongClickListener { copyToolbarPosition(); true }
+        // Long-press help on the other tokens.
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenSource.root, app.surrealar.ui.toolbar.ToolbarHelp.SOURCE)
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenFix.root, app.surrealar.ui.toolbar.ToolbarHelp.SOL)
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenAcc.root, app.surrealar.ui.toolbar.ToolbarHelp.ACC)
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenAge.root, app.surrealar.ui.toolbar.ToolbarHelp.AGE)
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenSats.root, app.surrealar.ui.toolbar.ToolbarHelp.SATS)
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenAlt.root, app.surrealar.ui.toolbar.ToolbarHelp.ALT)
+        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenBatt.root, app.surrealar.ui.toolbar.ToolbarHelp.BATTERY)
+    }
+
+    /** SOL / SATS: the sky + satellite view (Developer Tools) when enabled, else Settings › Receiver status. */
+    private fun openToolbarGnssStatus() {
+        if (lastDevToolsEnabled == true) navigateFromToolbar(R.id.nav_development) else openReceiverDetails()
+    }
+
+    /** Battery: Settings › Receiver (status, battery, device info). */
+    private fun openReceiverDetails() = navigateFromToolbar(
+        R.id.nav_settings,
+        androidx.core.os.bundleOf(app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
+            app.surrealar.ui.settings.SettingsFragment.CATEGORY_RECEIVER),
+    )
+
+    private fun navigateFromToolbar(destId: Int, args: android.os.Bundle? = null) {
+        if (!::navController.isInitialized) return
+        runCatching {
+            navController.navigate(destId, args, androidx.navigation.navOptions { launchSingleTop = true })
+        }.onFailure { app.surrealar.util.DiagnosticsLogger.w("Toolbar", "toolbar navigation failed: ${it.message}") }
+    }
+
+    /** Long-press on the coordinates: copy what's shown (position + height) to the clipboard. */
+    private fun copyToolbarPosition() {
+        val s = lastToolbarState
+        if (s == null || s.latLonText == "--") {
+            android.widget.Toast.makeText(this, "No position to copy", android.widget.Toast.LENGTH_SHORT).show(); return
+        }
+        val text = "${s.coordLabel} ${s.latLonText}, ${s.altitudeLabel} ${s.altitudeText}"
+        getSystemService(android.content.ClipboardManager::class.java)
+            ?.setPrimaryClip(android.content.ClipData.newPlainText("Position", text))
+        android.widget.Toast.makeText(this, "Position copied", android.widget.Toast.LENGTH_SHORT).show()
+    }
 
     /** The active external receiver profile's short label; "External" until settings have loaded. */
     private fun externalLabelFlow(): Flow<String> =

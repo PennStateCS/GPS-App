@@ -142,7 +142,7 @@ class GnssToolbarRenderer(
         if (ratchetKeys[view] != key) { ratchetKeys[view] = key; view.minWidth = 0 }
         if (text == "--") return
         val template = text.replace(Regex("[0-9]"), "0")
-        minWidthFor(view, if (text.contains('-')) template else "-")
+        minWidthFor(view, if (text.contains('-')) template else "-$template")
     }
 
     // ── One line, priority drop ───────────────────────────────────────────────

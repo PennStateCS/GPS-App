@@ -8,8 +8,8 @@
     android:background="@color/app_status_strip"
     android:paddingStart="10dp"
     android:paddingEnd="10dp"
-    android:paddingTop="6dp"
-    android:paddingBottom="6dp">
+    android:paddingTop="0dp"
+    android:paddingBottom="0dp">
 
     <!-- LEFT GROUP: Source + Status + Sats + Accuracy + Correction age (left-aligned) -->
     <include

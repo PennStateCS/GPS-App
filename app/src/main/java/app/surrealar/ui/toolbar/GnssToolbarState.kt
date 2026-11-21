@@ -28,5 +28,6 @@ data class GnssToolbarState(
     val isWaiting: Boolean,            // no current-provider fix yet (acquiring/reconnecting)
     val isStale: Boolean,
     val coordLabel: String = "LL",     // "LL" for lat/lon, "NE" for grid coordinates
-    val altitudeLabel: String = "ALT"  // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
+    val altitudeLabel: String = "ALT", // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
+    val coordToggleAvailable: Boolean = false, // a grid system is configured: tapping LL/NE switches the display
 )

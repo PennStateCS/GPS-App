@@ -217,6 +217,10 @@ private const val CAT_ID_DEV                = 7
         private const val CAT_ID_ABOUT              = 8
         private const val CAT_ID_APPEARANCE         = 9
         private const val CAT_ID_MAP                = 10
+        /** Nav argument: id of the category to open first (e.g. [CATEGORY_RECEIVER] from the toolbar). */
+        const val ARG_INITIAL_CATEGORY_ID = "initialCategoryId"
+        /** The Receiver category (receiver status, battery, device info). */
+        const val CATEGORY_RECEIVER = CAT_ID_LOCATION
         // Connection status timing thresholds (ms)
         const val FRESH_FIX_MAX_AGE_MS = 5_000L
         const val STALE_FIX_MAX_AGE_MS = 15_000L
@@ -226,6 +230,12 @@ private const val CAT_ID_DEV                = 7
     // repository is Hilt-injected (@Inject above); no manual init needed.
 
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
+
+    /** Opens [ARG_INITIAL_CATEGORY_ID] when given (the toolbar's battery token opens Receiver). */
+    override fun initialCategoryIndex(): Int {
+        val id = arguments?.getInt(ARG_INITIAL_CATEGORY_ID, -1) ?: -1
+        return provideCategories().indexOfFirst { it.id == id }.takeIf { it >= 0 } ?: super.initialCategoryIndex()
+    }
 
     // Categories are listed alphabetically by display name (case-insensitive), with About pinned last.
     private fun baseCategories(): List<SettingsCategory> = listOf(

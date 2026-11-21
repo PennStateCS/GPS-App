@@ -32,6 +32,8 @@ data class ToolbarInputs(
     val receiverKey: String = "",
     /** Changes once a second so ages ("No data 12s", "lost 12s") keep counting with no other input. */
     val tick: Long = 0L,
+    /** Toolbar-only display override: lat/lon instead of the configured grid. */
+    val preferLatLon: Boolean = false,
 )
 
 /** One toolbar update: the inputs it came from, the converted position, and what to show. */
@@ -74,7 +76,7 @@ object ToolbarPipeline {
                 val coords = i.fix?.let { runCatching { convert(it, i.coordSettings) }.getOrNull() }
                 val memory = prev.memory.next(i, coords, now)
                 val result = GnssToolbarStateMapper.map(
-                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now)
+                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now, i.preferLatLon)
                 Step(memory, ToolbarFrame(i, coords, result))
             }
             .mapNotNull { it.frame }

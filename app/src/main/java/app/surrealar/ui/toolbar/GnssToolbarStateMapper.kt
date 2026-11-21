@@ -188,6 +188,8 @@ object GnssToolbarStateMapper {
         last: LastFix? = null,
         /** Monotonic now (ms). */
         nowMs: Long = 0L,
+        /** Toolbar-only override: show lat/lon even when a grid system is configured (tap on LL/NE). */
+        preferLatLon: Boolean = false,
     ): ToolbarMapResult {
         if (fix == null) return ToolbarMapResult.Render(noFix(selectedSource, externalLabel, link, last, nowMs))
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
@@ -244,12 +246,14 @@ object GnssToolbarStateMapper {
         val altitudeText: String
         var coordLabel = "LL"
         var altitudeLabel = "ALT"
+        val gridConfigured = coords?.easting != null && coords.northing != null
         if (coords != null) {
-            latLonText = if (coords.easting != null && coords.northing != null) {
+            latLonText = if (gridConfigured && !preferLatLon) {
                 coordLabel = "NE"
                 app.surrealar.coords.CoordinateFormat.horizontal(coords)
             } else {
-                app.surrealar.coords.CoordinateFormat.horizontal(coords, latLonDecimals = 6)
+                // Lat/lon from the converted position (also when a grid exists and the user toggled to LL).
+                String.format(Locale.US, "%.6f, %.6f", coords.latDeg, coords.lonDeg)
             }
             altitudeLabel = coords.verticalLabel.uppercase(Locale.US)
             altitudeText = coords.height?.let {
@@ -295,7 +299,8 @@ object GnssToolbarStateMapper {
                 isWaiting = false,
                 isStale = false,
                 coordLabel = coordLabel,
-                altitudeLabel = altitudeLabel
+                altitudeLabel = altitudeLabel,
+                coordToggleAvailable = gridConfigured,
             )
         )
     }

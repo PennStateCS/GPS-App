@@ -94,4 +94,16 @@ class ToolbarFitTest {
         acc.text = "~±12.34 m"; acc.measure(0, 0); val w2 = acc.measuredWidth
         assertEquals("ACC keeps its width", w1, w2)
     }
+    @Test fun `coordinates and height keep their width when a value loses a digit or its sign`() {
+        val s = strip(); layoutAt(s, 1480)
+        val coord = s.tokens.getValue("coord").value
+        val alt = s.tokens.getValue("alt").value
+        coord.measure(0, 0); val c1 = coord.measuredWidth
+        alt.measure(0, 0); val a1 = alt.measuredWidth
+        s.renderer.render(full.copy(latLonText = "41.234567, 76.123456", altitudeText = "22.81 m"))
+        coord.measure(0, 0); alt.measure(0, 0)
+        assertTrue("coord shrank: $c1 → ${coord.measuredWidth}", coord.measuredWidth >= c1)
+        assertTrue("height shrank: $a1 → ${alt.measuredWidth}", alt.measuredWidth >= a1)
+        assertTrue("height min width covers a sign and the digits", alt.minWidth > 0)
+    }
 }
