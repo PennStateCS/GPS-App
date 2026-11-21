@@ -116,6 +116,24 @@ class GnssSourceCoordinator @Inject constructor(
     }
 
     /**
+     * Switches the active provider to NMEA replay and returns the provider that was active, so
+     * [endReplay] can restore it. Not persisted: a restart comes back to the saved source.
+     */
+    fun startReplay(reason: String): ProviderChoice {
+        val previous = sourceSettings.activeProvider.value
+        DiagnosticsLogger.i("GNSS", "startReplay ($reason), previous=$previous")
+        sourceSettings.setActiveProvider(ProviderChoice.REPLAY)
+        return previous
+    }
+
+    /** Ends replay by restoring [previous] (never REPLAY itself; falls back to Internal). */
+    fun endReplay(previous: ProviderChoice, reason: String) {
+        val restore = if (previous == ProviderChoice.REPLAY) ProviderChoice.INTERNAL else previous
+        DiagnosticsLogger.i("GNSS", "endReplay ($reason) → $restore")
+        if (sourceSettings.activeProvider.value == ProviderChoice.REPLAY) sourceSettings.setActiveProvider(restore)
+    }
+
+    /**
      * Makes External TCP the **active provider** (`setActiveProvider(EXTERNAL_TCP)`) and logs the
      * reason. [host]/[port] are for diagnostics only — the actual connection params are read by
      * `TcpNmeaSource` from [SettingsRepository], which the caller must have already persisted (see

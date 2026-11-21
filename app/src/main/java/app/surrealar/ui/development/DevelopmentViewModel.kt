@@ -58,6 +58,7 @@ class DevelopmentViewModel @Inject constructor(
             when (choice) {
                 SourceSettings.ProviderChoice.INTERNAL     -> "Internal GNSS Receiver"
                 SourceSettings.ProviderChoice.EXTERNAL_TCP -> "RS2+ External GNSS Receiver (TCP)"
+                SourceSettings.ProviderChoice.REPLAY       -> "NMEA Replay"
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "Unknown")

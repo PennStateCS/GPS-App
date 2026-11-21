@@ -60,7 +60,8 @@ class SourceSettings(
      * The enum is transport-level, not device-specific, so adding a new provider only requires
      * a new `SourceAdapter` implementation and a new entry here.
      */
-    enum class ProviderChoice { INTERNAL, EXTERNAL_TCP }
+    /* REPLAY: NMEA replay from a file (demo/testing) through the same fuser and buses as live data. */
+    enum class ProviderChoice { INTERNAL, EXTERNAL_TCP, REPLAY }
 
     /** Currently selected profile as a flow (null if none selected or list is empty). */
     val activeProfileFlow: Flow<ConnectionProfile?> =

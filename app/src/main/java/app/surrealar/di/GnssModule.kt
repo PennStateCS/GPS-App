@@ -4,7 +4,6 @@ import android.content.Context
 import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
 import app.surrealar.domain.repository.LocationSourceSettingsRepository
 import app.surrealar.domain.model.LocationSourceType
-import app.surrealar.gnss.accumulator.FixAccumulator
 import app.surrealar.gnss.bus.FixBus
 import app.surrealar.gnss.bus.SkyBus
 import app.surrealar.gnss.bus.FixSwitchboard
@@ -42,17 +41,13 @@ import javax.inject.Singleton
 object GnssModule {
 
     /**
-     * Provides a singleton [FixAccumulator] used by the NMEA replay feature
-     * (`MainActivity`) and the Diagnostics screen.
-     *
-     * Note: the live GNSS path (internal GPS and TCP external) does NOT go through this
-     * accumulator — it uses the [app.surrealar.gnss.bus.FixSwitchboard] pipeline
-     * instead. The accumulator is deliberately kept separate so the replay feature can run
-     * without interfering with live data.
+     * NMEA replay as a regular source (ProviderChoice.REPLAY): same NmeaFuser and switchboard path
+     * as live data. Replaces the old FixAccumulator, whose output nothing observed.
      */
     @Provides
     @Singleton
-    fun provideFixAccumulator(): FixAccumulator = FixAccumulator()
+    fun provideReplayAdapter(appScope: CoroutineScope): app.surrealar.gnss.replay.ReplayAdapter =
+        app.surrealar.gnss.replay.ReplayAdapter(appScope)
 
     /**
      * Provides a singleton [DiagnosticsService] for tracking NMEA processing metrics.
@@ -63,13 +58,13 @@ object GnssModule {
 
     /**
      * Provides the shared [NmeaRegistry] used by both the live GNSS pipeline
-     * (`NmeaFuser` inside each [NmeaSource]) and the NMEA replay `NmeaReplayController`.
+     * (`NmeaFuser` inside each [NmeaSource]). Replay builds its own lenient registry.
      *
      * All sentence types supported by the app are registered here. To add a new sentence type:
      *  1. Create a data class implementing `NmeaSentence` in `gnss/nmea/sentence/`
      *  2. Create a [SentenceParser] in `gnss/nmea/parse/`
      *  3. Add it to this map
-     *  4. Handle it in `NmeaFuser.handle` (live path) and [FixAccumulator.accept] (replay path)
+     *  4. Handle it in `NmeaFuser.handle` (live and replay paths)
      */
     @Provides
     @Singleton
@@ -206,6 +201,7 @@ object GnssModule {
         sourceSettings: SourceSettings,
         internalAdapter: InternalAdapter,
         externalAdapter: ExternalAdapter,
+        replayAdapter: app.surrealar.gnss.replay.ReplayAdapter,
         coordinateSettings: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository,
     ): FixSwitchboard {
         // Settings → Coordinates → External Receiver Datum. Internal GNSS is always WGS84.
@@ -217,7 +213,8 @@ object GnssModule {
             sourceSettings = sourceSettings,
             adapters       = mapOf(
                 ProviderChoice.INTERNAL     to internalAdapter,
-                ProviderChoice.EXTERNAL_TCP to externalAdapter
+                ProviderChoice.EXTERNAL_TCP to externalAdapter,
+                ProviderChoice.REPLAY       to replayAdapter,
             ),
             fixTransform   = { fix ->
                 if (fix.provider != app.surrealar.gnss.model.Provider.INTERNAL &&

@@ -30,7 +30,7 @@ import app.surrealar.databinding.FragmentHomeBinding
 import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.domain.repository.SettingsRepository
-import app.surrealar.gnss.accumulator.FixSnapshot
+import app.surrealar.gnss.model.FixSnapshot
 import app.surrealar.gnss.diagnostics.NmeaLogStats
 import app.surrealar.settings.model.ExternalReceiverSettings
 import app.surrealar.gnss.model.Fix

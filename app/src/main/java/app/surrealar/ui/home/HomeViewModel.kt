@@ -17,7 +17,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.surrealar.gnss.accumulator.FixSnapshot
+import app.surrealar.gnss.model.FixSnapshot
 import app.surrealar.gnss.model.TimestampSource
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.diagnostics.DiagnosticData

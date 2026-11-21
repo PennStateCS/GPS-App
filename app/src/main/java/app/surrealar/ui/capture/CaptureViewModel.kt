@@ -130,8 +130,10 @@ class CaptureViewModel @Inject constructor(
         // Also skip the fix replayed from before this session started (the fixes flow replays its
         // last value to new subscribers) — only fixes that arrive during the session are averaged.
         val replayedBeforeStart = fixSwitchboard.fixes.replayCache.lastOrNull()
+        // NMEA replay fixes (Provider.OTHER) are never averaged into a saved point.
         val modeFixes = fixSwitchboard.fixes.filter {
             it !== replayedBeforeStart &&
+                it.provider != app.surrealar.gnss.model.Provider.OTHER &&
                 (it.provider == app.surrealar.gnss.model.Provider.INTERNAL) == internal
         }
         val s = ObservationSession(viewModelScope, modeFixes, policy)

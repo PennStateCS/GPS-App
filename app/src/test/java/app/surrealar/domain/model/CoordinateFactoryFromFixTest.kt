@@ -1,6 +1,6 @@
 package app.surrealar.domain.model
 
-import app.surrealar.gnss.accumulator.FixSnapshot
+import app.surrealar.gnss.model.FixSnapshot
 import app.surrealar.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull

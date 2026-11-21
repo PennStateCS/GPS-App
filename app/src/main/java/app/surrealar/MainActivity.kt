@@ -43,9 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.ClipDrawable
-import app.surrealar.gnss.replay.NmeaReplayController
 import app.surrealar.gnss.replay.AssetNmeaReplaySource
-import app.surrealar.gnss.accumulator.FixAccumulator
 import app.surrealar.gnss.diagnostics.DiagnosticsService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -103,12 +101,14 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var switchboard: FixSwitchboard
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var externalAdapter: ExternalAdapter
-    @Inject lateinit var fixAccumulator: FixAccumulator
+    @Inject lateinit var replayAdapter: app.surrealar.gnss.replay.ReplayAdapter
+    @Inject lateinit var gnssSourceCoordinator: app.surrealar.gnss.source.GnssSourceCoordinator
     @Inject lateinit var diagnosticsService: DiagnosticsService
     @Inject lateinit var sourceSettings: app.surrealar.gnss.source.SourceSettings
 
     // Replay controller for NMEA playback
-    private var replayController: NmeaReplayController? = null
+    /** Provider active before replay started, restored when replay stops (null = not replaying). */
+    private var providerBeforeReplay: app.surrealar.gnss.source.SourceSettings.ProviderChoice? = null
 
     // Token view holder for status bar (ToolbarTokens lives in ui.toolbar, shared with the renderer)
     private lateinit var tokenSource: ToolbarTokens
@@ -412,7 +412,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        replayController?.stop()
+        // Replay is app-scoped now; leaving the app ends it and restores the previous source.
+        providerBeforeReplay?.let { gnssSourceCoordinator.endReplay(it, "activity destroyed") }
+        providerBeforeReplay = null
     }
 
     private fun moveBatteryIconToRight() {
@@ -1092,31 +1094,25 @@ class MainActivity : AppCompatActivity() {
      */
     private fun startNmeaReplay(fileName: String) {
         try {
-            // Stop any existing replay
-            replayController?.stop()
-
-            // Create new replay source
+            // Replay runs as a regular source (ProviderChoice.REPLAY): same NmeaFuser and FixSwitchboard
+            // path as live data, so the map, toolbar and sky view show it. Restarting replay keeps the
+            // provider that was active before the FIRST replay.
             val replaySource = AssetNmeaReplaySource(
                 context = this,
                 assetFileName = fileName,
-                delayBetweenLines = 1000L, // 1 second between NMEA sentences
+                // ~15 sentences per 1 Hz Emlid epoch → roughly real time (was 1 s per sentence).
+                delayBetweenLines = 60L,
                 name = "Replay ($fileName)"
             )
-
-            // Create new controller with replay source
-            replayController = NmeaReplayController(
-                scope = lifecycleScope,
-                source = replaySource,
-                // Lenient registry: replay logs may omit checksums. (The injected live registry
-                // requires them so a truncated TCP line can't publish a fix.)
-                registry = app.surrealar.gnss.nmea.parse.DefaultNmeaRegistry.create(
-                    verifyChecksum = true, requireChecksum = false
-                ),
-                accumulator = fixAccumulator
-            )
-
-            // Start the replay
-            replayController?.start()
+            if (sourceSettings.activeProvider.value == app.surrealar.gnss.source.SourceSettings.ProviderChoice.REPLAY) {
+                // Switch away and back so the adapter restarts with the new file.
+                replayAdapter.stop()
+                replayAdapter.load(replaySource)
+                replayAdapter.start()
+            } else {
+                replayAdapter.load(replaySource)
+                providerBeforeReplay = gnssSourceCoordinator.startReplay("user started replay of $fileName")
+            }
 
             // Update status to show replay is active
             tokenSource.value.text = "Replay"
@@ -1148,8 +1144,8 @@ class MainActivity : AppCompatActivity() {
      */
     private fun stopNmeaReplay() {
         try {
-            replayController?.stop()
-            replayController = null
+            providerBeforeReplay?.let { gnssSourceCoordinator.endReplay(it, "user stopped replay") }
+            providerBeforeReplay = null
 
             // Reset status display
             lifecycleScope.launch {
