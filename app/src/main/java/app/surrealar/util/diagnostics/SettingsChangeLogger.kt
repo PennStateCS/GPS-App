@@ -36,7 +36,10 @@ object SettingsChangeLogger {
                 .map { prefs -> prefs.asMap().mapKeys { it.key.name } }
                 .catch { DiagnosticsLogger.w(DiagTags.SETTINGS, "Settings change log stopped: ${it.message}") }
                 .collect { now ->
-                    previous?.let { before -> changes(before, now).forEach { DiagnosticsLogger.i(DiagTags.SETTINGS, it) } }
+                    previous?.let { before -> changes(before, now).forEach {
+                        // The active CRS / datum / units are COORD events too.
+                        DiagnosticsLogger.i(if (it.startsWith("Setting coord_")) DiagTags.COORD else DiagTags.SETTINGS, it)
+                    } }
                     previous = now
                 }
         }

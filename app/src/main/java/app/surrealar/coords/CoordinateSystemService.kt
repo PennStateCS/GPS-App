@@ -70,7 +70,7 @@ class CoordinateSystemService @Inject constructor(
 
     /** Live fix (always WGS84 on the feed — see [storedDatumEpsg]) → configured system. */
     fun convertFix(fix: Fix, s: CoordinateSystemSettings): ConvertedPosition =
-        converter.convert(
+        track(
             SourcePosition(
                 latDeg = fix.latDeg, lonDeg = fix.lonDeg,
                 ellipsoidalHeightM = fix.altEllipsoidalM, receiverMslM = fix.altMslM,
@@ -85,7 +85,7 @@ class CoordinateSystemService @Inject constructor(
      * (null/4326/4979 = WGS84). The capture time is the transformation epoch.
      */
     fun convertCoordinate(c: Coordinate, s: CoordinateSystemSettings): ConvertedPosition =
-        converter.convert(
+        track(
             SourcePosition(
                 latDeg = c.latitude, lonDeg = c.longitude,
                 ellipsoidalHeightM = c.altitude, receiverMslM = c.altitudeMsl,
@@ -96,13 +96,21 @@ class CoordinateSystemService @Inject constructor(
 
     // ── Formatting in the current settings (one place, so every screen agrees) ──────────────────
 
+    /** Converts and reports failures / zone changes to the COORD log (throttled, no positions). */
+    private fun track(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition =
+        try {
+            converter.convert(src, s).also { CoordDiagnostics.onResult(it) }
+        } catch (e: Exception) {
+            CoordDiagnostics.onFailure(s, e); throw e
+        }
+
     /** Stored point → current system. */
     fun convert(c: Coordinate): ConvertedPosition = convertCoordinate(c, settings)
 
     /** A WGS84 position (lat/lon/ellipsoidal height, observed at [epochMillis]) → current system. */
     fun convertWgs84(latDeg: Double, lonDeg: Double, ellipsoidalHeightM: Double?, epochMillis: Long,
                      receiverMslM: Double? = null): ConvertedPosition =
-        converter.convert(
+        track(
             SourcePosition(latDeg, lonDeg, ellipsoidalHeightM, receiverMslM, isNad83 = false,
                 epochYear = Itrf2014ToNad83.decimalYear(epochMillis)), settings,
         )
