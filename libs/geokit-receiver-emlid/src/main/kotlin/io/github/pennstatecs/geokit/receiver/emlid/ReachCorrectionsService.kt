@@ -59,6 +59,12 @@ internal class ReachCorrectionsService(
     private var lastLoggedSolution: String? = null
     private var lastLoggedStreamKey: String? = null
 
+    // Connect-error throttling: socket.io retries every 2-15 s for as long as the receiver is unreachable,
+    // so only the first error is logged, then one "still failing" line per [ERROR_LOG_INTERVAL_MS].
+    private var connectErrors = 0
+    private var firstErrorAtMs = 0L
+    private var lastErrorLogAtMs = 0L
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     fun connect() {
@@ -81,14 +87,12 @@ internal class ReachCorrectionsService(
             val s = socketFactory(uri, options)
 
             s.on(Socket.EVENT_CONNECT) {
+                val failed = synchronized(lock) { connectErrors.also { connectErrors = 0 } }
                 GnssLog.d(TAG, "socket.io connected to $host")
-                GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host")
+                GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host" +
+                    if (failed > 0) " after $failed failed attempts" else "")
             }
-            s.on(Socket.EVENT_CONNECT_ERROR) { args ->
-                val msg = args.firstOrNull()?.toString() ?: "unknown"
-                GnssLog.w(TAG, "socket.io connect error (will retry): $msg")
-                GnssLog.diagnosticWarn("CORRECTIONS", "socket connect error host=$host (will retry): $msg")
-            }
+            s.on(Socket.EVENT_CONNECT_ERROR) { args -> onConnectError(args.firstOrNull()?.toString() ?: "unknown") }
             s.on("reconnect_failed") {
                 GnssLog.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
                 GnssLog.diagnosticWarn("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
@@ -112,7 +116,31 @@ internal class ReachCorrectionsService(
         }
     }
 
+    /** First error logged at once; while it keeps failing, one summary line per minute. */
+    private fun onConnectError(msg: String) {
+        val now = nowMs()
+        val line: String? = synchronized(lock) {
+            connectErrors++
+            when {
+                connectErrors == 1 -> {
+                    firstErrorAtMs = now; lastErrorLogAtMs = now
+                    "socket connect error host=$host (will retry): $msg"
+                }
+                now - lastErrorLogAtMs >= ERROR_LOG_INTERVAL_MS -> {
+                    lastErrorLogAtMs = now
+                    "socket still failing host=$host: $connectErrors attempts in ${(now - firstErrorAtMs) / 1000}s, last error: $msg"
+                }
+                else -> null
+            }
+        }
+        if (line != null) {
+            GnssLog.w(TAG, line)
+            GnssLog.diagnosticWarn("CORRECTIONS", line)
+        }
+    }
+
     fun disconnect() {
+        synchronized(lock) { connectErrors = 0 }
         socket?.let { s ->
             s.off("broadcast")
             s.disconnect()
@@ -301,6 +329,8 @@ internal class ReachCorrectionsService(
     companion object {
         /** No broadcast for this long → status unknown (the receiver broadcasts about once a second). */
         const val STALE_AFTER_MS: Long = 10_000L
+        /** While connecting keeps failing, at most one log line per this interval. */
+        const val ERROR_LOG_INTERVAL_MS: Long = 60_000L
     }
 }
 
