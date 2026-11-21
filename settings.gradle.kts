@@ -35,3 +35,4 @@ dependencyResolutionManagement {
 rootProject.name = "SurveyingApp"
 include(":app")
 include(":geo-core")
+include(":gnss-core")

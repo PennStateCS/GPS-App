@@ -196,6 +196,7 @@ dependencies {
 
     // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
     implementation(project(":geo-core"))
+    implementation(project(":gnss-core"))
 
     // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)
