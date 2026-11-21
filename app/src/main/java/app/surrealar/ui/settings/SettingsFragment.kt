@@ -141,6 +141,27 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private enum class ConnectionUiStatus { CONNECTING, REACHABLE, STREAMING, STALE, DISCONNECTED }
 
     /** Clears all external-receiver transient state. Call when switching to internal or disconnecting. */
+    /** Nearest TextInputLayout wrapping [field] (TextInputEditText sits inside a FrameLayout in it). */
+    private fun inputLayoutOf(field: View): com.google.android.material.textfield.TextInputLayout? {
+        var p = field.parent
+        while (p != null) {
+            if (p is com.google.android.material.textfield.TextInputLayout) return p
+            p = p.parent
+        }
+        return null
+    }
+
+    private fun showAntennaHeightError(field: View) {
+        val msg = "Enter a height in metres (0 – ${AntennaHeightInput.MAX_M.toInt()}). Previous value kept."
+        val layout = inputLayoutOf(field)
+        if (layout != null) layout.error = msg
+        else android.widget.Toast.makeText(requireContext(), msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    private fun clearAntennaHeightError(field: View) {
+        inputLayoutOf(field)?.error = null
+    }
+
     private fun resetExternalReceiverStatus() {
         receiverHttpReachable = false
         provisionalConnectedUntil = 0L
@@ -1568,8 +1589,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         editAntennaHeight?.apply {
             lifecycleScope.launch {
                 try {
-                    val h = settingsRepo.gnssReceiverSettings.first().antennaHeightM
-                    if (h != 0.0) setText(String.format(java.util.Locale.US, "%.3f", h))
+                    setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().antennaHeightM))
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "antenna height load error", e)
                 }
@@ -1577,9 +1597,16 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val saveAntenna = {
                 lifecycleScope.launch {
                     try {
-                        val meters = (text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
                         val current = settingsRepo.gnssReceiverSettings.first()
-                        settingsRepo.setGnssReceiverSettings(current.copy(antennaHeightM = meters))
+                        val meters = AntennaHeightInput.parseMeters(text)
+                        if (meters == null) {
+                            // Bad input: keep the stored value, say so, and restore the field.
+                            showAntennaHeightError(this@apply)
+                            setText(AntennaHeightInput.format(current.antennaHeightM))
+                        } else {
+                            clearAntennaHeightError(this@apply)
+                            settingsRepo.setGnssReceiverSettings(current.copy(antennaHeightM = meters))
+                        }
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "antenna height save error", e)
                     }
@@ -1593,8 +1620,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         editInternalAntennaHeight?.apply {
             lifecycleScope.launch {
                 try {
-                    val h = settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM
-                    if (h != 0.0) setText(String.format(java.util.Locale.US, "%.3f", h))
+                    setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM))
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "internal antenna height load error", e)
                 }
@@ -1602,9 +1628,15 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val saveInternalAntenna = {
                 lifecycleScope.launch {
                     try {
-                        val meters = (text?.toString()?.trim()?.toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)
                         val current = settingsRepo.gnssReceiverSettings.first()
-                        settingsRepo.setGnssReceiverSettings(current.copy(internalAntennaHeightM = meters))
+                        val meters = AntennaHeightInput.parseMeters(text)
+                        if (meters == null) {
+                            showAntennaHeightError(this@apply)
+                            setText(AntennaHeightInput.format(current.internalAntennaHeightM))
+                        } else {
+                            clearAntennaHeightError(this@apply)
+                            settingsRepo.setGnssReceiverSettings(current.copy(internalAntennaHeightM = meters))
+                        }
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "internal antenna height save error", e)
                     }
