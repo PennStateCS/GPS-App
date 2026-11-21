@@ -249,22 +249,35 @@ class NmeaFuser(
                 gsaCountByTalker.toMap(), gsvCountByTalker.toMap())
         }
 
+    /**
+     * Accepts a ZDA when its time-of-day agrees with the latest GGA/RMC (same epoch within
+     * [ZDA_MATCH_MS], midnight-aware) — GNSS time vs GNSS time. Comparing with the DEVICE clock (the
+     * old −5..10 s window) rejected every ZDA after a tablet clock step, so the last accepted ZDA's
+     * date was reused and fixes after UTC midnight were dated a day behind. With no GGA/RMC yet to
+     * compare against, the ZDA is accepted. See also [freshZda] (expiry).
+     */
     private fun handleZda(zda: ZDA) {
-        val epochMs = zda.epochMillis
-        if (epochMs != null) {
-            val ageSec = (clock() - epochMs) / 1000.0
-            /*
-             * Allow a small future window for receiver clock skew. Reject anything
-             * significantly in the past — it means the ZDA is stale or the receiver
-             * clock has reset.
-             */
-            if (ageSec in -5.0..10.0) {
-                lastZda = zda
-            } else {
-                android.util.Log.w("NmeaFuser", "Stale ZDA ignored: age=${ageSec}s")
-            }
+        if (zda.epochMillis == null) return
+        val ref = lastGga?.timeRaw ?: lastRmc?.timeRaw
+        val zdaTime = NmeaDateTimeUtils.parseNmeaTime(zda.timeRaw)
+        val refTime = NmeaDateTimeUtils.parseNmeaTime(ref)
+        val agrees = zdaTime == null || refTime == null || run {
+            val diff = Math.abs(zdaTime.toNanoOfDay() - refTime.toNanoOfDay()) / 1_000_000L
+            minOf(diff, DAY_MS - diff) <= ZDA_MATCH_MS
+        }
+        if (agrees) {
+            lastZda = zda
+            lastZdaAtMs = clock()
+        } else {
+            android.util.Log.w("NmeaFuser", "ZDA ignored: time ${zda.timeRaw} doesn't match GGA/RMC $ref")
         }
     }
+
+    /** Wall-clock arrival of the last accepted ZDA (only for expiry; never compared with GNSS time). */
+    private var lastZdaAtMs = 0L
+
+    /** The stored ZDA if refreshed within [ZDA_EXPIRY_MS]; otherwise the date falls back to RMC, then device. */
+    private fun freshZda(): ZDA? = lastZda?.takeIf { clock() - lastZdaAtMs <= ZDA_EXPIRY_MS }
 
     private fun handleGsa(gsa: GSA) {
         lastGsa = gsa
@@ -597,8 +610,9 @@ class NmeaFuser(
      */
     private fun computeEpochMs(gga: GGA): Pair<Long, TimestampSource> {
         val ggaTime = NmeaDateTimeUtils.parseNmeaTime(gga.timeRaw)
+        val zda = freshZda()
         if (ggaTime != null) {
-            val zdaDate = lastZda?.let { z ->
+            val zdaDate = zda?.let { z ->
                 if (z.year != null && z.month != null && z.day != null)
                     runCatching { LocalDate.of(z.year, z.month, z.day) }.getOrNull() else null
             }
@@ -611,7 +625,7 @@ class NmeaFuser(
             // Midnight rollover: if the 1 Hz date source's own time was just before midnight while
             // GGA has already wrapped past it, the naive combine lands ~24 h in the past. Detect via
             // the reference ZDA/RMC epoch and advance one day.
-            val refEpoch = lastZda?.epochMillis ?: lastRmc?.epochMillis
+            val refEpoch = zda?.epochMillis ?: lastRmc?.epochMillis
             if (refEpoch != null && epoch < refEpoch - TWELVE_HOURS_MS) {
                 epoch += DAY_MS
             }
@@ -619,7 +633,7 @@ class NmeaFuser(
         }
         // No usable GGA time-of-day → preserve the previous ZDA → RMC → device behavior.
         return when {
-            lastZda?.epochMillis != null -> lastZda!!.epochMillis!! to TimestampSource.NMEA_ZDA
+            zda?.epochMillis != null     -> zda.epochMillis!! to TimestampSource.NMEA_ZDA
             lastRmc?.epochMillis != null -> lastRmc!!.epochMillis!! to TimestampSource.GNSS_PROVIDER
             else                         -> clock() to TimestampSource.DEVICE
         }
@@ -629,7 +643,7 @@ class NmeaFuser(
     fun reset() = synchronized(lock) {
         gsvSignalsByTalker.clear(); ggaSinceLastGsa = false; lastGsaAtMs = 0L
         lastAccuracy = null; lastAccuracyAtMs = 0L
-        lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
+        lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null; lastZdaAtMs = 0L
         pendingGga = null; pendingAtMs = 0L; lastGstAtMs = 0L; lastGstTodMs = null; gstPeriodMs = 1_000L; gstEpochRtk = null
         lastEmittedGgaTimeUtc = null; lastTimestampSource = null
         ggaCount = 0; rmcCount = 0; zdaCount = 0; gstCount = 0; emittedFixCount = 0
@@ -733,6 +747,10 @@ class NmeaFuser(
         const val ENRICHMENT_WINDOW_MS = 2_500L
         /** Longest a GGA is held waiting for its same-time GST before emitting without it. */
         const val GST_HOLD_MS = 300L
+        /** A ZDA is the same epoch as the latest GGA/RMC when their times differ by at most this. */
+        const val ZDA_MATCH_MS = 2_000L
+        /** A stored ZDA not refreshed for this long no longer supplies the date. */
+        const val ZDA_EXPIRY_MS = 10_000L
         /** The stream counts as GST-capable while a GST arrived within this window. */
         const val GST_ACTIVE_MS = 5_000L
         /** Two NMEA times within this are the same epoch (covers centisecond rounding). */

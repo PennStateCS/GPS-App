@@ -130,6 +130,51 @@ class NmeaFuserEpochTest {
         assertEquals("emitted only once", before + 1, out.size)
     }
 
+    private fun zdaFuser(clock: () -> Long, out: MutableList<Fix>) = NmeaFuser(
+        Provider.RS2_EXTERNAL,
+        NmeaRegistry(mapOf("GGA" to GgaParser(), "RMC" to RmcParser(), "ZDA" to ZdaParser()), verifyChecksum = false),
+        onFix = { out.add(it) }, onGsv = {}, clock = clock
+    )
+
+    private fun epochBurst(f: NmeaFuser, t: String, ddmmyy: String, dd: String, mm: String, yyyy: String) {
+        f.accept("\$GNRMC,$t,A,4118.4448800,N,07601.2345600,W,0.01,0.0,$ddmmyy,,,R")
+        f.accept("\$GNGGA,$t,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
+        f.accept("\$GNZDA,$t,$dd,$mm,$yyyy,00,00")
+    }
+
+    @Test
+    fun `ZDA is accepted by GNSS time even when the device clock is an hour off`() {
+        val gnss = java.time.ZonedDateTime.of(2026, 11, 20, 17, 24, 24, 0, java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        var now = gnss + 3_600_000L                      // tablet clock 1 h ahead
+        val out = mutableListOf<Fix>()
+        val f = zdaFuser({ now }, out)
+        epochBurst(f, "172424.00", "201126", "20", "11", "2026")
+        now += 1_000
+        epochBurst(f, "172425.00", "201126", "20", "11", "2026")
+        assertEquals(app.surrealar.gnss.model.TimestampSource.NMEA_ZDA, out.last().timestampSource)
+        assertEquals(gnss + 1_000, out.last().timeUtc.toEpochMilli())
+    }
+
+    @Test
+    fun `after a clock step the date still rolls over at UTC midnight`() {
+        val d0900 = java.time.ZonedDateTime.of(2026, 11, 20, 9, 0, 0, 0, java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        var now = d0900                                  // clock in sync: ZDA accepted on day D
+        val out = mutableListOf<Fix>()
+        val f = zdaFuser({ now }, out)
+        epochBurst(f, "090000.00", "201126", "20", "11", "2026")
+        // Network time steps the tablet clock; 15 h later, just after UTC midnight:
+        now = d0900 + 15 * 3_600_000L + 3_600_000L + 1_000
+        epochBurst(f, "000001.00", "211126", "21", "11", "2026")
+        val day = out.last().timeUtc.atZone(java.time.ZoneOffset.UTC).toLocalDate()
+        assertEquals("fix after midnight must be dated the 21st, not a day behind",
+            java.time.LocalDate.of(2026, 11, 21), day)
+        // And the ZDA from the new day is accepted (matches the GGA's time), so the next epoch uses it.
+        now += 1_000
+        epochBurst(f, "000002.00", "211126", "21", "11", "2026")
+        assertEquals(app.surrealar.gnss.model.TimestampSource.NMEA_ZDA, out.last().timestampSource)
+        assertEquals(java.time.LocalDate.of(2026, 11, 21), out.last().timeUtc.atZone(java.time.ZoneOffset.UTC).toLocalDate())
+    }
+
     @Test
     fun `stream end - flush emits the held fix`() {
         val now = 1_000_000L   // 0 would read as "no GST ever seen"
