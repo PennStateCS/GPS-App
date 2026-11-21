@@ -75,7 +75,7 @@ class CaptureViewModel @Inject constructor(
             sourceSettings.activeProvider.collect { provider ->
                 if (previousProvider != null && previousProvider != provider) {
                     if (session != null) {
-                        DiagnosticsLogger.i("Capture", "Capture canceled/reset due to provider switch $previousProvider -> $provider")
+                        DiagnosticsLogger.i("CAPTURE", "Capture canceled/reset due to provider switch $previousProvider -> $provider")
                         cancel()
                     }
                 }
@@ -113,7 +113,7 @@ class CaptureViewModel @Inject constructor(
         // Cancel any existing session FIRST so a previous ObservationSession can't keep collecting
         // fixes or emitting state into the UI after a new capture begins.
         if (session != null) {
-            DiagnosticsLogger.i("Capture", "Previous capture session canceled before new start")
+            DiagnosticsLogger.i("CAPTURE", "Previous capture session canceled before new start")
         }
         stopSession()
         _state.value = ObservationSession.State.Idle
@@ -121,7 +121,7 @@ class CaptureViewModel @Inject constructor(
         startSnapshot = viewModelScope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { readSnapshot() }
 
         val provider = sourceSettings.activeProvider.value
-        DiagnosticsLogger.i("Capture", "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} " +
+        DiagnosticsLogger.i("CAPTURE", "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} " +
             "activeProvider=$provider minDur=${policy.minDurationSec}s maxDur=${policy.maxDurationSec}s " +
             "minFixes=${policy.minSamples} required=${policy.requiredMinStatus}")
         // Feed the session ONLY the selected mode's provider, so internal GPS fixes can never be
@@ -143,10 +143,10 @@ class CaptureViewModel @Inject constructor(
                 _state.value = st
                 if (st is ObservationSession.State.Complete) {
                     if (st.requirementsMet) {
-                        DiagnosticsLogger.i("Capture",
+                        DiagnosticsLogger.i("CAPTURE",
                             "Capture ready (requirements met) acceptedFixes=${st.result.samples}")
                     } else {
-                        DiagnosticsLogger.w("Capture",
+                        DiagnosticsLogger.w("CAPTURE",
                             "Capture timed out before requirements met acceptedFixes=${st.result.samples}/${policy.minSamples}")
                     }
                 }
@@ -156,7 +156,7 @@ class CaptureViewModel @Inject constructor(
     }
 
     fun cancel() {
-        if (session != null) DiagnosticsLogger.i("Capture", "Capture canceled")
+        if (session != null) DiagnosticsLogger.i("CAPTURE", "Capture canceled")
         stopSession()
         _state.value = ObservationSession.State.Idle
     }
@@ -183,7 +183,7 @@ class CaptureViewModel @Inject constructor(
         // Defense-in-depth: never persist a timed-out, under-sampled capture. The UI disables
         // Save in that case; this guards the data path too.
         if (!completed.requirementsMet) {
-            DiagnosticsLogger.w("Capture", "Save blocked: requirements not met (timed out)")
+            DiagnosticsLogger.w("CAPTURE", "Save blocked: requirements not met (timed out)")
             return
         }
         val finished = completed.result
@@ -238,7 +238,7 @@ class CaptureViewModel @Inject constructor(
             antennaHeightM = antennaHeightM,
         )
 
-        DiagnosticsLogger.i("Capture", "Coordinate saved name=\"$name\" source=${provider.name} " +
+        DiagnosticsLogger.i("CAPTURE", "Coordinate saved name=\"$name\" source=${provider.name} " +
             "samples=${finished.samples} hAcc=${finished.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${finished.rtkStatus}")
     }
 }

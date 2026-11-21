@@ -141,14 +141,14 @@ class TcpNmeaSource(
 
                 if (host.isNullOrBlank() || port == null) {
                     Log.w(TAG, "No TCP host/port configured")
-                    DiagnosticsLogger.w("Receiver", "TCP NMEA: no host/port configured")
+                    DiagnosticsLogger.w("RECEIVER", "TCP NMEA: no host/port configured")
                     return@launch
                 }
 
                 started = true
                 firstDataLogged = false
                 Log.d(TAG, "Connecting to $host:$port")
-                DiagnosticsLogger.i("Receiver", "Connecting to $host:$port")
+                DiagnosticsLogger.i("RECEIVER", "Connecting to $host:$port")
                 connectAndRead(host, port)
 
             } catch (ce: CancellationException) {
@@ -157,7 +157,7 @@ class TcpNmeaSource(
                 // stop() closes the socket, which surfaces here as "Socket closed" — not an error.
                 if (!isActive) return@launch
                 Log.e(TAG, "Connection error: ${e.message}")
-                DiagnosticsLogger.e("Receiver", "TCP connection error: ${e.message}")
+                DiagnosticsLogger.e("RECEIVER", "TCP connection error: ${e.message}")
                 started = false
                 // Let ExternalAdapter's reconnect loop handle the retry
             }
@@ -197,7 +197,7 @@ class TcpNmeaSource(
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
             Log.d(TAG, "Connected to $host:$port")
-            DiagnosticsLogger.i("Receiver", "TCP socket connected to $host:$port")
+            DiagnosticsLogger.i("RECEIVER", "TCP socket connected to $host:$port")
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8), 1024)
 
             // Enforce the fuser's GST hold cap in time (readLine() blocks, so the cap can't rely on the
@@ -217,7 +217,7 @@ class TcpNmeaSource(
                     silentTimeouts = 0
                     if (line == null) {
                         Log.w(TAG, "Connection closed by remote")
-                        DiagnosticsLogger.w("Receiver", "TCP connection closed by remote ($host:$port)")
+                        DiagnosticsLogger.w("RECEIVER", "TCP connection closed by remote ($host:$port)")
                         break
                     }
                     if (myGeneration != generation) break   // stopped while reading this line
@@ -225,7 +225,7 @@ class TcpNmeaSource(
                     if (clean.isNotEmpty() && clean[0] == '$') {
                         if (!firstDataLogged) {
                             firstDataLogged = true
-                            DiagnosticsLogger.i("Receiver", "First NMEA sentence received from $host:$port")
+                            DiagnosticsLogger.i("RECEIVER", "First NMEA sentence received from $host:$port")
                         }
                         diagnostics?.recordLine(clean)
                         _rawNmea.tryEmit(Unit)
@@ -237,7 +237,7 @@ class TcpNmeaSource(
                     if (++silentTimeouts >= DEAD_LINK_TIMEOUTS) {
                         val silentMs = silentTimeouts.toLong() * readTimeoutMs
                         Log.w(TAG, "No data for ${silentMs}ms — treating the link as dead")
-                        DiagnosticsLogger.w("Receiver", "TCP: no data for ${silentMs}ms from $host:$port — link dead, reconnecting")
+                        DiagnosticsLogger.w("RECEIVER", "TCP: no data for ${silentMs}ms from $host:$port — link dead, reconnecting")
                         break
                     }
                 }
@@ -258,7 +258,7 @@ class TcpNmeaSource(
             if (activeSocket === socket) activeSocket = null
             readerGeneration.remove()
             Log.d(TAG, "Disconnected from $host:$port")
-            DiagnosticsLogger.i("Receiver", "TCP disconnected from $host:$port")
+            DiagnosticsLogger.i("RECEIVER", "TCP disconnected from $host:$port")
         }
     }
 }

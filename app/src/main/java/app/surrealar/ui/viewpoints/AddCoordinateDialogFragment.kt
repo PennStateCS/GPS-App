@@ -257,7 +257,7 @@ class AddCoordinateDialogFragment(
             isExternalMode = sourceSetting != LocationSourceType.INTERNAL
             modeResolved = true
 
-            DiagnosticsLogger.i("Capture",
+            DiagnosticsLogger.i("CAPTURE",
                 "Capture opened selectedSource=$sourceSetting activeProvider=$activeProvider " +
                     "mode=${if (isExternalMode) "EXTERNAL" else "INTERNAL"}")
 
@@ -265,7 +265,7 @@ class AddCoordinateDialogFragment(
             sectionExternal?.visibility = View.VISIBLE
             if (isExternalMode) {
                 if (activeProvider != SourceSettings.ProviderChoice.EXTERNAL_TCP) {
-                    DiagnosticsLogger.i("Capture", "External capture waiting for external data (activeProvider=$activeProvider)")
+                    DiagnosticsLogger.i("CAPTURE", "External capture waiting for external data (activeProvider=$activeProvider)")
                     showExternalWaiting()
                 }
                 startExternalAveraging()
@@ -322,7 +322,7 @@ class AddCoordinateDialogFragment(
         val now = System.currentTimeMillis()
         if (now - lastCaptureIgnoreLogMs >= 10_000L) {
             lastCaptureIgnoreLogMs = now
-            DiagnosticsLogger.w("Capture", "Ignored $reason fix in live preview")
+            DiagnosticsLogger.w("CAPTURE", "Ignored $reason fix in live preview")
         }
     }
 
@@ -656,7 +656,7 @@ class AddCoordinateDialogFragment(
             // before the minimums were met). The Save button is already disabled in that case;
             // this is defense-in-depth so an incomplete capture can never be silently saved.
             if (!completedState.requirementsMet) {
-                DiagnosticsLogger.w("Capture", "Save blocked: requirements not met (timed out)")
+                DiagnosticsLogger.w("CAPTURE", "Save blocked: requirements not met (timed out)")
                 return
             }
             viewLifecycleOwner.lifecycleScope.launch {
@@ -700,7 +700,7 @@ class AddCoordinateDialogFragment(
             // Model-embedded location: the model's own coordinates, not an antenna measurement, so
             // no antenna height is subtracted.
             val altitude = altitude ?: run {
-                DiagnosticsLogger.w("Capture", "Save blocked: model location has no altitude")
+                DiagnosticsLogger.w("CAPTURE", "Save blocked: model location has no altitude")
                 return
             }
             val utm = try { Utm.forward(latitude, longitude) } catch (_: Exception) { null }
@@ -764,7 +764,7 @@ class AddCoordinateDialogFragment(
         val validation = validateForSave(coordinate)
         if (!validation.isValid) {
             val msg = validation.errors.firstOrNull() ?: "Invalid coordinate"
-            DiagnosticsLogger.w("Capture", "Save blocked: ${validation.errors.joinToString()}")
+            DiagnosticsLogger.w("CAPTURE", "Save blocked: ${validation.errors.joinToString()}")
             if (isAdded) Toast.makeText(requireContext(), "Can't save: $msg", Toast.LENGTH_LONG).show()
             btnSave?.isEnabled = false
             return false

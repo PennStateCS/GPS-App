@@ -141,7 +141,7 @@ class GnssSourceCoordinator @Inject constructor(
      * to the external adapter the switchboard binds.
      */
     fun activateExternalTcpProvider(host: String, port: Int, reason: String) {
-        DiagnosticsLogger.i("Receiver", "Activate external provider for $host:$port ($reason)")
+        DiagnosticsLogger.i("RECEIVER", "Activate external provider for $host:$port ($reason)")
         val target = host to port
         if (sourceSettings.activeProvider.value == ProviderChoice.EXTERNAL_TCP) {
             // Already External: setting the same provider is a no-op for the switchboard, so the

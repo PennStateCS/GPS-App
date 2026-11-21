@@ -131,7 +131,7 @@ class ExternalAdapter(
      */
     override fun reconnectNow(reason: String) = synchronized(lifecycleLock) {
         if (reconnectJob == null) return@synchronized
-        DiagnosticsLogger.i("Receiver", "Reconnecting external receiver now ($reason)")
+        DiagnosticsLogger.i("RECEIVER", "Reconnecting external receiver now ($reason)")
         stopLocked()
         startLocked()
     }
@@ -140,7 +140,7 @@ class ExternalAdapter(
 
     private fun stopLocked() {
         Log.d(TAG, "stop()")
-        DiagnosticsLogger.i("Receiver", "External adapter stopped")
+        DiagnosticsLogger.i("RECEIVER", "External adapter stopped")
         reconnectJob?.cancel(); reconnectJob = null
         stopInternalJobs()
         runCatching { nmea.stop() }
@@ -160,7 +160,7 @@ class ExternalAdapter(
                 attempts++
                 _attemptCount.value = attempts
                 _connectionState.value = if (attempts == 1) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
-                if (attempts > 1) DiagnosticsLogger.w("Receiver", "Reconnecting external receiver attempt #$attempts")
+                if (attempts > 1) DiagnosticsLogger.w("RECEIVER", "Reconnecting external receiver attempt #$attempts")
 
                 // Under the lifecycle lock, and only if this loop is still the live one (a stop()
                 // that won the lock has already cancelled us).
@@ -174,7 +174,7 @@ class ExternalAdapter(
 
                 waitForFirstDataOrTimeout()
                 _connectionState.value = ConnectionState.CONNECTED
-                DiagnosticsLogger.i("Receiver", "External receiver connected (attempt #$attempts)")
+                DiagnosticsLogger.i("RECEIVER", "External receiver connected (attempt #$attempts)")
                 app.surrealar.gnss.debug.GnssDebugLog.event("external") {
                     "CONNECTED after $attempts attempt(s); fuser stats ${nmea.nmeaTimingStats()}"
                 }
@@ -186,7 +186,7 @@ class ExternalAdapter(
                 throw ce
             } catch (e: Exception) {
                 Log.w(TAG, "connection attempt #$attempts failed: ${e.message}", e)
-                DiagnosticsLogger.w("Receiver", "Connection attempt #$attempts failed: ${e.message}")
+                DiagnosticsLogger.w("RECEIVER", "Connection attempt #$attempts failed: ${e.message}")
                 _connectionState.value = ConnectionState.ERROR
                 synchronized(lifecycleLock) { stopInternalJobs() }
                 if (!coroutineContext.isActive) break
@@ -232,7 +232,7 @@ class ExternalAdapter(
                         val profile = currentProfile()
                         fix.copy(accuracyClass = profile.accuracyClass, receiverLabel = profile.label)
                     }.getOrElse {
-                        DiagnosticsLogger.e("Receiver", "fix stamping failed; publishing unstamped fix", it); fix
+                        DiagnosticsLogger.e("RECEIVER", "fix stamping failed; publishing unstamped fix", it); fix
                     }
                     _fixes.emit(stamped)
                 }
@@ -247,7 +247,7 @@ class ExternalAdapter(
                 .collect { gsv ->
                     runCatching { inv.consume(gsv) }
                         .onSuccess { _sky.value = it }
-                        .onFailure { DiagnosticsLogger.e("Receiver", "GSV update failed; message skipped", it) }
+                        .onFailure { DiagnosticsLogger.e("RECEIVER", "GSV update failed; message skipped", it) }
                 }
         }
 
@@ -267,12 +267,12 @@ class ExternalAdapter(
             // Connect refused / host unreachable / no host configured: retry on the backoff
             // schedule now rather than sitting out the full connect timeout.
             if (!nmea.isConnectionActive()) {
-                DiagnosticsLogger.w("Receiver", "External connection ended before any NMEA data — will retry")
+                DiagnosticsLogger.w("RECEIVER", "External connection ended before any NMEA data — will retry")
                 throw IllegalStateException("Connection ended before data")
             }
             delay(250)
         }
-        DiagnosticsLogger.w("Receiver", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry")
+        DiagnosticsLogger.w("RECEIVER", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry")
         throw IllegalStateException("Timeout: no data within ${CONNECT_TIMEOUT_MS} ms")
     }
 
@@ -282,14 +282,14 @@ class ExternalAdapter(
             // Socket closed by the receiver (reboot, Wi-Fi drop, another client took the slot):
             // reconnect immediately instead of waiting for the no-data timeout.
             if (!nmea.isConnectionActive()) {
-                DiagnosticsLogger.w("Receiver", "External connection ended — triggering reconnect")
+                DiagnosticsLogger.w("RECEIVER", "External connection ended — triggering reconnect")
                 throw IllegalStateException("Connection ended")
             }
             val last = lastDataTimeMs
             if (last == 0L) continue
             val staleFor = monotonicNowMs() - last
             if (staleFor > HEALTH_DATA_TIMEOUT_MS) {
-                DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
+                DiagnosticsLogger.w("RECEIVER", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
                 throw IllegalStateException("No data for ${HEALTH_DATA_TIMEOUT_MS} ms")
             }
         }
