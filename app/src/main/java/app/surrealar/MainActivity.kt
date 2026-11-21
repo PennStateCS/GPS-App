@@ -110,6 +110,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tokenFix: ToolbarTokens
     private lateinit var tokenSats: ToolbarTokens
     private lateinit var tokenAcc: ToolbarTokens
+    private lateinit var tokenAge: ToolbarTokens
     private lateinit var tokenCoord: ToolbarTokens
     private lateinit var tokenAlt: ToolbarTokens
     private lateinit var tokenBatt: ToolbarTokens
@@ -191,13 +192,14 @@ class MainActivity : AppCompatActivity() {
         tokenFix    = findToken(R.id.token_fix)
         tokenSats   = findToken(R.id.token_sats)
         tokenAcc    = findToken(R.id.token_acc)
+        tokenAge    = findToken(R.id.token_age)
         tokenCoord  = findToken(R.id.token_coord)
         tokenAlt    = findToken(R.id.token_alt)
         tokenBatt   = findToken(R.id.token_batt)
 
         // View-only toolbar renderer. Color resolution and battery-polling lifecycle stay here.
         toolbarRenderer = GnssToolbarRenderer(
-            source = tokenSource, fix = tokenFix, sats = tokenSats, acc = tokenAcc,
+            source = tokenSource, fix = tokenFix, sats = tokenSats, acc = tokenAcc, age = tokenAge,
             coord = tokenCoord, alt = tokenAlt, batt = tokenBatt,
             colorFor = ::levelColor,
             onBatteryVisibilityChanged = ::updateBatteryVisibility
@@ -208,6 +210,8 @@ class MainActivity : AppCompatActivity() {
         tokenFix.label.text = ""   // dynamic: "GPS" / "RTK Float" / etc.
         tokenSats.label.setText(R.string.status_token_sats)
         tokenAcc.label.setText(R.string.status_token_hacc)
+        tokenAge.label.setText(R.string.status_token_age)
+        tokenAge.root.isVisible = false
         tokenCoord.label.setText(R.string.status_token_ll)
         tokenAlt.label.setText(R.string.status_token_alt)
 

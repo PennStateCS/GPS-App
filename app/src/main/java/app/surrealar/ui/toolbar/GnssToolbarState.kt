@@ -20,7 +20,7 @@ data class GnssToolbarState(
     val accuracyLevel: GnssStatusLevel,
     val latLonText: String,            // "lat, lon" or "--"
     val altitudeText: String,          // "x.xx m" or "--" (always shown)
-    val correctionText: String?,       // reserved; no dedicated toolbar token today
+    val correctionAgeText: String?,    // "1.2s" / "13s" correction age (external only), or null to hide
     val batteryVisible: Boolean,       // external → poll/show; internal → hide
     val batteryText: String?,          // battery value is rendered by the separate polling pipeline
     val statusLevel: GnssStatusLevel,  // overall level (mirrors fixLevel today)

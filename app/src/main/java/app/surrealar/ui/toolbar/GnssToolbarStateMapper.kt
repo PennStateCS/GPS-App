@@ -104,7 +104,7 @@ object GnssToolbarStateMapper {
             accuracyLevel = GnssStatusLevel.NONE,
             latLonText = "--",
             altitudeText = "--",
-            correctionText = null,
+            correctionAgeText = null,
             batteryVisible = !isInternal,
             batteryText = null,
             statusLevel = GnssStatusLevel.NONE,
@@ -269,6 +269,14 @@ object GnssToolbarStateMapper {
         }
 
         val isReplay = fix.provider == Provider.REPLAY
+
+        // --- CORRECTION AGE (external receivers only) ---
+        // TODO(colour update): grade the age — e.g. good < 2 s, warn < 5 s, bad at the capture gate
+        // (AveragingPolicy.maxDiffAgeSec). Plain value colour for now.
+        val correctionAgeText = fix.diffAgeS
+            ?.takeIf { !isInternal && !isReplay && it.isFinite() && it >= 0.0 }
+            ?.let { GnssStatusFormatter.formatAgeSeconds(it) }
+
         return ToolbarMapResult.Render(
             GnssToolbarState(
                 sourceText = if (isReplay) "Replay" else GnssStatusFormatter.formatSource(isInternal, externalLabel),
@@ -279,7 +287,7 @@ object GnssToolbarStateMapper {
                 accuracyLevel = accuracyLevel,
                 latLonText = latLonText,
                 altitudeText = altitudeText,
-                correctionText = null,
+                correctionAgeText = correctionAgeText,
                 batteryVisible = !isInternal && !isReplay,   // no receiver battery for a log file
                 batteryText = null,
                 statusLevel = fixLevel,

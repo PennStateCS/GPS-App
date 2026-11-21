@@ -36,6 +36,7 @@ class GnssToolbarRenderer(
     private val fix: ToolbarTokens,
     private val sats: ToolbarTokens,
     private val acc: ToolbarTokens,
+    private val age: ToolbarTokens,
     private val coord: ToolbarTokens,
     private val alt: ToolbarTokens,
     private val batt: ToolbarTokens,
@@ -73,9 +74,15 @@ class GnssToolbarRenderer(
             acc.root.isVisible = false
         }
 
-        // Separator between SATS and ACC: visible only when both are shown
-        sats.separator?.isVisible = satsVisible && accVisible
-        acc.separator?.isVisible = false
+        // Correction age (external only)
+        val ageVisible = state.correctionAgeText != null
+        if (ageVisible) age.value.text = state.correctionAgeText
+        age.root.isVisible = ageVisible
+
+        // Separators between visible left-group tokens (SATS | ACC | AGE)
+        sats.separator?.isVisible = satsVisible && (accVisible || ageVisible)
+        acc.separator?.isVisible = accVisible && ageVisible
+        age.separator?.isVisible = false
 
         // Battery
         batt.icon.contentDescription = if (state.isExternal) "receiver battery" else "device battery"
