@@ -528,11 +528,8 @@ class ArFilamentRenderer {
                     // correct for the actual rendered size (fixes the arModelScale inconsistency
                     // that occurred when the caller applied scale to worldMatrix basis columns).
                     val effScale = ns * placement.scale * pose.coordScale
-                    val cm = FloatArray(16)   // zero-initialised
-                    cm[0]  = -effScale;  cm[5]  = effScale;  cm[10] = -effScale;  cm[15] = 1.0f
-                    cm[12] = effScale * ap.x
-                    cm[13] = -effScale * ap.y
-                    cm[14] = effScale * ap.z
+                    // Same matrix as before, now shared with the GLB-orientation tests.
+                    val cm = ModelCorrectionMatrix.base(effScale, ap.x, ap.y, ap.z)
 
                     // Fine nudge applied on top (T(nudge) · R · cm). For CUSTOM the offset is already in the
                     // anchor point above, so only the vertical nudge remains; other presets keep the nudge.

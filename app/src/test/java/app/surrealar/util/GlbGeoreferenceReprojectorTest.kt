@@ -191,4 +191,27 @@ class GlbGeoreferenceReprojectorTest {
         assertEquals(2 * d * mLat, northSouth, 0.002)   // sphere was +0.52 m
         assertEquals(2 * d * mLon, eastWest, 0.002)     // sphere was −0.23 m
     }
+
+    @Test fun `after the renderer's correction, north is world north and east is world east`() {
+        val v = reprojectedCompass()
+        val cm = app.surrealar.ui.openinar.ModelCorrectionMatrix.base(1f, 0f, 0f, 0f)
+        val north = app.surrealar.ui.openinar.ModelCorrectionMatrix.transformPoint(cm, v[0][0], v[0][1], v[0][2])
+        val east = app.surrealar.ui.openinar.ModelCorrectionMatrix.transformPoint(cm, v[2][0], v[2][1], v[2][2])
+        // ARCore Earth anchors are east-up-south: north = −Z, east = +X.
+        assertTrue("north vertex must land north (z < 0), was ${north.toList()}", north[2] < -100f)
+        assertEquals(0f, north[0], 0.01f)
+        assertTrue("east vertex must land east (x > 0), was ${east.toList()}", east[0] > 80f)
+        assertEquals(0f, east[2], 0.01f)
+        // Handedness preserved (no mirror): east × north = up (+Y) in a right-handed EUS frame.
+        val crossY = east[2] * north[0] - east[0] * north[2]
+        assertTrue("east × north must point up", crossY > 0f)
+    }
+
+    @Test fun `reprojected file carries the convention marker`() {
+        val file = GlbTestFixtures.tempGlb(GlbTestFixtures.glbGeoreferenced(compassVertices()))
+        GlbGeoreferenceReprojector.reprojectIfGeoreferenced(file)
+        val root = org.json.JSONObject(GlbTestFixtures.parse(file.readBytes()).json!!)
+        assertEquals(GlbGeoreferenceReprojector.REPROJECTION_MARKER_VALUE,
+            root.getJSONObject("asset").getJSONObject("extras").getString(GlbGeoreferenceReprojector.REPROJECTION_MARKER_KEY))
+    }
 }

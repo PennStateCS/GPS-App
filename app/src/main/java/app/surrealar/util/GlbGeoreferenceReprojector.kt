@@ -40,6 +40,10 @@ object GlbGeoreferenceReprojector {
 
     private const val MAX_FILE_BYTES = 128 * 1024 * 1024
 
+    /** asset.extras key/value written into reprojected GLBs (WGS84 ENU, north = model +Z). */
+    const val REPROJECTION_MARKER_KEY = "surrealarReprojection"
+    const val REPROJECTION_MARKER_VALUE = "wgs84-enu-north+z-v2"
+
     fun reprojectIfGeoreferenced(file: File): EmbeddedModelLocation? {
         if (!file.exists() || !file.canRead()) return null
         if (!file.name.lowercase().endsWith(".glb")) return null
@@ -159,10 +163,14 @@ object GlbGeoreferenceReprojector {
                 val z = buf.getFloat(off + 8).toDouble()
 
                 // Reproject degrees → local ENU metres about the origin (lat = −Z, lon = X, h = Y).
+                // Written in the renderer's model convention (glTF +Z = north): the AR renderer turns
+                // every model 180° about Y, which maps model +Z → world −Z (north) and model −X →
+                // world +X (east). Writing east→+X / north→−Z here made georeferenced models render
+                // turned 180°. Both horizontal axes flip (a rotation, not a mirror).
                 val p = enu.toEnu(-z, x, y)
-                val nx = p[0].toFloat()          // east  → +X
+                val nx = (-p[0]).toFloat()       // east  → −X
                 val ny = p[2].toFloat()          // up    → +Y
-                val nz = (-p[1]).toFloat()       // north → −Z
+                val nz = p[1].toFloat()          // north → +Z
 
                 buf.putFloat(off, nx)
                 buf.putFloat(off + 4, ny)
@@ -177,6 +185,12 @@ object GlbGeoreferenceReprojector {
             acc.put("min", org.json.JSONArray(listOf(nMinX, nMinY, nMinZ)))
             acc.put("max", org.json.JSONArray(listOf(nMaxX, nMaxY, nMaxZ)))
         }
+
+        // Mark the file so a later version can tell which convention it was rewritten with. Files
+        // reprojected before this marker existed used east→+X / north→−Z (render turned 180°).
+        val asset = root.optJSONObject("asset") ?: JSONObject().also { root.put("asset", it) }
+        val extras = asset.optJSONObject("extras") ?: JSONObject().also { asset.put("extras", it) }
+        extras.put(REPROJECTION_MARKER_KEY, REPROJECTION_MARKER_VALUE)
 
         // Re-serialise: JSON length changes (min/max edited), so rebuild the container.
         val newJson = root.toString().toByteArray(Charsets.UTF_8)
