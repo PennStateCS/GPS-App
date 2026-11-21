@@ -8,16 +8,33 @@ import java.util.zip.ZipOutputStream
 /** Builds the diagnostic ZIP from [ReportSources]: flush the logs, then write every entry. */
 object ReportAssembler {
 
+    /** Above this many bytes of logs, only the last 24 h of each log file goes in (keeps the ZIP emailable). */
+    const val MAX_LOG_BYTES = 20L * 1024 * 1024
+
+    /** Keeps lines from the last 24 h; stack-trace lines follow the line they belong to. */
+    fun last24hFilter(nowMs: Long): (String) -> Boolean {
+        var keep = false
+        return { line ->
+            val p = app.surrealar.util.diagnostics.LogLineFormat.parse(line)
+            if (p != null) keep = nowMs - p.epochMs <= LogIndex.DAY_MS
+            keep
+        }
+    }
+
     suspend fun write(
         zipFile: File,
         src: ReportSources,
         flush: () -> Unit = { DiagnosticsLogger.flush() },
+        maxLogBytes: Long = MAX_LOG_BYTES,
     ): List<Pair<String, Long>> {
         runCatching(flush)
+        val logs = runCatching { src.logFiles() }.getOrDefault(emptyList())
+        val errors = runCatching { src.errorFiles() }.getOrDefault(emptyList())
+        val truncated = (logs + errors).sumOf { it.length() } > maxLogBytes
         return ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
             val z = ZipBuilder(zos)
-            val idx = runCatching { LogIndex.build(src.logFiles() + src.errorFiles(), src.nowMs) }.getOrElse { LogIndex(src.nowMs) }
-            z.textSafe("README.txt") { ReadmeCollector.render(src.reportId, logsTruncatedTo24h = false) }
+            val idx = runCatching { LogIndex.build(logs + errors, src.nowMs) }.getOrElse { LogIndex(src.nowMs) }
+            z.textSafe("README.txt") { ReadmeCollector.render(src.reportId, logsTruncatedTo24h = truncated) }
             // ── Compact summaries (current state at export time) ──
             z.textSafe("diagnostic-summary.txt") {
                 val first = runCatching { FirstLookCollector.render(src.reportId, idx, src.liveState()) }
@@ -42,11 +59,11 @@ object ReportAssembler {
             z.textSafe("map-diagnostics.txt") { src.mapDiagnostics() }
             z.textSafe("nmea-stream-diagnostics.txt") { src.nmeaStream() }
             // ── Rolling logs (event history + crashes) ──
-            src.logFiles().forEach { z.file(it.name, it) }
-            src.errorFiles().forEach { z.file(it.name, it) }
+            logs.forEach { z.file(it.name, it, if (truncated) last24hFilter(src.nowMs) else { _ -> true }) }
+            errors.forEach { z.file(it.name, it, if (truncated) last24hFilter(src.nowMs) else { _ -> true }) }
             // Last: lists everything above.
             val listed = z.entries.toList()
-            z.textSafe("manifest.txt") { ManifestCollector.render(listed, src.reportId, src.nowMs, logsTruncatedTo24h = false) }
+            z.textSafe("manifest.txt") { ManifestCollector.render(listed, src.reportId, src.nowMs, logsTruncatedTo24h = truncated) }
             z.entries
         }
     }

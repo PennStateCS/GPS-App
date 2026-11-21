@@ -31,6 +31,25 @@ class ReportAssemblerTest {
         assertEquals(expected, written.map { it.first })
     }
 
+    private fun entry(zip: File, name: String) = ZipFile(zip).use { z -> z.getInputStream(z.getEntry(name)).reader().readText() }
+
+    @Test fun `over the size limit only the last 24 h of logs go in, and README and manifest say so`() = runTest {
+        val old = "2026-11-19T10:00:00.000-05:00 W GNSS [main] two days old\n\tcontinuation of the old line\n"
+        val src = FakeReportSources(tmp.newFolder("logs"), eventLog = old + FakeReportSources.DEFAULT_EVENT_LOG)
+        val small = File(tmp.root, "small.zip")
+        ReportAssembler.write(small, src, flush = {}, maxLogBytes = 10)
+        val log = entry(small, "app-log-current.txt")
+        assertEquals(false, log.contains("two days old") || log.contains("continuation of the old line"))
+        assertEquals(true, log.contains("Capture saved name=\"CP-1\""))
+        assertEquals(true, entry(small, "README.txt").contains("only the last 24 hours"))
+        assertEquals(true, entry(small, "manifest.txt").contains("truncated to the last 24 hours"))
+
+        val full = File(tmp.root, "full.zip")
+        ReportAssembler.write(full, src, flush = {})
+        assertEquals(true, entry(full, "app-log-current.txt").contains("two days old"))
+        assertEquals(false, entry(full, "manifest.txt").contains("truncated"))
+    }
+
     @Test fun `a failing section is replaced by its error, the rest is still written`() = runTest {
         val zip = File(tmp.root, "r.zip")
         val src = object : FakeReportSources(tmp.newFolder("logs")) {
