@@ -2,6 +2,7 @@ package app.surrealar.coords
 
 import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
 import io.github.pennstatecs.geokit.geoid.Geoid18Grid
+import kotlinx.coroutines.launch
 
 import android.content.Context
 import app.surrealar.domain.model.Coordinate
@@ -36,10 +37,24 @@ class CoordinateSystemService @Inject constructor(
     val settings: CoordinateSystemSettings get() = settingsFlow.value
     val unit: app.surrealar.settings.model.LinearUnit get() = settings.unit
 
-    private val geoid: Geoid18Grid? = runCatching {
-        context.assets.open(Geoid18Grid.ASSET_PATH).use { Geoid18Grid(it.readBytes()) }
-    }.onFailure { DiagnosticsLogger.e("Coords", "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
-        .getOrNull()
+    /**
+     * The GEOID18 grid (5.2 MB), read on Dispatchers.IO in the background so cold start never blocks the
+     * main thread on it. Null until loaded (or if loading failed): heights that need the geoid read as
+     * unavailable for that moment, exactly as when the grid can't be loaded. Never waited on.
+     */
+    @Volatile private var geoid: Geoid18Grid? = null
+
+    /** True once the GEOID18 grid is available. */
+    val geoidLoaded: Boolean get() = geoid != null
+
+    init {
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            geoid = runCatching {
+                context.assets.open(Geoid18Grid.ASSET_PATH).use { Geoid18Grid(it.readBytes()) }
+            }.onFailure { DiagnosticsLogger.e("Coords", "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
+                .getOrNull()
+        }
+    }
 
     private val converter = CoordinateConverter { lat, lon -> geoid?.undulation(lat, lon) }
 
