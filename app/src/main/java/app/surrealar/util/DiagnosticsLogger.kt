@@ -5,6 +5,7 @@ import android.util.Log
 import app.surrealar.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ExecutorService
@@ -147,6 +148,52 @@ object DiagnosticsLogger {
         Log.e(tag, message, throwable)
         writeAsync('E', tag, message, throwable)
         writeErrorAsync('E', tag, message, throwable)
+    }
+
+    // ── throttled helpers ─────────────────────────────────────────────────────
+
+    private val NO_VALUE = Any()
+    private val lastValues = ConcurrentHashMap<String, Any>()
+    private val lastWrites = ConcurrentHashMap<String, Long>()
+
+    /** Monotonic clock for [every]; swapped in tests. */
+    @Volatile internal var nowMs: () -> Long = { System.nanoTime() / 1_000_000L }
+
+    /**
+     * Writes [message] only when [value] for [key] differs from the last value logged for that key
+     * (the first call always writes). The message lambda runs only when the line is written, so
+     * callers on hot paths pay one map lookup. Returns true if it wrote.
+     */
+    fun logOnChange(tag: String, key: String, value: Any?, level: Char = 'I', message: () -> String): Boolean {
+        val v = value ?: NO_VALUE
+        val previous = lastValues.put(key, v)
+        if (previous == v) return false
+        write(level, tag, message())
+        return true
+    }
+
+    /** Writes [message] at most once per [intervalMs] for [key]. Returns true if it wrote. */
+    fun every(tag: String, key: String, intervalMs: Long, level: Char = 'I', message: () -> String): Boolean {
+        val now = nowMs()
+        var due = false
+        lastWrites.compute(key) { _, last ->
+            if (last == null || now - last >= intervalMs) { due = true; now } else last
+        }
+        if (due) write(level, tag, message())
+        return due
+    }
+
+    /** Forgets [logOnChange] values and [every] times (tests, and a new receiver session). */
+    fun resetThrottles(keyPrefix: String = "") {
+        lastValues.keys.removeAll { it.startsWith(keyPrefix) }
+        lastWrites.keys.removeAll { it.startsWith(keyPrefix) }
+    }
+
+    private fun write(level: Char, tag: String, message: String) = when (level) {
+        'E' -> e(tag, message)
+        'W' -> w(tag, message)
+        'D' -> d(tag, message)
+        else -> i(tag, message)
     }
 
     /** Debug-level: written to file only in debug builds; always written to Logcat. */

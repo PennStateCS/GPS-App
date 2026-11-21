@@ -1,6 +1,7 @@
 package app.surrealar.util
 
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -42,6 +43,33 @@ class DiagnosticsLoggerTest {
         val p = app.surrealar.util.diagnostics.LogLineFormat.parse(File(dir, "app-log-current.txt").readLines().last())!!
         assertTrue(p.level == 'W' && p.tag == "RECEIVER" && p.message == "TCP: no data for 10000ms")
         assertTrue(p.thread, p.thread.isNotBlank())
+    }
+
+    private fun lines(): List<String> { DiagnosticsLogger.flush(); return File(dir, "app-log-current.txt").takeIf { it.exists() }?.readLines() ?: emptyList() }
+
+    @Test fun `logOnChange writes only when the value changes, and only builds the message then`() {
+        DiagnosticsLogger.resetThrottles()
+        var built = 0
+        listOf("FIX", "FIX", "FLOAT", "FLOAT", null, null, "FIX").forEach { v ->
+            DiagnosticsLogger.logOnChange("GNSS", "test.rtk", v) { built++; "rtk=$v" }
+        }
+        assertEquals(listOf("rtk=FIX", "rtk=FLOAT", "rtk=null", "rtk=FIX"), lines().map { it.substringAfter("] ") }.filter { it.startsWith("rtk=") })
+        assertEquals(4, built)
+    }
+
+    @Test fun `every writes at most once per interval per key`() {
+        DiagnosticsLogger.resetThrottles()
+        var now = 0L
+        DiagnosticsLogger.nowMs = { now }
+        try {
+            for (t in 0L..250_000L step 1_000L) {
+                now = t
+                DiagnosticsLogger.every("GNSS", "test.hb", 60_000L) { "hb $t" }
+                DiagnosticsLogger.every("GNSS", "test.other", 100_000L) { "other $t" }
+            }
+        } finally { DiagnosticsLogger.nowMs = { System.nanoTime() / 1_000_000L } }
+        assertEquals(listOf("hb 0", "other 0", "hb 60000", "other 100000", "hb 120000", "hb 180000", "other 200000", "hb 240000"),
+            lines().map { it.substringAfter("] ") }.filter { it.startsWith("hb ") || it.startsWith("other ") })
     }
 
     @Test fun `coroutine crash is marked not fatal`() {
