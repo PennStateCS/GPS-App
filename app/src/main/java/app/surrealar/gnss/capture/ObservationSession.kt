@@ -112,8 +112,7 @@ class ObservationSession(
     private var lastVAcc: Double? = null
     private var lastDiffAge: Double? = null
     private var lastCorrectionStationId: String? = null
-    private var lastAltMsl: Double? = null
-    private var lastGeoidSeparation: Double? = null
+    private var lastFixTimeUtc: Instant? = null
     private var lastTimestampSource: app.surrealar.gnss.model.TimestampSource? = null
     private var lastMultipathIndex: Double? = null
     private var lastStdDevEast: Double? = null
@@ -136,6 +135,9 @@ class ObservationSession(
         val xs = RunningStats(); val ys = RunningStats(); val zs = RunningStats()
         // Local East/North/Up offsets from the first accepted sample, for horizontal/vertical spread.
         val es = RunningStats(); val ns = RunningStats(); val us = RunningStats()
+        // Geoid separation N per accepted fix (reported, or ellipsoidal − MSL). MSL is derived at the
+        // end as averaged ellipsoidal height − mean N, so altitude − altitudeMsl == N exactly.
+        val geoidN = RunningStats()
         var ref: Triple<Double, Double, Double>? = null      // first sample ECEF
         var refLatLon: Pair<Double, Double>? = null
         var samples = 0
@@ -162,7 +164,7 @@ class ObservationSession(
                 _state.value = State.Paused(TIMEOUT_NO_ACCEPTED_FIXES)
                 return true
             }
-            finalize(start, xs, ys, zs, samples, requirementsMet, spreadH(), spreadV())
+            finalize(start, xs, ys, zs, geoidN, samples, requirementsMet, spreadH(), spreadV())
             return true
         }
 
@@ -228,8 +230,10 @@ class ObservationSession(
                     lastVAcc = v
                     lastDiffAge = fix.diffAgeS
                     lastCorrectionStationId = fix.correctionStationId
-                    lastAltMsl = fix.altMslM
-                    lastGeoidSeparation = fix.geoidSeparationM
+                    (fix.geoidSeparationM ?: fix.altMslM?.let { fix.altEllipsoidalM!! - it })
+                        ?.takeIf { it.isFinite() }
+                        ?.let { geoidN.push(it) }
+                    lastFixTimeUtc = fix.timeUtc
                     lastTimestampSource = fix.timestampSource
                     lastMultipathIndex = fix.multipathIndex
                     lastStdDevEast = fix.stdDevEastM
@@ -273,7 +277,7 @@ class ObservationSession(
 
     private fun finalize(
         start: Instant,
-        xs: RunningStats, ys: RunningStats, zs: RunningStats, samples: Int,
+        xs: RunningStats, ys: RunningStats, zs: RunningStats, geoidN: RunningStats, samples: Int,
         requirementsMet: Boolean,
         spreadHorizontalM: Double?,
         spreadVerticalM: Double?,
@@ -283,6 +287,7 @@ class ObservationSession(
          * ellipsoidal height for storage and display.
          */
         val (lat, lon, h) = Geodesy.ecefToLla(xs.mean(), ys.mean(), zs.mean())
+        val meanN = if (geoidN.n > 0) geoidN.mean() else null
 
         val result = CaptureResult(
             startedAt = start,
@@ -302,8 +307,9 @@ class ObservationSession(
             vAccM = lastVAcc,
             diffAgeS = lastDiffAge,
             correctionStationId = lastCorrectionStationId,
-            altMslM = lastAltMsl,
-            geoidSeparationM = lastGeoidSeparation,
+            altMslM = meanN?.let { h - it },
+            geoidSeparationM = meanN,
+            lastFixTimeUtc = lastFixTimeUtc,
             timestampSource = lastTimestampSource,
             multipathIndex = lastMultipathIndex,
             stdDevEastM = lastStdDevEast,

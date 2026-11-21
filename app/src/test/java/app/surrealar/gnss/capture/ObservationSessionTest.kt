@@ -133,5 +133,59 @@ class ObservationSessionTest {
         runCurrent()
         assertTrue(session.state.value is ObservationSession.State.Complete)
     }
+
+    @Test
+    fun `MSL height is the averaged ellipsoidal height minus the mean geoid separation`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val session = ObservationSession(backgroundScope, fixes, policy(minDur = 0, maxDur = 100, minSamples = 2))
+        session.start(); runCurrent()
+        // Ellipsoidal 10.0 / 12.0 (mean 11.0); N −33.0 / −33.2 (mean −33.1) → MSL 44.1, not the last epoch's 45.2.
+        fixes.emit(validFix(alt = 10.0).copy(geoidSeparationM = -33.0, altMslM = 43.0))
+        fixes.emit(validFix(alt = 12.0).copy(geoidSeparationM = -33.2, altMslM = 45.2))
+        runCurrent()
+        val r = (session.state.value as ObservationSession.State.Complete).result
+        assertEquals(11.0, r.altEllipsoidalM, 1e-3)
+        assertEquals(-33.1, r.geoidSeparationM!!, 1e-9)
+        assertEquals(44.1, r.altMslM!!, 1e-3)
+        assertEquals("altitude − MSL must equal N", r.geoidSeparationM!!, r.altEllipsoidalM - r.altMslM!!, 1e-9)
+    }
+
+    @Test
+    fun `geoid separation is derived from ellipsoidal minus MSL when N is not reported`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val session = ObservationSession(backgroundScope, fixes, policy(minDur = 0, maxDur = 100, minSamples = 2))
+        session.start(); runCurrent()
+        fixes.emit(validFix(alt = 10.0).copy(altMslM = 43.0))   // N = −33.0
+        fixes.emit(validFix(alt = 12.0).copy(altMslM = 45.0))   // N = −33.0
+        runCurrent()
+        val r = (session.state.value as ObservationSession.State.Complete).result
+        assertEquals(-33.0, r.geoidSeparationM!!, 1e-9)
+        assertEquals(44.0, r.altMslM!!, 1e-3)
+    }
+
+    @Test
+    fun `no MSL or N reported leaves both unknown`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val session = ObservationSession(backgroundScope, fixes, policy(minDur = 0, maxDur = 100, minSamples = 1))
+        session.start(); runCurrent()
+        fixes.emit(validFix())
+        runCurrent()
+        val r = (session.state.value as ObservationSession.State.Complete).result
+        assertNull(r.altMslM)
+        assertNull(r.geoidSeparationM)
+    }
+
+    @Test
+    fun `result carries the last accepted fix time`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val session = ObservationSession(backgroundScope, fixes, policy(minDur = 0, maxDur = 100, minSamples = 2))
+        session.start(); runCurrent()
+        val t2 = Instant.now()
+        fixes.emit(validFix().copy(timeUtc = t2.minusMillis(1000)))
+        fixes.emit(validFix().copy(timeUtc = t2, timestampSource = TimestampSource.NMEA_ZDA))
+        runCurrent()
+        val r = (session.state.value as ObservationSession.State.Complete).result
+        assertEquals(t2, r.lastFixTimeUtc)
+    }
 }
 

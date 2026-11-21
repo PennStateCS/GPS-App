@@ -3,6 +3,7 @@ package app.surrealar.domain.model
 import app.surrealar.gnss.accumulator.FixSnapshot
 import app.surrealar.gnss.capture.CaptureResult
 import app.surrealar.gnss.model.Provider
+import app.surrealar.gnss.model.TimestampSource
 import app.surrealar.util.UtmConverter
 import java.time.Duration
 
@@ -132,7 +133,14 @@ object CoordinateFactory {
             Provider.OTHER        -> "other"
         }
         val utm = runCatching { UtmConverter.latLonToUtm(result.latDeg, result.lonDeg) }.getOrNull()
+        // Wall-clock save time for the audit fields (createdAt/updatedAt).
         val capturedAtMs = result.endedAt.toEpochMilli()
+        // The coordinate's timestamp is the last accepted fix's own time, so it matches the
+        // timestampSource label. Without one, fall back to the device clock and say so.
+        val fixTimeMs = result.lastFixTimeUtc?.toEpochMilli()
+        val timestampMs = fixTimeMs ?: capturedAtMs
+        val timestampSourceName =
+            if (fixTimeMs != null) result.timestampSource?.name else TimestampSource.DEVICE.name
         // Antenna/pole offset: the receiver reports the antenna phase-centre altitude; subtract the
         // pole height so the stored altitude is the ground mark. Applied to both ellipsoidal and MSL
         // (geoid separation is a difference, so it is unchanged). Recorded for provenance when > 0.
@@ -143,7 +151,7 @@ object CoordinateFactory {
             latitude            = result.latDeg,
             longitude           = result.lonDeg,
             altitude            = result.altEllipsoidalM - antennaHeightM,
-            timestamp           = capturedAtMs,
+            timestamp           = timestampMs,
             icon                = iconId,
             color               = color,
             provider            = providerStr,
@@ -163,7 +171,7 @@ object CoordinateFactory {
             altitudeMsl         = result.altMslM?.let { it - antennaHeightM },
             geoidSeparationM    = result.geoidSeparationM,
             antennaHeightM      = appliedOffset,
-            timestampSource     = result.timestampSource?.name,
+            timestampSource     = timestampSourceName,
             multipathIndex      = result.multipathIndex,
             stdLatM             = result.stdDevNorthM,
             stdLonM             = result.stdDevEastM,

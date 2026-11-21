@@ -33,8 +33,10 @@ class CoordinateFactoryTest {
         multipathIndex: Double? = 0.15,
         stdDevEastM: Double? = 0.011,
         stdDevNorthM: Double? = 0.013,
-        stdDevUpM: Double? = 0.021
+        stdDevUpM: Double? = 0.021,
+        lastFixTimeUtc: Instant? = Instant.ofEpochMilli(1_700_000_059_800L)
     ) = CaptureResult(
+        lastFixTimeUtc = lastFixTimeUtc,
         startedAt = startedAt,
         endedAt = endedAt,
         samples = samples,
@@ -73,7 +75,31 @@ class CoordinateFactoryTest {
         assertEquals(result.latDeg, coord.latitude, 1e-10)
         assertEquals(result.lonDeg, coord.longitude, 1e-10)
         assertEquals(result.altEllipsoidalM, coord.altitude, 1e-10)
+        assertEquals(result.lastFixTimeUtc!!.toEpochMilli(), coord.timestamp)
+    }
+
+    @Test
+    fun `timestamp is the last fix time while audit fields keep the wall clock`() {
+        val result = captureResult()
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "t", name = "T", note = null, color = 0, iconId = "pin",
+            provider = Provider.RS2_EXTERNAL, result = result
+        )
+        assertEquals(1_700_000_059_800L, coord.timestamp)
+        assertEquals(TimestampSource.NMEA_ZDA.name, coord.timestampSource)
+        assertEquals(result.endedAt.toEpochMilli(), coord.createdAt)
+        assertEquals(result.endedAt.toEpochMilli(), coord.updatedAt)
+    }
+
+    @Test
+    fun `without a fix time the timestamp is the device clock and labelled DEVICE`() {
+        val result = captureResult(lastFixTimeUtc = null)
+        val coord = CoordinateFactory.fromCaptureResult(
+            id = "d", name = "D", note = null, color = 0, iconId = "pin",
+            provider = Provider.RS2_EXTERNAL, result = result
+        )
         assertEquals(result.endedAt.toEpochMilli(), coord.timestamp)
+        assertEquals(TimestampSource.DEVICE.name, coord.timestampSource)
     }
 
     @Test

@@ -130,4 +130,7 @@ data class CaptureResult(
 
     /** Measured vertical spread (σ of the local Up offsets, metres). Null with fewer than two samples. */
     val spreadVerticalM: Double? = null,
+
+    /** GNSS time of the last accepted fix (labelled by [timestampSource]); null if none was recorded. */
+    val lastFixTimeUtc: Instant? = null,
 )
