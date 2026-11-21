@@ -58,8 +58,9 @@ host changes. The UI reads only the manager's neutral flows and capability flags
 ## org.json
 
 The Reach parsers use `org.json`, which Android provides on the platform. This module compiles and
-tests against the `org.json:json` artifact (`compileOnly` + `testImplementation`), so the APK uses
-the platform copy and doesn't bundle a duplicate. socket.io-client's own org.json dependency is
+tests against Android's own org.json implementation packaged as a jar
+(`com.vaadin.external.google:android-json`, `compileOnly` + `testImplementation`). That way the API
+and behaviour match the device, and the APK uses the platform copy instead of bundling a duplicate. socket.io-client's own org.json dependency is
 excluded for the same reason.
 
 ## Build and test

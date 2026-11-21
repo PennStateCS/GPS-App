@@ -125,7 +125,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toolbarRenderer: GnssToolbarRenderer
 
     /** Short label of the selected external receiver profile (e.g. "RS2+"/"RS4"); updated from settings. */
-    @Volatile private var externalReceiverLabel: String = "RS2+"
+    @Volatile private var externalReceiverLabel: String = ""
 
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null

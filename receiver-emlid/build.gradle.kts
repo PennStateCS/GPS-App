@@ -28,10 +28,10 @@ dependencies {
     implementation(libs.socket.io.client) {
         exclude(group = "org.json", module = "json")
     }
-    // org.json: compile and test against the artifact, but don't ship it — the APK uses Android's
-    // platform copy (app/build.gradle.kts also excludes org.json:json). See README.
-    compileOnly(libs.org.json)
-    testImplementation(libs.org.json)
+    // org.json: compile and test against Android's own org.json API (android-json, packaged as a jar),
+    // but don't ship it — the APK uses the platform copy. See README.
+    compileOnly(libs.android.json)
+    testImplementation(libs.android.json)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

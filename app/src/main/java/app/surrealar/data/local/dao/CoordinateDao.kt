@@ -3,7 +3,6 @@ package app.surrealar.data.local.dao
 import androidx.lifecycle.LiveData
 import androidx.room.*
 import app.surrealar.data.local.entity.CoordinateEntity
-import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.RtkStatus
 import kotlinx.coroutines.flow.Flow
 
@@ -80,9 +79,6 @@ interface CoordinateDao {
     suspend fun deleteOlderThan(olderThanMs: Long)
 
     // --- Enum-typed filters (updated) ---
-    @Query("SELECT * FROM coordinates WHERE provider = :provider ORDER BY timestamp DESC")
-    suspend fun getByProvider(provider: Provider): List<CoordinateEntity>
-
     @Query("SELECT * FROM coordinates WHERE rtkStatus = :rtk ORDER BY timestamp DESC")
     suspend fun getByRtkStatus(rtk: RtkStatus): List<CoordinateEntity>
 

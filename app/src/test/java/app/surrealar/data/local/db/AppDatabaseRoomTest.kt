@@ -198,7 +198,6 @@ class AppDatabaseRoomTest {
             )
         )
         assertEquals(listOf("float"), coords.getByRtkStatus(RtkStatus.FLOAT).map { it.id })
-        assertEquals(listOf("internal"), coords.getByProvider(Provider.INTERNAL).map { it.id })
         assertEquals(RtkStatus.FIX, coords.getById("fix")!!.rtkStatus)
     }
 
