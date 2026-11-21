@@ -135,6 +135,31 @@ class ObservationSessionTest {
     }
 
     @Test
+    fun `old correction age does not reject a single-or-better capture (SBAS age on device GNSS)`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val p = policy(minDur = 0, maxDur = 100, minSamples = 2).copy(requiredMinStatus = RtkStatus.SINGLE, maxDiffAgeSec = 10)
+        val session = ObservationSession(backgroundScope, fixes, p)
+        session.start(); runCurrent()
+        fixes.emit(validFix(rtk = RtkStatus.DGPS).copy(diffAgeS = 25.0))
+        fixes.emit(validFix(rtk = RtkStatus.SINGLE).copy(diffAgeS = 25.0))
+        runCurrent()
+        assertEquals(2, (session.state.value as ObservationSession.State.Complete).result.samples)
+    }
+
+    @Test
+    fun `old correction age still rejects when corrections are required`() = runTest {
+        val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 16)
+        val p = policy(minDur = 0, maxDur = 100, minSamples = 1).copy(requiredMinStatus = RtkStatus.FIX, maxDiffAgeSec = 10)
+        val session = ObservationSession(backgroundScope, fixes, p)
+        session.start(); runCurrent()
+        fixes.emit(validFix(rtk = RtkStatus.FIX).copy(diffAgeS = 25.0))
+        runCurrent()
+        assertTrue(session.state.value !is ObservationSession.State.Complete)
+        assertTrue(AveragingPolicy(requiredMinStatus = RtkStatus.DGPS).requiresFreshCorrections)
+        assertFalse(AveragingPolicy(requiredMinStatus = RtkStatus.SINGLE).requiresFreshCorrections)
+    }
+
+    @Test
     fun `dead-reckoned fixes never satisfy a capture requirement`() {
         for (req in listOf(RtkStatus.SINGLE, RtkStatus.DGPS, RtkStatus.FIX, RtkStatus.NONE)) {
             assertFalse("DR must not meet $req", RtkStatus.DEAD_RECKONING.meetsOrExceeds(req))

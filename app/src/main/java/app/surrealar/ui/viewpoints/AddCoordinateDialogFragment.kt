@@ -569,7 +569,7 @@ class AddCoordinateDialogFragment(
         if (!fix.rtkStatus.meetsOrExceeds(policy.requiredMinStatus))
             return "Waiting for required fix quality: ${shortFix(policy.requiredMinStatus.name)}"
         val diffAge = fix.diffAgeS
-        if (diffAge != null && diffAge > policy.maxDiffAgeSec)
+        if (policy.requiresFreshCorrections && diffAge != null && diffAge > policy.maxDiffAgeSec)
             return "Waiting for fresh correction data"
         if (fix.altEllipsoidalM == null)
             return "Waiting for ellipsoidal height"

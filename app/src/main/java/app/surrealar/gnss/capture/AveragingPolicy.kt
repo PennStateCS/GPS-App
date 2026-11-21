@@ -55,14 +55,22 @@ data class AveragingPolicy(
      */
     val horizontalPrecisionTargetM: Double? = null,
 ) {
+    /**
+     * The correction-age gate ([maxDiffAgeSec]) applies only when the capture requires corrections
+     * (DGPS, FLOAT or FIX). For SINGLE-or-better captures an old age (e.g. an SBAS age on device
+     * GNSS GGA) must not reject every fix.
+     */
+    val requiresFreshCorrections: Boolean
+        get() = requiredMinStatus.qualityRank() > RtkStatus.SINGLE.qualityRank()
+
     companion object {
         /**
          * Averaging rules for INTERNAL (device / tablet) GNSS captures — the Standard preset's
          * internal policy and the Custom preset's internal fallback. Device GNSS never reaches RTK,
          * so standalone (SINGLE) quality is accepted. 30 s / 20 fixes averages out per-fix jitter and
          * single-epoch jumps; most device GNSS error is slowly varying (multipath, atmosphere), so
-         * much longer sessions give diminishing returns for a field workflow. Device GNSS sends no
-         * correction age, so that gate never applies.
+         * much longer sessions give diminishing returns for a field workflow. SINGLE is required, so
+         * the correction-age gate does not apply ([requiresFreshCorrections] is false).
          */
         val INTERNAL = AveragingPolicy(
             minDurationSec = 30,

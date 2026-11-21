@@ -199,7 +199,9 @@ class ObservationSession(
                         freshness = FixFreshnessGate(maxAgeMs = policy.maxFixAgeSec * 1_000L)
                         consecutiveStale = 0
                     }
-                    val freshCorr = fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true
+                    // Only when the capture requires corrections (DGPS/FLOAT/FIX); see AveragingPolicy.
+                    val freshCorr = !policy.requiresFreshCorrections ||
+                        (fix.diffAgeS?.let { it <= policy.maxDiffAgeSec } ?: true)
                     okMode && freshFix && freshCorr && fix.altEllipsoidalM != null
                 }
                 .onEach { fix ->
