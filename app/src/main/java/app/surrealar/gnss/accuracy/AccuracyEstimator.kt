@@ -36,7 +36,8 @@ object AccuracyEstimator {
          * Fall back to DOP × UERE when receiver-reported accuracy is missing.
          * This is an estimate, not a replacement for receiver-provided error stats.
          */
-        val uere = uereTable.uere(fix.provider, fix.rtkStatus)
+        // No position solution (NONE/INVALID) → no estimate, rather than a number.
+        val uere = uereTable.uere(fix.provider, fix.rtkStatus) ?: return Accuracy1Sigma(null, null)
         val horizontalMeters = fix.hDop?.times(uere)
         val verticalMeters = fix.vDop?.times(uere)
 

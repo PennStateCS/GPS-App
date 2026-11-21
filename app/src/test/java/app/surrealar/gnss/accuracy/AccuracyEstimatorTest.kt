@@ -20,7 +20,7 @@ class AccuracyEstimatorTest {
 
     private fun fix(
         provider: Provider = Provider.INTERNAL,
-        rtkStatus: RtkStatus = RtkStatus.NONE,
+        rtkStatus: RtkStatus = RtkStatus.SINGLE,
         hAccM: Double? = null,
         vAccM: Double? = null,
         hDop: Double? = null,
@@ -52,13 +52,29 @@ class AccuracyEstimatorTest {
 
     // ── Fallback: DOP × UERE ──────────────────────────────────────────────────────────────────
 
-    @Test fun `internal no-fix falls back to DOP times internal UERE`() {
+    @Test fun `internal single falls back to DOP times internal UERE`() {
         val r = AccuracyEstimator.estimate1SigmaMeters(
-            fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.NONE, hDop = 1.5, vDop = 2.0),
+            fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 1.5, vDop = 2.0),
             UereTable()
         )
-        assertEquals(1.5 * 4.0, r.horizontalMeters!!, tol)   // internal[NONE] = 4.0
+        assertEquals(1.5 * 4.0, r.horizontalMeters!!, tol)   // internal[SINGLE] = 4.0
         assertEquals(2.0 * 4.0, r.verticalMeters!!, tol)
+    }
+
+    @Test fun `no fix gives no accuracy estimate rather than a number`() {
+        val r = AccuracyEstimator.estimate1SigmaMeters(
+            fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.NONE, hDop = 1.5, vDop = 2.0),
+            UereTable()
+        )
+        assertNull(r.horizontalMeters)
+        assertNull(r.verticalMeters)
+    }
+
+    @Test fun `first Emlid fix before any GST uses the standalone RS2 UERE`() {
+        val r = AccuracyEstimator.estimate1SigmaMeters(
+            fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 0.8), UereTable()
+        )
+        assertEquals(0.8 * 2.5, r.horizontalMeters!!, tol)
     }
 
     @Test fun `RS2 RTK fixed uses the tight rs2 UERE`() {
@@ -82,7 +98,7 @@ class AccuracyEstimatorTest {
 
     @Test fun `high DOP scales the estimate up`() {
         val r = AccuracyEstimator.estimate1SigmaMeters(
-            fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.NONE, hDop = 50.0), UereTable()
+            fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 50.0), UereTable()
         )
         assertEquals(200.0, r.horizontalMeters!!, tol)
     }
@@ -91,19 +107,19 @@ class AccuracyEstimatorTest {
 
     @Test fun `UereTable maps providers and modes`() {
         val t = UereTable()
-        assertEquals(4.0, t.uere(Provider.INTERNAL, RtkStatus.NONE), tol)
-        assertEquals(0.02, t.uere(Provider.RS2_EXTERNAL, RtkStatus.FIX), tol)
-        assertEquals(0.25, t.uere(Provider.RS2_BT, RtkStatus.FLOAT), tol)
-        assertEquals(0.5, t.uere(Provider.RS2_TCP, RtkStatus.DGPS), tol)
+        assertEquals(4.0, t.uere(Provider.INTERNAL, RtkStatus.SINGLE)!!, tol)
+        assertEquals(0.02, t.uere(Provider.RS2_EXTERNAL, RtkStatus.FIX)!!, tol)
+        assertEquals(0.25, t.uere(Provider.RS2_BT, RtkStatus.FLOAT)!!, tol)
+        assertEquals(0.5, t.uere(Provider.RS2_TCP, RtkStatus.DGPS)!!, tol)
         // OTHER/MODEL share the internal table.
-        assertEquals(2.0, t.uere(Provider.OTHER, RtkStatus.DGPS), tol)
-        assertEquals(2.0, t.uere(Provider.MODEL, RtkStatus.FIX), tol)
+        assertEquals(2.0, t.uere(Provider.OTHER, RtkStatus.DGPS)!!, tol)
+        assertEquals(2.0, t.uere(Provider.MODEL, RtkStatus.FIX)!!, tol)
     }
 
-    @Test fun `UereTable falls back when the mode is absent from the table`() {
-        val t = UereTable()
-        // SINGLE is not in either map → provider-specific fallback constants.
-        assertEquals(4.0, t.uere(Provider.INTERNAL, RtkStatus.SINGLE), tol)   // INTERNAL_FALLBACK
-        assertEquals(1.0, t.uere(Provider.RS2_EXTERNAL, RtkStatus.SINGLE), tol) // RS2_FALLBACK
+    @Test fun `UereTable falls back when a custom table lacks a mode`() {
+        val t = UereTable(internal = emptyMap(), rs2 = emptyMap())
+        assertEquals(4.0, t.uere(Provider.INTERNAL, RtkStatus.SINGLE)!!, tol)
+        assertEquals(2.5, t.uere(Provider.RS2_EXTERNAL, RtkStatus.SINGLE)!!, tol)
+        assertNull(t.uere(Provider.RS2_EXTERNAL, RtkStatus.NONE))
     }
 }
