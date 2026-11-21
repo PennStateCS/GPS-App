@@ -322,7 +322,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
          */
         private const val DIAG = ArFilamentRenderer.DIAG
         /** Minimum GNSS horizontal accuracy required before creating geospatial anchors. */
-        private const val MAX_GNSS_ACCURACY_M = 20.0
+        private const val MAX_GNSS_ACCURACY_M = ArGnssGate.MAX_ACCURACY_M
         /**
          * Default uniform scale applied to every GLB model rendered via Filament.
          * 1.0 = real-world metric scale (correct for BIM/survey models exported in metres).
@@ -1260,8 +1260,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             return
         }
 
-        // Determine horizontal accuracy for gating (GST hAccM, else HDOP × UERE estimate).
+        // GNSS gate (ArGnssGate): no satellite solution never anchors; otherwise the shared accuracy
+        // (receiver 68 % radius, else DOP × UERE by accuracy class) must be within MAX_GNSS_ACCURACY_M.
         val accuracyM: Double? = gnssGateAccuracyM(gnssFix)
+        if (!ArGnssGate.hasSolution(gnssFix.rtkStatus)) {
+            if (!loggedAccuracyGate) {
+                loggedAccuracyGate = true
+                DiagnosticsLogger.w(DIAG, "anchor skip reason=\"gnss_no_solution\" rtk=${gnssFix.rtkStatus} items=${geoItems.size}")
+            }
+            return
+        }
         if (accuracyM != null && accuracyM > MAX_GNSS_ACCURACY_M) {
             // Log once per blocked period — this method runs every GL frame until anchors exist.
             if (!loggedAccuracyGate) {
@@ -1688,16 +1696,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // ── onDrawFrame helpers (all called from the GL thread) ──────────────────
 
-    /** Ordered quality levels for auto re-anchor; higher index = better quality. */
-    private fun rtkQualityRank(status: io.github.pennstatecs.geokit.gnss.model.RtkStatus?): Int =
-        when (status) {
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> 4
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> 3
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> 2
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> 1
-            else                                                  -> 0
-        }
-
     /**
      * Handles a pending re-anchor request then processes earth tracking state.
      * Returns a short human-readable earth status string for the debug panel.
@@ -1749,9 +1747,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 // deliberate upgrades; the cooldown prevents a repeat within 30s.
                 val currentFix = currentGnssFix
                 if (geoAnchorsCreated && currentFix != null) {
-                    val newRank  = rtkQualityRank(currentFix.rtkStatus)
-                    val lastRank = rtkQualityRank(lastAnchorRtkStatus)
-                    val isRtkUpgrade = newRank >= 3 && lastRank < 3   // non-RTK → RTK threshold
+                    val newRank  = currentFix.rtkStatus.qualityRank()
+                    val lastRank = lastAnchorRtkStatus?.qualityRank() ?: 0
+                    val rtk = io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT.qualityRank()
+                    val isRtkUpgrade = newRank >= rtk && lastRank < rtk   // non-RTK → RTK threshold
                     val cooldownElapsed = System.currentTimeMillis() - lastReanchorTimeMs >= REANCHOR_COOLDOWN_MS
                     if (isRtkUpgrade && cooldownElapsed) {
                         ArSessionDiagnostics.reanchorAttempts++
@@ -2186,19 +2185,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private fun terrainStateName(anchor: com.google.ar.core.Anchor): String? =
         runCatching { anchor.terrainAnchorState.name }.getOrNull()?.takeIf { it != "NONE" }
 
-    /**
-     * Horizontal accuracy the anchor gate uses: GST-derived hAccM, else a HDOP × UERE estimate so
-     * the gate always has a value when GST sentences are absent (common with phone GPS).
-     * UERE per fix quality: RTK FIX ≈ 0.02 m/HDOP, FLOAT ≈ 0.1, DGPS ≈ 0.5, SINGLE ≈ 3.0.
-     */
-    private fun gnssGateAccuracyM(fix: Fix): Double? = fix.hAccM ?: fix.hDop?.let { hdop ->
-        when (fix.rtkStatus) {
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX   -> hdop * 0.02
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT -> hdop * 0.1
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS  -> hdop * 0.5
-            else                                     -> hdop * 3.0
-        }
-    }
+    /** Horizontal accuracy the anchor gate uses — the app-wide estimate (see [ArGnssGate.accuracyM]). */
+    private fun gnssGateAccuracyM(fix: Fix): Double? = ArGnssGate.accuracyM(fix)
 
     /** Builds the debug panel text via [ArDebugReport]. Must be called on the main thread. */
     private fun buildDebugText(

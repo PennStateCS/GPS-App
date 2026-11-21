@@ -226,10 +226,14 @@ class AndroidMockLocationPublisher(
             fix.speedMps?.let       { speed = it.toFloat() }
             fix.courseDeg?.let      { bearing = it.toFloat() }
 
-            // accuracy is mandatory — setTestProviderLocation throws if it is unset (0f). Without a
-            // receiver estimate (no GST), use one matching the solution type: a flat 5 m placeholder
-            // told ARCore to distrust an RTK FIX, the best position it can get.
-            accuracy = fix.hAccM?.toFloat()?.takeIf { it > 0f } ?: fallbackHorizontalAccuracyM(fix.rtkStatus)
+            // accuracy is mandatory — setTestProviderLocation throws if it is unset (0f). The receiver's
+            // own 68 % radius when it sends one; else the app-wide DOP × UERE estimate for the fix's
+            // accuracy class (same number the toolbar shows); the flat per-status value only when HDOP
+            // is missing too.
+            accuracy = fix.hAccM?.toFloat()?.takeIf { it > 0f }
+                ?: io.github.pennstatecs.geokit.gnss.accuracy.AccuracyEstimator.estimate1SigmaMeters(fix, uere)
+                    .horizontalMeters?.toFloat()?.takeIf { it > 0f }
+                ?: fallbackHorizontalAccuracyM(fix.rtkStatus)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 fix.vAccM?.let { verticalAccuracyMeters = it.toFloat() }
@@ -246,8 +250,11 @@ class AndroidMockLocationPublisher(
             elapsedRealtimeNanos = nowElapsedNanos - (ageMs ?: 0L) * 1_000_000L
         }
 
+    private val uere = io.github.pennstatecs.geokit.gnss.accuracy.UereTable()
+
     /**
-     * Placeholder horizontal accuracy (m, ~68%) by solution type when the receiver sends no GST.
+     * Placeholder horizontal accuracy (m, ~68%) by solution type when there's no receiver accuracy and
+     * no HDOP to estimate one from.
      * Conservative for each class: RTK fixed is cm-level, float decimetres, DGPS ~1 m.
      */
     internal fun fallbackHorizontalAccuracyM(status: io.github.pennstatecs.geokit.gnss.model.RtkStatus): Float = when (status) {
