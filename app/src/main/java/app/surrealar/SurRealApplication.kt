@@ -41,6 +41,7 @@ interface SurRealApplicationEntryPoint {
     fun gnssFeedLogger(): app.surrealar.util.diagnostics.GnssFeedLogger
     fun diagnosticsService(): app.surrealar.gnss.diagnostics.DiagnosticsService
     fun receiverDeviceManager(): app.surrealar.receiver.ReceiverDeviceManager
+    fun appDatabase(): app.surrealar.data.local.db.AppDatabase
 }
 
 /**

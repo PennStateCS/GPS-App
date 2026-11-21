@@ -78,8 +78,8 @@ object AppReportReaders {
 
     private fun dirSize(dir: File): Long = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-    fun dataHealth(context: Context): DataHealth {
-        val db = app.surrealar.data.local.db.AppDatabase.getDatabase(context).openHelper.readableDatabase
+    fun dataHealth(database: app.surrealar.data.local.db.AppDatabase): DataHealth {
+        val db = database.openHelper.readableDatabase
         val tables = mutableListOf<String>()
         db.query("SELECT name FROM sqlite_master WHERE type='table'").use { c -> while (c.moveToNext()) tables += c.getString(0) }
         val counts = tables.filterNot { it.startsWith("sqlite_") || it == "android_metadata" || it == "room_master_table" }

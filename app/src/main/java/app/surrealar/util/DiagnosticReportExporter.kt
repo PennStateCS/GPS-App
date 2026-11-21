@@ -138,7 +138,9 @@ object DiagnosticReportExporter {
                 sentenceCounts = app.surrealar.util.diagnostics.report.GnssStatsCollector.sentenceCounts(nmeaStream()),
             )
         }
-        override fun dataHealth() = app.surrealar.util.diagnostics.report.AppReportReaders.dataHealth(context)
+        override fun dataHealth() = app.surrealar.util.diagnostics.report.AppReportReaders.dataHealth(
+            dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext,
+                app.surrealar.SurRealApplicationEntryPoint::class.java).appDatabase())
         override fun logFiles() = DiagnosticsLogger.logFiles()
         override fun errorFiles() = DiagnosticsLogger.errorFiles()
     }
