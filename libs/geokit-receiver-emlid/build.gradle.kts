@@ -26,8 +26,9 @@ kotlin {
 dependencies {
     // ReceiverDevice and the neutral models are part of this module's API.
     api(project(":geokit-gnss"))
-    // Reach live corrections arrive as socket.io broadcasts. Android ships org.json on the platform,
-    // so the artifact is excluded here exactly as the app always did.
+    // Reach live corrections arrive as socket.io broadcasts. The client stays on 1.0.1 (EIO=3): the Reach
+    // firmware can't talk to the 2.x (EIO=4) client - see the pin in libs.versions.toml. Android ships
+    // org.json on the platform, so the artifact is excluded here exactly as the app always did.
     implementation(libs.socket.io.client) {
         exclude(group = "org.json", module = "json")
     }

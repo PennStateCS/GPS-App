@@ -201,7 +201,7 @@ dependencies {
     implementation(libs.jmdns)
 
     // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts) now comes in
-    // through :geokit-receiver-emlid (CVE-fixed 2.x line, org.json excluded there).
+    // through :geokit-receiver-emlid (pinned to 1.0.1 for the Reach's EIO=3 protocol - see libs.versions.toml).
 
     // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
     implementation(project(":geokit-core"))
