@@ -46,7 +46,7 @@ class CoordinateFactoryFromFixTest {
         assertEquals(0.03, c.verticalAccuracyM!!, 1e-9)
         assertEquals(1.0, c.correctionAgeS!!, 1e-9)
         assertEquals("0123", c.correctionStationId)
-        assertEquals("Base Station 0123", c.correctionSource)   // derived from a 4-char station id
+        assertEquals("UNKNOWN", c.correctionSource)   // station present, transport not reported
         assertEquals(0.5, c.speedMps!!, 1e-9)
         assertEquals(84.4, c.courseDeg!!, 1e-9)
         assertEquals(0.01, c.stdLatM!!, 1e-9)

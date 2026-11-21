@@ -141,4 +141,24 @@ class CoordinateMappersTest {
         val e = toEntityFromFix(id = "c5", name = "P", icon = "ic_pin", color = 0, note = null, fix = fix(399.02))
         assertEquals(399.02, e.altitude, 0.0)
     }
+
+    @Test
+    fun captureCorrectionSource_isStoredNotDropped() {
+        // CoordinateFactory used to write "Base Station 1116" / "RTCM", which valueOf() rejected → null.
+        for (legacy in listOf("Base Station 1116", "RTCM", "Station 12345", "UNKNOWN")) {
+            assertEquals(legacy, app.surrealar.domain.model.CorrectionSource.UNKNOWN,
+                rich.copy(correctionSource = legacy).toEntity().correctionSource)
+        }
+        assertEquals(app.surrealar.domain.model.CorrectionSource.NTRIP,
+            rich.copy(correctionSource = "ntrip").toEntity().correctionSource)
+        assertNull(rich.copy(correctionSource = null).toEntity().correctionSource)
+    }
+
+    @Test
+    fun rtkStatusAliases_mapLikeTheRoomConverter() {
+        assertEquals(RtkStatus.FIX, rich.copy(rtkStatus = "RTK_FIXED").toEntity().rtkStatus)
+        assertEquals(RtkStatus.FLOAT, rich.copy(rtkStatus = "RTK_FLOAT").toEntity().rtkStatus)
+        assertEquals(RtkStatus.FIX, rich.copy(rtkStatus = "fixed").toEntity().rtkStatus)
+        assertEquals(RtkStatus.DEAD_RECKONING, rich.copy(rtkStatus = "DR").toEntity().rtkStatus)
+    }
 }

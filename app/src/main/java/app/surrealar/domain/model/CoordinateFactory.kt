@@ -194,14 +194,13 @@ object CoordinateFactory {
         )
     }
 
-    private fun deriveCorrectionsSource(stationId: String?): String? {
-        return when {
-            stationId.isNullOrBlank() -> null
-            stationId.startsWith("RTCM") -> "RTCM"
-            stationId.length == 4 -> "Base Station $stationId"
-            else -> "Station $stationId"
-        }
-    }
+    /**
+     * A GGA station ID says corrections came from a base, but not over what (NTRIP, LoRa, …), so the
+     * source is the existing enum's UNKNOWN; the station itself is kept in correctionStationId.
+     * Must be an enum name so it survives the DB mapper (free text used to become null).
+     */
+    private fun deriveCorrectionsSource(stationId: String?): String? =
+        if (stationId.isNullOrBlank()) null else CorrectionSource.UNKNOWN.name
 }
 
 /** Quick validation helpers. */

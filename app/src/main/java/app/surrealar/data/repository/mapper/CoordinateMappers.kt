@@ -31,12 +31,23 @@ private fun providerDomainStringToEnum(s: String?): Provider = when (s?.lowercas
 }
 
 private fun rtkEnumToDomainString(rtk: RtkStatus?): String? = rtk?.name
+// Same aliases as the Room converter ("RTK_FIXED", "FIXED", "DR", …), so a status string written by
+// any path maps instead of silently becoming null.
 private fun rtkDomainStringToEnum(s: String?): RtkStatus? =
-    s?.let { runCatching { RtkStatus.valueOf(it.uppercase(Locale.US)) }.getOrNull() }
+    app.surrealar.data.local.db.Converters.toRtkStatus(s)
 
 private fun corrEnumToDomainString(c: CorrectionSource?): String? = c?.name
-private fun corrDomainStringToEnum(s: String?): CorrectionSource? =
-    s?.let { runCatching { CorrectionSource.valueOf(it.uppercase(Locale.US)) }.getOrNull() }
+
+/**
+ * Exact enum names map directly. Anything else non-blank — e.g. the station descriptions older
+ * captures produced ("Base Station 1116", "RTCM", "Station …") — means corrections were applied
+ * from a source whose transport wasn't reported: [CorrectionSource.UNKNOWN], not null.
+ */
+private fun corrDomainStringToEnum(s: String?): CorrectionSource? {
+    val v = s?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return runCatching { CorrectionSource.valueOf(v.uppercase(Locale.US)) }.getOrNull()
+        ?: CorrectionSource.UNKNOWN
+}
 
 // ---------- Builders / Mappers ----------
 

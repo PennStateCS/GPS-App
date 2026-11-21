@@ -718,7 +718,9 @@ class CoordinateDetailFragment : Fragment() {
         CoordinateDetailFormatter.correctionFreshnessText(c.correctionAgeS)
             ?.let { corrections += DetailRow("Correction age", it) }
         c.correctionStationId?.takeIf { it.isNotBlank() }?.let { corrections += DetailRow("Station ID", it) }
-        c.correctionSource?.takeIf { it.isNotBlank() }?.let { corrections += DetailRow("Correction source", it) }
+        // UNKNOWN only means "transport not reported" — the Station ID row already says where from.
+        c.correctionSource?.takeIf { it.isNotBlank() && it != "UNKNOWN" }
+            ?.let { corrections += DetailRow("Correction source", it) }
 
         // Precision details (right column on tablet) — DOP/multipath are not on tiles.
         val precision = mutableListOf<DetailRow>()

@@ -167,8 +167,10 @@ class CoordinateFactoryTest {
         assertEquals(0.013, coord.stdLatM!!, 1e-10)
         assertEquals(0.011, coord.stdLonM!!, 1e-10)
         assertEquals(0.021, coord.stdAltM!!, 1e-10)
-        // Correction source derived from the station id ("ABCD", length 4).
-        assertEquals("Base Station ABCD", coord.correctionSource)
+        // A station id means corrections from a base whose transport isn't reported → UNKNOWN
+        // (an enum name, so it survives the DB mapper); the id itself stays in correctionStationId.
+        assertEquals(CorrectionSource.UNKNOWN.name, coord.correctionSource)
+        assertEquals("ABCD", coord.correctionStationId)
     }
 
     @Test
