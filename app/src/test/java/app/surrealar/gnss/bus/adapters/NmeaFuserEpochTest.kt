@@ -47,9 +47,10 @@ class NmeaFuserEpochTest {
 
         assertEquals(3, fixes.size)
         assertEquals(RtkStatus.FIX, fixes[1].rtkStatus)
-        assertEquals(0.010, fixes[1].hAccM!!, 1e-9)
+        // hAccM is a 68 % radius: 1.515 × per-axis σ (vertical stays 1σ).
+        assertEquals(0.010 * 1.515, fixes[1].hAccM!!, 1e-9)
         assertEquals(RtkStatus.FLOAT, fixes[2].rtkStatus)
-        assertEquals("first FLOAT fix must not keep the FIX epoch's ±0.010", 0.300, fixes[2].hAccM!!, 1e-9)
+        assertEquals("first FLOAT fix must not keep the FIX epoch's accuracy", 0.300 * 1.515, fixes[2].hAccM!!, 1e-9)
         assertEquals(0.600, fixes[2].vAccM!!, 1e-9)
     }
 
@@ -83,7 +84,7 @@ class NmeaFuserEpochTest {
         fuser.accept("\$GNGST,172424.00,0.020,,,,0.050,0.050,0.100")
         fuser.accept("\$GNGGA,172424.00,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
         assertEquals(1, fixes.size)
-        assertEquals(0.050, fixes[0].hAccM!!, 1e-9)
+        assertEquals(0.050 * 1.515, fixes[0].hAccM!!, 1e-9)
     }
 
     @Test
@@ -94,10 +95,10 @@ class NmeaFuserEpochTest {
             val before = fixes.size
             fuser.accept("\$GNGGA,$t,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
             assertEquals("sub-second GGA $t emits at once (no GST expected)", before + 1, fixes.size)
-            assertEquals(0.011, fixes.last().hAccM!!, 1e-9)
+            assertEquals(0.011 * 1.515, fixes.last().hAccM!!, 1e-9)
         }
         burst("172426.00", q = 4, sigma = 0.012, pdop = 1.2)
-        assertEquals(0.012, fixes.last().hAccM!!, 1e-9)
+        assertEquals(0.012 * 1.515, fixes.last().hAccM!!, 1e-9)
     }
 
     @Test

@@ -631,22 +631,24 @@ class NmeaFuser(
     }
 
     /**
-     * 1-sigma circular horizontal accuracy from GST, in metres, or null when GST provides neither the
-     * error-ellipse semi-axes nor the lat/lon standard deviations (i.e. accuracy is genuinely unknown —
+     * 68 % horizontal radius from GST, in metres (the app-wide meaning of hAccM — same as Android's
+     * Location.accuracy; see [app.surrealar.geo.HorizontalAccuracy]), or null when GST provides neither
+     * the error-ellipse semi-axes nor the lat/lon standard deviations (accuracy genuinely unknown —
      * callers must treat null as "unknown", never 0.0).
      *
      * Preference order:
-     *  1. Semi-major/semi-minor axes (fields 3–4): sqrt((σ_major² + σ_minor²) / 2), handling elongated ellipses.
-     *  2. Lat/lon std-devs (fields 6–7): sqrt((σ_lat² + σ_lon²) / 2). Emlid Reach fills these and leaves 1 empty.
+     *  1. Semi-major/semi-minor axes (fields 3–4).
+     *  2. Lat/lon std-devs (fields 6–7). Emlid Reach fills these and leaves 1 empty.
+     * Either pair → 1.515 · sqrt((σ1² + σ2²) / 2). Vertical (σ_alt) stays 1σ.
      */
     private fun horizontalAccuracyFromGst(gst: GST?): Double? {
         if (gst == null) return null
         val major = gst.stdDevMajor
         val minor = gst.stdDevMinor
-        if (major != null && minor != null) return Math.sqrt((major * major + minor * minor) / 2.0)
+        if (major != null && minor != null) return app.surrealar.geo.HorizontalAccuracy.r68(major, minor)
         val lat = gst.stdDevLat
         val lon = gst.stdDevLon
-        if (lat != null && lon != null) return Math.sqrt((lat * lat + lon * lon) / 2.0)
+        if (lat != null && lon != null) return app.surrealar.geo.HorizontalAccuracy.r68(lat, lon)
         return null
     }
 

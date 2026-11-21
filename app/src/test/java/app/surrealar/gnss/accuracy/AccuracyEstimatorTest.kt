@@ -57,7 +57,7 @@ class AccuracyEstimatorTest {
             fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 1.5, vDop = 2.0),
             UereTable()
         )
-        assertEquals(1.5 * 4.0, r.horizontalMeters!!, tol)   // internal[SINGLE] = 4.0
+        assertEquals(1.515 * 1.5 * 4.0, r.horizontalMeters!!, tol)   // 68 % radius: 1.515 × HDOP × internal[SINGLE]
         assertEquals(2.0 * 4.0, r.verticalMeters!!, tol)
     }
 
@@ -74,14 +74,14 @@ class AccuracyEstimatorTest {
         val r = AccuracyEstimator.estimate1SigmaMeters(
             fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 0.8), UereTable()
         )
-        assertEquals(0.8 * 2.5, r.horizontalMeters!!, tol)
+        assertEquals(1.515 * 0.8 * 2.5, r.horizontalMeters!!, tol)
     }
 
     @Test fun `RS2 RTK fixed uses the tight rs2 UERE`() {
         val r = AccuracyEstimator.estimate1SigmaMeters(
             fix(provider = Provider.RS2_EXTERNAL, rtkStatus = RtkStatus.FIX, hDop = 0.8), UereTable()
         )
-        assertEquals(0.8 * 0.02, r.horizontalMeters!!, tol)   // rs2[FIX] = 0.02
+        assertEquals(1.515 * 0.8 * 0.02, r.horizontalMeters!!, tol)   // rs2[FIX] = 0.02, ×1.515 → 68 % radius
         assertNull(r.verticalMeters)                          // no vDop → no vertical estimate
     }
 
@@ -100,7 +100,7 @@ class AccuracyEstimatorTest {
         val r = AccuracyEstimator.estimate1SigmaMeters(
             fix(provider = Provider.INTERNAL, rtkStatus = RtkStatus.SINGLE, hDop = 50.0), UereTable()
         )
-        assertEquals(200.0, r.horizontalMeters!!, tol)
+        assertEquals(1.515 * 200.0, r.horizontalMeters!!, tol)
     }
 
     // ── UereTable mapping + fallbacks ─────────────────────────────────────────────────────────

@@ -3,15 +3,19 @@ package app.surrealar.gnss.accuracy
 import app.surrealar.gnss.model.Fix
 
 /**
- * Estimates 1-sigma position accuracy for a fix.
+ * Estimates position accuracy for a fix: horizontal as a 68 % radius (app-wide meaning of hAccM,
+ * see [app.surrealar.geo.HorizontalAccuracy]), vertical as 1σ.
  *
- * Receiver-reported GST values are preferred because they come directly from the
- * GNSS solution. When GST is not available, the estimator falls back to a common
- * approximation: DOP multiplied by an expected UERE value for the fix type.
+ * Receiver-reported values are preferred (GST is already converted to a 68 % radius in NmeaFuser;
+ * $..ACCURACY and Android Location.accuracy are 68 % radii as reported). When none is available,
+ * the estimator falls back to DOP × UERE for the fix type, with the horizontal scaled by 1.515.
  */
 object AccuracyEstimator {
 
-    /** Horizontal/vertical 1-sigma accuracy in metres; either is null when it could not be estimated. */
+    /**
+     * Horizontal accuracy (68 % radius) and vertical accuracy (1σ) in metres; either is null when it
+     * could not be estimated. (Name kept for compatibility — the horizontal is not a plain 1σ.)
+     */
     data class Accuracy1Sigma(
         val horizontalMeters: Double?,
         val verticalMeters: Double?
@@ -38,7 +42,10 @@ object AccuracyEstimator {
          */
         // No position solution (NONE/INVALID) → no estimate, rather than a number.
         val uere = uereTable.uere(fix.provider, fix.rtkStatus) ?: return Accuracy1Sigma(null, null)
-        val horizontalMeters = fix.hDop?.times(uere)
+        // HDOP × UERE is roughly a 1σ per-axis horizontal error; scale to the app-wide 68 % radius
+        // (×1.515) so it agrees with GST, $..ACCURACY and Android Location.accuracy.
+        // VDOP × UERE stays a 1σ vertical, like every other vertical source.
+        val horizontalMeters = fix.hDop?.let { app.surrealar.geo.HorizontalAccuracy.r68(it * uere) }
         val verticalMeters = fix.vDop?.times(uere)
 
         return Accuracy1Sigma(horizontalMeters, verticalMeters)

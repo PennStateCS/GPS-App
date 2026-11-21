@@ -71,7 +71,7 @@ class ReachNmeaCaptureReplayTest {
         // GST accuracy parsed from lat/lon std-devs (0.010) — present and NOT fabricated as 0.0.
         val hacc = fuser.timingStats.lastHAccM
         assertNotNull("GST horizontal accuracy must be parsed, not null", hacc)
-        assertEquals("GST accuracy ~0.010 m", 0.010, hacc!!, 1e-3)
+        assertEquals("GST σ 0.010 m → 68 % radius 0.0152 m", 0.0152, hacc!!, 1e-4)
         assertTrue("accuracy must never be a fake 0.0", hacc > 0.0)
 
         // satsVisible (GSV) never below satsUsed (no cross-constellation double-count blowup).
@@ -150,7 +150,7 @@ class ReachNmeaCaptureReplayTest {
         // GST accuracy parsed from lat/lon std-devs (RS2 also leaves semi-major/minor empty).
         val hacc = fuser.timingStats.lastHAccM
         assertNotNull("GST accuracy must be parsed, not DOP fallback", hacc)
-        assertEquals(0.010, hacc!!, 1e-3)
+        assertEquals(0.0152, hacc!!, 1e-4)
         assertEquals(NmeaFuser.AccuracySource.RECEIVER_GST, fuser.timingStats.lastAccuracySource)
 
         // RS2 has no IMU / GNETC.
