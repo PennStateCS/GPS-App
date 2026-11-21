@@ -3,13 +3,10 @@ package app.surrealar.util
 import android.content.Context
 import android.util.Log
 import app.surrealar.BuildConfig
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.FileOutputStream
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,8 +41,9 @@ import java.util.Locale
  *     so a crash from a previous launch is still in the export.
  *   - Raw NMEA is NEVER written here — it has its own separate, optional logger ([LogZip]).
  *
- * File IO is always dispatched off the main thread via an internal CoroutineScope.
- * Logging failures (disk full, IO error) are caught and never crash the app.
+ * Normal writes go to one background writer thread (in call order). Crashes use [writeCrashSync],
+ * which writes on the calling thread and fsyncs before returning, because the process dies right
+ * after an uncaught exception. Logging failures (disk full, IO error) are caught and never crash the app.
  *
  * Privacy note: callers must never pass API keys, passwords, auth tokens, raw NMEA
  * streams, or full coordinate dumps to this logger.
@@ -62,13 +60,22 @@ object DiagnosticsLogger {
     private const val MAX_ERROR_ROTATED = 2
     private const val MAX_ERROR_BYTES   = 1L * 1024 * 1024   // 1 MB per error file
 
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val mutex   = Mutex()
+    /** One background writer keeps lines in call order; [lock] guards the files for it and [writeCrashSync]. */
+    private val writer: ExecutorService = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "diag-log").apply { isDaemon = true }
+    }
+    private val lock = Any()
     private val tsFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
     @Volatile private var logDir: File? = null
     @Volatile private var currentSize: Long = 0L
     @Volatile private var errorSize: Long = 0L
+
+    /** Screen currently shown (set by navigation); included in crash records. */
+    @Volatile var currentScreen: String? = null
+
+    /** This process session's ID (set at start-up); included in crash records. */
+    @Volatile var sessionId: String? = null
 
     /**
      * Must be called once before any log method. Safe to call multiple times.
@@ -81,6 +88,43 @@ object DiagnosticsLogger {
         logDir = dir
         currentSize = File(dir, CURRENT_FILE).length()
         errorSize   = File(dir, ERROR_CURRENT).length()
+    }
+
+    /** Points the logger at [dir] (tests only). */
+    internal fun initForTest(dir: File) {
+        dir.mkdirs()
+        logDir = dir
+        currentSize = File(dir, CURRENT_FILE).length()
+        errorSize   = File(dir, ERROR_CURRENT).length()
+    }
+
+    /**
+     * Writes a crash to the error log AND the event log on the calling thread, fsynced, before
+     * returning — the uncaught-exception handler calls this right before the process dies, when an
+     * async write would be lost. Includes the thread, the full stack trace with causes, the current
+     * screen and the session ID. [fatal] = false for exceptions caught by a coroutine handler.
+     */
+    fun writeCrashSync(thread: Thread, throwable: Throwable, fatal: Boolean) {
+        val message = (if (fatal) "Uncaught exception (fatal)" else "Uncaught exception in a coroutine (not fatal)") +
+            " thread=${thread.name} screen=${currentScreen ?: "unknown"} session=${sessionId ?: "unknown"}" +
+            " type=${throwable.javaClass.name}: ${throwable.message}"
+        runCatching { Log.e("GlobalCrash", message, throwable) }
+        val dir = logDir ?: return
+        val bytes = buildLogLine("ERROR", "ERROR", message, throwable).toByteArray(Charsets.UTF_8)
+        synchronized(lock) {
+            try {
+                if (errorSize + bytes.size > MAX_ERROR_BYTES) rotateErrors(dir)
+                appendSynced(File(dir, ERROR_CURRENT), bytes); errorSize += bytes.size
+                if (currentSize + bytes.size > MAX_LOG_BYTES) rotate(dir)
+                appendSynced(File(dir, CURRENT_FILE), bytes); currentSize += bytes.size
+            } catch (ex: Throwable) {
+                runCatching { Log.e("DiagnosticsLogger", "Crash write failed: ${ex.message}") }
+            }
+        }
+    }
+
+    private fun appendSynced(file: File, bytes: ByteArray) {
+        FileOutputStream(file, true).use { out -> out.write(bytes); out.flush(); out.fd.sync() }
     }
 
     /** Info-level event. Always written to file (once initialized). */
@@ -120,13 +164,11 @@ object DiagnosticsLogger {
      */
     fun writeSessionSummary(name: String, content: String) {
         val dir = logDir ?: return
-        ioScope.launch {
-            mutex.withLock {
-                try {
-                    File(dir, name).writeText(content, Charsets.UTF_8)
-                } catch (ex: Exception) {
-                    Log.e("DiagnosticsLogger", "Session summary write failed ($name): ${ex.message}")
-                }
+        submit {
+            try {
+                File(dir, name).writeText(content, Charsets.UTF_8)
+            } catch (ex: Exception) {
+                Log.e("DiagnosticsLogger", "Session summary write failed ($name): ${ex.message}")
             }
         }
     }
@@ -169,42 +211,37 @@ object DiagnosticsLogger {
 
     // ── internals ──────────────────────────────────────────────────────────────
 
+    /** Runs [block] on the writer thread under [lock]. */
+    private fun submit(block: () -> Unit) {
+        runCatching { writer.execute { synchronized(lock) { block() } } }
+    }
+
     private fun writeAsync(level: String, tag: String, message: String, t: Throwable?) {
         val dir = logDir ?: return
-        ioScope.launch {
-            mutex.withLock {
-                try {
-                    val file = File(dir, CURRENT_FILE)
-                    val line = buildLogLine(level, tag, message, t)
-                    val bytes = line.toByteArray(Charsets.UTF_8)
-                    if (currentSize + bytes.size > MAX_LOG_BYTES) {
-                        rotate(dir)
-                    }
-                    file.appendBytes(bytes)
-                    currentSize += bytes.size
-                } catch (ex: Exception) {
-                    Log.e("DiagnosticsLogger", "File write failed: ${ex.message}")
-                }
+        val line = buildLogLine(level, tag, message, t)   // built on the caller (its thread and time)
+        submit {
+            try {
+                val bytes = line.toByteArray(Charsets.UTF_8)
+                if (currentSize + bytes.size > MAX_LOG_BYTES) rotate(dir)
+                File(dir, CURRENT_FILE).appendBytes(bytes)
+                currentSize += bytes.size
+            } catch (ex: Exception) {
+                Log.e("DiagnosticsLogger", "File write failed: ${ex.message}")
             }
         }
     }
 
     private fun writeErrorAsync(level: String, tag: String, message: String, t: Throwable?) {
         val dir = logDir ?: return
-        ioScope.launch {
-            mutex.withLock {
-                try {
-                    val file = File(dir, ERROR_CURRENT)
-                    val line = buildLogLine(level, tag, message, t)
-                    val bytes = line.toByteArray(Charsets.UTF_8)
-                    if (errorSize + bytes.size > MAX_ERROR_BYTES) {
-                        rotateErrors(dir)
-                    }
-                    file.appendBytes(bytes)
-                    errorSize += bytes.size
-                } catch (ex: Exception) {
-                    Log.e("DiagnosticsLogger", "Error-file write failed: ${ex.message}")
-                }
+        val line = buildLogLine(level, tag, message, t)
+        submit {
+            try {
+                val bytes = line.toByteArray(Charsets.UTF_8)
+                if (errorSize + bytes.size > MAX_ERROR_BYTES) rotateErrors(dir)
+                File(dir, ERROR_CURRENT).appendBytes(bytes)
+                errorSize += bytes.size
+            } catch (ex: Exception) {
+                Log.e("DiagnosticsLogger", "Error-file write failed: ${ex.message}")
             }
         }
     }

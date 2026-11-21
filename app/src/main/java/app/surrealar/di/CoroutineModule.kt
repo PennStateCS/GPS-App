@@ -32,6 +32,7 @@ object CoroutineModule {
 
     /** Logs an uncaught coroutine failure (never a cancellation) instead of crashing. */
     val LogUncaught: CoroutineExceptionHandler = CoroutineExceptionHandler { _, e ->
-        DiagnosticsLogger.e("Coroutine", "Uncaught exception in a background coroutine: ${e.javaClass.simpleName}", e)
+        // Same synchronous path as the global crash handler, but the process keeps running.
+        DiagnosticsLogger.writeCrashSync(Thread.currentThread(), e, fatal = false)
     }
 }

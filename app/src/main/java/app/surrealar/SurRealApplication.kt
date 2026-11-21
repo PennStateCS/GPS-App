@@ -113,16 +113,10 @@ class SurRealApplication : Application() {
         // normal crash behavior (process termination, Play Console reporting) still happens.
         val previousCrashHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            // Blocking, fsynced write: the process dies as soon as the previous handler runs.
             try {
-                DiagnosticsLogger.e(
-                    "GlobalCrash",
-                    "Uncaught exception thread=${thread.name} type=${throwable.javaClass.name}" +
-                        " app=${BuildConfig.VERSION_NAME} build=${BuildConfig.BUILD_NUMBER}" +
-                        " debug=${BuildConfig.DEBUG}",
-                    throwable
-                )
+                DiagnosticsLogger.writeCrashSync(thread, throwable, fatal = true)
             } catch (_: Throwable) { /* never let crash logging mask the original crash */ }
-            Log.e("GlobalCrash", "Uncaught exception on thread ${thread.name}", throwable)
             previousCrashHandler?.uncaughtException(thread, throwable)
         }
         Log.d("SurRealApplication","Application started; global crash handler installed")
