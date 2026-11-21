@@ -5,6 +5,8 @@ import android.util.Log
 import app.surrealar.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.text.SimpleDateFormat
@@ -210,6 +212,18 @@ object DiagnosticsLogger {
     }
 
     // ── internals ──────────────────────────────────────────────────────────────
+
+    /**
+     * Waits until every line queued so far is on disk (or [timeoutMs] passes). The exporter calls this
+     * before zipping so the last events before "Export" are in the report. Don't call it from the
+     * writer thread. Returns false on timeout.
+     */
+    fun flush(timeoutMs: Long = 5_000L): Boolean {
+        if (logDir == null) return true
+        val done = CountDownLatch(1)
+        val queued = runCatching { writer.execute { done.countDown() } }.isSuccess
+        return queued && done.await(timeoutMs, TimeUnit.MILLISECONDS)
+    }
 
     /** Runs [block] on the writer thread under [lock]. */
     private fun submit(block: () -> Unit) {

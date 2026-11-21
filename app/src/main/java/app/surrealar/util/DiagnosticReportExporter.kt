@@ -75,7 +75,7 @@ object DiagnosticReportExporter {
             val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())
             val permWarnings = runCatching { computePermissionWarnings(context) }.getOrDefault(emptyList())
 
-            ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            writeZip(zipFile) { zos ->
                 // ── Compact summaries (current state at export time) ──
                 zos.addText("diagnostic-summary.txt", buildSummary(context, warnings + permWarnings))
                 zos.addTextSafe("settings-snapshot.txt") {
@@ -419,6 +419,19 @@ object DiagnosticReportExporter {
     }
 
     // ── ZIP helpers ────────────────────────────────────────────────────────────
+
+    /**
+     * Flushes queued log lines to disk, then writes the ZIP — so the events right before the export
+     * (including the export's own) are in it. `internal` for tests.
+     */
+    internal suspend fun writeZip(
+        zipFile: File,
+        flush: () -> Unit = { DiagnosticsLogger.flush() },
+        body: suspend (ZipOutputStream) -> Unit,
+    ) {
+        runCatching(flush)
+        ZipOutputStream(FileOutputStream(zipFile)).use { body(it) }
+    }
 
     private fun ZipOutputStream.addText(name: String, content: String) {
         putNextEntry(ZipEntry(name))
