@@ -95,6 +95,7 @@ class SurRealApplication : Application() {
         // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
         // coordinates/models. Release builds keep data via real migrations.
         DiagnosticsLogger.i("DB", "Destructive migration allowed: ${BuildConfig.DEBUG}")
+        app.surrealar.util.diagnostics.ExitReasonRecorder.recordAtStartup(this)
 
         // Explicitly select the Maps renderer before any MapView is created.
         // Without this, preferredRenderer is null and the SDK auto-selects — which
