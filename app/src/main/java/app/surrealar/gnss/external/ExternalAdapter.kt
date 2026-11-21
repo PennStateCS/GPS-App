@@ -53,6 +53,8 @@ class ExternalAdapter(
      * and captures see the receiver that produced the fix even if the profile changes later.
      */
     private val currentProfile: () -> app.surrealar.settings.model.ExternalReceiverProfile,
+    /** Monotonic clock for data-age and connect timing (never jumps with wall-clock corrections). */
+    private val monotonicNowMs: () -> Long = { android.os.SystemClock.elapsedRealtime() },
 ) : SourceAdapter, SkyProvider, Startable, RawNmeaProvider, app.surrealar.gnss.source.ExternalReconnectable {
 
     companion object {
@@ -192,7 +194,7 @@ class ExternalAdapter(
                 app.surrealar.gnss.debug.GnssDebugLog.event("external") {
                     "attempt #$attempts failed (${e.javaClass.simpleName}: ${e.message}); " +
                         "connectionActive=${nmea.isConnectionActive()} firstData=$firstDataArrived " +
-                        "lastDataAgo=${if (lastDataTimeMs == 0L) "-" else "${System.currentTimeMillis() - lastDataTimeMs}ms"} " +
+                        "lastDataAgo=${if (lastDataTimeMs == 0L) "-" else "${monotonicNowMs() - lastDataTimeMs}ms"} " +
                         "retry in ${backoff}ms"
                 }
                 delay(backoff)
@@ -221,7 +223,7 @@ class ExternalAdapter(
                 .conflate()
                 .onEach {
                     firstDataArrived = true
-                    lastDataTimeMs = System.currentTimeMillis()
+                    lastDataTimeMs = monotonicNowMs()
                 }
                 .collect { fix ->
                     // Per-item work is guarded so one bad item can't end the collector (or crash the
@@ -240,7 +242,7 @@ class ExternalAdapter(
             nmea.gsvStream()
                 .onEach {
                     firstDataArrived = true
-                    lastDataTimeMs = System.currentTimeMillis()
+                    lastDataTimeMs = monotonicNowMs()
                 }
                 .collect { gsv ->
                     runCatching { inv.consume(gsv) }
@@ -252,15 +254,15 @@ class ExternalAdapter(
         rawNmeaJob = scope.launch {
             nmea.rawNmeaEvents().collect {
                 firstDataArrived = true
-                lastDataTimeMs = System.currentTimeMillis()
+                lastDataTimeMs = monotonicNowMs()
                 _rawNmea.emit(Unit)
             }
         }
     }
 
     private suspend fun waitForFirstDataOrTimeout() {
-        val start = System.currentTimeMillis()
-        while (coroutineContext.isActive && System.currentTimeMillis() - start < CONNECT_TIMEOUT_MS) {
+        val start = monotonicNowMs()
+        while (coroutineContext.isActive && monotonicNowMs() - start < CONNECT_TIMEOUT_MS) {
             if (firstDataArrived) return
             // Connect refused / host unreachable / no host configured: retry on the backoff
             // schedule now rather than sitting out the full connect timeout.
@@ -285,7 +287,7 @@ class ExternalAdapter(
             }
             val last = lastDataTimeMs
             if (last == 0L) continue
-            val staleFor = System.currentTimeMillis() - last
+            val staleFor = monotonicNowMs() - last
             if (staleFor > HEALTH_DATA_TIMEOUT_MS) {
                 DiagnosticsLogger.w("Receiver", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
                 throw IllegalStateException("No data for ${HEALTH_DATA_TIMEOUT_MS} ms")

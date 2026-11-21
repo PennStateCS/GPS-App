@@ -56,7 +56,9 @@ class TcpNmeaSource(
     @Suppress("UNUSED_PARAMETER") sourceSettings: SourceSettings,  // Reserved for future profile support
     registry: NmeaRegistry,
     private val provider: Provider = Provider.EXTERNAL_TCP,
-    private val diagnostics: DiagnosticsService? = null
+    private val diagnostics: DiagnosticsService? = null,
+    /** Socket read timeout; [DEAD_LINK_TIMEOUTS] in a row with no data ends the connection. Tests shorten it. */
+    private val readTimeoutMs: Int = SOCKET_TIMEOUT_MS,
 ) : NmeaSource {
 
     companion object {
@@ -64,6 +66,13 @@ class TcpNmeaSource(
         private const val SOCKET_TIMEOUT_MS = 5_000
         /** How often the fuser's GST hold cap (300 ms) is checked while reading. */
         private const val HOLD_TICK_MS = 100L
+        /**
+         * Consecutive read timeouts with no line received that mean the link is dead (half-open socket:
+         * Wi-Fi dropped, receiver powered off without closing). 2 × 5 s ≈ 10 s on a ≥1 Hz stream, instead
+         * of the adapter's 30 s no-data timeout. Ending the connection lets ExternalAdapter's existing
+         * reconnect/backoff run.
+         */
+        private const val DEAD_LINK_TIMEOUTS = 2
     }
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -183,7 +192,8 @@ class TcpNmeaSource(
         readerGeneration.set(myGeneration)
         try {
             socket = Socket().also { activeSocket = it }.apply {
-                soTimeout = SOCKET_TIMEOUT_MS
+                soTimeout = readTimeoutMs
+                keepAlive = true   // OS-level probe for a peer that vanished without closing
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
             Log.d(TAG, "Connected to $host:$port")
@@ -199,10 +209,12 @@ class TcpNmeaSource(
                     if (myGeneration == generation) fuser.flushIfStale()
                 }
             }
+            var silentTimeouts = 0
             try {
             while (coroutineContext.isActive) {
                 try {
                     val line = reader.readLine()
+                    silentTimeouts = 0
                     if (line == null) {
                         Log.w(TAG, "Connection closed by remote")
                         DiagnosticsLogger.w("Receiver", "TCP connection closed by remote ($host:$port)")
@@ -222,6 +234,12 @@ class TcpNmeaSource(
                     }
                 } catch (_: SocketTimeoutException) {
                     if (!coroutineContext.isActive) break
+                    if (++silentTimeouts >= DEAD_LINK_TIMEOUTS) {
+                        val silentMs = silentTimeouts.toLong() * readTimeoutMs
+                        Log.w(TAG, "No data for ${silentMs}ms — treating the link as dead")
+                        DiagnosticsLogger.w("Receiver", "TCP: no data for ${silentMs}ms from $host:$port — link dead, reconnecting")
+                        break
+                    }
                 }
             }
             } finally {
