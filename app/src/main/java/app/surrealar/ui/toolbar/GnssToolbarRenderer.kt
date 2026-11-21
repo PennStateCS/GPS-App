@@ -104,8 +104,7 @@ class GnssToolbarRenderer(
         acc.separator?.isVisible = accVisible && ageVisible
         age.separator?.isVisible = false
 
-        // Battery
-        batt.icon.contentDescription = if (state.isExternal) "receiver battery" else "device battery"
+        // Battery (its spoken description is set with the battery reading, see renderBattery)
         onBatteryVisibilityChanged(state.batteryVisible)
 
         // Coordinates ("LL" lat/lon or "NE" grid, per Settings → Coordinates)
@@ -122,6 +121,15 @@ class GnssToolbarRenderer(
         ratchetWidth(alt.value, state.altitudeText, key = "alt:${state.altitudeLabel}:${state.altitudeText.substringAfterLast(' ')}")
         alt.value.alpha = if (state.isStale) STALE_ALPHA else 1f
         alt.root.isVisible = true
+
+        // Spoken descriptions (TalkBack reads each token root as one item)
+        source.root.contentDescription = state.sourceDescription
+        fix.root.contentDescription = state.fixDescription
+        sats.root.contentDescription = state.satsDescription
+        acc.root.contentDescription = state.accuracyDescription
+        age.root.contentDescription = state.ageDescription
+        coord.root.contentDescription = state.coordDescription
+        alt.root.contentDescription = state.altitudeDescription
 
         fitToWidth()
     }

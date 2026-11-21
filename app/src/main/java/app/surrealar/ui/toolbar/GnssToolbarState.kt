@@ -31,4 +31,12 @@ data class GnssToolbarState(
     val altitudeLabel: String = "ALT", // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
     val coordToggleAvailable: Boolean = false, // a grid system is configured: tapping LL/NE switches the display
     val isReplay: Boolean = false,      // an NMEA log is replaying: source shows "REPLAY" with the replay icon
+    // Spoken descriptions (TalkBack), one per token, built by the mapper. Null = token hidden.
+    val sourceDescription: String = "",
+    val fixDescription: String = "",
+    val satsDescription: String? = null,
+    val accuracyDescription: String? = null,
+    val ageDescription: String? = null,
+    val coordDescription: String = "",
+    val altitudeDescription: String = "",
 )

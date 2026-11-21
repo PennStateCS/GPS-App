@@ -4,6 +4,8 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:minHeight="48dp"
+    android:focusable="true"
+    android:importantForAccessibility="yes"
     android:orientation="horizontal"
     android:gravity="center_vertical"
     android:paddingStart="0dp"
@@ -17,6 +19,7 @@
         android:layout_marginEnd="4dp"
         app:tint="@android:color/white"
         android:contentDescription="@null"
+        android:importantForAccessibility="no"
         android:src="@drawable/ic_satellite_24"
         android:visibility="gone"/>
 
@@ -25,6 +28,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Acc"
+        android:importantForAccessibility="no"
         android:textSize="12sp"
         android:textColor="@color/app_on_status_strip_variant"
         android:maxLines="1" />
@@ -40,7 +44,8 @@
         android:textColor="@color/app_on_status_strip"
         android:maxLines="1"
         android:ellipsize="end"
-        android:fontFeatureSettings="tnum" />
+        android:fontFeatureSettings="tnum"
+        android:importantForAccessibility="no" />
 
     <!-- Vertical bar separator with equal margins on both sides -->
     <TextView
@@ -51,6 +56,7 @@
         android:layout_marginStart="8dp"
         android:layout_marginEnd="8dp"
         android:text="|"
+        android:importantForAccessibility="no"
         android:textColor="@color/app_status_separator"
         android:textSize="14sp" />
 </LinearLayout>

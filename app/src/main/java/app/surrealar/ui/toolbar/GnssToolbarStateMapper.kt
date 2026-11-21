@@ -110,7 +110,11 @@ object GnssToolbarStateMapper {
             statusLevel = GnssStatusLevel.NONE,
             isExternal = !isInternal,
             isWaiting = true,
-            isStale = false
+            isStale = false,
+            sourceDescription = sourceDescription(isInternal, externalLabel, isReplay = false),
+            fixDescription = if (isInternal) "No fix" else "Connecting to receiver",
+            coordDescription = "Position not available",
+            altitudeDescription = "Height not available",
         )
     }
 
@@ -119,7 +123,8 @@ object GnssToolbarStateMapper {
      * Uses the existing ERROR level; live fields are cleared rather than left stale.
      */
     fun error(source: LocationSourceType, externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL): GnssToolbarState =
-        waiting(source, externalLabel).copy(fixText = "Error", fixLevel = GnssStatusLevel.ERROR, statusLevel = GnssStatusLevel.ERROR)
+        waiting(source, externalLabel).copy(fixText = "Error", fixLevel = GnssStatusLevel.ERROR, statusLevel = GnssStatusLevel.ERROR,
+            fixDescription = "GNSS status error, retrying")
 
     /** The link status for [source] at [nowMs] (monotonic). */
     fun linkStatus(source: LocationSourceType, link: ToolbarLinkInputs, nowMs: Long): LinkStatus {
@@ -147,7 +152,7 @@ object GnssToolbarStateMapper {
     ): GnssToolbarState {
         val base = waiting(source, externalLabel)
         val status = linkStatus(source, link, nowMs)
-        if (status == LinkStatus.LOCATION_OFF) return base.copy(fixText = "Location off")
+        if (status == LinkStatus.LOCATION_OFF) return base.copy(fixText = "Location off", fixDescription = "Location is off")
 
         val usable = last?.takeIf { fixMatchesSource(source, it.fix) && nowMs - it.atMs in 0..STALE_KEEP_MS }
         if (usable != null && status != LinkStatus.STREAMING) {
@@ -162,15 +167,23 @@ object GnssToolbarStateMapper {
                     accuracyLevel = GnssStatusLevel.NONE,
                     isWaiting = true,
                     isStale = true,
+                    fixDescription = "Position lost ${seconds(nowMs - usable.atMs)} seconds ago, showing the last position",
+                    satsDescription = null,
+                    accuracyDescription = null,
+                    ageDescription = null,
+                    coordDescription = "Last known " + shown.coordDescription.replaceFirstChar { it.lowercase() },
+                    altitudeDescription = "Last known " + shown.altitudeDescription.replaceFirstChar { it.lowercase() },
                 )
             }
         }
-        val text = when (status) {
-            LinkStatus.CONNECTING -> "Connecting…"
-            LinkStatus.CONNECTED_NO_DATA -> link.lastRawNmeaAtMs?.let { "No data ${seconds(nowMs - it)}s" } ?: "No data"
-            else -> "No fix"
+        val silentS = link.lastRawNmeaAtMs?.let { seconds(nowMs - it) }
+        val (text, spoken) = when (status) {
+            LinkStatus.CONNECTING -> "Connecting…" to "Connecting to receiver"
+            LinkStatus.CONNECTED_NO_DATA -> (silentS?.let { "No data ${it}s" } ?: "No data") to
+                (silentS?.let { "Receiver connected, no data for $it seconds" } ?: "Receiver connected, no data")
+            else -> "No fix" to "No fix"
         }
-        return base.copy(fixText = text)
+        return base.copy(fixText = text, fixDescription = spoken)
     }
 
     private fun seconds(ms: Long): Long = ms.coerceAtLeast(0L) / 1_000L
@@ -180,7 +193,48 @@ object GnssToolbarStateMapper {
 
     /** [s] marked as replay: REPLAY source, no receiver battery, no correction age. */
     private fun replay(s: GnssToolbarState) = s.copy(
-        sourceText = REPLAY_LABEL, isReplay = true, batteryVisible = false, correctionAgeText = null)
+        sourceText = REPLAY_LABEL, isReplay = true, batteryVisible = false, correctionAgeText = null,
+        sourceDescription = sourceDescription(isInternal = false, label = "", isReplay = true), ageDescription = null)
+
+    // ── Spoken descriptions (TalkBack) ─────────────────────────────────────────
+
+    internal fun sourceDescription(isInternal: Boolean, label: String, isReplay: Boolean): String = when {
+        isReplay -> "Source: NMEA replay"
+        isInternal -> "Source: device GNSS"
+        else -> "Source: $label receiver"
+    }
+
+    internal fun fixDescription(status: RtkStatus, isInternal: Boolean): String = "Solution: " + when {
+        isInternal -> if (status == RtkStatus.NONE || status == RtkStatus.INVALID) "no fix" else "GPS"
+        else -> when (status) {
+            RtkStatus.FIX -> "RTK fixed"
+            RtkStatus.FLOAT -> "RTK float"
+            RtkStatus.DGPS -> "DGPS"
+            RtkStatus.SINGLE -> "single, no corrections"
+            RtkStatus.DEAD_RECKONING -> "dead reckoning"
+            RtkStatus.NONE, RtkStatus.INVALID -> "no fix"
+        }
+    }
+
+    /** "Accuracy plus or minus 1.5 centimetres, estimated" (centimetres under 1 m, else metres). */
+    internal fun accuracyDescription(hAccM: Double, estimated: Boolean): String {
+        val amount = if (hAccM < 1.0) "${trim1(hAccM * 100.0)} centimetres" else String.format(Locale.US, "%.2f metres", hAccM)
+        return "Accuracy plus or minus $amount" + if (estimated) ", estimated" else ""
+    }
+
+    internal fun ageDescription(ageS: Double): String = "Correction age ${trim1(ageS)} seconds"
+
+    internal fun satsDescription(used: Int, visible: Int): String = "Satellites $used used of $visible"
+
+    /** Battery token description, e.g. "Receiver battery 80 percent, charging". */
+    fun batteryDescription(percent: Int?, charging: Boolean?): String =
+        if (percent == null) "Receiver battery unknown"
+        else "Receiver battery $percent percent" + if (charging == true) ", charging" else ""
+
+    private fun trim1(v: Double): String {
+        val r = Math.round(v * 10.0) / 10.0
+        return if (r == Math.floor(r)) r.toLong().toString() else String.format(Locale.US, "%.1f", r)
+    }
 
     fun map(
         selectedSource: LocationSourceType,
@@ -314,6 +368,13 @@ object GnssToolbarStateMapper {
                 altitudeLabel = altitudeLabel,
                 coordToggleAvailable = gridConfigured,
                 isReplay = isReplay,
+                sourceDescription = sourceDescription(isInternal, externalLabel, isReplay),
+                fixDescription = fixDescription(fix.rtkStatus, isInternal),
+                satsDescription = if (satelliteText != null) satsDescription(used, vis) else null,
+                accuracyDescription = if (accuracyText != null && hAcc != null) accuracyDescription(hAcc, estimated) else null,
+                ageDescription = correctionAgeText?.let { ageDescription(fix.diffAgeS!!) },
+                coordDescription = (if (coordLabel == "NE") "Grid position " else "Position ") + latLonText.replace(" · ", ", "),
+                altitudeDescription = if (altitudeText == "--") "Height not available" else "Height $altitudeLabel $altitudeText",
             )
         )
     }
