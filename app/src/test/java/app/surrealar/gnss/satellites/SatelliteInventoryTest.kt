@@ -23,6 +23,23 @@ class SatelliteInventoryTest {
     }
 
     @Test
+    fun `SNR moves exactly halfway after one half-life`() {
+        inventory.consume(GsvMessage("GP", listOf(GsvEntry(5, 45, 120, 40.0, true))))
+        currentTimeSeconds += 10.0                       // one half-life
+        val s = inventory.consume(GsvMessage("GP", listOf(GsvEntry(5, 45, 120, 20.0, true))))
+        // Real half-life: 40 → 30. Using halfLife as a time constant gave 27.4 (a 6.9 s half-life).
+        assertEquals(30.0, s.satellites.single().cn0DbHz!!, 1e-9)
+    }
+
+    @Test
+    fun `satellite that stops reporting SNR loses its old smoothed value`() {
+        inventory.consume(GsvMessage("GP", listOf(GsvEntry(5, 45, 120, 40.0, true))))
+        currentTimeSeconds += 1.0
+        val s = inventory.consume(GsvMessage("GP", listOf(GsvEntry(5, 45, 120, null, false))))
+        assertNull("blank SNR must not keep showing 40 dB-Hz", s.satellites.single().cn0DbHz)
+    }
+
+    @Test
     fun `reset clears all satellite state`() {
         // Add some satellites
         val gpsMsg = GsvMessage("GP", listOf(

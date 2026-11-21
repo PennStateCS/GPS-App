@@ -28,6 +28,8 @@ class SatelliteInventory(
     /** Label for debug-build tracing ("internal" / "external"). */
     private val debugName: String = "sky"
 ) {
+    private companion object { val LN2 = kotlin.math.ln(2.0) }
+
     /** Namespaced key to avoid SVID collisions across constellations (GPS and GLONASS can share numbers). */
     private data class SatId(val c: Constellation, val svid: Int)
 
@@ -50,13 +52,18 @@ class SatelliteInventory(
         gsv.entries.forEach { e ->
             val id = SatId(const, e.svid)
 
-            // SNR EMA (only if present)
-            e.snrDbHz?.let { snrSample ->
+            // SNR EMA with a true half-life: after halfLifeSeconds the old value's weight is 0.5
+            // (exp(−ln2·dt/T)). Using T as the time constant gave a 6.9 s half-life for T = 10 s.
+            val snrSample = e.snrDbHz
+            if (snrSample != null) {
                 val prev = snrBySat[id]
                 val dt = if (prev == null) 0.0 else max(1e-3, t - prev.second)
-                val alpha = 1.0 - kotlin.math.exp(-dt / halfLifeSeconds)
+                val alpha = 1.0 - kotlin.math.exp(-LN2 * dt / halfLifeSeconds)
                 val smoothed = prev?.first?.let { it + alpha * (snrSample - it) } ?: snrSample
                 snrBySat[id] = smoothed to t
+            } else {
+                // Still listed but no SNR now (lost lock on the signal): don't keep the old value.
+                snrBySat.remove(id)
             }
 
             // Geometry
