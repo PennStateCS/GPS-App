@@ -13,7 +13,7 @@ package app.surrealar.gnss.nmea.sentence
  * - diffAge: age of differential corrections (seconds)
  * - stationId: differential reference station ID
  */
-data class GGA(
+public data class GGA(
     override val talker: String,
     val timeRaw: String?,
     val lat: Double?,

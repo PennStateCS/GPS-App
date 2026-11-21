@@ -4,7 +4,7 @@ package app.surrealar.gnss.nmea.parse
  * Utility functions for parsing NMEA coordinate formats (ddmm.mmmm and dddmm.mmmm)
  * and converting them to decimal degrees with proper hemisphere handling.
  */
-object NmeaCoordinateUtils {
+internal object NmeaCoordinateUtils {
 
     /**
      * Converts NMEA latitude format (ddmm.mmmm) to decimal degrees.

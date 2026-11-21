@@ -13,7 +13,7 @@ import app.surrealar.gnss.model.RtkStatus
  * stale correction data are paused/rejected according to [maxFixAgeSec] and
  * [maxDiffAgeSec].
  */
-data class AveragingPolicy(
+public data class AveragingPolicy(
     /** Minimum number of seconds to collect before the session is allowed to finish. */
     val minDurationSec: Int = 60,
 
@@ -63,7 +63,7 @@ data class AveragingPolicy(
     val requiresFreshCorrections: Boolean
         get() = requiredMinStatus.qualityRank() > RtkStatus.SINGLE.qualityRank()
 
-    companion object {
+    public companion object {
         /**
          * Averaging rules for INTERNAL (device / tablet) GNSS captures — the Standard preset's
          * internal policy and the Custom preset's internal fallback. Device GNSS never reaches RTK,
@@ -72,7 +72,7 @@ data class AveragingPolicy(
          * much longer sessions give diminishing returns for a field workflow. SINGLE is required, so
          * the correction-age gate does not apply ([requiresFreshCorrections] is false).
          */
-        val INTERNAL = AveragingPolicy(
+        public val INTERNAL: AveragingPolicy = AveragingPolicy(
             minDurationSec = 30,
             maxDurationSec = 90,
             minSamples = 20,

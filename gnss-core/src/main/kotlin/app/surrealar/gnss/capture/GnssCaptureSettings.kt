@@ -15,7 +15,7 @@ import app.surrealar.gnss.model.RtkStatus
  * external GNSS receivers. Internal phone GPS may not satisfy a FIX-only policy;
  * users who want to allow internal GPS captures should lower [requiredMinStatus].
  */
-data class GnssCaptureSettings(
+public data class GnssCaptureSettings(
     val requiredMinStatus: RtkStatus = RtkStatus.FIX,
     val minDurationSec: Int = 60,
     val maxDurationSec: Int = 120,
@@ -35,7 +35,7 @@ data class GnssCaptureSettings(
  * receives out-of-range inputs even when stored preferences are corrupted.
  * maxDurationSec is additionally clamped to be at least minDurationSec.
  */
-fun GnssCaptureSettings.toAveragingPolicy(): AveragingPolicy {
+public fun GnssCaptureSettings.toAveragingPolicy(): AveragingPolicy {
     val minDur = minDurationSec.coerceIn(1, 600)
     val maxDur = maxDurationSec.coerceIn(minDur, 600)
     return AveragingPolicy(

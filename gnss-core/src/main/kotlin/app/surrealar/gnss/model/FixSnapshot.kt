@@ -5,7 +5,7 @@ package app.surrealar.gnss.model
  * HomeViewModel maps the live FixSwitchboard fix into this. (It used to live next to the retired
  * FixAccumulator, which built it from replay sentences.)
  */
-data class FixSnapshot(
+public data class FixSnapshot(
     val timestampMillis: Long,
     val timestampSource: TimestampSource,
     val lat: Double?,

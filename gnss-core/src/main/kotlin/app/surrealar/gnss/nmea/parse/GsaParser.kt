@@ -19,7 +19,7 @@ import app.surrealar.gnss.nmea.sentence.GSA
  * - DOP fields can be blank or non-numeric; we parse them as Double? safely.
  * - We expose mode2 as fixMode (Int?) and return the used SVIDs list.
  */
-class GsaParser : SentenceParser<GSA> {
+public class GsaParser : SentenceParser<GSA> {
     override val tag: String = "GSA"
 
     override fun parse(talker: String, fields: List<String>): GSA? {

@@ -22,7 +22,7 @@ import kotlin.math.max
  *
  * Not thread-safe — confine all calls to a single coroutine or add a Mutex.
  */
-class SatelliteInventory(
+public class SatelliteInventory(
     private val halfLifeSeconds: Double = 10.0,
     private val evictionSeconds: Double = 30.0,
     private val nowSeconds: () -> Double = { System.nanoTime() / 1e9 },
@@ -45,7 +45,12 @@ class SatelliteInventory(
         val lastSeen: Double
     )
 
-    fun consume(gsv: GsvMessage): SkySnapshot {
+    /**
+     * Merges one completed GSV epoch into the inventory (SNR smoothed with the configured half-life;
+     * satellites unseen for evictionSeconds dropped) and returns the current sky. Not thread-safe:
+     * call from one collector.
+     */
+    public fun consume(gsv: GsvMessage): SkySnapshot {
         val t = nowSeconds()
         val const = mapConstellationName(gsv.constellation)
 
@@ -146,7 +151,7 @@ class SatelliteInventory(
      * Clears all accumulated satellite state. Call when switching GNSS providers
      * to avoid stale satellites from the previous source appearing in the sky view.
      */
-    fun reset() {
+    public fun reset() {
         snrBySat.clear()
         geometryBySat.clear()
         GnssLog.d("SatelliteInventory", "Reset: cleared all satellite state")

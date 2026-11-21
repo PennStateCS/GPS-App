@@ -13,7 +13,7 @@ package app.surrealar.gnss.nmea.sentence
  * @param timeRaw    UTC time (field 1), if present.
  * @param dataFields raw fields after the timestamp, unparsed (semantics undocumented).
  */
-data class ETC(
+public data class ETC(
     override val talker: String,
     val timeRaw: String?,
     val dataFields: List<String>,

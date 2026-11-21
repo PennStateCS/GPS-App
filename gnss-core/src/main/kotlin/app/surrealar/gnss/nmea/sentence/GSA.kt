@@ -6,7 +6,7 @@ package app.surrealar.gnss.nmea.sentence
  * - usedSvids: up to 12 PRNs/SVIDs used in the solution
  * - pdop/hdop/vdop: dilution of precision values, if provided
  */
-data class GSA(
+public data class GSA(
     override val talker: String,
     val fixMode: Int?,
     val usedSvids: List<Int>,

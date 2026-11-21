@@ -56,11 +56,8 @@ class NmeaTruncatedLineTest {
         return "$" + payload + "*" + "%02X".format(cs)
     }
 
-    @Test fun `missing hemisphere is not read as positive`() {
-        assertNull(NmeaCoordinateUtils.toDecimalDegrees("07601.0300517", null, isLatitude = false))
-        assertNull(NmeaCoordinateUtils.toDecimalDegrees("4118.4448800", null, isLatitude = true))
-        assertEquals(-76.01717, NmeaCoordinateUtils.toDecimalDegrees("07601.0300517", "W", false)!!, 1e-5)
-    }
+    // "missing hemisphere is not read as positive" moved to gnss-core's NmeaCoordinateUtilsTest
+    // (NmeaCoordinateUtils is internal to the module).
 
     @Test fun `even a lenient registry gives no position for the truncated GGA`() {
         val gga = DefaultNmeaRegistry.create(verifyChecksum = false).parse(truncated) as? GGA

@@ -9,7 +9,7 @@ import java.time.LocalTime
  * Parsers may choose to fill only raw fields (timeRaw/dateRaw) and leave time/date/epochMillis null,
  * or populate them when available. Accumulator decides how to fuse/interpret time.
  */
-data class RMC(
+public data class RMC(
     override val talker: String,
     val timeRaw: String?,
     val dateRaw: String?,

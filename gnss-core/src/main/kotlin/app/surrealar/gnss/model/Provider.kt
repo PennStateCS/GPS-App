@@ -7,7 +7,7 @@ package app.surrealar.gnss.model
  * estimation) knows which receiver produced the data without having to inspect
  * the fix pipeline itself.
  */
-enum class Provider {
+public enum class Provider {
     /** Android device's built-in GNSS chip (via the NMEA listener API). */
     INTERNAL,
 

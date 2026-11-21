@@ -6,7 +6,7 @@ import app.surrealar.gnss.nmea.sentence.EBP
  * Parses Emlid-specific `$..EBP` (base position) sentences. Tolerant: any missing/unparseable field
  * yields null, and EBP never participates in fix generation. See [EBP] for the assumed field order.
  */
-class EbpParser : SentenceParser<EBP> {
+public class EbpParser : SentenceParser<EBP> {
     override val tag: String = "EBP"
 
     override fun parse(talker: String, fields: List<String>): EBP? {

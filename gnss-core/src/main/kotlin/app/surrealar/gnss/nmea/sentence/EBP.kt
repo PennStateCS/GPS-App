@@ -14,7 +14,7 @@ package app.surrealar.gnss.nmea.sentence
  *  [3]=base longitude (dddmm.mmmm) [4]=E|W
  *  [5]=base altitude (metres)      [6]=unit ('M')
  */
-data class EBP(
+public data class EBP(
     override val talker: String,
     val baseLat: Double?,
     val baseLon: Double?,

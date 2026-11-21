@@ -19,8 +19,20 @@ import java.time.ZonedDateTime
  * Accepts raw NMEA lines, parses them via [NmeaRegistry], accumulates GGA/RMC/GSA/GSV/ZDA
  * sentences, and fires [onFix] / [onGsv] whenever a new position epoch is ready.
  *
- * **Not thread-safe**: all calls to [accept] must originate from the same thread, or callers
- * must provide their own synchronisation.
+ * **Threading.** Feed lines from one reader thread, in stream order: epoch assembly depends on the
+ * order of the sentences, which no lock can restore. All state is guarded by an internal lock, so
+ * [flushIfStale] (a ~100 ms timer), [flush], [reset] and the stats getters may run on other threads.
+ * [onFix] and [onGsv] are called synchronously **while that lock is held**: keep them short, never
+ * block in them, and don't call this fuser from another thread inside them.
+ *
+ * **GST hold.** Emlid sends GST (accuracy) and GSA (DOP, used satellites) after the GGA of the same
+ * epoch. When the stream carries GST and one is expected for a GGA's time, the fix is held and released
+ * by the first of: a GST with the same time, the first sentence of the next epoch, or 300 ms
+ * (GST_HOLD_MS), checked on every sentence and by [flushIfStale]. Streams without GST are never held.
+ * Call [flush] at the end of finite input (replay, tests) so the last epoch is emitted.
+ *
+ * **Accuracy.** [Fix.hAccM] is a 68 % horizontal radius (GST σ → HorizontalAccuracy.r68; MediaTek
+ * $..ACCURACY as reported); [Fix.vAccM] is 1σ. Values the receiver did not send stay null, never 0.
  *
  * Extracted from the duplicated logic that previously lived in both `InternalNmeaSource` and
  * `TcpNmeaSource`. Adding support for a new external provider requires only a new
@@ -29,10 +41,11 @@ import java.time.ZonedDateTime
  *
  * @param provider   Which GNSS provider produced this data (stamped onto every [Fix]).
  * @param registry   Shared [NmeaRegistry] that performs checksum-verified sentence parsing.
- * @param onFix      Invoked synchronously when a complete position epoch is assembled.
- * @param onGsv      Invoked synchronously when a full GSV multi-message epoch completes.
+ * @param onFix      Invoked synchronously, under the fuser's lock, when a position epoch is assembled.
+ * @param onGsv      Invoked synchronously, under the fuser's lock, when a full GSV epoch completes.
+ * @param clock      Wall clock in milliseconds (GST hold, staleness); injectable for tests.
  */
-class NmeaFuser(
+public class NmeaFuser(
     private val provider: Provider,
     private val registry: NmeaRegistry,
     private val onFix: (Fix) -> Unit,
@@ -114,8 +127,11 @@ class NmeaFuser(
     /** Guards all state: the internal source feeds from the main looper, stop()/reset() and stats readers run elsewhere. */
     private val lock = Any()
 
-    /** Feed one raw NMEA line into the fuser. Silently ignores unparseable lines. */
-    fun accept(line: String) {
+    /**
+     * Feed one raw NMEA line (with or without the trailing CR/LF). Unparseable, checksum-failed and
+     * unknown sentences are ignored. May call [onFix] / [onGsv] before returning.
+     */
+    public fun accept(line: String) {
         val sentence = try { registry.parse(line) } catch (_: Exception) { return } ?: return
         synchronized(lock) { handle(sentence) }
     }
@@ -182,7 +198,7 @@ class NmeaFuser(
     private var lastEtc: ETC? = null
 
     /** Snapshot of Emlid custom-sentence activity, for diagnostics. */
-    data class NmeaCustomStats(
+    public data class NmeaCustomStats(
         val ebpSeen: Boolean,
         val etcSeen: Boolean,
         val ebpCount: Int,
@@ -193,11 +209,11 @@ class NmeaFuser(
     )
 
     /** Read-only view of EBP/ETC activity seen by this fuser (diagnostics). */
-    val nmeaCustomStats: NmeaCustomStats
+    public val nmeaCustomStats: NmeaCustomStats
         get() = synchronized(lock) { NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc, etcOrientationSeen) }
 
     /** Where the last fix's horizontal accuracy came from. */
-    enum class AccuracySource { RECEIVER_GST, RECEIVER_PROPRIETARY, DOP_ESTIMATE, UNKNOWN }
+    public enum class AccuracySource { RECEIVER_GST, RECEIVER_PROPRIETARY, DOP_ESTIMATE, UNKNOWN }
 
     // ── Sentence/fix rate diagnostics (cumulative counts; consumers compute rates from deltas) ──
     private var ggaCount = 0
@@ -219,7 +235,7 @@ class NmeaFuser(
     private var lastAccuracySource: AccuracySource = AccuracySource.UNKNOWN
 
     /** Cumulative sentence/fix counts + last-fix summary + the clock used for the last fix's date. */
-    data class FuserTimingStats(
+    public data class FuserTimingStats(
         val ggaCount: Int,
         val rmcCount: Int,
         val zdaCount: Int,
@@ -243,7 +259,7 @@ class NmeaFuser(
     )
 
     /** Snapshot of sentence/fix counts, last-fix summary, and the date source of the last fix. */
-    val timingStats: FuserTimingStats
+    public val timingStats: FuserTimingStats
         get() = synchronized(lock) {
             FuserTimingStats(ggaCount, rmcCount, zdaCount, gstCount, emittedFixCount, lastTimestampSource,
                 lastRtkStatus, lastSatsUsed, lastSatsVisible, lastAltMslM, lastGeoidSepM, lastHAccM, lastAccuracySource,
@@ -465,14 +481,14 @@ class NmeaFuser(
      * Releases a fix held for its GST, if any. The live stream releases it with the next epoch's
      * first sentence; call this at end of input (replay, tests) so the last epoch is not lost.
      */
-    fun flush() = synchronized(lock) { releasePending() }
+    public fun flush(): Unit = synchronized(lock) { releasePending() }
 
     /**
      * Enforces the GST hold cap in time, not only when the next sentence arrives: releases a held fix
      * once it has waited longer than [GST_HOLD_MS]. Sources call this every ~100 ms. Runs under the
      * same lock as [accept], so [onFix] is never called concurrently and fixes stay in order.
      */
-    fun flushIfStale(nowMs: Long = clock()) = synchronized(lock) {
+    public fun flushIfStale(nowMs: Long = clock()): Unit = synchronized(lock) {
         if (pendingGga != null && nowMs - pendingAtMs > GST_HOLD_MS) releasePending()
     }
 
@@ -641,7 +657,7 @@ class NmeaFuser(
     }
 
     /** Clears all accumulated sentence state. Call when the underlying GNSS source is stopped. */
-    fun reset() = synchronized(lock) {
+    public fun reset(): Unit = synchronized(lock) {
         gsvSignalsByTalker.clear(); ggaSinceLastGsa = false; lastGsaAtMs = 0L
         lastAccuracy = null; lastAccuracyAtMs = 0L
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null; lastZdaAtMs = 0L

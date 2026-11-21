@@ -16,7 +16,7 @@ import app.surrealar.gnss.nmea.sentence.GST
  * [7] Standard deviation of longitude error (meters)
  * [8] Standard deviation of altitude error (meters)
  */
-class GstParser : SentenceParser<GST> {
+public class GstParser : SentenceParser<GST> {
     override val tag: String = "GST"
 
     override fun parse(talker: String, fields: List<String>): GST? {

@@ -5,15 +5,19 @@ import app.surrealar.gnss.nmea.sentence.NmeaSentence
 /**
  * Builds the default [NmeaRegistry] with all sentence parsers the app supports.
  *
- * This factory is used in tests and the replay pipeline where a standalone
- * registry is needed. Production code gets the registry through Hilt via
- * `GnssModule`, which calls this same factory under the hood.
+ * Used by tests and NMEA replay, where a standalone registry is needed. (The app's live registry is
+ * built in its GnssModule from the same parsers, with checksums required.)
  *
  * To add support for a new sentence type, create a [SentenceParser] subclass
- * and add it to the map here and in `GnssModule`.
+ * and add it to the map here and in the app's GnssModule.
  */
-object DefaultNmeaRegistry {
-    fun create(verifyChecksum: Boolean = true, requireChecksum: Boolean = false): NmeaRegistry {
+public object DefaultNmeaRegistry {
+    /**
+     * A registry with GGA, RMC, GSA, GSV, ZDA, GST, $..ACCURACY, EBP and ETC parsers.
+     * @param verifyChecksum reject lines whose `*hh` checksum doesn't match.
+     * @param requireChecksum also reject lines with no checksum (live streams); false for log files.
+     */
+    public fun create(verifyChecksum: Boolean = true, requireChecksum: Boolean = false): NmeaRegistry {
         val map: Map<String, SentenceParser<out NmeaSentence>> = mapOf(
             "GGA" to GgaParser(),
             "RMC" to RmcParser(),

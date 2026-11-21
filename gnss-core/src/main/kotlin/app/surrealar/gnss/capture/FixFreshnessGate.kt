@@ -16,14 +16,18 @@ import app.surrealar.gnss.model.Fix
  *
  * Not thread-safe; use from one collector.
  */
-class FixFreshnessGate(
+public class FixFreshnessGate(
     private val maxAgeMs: Long,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     private var baselineOffsetMs: Long? = null
     private var newestFixMs: Long? = null
 
-    fun isFresh(fix: Fix): Boolean {
+    /**
+     * True when [fix] was delivered within [maxAgeMs] of the fastest delivery seen (and its GNSS time
+     * has not gone backwards by more than [maxAgeMs]). Updates the gate's baseline.
+     */
+    public fun isFresh(fix: Fix): Boolean {
         val fixMs = fix.timeUtc.toEpochMilli()
         val newest = newestFixMs
         if (newest != null && fixMs < newest - maxAgeMs) return false

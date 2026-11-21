@@ -7,7 +7,7 @@ import app.surrealar.gnss.nmea.sentence.ETC
  * data fields WITHOUT interpreting their semantics (the layout is undocumented — see [ETC]). ETC is
  * diagnostics-only and never modifies coordinates, the live fix, or AR orientation.
  */
-class EtcParser : SentenceParser<ETC> {
+public class EtcParser : SentenceParser<ETC> {
     override val tag: String = "ETC"
 
     override fun parse(talker: String, fields: List<String>): ETC? {

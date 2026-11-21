@@ -11,24 +11,25 @@ import app.surrealar.gnss.model.Fix
  * the estimator falls back to DOP × UERE for the fix type; HDOP × UERE is a horizontal RMS, scaled
  * by 1.515/√2 ≈ 1.071 to a 68 % radius.
  */
-object AccuracyEstimator {
+public object AccuracyEstimator {
 
     /**
      * Horizontal accuracy (68 % radius) and vertical accuracy (1σ) in metres; either is null when it
      * could not be estimated. (Name kept for compatibility — the horizontal is not a plain 1σ.)
      */
-    data class Accuracy1Sigma(
+    public data class Accuracy1Sigma(
         val horizontalMeters: Double?,
         val verticalMeters: Double?
     )
 
     /**
-     * Returns horizontal and vertical 1-sigma accuracy estimates in meters.
+     * Returns the horizontal accuracy (68 % radius) and vertical accuracy (1σ) in metres for [fix],
+     * falling back to DOP × UERE from [uereTable] when the receiver reported none.
      *
      * The result may contain null values when the receiver did not report GST
      * accuracy and the fix does not include enough DOP data for a fallback estimate.
      */
-    fun estimate1SigmaMeters(fix: Fix, uereTable: UereTable): Accuracy1Sigma {
+    public fun estimate1SigmaMeters(fix: Fix, uereTable: UereTable): Accuracy1Sigma {
         /*
          * GST is the best available source because it reflects the receiver's own
          * solution statistics. Preserve partial GST data if only one axis is present.

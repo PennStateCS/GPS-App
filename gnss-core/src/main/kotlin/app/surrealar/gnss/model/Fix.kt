@@ -5,31 +5,61 @@ import java.time.Instant
 /**
  * Single GNSS position/time observation normalized for the app.
  * Fields are intentionally explicit so UI doesn't guess at semantics.
+ *
+ * Units are in the names (Deg, M, S, Mps). `null` always means "unknown / not reported", never 0.
+ * Horizontal accuracy [hAccM] is a **68 % radius**; vertical accuracy [vAccM] and the per-axis
+ * standard deviations are **1σ**.
+ *
+ * @property provider GNSS data source: [Provider.INTERNAL] (the device's own GNSS) or an external receiver.
+ * @property timeUtc UTC time of the fix (GNSS time where available, else the device clock).
+ * @property timestampSource where [timeUtc] came from.
+ * @property latDeg latitude, decimal degrees, in the feed's datum (WGS84/ITRF for the app).
+ * @property lonDeg longitude, decimal degrees, in the feed's datum.
+ * @property altEllipsoidalM height above the ellipsoid, metres (= [altMslM] + [geoidSeparationM]).
+ * @property altMslM height above mean sea level as reported (GGA), metres.
+ * @property geoidSeparationM geoid separation N, metres; positive = geoid above the ellipsoid.
+ * @property hDop horizontal dilution of precision (GGA).
+ * @property vDop vertical dilution of precision (GSA).
+ * @property pDop position dilution of precision (GSA).
+ * @property hAccM horizontal accuracy, metres, as a 68 % radius (GST converted, or $..ACCURACY as reported).
+ * @property vAccM vertical accuracy, metres, 1σ (GST altitude σ, or $..ACCURACY).
+ * @property stdDevEastM east standard deviation, metres, 1σ (GST longitude σ).
+ * @property stdDevNorthM north standard deviation, metres, 1σ (GST latitude σ).
+ * @property stdDevUpM up standard deviation, metres, 1σ (GST altitude σ).
+ * @property rtkStatus fix quality (NONE, DGPS, FLOAT, FIX, …).
+ * @property satsUsed satellites used in the solution; null = not reported (never 0 for unknown).
+ * @property satsVisible satellites in view, if known.
+ * @property diffAgeS age of the differential corrections, seconds.
+ * @property speedMps speed over ground, metres per second (RMC).
+ * @property courseDeg course over ground, degrees true (RMC); null when the receiver leaves it blank.
+ * @property correctionStationId differential/RTK base station ID, if reported.
+ * @property multipathIndex multipath index, if reported.
+ * @property rawNmeaSnapshot raw NMEA sentences behind this fix, if kept.
  */
-data class Fix(
-    val provider: Provider,                         // GNSS data source: INTERNAL (phone) or RS2_EXTERNAL (external receiver)
-    val timeUtc: Instant,                           // UTC timestamp of fix (from GNSS or system)
-    val timestampSource: TimestampSource,           // Source of timestamp: DEVICE, NMEA_ZDA, GNSS_PROVIDER, or UNKNOWN
-    val latDeg: Double,                             // Latitude in decimal degrees (WGS84)
-    val lonDeg: Double,                             // Longitude in decimal degrees (WGS84)
-    val altEllipsoidalM: Double?,                   // Altitude above ellipsoid (meters); may be null for poor fixes
-    val altMslM: Double?,                           // Altitude above mean sea level (meters); may be null if not provided/derived
-    val geoidSeparationM: Double?,                  // Geoid separation N (meters); positive = geoid above ellipsoid (altEllipsoidal = altMsl + N)
-    val hDop: Double?,                              // Horizontal dilution of precision (from GSA sentence)
-    val vDop: Double?,                              // Vertical dilution of precision (from GSA sentence)
-    val pDop: Double?,                              // Position dilution of precision (from GSA sentence)
-    val hAccM: Double?,                             // Horizontal accuracy (meters, 1-sigma); from GST or null
-    val vAccM: Double?,                             // Vertical accuracy (meters, 1-sigma); from GST or null
-    val stdDevEastM: Double?,                       // East standard deviation (meters, 1-sigma); from GST stdDevLon
-    val stdDevNorthM: Double?,                      // North standard deviation (meters, 1-sigma); from GST stdDevLat
-    val stdDevUpM: Double?,                         // Up standard deviation (meters, 1-sigma); from GST stdDevAlt
-    val rtkStatus: RtkStatus,                       // RTK status: NONE, DGPS, FLOAT, FIX
-    val satsUsed: Int?,                             // Number of satellites used in solution; null = not reported (never 0 for unknown)
-    val satsVisible: Int?,                          // Total satellites in view (if known)
-    val diffAgeS: Double?,                          // Age of differential correction (seconds, if known)
-    val speedMps: Double?,                          // Speed over ground (meters/second); from RMC or fused
-    val courseDeg: Double?,                         // Course over ground (degrees); from RMC or fused
-    val correctionStationId: String? = null,        // Correction station ID (if available)
-    val multipathIndex: Double? = null,             // Multipath index (if available)
-    val rawNmeaSnapshot: List<String> = emptyList() // Raw NMEA sentences for this fix (if available)
+public data class Fix(
+    val provider: Provider,
+    val timeUtc: Instant,
+    val timestampSource: TimestampSource,
+    val latDeg: Double,
+    val lonDeg: Double,
+    val altEllipsoidalM: Double?,
+    val altMslM: Double?,
+    val geoidSeparationM: Double?,
+    val hDop: Double?,
+    val vDop: Double?,
+    val pDop: Double?,
+    val hAccM: Double?,
+    val vAccM: Double?,
+    val stdDevEastM: Double?,
+    val stdDevNorthM: Double?,
+    val stdDevUpM: Double?,
+    val rtkStatus: RtkStatus,
+    val satsUsed: Int?,
+    val satsVisible: Int?,
+    val diffAgeS: Double?,
+    val speedMps: Double?,
+    val courseDeg: Double?,
+    val correctionStationId: String? = null,
+    val multipathIndex: Double? = null,
+    val rawNmeaSnapshot: List<String> = emptyList()
     )

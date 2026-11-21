@@ -241,4 +241,11 @@ class NmeaCoordinateUtilsTest {
         assertNotNull(maxMinutes)
         assertEquals(41.99999833, maxMinutes!!, 0.00000001)
     }
+
+    // Moved from the app's NmeaTruncatedLineTest (a TCP drop mid-sentence loses the hemisphere).
+    @Test fun `missing hemisphere is not read as positive`() {
+        assertNull(NmeaCoordinateUtils.toDecimalDegrees("07601.0300517", null, isLatitude = false))
+        assertNull(NmeaCoordinateUtils.toDecimalDegrees("4118.4448800", null, isLatitude = true))
+        assertEquals(-76.01717, NmeaCoordinateUtils.toDecimalDegrees("07601.0300517", "W", false)!!, 1e-5)
+    }
 }

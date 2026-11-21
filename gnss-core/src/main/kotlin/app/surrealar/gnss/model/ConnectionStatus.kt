@@ -7,7 +7,7 @@ package app.surrealar.gnss.model
  * right now — whether it is still trying to connect, actively streaming data,
  * or has hit a problem.
  */
-enum class ConnectionStatus {
+public enum class ConnectionStatus {
     /** No active connection and no attempt in progress. */
     DISCONNECTED,
 

@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong
  * [SUMMARY_INTERVAL_MS] when there were failures, and on demand via [logParseSummary] (e.g. when a
  * source stops). Summaries carry counts and recent failed sentence TYPES only — never raw payloads.
  */
-class NmeaRegistry(
+public class NmeaRegistry(
     private val parsers: Map<String, SentenceParser<out NmeaSentence>>,
     private val verifyChecksum: Boolean = true,
     private val requireChecksum: Boolean = false
@@ -35,7 +35,12 @@ class NmeaRegistry(
     private val summaryLock = Any()
     @Volatile private var lastSummaryMs = System.currentTimeMillis()
 
-    fun parse(line: String): NmeaSentence? {
+    /**
+     * Parses one NMEA line into its sentence, or null if it is blank, malformed, fails the checksum
+     * rules, or has no registered parser (failures are counted for the periodic summary). Never throws.
+     * Thread-safe: may be called from several reader threads.
+     */
+    public fun parse(line: String): NmeaSentence? {
         val trimmed = line.trim()
         if (trimmed.isEmpty()) return null            // benign blank — not counted as a failure
         wConsidered.incrementAndGet()
@@ -94,7 +99,7 @@ class NmeaRegistry(
     }
 
     /** Forces a parse summary to the diagnostic log now (e.g. when a source stops). */
-    fun logParseSummary(reason: String) {
+    public fun logParseSummary(reason: String) {
         synchronized(summaryLock) {
             lastSummaryMs = System.currentTimeMillis()
             emitSummaryLocked(reason)

@@ -17,7 +17,7 @@ import kotlin.math.min
  *
  * Each GSV message carries up to 4 satellites.
  */
-class GsvParser : SentenceParser<GSV> {
+public class GsvParser : SentenceParser<GSV> {
     override val tag: String = "GSV"
 
     override fun parse(talker: String, fields: List<String>): GSV? {

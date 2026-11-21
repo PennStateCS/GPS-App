@@ -14,9 +14,9 @@ import app.surrealar.gnss.nmea.sentence.NmeaSentence
  * The `fields` list includes field[0] == "<TALKER><TAG>" to keep indices stable
  * with common NMEA field numbering (so field[1] is the first data field).
  */
-interface SentenceParser<S : NmeaSentence> {
+public interface SentenceParser<S : NmeaSentence> {
     /** The 3-letter NMEA sentence tag (e.g., "GGA", "RMC"). Uppercase. */
-    val tag: String
+    public val tag: String
 
     /**
      * Parse a typed sentence from talker + CSV fields.
@@ -24,8 +24,8 @@ interface SentenceParser<S : NmeaSentence> {
      * @param fields CSV-split fields including head at index 0 ("<TALKER><TAG>").
      * @return A typed sentence or null if not parseable/invalid.
      */
-    fun parse(talker: String, fields: List<String>): S?
+    public fun parse(talker: String, fields: List<String>): S?
 }
 
 /** Handy alias when building parser registries/maps. */
-typealias AnySentenceParser = SentenceParser<out NmeaSentence>
+internal typealias AnySentenceParser = SentenceParser<out NmeaSentence>

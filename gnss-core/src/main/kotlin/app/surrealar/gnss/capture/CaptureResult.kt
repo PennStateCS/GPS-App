@@ -14,7 +14,7 @@ import java.time.Instant
  * a snapshot from the last accepted fix, not an average across the whole session.
  * Fields are nullable when the receiver did not report that value during capture.
  */
-data class CaptureResult(
+public data class CaptureResult(
     /** Time when the capture session began accepting fixes. */
     val startedAt: Instant,
 

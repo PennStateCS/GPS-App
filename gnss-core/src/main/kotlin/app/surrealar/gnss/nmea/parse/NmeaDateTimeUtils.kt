@@ -18,7 +18,7 @@ import java.time.ZonedDateTime
  * than adding new methods here; keep this object narrow to avoid it growing into
  * a catch-all utilities class.
  */
-object NmeaDateTimeUtils {
+internal object NmeaDateTimeUtils {
 
     /**
      * Parses an NMEA time field (HHMMSS[.sss]) into a [LocalTime].

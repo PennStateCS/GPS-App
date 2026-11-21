@@ -13,8 +13,8 @@ java {
 }
 
 kotlin {
-    // Warnings while code moves in unchanged; switched to strict explicitApi() once the API is tidied.
-    explicitApiWarning()
+    // Every public declaration needs explicit visibility and return type (library API discipline).
+    explicitApi()
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }

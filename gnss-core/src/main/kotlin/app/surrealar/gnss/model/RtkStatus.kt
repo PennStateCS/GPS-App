@@ -8,7 +8,7 @@ package app.surrealar.gnss.model
  * interpreted — treat both as lowest quality. Compare with [meetsOrExceeds], not enum ordinals.
  * [prefKey] is the stable persisted token; [fromPrefKey] also accepts the legacy enum name.
  */
-enum class RtkStatus(val prefKey: String) {
+public enum class RtkStatus(public val prefKey: String) {
     NONE("none"),
     DGPS("dgps"),
     FLOAT("float"),
@@ -17,13 +17,13 @@ enum class RtkStatus(val prefKey: String) {
     DEAD_RECKONING("dead_reckoning"),
     INVALID("invalid");
 
-    companion object {
+    public companion object {
         /**
          * Resolves a persisted token (new prefKey or legacy enum name) to a status. The [default]
          * is caller-supplied because the documented default differs by context (e.g. the capture
          * "required minimum status" defaults to [FIX]).
          */
-        fun fromPrefKey(value: String?, default: RtkStatus = NONE): RtkStatus =
+        public fun fromPrefKey(value: String?, default: RtkStatus = NONE): RtkStatus =
             entries.firstOrNull { it.prefKey.equals(value, ignoreCase = true) || it.name.equals(value, ignoreCase = true) }
                 ?: default
     }
@@ -40,7 +40,7 @@ enum class RtkStatus(val prefKey: String) {
      * - NONE (0): no fix
      * - INVALID (0): invalid/unknown status
      */
-    fun qualityRank(): Int = when (this) {
+    public fun qualityRank(): Int = when (this) {
         FIX            -> 4
         FLOAT          -> 3
         DGPS           -> 2
@@ -58,6 +58,6 @@ enum class RtkStatus(val prefKey: String) {
      * satellite solution, so a "Single or better" capture must not average it. Its [qualityRank]
      * stays 1 so status displays still treat it as a (degraded) position.
      */
-    fun meetsOrExceeds(other: RtkStatus): Boolean =
+    public fun meetsOrExceeds(other: RtkStatus): Boolean =
         this != DEAD_RECKONING && qualityRank() >= other.qualityRank()
 }

@@ -24,7 +24,7 @@ import java.time.ZoneOffset
  * [11] MagVar E/W (optional)
  * [12] Mode (optional; e.g., A/D/E/N)
  */
-class RmcParser : SentenceParser<RMC> {
+public class RmcParser : SentenceParser<RMC> {
     override val tag: String = "RMC"
 
     override fun parse(talker: String, fields: List<String>): RMC? {

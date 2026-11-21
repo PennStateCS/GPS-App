@@ -11,7 +11,7 @@ import app.surrealar.gnss.nmea.sentence.NmeaSentence
  * Production GNSS sources (`InternalNmeaSource`, `TcpNmeaSource`) use `NmeaFuser` directly
  * with the singleton [NmeaRegistry] provided by DI, so they do not instantiate this class.
  */
-class NmeaParser(registry: NmeaRegistry = DefaultNmeaRegistry.create()) {
+internal class NmeaParser(registry: NmeaRegistry = DefaultNmeaRegistry.create()) {
 
     private val registry: NmeaRegistry = registry
 

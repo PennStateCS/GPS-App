@@ -13,9 +13,11 @@ import kotlinx.coroutines.flow.SharedFlow
  * Optional contract for adapters that need explicit lifecycle control. (Moved here from
  * gnss.bus/FixSwitchboard.kt when this package became part of gnss-core; unchanged.)
  */
-interface Startable {
-    fun start()
-    fun stop()
+public interface Startable {
+    /** Starts the adapter (opens its connection / registers listeners). */
+    public fun start()
+    /** Stops the adapter and releases its resources; safe to call when already stopped. */
+    public fun stop()
 }
 
 /**
@@ -28,22 +30,24 @@ interface Startable {
  * To add support for a new transport (e.g. u-blox over Bluetooth), implement this
  * interface and pass the instance to a new external adapter registered in GnssModule.
  */
-interface NmeaSource : Startable {
-    fun parsedFixes(): SharedFlow<Fix>
-    fun gsvStream(): SharedFlow<GsvMessage>
+public interface NmeaSource : Startable {
+    /** Fixes produced by this source's [NmeaFuser]. */
+    public fun parsedFixes(): SharedFlow<Fix>
+    /** Completed GSV epochs (satellites in view) from this source's [NmeaFuser]. */
+    public fun gsvStream(): SharedFlow<GsvMessage>
     /** Emits once for every raw NMEA sentence received, before parsing. */
-    fun rawNmeaEvents(): SharedFlow<Unit>
+    public fun rawNmeaEvents(): SharedFlow<Unit>
 
     /** Cumulative NMEA sentence/fix-rate stats from this source's fuser (diagnostics; no coordinates). */
-    fun nmeaTimingStats(): NmeaFuser.FuserTimingStats
+    public fun nmeaTimingStats(): NmeaFuser.FuserTimingStats
     /** Emlid EBP/ETC activity seen by this source's fuser (diagnostics). */
-    fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats
+    public fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats
 
     /**
      * False once the underlying connection has ended (remote closed, connect failed, stopped).
      * Sources without a connection concept keep the default `true`.
      */
-    fun isConnectionActive(): Boolean = true
+    public fun isConnectionActive(): Boolean = true
 }
 
 /**
@@ -51,12 +55,13 @@ interface NmeaSource : Startable {
  * [app.surrealar.gnss.bus.FixSwitchboard] forwards it so observers can distinguish
  * "socket connected but no parsed fix" from "no NMEA data flowing at all."
  */
-interface RawNmeaProvider {
-    val rawNmea: SharedFlow<Unit>
+public interface RawNmeaProvider {
+    /** Emits once per raw NMEA line received, before parsing. */
+    public val rawNmea: SharedFlow<Unit>
 }
 
 /** Satellite data entry from a single GSV sentence, normalised for SatelliteInventory. */
-data class GsvMessage(
+public data class GsvMessage(
     val constellation: String,
     val entries: List<GsvEntry>
 )
@@ -66,7 +71,7 @@ data class GsvMessage(
  * degrees and [snrDbHz] is C/N0 in dB-Hz; these are null when the receiver omitted them. [usedInFix]
  * reflects whether the satellite contributed to the position solution, when that is known.
  */
-data class GsvEntry(
+public data class GsvEntry(
     val svid: Int,
     val elevationDeg: Int?,
     val azimuthDeg: Int?,

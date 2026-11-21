@@ -6,7 +6,7 @@ import app.surrealar.gnss.nmea.sentence.ACCURACY
  * Parses MediaTek `$..ACCURACY,<hAcc>,<?>,<speedAcc>,<vAcc>` (see [ACCURACY]).
  * Non-positive or non-numeric accuracies are treated as unknown (null), never 0.0.
  */
-class AccuracyParser : SentenceParser<ACCURACY> {
+public class AccuracyParser : SentenceParser<ACCURACY> {
     override val tag: String = "ACCURACY"
 
     override fun parse(talker: String, fields: List<String>): ACCURACY? {

@@ -17,7 +17,7 @@ import java.time.*
  *
  * We compute epochMillis in UTC. If any component is invalid, epochMillis will be null.
  */
-class ZdaParser : SentenceParser<ZDA> {
+public class ZdaParser : SentenceParser<ZDA> {
     override val tag: String = "ZDA"
 
     override fun parse(talker: String, fields: List<String>): ZDA? {

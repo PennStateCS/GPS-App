@@ -3,7 +3,7 @@ package app.surrealar.gnss.model
 /**
  * Indicates where the timestamp for a GNSS fix originated.
  */
-enum class TimestampSource {
+public enum class TimestampSource {
     /** From the Android system clock (elapsedRealtime or wall time). */
     DEVICE,
 

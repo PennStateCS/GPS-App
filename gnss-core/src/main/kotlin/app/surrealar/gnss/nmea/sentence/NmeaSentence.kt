@@ -10,10 +10,10 @@ package app.surrealar.gnss.nmea.sentence
  * Implementations should be pure data holders with no side effects. All sentence
  * types are declared as data classes so they can be compared and copied easily.
  */
-interface NmeaSentence {
+public interface NmeaSentence {
     /** Two-letter talker prefix extracted from the sentence header (e.g. "GP", "GL"). */
-    val talker: String
+    public val talker: String
 
     /** Three-letter sentence type tag (e.g. "GGA", "RMC", "GSA"). Always uppercase. */
-    val tag: String
+    public val tag: String
 }

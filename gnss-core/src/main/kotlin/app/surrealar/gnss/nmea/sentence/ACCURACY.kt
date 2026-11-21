@@ -12,7 +12,7 @@ package app.surrealar.gnss.nmea.sentence
  * @property speedAccMps Speed accuracy, m/s (field 3).
  * @property vAccM    Vertical accuracy estimate, metres (field 4).
  */
-data class ACCURACY(
+public data class ACCURACY(
     override val talker: String,
     val hAccM: Double?,
     val field2: Double?,

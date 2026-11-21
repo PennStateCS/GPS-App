@@ -22,7 +22,7 @@ import app.surrealar.gnss.nmea.sentence.GGA
  * [13]=age of diff (seconds, optional)
  * [14]=station ID (optional)
  */
-class GgaParser : SentenceParser<GGA> {
+public class GgaParser : SentenceParser<GGA> {
     override val tag: String = "GGA"
 
     override fun parse(talker: String, fields: List<String>): GGA? {

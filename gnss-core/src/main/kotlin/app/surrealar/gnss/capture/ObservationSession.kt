@@ -31,7 +31,7 @@ import java.time.Instant
  * Collection pauses by ignoring fixes that are stale, below the required RTK
  * quality, missing ellipsoidal height, or using stale correction data.
  */
-class ObservationSession(
+public class ObservationSession(
     private val scope: CoroutineScope,
     // A plain Flow (not SharedFlow) so callers can pass a provider-filtered stream — e.g. an
     // external capture passes only external-provider fixes. Only Flow operators are used below,
@@ -47,8 +47,9 @@ class ObservationSession(
      * UI code can observe this state to show capture progress, pause reasons, or
      * the final averaged result.
      */
-    sealed interface State {
-        data object Idle : State
+    public sealed interface State {
+        /** Not started yet, or cancelled. */
+        public data object Idle : State
 
         /**
          * Capture is actively accepting fixes that pass the policy gates.
@@ -56,7 +57,7 @@ class ObservationSession(
          * The accuracy values shown here are from the most recent accepted fix, not
          * from the final averaged result.
          */
-        data class Capturing(
+        public data class Capturing(
             val startedAt: Instant,
             val elapsedSec: Int,
             val samples: Int,
@@ -75,24 +76,25 @@ class ObservationSession(
          * finished only because the maximum sampling time was reached first — the
          * averaged result is still valid but under-sampled, and the UI should say so.
          */
-        data class Complete(
+        public data class Complete(
             val result: CaptureResult,
             val requirementsMet: Boolean
         ) : State
 
         /** Capture could not continue because the stream failed or became invalid. */
-        data class Paused(val reason: String) : State
+        public data class Paused(val reason: String) : State
     }
 
-    companion object {
+    public companion object {
         /** [State.Paused] reason when the maximum duration passed without one accepted fix. */
-        const val TIMEOUT_NO_ACCEPTED_FIXES = "timeout_no_accepted_fixes"
+        public const val TIMEOUT_NO_ACCEPTED_FIXES: String = "timeout_no_accepted_fixes"
         /** Consecutive stale fixes after which the freshness baseline is rebuilt (clock step). */
         internal const val STALE_RESET_COUNT = 5
     }
 
     private val _state = MutableStateFlow<State>(State.Idle)
-    val state: StateFlow<State> = _state.asStateFlow()
+    /** Current capture state; starts at [State.Idle]. */
+    public val state: StateFlow<State> = _state.asStateFlow()
 
     private var job: Job? = null
 
@@ -125,7 +127,7 @@ class ObservationSession(
      *
      * Calling start while a session is already active has no effect.
      */
-    fun start() {
+    public fun start() {
         if (job != null) return
         val start = Instant.now()
 
@@ -272,7 +274,7 @@ class ObservationSession(
      * This is for user-initiated cancellation. A completed session is finalized
      * through finalize(), which leaves the state as Complete.
      */
-    fun cancel() {
+    public fun cancel() {
         job?.cancel()
         job = null
         _state.value = State.Idle

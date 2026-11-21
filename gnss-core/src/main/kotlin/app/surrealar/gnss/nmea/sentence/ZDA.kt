@@ -6,7 +6,7 @@ package app.surrealar.gnss.nmea.sentence
  * Provides precise UTC time and date, optionally with timezone offsets.
  * Accumulator should decide how to fuse this into the unified timestamp.
  */
-data class ZDA(
+public data class ZDA(
     override val talker: String,
     val timeRaw: String?,
     val day: Int?,

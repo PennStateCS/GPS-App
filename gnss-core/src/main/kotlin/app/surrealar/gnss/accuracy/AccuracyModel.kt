@@ -23,7 +23,7 @@ import app.surrealar.gnss.model.RtkStatus
  * NONE / INVALID have no position solution at all: [uere] returns null, so no accuracy is
  * shown or estimated instead of a made-up number.
  */
-data class UereTable(
+public data class UereTable(
     val internal: Map<RtkStatus, Double> = mapOf(
         RtkStatus.DEAD_RECKONING to 10.0,
         RtkStatus.SINGLE to 4.0,
@@ -47,7 +47,7 @@ data class UereTable(
      * types share the same table because they represent the same receiver class
      * over different transports.
      */
-    fun uere(provider: Provider, mode: RtkStatus): Double? {
+    public fun uere(provider: Provider, mode: RtkStatus): Double? {
         if (mode == RtkStatus.NONE || mode == RtkStatus.INVALID) return null
         return when (provider) {
             Provider.RS2_EXTERNAL,

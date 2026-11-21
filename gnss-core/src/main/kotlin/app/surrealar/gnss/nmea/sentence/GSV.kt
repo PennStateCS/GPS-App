@@ -5,7 +5,7 @@ package app.surrealar.gnss.nmea.sentence
  * Elevation is degrees (0–90), azimuth degrees (0–359), and SNR is C/N0 in dB (higher is stronger;
  * absent for a satellite that is in view but not tracked).
  */
-data class GSVSatellite(
+public data class GSVSatellite(
     val svid: Int?,
     val elevationDeg: Int?,
     val azimuthDeg: Int?,
@@ -20,7 +20,7 @@ data class GSVSatellite(
  * sequence, so a single sentence is a fragment — accumulate by talker until the sequence completes.
  * Fields are nullable because partial sentences are valid on the wire.
  */
-data class GSV(
+public data class GSV(
     override val talker: String,
     val totalMessages: Int?,
     val messageNumber: Int?,

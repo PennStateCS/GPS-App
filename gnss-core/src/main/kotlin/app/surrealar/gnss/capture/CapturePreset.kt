@@ -15,12 +15,17 @@ import app.surrealar.gnss.model.RtkStatus
  * a short occupation does not indicate accuracy there; internal presets use time + fix counts only.
  *
  * [prefKey] is persisted — never rename.
+ *
+ * @property prefKey stable token stored in settings.
+ * @property label name shown to the user.
+ * @property external policy for RTK/external receivers; null = use the Settings fields (Custom).
+ * @property internal policy for the device's own GNSS; null = [AveragingPolicy.INTERNAL].
  */
-enum class CapturePreset(
-    val prefKey: String,
-    val label: String,
-    val external: AveragingPolicy?,
-    val internal: AveragingPolicy?,
+public enum class CapturePreset(
+    public val prefKey: String,
+    public val label: String,
+    public val external: AveragingPolicy?,
+    public val internal: AveragingPolicy?,
 ) {
     QUICK_TOPO(
         "quick_topo", "Quick topo",
@@ -48,11 +53,12 @@ enum class CapturePreset(
     /** The individual Settings fields (external) / [AveragingPolicy.INTERNAL] (internal). */
     CUSTOM("custom", "Custom", external = null, internal = null);
 
-    companion object {
+    public companion object {
         /** Default for new and existing installs: keeps the pre-preset behaviour until a preset is chosen. */
-        val DEFAULT = CUSTOM
+        public val DEFAULT: CapturePreset = CUSTOM
 
-        fun fromPrefKey(key: String?): CapturePreset = entries.firstOrNull { it.prefKey == key } ?: DEFAULT
+        /** The preset stored as [key], or [DEFAULT] for null / unknown keys. */
+        public fun fromPrefKey(key: String?): CapturePreset = entries.firstOrNull { it.prefKey == key } ?: DEFAULT
     }
 }
 
@@ -60,7 +66,7 @@ enum class CapturePreset(
  * The averaging policy a capture should use for the saved settings: the chosen preset's policy, or for
  * [CapturePreset.CUSTOM] the individual fields (external) / [AveragingPolicy.INTERNAL] (internal).
  */
-fun GnssCaptureSettings.resolvePolicy(internal: Boolean): AveragingPolicy {
+public fun GnssCaptureSettings.resolvePolicy(internal: Boolean): AveragingPolicy {
     val presetPolicy = if (internal) preset.internal else preset.external
     return presetPolicy ?: if (internal) AveragingPolicy.INTERNAL else toAveragingPolicy()
 }

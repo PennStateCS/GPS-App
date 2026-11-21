@@ -11,7 +11,7 @@ package app.surrealar.gnss.nmea.sentence
  * - stdDevLon: Standard deviation of longitude error (meters)
  * - stdDevAlt: Standard deviation of altitude error (meters)
  */
-data class GST(
+public data class GST(
     override val talker: String,
     val timeRaw: String?,
     val rmsStdDev: Double?,
