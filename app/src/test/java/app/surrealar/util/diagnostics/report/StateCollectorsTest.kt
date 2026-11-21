@@ -34,4 +34,12 @@ class StateCollectorsTest {
         """.trimIndent() + "\n", DeviceHealthCollector.render(FakeReportSources.FAKE_HEALTH))
     }
 
+    @Test fun `captures keeps the last 50`() {
+        val out = CapturesCollector.render(CapturesCollector.read(FakeReportSources(tmp.newFolder("l")).capturesLog()))
+        val rows = out.lines().filter { it.contains("Capture saved") }
+        assertEquals(50, rows.size)
+        assertTrue(rows.first().contains("name=\"P6\"")); assertTrue(rows.last().contains("name=\"P55\""))
+        assertTrue(CapturesCollector.render(emptyList()).contains("(no captures recorded)"))
+    }
+
 }

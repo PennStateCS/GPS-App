@@ -30,6 +30,7 @@ object ReportAssembler {
             z.textSafe("exits.txt") { ExitsCollector.render(idx, traces.map { it.name }) }
             traces.forEach { z.file("exits/${it.name}", it) }
             z.textSafe("device-health.txt") { DeviceHealthCollector.render(src.deviceHealth()) }
+            z.textSafe("captures.txt") { CapturesCollector.render(CapturesCollector.read(src.capturesLog())) }
             z.textSafe("settings-snapshot.txt") { src.settingsSnapshot() }
             z.textSafe("permissions-status.txt") { src.permissions() }
             z.textSafe("app-state-summary.txt") { src.appState() }
