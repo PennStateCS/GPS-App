@@ -659,14 +659,18 @@ class MainActivity : AppCompatActivity() {
                 // Pipeline (see ToolbarPipeline): combine raw inputs → sample(250 ms) → convert + map on
                 // Dispatchers.Default → render here on Main. retryForever keeps it alive after an error
                 // (shows the error state, backs off 1 s → 5 s, resubscribes) instead of ending it.
-                val inputs = combine(
+                val gnss = combine(
                     switchboard.currentFix,
                     switchboard.sky,
                     settingsRepository.locationSource,
                     settingsRepository.coordinateSystemSettings,
                     externalLabelFlow(),
                 ) { fix, sky, source, coordSettings, label -> ToolbarInputs(source, fix, sky, coordSettings, label) }
-                ToolbarPipeline.frames(inputs, coordinateSystemService::convertFix)
+                val inputs = combine(gnss, toolbarLinkFlow(), toolbarTickFlow(), receiverKeyFlow()) { g, link, tick, key ->
+                    g.copy(link = link.copy(locationEnabled = tick.second), receiverKey = key, tick = tick.first)
+                }
+                ToolbarPipeline.frames(inputs, coordinateSystemService::convertFix,
+                    nowMs = { android.os.SystemClock.elapsedRealtime() })
                     .onEach { frame -> renderToolbarFrame(frame) }
                     .retryForever { e, attempt ->
                         android.util.Log.e("MainActivity", "GNSS toolbar pipeline error (retry #${attempt + 1})", e)
@@ -791,6 +795,42 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /**
+     * Link state for the toolbar, read-only: the external adapter's connection phase and the monotonic
+     * time of the last raw NMEA line (sampled; at most twice a second).
+     */
+    private fun toolbarLinkFlow(): Flow<app.surrealar.ui.toolbar.ToolbarLinkInputs> = combine(
+        externalAdapter.connectionState.map {
+            if (it == ExternalAdapter.ConnectionState.CONNECTED) app.surrealar.ui.toolbar.ExternalLinkPhase.CONNECTED
+            else app.surrealar.ui.toolbar.ExternalLinkPhase.CONNECTING
+        },
+        @OptIn(kotlinx.coroutines.FlowPreview::class)
+        switchboard.rawNmea.sample(500L).map<Unit, Long?> { android.os.SystemClock.elapsedRealtime() }.onStart { emit(null) },
+    ) { phase, lastRaw -> app.surrealar.ui.toolbar.ToolbarLinkInputs(externalPhase = phase, lastRawNmeaAtMs = lastRaw) }
+
+    /** Once a second: (monotonic now, location permission + setting on). Keeps ages counting. */
+    private fun toolbarTickFlow(): Flow<Pair<Long, Boolean>> = flow {
+        while (true) {
+            emit(android.os.SystemClock.elapsedRealtime() to isLocationEnabledForToolbar())
+            delay(1_000L)
+        }
+    }
+
+    private fun isLocationEnabledForToolbar(): Boolean {
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val lm = getSystemService(android.location.LocationManager::class.java)
+        val on = lm != null && androidx.core.location.LocationManagerCompat.isLocationEnabled(lm)
+        return granted && on
+    }
+
+    /** Identifies the external receiver (profile + host:port): a change forgets the toolbar's last fix. */
+    private fun receiverKeyFlow(): Flow<String> =
+        settingsRepository.externalReceiverSettings.map { "${it.profile.prefKey}@${it.tcpHost}:${it.tcpPort}" }
+            .onStart { emit("") }.distinctUntilChanged()
 
     /** The active external receiver profile's short label; "External" until settings have loaded. */
     private fun externalLabelFlow(): Flow<String> =

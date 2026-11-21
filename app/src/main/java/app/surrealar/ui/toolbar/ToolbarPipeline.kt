@@ -12,7 +12,8 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.sample
 import kotlin.math.min
@@ -25,6 +26,12 @@ data class ToolbarInputs(
     val coordSettings: CoordinateSystemSettings,
     /** Short label of the active external receiver profile ("RS2+", "RS4", "EXT"), or "External". */
     val externalLabel: String,
+    /** Link state (connection phase, last raw NMEA, location on/off) to explain a missing fix. */
+    val link: ToolbarLinkInputs = ToolbarLinkInputs(),
+    /** Identifies the external receiver (profile + host); a change forgets the last fix. */
+    val receiverKey: String = "",
+    /** Changes once a second so ages ("No data 12s", "lost 12s") keep counting with no other input. */
+    val tick: Long = 0L,
 )
 
 /** One toolbar update: the inputs it came from, the converted position, and what to show. */
@@ -56,15 +63,39 @@ object ToolbarPipeline {
         convert: (Fix, CoordinateSystemSettings) -> ConvertedPosition?,
         refreshMs: Long = REFRESH_MS,
         computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+        /** Monotonic clock (ms) for link and last-fix ages. */
+        nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
     ): Flow<ToolbarFrame> =
         inputs
             .sample(refreshMs)
-            .map { i ->
+            .runningFold(Step(null, null)) { prev, i ->
+                val now = nowMs()
                 // A conversion failure only drops the converted display (lat/lon + MSL is shown instead).
                 val coords = i.fix?.let { runCatching { convert(it, i.coordSettings) }.getOrNull() }
-                ToolbarFrame(i, coords, GnssToolbarStateMapper.map(i.source, i.fix, i.sky, i.externalLabel, coords))
+                val memory = prev.memory.next(i, coords, now)
+                val result = GnssToolbarStateMapper.map(
+                    i.source, i.fix, i.sky, i.externalLabel, coords, i.link, memory?.last, now)
+                Step(memory, ToolbarFrame(i, coords, result))
             }
+            .mapNotNull { it.frame }
             .flowOn(computeDispatcher)
+
+    private data class Step(val memory: FixMemory?, val frame: ToolbarFrame?)
+
+    /**
+     * The last fix shown, tied to the source and receiver it came from. Forgotten when the selected
+     * source or the receiver changes, so a lost-link display never shows another provider's position.
+     * Replay fixes are never remembered.
+     */
+    internal data class FixMemory(val source: LocationSourceType, val receiverKey: String, val last: LastFix)
+
+    internal fun FixMemory?.next(i: ToolbarInputs, coords: ConvertedPosition?, now: Long): FixMemory? {
+        val kept = this?.takeIf { it.source == i.source && it.receiverKey == i.receiverKey }
+        val fix = i.fix ?: return kept
+        if (fix.provider == io.github.pennstatecs.geokit.gnss.model.Provider.REPLAY) return kept
+        if (!GnssToolbarStateMapper.fixMatchesSource(i.source, fix)) return kept
+        return FixMemory(i.source, i.receiverKey, LastFix(fix, now, coords))
+    }
 
     /** Wait before resubscribing after the [attempt]-th consecutive error (0-based): 1 s, 2 s, 4 s, then 5 s. */
     fun backoffMs(attempt: Long): Long = min(1_000L shl attempt.coerceIn(0, 3).toInt(), 5_000L)

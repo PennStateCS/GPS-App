@@ -84,11 +84,16 @@ class GnssToolbarRenderer(
         // Coordinates ("LL" lat/lon or "NE" grid, per Settings → Coordinates)
         coord.label.text = state.coordLabel
         coord.value.text = state.latLonText
+        // A lost link keeps the last position on screen, greyed (alpha, not a colour change).
+        coord.value.alpha = if (state.isStale) STALE_ALPHA else 1f
         coord.root.isVisible = true
 
         // Altitude (always visible with a placeholder); label names the height reference
         alt.label.text = state.altitudeLabel
         alt.value.text = state.altitudeText
+        alt.value.alpha = if (state.isStale) STALE_ALPHA else 1f
         alt.root.isVisible = true
     }
+
+    private companion object { const val STALE_ALPHA = 0.5f }
 }

@@ -60,7 +60,7 @@ class GnssToolbarStateMapperTest {
         val s = render(GnssToolbarStateMapper.map(LocationSourceType.INTERNAL, null, SkySnapshot()))
         assertEquals("Internal", s.sourceText)
         assertTrue(s.isWaiting)
-        assertEquals("--", s.fixText)
+        assertEquals("No fix", s.fixText)   // says why (was a bare "--")
         assertEquals("--", s.latLonText)
         assertNull(s.satelliteText)
         assertNull(s.accuracyText)
@@ -103,7 +103,7 @@ class GnssToolbarStateMapperTest {
         val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL, null, SkySnapshot()))
         assertEquals("External", s.sourceText)   // no profile passed: neutral fallback, never "RS2+"
         assertTrue(s.isWaiting)
-        assertEquals("Waiting", s.fixText)
+        assertEquals("Connecting…", s.fixText)   // says why (was "Waiting")
         assertEquals("--", s.latLonText)             // no stale coordinates
         assertNull(s.satelliteText)
         assertTrue(s.isExternal)

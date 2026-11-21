@@ -16,6 +16,33 @@ sealed interface ToolbarMapResult {
     data class Ignore(val reason: String) : ToolbarMapResult
 }
 
+/** External receiver connection phase, read from the adapter's existing connection state. */
+enum class ExternalLinkPhase { CONNECTING, CONNECTED }
+
+/** Neutral link status the toolbar explains when there's no position. */
+enum class LinkStatus { CONNECTING, CONNECTED_NO_DATA, STREAMING, LOCATION_OFF, ACQUIRING }
+
+/**
+ * What the toolbar knows about the link besides the fix itself (all read-only).
+ *
+ * @property externalPhase external receiver phase; null for internal GNSS.
+ * @property lastRawNmeaAtMs monotonic time (ms) of the last raw NMEA line from the active source, or null.
+ * @property locationEnabled internal GNSS: location permission granted and the location setting on.
+ */
+data class ToolbarLinkInputs(
+    val externalPhase: ExternalLinkPhase? = null,
+    val lastRawNmeaAtMs: Long? = null,
+    val locationEnabled: Boolean = true,
+)
+
+/** The last fix shown for the current source and receiver, kept to explain a lost link. */
+data class LastFix(
+    val fix: Fix,
+    /** Monotonic time (ms) it was last current. */
+    val atMs: Long,
+    val coords: app.surrealar.coords.ConvertedPosition?,
+)
+
 /**
  * Pure mapper: turns the current GNSS inputs into a [GnssToolbarState]. Holds ALL the display
  * decision logic that used to live in `MainActivity.updateStatusTokens` so it can be unit-tested
@@ -24,7 +51,7 @@ sealed interface ToolbarMapResult {
  * Source-switch protections live here too:
  *  - wrong-provider fixes (internal fix while RS2+ selected during the connecting window) → Ignore
  *  - invalid coordinates → Render(waiting) (never leave older values on screen)
- *  - no current-provider fix → Render(waiting)
+ *  - no current-provider fix → Render(a no-fix state that says why: connecting, no data, lost, …)
  *
  * Liveness is NOT judged here by comparing the fix's GNSS timestamp with the device clock (a skewed
  * tablet clock froze the toolbar). The input is `FixSwitchboard.currentFix`, which the GNSS feed
@@ -53,19 +80,24 @@ object GnssToolbarStateMapper {
     internal const val INTERNAL_GOOD_M = 5.0
     internal const val INTERNAL_FAIR_M = 15.0
 
+    /** Raw NMEA older than this means the connected receiver has stopped sending. */
+    internal const val RAW_STALE_MS = 3_000L
+
+    /** A lost position stays on screen (greyed) this long, then falls back to "--". */
+    const val STALE_KEEP_MS = 60_000L
+
     /** NMEA replay fixes ([Provider.REPLAY]) are shown whichever source is selected. */
     fun fixMatchesSource(source: LocationSourceType, fix: Fix): Boolean =
         if (fix.provider == Provider.REPLAY) true
         else if (source == LocationSourceType.INTERNAL) fix.provider == Provider.INTERNAL
         else fix.provider != Provider.INTERNAL
 
-    /** Display state shown while there is no current-provider fix (just switched / acquiring). */
+    /** Display state while there is no current-provider fix and nothing more is known. */
     fun waiting(source: LocationSourceType, externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL): GnssToolbarState {
         val isInternal = source == LocationSourceType.INTERNAL
         return GnssToolbarState(
             sourceText = GnssStatusFormatter.formatSource(isInternal, externalLabel),
-            // External shows an explicit "Waiting" so RS2+ is never paired with an ambiguous blank.
-            fixText = if (isInternal) "--" else "Waiting",
+            fixText = if (isInternal) "No fix" else "Connecting…",
             fixLevel = GnssStatusLevel.NONE,
             satelliteText = null,
             accuracyText = null,
@@ -89,6 +121,60 @@ object GnssToolbarStateMapper {
     fun error(source: LocationSourceType, externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL): GnssToolbarState =
         waiting(source, externalLabel).copy(fixText = "Error", fixLevel = GnssStatusLevel.ERROR, statusLevel = GnssStatusLevel.ERROR)
 
+    /** The link status for [source] at [nowMs] (monotonic). */
+    fun linkStatus(source: LocationSourceType, link: ToolbarLinkInputs, nowMs: Long): LinkStatus {
+        if (source == LocationSourceType.INTERNAL) {
+            return if (link.locationEnabled) LinkStatus.ACQUIRING else LinkStatus.LOCATION_OFF
+        }
+        if (link.externalPhase != ExternalLinkPhase.CONNECTED) return LinkStatus.CONNECTING
+        val raw = link.lastRawNmeaAtMs
+        return if (raw != null && nowMs - raw <= RAW_STALE_MS) LinkStatus.STREAMING else LinkStatus.CONNECTED_NO_DATA
+    }
+
+    /**
+     * No current fix: say why. "Location off" (internal: permission or setting), "Connecting…",
+     * "No data 12s" (receiver connected but silent), "No fix" (data flowing / acquiring), or — when
+     * the link was lost after a fix within [STALE_KEEP_MS] — the last position greyed out with
+     * "<status> (lost 12s)" and no accuracy/satellites. All in the neutral style (no new colours).
+     * The last fix is only ever this source's (and receiver's); see ToolbarPipeline's memory.
+     */
+    fun noFix(
+        source: LocationSourceType,
+        externalLabel: String,
+        link: ToolbarLinkInputs,
+        last: LastFix?,
+        nowMs: Long,
+    ): GnssToolbarState {
+        val base = waiting(source, externalLabel)
+        val status = linkStatus(source, link, nowMs)
+        if (status == LinkStatus.LOCATION_OFF) return base.copy(fixText = "Location off")
+
+        val usable = last?.takeIf { fixMatchesSource(source, it.fix) && nowMs - it.atMs in 0..STALE_KEEP_MS }
+        if (usable != null && status != LinkStatus.STREAMING) {
+            val shown = (map(source, usable.fix, SkySnapshot(), externalLabel, usable.coords) as? ToolbarMapResult.Render)?.state
+            if (shown != null) {
+                return shown.copy(
+                    fixText = "${shown.fixText} (lost ${seconds(nowMs - usable.atMs)}s)",
+                    fixLevel = GnssStatusLevel.NONE,
+                    statusLevel = GnssStatusLevel.NONE,
+                    satelliteText = null,
+                    accuracyText = null,
+                    accuracyLevel = GnssStatusLevel.NONE,
+                    isWaiting = true,
+                    isStale = true,
+                )
+            }
+        }
+        val text = when (status) {
+            LinkStatus.CONNECTING -> "Connecting…"
+            LinkStatus.CONNECTED_NO_DATA -> link.lastRawNmeaAtMs?.let { "No data ${seconds(nowMs - it)}s" } ?: "No data"
+            else -> "No fix"
+        }
+        return base.copy(fixText = text)
+    }
+
+    private fun seconds(ms: Long): Long = ms.coerceAtLeast(0L) / 1_000L
+
     fun map(
         selectedSource: LocationSourceType,
         fix: Fix?,
@@ -96,8 +182,14 @@ object GnssToolbarStateMapper {
         externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL,
         /** The fix expressed in the user's coordinate system (null = legacy lat/lon + MSL display). */
         coords: app.surrealar.coords.ConvertedPosition? = null,
+        /** Link state used to explain a missing fix. */
+        link: ToolbarLinkInputs = ToolbarLinkInputs(),
+        /** Last fix for this source/receiver, to keep a lost position on screen (greyed). */
+        last: LastFix? = null,
+        /** Monotonic now (ms). */
+        nowMs: Long = 0L,
     ): ToolbarMapResult {
-        if (fix == null) return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
+        if (fix == null) return ToolbarMapResult.Render(noFix(selectedSource, externalLabel, link, last, nowMs))
         if (!fixMatchesSource(selectedSource, fix)) return ToolbarMapResult.Ignore("wrong-provider")
         if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
             return ToolbarMapResult.Render(waiting(selectedSource, externalLabel))
