@@ -44,6 +44,9 @@ object ReportAssembler {
             // ── Rolling logs (event history + crashes) ──
             src.logFiles().forEach { z.file(it.name, it) }
             src.errorFiles().forEach { z.file(it.name, it) }
+            // Last: lists everything above.
+            val listed = z.entries.toList()
+            z.textSafe("manifest.txt") { ManifestCollector.render(listed, src.reportId, src.nowMs, logsTruncatedTo24h = false) }
             z.entries
         }
     }
