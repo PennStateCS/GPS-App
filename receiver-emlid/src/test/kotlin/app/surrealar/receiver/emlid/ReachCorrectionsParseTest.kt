@@ -1,22 +1,16 @@
-package app.surrealar.gnss.external
-
+package app.surrealar.receiver.emlid
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
  * Tests the pure broadcast parsing in [ReachCorrectionsService] (navigation + stream_status).
  * Protects the corrections/RTK status diagnostics from silent breakage on firmware JSON changes.
- * Robolectric supplies real org.json; no socket/network/hardware is used.
+ * org.json comes from the test classpath; no socket/network/hardware is used.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class ReachCorrectionsParseTest {
 
     private val svc = ReachCorrectionsService("127.0.0.1")

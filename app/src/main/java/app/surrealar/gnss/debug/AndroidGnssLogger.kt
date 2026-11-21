@@ -1,6 +1,7 @@
 package app.surrealar.gnss.debug
 
 import android.util.Log
+import app.surrealar.gnss.log.DiagnosticLevel
 import app.surrealar.gnss.log.GnssLogger
 import app.surrealar.util.DiagnosticsLogger
 
@@ -9,7 +10,7 @@ import app.surrealar.util.DiagnosticsLogger
  * module existed. Installed once in SurRealApplication.onCreate.
  *
  * - d/i/w/e → android.util.Log (logcat only), same tag and message.
- * - diagnostic → DiagnosticsLogger.i (logcat + the exportable diagnostics log).
+ * - diagnostic → DiagnosticsLogger.i / .w / .e by level (logcat + the exportable diagnostics log).
  * - enabled / isDue / trace → GnssDebugLog (debug builds only, tag "GnssDebug", "[area] " prefix,
  *   the same per-key throttle map as the app's own GnssDebugLog.every calls).
  */
@@ -28,7 +29,11 @@ object AndroidGnssLogger : GnssLogger {
         if (throwable == null) Log.e(tag, message) else Log.e(tag, message, throwable)
     }
 
-    override fun diagnostic(tag: String, message: String) = DiagnosticsLogger.i(tag, message)
+    override fun diagnostic(tag: String, message: String, level: DiagnosticLevel, throwable: Throwable?) = when (level) {
+        DiagnosticLevel.INFO -> DiagnosticsLogger.i(tag, message)
+        DiagnosticLevel.WARN -> DiagnosticsLogger.w(tag, message, throwable)
+        DiagnosticLevel.ERROR -> DiagnosticsLogger.e(tag, message, throwable)
+    }
 
     override fun isDue(key: String, intervalMs: Long): Boolean = GnssDebugLog.due(key, intervalMs)
 

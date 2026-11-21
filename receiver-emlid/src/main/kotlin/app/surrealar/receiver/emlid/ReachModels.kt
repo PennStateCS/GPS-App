@@ -1,14 +1,13 @@
-package app.surrealar.gnss.external.model
-
+package app.surrealar.receiver.emlid
 /**
  * Live correction status pushed from the Reach via socket.io broadcast events
- * (parsed by [app.surrealar.gnss.external.ReachCorrectionsService], mapped to the receiver-neutral
+ * (parsed by [ReachCorrectionsService], mapped to the receiver-neutral
  * `ReceiverCorrections` by `EmlidMapping`).
  *
  * The other Reach app-facing models (battery, device, storage, connection status, device commands)
  * were replaced by the neutral receiver models in gnss-core (`app.surrealar.gnss.receiver`).
  */
-data class ReachCorrectionsInfo(
+public data class ReachCorrectionsInfo(
     val isReceiving: Boolean,
     val channel: String?,
     val satellitesInView: Int?,

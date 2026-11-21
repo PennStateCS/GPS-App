@@ -192,15 +192,14 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.jmdns)
 
-    // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts).
-    // Upgraded to the CVE-fixed 2.x line; validate RS2+ protocol compatibility in field tests.
-    implementation(libs.socket.io.client) {
-        exclude(group = "org.json", module = "json")
-    }
+    // Socket.IO client for Reach RS2+ live data (navigation/stream_status broadcasts) now comes in
+    // through :receiver-emlid (CVE-fixed 2.x line, org.json excluded there).
 
     // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
     implementation(project(":geo-core"))
     implementation(project(":gnss-core"))
+    // Emlid Reach receiver status (HTTP API + socket.io) behind ReceiverDevice.
+    implementation(project(":receiver-emlid"))
 
     // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)

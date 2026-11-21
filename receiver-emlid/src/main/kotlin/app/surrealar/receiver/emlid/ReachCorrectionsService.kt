@@ -1,8 +1,6 @@
-package app.surrealar.gnss.external
+package app.surrealar.receiver.emlid
 
-import android.util.Log
-import app.surrealar.gnss.external.model.ReachCorrectionsInfo
-import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.gnss.log.GnssLog
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
@@ -27,7 +25,7 @@ private const val TAG = "ReachCorrectionsService"
  *
  * The /battery REST endpoint is NOT touched here; keep using [ReachBatteryService] for that.
  */
-class ReachCorrectionsService(private val host: String) {
+internal class ReachCorrectionsService(private val host: String) {
 
     private val _correctionsInfo = MutableStateFlow<ReachCorrectionsInfo?>(null)
     val correctionsInfo: StateFlow<ReachCorrectionsInfo?> = _correctionsInfo.asStateFlow()
@@ -40,7 +38,7 @@ class ReachCorrectionsService(private val host: String) {
     private var cachedChannel: String? = null
     private var cachedIsReceiving: Boolean = false
 
-    // Last values logged to DiagnosticsLogger — used to log only state CHANGES (corrections
+    // Last values written to the diagnostics log (GnssLog.diagnostic) — used to log only state CHANGES (corrections
     // broadcasts arrive continuously; logging each one would flood the diagnostic export).
     private var lastLoggedSolution: String? = null
     private var lastLoggedStreamKey: String? = null
@@ -49,10 +47,10 @@ class ReachCorrectionsService(private val host: String) {
 
     fun connect() {
         if (socket?.connected() == true) {
-            Log.d(TAG, "Already connected to $host — ignoring duplicate connect()")
+            GnssLog.d(TAG, "Already connected to $host — ignoring duplicate connect()")
             return
         }
-        DiagnosticsLogger.i("CORRECTIONS", "connect attempt host=$host")
+        GnssLog.diagnostic("CORRECTIONS", "connect attempt host=$host")
         try {
             val options = IO.Options().apply {
                 transports = arrayOf("polling")   // RS2+ supports polling; skip websocket upgrade
@@ -65,31 +63,31 @@ class ReachCorrectionsService(private val host: String) {
             val s = IO.socket(uri, options)
 
             s.on(Socket.EVENT_CONNECT) {
-                Log.d(TAG, "socket.io connected to $host")
-                DiagnosticsLogger.i("CORRECTIONS", "socket connected host=$host")
+                GnssLog.d(TAG, "socket.io connected to $host")
+                GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host")
             }
             s.on(Socket.EVENT_CONNECT_ERROR) { args ->
                 val msg = args.firstOrNull()?.toString() ?: "unknown"
-                Log.w(TAG, "socket.io connect error (will retry): $msg")
-                DiagnosticsLogger.w("CORRECTIONS", "socket connect error host=$host (will retry): $msg")
+                GnssLog.w(TAG, "socket.io connect error (will retry): $msg")
+                GnssLog.diagnosticWarn("CORRECTIONS", "socket connect error host=$host (will retry): $msg")
             }
             s.on("reconnect_failed") {
-                Log.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
-                DiagnosticsLogger.w("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
+                GnssLog.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
+                GnssLog.diagnosticWarn("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
             }
             s.on(Socket.EVENT_DISCONNECT) { args ->
                 val reason = args.firstOrNull()?.toString() ?: "unknown"
-                Log.d(TAG, "socket.io disconnected: $reason")
-                DiagnosticsLogger.i("CORRECTIONS", "socket disconnected host=$host reason=$reason")
+                GnssLog.d(TAG, "socket.io disconnected: $reason")
+                GnssLog.diagnostic("CORRECTIONS", "socket disconnected host=$host reason=$reason")
             }
             s.on("broadcast", broadcastListener)
 
             s.connect()
             socket = s
-            Log.d(TAG, "socket.io connecting to http://$host")
+            GnssLog.d(TAG, "socket.io connecting to http://$host")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create socket.io connection to $host: ${e.message}", e)
-            DiagnosticsLogger.e("CORRECTIONS",
+            GnssLog.e(TAG, "Failed to create socket.io connection to $host: ${e.message}", e)
+            GnssLog.diagnosticError("CORRECTIONS",
                 "failed to create socket host=$host: ${e.javaClass.simpleName} ${e.message}", e)
         }
     }
@@ -98,8 +96,8 @@ class ReachCorrectionsService(private val host: String) {
         socket?.let { s ->
             s.off("broadcast", broadcastListener)
             s.disconnect()
-            Log.d(TAG, "socket.io disconnected from $host")
-            DiagnosticsLogger.i("CORRECTIONS", "disconnect requested host=$host")
+            GnssLog.d(TAG, "socket.io disconnected from $host")
+            GnssLog.diagnostic("CORRECTIONS", "disconnect requested host=$host")
         }
         socket = null
         cachedNav = null
@@ -114,13 +112,13 @@ class ReachCorrectionsService(private val host: String) {
     private val broadcastListener = Emitter.Listener { args ->
         val payload = args.firstOrNull() as? JSONObject ?: run {
             // Some socket.io broadcasts arrive as plain strings (handshake/other events) — expected.
-            Log.d(TAG, "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}")
+            GnssLog.d(TAG, "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}")
             return@Listener
         }
         val name = payload.optString("name", "")
         val data = payload.optJSONObject("payload") ?: run {
             // Broadcasts we don't consume (e.g. time_marks) may omit a payload object — expected.
-            Log.d(TAG, "broadcast '$name': no payload object (ignored)")
+            GnssLog.d(TAG, "broadcast '$name': no payload object (ignored)")
             return@Listener
         }
 
@@ -134,19 +132,19 @@ class ReachCorrectionsService(private val host: String) {
     // ── Payload handlers ──────────────────────────────────────────────────────
 
     private fun handleNavigation(data: JSONObject) {
-        Log.d(TAG, "navigation broadcast: ${data.toString().take(300)}")
+        GnssLog.d(TAG, "navigation broadcast: ${data.toString().take(300)}")
 
         val nav = parseNavigation(data)
         cachedNav = nav
 
-        Log.d(TAG, "navigation parsed: aod=${nav.aod} sol=${nav.solution} baseline=${nav.baseline} " +
+        GnssLog.d(TAG, "navigation parsed: aod=${nav.aod} sol=${nav.solution} baseline=${nav.baseline} " +
                 "satsBase=${nav.satsBase} baseLat=${nav.baseLat} baseLon=${nav.baseLon} baseH=${nav.baseH}")
 
         // Log only when the RTK solution state changes (navigation broadcasts arrive continuously).
         // Base-station lat/lon are intentionally omitted to avoid coordinate spam in the export.
         if (nav.solution != lastLoggedSolution) {
             lastLoggedSolution = nav.solution
-            DiagnosticsLogger.i("CORRECTIONS", "rtk solution=${nav.solution ?: "none"} " +
+            GnssLog.diagnostic("CORRECTIONS", "rtk solution=${nav.solution ?: "none"} " +
                 "ageS=${nav.aod ?: "?"} baselineKm=${nav.baseline ?: "?"} baseSats=${nav.satsBase ?: "?"}")
         }
 
@@ -168,20 +166,20 @@ class ReachCorrectionsService(private val host: String) {
     }
 
     private fun handleStreamStatus(data: JSONObject) {
-        Log.d(TAG, "stream_status broadcast: ${data.toString().take(300)}")
+        GnssLog.d(TAG, "stream_status broadcast: ${data.toString().take(300)}")
 
         val parsed = parseStreamStatus(data)
         if (parsed != null) {
             cachedIsReceiving = parsed.isReceiving
             cachedChannel     = parsed.channel
 
-            Log.d(TAG, "stream_status parsed: state=${parsed.state} connected=${parsed.isReceiving} channel=${parsed.channel}")
+            GnssLog.d(TAG, "stream_status parsed: state=${parsed.state} connected=${parsed.isReceiving} channel=${parsed.channel}")
 
             // Log only on a change of the correction-input state/channel.
             val streamKey = "${parsed.state}|${parsed.isReceiving}|${parsed.channel}"
             if (streamKey != lastLoggedStreamKey) {
                 lastLoggedStreamKey = streamKey
-                DiagnosticsLogger.i("CORRECTIONS",
+                GnssLog.diagnostic("CORRECTIONS",
                     "stream_status state=${parsed.state} receiving=${parsed.isReceiving} channel=${parsed.channel ?: "none"}")
             }
         }

@@ -32,8 +32,11 @@ public interface GnssLogger {
     /** Error to the developer log, with an optional [throwable]. */
     public fun e(tag: String, message: String, throwable: Throwable? = null)
 
-    /** Info-level event that is also kept in the host's diagnostics log (no coordinates). */
-    public fun diagnostic(tag: String, message: String)
+    /**
+     * Event that is also kept in the host's diagnostics log (no coordinates), at [level] (info unless
+     * given), with an optional [throwable].
+     */
+    public fun diagnostic(tag: String, message: String, level: DiagnosticLevel = DiagnosticLevel.INFO, throwable: Throwable? = null)
 
     /**
      * Throttle gate for [GnssLog.every]: returns true, and records the time, if [key] has not been
@@ -51,11 +54,14 @@ public interface GnssLogger {
         override fun i(tag: String, message: String) {}
         override fun w(tag: String, message: String, throwable: Throwable?) {}
         override fun e(tag: String, message: String, throwable: Throwable?) {}
-        override fun diagnostic(tag: String, message: String) {}
+        override fun diagnostic(tag: String, message: String, level: DiagnosticLevel, throwable: Throwable?) {}
         override fun isDue(key: String, intervalMs: Long): Boolean = false
         override fun trace(area: String, message: String) {}
     }
 }
+
+/** Severity of a [GnssLogger.diagnostic] event. */
+public enum class DiagnosticLevel { INFO, WARN, ERROR }
 
 /**
  * The single place gnss-core logs through. Install a [GnssLogger] once at startup, before any GNSS
@@ -95,7 +101,17 @@ public object GnssLog {
     public fun e(tag: String, message: String, throwable: Throwable? = null): Unit = logger.e(tag, message, throwable)
 
     /** See [GnssLogger.diagnostic]. */
-    public fun diagnostic(tag: String, message: String): Unit = logger.diagnostic(tag, message)
+    public fun diagnostic(
+        tag: String, message: String, level: DiagnosticLevel = DiagnosticLevel.INFO, throwable: Throwable? = null,
+    ): Unit = logger.diagnostic(tag, message, level, throwable)
+
+    /** [diagnostic] at [DiagnosticLevel.WARN]. */
+    public fun diagnosticWarn(tag: String, message: String, throwable: Throwable? = null): Unit =
+        logger.diagnostic(tag, message, DiagnosticLevel.WARN, throwable)
+
+    /** [diagnostic] at [DiagnosticLevel.ERROR]. */
+    public fun diagnosticError(tag: String, message: String, throwable: Throwable? = null): Unit =
+        logger.diagnostic(tag, message, DiagnosticLevel.ERROR, throwable)
 
     /**
      * Throttled debug trace: writes [message] under [area] at most once per [intervalMs] for [key].

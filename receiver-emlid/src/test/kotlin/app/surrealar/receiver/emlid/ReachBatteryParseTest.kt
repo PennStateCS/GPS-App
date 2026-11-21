@@ -1,22 +1,16 @@
-package app.surrealar.gnss.external
-
+package app.surrealar.receiver.emlid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
  * Tests the pure JSON→[BatteryStatus] parse in [ReachBatteryService.parse]: state-of-charge
  * scaling, the /status nested layout, and the single strict charging rule.
  *
- * Robolectric supplies a real `org.json.JSONObject` (stubbed in plain JVM unit tests). No HTTP.
+ * org.json comes from the test classpath (the APK uses Android's platform copy). No HTTP.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class ReachBatteryParseTest {
 
     private fun parse(json: String) = ReachBatteryService.parse(json)

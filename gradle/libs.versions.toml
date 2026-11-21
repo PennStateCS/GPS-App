@@ -26,6 +26,8 @@ datastore = "1.3.0"
 coroutines = "1.11.0"
 jmdns = "3.6.5"
 socketIo = "2.1.2"
+# org.json for JVM compile/tests of :receiver-emlid only (compileOnly — the APK uses Android's platform copy).
+orgJson = "20240303"
 desugarJdkLibs = "2.1.5"
 robolectric = "4.18"
 androidxTestCore = "1.7.0"
@@ -62,6 +64,7 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 jmdns = { group = "org.jmdns", name = "jmdns", version.ref = "jmdns" }
 socket-io-client = { group = "io.socket", name = "socket.io-client", version.ref = "socketIo" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }

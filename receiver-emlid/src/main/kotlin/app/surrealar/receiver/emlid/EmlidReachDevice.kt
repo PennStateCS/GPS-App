@@ -1,12 +1,4 @@
 package app.surrealar.receiver.emlid
-
-import app.surrealar.gnss.external.BatteryStatus
-import app.surrealar.gnss.external.ReachBatteryService
-import app.surrealar.gnss.external.ReachCorrectionsService
-import app.surrealar.gnss.external.ReachDeviceInfoDto
-import app.surrealar.gnss.external.ReachDeviceService
-import app.surrealar.gnss.external.ReachHttpClient
-import app.surrealar.gnss.external.model.ReachCorrectionsInfo
 import app.surrealar.gnss.log.GnssLog
 import app.surrealar.gnss.receiver.ReceiverBattery
 import app.surrealar.gnss.receiver.ReceiverCapabilities
@@ -39,7 +31,7 @@ import kotlinx.coroutines.launch
  *
  * Not thread-safe: call [start] / [stop] from one coroutine (ReceiverDeviceManager does).
  */
-class EmlidReachDevice(
+public class EmlidReachDevice(
     private val api: EmlidApi = EmlidApi.Http,
     private val newScope: () -> CoroutineScope = { CoroutineScope(SupervisorJob() + Dispatchers.IO) },
 ) : ReceiverDevice {
@@ -59,7 +51,7 @@ class EmlidReachDevice(
     @Volatile private var correctionsLink: EmlidApi.CorrectionsLink? = null
 
     /** True while poll loops are running (tests: no loops may outlive [stop]). */
-    val isRunning: Boolean get() = scope?.coroutineContext?.get(Job)?.isActive == true
+    public val isRunning: Boolean get() = scope?.coroutineContext?.get(Job)?.isActive == true
 
     override fun start(host: String) {
         if (isRunning) stop()
@@ -140,19 +132,19 @@ class EmlidReachDevice(
     }
 
     /** The receiver's HTTP / socket.io endpoints, injectable for tests. */
-    interface EmlidApi {
-        fun batteryReader(host: String): suspend () -> BatteryStatus?
-        fun deviceReader(host: String): suspend () -> ReachDeviceInfoDto?
-        fun corrections(host: String): CorrectionsLink
+    public interface EmlidApi {
+        public fun batteryReader(host: String): suspend () -> BatteryStatus?
+        public fun deviceReader(host: String): suspend () -> ReachDeviceInfoDto?
+        public fun corrections(host: String): CorrectionsLink
 
-        interface CorrectionsLink {
-            val info: StateFlow<ReachCorrectionsInfo?>
-            fun connect()
-            fun disconnect()
+        public interface CorrectionsLink {
+            public val info: StateFlow<ReachCorrectionsInfo?>
+            public fun connect()
+            public fun disconnect()
         }
 
         /** The real receiver. */
-        object Http : EmlidApi {
+        public object Http : EmlidApi {
             override fun batteryReader(host: String): suspend () -> BatteryStatus? {
                 // Short timeouts: /battery doesn't exist on all firmware, so the /status fallback
                 // costs at most ~3 s instead of the default 8 s per endpoint.
@@ -183,16 +175,16 @@ class EmlidReachDevice(
 }
 
 /** Reach service results → the receiver-neutral models, keeping every field (extras in `details`). */
-object EmlidMapping {
+public object EmlidMapping {
 
     /** Detail labels (also the Developer page's row labels). */
-    const val USB_CHARGER_CURRENT = "USB Charger Current"
-    const val USB_CHARGER_VOLTAGE = "USB Charger Voltage"
-    const val OTG_POWER = "OTG Power"
-    const val GNSS_RECEIVER_FW = "GNSS Receiver FW"
-    const val RAW_RESPONSE = "Raw response"
+    public const val USB_CHARGER_CURRENT: String = "USB Charger Current"
+    public const val USB_CHARGER_VOLTAGE: String = "USB Charger Voltage"
+    public const val OTG_POWER: String = "OTG Power"
+    public const val GNSS_RECEIVER_FW: String = "GNSS Receiver FW"
+    public const val RAW_RESPONSE: String = "Raw response"
 
-    fun battery(b: BatteryStatus): ReceiverBattery = ReceiverBattery(
+    public fun battery(b: BatteryStatus): ReceiverBattery = ReceiverBattery(
         percent = b.percent,
         isCharging = b.isCharging,
         voltageV = b.voltageV,
@@ -207,7 +199,7 @@ object EmlidMapping {
         },
     )
 
-    fun deviceInfo(ip: String, device: ReachDeviceInfoDto?, errorMessage: String?): ReceiverDeviceInfo {
+    public fun deviceInfo(ip: String, device: ReachDeviceInfoDto?, errorMessage: String?): ReceiverDeviceInfo {
         fun String?.blankToNull() = takeIf { !it.isNullOrBlank() }
         val storage = device?.storageTotalMb?.let { total ->
             val free = device.storageFreeMb ?: 0L
@@ -230,7 +222,7 @@ object EmlidMapping {
         )
     }
 
-    fun corrections(c: ReachCorrectionsInfo): ReceiverCorrections = ReceiverCorrections(
+    public fun corrections(c: ReachCorrectionsInfo): ReceiverCorrections = ReceiverCorrections(
         isReceiving    = c.isReceiving,
         channel        = c.channel,
         stationId      = null,          // Reach broadcasts don't carry a station ID (GGA does)

@@ -71,7 +71,8 @@ GnssLog.install(object : GnssLogger {
     override fun i(tag: String, message: String) = println("I/$tag: $message")
     override fun w(tag: String, message: String, throwable: Throwable?) = println("W/$tag: $message")
     override fun e(tag: String, message: String, throwable: Throwable?) = println("E/$tag: $message")
-    override fun diagnostic(tag: String, message: String) = println("DIAG/$tag: $message")
+    override fun diagnostic(tag: String, message: String, level: DiagnosticLevel, throwable: Throwable?) =
+        println("DIAG-$level/$tag: $message")
     private val last = java.util.concurrent.ConcurrentHashMap<String, Long>()
     override fun isDue(key: String, intervalMs: Long): Boolean {
         val now = System.nanoTime() / 1_000_000

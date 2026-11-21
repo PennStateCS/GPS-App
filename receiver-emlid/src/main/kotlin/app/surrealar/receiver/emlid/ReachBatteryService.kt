@@ -1,12 +1,11 @@
-package app.surrealar.gnss.external
-
+package app.surrealar.receiver.emlid
 import org.json.JSONObject
 
 /**
  * Raw battery readout parsed from the Reach device's HTTP/JSON response. Service-layer DTO — mapped
  * into the receiver-neutral `ReceiverBattery` (EmlidMapping) before use.
  */
-data class BatteryStatus(
+public data class BatteryStatus(
     val percent: Int,
     val voltageV: Double?,
     val currentA: Double?,
@@ -30,7 +29,7 @@ data class BatteryStatus(
  *    a) Battery fields nested under "battery" key
  *    b) Battery fields at root level (older firmware / ReachView 2 layout)
  */
-class ReachBatteryService(private val client: ReachHttpClient) {
+internal class ReachBatteryService(private val client: ReachHttpClient) {
 
     suspend fun read(): BatteryStatus? =
         tryEndpoint("/battery") ?: tryEndpoint("/status")

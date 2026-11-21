@@ -1,8 +1,8 @@
 package app.surrealar.receiver
 
-import app.surrealar.gnss.external.BatteryStatus
-import app.surrealar.gnss.external.ReachDeviceInfoDto
-import app.surrealar.gnss.external.model.ReachCorrectionsInfo
+import app.surrealar.receiver.emlid.BatteryStatus
+import app.surrealar.receiver.emlid.ReachDeviceInfoDto
+import app.surrealar.receiver.emlid.ReachCorrectionsInfo
 import app.surrealar.gnss.receiver.ReceiverBattery
 import app.surrealar.gnss.receiver.ReceiverCapabilities
 import app.surrealar.gnss.receiver.ReceiverCorrections

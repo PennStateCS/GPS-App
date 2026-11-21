@@ -1,14 +1,13 @@
-package app.surrealar.gnss.external
+package app.surrealar.receiver.emlid
 
-import android.util.Log
-import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.gnss.log.GnssLog
 import org.json.JSONObject
 
 /**
  * Raw device-info parsed from the Reach device's HTTP/JSON response. Service-layer DTO — mapped into
  * the receiver-neutral `ReceiverDeviceInfo` (EmlidMapping).
  */
-data class ReachDeviceInfoDto(
+public data class ReachDeviceInfoDto(
     val name: String?,
     val model: String?,
     val firmware: String?,
@@ -32,7 +31,7 @@ private const val TAG = "ReachDeviceService"
  * Handles nested (Layout A) and flat-root (Layout B) JSON layouts,
  * plus the "general" wrapper used in some ReachView 3 builds.
  */
-class ReachDeviceService(private val client: ReachHttpClient) {
+internal class ReachDeviceService(private val client: ReachHttpClient) {
 
     suspend fun read(): ReachDeviceInfoDto? =
         tryEndpoint("/info") ?: tryEndpoint("/status")
@@ -40,8 +39,8 @@ class ReachDeviceService(private val client: ReachHttpClient) {
     private suspend fun tryEndpoint(path: String): ReachDeviceInfoDto? {
         val text = runCatching { client.get(path) }
             .onFailure {
-                Log.w(TAG, "GET $path failed: ${it.message}")
-                DiagnosticsLogger.w("CORRECTIONS",
+                GnssLog.w(TAG, "GET $path failed: ${it.message}")
+                GnssLog.diagnosticWarn("CORRECTIONS",
                     "device endpoint $path failed: ${it.javaClass.simpleName} ${it.message}")
             }
             .getOrNull() ?: return null
@@ -54,11 +53,11 @@ class ReachDeviceService(private val client: ReachHttpClient) {
      * malformed JSON. `internal` so unit tests can exercise it without a live HTTP client.
      */
     internal fun parseReachDeviceInfo(path: String, text: String): ReachDeviceInfoDto? {
-        Log.d(TAG, "GET $path → ${text.length} chars: ${text.take(300)}")
+        GnssLog.d(TAG, "GET $path → ${text.length} chars: ${text.take(300)}")
 
         val root = try { JSONObject(text) } catch (e: Exception) {
-            Log.w(TAG, "JSON parse failed for $path: ${e.message}")
-            DiagnosticsLogger.w("CORRECTIONS", "device endpoint $path returned non-JSON: ${e.message}")
+            GnssLog.w(TAG, "JSON parse failed for $path: ${e.message}")
+            GnssLog.diagnosticWarn("CORRECTIONS", "device endpoint $path returned non-JSON: ${e.message}")
             return null
         }
 
@@ -129,12 +128,12 @@ class ReachDeviceService(private val client: ReachHttpClient) {
         val hostname = deviceObj?.str("local_address")
                     ?: root.str("local_address", "hostname")
 
-        Log.d(TAG, "Parsed [$path]: name=$name  model=$model  fw=$firmware  serial=$serial  uptime=$uptime  storage=${storageTotalMb}/${storageFreeMb} MB")
+        GnssLog.d(TAG, "Parsed [$path]: name=$name  model=$model  fw=$firmware  serial=$serial  uptime=$uptime  storage=${storageTotalMb}/${storageFreeMb} MB")
 
         // If nothing at all was parsed, this endpoint doesn't have device info
         if (name == null && model == null && firmware == null && serial == null) {
-            Log.w(TAG, "No device fields found in $path response – top-level keys: ${root.keys().asSequence().toList()}")
-            DiagnosticsLogger.w("CORRECTIONS", "device endpoint $path had no device fields (endpoint may be missing/404)")
+            GnssLog.w(TAG, "No device fields found in $path response – top-level keys: ${root.keys().asSequence().toList()}")
+            GnssLog.diagnosticWarn("CORRECTIONS", "device endpoint $path had no device fields (endpoint may be missing/404)")
             return null
         }
 

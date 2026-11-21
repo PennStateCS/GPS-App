@@ -1,19 +1,9 @@
 package app.surrealar.receiver.emlid
-
-import app.surrealar.gnss.external.BatteryStatus
-import app.surrealar.gnss.external.ReachBatteryService
-import app.surrealar.gnss.external.ReachDeviceInfoDto
-import app.surrealar.gnss.external.ReachDeviceService
-import app.surrealar.gnss.external.ReachHttpClient
-import app.surrealar.gnss.external.model.ReachCorrectionsInfo
 import app.surrealar.gnss.receiver.ReceiverBattery
 import app.surrealar.gnss.receiver.ReceiverCorrections
 import app.surrealar.gnss.receiver.ReceiverDeviceInfo
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
  * The Reach JSON fixtures (same payloads as ReachBatteryParseTest / ReachDeviceServiceParseTest)
@@ -21,9 +11,6 @@ import org.robolectric.annotation.Config
  * models: "before" = the old ReachDeviceRepository mapping + old UI formatting, "after" = EmlidMapping
  * + the new UI formatting.
  */
-// org.json is stubbed in plain JVM unit tests; Robolectric provides a real implementation.
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class EmlidMappingTest {
 
     private val batteryFixtures = listOf(

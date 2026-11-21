@@ -1,5 +1,4 @@
-package app.surrealar.gnss.external
-
+package app.surrealar.receiver.emlid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

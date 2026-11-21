@@ -1,22 +1,16 @@
-package app.surrealar.gnss.external
-
+package app.surrealar.receiver.emlid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
  * Tests the pure JSON→DTO parsing in [ReachDeviceService.parseReachDeviceInfo] across known
  * Reach/Emlid firmware layouts and bad input. Protects device-info display + the `CORRECTIONS`
  * diagnostics from silent breakage when receiver firmware JSON changes.
  *
- * Robolectric supplies a real `org.json.JSONObject` (stubbed in plain JVM unit tests). The HTTP
+ * org.json comes from the test classpath (the APK uses Android's platform copy). The HTTP
  * client is never used — only the parse method is exercised — so no network/hardware is required.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class ReachDeviceServiceParseTest {
 
     private val svc = ReachDeviceService(ReachHttpClient("127.0.0.1"))

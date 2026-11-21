@@ -1,6 +1,6 @@
 package app.surrealar.receiver
 
-import app.surrealar.gnss.external.ReachHttpClient
+import app.surrealar.receiver.emlid.ReachHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

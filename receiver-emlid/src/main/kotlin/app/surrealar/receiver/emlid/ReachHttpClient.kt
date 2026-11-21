@@ -1,5 +1,4 @@
-package app.surrealar.gnss.external
-
+package app.surrealar.receiver.emlid
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -9,12 +8,12 @@ import java.net.URL
  * Small, focused HTTP client for RS2+ queries on port 80.
  * Centralizes timeouts and simple retries so services remain thin.
  */
-class ReachHttpClient(
+public class ReachHttpClient(
     private val host: String,
     private val connectTimeoutMs: Int = 4000,
     private val readTimeoutMs: Int = 4000
 ) {
-    suspend fun get(path: String): String = withContext(Dispatchers.IO) {
+    public suspend fun get(path: String): String = withContext(Dispatchers.IO) {
         val url = URL("http://$host$path")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = connectTimeoutMs
