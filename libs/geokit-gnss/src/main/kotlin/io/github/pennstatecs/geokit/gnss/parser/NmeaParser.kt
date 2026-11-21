@@ -8,8 +8,8 @@ import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 /**
  * Thin façade over [NmeaRegistry] used by tests and the NMEA replay pipeline.
  *
- * Production GNSS sources (`InternalNmeaSource`, `TcpNmeaSource`) use `NmeaFuser` directly
- * with the singleton [NmeaRegistry] provided by DI, so they do not instantiate this class.
+ * Live GNSS sources use `NmeaFuser` directly with their own [NmeaRegistry], so they do not
+ * instantiate this class.
  */
 internal class NmeaParser(registry: NmeaRegistry = DefaultNmeaRegistry.create()) {
 

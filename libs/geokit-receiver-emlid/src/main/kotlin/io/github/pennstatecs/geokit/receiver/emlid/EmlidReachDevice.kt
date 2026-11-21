@@ -22,14 +22,14 @@ import kotlinx.coroutines.launch
 /**
  * Emlid Reach RS2+ / RS4 / RS4 Pro status over the receiver's HTTP API and socket.io broadcasts.
  *
- * Same behaviour as the former ReachDeviceRepository, for one host per [start]:
+ * For one host per [start]:
  * - **Battery**: the app's only battery poller. 15 s between successful reads; on failure back off
  *   5 s → 15 s → 30 s, and after 3 consecutive failures publish null (UI hides the battery) while
  *   retrying every 30 s. Short HTTP timeouts (1.5 s) because /battery is missing on some firmware.
  * - **Device info**: every 30 s.
  * - **Corrections**: pushed by the receiver's socket.io `broadcast` events.
  *
- * Not thread-safe: call [start] / [stop] from one coroutine (ReceiverDeviceManager does).
+ * Not thread-safe: call [start] / [stop] from one coroutine.
  */
 public class EmlidReachDevice(
     private val api: EmlidApi = EmlidApi.Http,

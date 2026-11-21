@@ -3,13 +3,13 @@ package io.github.pennstatecs.geokit.gnss.nmea.parse
 import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 
 /**
- * Builds the default [NmeaRegistry] with all sentence parsers the app supports.
+ * Builds the default [NmeaRegistry] with every sentence parser in this library.
  *
- * Used by tests and NMEA replay, where a standalone registry is needed. (The app's live registry is
- * built in its GnssModule from the same parsers, with checksums required.)
+ * Used by tests and NMEA replay. A host can also build its own registry from the same parsers, e.g.
+ * with checksums required for live streams (`NmeaRegistry(parsers, requireChecksum = true)`).
  *
  * To add support for a new sentence type, create a [SentenceParser] subclass
- * and add it to the map here and in the app's GnssModule.
+ * and add it to the map here (and to any registry the host builds itself).
  */
 public object DefaultNmeaRegistry {
     /**

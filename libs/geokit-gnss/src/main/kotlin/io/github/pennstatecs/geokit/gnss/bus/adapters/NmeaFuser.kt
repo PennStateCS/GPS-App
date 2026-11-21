@@ -34,10 +34,8 @@ import java.time.ZonedDateTime
  * **Accuracy.** [Fix.hAccM] is a 68 % horizontal radius (GST σ → HorizontalAccuracy.r68; MediaTek
  * $..ACCURACY as reported); [Fix.vAccM] is 1σ. Values the receiver did not send stay null, never 0.
  *
- * Extracted from the duplicated logic that previously lived in both `InternalNmeaSource` and
- * `TcpNmeaSource`. Adding support for a new external provider requires only a new
- * `SourceAdapter` implementation that creates its own [NmeaFuser] with the appropriate
- * [Provider] value — no changes to the fuser itself are needed.
+ * One fuser serves every NMEA source (device GNSS, TCP, Bluetooth, replay). Adding a new source means
+ * creating its own [NmeaFuser] with the appropriate [Provider] value — no changes to the fuser itself.
  *
  * @param provider   Which GNSS provider produced this data (stamped onto every [Fix]).
  * @param registry   Shared [NmeaRegistry] that performs checksum-verified sentence parsing.

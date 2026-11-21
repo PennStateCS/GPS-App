@@ -1,9 +1,8 @@
 package io.github.pennstatecs.geokit.gnss.model
 
 /**
- * Display-oriented snapshot of a [Fix] (Home card, fix badge, [app.surrealar.domain.model.CoordinateFactory.fromFix]).
- * HomeViewModel maps the live FixSwitchboard fix into this. (It used to live next to the retired
- * FixAccumulator, which built it from replay sentences.)
+ * Display-oriented snapshot of a [Fix]: the subset a status card, fix badge or saved-point builder
+ * needs, mapped from the live fix by the host.
  */
 public data class FixSnapshot(
     val timestampMillis: Long,

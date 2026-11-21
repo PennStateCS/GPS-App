@@ -10,7 +10,7 @@ import io.github.pennstatecs.geokit.gnss.model.RtkStatus
  * finish. They do not affect live AR rendering, ARCore anchor creation, or provider
  * selection.
  *
- * The policy applies to whichever provider is currently active through FixSwitchboard.
+ * The policy applies to whichever GNSS provider is currently active.
  * RTK FIX is the default because it is the minimum quality needed for survey-grade
  * external GNSS receivers. Internal phone GPS may not satisfy a FIX-only policy;
  * users who want to allow internal GPS captures should lower [requiredMinStatus].

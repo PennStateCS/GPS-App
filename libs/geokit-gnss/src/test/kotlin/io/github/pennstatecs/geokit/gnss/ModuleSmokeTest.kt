@@ -1,4 +1,4 @@
-package app.surrealar.gnss
+package io.github.pennstatecs.geokit.gnss
 
 import org.junit.Assert.assertNull
 import org.junit.Test

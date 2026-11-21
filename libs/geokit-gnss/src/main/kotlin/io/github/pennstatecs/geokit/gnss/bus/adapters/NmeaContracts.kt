@@ -10,8 +10,7 @@ import kotlinx.coroutines.flow.SharedFlow
  */
 
 /**
- * Optional contract for adapters that need explicit lifecycle control. (Moved here from
- * gnss.bus/FixSwitchboard.kt when this package became part of geokit-gnss; unchanged.)
+ * Optional contract for adapters that need explicit lifecycle control.
  */
 public interface Startable {
     /** Starts the adapter (opens its connection / registers listeners). */
@@ -28,7 +27,7 @@ public interface Startable {
  * The external adapter owns reconnection; the source itself makes a single attempt.
  *
  * To add support for a new transport (e.g. u-blox over Bluetooth), implement this
- * interface and pass the instance to a new external adapter registered in GnssModule.
+ * interface and hand the instance to the host's source adapter (which owns reconnection).
  */
 public interface NmeaSource : Startable {
     /** Fixes produced by this source's [NmeaFuser]. */
@@ -52,8 +51,8 @@ public interface NmeaSource : Startable {
 
 /**
  * Optional interface for adapters that expose a raw-NMEA activity stream.
- * [app.surrealar.gnss.bus.FixSwitchboard] forwards it so observers can distinguish
- * "socket connected but no parsed fix" from "no NMEA data flowing at all."
+ * A host can forward it so observers can distinguish "socket connected but no parsed fix" from
+ * "no NMEA data flowing at all."
  */
 public interface RawNmeaProvider {
     /** Emits once per raw NMEA line received, before parsing. */
