@@ -308,7 +308,8 @@ class SkyplotView @JvmOverloads constructor(
             val az = sat.azDeg!!
             val el = sat.elDeg!!
             val snrRaw = sat.snrDbHz
-            val snr = (snrRaw ?: 0.0).toInt().coerceIn(0, 50)
+            val snrDb = SnrDisplay.db(snrRaw)   // null = unknown (drawn grey, smallest dot)
+            val snr = snrDb ?: 0
 
             val azRad = Math.toRadians(az)
             val r = radius * (90.0 - el) / 90.0
@@ -316,13 +317,13 @@ class SkyplotView @JvmOverloads constructor(
             val sy = cy - r.toFloat() * cos(azRad).toFloat()
 
             val usedNow = isUsedSat(sat)
-            if (usedNow) canvas.drawCircle(sx, sy, dp(3.5f) + dp(2.5f) * (snr / 50f) + dp(1.5f), usedHalo)
+            if (usedNow) canvas.drawCircle(sx, sy, dp(3.5f) + dp(2.5f) * SnrDisplay.fraction(snrDb) + dp(1.5f), usedHalo)
 
             // Fill color: UNUSED => gray; USED => SNR color
             val fillColor = if (!usedNow) {
                 colorGray
             } else {
-                if (snrRaw == null || snr <= 0) colorGray else when {
+                if (snrDb == null) colorGray else when {
                     snr >= snrGreen -> colorGreen
                     snr >= snrYellow -> colorYellow
                     else -> colorRed
@@ -335,7 +336,7 @@ class SkyplotView @JvmOverloads constructor(
             satStroke.color = constellationStrokeColor(sat.constellation)
 
             // Dot radius grows slightly with SNR (3.5dp..6dp)
-            val dotR = dp(3.5f) + dp(2.5f) * (snr / 50f)
+            val dotR = dp(3.5f) + dp(2.5f) * SnrDisplay.fraction(snrDb)
 
             // Draw dot + stroke
             canvas.drawCircle(sx, sy, dotR, satFill)
@@ -378,15 +379,15 @@ class SkyplotView @JvmOverloads constructor(
 
         satellites.forEachIndexed { index, sat ->
             val y = listY + (index + 1) * itemHeight
-            val snrRaw = sat.snrDbHz
-            val snr = (snrRaw ?: 0.0).toInt().coerceIn(0, 50)
+            val snrDb = SnrDisplay.db(sat.snrDbHz)
+            val snr = snrDb ?: 0
             val usedNow = isUsedSat(sat)
 
             // Small dot for satellite
             val fillColor = if (!usedNow) {
                 colorGray
             } else {
-                if (snrRaw == null || snr <= 0) colorGray else when {
+                if (snrDb == null) colorGray else when {
                     snr >= snrGreen -> colorGreen
                     snr >= snrYellow -> colorYellow
                     else -> colorRed
@@ -401,7 +402,7 @@ class SkyplotView @JvmOverloads constructor(
             canvas.drawCircle(listX + dotR, y - dotR, dotR, satStroke)
 
             // Label
-            val label = "${prnLabel(sat)} ${if (snrRaw != null) "${snrRaw.toInt()}dB" else "?"}"
+            val label = "${prnLabel(sat)} ${snrDb?.let { "${it}dB" } ?: "?"}"
             canvas.drawText(label, listX + dotR * 3, y, textPaint)
 
             // Touch target
@@ -430,7 +431,7 @@ class SkyplotView @JvmOverloads constructor(
             val lastT = dq.lastOrNull()?.t ?: Long.MIN_VALUE
             if (now - lastT < trailMinGapMs) return@forEach
 
-            val snr = (s.snrDbHz ?: -1.0).toInt().coerceAtLeast(-1)
+            val snr = SnrDisplay.db(s.snrDbHz) ?: -1   // −1 = unknown (trail drawn grey)
             val sample = TrailSample(
                 az = az.toFloat(),
                 el = el.toFloat(),

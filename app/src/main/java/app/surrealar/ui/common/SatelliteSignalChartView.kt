@@ -222,7 +222,7 @@ class SatelliteSignalChartView @JvmOverloads constructor(
         canvas.drawLine(plotLeft, plotBottom, plotRight, plotBottom, axisPaint)
 
         // Threshold lines
-        val maxSignal = 50f
+        val maxSignal = SnrDisplay.MAX_DB.toFloat()
         val chartHeight = plotBottom - plotTop
         fun line(yVal: Float, color: Int) {
             val y = plotBottom - (yVal / maxSignal) * chartHeight
@@ -256,7 +256,8 @@ class SatelliteSignalChartView @JvmOverloads constructor(
 
         sats.forEachIndexed { index, sat ->
             val x = plotLeft + index * actualSpacing + (actualSpacing - dynamicBarWidth) / 2f
-            val snr = (sat.snrDbHz ?: 0.0).toInt().coerceIn(0, 50)
+            // Unknown SNR is filtered out in setData; rounded and capped at SnrDisplay.MAX_DB.
+            val snr = SnrDisplay.db(sat.snrDbHz) ?: return@forEachIndexed
             val barHeight = (snr.toFloat() / maxSignal) * chartHeight
             val barTop = plotBottom - barHeight
 
