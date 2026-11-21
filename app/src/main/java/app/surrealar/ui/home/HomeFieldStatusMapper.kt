@@ -196,7 +196,7 @@ object HomeFieldStatusMapper {
     private fun rtkChip(i: Inputs): Chip? {
         val age = i.correctionAgeS ?: return null
         if (age < 0) return null
-        return if (age > STALE_CORRECTION_S) Chip("RTK stale", Severity.WARNING) else Chip("RTK ${age.toInt()}s")
+        return if (age > STALE_CORRECTION_S) Chip("RTK stale", Severity.WARNING) else Chip("RTK ${GnssStatusFormatter.formatAgeSeconds(age)}")
     }
 
     private fun baseChip(i: Inputs): Chip? =

@@ -92,7 +92,7 @@ class HomeFieldStatusMapperTest {
         assertEquals(Severity.GOOD, s.severity)
         assertEquals("RS2+ · Fixed · H ±0.02 m · V ±0.04 m", s.primaryDetail)
         assertEquals("Reach6 · 192.168.2.174:9000", s.receiverDetail)
-        assertEquals(listOf("Sats 29/29", "HDOP 0.6", "RTK 1s", "Base 1116", "NMEA 12/s"), chipLabels(s))
+        assertEquals(listOf("Sats 29/29", "HDOP 0.6", "RTK 1.0s", "Base 1116", "NMEA 12/s"), chipLabels(s))
     }
 
     @Test
@@ -103,7 +103,7 @@ class HomeFieldStatusMapperTest {
         assertEquals(State.FLOAT, s.state)
         assertEquals(Severity.CAUTION, s.severity)
         assertEquals("RS2+ · Float · H ±0.04 m · V ±0.06 m", s.primaryDetail)
-        assertTrue(chipLabels(s).contains("RTK 0s"))
+        assertTrue(chipLabels(s).contains("RTK 0.0s"))
     }
 
     @Test
@@ -216,7 +216,7 @@ class HomeFieldStatusMapperTest {
             )
         )
         assertEquals(
-            listOf("Sats 29/29", "HDOP 0.7", "RTK 0s", "Base 1116", "NMEA 12/s", "Errors 2"),
+            listOf("Sats 29/29", "HDOP 0.7", "RTK 0.0s", "Base 1116", "NMEA 12/s", "Errors 2"),
             chipLabels(s),
         )
     }

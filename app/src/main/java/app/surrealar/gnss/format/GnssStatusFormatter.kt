@@ -68,5 +68,15 @@ object GnssStatusFormatter {
 
     /** Differential/RTK correction age, e.g. "Age 3s"; null when not reported or negative. */
     fun formatCorrectionAge(diffAgeS: Double?): String? =
-        diffAgeS?.let { if (it >= 0) "Age ${it.toInt()}s" else null }
+        diffAgeS?.let { if (it >= 0) "Age ${formatAgeSeconds(it)}" else null }
+
+    /**
+     * Correction age for display: one decimal under 10 s ("1.8s"), whole seconds above ("13s").
+     * Rounded, never truncated — 1.8 s used to read "1s".
+     */
+    fun formatAgeSeconds(ageS: Double): String {
+        val oneDecimal = Math.round(ageS * 10.0) / 10.0
+        return if (oneDecimal < 10.0) String.format(java.util.Locale.US, "%.1fs", oneDecimal)
+        else "${Math.round(ageS)}s"
+    }
 }

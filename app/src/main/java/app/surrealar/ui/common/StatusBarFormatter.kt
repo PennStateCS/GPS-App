@@ -83,7 +83,7 @@ fun updateStatusBar(source: String, fix: Fix, gnssStatus: GnssStatus?): String {
     val baseline: String? = null
 
     // Differential correction age
-    val corrAge = fix.diffAgeS?.let { secs -> if (secs >= 0) "Age ${secs.toInt()}s" else null } // age of corrections
+    val corrAge = app.surrealar.gnss.format.GnssStatusFormatter.formatCorrectionAge(fix.diffAgeS) // age of corrections
 
     val parts = mutableListOf<String>()
     parts += srcLabel

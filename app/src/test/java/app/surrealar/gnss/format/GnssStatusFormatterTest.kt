@@ -81,11 +81,14 @@ class GnssStatusFormatterTest {
         assertNull(GnssStatusFormatter.formatCorrectionAge(null))
     }
 
-    @Test fun `correction age - fresh value formatted as whole seconds`() {
-        assertEquals("Age 3s", GnssStatusFormatter.formatCorrectionAge(3.0))
-        assertEquals("Age 3s", GnssStatusFormatter.formatCorrectionAge(3.9)) // truncates
-        assertEquals("Age 0s", GnssStatusFormatter.formatCorrectionAge(0.0))
+    @Test fun `correction age - one decimal under 10 s, rounded above`() {
+        assertEquals("Age 1.8s", GnssStatusFormatter.formatCorrectionAge(1.8))   // used to read "1s"
+        assertEquals("Age 3.9s", GnssStatusFormatter.formatCorrectionAge(3.9))
+        assertEquals("Age 0.0s", GnssStatusFormatter.formatCorrectionAge(0.0))
+        assertEquals("Age 13s", GnssStatusFormatter.formatCorrectionAge(12.6))
         assertEquals("Age 30s", GnssStatusFormatter.formatCorrectionAge(30.0))
+        assertEquals("1.8s", GnssStatusFormatter.formatAgeSeconds(1.8))
+        assertEquals("10s", GnssStatusFormatter.formatAgeSeconds(9.96))           // rounds up across the boundary
     }
 
     @Test fun `correction age - negative is treated as not reported`() {
