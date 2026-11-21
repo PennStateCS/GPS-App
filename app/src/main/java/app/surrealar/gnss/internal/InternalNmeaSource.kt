@@ -44,6 +44,8 @@ class InternalNmeaSource(
 
     private companion object {
         const val TAG = "InternalNmeaSource"
+        /** How often the fuser's GST hold cap (300 ms) is checked. */
+        const val HOLD_TICK_MS = 100L
     }
 
     // Application context retained for fresh permission checks on every (re)start attempt.
@@ -311,6 +313,8 @@ class InternalNmeaSource(
             lm.addNmeaListener(listener, Handler(Looper.getMainLooper()))
             nmeaListener = listener
             started = true
+            holdHandler.removeCallbacks(holdTick)
+            holdHandler.postDelayed(holdTick, HOLD_TICK_MS)
             awaitingPermission = false
             android.util.Log.d(TAG, "Internal NMEA listener registered")
             DiagnosticsLogger.i("SOURCE", "internal GPS: ACTIVE — NMEA listener registered, awaiting first fix")
@@ -365,6 +369,19 @@ class InternalNmeaSource(
     private val fullTrackingCallback = object : android.location.GnssMeasurementsEvent.Callback() {}
     private var fullTrackingRegistered = false
 
+    /**
+     * Enforces the fuser's GST hold cap in time on the same main-looper thread the NMEA listener
+     * delivers on, so onFix keeps running on one thread (the fuser lock serialises it anyway).
+     */
+    private val holdHandler = Handler(Looper.getMainLooper())
+    private val holdTick = object : Runnable {
+        override fun run() {
+            if (!started) return
+            fuser.flushIfStale()
+            holdHandler.postDelayed(this, HOLD_TICK_MS)
+        }
+    }
+
     /** Debug builds: periodic raw-sentence samples with Android's own satellite counts (logcat only). */
     private val debugSampler = app.surrealar.gnss.debug.NmeaDebugSampler("nmea-int")
 
@@ -412,6 +429,11 @@ class InternalNmeaSource(
         nmeaListener = null
         started = false
         awaitingPermission = false
+        holdHandler.removeCallbacks(holdTick)
+
+        // Emit a fix still held for its GST before clearing state (device GNSS normally sends no
+        // GST, so nothing is held — this keeps every source consistent).
+        fuser.flush()
 
         /*
          * The fuser carries sentence state across messages. Reset it so the next start

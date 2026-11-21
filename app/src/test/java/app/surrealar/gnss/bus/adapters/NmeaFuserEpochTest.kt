@@ -111,6 +111,40 @@ class NmeaFuserEpochTest {
     }
 
     @Test
+    fun `lost GST - held fix is emitted by flushIfStale within 300 ms (fake clock)`() {
+        var now = 1_000_000L
+        val registry = NmeaRegistry(mapOf("GGA" to GgaParser(), "GST" to GstParser()), verifyChecksum = false)
+        val out = mutableListOf<Fix>()
+        val f = NmeaFuser(Provider.RS2_EXTERNAL, registry, onFix = { out.add(it) }, onGsv = {}, clock = { now })
+        fun gga(t: String) = f.accept("\$GNGGA,$t,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
+        gga("172424.00"); f.accept("\$GNGST,172424.00,0.02,,,,0.010,0.010,0.020")
+        gga("172425.00"); f.accept("\$GNGST,172425.00,0.02,,,,0.010,0.010,0.020")
+        val before = out.size
+        now += 1_000; gga("172426.00")                 // expects a GST that never arrives
+        assertEquals("held for its GST", before, out.size)
+        now += 200; f.flushIfStale()
+        assertEquals("not yet stale at 200 ms", before, out.size)
+        now += 150; f.flushIfStale()
+        assertEquals("emitted once past 300 ms, without waiting for the next epoch", before + 1, out.size)
+        f.flushIfStale()
+        assertEquals("emitted only once", before + 1, out.size)
+    }
+
+    @Test
+    fun `stream end - flush emits the held fix`() {
+        val now = 1_000_000L   // 0 would read as "no GST ever seen"
+        val registry = NmeaRegistry(mapOf("GGA" to GgaParser(), "GST" to GstParser()), verifyChecksum = false)
+        val out = mutableListOf<Fix>()
+        val f = NmeaFuser(Provider.RS2_EXTERNAL, registry, onFix = { out.add(it) }, onGsv = {}, clock = { now })
+        f.accept("\$GNGST,172424.00,0.02,,,,0.010,0.010,0.020")
+        f.accept("\$GNGGA,172425.00,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
+        val held = out.size
+        assertEquals("GGA is waiting for its GST", 0, held)
+        f.flush()
+        assertEquals(held + 1, out.size)
+    }
+
+    @Test
     fun `flush releases a fix still waiting for its GST`() {
         burst("172424.00", q = 4, sigma = 0.010, pdop = 1.2)
         burst("172425.00", q = 4, sigma = 0.010, pdop = 1.2)

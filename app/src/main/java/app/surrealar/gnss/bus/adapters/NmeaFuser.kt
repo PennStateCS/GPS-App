@@ -35,7 +35,9 @@ class NmeaFuser(
     private val provider: Provider,
     private val registry: NmeaRegistry,
     private val onFix: (Fix) -> Unit,
-    private val onGsv: (GsvMessage) -> Unit
+    private val onGsv: (GsvMessage) -> Unit,
+    /** Wall clock (ms). Injectable so the GST hold cap can be tested with a fake clock. */
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     /** Constellation-aware satellite ID to prevent SVID collisions across GNSS systems. */
     private data class SatId(val talker: String, val svid: Int)
@@ -133,7 +135,7 @@ class NmeaFuser(
     private var gstEpochRtk: RtkStatus? = null
 
     private fun handle(sentence: NmeaSentence) {
-        val now = System.currentTimeMillis()
+        val now = clock()
         pendingGga?.let { p ->
             if (now - pendingAtMs > GST_HOLD_MS || startsNextEpoch(sentence, p)) releasePending()
         }
@@ -164,7 +166,7 @@ class NmeaFuser(
                 pendingGga?.let { if (timesMatch(sentence.timeRaw, it.timeRaw)) releasePending() }
             }
             // MediaTek proprietary accuracy: no timestamp, so freshness is judged by arrival time.
-            is ACCURACY -> { lastAccuracy = sentence; lastAccuracyAtMs = System.currentTimeMillis() }
+            is ACCURACY -> { lastAccuracy = sentence; lastAccuracyAtMs = clock() }
             is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
             is ETC -> { etcCount++; lastEtc = sentence   // Emlid orientation/IMU — diagnostics only
                         if (sentence.hasOrientationData) etcOrientationSeen = true }
@@ -250,7 +252,7 @@ class NmeaFuser(
     private fun handleZda(zda: ZDA) {
         val epochMs = zda.epochMillis
         if (epochMs != null) {
-            val ageSec = (System.currentTimeMillis() - epochMs) / 1000.0
+            val ageSec = (clock() - epochMs) / 1000.0
             /*
              * Allow a small future window for receiver clock skew. Reject anything
              * significantly in the past — it means the ZDA is stale or the receiver
@@ -268,7 +270,7 @@ class NmeaFuser(
         lastGsa = gsa
         gsaCountByTalker[gsa.talker] = (gsaCountByTalker[gsa.talker] ?: 0) + 1
 
-        val now = System.currentTimeMillis()
+        val now = clock()
         // New epoch: first GSA after a GGA, or a long gap (receiver paused / GSA-only stream).
         if (ggaSinceLastGsa || now - lastGsaUpdateMs > GSA_EPOCH_TIMEOUT_MS) {
             gsaUsedSatIds.clear()
@@ -326,7 +328,7 @@ class NmeaFuser(
         if (num >= total) {
             // Last message in this signal's sequence. Store it, then merge every fresh signal for
             // this talker so one constellation = one list of satellites.
-            val now = System.currentTimeMillis()
+            val now = clock()
             val signals = gsvSignalsByTalker.getOrPut(talker) { sortedMapOf() }
             signals[signal] = CompletedGsv(now, pending.satellites.toList(), gsv.totalSatellites)
             signals.entries.removeIf { now - it.value.atMs > GSV_SIGNAL_STALE_MS }
@@ -451,6 +453,15 @@ class NmeaFuser(
      */
     fun flush() = synchronized(lock) { releasePending() }
 
+    /**
+     * Enforces the GST hold cap in time, not only when the next sentence arrives: releases a held fix
+     * once it has waited longer than [GST_HOLD_MS]. Sources call this every ~100 ms. Runs under the
+     * same lock as [accept], so [onFix] is never called concurrently and fixes stay in order.
+     */
+    fun flushIfStale(nowMs: Long = clock()) = synchronized(lock) {
+        if (pendingGga != null && nowMs - pendingAtMs > GST_HOLD_MS) releasePending()
+    }
+
     private fun maybeEmitFix(gga: GGA) {
         val lat = gga.lat ?: return
         val lon = gga.lon ?: return
@@ -519,13 +530,13 @@ class NmeaFuser(
         }
         if (exactGst != null) gstEpochRtk = rtk
         val rmc = lastRmc?.takeIf { sameEpoch(it.timeRaw, gga.timeRaw) }
-        val gsa = lastGsa?.takeIf { System.currentTimeMillis() - lastGsaAtMs <= GSA_STALE_MS }
+        val gsa = lastGsa?.takeIf { clock() - lastGsaAtMs <= GSA_STALE_MS }
 
         // Receiver-reported accuracy: standard GST first; otherwise the receiver's proprietary
         // $..ACCURACY (MediaTek) if it arrived recently — it follows GGA in each burst, so it belongs
         // to this or the previous epoch. Downstream, a still-missing value is filled from Android's
         // Location (internal source) or estimated from DOP × UERE.
-        val acc = lastAccuracy?.takeIf { System.currentTimeMillis() - lastAccuracyAtMs <= ENRICHMENT_WINDOW_MS }
+        val acc = lastAccuracy?.takeIf { clock() - lastAccuracyAtMs <= ENRICHMENT_WINDOW_MS }
         val gstH = horizontalAccuracyFromGst(gst)
         val hAccM = gstH ?: acc?.hAccM
         val vAccM = gst?.stdDevAlt ?: acc?.vAccM
@@ -610,7 +621,7 @@ class NmeaFuser(
         return when {
             lastZda?.epochMillis != null -> lastZda!!.epochMillis!! to TimestampSource.NMEA_ZDA
             lastRmc?.epochMillis != null -> lastRmc!!.epochMillis!! to TimestampSource.GNSS_PROVIDER
-            else                         -> System.currentTimeMillis() to TimestampSource.DEVICE
+            else                         -> clock() to TimestampSource.DEVICE
         }
     }
 
@@ -672,7 +683,7 @@ class NmeaFuser(
                 "hAcc=${hAccM ?: "none"} vAcc=${gst?.stdDevAlt ?: lastAccuracy?.vAccM} " +
                 "accSource=${when {
                     gst != null && horizontalAccuracyFromGst(gst) != null -> "GST"
-                    hAccM != null -> "\$..ACCURACY (age ${System.currentTimeMillis() - lastAccuracyAtMs} ms)"
+                    hAccM != null -> "\$..ACCURACY (age ${clock() - lastAccuracyAtMs} ms)"
                     else -> "none (GST ${if (lastGst == null) "absent" else "stale"}, ACCURACY ${if (lastAccuracy == null) "absent" else "stale"})"
                 }} " +
                 "speed=${rmc?.speedKnots} diffAge=${gga.diffAge} station=${gga.stationId}"

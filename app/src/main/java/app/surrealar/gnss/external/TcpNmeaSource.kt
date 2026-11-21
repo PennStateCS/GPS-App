@@ -11,6 +11,7 @@ import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.nmea.parse.NmeaRegistry
 import app.surrealar.gnss.source.SourceSettings
+import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +62,8 @@ class TcpNmeaSource(
     companion object {
         private const val TAG = "TcpNmeaSource"
         private const val SOCKET_TIMEOUT_MS = 5_000
+        /** How often the fuser's GST hold cap (300 ms) is checked while reading. */
+        private const val HOLD_TICK_MS = 100L
     }
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -187,6 +190,16 @@ class TcpNmeaSource(
             DiagnosticsLogger.i("Receiver", "TCP socket connected to $host:$port")
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8), 1024)
 
+            // Enforce the fuser's GST hold cap in time (readLine() blocks, so the cap can't rely on the
+            // next sentence). The ticker carries this reader's generation as a coroutine thread-local,
+            // so its fixes pass the same onFix guard and are dropped after a stop like any other.
+            val holdTicker = scope.launch(Dispatchers.IO + readerGeneration.asContextElement(myGeneration)) {
+                while (isActive && myGeneration == generation) {
+                    kotlinx.coroutines.delay(HOLD_TICK_MS)
+                    if (myGeneration == generation) fuser.flushIfStale()
+                }
+            }
+            try {
             while (coroutineContext.isActive) {
                 try {
                     val line = reader.readLine()
@@ -211,7 +224,14 @@ class TcpNmeaSource(
                     if (!coroutineContext.isActive) break
                 }
             }
+            } finally {
+                holdTicker.cancel()
+            }
         } finally {
+            // Stream ended (EOF / error): emit a fix still held for its GST so the last position
+            // before a disconnect isn't lost. On the reader thread, so the generation guard applies:
+            // after an explicit stop() it is dropped, as before.
+            if (myGeneration == generation) runCatching { fuser.flush() }
             // Close directly (already on Dispatchers.IO). The previous withContext(...) threw
             // immediately in a cancelled coroutine without running its block, leaking the socket
             // on every stop/reconnect.
