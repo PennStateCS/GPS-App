@@ -32,7 +32,7 @@ object ReportAssembler {
         val errors = runCatching { src.errorFiles() }.getOrDefault(emptyList())
         val truncated = (logs + errors).sumOf { it.length() } > maxLogBytes
         return ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
-            val z = ZipBuilder(zos)
+            val z = ZipBuilder(zos, ReportRedactor::scrub)
             val idx = runCatching { LogIndex.build(logs + errors, src.nowMs) }.getOrElse { LogIndex(src.nowMs) }
             z.textSafe("README.txt") { ReadmeCollector.render(src.reportId, logsTruncatedTo24h = truncated) }
             // ── Compact summaries (current state at export time) ──
