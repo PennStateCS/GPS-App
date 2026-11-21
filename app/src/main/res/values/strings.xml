@@ -214,6 +214,11 @@
     <string name="dev_gnss_section_history">NMEA History (newest first)</string>
     <string name="dev_gnss_no_data">(no NMEA data yet)</string>
 
+    <!-- Model yaw: the renderer rotates counterclockwise about up (+90 turns a north-facing model to
+         face west). Stored values keep that meaning, so the label states the direction. -->
+    <string name="model_yaw_hint">Yaw ° (CCW)</string>
+    <string name="model_yaw_help">Yaw (° counterclockwise from north, viewed from above). +90 turns a north-facing model to face west.</string>
+
     <!-- FixBadge component strings -->
     <string name="fix_badge_satellites">🛰️ %1$s/%2$s sats</string>
     <string name="fix_badge_hdop">HDOP: %1$s</string>

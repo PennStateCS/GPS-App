@@ -197,7 +197,7 @@
 
                     <!-- Yaw · Pitch -->
                     <LinearLayout style="@style/PlacementFieldRow">
-                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="Yaw °">
+                        <com.google.android.material.textfield.TextInputLayout style="@style/PlacementField" android:hint="@string/model_yaw_hint">
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/edit_model_yaw"
                                 android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -210,6 +210,14 @@
                                 android:inputType="numberSigned|numberDecimal" />
                         </com.google.android.material.textfield.TextInputLayout>
                     </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="8dp"
+                        android:text="@string/model_yaw_help"
+                        android:textSize="12sp"
+                        android:textColor="?android:attr/textColorSecondary" />
 
                     <!-- Roll · Origin X -->
                     <LinearLayout style="@style/PlacementFieldRow">

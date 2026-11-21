@@ -212,7 +212,7 @@ class CoordinateDetailFormatterTest {
     fun modelPlacementSummaryText_includesOnlyPresentFields() {
         assertNull(CoordinateDetailFormatter.modelPlacementSummaryText(null, null, null, null, null, null, null, null))
         assertEquals(
-            "scale 1.50× · yaw 90° · v-offset 1.50 m",
+            "scale 1.50× · yaw 90° CCW · v-offset 1.50 m",
             CoordinateDetailFormatter.modelPlacementSummaryText(1.5, 90.0, null, null, 1.5, null, null, null)
         )
         assertEquals(

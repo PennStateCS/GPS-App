@@ -127,7 +127,7 @@ object CoordinateDetailFormatter {
 
     /**
      * Compact model-placement summary, including only the fields that are present, e.g.
-     * "scale 1.50× · yaw 90° · v-offset 1.50 m · origin (0.10, 0.20, 0.30) m". Null when no placement
+     * "scale 1.50× · yaw 90° CCW · v-offset 1.50 m · origin (0.10, 0.20, 0.30) m". Null when no placement
      * override is set.
      */
     fun modelPlacementSummaryText(
@@ -137,7 +137,8 @@ object CoordinateDetailFormatter {
     ): String? {
         val parts = buildList {
             scale?.let { add(String.format(Locale.US, "scale %.2f×", it)) }
-            yawDeg?.let { add(String.format(Locale.US, "yaw %.0f°", it)) }
+            // Yaw is counterclockwise from north (viewed from above) — say so where it is shown.
+            yawDeg?.let { add(String.format(Locale.US, "yaw %.0f° CCW", it)) }
             pitchDeg?.let { add(String.format(Locale.US, "pitch %.0f°", it)) }
             rollDeg?.let { add(String.format(Locale.US, "roll %.0f°", it)) }
             verticalOffsetM?.let { add(String.format(Locale.US, "v-offset %.2f m", it)) }

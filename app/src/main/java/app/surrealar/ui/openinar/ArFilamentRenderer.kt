@@ -576,7 +576,7 @@ class ArFilamentRenderer {
                         "computedOffset=(${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}) " +
                         "customOffset=(${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}) " +
                         "nudge=(${f(nudgeX)},${f(nudgeY)},${f(nudgeZ)}) scale=${f(effScale)} " +
-                        "yaw=${f(placement.yawDeg)} pitch=${f(placement.pitchDeg)} roll=${f(placement.rollDeg)} " +
+                        "yawCCW=${f(placement.yawDeg)} pitch=${f(placement.pitchDeg)} roll=${f(placement.rollDeg)} " +
                         "anchorType=geospatial transformSource=anchor-driven")
                 }
                 Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)" +
