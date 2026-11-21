@@ -877,7 +877,7 @@ class RenderMapFragment : Fragment() {
         if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
         startStaleWatcher()
         refreshStakeout()
-        logMapEvent("STAKEOUT", "guidance started")
+        logMapEvent("STAKEOUT", "guidance started tolerance=${stakeoutSettings.toleranceMeters}m")
     }
 
     private fun stopGuidance() {
@@ -971,6 +971,8 @@ class RenderMapFragment : Fragment() {
         )
         when (feedbackGate.onUpdate(status, android.os.SystemClock.elapsedRealtime())) {
             app.surrealar.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
+                // Distance to target only (no positions): the gate fires once per arrival.
+                logMapEvent("STAKEOUT", "within tolerance (${"%.3f".format(java.util.Locale.US, distanceMeters)} m <= ${s.toleranceMeters} m)")
                 if (s.enableHaptics) haptic(arrived = true); if (s.enableAudio) beep(arrived = true)
             }
             app.surrealar.stakeout.StakeoutFeedback.NAVIGATING_PULSE -> {
@@ -1869,7 +1871,7 @@ class RenderMapFragment : Fragment() {
         lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
 
         refreshStakeout()
-        logMapEvent("STAKEOUT", "stakeout started")
+        logMapEvent("STAKEOUT", "stakeout started target=\"${coord.name}\" id=${coord.id}")
         showSnackbar("Stakeout started: ${coord.name}")
         dismissSelectedCoordinate()
     }
