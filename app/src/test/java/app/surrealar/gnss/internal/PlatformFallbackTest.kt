@@ -76,6 +76,18 @@ class PlatformFallbackTest {
         assertEquals(1 to 2, PlatformFallback.counts(sats))
     }
 
+    @Test fun `elevation and azimuth are rounded like GsvParser, not truncated`() {
+        val e = PlatformFallback.toGsvMessages(
+            listOf(PlatformSatellite("GP", 7, 12.7f, 359.6f, 40f, usedInFix = true))
+        ).single().entries.single()
+        assertEquals(13, e.elevationDeg)     // toInt() gave 12
+        assertEquals(360, e.azimuthDeg)
+        val low = PlatformFallback.toGsvMessages(
+            listOf(PlatformSatellite("GP", 8, -0.6f, 10.2f, 30f, usedInFix = false))
+        ).single().entries.single()
+        assertEquals(-1, low.elevationDeg)   // toInt() gave 0 (above the horizon)
+    }
+
     @Test fun `no satellite count anywhere stays unknown instead of becoming 0`() {
         val fix = PlatformFallback.toFix(loc().copy(satellitesExtra = null), satsUsed = null, satsVisible = null)
         assertNull(fix.satsUsed)

@@ -123,8 +123,10 @@ internal object PlatformFallback {
                 val best = signals.maxByOrNull { it.cn0DbHz }!!
                 GsvEntry(
                     svid = svid,
-                    elevationDeg = best.elevationDeg.takeIf { it.isFinite() }?.toInt(),
-                    azimuthDeg = best.azimuthDeg.takeIf { it.isFinite() }?.toInt(),
+                    // Rounded exactly like GsvParser (kotlin.math.round), so a satellite reads the same
+                    // whichever path produced it; toInt() truncated (12.7 → 12, −0.6 → 0).
+                    elevationDeg = best.elevationDeg.takeIf { it.isFinite() }?.let { kotlin.math.round(it).toInt() },
+                    azimuthDeg = best.azimuthDeg.takeIf { it.isFinite() }?.let { kotlin.math.round(it).toInt() },
                     snrDbHz = best.cn0DbHz.takeIf { it.isFinite() && it > 0f }?.toDouble(),
                     usedInFix = signals.any { it.usedInFix },
                 )
