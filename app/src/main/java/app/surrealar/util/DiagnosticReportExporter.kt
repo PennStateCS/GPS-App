@@ -18,30 +18,16 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
  * Builds a shareable diagnostic ZIP in [Context.getCacheDir]/diagnostic_exports/.
  *
- * The ZIP is organized as compact, human-readable summaries (state at export time) plus the rolling
- * event/error logs. Summary files (what they answer):
- *   diagnostic-summary.txt    build/device/maps info + IMPORTANT WARNINGS        (Q1, Q2, Q10 pointer)
- *   settings-snapshot.txt     sanitized current settings (GNSS/AR/map/capture)   (Q1, Q2)
- *   permissions-status.txt    runtime permission grants + location services      (Q9)
- *   app-state-summary.txt     live GNSS/receiver/network state                   (Q2, Q3, Q4, Q5, Q8)
- *   coordinates.txt           coordinate counts + coordinate→model associations  (Q6)
- *   model-integrity.txt       model inventory: existence, size, link count       (Q6)
- *   ar-session-summary.txt    most recent AR/model session tallies               (Q6, Q7)
- *   map-diagnostics.txt       map renderer/key/tile status                       (Q8)
- *   nmea-stream-diagnostics.txt  NMEA stream timing/parse stats (no raw NMEA)    (Q5)
- * Rolling logs:
- *   app-log-current.txt, app-log-1..4.txt   diagnostic event log (AR/model/GNSS/corrections)
- *   app-errors-*.txt                        separate error/crash log (latest crash)  (Q10)
- *
- * Privacy/redaction (default): no API keys (redacted), passwords, auth tokens, Bluetooth MAC,
- * Wi-Fi BSSID, full coordinate databases (raw lat/lon are NOT dumped — only counts/associations),
- * model file contents, or raw NMEA streams. Receiver host/IP + port ARE included (connectivity).
+ * Gathers the running app's state as [app.surrealar.util.diagnostics.report.ReportSources] and hands it
+ * to [app.surrealar.util.diagnostics.report.ReportAssembler], which flushes the logs and writes every
+ * file (the list and what each file is: README.txt in the ZIP / ReadmeCollector). Everything written
+ * passes through ReportRedactor: no API keys, passwords, tokens, raw NMEA or coordinates. Receiver
+ * host/IP + port ARE included (connectivity).
  */
 object DiagnosticReportExporter {
 
@@ -389,9 +375,6 @@ object DiagnosticReportExporter {
         return sb.toString()
     }
 
-    // Settings now live in `current-settings-snapshot.txt` (SettingsSnapshotCollector) — a more
-    // complete, sanitized snapshot that supersedes the old settings-summary section.
-
     /**
      * Coordinate counts + the coordinate→model association rows needed to diagnose "models linked
      * but not rendering". Raw lat/lon are deliberately NOT dumped (privacy); only aggregate counts
@@ -481,26 +464,5 @@ object DiagnosticReportExporter {
     ) {
         runCatching(flush)
         ZipOutputStream(FileOutputStream(zipFile)).use { body(it) }
-    }
-
-    private fun ZipOutputStream.addText(name: String, content: String) {
-        putNextEntry(ZipEntry(name))
-        write(content.toByteArray(Charsets.UTF_8))
-        closeEntry()
-    }
-
-    /** Like [addText] but never lets one failing section abort the export — writes the error instead. */
-    private suspend fun ZipOutputStream.addTextSafe(name: String, build: suspend () -> String) {
-        val content = runCatching { build() }.getOrElse {
-            DiagnosticsLogger.w("EXPORT", "section $name failed: ${it.message}", it)
-            "Section failed to generate: ${it.message}"
-        }
-        addText(name, content)
-    }
-
-    private fun ZipOutputStream.addFile(name: String, file: File) {
-        putNextEntry(ZipEntry(name))
-        file.inputStream().use { it.copyTo(this) }
-        closeEntry()
     }
 }

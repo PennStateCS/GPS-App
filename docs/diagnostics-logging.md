@@ -22,47 +22,41 @@ latest crash — even from a previous app launch — is always in the export.
 
 ## 2. Exported ZIP contents
 
-Built by `DiagnosticReportExporter.buildReport()` into `cacheDir/diagnostic_exports/`:
+Built by `DiagnosticReportExporter.buildReport()` into `cacheDir/diagnostic_exports/` as
+`surreal-ar-<device>-v<version>-<yyyyMMdd-HHmm>.zip`. The exporter gathers `ReportSources` from the
+running app; `report/ReportAssembler` flushes the logger, then writes every file. The list of files and
+what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes README.txt in the ZIP).
 
-| File | Contents |
-|------|----------|
-| `diagnostic-summary.txt` | Report time, **Important warnings** (incl. permission denials), app/build/git, device, maps renderer |
-| `settings-snapshot.txt` | Sanitized current settings — GNSS/AR/map/capture (`SettingsSnapshotCollector`; API key redacted) |
-| `permissions-status.txt` | Runtime permission grants (camera/location/bluetooth/notifications) + GPS/network provider enabled |
-| `app-state-summary.txt` | Live GNSS/receiver/network/map state (selected source, active provider, current fix, host:port presence — no credentials) |
-| `coordinates.txt` | Coordinate counts + coordinate→model association rows (no raw lat/lon) |
-| `model-integrity.txt` | Model inventory: basename, file existence, size, linked-coordinate count, **+ `lastArStatus`/`reason`** joined from the last AR session (`queued`/`loading`/`ready`/`in_scene`/`failed`/`skipped`/`not_used_in_last_ar_session`) |
-| `ar-session-summary.txt` | Most recent AR/model session (from `ArSessionDiagnostics`, persisted as `ar-last-session.txt`; survives event-log rotation): open/close/duration, coordinates received/withModel/visible, labels shown, per-status model counts (queued/loading/loaded/inScene/failed/skipped) + reason breakdown, anchors attempted/created/failed, active anchors, reanchors, last Earth + camera tracking state, and warnings (e.g. "labels rendered but NO models reached the scene") |
-| `map-diagnostics.txt`, `nmea-stream-diagnostics.txt` | Map renderer/key/tile status + NMEA stream timing/parse stats (no raw NMEA) |
-| `app-log-current.txt`, `app-log-1..4.txt` | Rolling diagnostic event log (all categories below) |
-| `app-errors-current.txt`, `app-errors-1..2.txt` | Errors/crashes (separate so the latest crash is never lost) |
-
-**Important warnings** surfaced in the summary include: selected GNSS source ≠ active provider;
-external GNSS selected but no receiver configured; coordinates link a model whose file is missing.
-AR-tracking / parse / anchor outcomes are reconstructed from the event log (tags `AR` / `AR_MDL`).
-
-Each section is wrapped so one failing section cannot abort the whole export (`addTextSafe`,
-`runCatching` around data gathering); the failure is logged instead.
+- Each collector (`report/*Collector`) is a pure renderer with a golden test over fake inputs
+  (`FakeReportSources`); `ZipBuilder.textSafe` keeps one failing section from breaking the export.
+- `diagnostic-summary.txt` starts with the **First look** block (report ID, time span, sessions,
+  last session clean, crashes/ANRs in 24 h, source/RTK, link, correction age, storage, top warnings).
+- Logs over 20 MB → only the last 24 h of each log file; README and manifest say so.
+- Everything written passes through `ReportRedactor` (raw NMEA, API keys, password/token values and
+  6+-decimal coordinates are replaced). `ReportRedactionTest` builds a full report from leaky fakes.
+- The share intent: To = `BuildConfig.DIAG_REPORT_EMAIL` (Gradle property `DIAG_REPORT_EMAIL`, blank by
+  default), subject with device/version/time, body with three prompts and the report ID.
 
 ## 3. Event categories (tags)
 
-Use a consistent tag string as the first arg to `DiagnosticsLogger`:
+Only the tags in `util/diagnostics/DiagTags` are used: `APP, LIFECYCLE, NAV, SETTINGS, SYSTEM, GNSS,
+RECEIVER, CORRECTIONS, NMEA, CAPTURE, COORD, DATA, MODEL, AR, MAP, STAKEOUT, EXPORT, ERROR`.
+Line format (`LogLineFormat`): `2026-11-21T14:03:07.412-05:00 W RECEIVER [main] message`.
 
-- `APP` — startup/session metadata
-- `SOURCE` — internal GPS provider start/stop/permission/first-fix; GNSS source selection
-- `GNSS` — provider switch/state (legacy; some external code still uses `Receiver`)
-- `CORRECTIONS` — Reach socket connect/disconnect/failure, stream status, RTK solution changes, device-endpoint failures (`ReachCorrectionsService`, `ReachDeviceService`)
-- `NMEA` — throttled parse-failure summaries (`NmeaRegistry`; never per-sentence)
-- `COORD` — coordinate create/edit/save/delete/validation
-- `MODEL` — model import/copy/db-record/link/unlink (`ModelsFragment`, `ModelsViewModel`, link/unlink in `CoordinateDetailFragment`)
-- `AR_MDL` — AR screen + ARCore/earth lifecycle + model preload/parse/asset/anchor/scene state (value of `ArFilamentRenderer.DIAG`)
-- `EXPORT` / `DiagnosticExport` — diagnostic export
-- `ERROR` — non-fatal exceptions / crashes (use `DiagnosticsLogger.e`; also mirrored to `app-errors-*.txt`)
-
+- One place per kind of event: `LifecycleLogger`, `NavLogger`, `SettingsChangeLogger`,
+  `SystemEventsLogger`, `GnssFeedLogger` (`GnssFeedTracker`, `ReceiverLinkTracker`, `ClockOffset`),
+  `CaptureDiagnostics` (+ `diagnostics/captures.log`), `DataOpLog` / `DbDiagnostics`, `CoordDiagnostics`,
+  `HeadingDiagnostics`, `ToolbarLinkLog`.
+- Hot paths use `DiagnosticsLogger.logOnChange(tag, key, value) { msg }` or
+  `every(tag, key, intervalMs) { msg }` — the message lambda runs only when a line is written.
+  `LogBudgetTest` keeps an hour of 5 Hz fixes plus app events under 2 MB.
+- Crashes: `DiagnosticsLogger.writeCrashSync` (fsynced, before the process dies). Exit reasons and
+  ANR traces: `ExitReasonRecorder` (`diagnostics/exits/`). Sessions: `SessionTracker` (SESSION_START).
+- Never log raw NMEA, coordinates (lat/lon/height, ECEF, N/E), passwords or keys.
 ## 4. Where to add future diagnostic events
 
 - **AR lifecycle / anchors / model load** → `ui/openinar/OpenInARFragment` and
-  `ui/openinar/ArFilamentRenderer` (tag `AR_MDL`). Already instrumented: screen open/close,
+  `ui/openinar/ArFilamentRenderer` (tag `AR`). Already instrumented: screen open/close,
   session resume, Earth + camera tracking **state-change** events, anchor create/fail, accuracy gate,
   distance skips, preload start/success/fail, scene-state counts. **Never log per frame** — gate on
   state change (see `loggedAccuracyGate`, `lastDistanceSkippedIds`, `lastEarthTrackingLogged`,
@@ -73,10 +67,10 @@ Use a consistent tag string as the first arg to `DiagnosticsLogger`:
   set from `modelLoadState`. It feeds `ar-session-summary.txt` and `model-integrity.txt`'s
   `lastArStatus`. Keep it a compact summary — do NOT turn it into an event log.
 - **GNSS source / provider switching** → `gnss/source/GnssSourceCoordinator` + `SourceSettings`
-  (tags `SOURCE` / `GNSS`). Summarize high-frequency fixes; log provider/state changes only.
+  (tag `GNSS`). Summarize high-frequency fixes; log provider/state changes only.
 - **Coordinate save flow** → the add/edit coordinate dialogs + `CoordinateRepository` callers
   (tag `COORD`). Do not log personal notes.
-- **Export** → `DiagnosticReportExporter`; add a new `coordinates/models/...`-style section via
-  `zos.addTextSafe(name) { ... }`, and add a warning in `computeWarnings()`.
+- **Export** → add a collector in `util/diagnostics/report`, a line in `ReportAssembler`, an entry in
+  `ReadmeCollector.FILES`, and a warning in `DiagnosticReportExporter.computeWarnings()` if needed.
 
 To add a warning to the summary, append a line in `DiagnosticReportExporter.computeWarnings()`.
