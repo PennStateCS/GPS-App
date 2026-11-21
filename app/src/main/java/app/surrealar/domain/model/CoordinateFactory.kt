@@ -26,7 +26,7 @@ object CoordinateFactory {
     /**
      * Builds a [Coordinate] from a [FixSnapshot].
      *
-     * @param provider The display/storage string for the GNSS source (e.g. "fused", "rs2-tcp").
+     * @param provider The display/storage string for the GNSS source (e.g. "fused", "external-tcp").
      *                 Defaults to "fused". Do NOT pass `fix.timestampSource.name` — that gives
      *                 the clock source ("DEVICE", "NMEA_ZDA"), not the GNSS receiver.
      */
@@ -124,17 +124,9 @@ object CoordinateFactory {
         /** EPSG of the datum the result's lat/lon/height are in (4979/4326 WGS84, 6319 NAD83(2011)). */
         crsEpsg: Int = 4326
     ): Coordinate {
-        // These strings MUST stay in sync with DbConstants / CoordinateMappers so a captured
-        // coordinate round-trips through the DB without its provider degrading. In particular
-        // RS2_EXTERNAL maps to its own "rs2-external" token (not "rs2-tcp").
-        val providerStr = when (provider) {
-            Provider.INTERNAL     -> "fused"
-            Provider.RS2_EXTERNAL -> "rs2-external"
-            Provider.RS2_TCP      -> "rs2-tcp"
-            Provider.RS2_BT       -> "rs2-bt"
-            Provider.MODEL        -> "model"
-            Provider.OTHER        -> "other"
-        }
+        // Same table as CoordinateMappers, so a captured coordinate round-trips through the DB
+        // without its provider degrading.
+        val providerStr = app.surrealar.data.local.db.ProviderTokens.toDomain(provider)
         val utm = runCatching { Utm.forward(result.latDeg, result.lonDeg) }.getOrNull()
         // Wall-clock save time for the audit fields (createdAt/updatedAt).
         val capturedAtMs = result.endedAt.toEpochMilli()

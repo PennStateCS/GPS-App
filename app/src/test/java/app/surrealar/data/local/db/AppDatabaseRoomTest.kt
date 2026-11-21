@@ -63,7 +63,7 @@ class AppDatabaseRoomTest {
         name: String = "Pt $id",
         icon: String = "ic_pin",
         rtk: RtkStatus? = RtkStatus.FIX,
-        provider: Provider = Provider.RS2_EXTERNAL,
+        provider: Provider = Provider.EXTERNAL_TCP,
         hdop: Double? = 0.8,
         hAcc: Double? = 0.02,
         modelId: String? = null,
@@ -192,8 +192,8 @@ class AppDatabaseRoomTest {
     fun enumFilters_useStoredEnumValues() = runBlocking {
         coords.insertAll(
             listOf(
-                entity("fix", rtk = RtkStatus.FIX, provider = Provider.RS2_EXTERNAL),
-                entity("float", rtk = RtkStatus.FLOAT, provider = Provider.RS2_EXTERNAL),
+                entity("fix", rtk = RtkStatus.FIX, provider = Provider.EXTERNAL_TCP),
+                entity("float", rtk = RtkStatus.FLOAT, provider = Provider.EXTERNAL_TCP),
                 entity("internal", rtk = RtkStatus.SINGLE, provider = Provider.INTERNAL),
             )
         )

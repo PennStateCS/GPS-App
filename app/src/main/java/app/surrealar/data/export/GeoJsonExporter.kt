@@ -62,7 +62,7 @@ class GeoJsonExporter {
             // Properties
             val properties = JSONObject()
             properties.put("timestamp", fix.timeUtc.toString())
-            properties.put("provider", fix.provider.name)
+            properties.put("provider", fix.receiverLabel ?: fix.provider.label)   // receiver name
             properties.put("timestampSource", fix.timestampSource.name)
             properties.put("rtkStatus", fix.rtkStatus.name)
             fix.satsUsed?.let { properties.put("satsUsed", it) }

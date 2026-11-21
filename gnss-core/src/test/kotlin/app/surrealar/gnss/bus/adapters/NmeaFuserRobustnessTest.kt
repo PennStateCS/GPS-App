@@ -16,7 +16,7 @@ class NmeaFuserRobustnessTest {
     private val fixes = mutableListOf<Fix>()
     private val gsv = mutableListOf<GsvMessage>()
     private val fuser = NmeaFuser(
-        Provider.RS2_EXTERNAL,
+        Provider.EXTERNAL_TCP,
         DefaultNmeaRegistry.create(verifyChecksum = false),
         onFix = { fixes += it },
         onGsv = { gsv += it }

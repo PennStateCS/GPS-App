@@ -69,7 +69,7 @@ class CoordinateFactoryTest {
         val coord = CoordinateFactory.fromCaptureResult(
             id = "test-id", name = "P1", note = null,
             color = 0xFF3F51B5.toInt(), iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result
+            provider = Provider.EXTERNAL_TCP, result = result
         )
 
         assertEquals(result.latDeg, coord.latitude, 1e-10)
@@ -83,7 +83,7 @@ class CoordinateFactoryTest {
         val result = captureResult()
         val coord = CoordinateFactory.fromCaptureResult(
             id = "t", name = "T", note = null, color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result
+            provider = Provider.EXTERNAL_TCP, result = result
         )
         assertEquals(1_700_000_059_800L, coord.timestamp)
         assertEquals(TimestampSource.NMEA_ZDA.name, coord.timestampSource)
@@ -96,7 +96,7 @@ class CoordinateFactoryTest {
         val result = captureResult(lastFixTimeUtc = null)
         val coord = CoordinateFactory.fromCaptureResult(
             id = "d", name = "D", note = null, color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result
+            provider = Provider.EXTERNAL_TCP, result = result
         )
         assertEquals(result.endedAt.toEpochMilli(), coord.timestamp)
         assertEquals(TimestampSource.DEVICE.name, coord.timestampSource)
@@ -108,7 +108,7 @@ class CoordinateFactoryTest {
         val coord = CoordinateFactory.fromCaptureResult(
             id = "q", name = "Q", note = "survey note",
             color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result
+            provider = Provider.EXTERNAL_TCP, result = result
         )
 
         assertEquals(RtkStatus.FIX.name, coord.rtkStatus)
@@ -132,7 +132,7 @@ class CoordinateFactoryTest {
         val coord = CoordinateFactory.fromCaptureResult(
             id = "utm", name = "UTM", note = null,
             color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result
+            provider = Provider.EXTERNAL_TCP, result = result
         )
 
         assertNotNull("easting should not be null", coord.easting)
@@ -156,7 +156,7 @@ class CoordinateFactoryTest {
     fun `fromCaptureResult preserves final-fix metadata`() {
         val coord = CoordinateFactory.fromCaptureResult(
             id = "m", name = "M", note = null, color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = captureResult()
+            provider = Provider.EXTERNAL_TCP, result = captureResult()
         )
 
         assertEquals(8.2, coord.altitudeMsl!!, 1e-10)
@@ -199,7 +199,7 @@ class CoordinateFactoryTest {
         val result = captureResult(altEllipsoidalM = 10.5, altMslM = 8.2)
         val coord = CoordinateFactory.fromCaptureResult(
             id = "ah", name = "AH", note = null, color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result, antennaHeightM = 2.0
+            provider = Provider.EXTERNAL_TCP, result = result, antennaHeightM = 2.0
         )
         // Stored altitude is the ground mark = antenna altitude − pole height.
         assertEquals(8.5, coord.altitude, 1e-10)
@@ -214,7 +214,7 @@ class CoordinateFactoryTest {
         val result = captureResult(altEllipsoidalM = 10.5, altMslM = 8.2)
         val coord = CoordinateFactory.fromCaptureResult(
             id = "z", name = "Z", note = null, color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result, antennaHeightM = 0.0
+            provider = Provider.EXTERNAL_TCP, result = result, antennaHeightM = 0.0
         )
         assertEquals(10.5, coord.altitude, 1e-10)
         assertEquals(8.2, coord.altitudeMsl!!, 1e-10)
@@ -226,7 +226,7 @@ class CoordinateFactoryTest {
         val result = captureResult(altEllipsoidalM = 10.5, altMslM = null)
         val coord = CoordinateFactory.fromCaptureResult(
             id = "nm", name = "NM", note = null, color = 0, iconId = "pin",
-            provider = Provider.RS2_EXTERNAL, result = result, antennaHeightM = 1.5
+            provider = Provider.EXTERNAL_TCP, result = result, antennaHeightM = 1.5
         )
         assertEquals(9.0, coord.altitude, 1e-10)
         assertNull(coord.altitudeMsl)

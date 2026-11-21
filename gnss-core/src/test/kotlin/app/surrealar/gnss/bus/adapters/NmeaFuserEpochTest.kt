@@ -27,7 +27,7 @@ class NmeaFuserEpochTest {
             verifyChecksum = false
         )
         fixes.clear()
-        fuser = NmeaFuser(Provider.RS2_EXTERNAL, registry, onFix = { fixes.add(it) }, onGsv = {})
+        fuser = NmeaFuser(Provider.EXTERNAL_TCP, registry, onFix = { fixes.add(it) }, onGsv = {})
     }
 
     /** One Emlid-ordered burst. [q] GGA quality, [sigma] GST lat/lon/alt σ, [pdop] GSA PDOP. */
@@ -115,7 +115,7 @@ class NmeaFuserEpochTest {
         var now = 1_000_000L
         val registry = NmeaRegistry(mapOf("GGA" to GgaParser(), "GST" to GstParser()), verifyChecksum = false)
         val out = mutableListOf<Fix>()
-        val f = NmeaFuser(Provider.RS2_EXTERNAL, registry, onFix = { out.add(it) }, onGsv = {}, clock = { now })
+        val f = NmeaFuser(Provider.EXTERNAL_TCP, registry, onFix = { out.add(it) }, onGsv = {}, clock = { now })
         fun gga(t: String) = f.accept("\$GNGGA,$t,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
         gga("172424.00"); f.accept("\$GNGST,172424.00,0.02,,,,0.010,0.010,0.020")
         gga("172425.00"); f.accept("\$GNGST,172425.00,0.02,,,,0.010,0.010,0.020")
@@ -131,7 +131,7 @@ class NmeaFuserEpochTest {
     }
 
     private fun zdaFuser(clock: () -> Long, out: MutableList<Fix>) = NmeaFuser(
-        Provider.RS2_EXTERNAL,
+        Provider.EXTERNAL_TCP,
         NmeaRegistry(mapOf("GGA" to GgaParser(), "RMC" to RmcParser(), "ZDA" to ZdaParser()), verifyChecksum = false),
         onFix = { out.add(it) }, onGsv = {}, clock = clock
     )
@@ -180,7 +180,7 @@ class NmeaFuserEpochTest {
         val now = 1_000_000L   // 0 would read as "no GST ever seen"
         val registry = NmeaRegistry(mapOf("GGA" to GgaParser(), "GST" to GstParser()), verifyChecksum = false)
         val out = mutableListOf<Fix>()
-        val f = NmeaFuser(Provider.RS2_EXTERNAL, registry, onFix = { out.add(it) }, onGsv = {}, clock = { now })
+        val f = NmeaFuser(Provider.EXTERNAL_TCP, registry, onFix = { out.add(it) }, onGsv = {}, clock = { now })
         f.accept("\$GNGST,172424.00,0.02,,,,0.010,0.010,0.020")
         f.accept("\$GNGGA,172425.00,4118.4448800,N,07601.2345600,W,4,18,0.6,180.0,M,-33.0,M,1.0,0000")
         val held = out.size

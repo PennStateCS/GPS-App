@@ -32,7 +32,7 @@ class ReachNmeaCaptureReplayTest {
             ?: error("Missing test fixture: $resource")
         val fixes = mutableListOf<Fix>()
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = DefaultNmeaRegistry.create(verifyChecksum = true), // production checksum behavior
             onFix = { fixes.add(it) },
             onGsv = { }
@@ -117,7 +117,7 @@ class ReachNmeaCaptureReplayTest {
     fun `missing GST yields unknown (null) accuracy, never fabricated 0_0`() {
         val fixes = mutableListOf<Fix>()
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = DefaultNmeaRegistry.create(verifyChecksum = false),
             onFix = { fixes.add(it) },
             onGsv = { }

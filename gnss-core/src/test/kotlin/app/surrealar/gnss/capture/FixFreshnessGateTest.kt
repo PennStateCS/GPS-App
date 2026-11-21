@@ -12,7 +12,7 @@ import java.time.Instant
 class FixFreshnessGateTest {
 
     private fun fix(gnssMs: Long) = Fix(
-        provider = Provider.RS2_EXTERNAL, timeUtc = Instant.ofEpochMilli(gnssMs),
+        provider = Provider.EXTERNAL_TCP, timeUtc = Instant.ofEpochMilli(gnssMs),
         timestampSource = TimestampSource.NMEA_ZDA, latDeg = 41.0, lonDeg = -76.0,
         altEllipsoidalM = 100.0, altMslM = null, geoidSeparationM = null,
         hDop = null, vDop = null, pDop = null, hAccM = null, vAccM = null,

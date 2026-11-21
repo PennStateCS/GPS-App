@@ -38,6 +38,14 @@ data class CoordinateDetailBadges(
  */
 object CoordinateDetailUiMapper {
 
+    /**
+     * Short receiver name for the source badge: the profile's short label when the point's sourceDevice
+     * is a profile label (e.g. "Emlid Reach RS2+" → "RS2+"), else "EXTERNAL GNSS".
+     */
+    private fun externalBadgeLabel(sourceDevice: String?): String =
+        app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(sourceDevice)?.shortLabel?.uppercase(Locale.US)
+            ?: "EXTERNAL GNSS"
+
     /** The "source" badge is always shown; label + color depend on capture method / provider. */
     fun sourceBadge(c: Coordinate): BadgeUi {
         val cm = c.captureMethod?.trim()?.lowercase(Locale.US)
@@ -46,8 +54,8 @@ object CoordinateDetailUiMapper {
             cm == "model_embedded" || prov == "model"        -> "MODEL EMBEDDED LOCATION" to 0xFF1565C0.toInt()
             cm == "imported"                                 -> "IMPORTED"     to 0xFF455A64.toInt()
             cm == "manual" || cm == "map_tap"                -> "MANUAL"       to 0xFF455A64.toInt()
-            prov.contains("rs2") || cm == "external_gnss" ||
-                cm == "rtk_receiver"                         -> "RS2+"         to 0xFF1565C0.toInt()
+            app.surrealar.data.local.db.ProviderTokens.isExternal(prov) || cm == "external_gnss" ||
+                cm == "rtk_receiver"                         -> externalBadgeLabel(c.sourceDevice) to 0xFF1565C0.toInt()
             else                                             -> "INTERNAL GPS" to 0xFF1565C0.toInt()
         }
         return BadgeUi(label, color)

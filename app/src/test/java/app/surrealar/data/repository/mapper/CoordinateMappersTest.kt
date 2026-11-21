@@ -46,7 +46,9 @@ class CoordinateMappersTest {
         assertEquals(rich.latitude, back.latitude, 0.0)
         assertEquals(rich.longitude, back.longitude, 0.0)
         assertEquals(rich.altitude, back.altitude, 0.0)
-        assertEquals(rich.provider, back.provider)               // rs2-external must NOT degrade
+        // A legacy "rs2-external" token keeps its meaning (external receiver over TCP) and is written
+        // back as the receiver-neutral token.
+        assertEquals("external-tcp", back.provider)
         assertEquals(rich.captureMethod, back.captureMethod)
         assertEquals(rich.rtkStatus, back.rtkStatus)
         assertEquals(rich.hdop, back.hdop)
@@ -119,7 +121,7 @@ class CoordinateMappersTest {
     }
 
     private fun fix(altEllipsoidalM: Double?) = Fix(
-        provider = Provider.RS2_EXTERNAL, timeUtc = Instant.ofEpochMilli(1_000L),
+        provider = Provider.EXTERNAL_TCP, timeUtc = Instant.ofEpochMilli(1_000L),
         timestampSource = TimestampSource.NMEA_ZDA, latDeg = 41.0, lonDeg = -76.0,
         altEllipsoidalM = altEllipsoidalM, altMslM = null, geoidSeparationM = null,
         hDop = null, vDop = null, pDop = null, hAccM = null, vAccM = null,

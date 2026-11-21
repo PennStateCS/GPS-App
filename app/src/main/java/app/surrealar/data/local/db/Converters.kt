@@ -72,7 +72,8 @@ object Converters {
 
     /**
      * Lenient parse for the (non-null) provider column. Tolerates canonical enum names and the
-     * legacy hyphen/underscore/captureMethod-style aliases. A non-blank but unrecognized value
+     * legacy hyphen/underscore/captureMethod-style aliases, including the pre-rename vendor names
+     * (RS2_EXTERNAL / RS2_TCP → EXTERNAL_TCP, RS2_BT → EXTERNAL_BT). A non-blank but unrecognized value
      * maps to [Provider.OTHER] rather than null so the non-null column never NPEs on read.
      */
     @TypeConverter
@@ -80,9 +81,10 @@ object Converters {
     fun toProvider(value: String?): Provider? = when (value?.trim()?.lowercase(Locale.US)) {
         null, "" -> null
         "internal", "fused", "internal_gps"                          -> Provider.INTERNAL
-        "rs2_external", "rs2-external", "external", "external_gnss"   -> Provider.RS2_EXTERNAL
-        "rs2_bt", "rs2-bt"                                            -> Provider.RS2_BT
-        "rs2_tcp", "rs2-tcp"                                          -> Provider.RS2_TCP
+        "rs2_external", "rs2-external", "external", "external_gnss",
+        "rs2_tcp", "rs2-tcp", "external_tcp", "external-tcp"         -> Provider.EXTERNAL_TCP
+        "rs2_bt", "rs2-bt", "external_bt", "external-bt"           -> Provider.EXTERNAL_BT
+        "replay"                                                     -> Provider.REPLAY
         "model", "model_embedded"                                    -> Provider.MODEL
         "other"                                                      -> Provider.OTHER
         else -> runCatching { Provider.valueOf(value.trim().uppercase(Locale.US)) }.getOrNull()

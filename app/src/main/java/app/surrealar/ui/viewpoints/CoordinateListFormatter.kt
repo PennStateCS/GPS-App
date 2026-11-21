@@ -27,14 +27,14 @@ object CoordinateListFormatter {
     fun latLonLine(c: Coordinate): String =
         String.format(Locale.US, "%.6f, %.6f", c.latitude, c.longitude)
 
-    /** Source label: model name when linked, the external device/"RS2+", or the capture method. */
+    /** Source label: model name when linked, the external receiver's label, or the capture method. */
     private fun sourceLabel(c: Coordinate, modelName: String?): String? {
         if (c.linkedModelId != null) {
             return modelName?.takeIf { it.isNotBlank() } ?: "Model linked"
         }
         val method = c.captureMethod?.lowercase(Locale.US)
-        if (c.provider.lowercase(Locale.US).contains("rs2") || method == "external_gnss" || method == "rtk_receiver") {
-            return c.sourceDevice?.takeIf { it.isNotBlank() } ?: "RS2+"
+        if (app.surrealar.data.local.db.ProviderTokens.isExternal(c.provider) || method == "external_gnss" || method == "rtk_receiver") {
+            return c.sourceDevice?.takeIf { it.isNotBlank() } ?: "External GNSS"
         }
         return when (method) {
             "internal_gps"   -> "Internal GPS"

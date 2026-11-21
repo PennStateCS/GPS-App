@@ -122,7 +122,7 @@ class FixSwitchboardTest {
         assertEquals("new adapter started", 1, external.startCount)
         assertEquals("old adapter stopped", 1, internal.stopCount)
 
-        val externalFix = fix(Provider.RS2_EXTERNAL)
+        val externalFix = fix(Provider.EXTERNAL_TCP)
         external.emit(externalFix); advanceUntilIdle()
         assertEquals(externalFix, sb.currentFix.value)
     }
@@ -135,7 +135,7 @@ class FixSwitchboardTest {
         sb.start(); advanceUntilIdle()
 
         flow.value = ProviderChoice.EXTERNAL_TCP; advanceUntilIdle()
-        val externalFix = fix(Provider.RS2_EXTERNAL)
+        val externalFix = fix(Provider.EXTERNAL_TCP)
         external.emit(externalFix); advanceUntilIdle()
         assertEquals(externalFix, sb.currentFix.value)
 
@@ -153,7 +153,7 @@ class FixSwitchboardTest {
         sb.start(); advanceUntilIdle()
 
         flow.value = ProviderChoice.EXTERNAL_TCP; advanceUntilIdle()
-        external.emit(fix(Provider.RS2_EXTERNAL)); advanceUntilIdle()
+        external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle()
 
         flow.value = ProviderChoice.INTERNAL; advanceUntilIdle()
         assertNull("external fix must not carry into internal session", sb.currentFix.value)
@@ -186,9 +186,9 @@ class FixSwitchboardTest {
 
         assertNull(sb.currentFix.value)
         // Final provider is EXTERNAL: external fixes route, internal fixes do not.
-        external.emit(fix(Provider.RS2_EXTERNAL)); advanceUntilIdle()
+        external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle()
         val ext = sb.currentFix.value
-        assertEquals(Provider.RS2_EXTERNAL, ext?.provider)
+        assertEquals(Provider.EXTERNAL_TCP, ext?.provider)
         internal.emit(fix(Provider.INTERNAL)); advanceUntilIdle()
         assertEquals("only the final provider routes", ext, sb.currentFix.value)
     }
@@ -250,8 +250,8 @@ class FixSwitchboardTest {
         assertEquals(ProviderChoice.INTERNAL, src.activeProvider.value)
 
         flow.value = ProviderChoice.EXTERNAL_TCP; advanceUntilIdle()
-        external.emit(fix(Provider.RS2_EXTERNAL)); advanceUntilIdle()
-        assertEquals(Provider.RS2_EXTERNAL, sb.currentFix.value?.provider)
+        external.emit(fix(Provider.EXTERNAL_TCP)); advanceUntilIdle()
+        assertEquals(Provider.EXTERNAL_TCP, sb.currentFix.value?.provider)
         assertEquals(ProviderChoice.EXTERNAL_TCP, src.activeProvider.value)
     }
 

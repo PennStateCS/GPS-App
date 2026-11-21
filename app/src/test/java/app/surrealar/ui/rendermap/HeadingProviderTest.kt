@@ -25,7 +25,7 @@ class HeadingProviderTest {
     private val nov20 = ZonedDateTime.of(2026, 11, 20, 12, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
 
     private fun fix(lat: Double, lon: Double) = Fix(
-        provider = Provider.RS2_EXTERNAL, timeUtc = Instant.ofEpochMilli(nov20), timestampSource = TimestampSource.NMEA_ZDA,
+        provider = Provider.EXTERNAL_TCP, timeUtc = Instant.ofEpochMilli(nov20), timestampSource = TimestampSource.NMEA_ZDA,
         latDeg = lat, lonDeg = lon, altEllipsoidalM = 330.0, altMslM = 363.0, geoidSeparationM = -33.0,
         hDop = null, vDop = null, pDop = null, hAccM = null, vAccM = null,
         stdDevEastM = null, stdDevNorthM = null, stdDevUpM = null,

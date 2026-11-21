@@ -1,28 +1,32 @@
 package app.surrealar.gnss.model
 
 /**
- * Identifies where a GNSS fix came from.
+ * How a GNSS fix reached the app: the *connection*, not the receiver vendor. Which receiver produced
+ * an external fix is carried separately ([Fix.receiverLabel], [Fix.accuracyClass], set from the
+ * active receiver profile).
  *
- * This value is stamped onto every [Fix] so downstream code (UI, storage, accuracy
- * estimation) knows which receiver produced the data without having to inspect
- * the fix pipeline itself.
+ * Stored by [name] in the coordinates table. Values written by earlier versions (`RS2_EXTERNAL`,
+ * `RS2_TCP`, `RS2_BT`, `rs2-external`, …) are still read by the app's converters and mapped to the
+ * matching value here.
+ *
+ * @property label generic display name, used when no receiver label is known.
  */
-public enum class Provider {
-    /** Android device's built-in GNSS chip (via the NMEA listener API). */
-    INTERNAL,
+public enum class Provider(public val label: String) {
+    /** The device's built-in GNSS chip (via the platform NMEA listener). */
+    INTERNAL("Device GNSS"),
 
-    /** External receiver connected over RS2 — general/legacy label. */
-    RS2_EXTERNAL,
+    /** External receiver streaming NMEA over TCP/IP (e.g. Wi-Fi hotspot). Formerly RS2_EXTERNAL / RS2_TCP. */
+    EXTERNAL_TCP("External GNSS (TCP)"),
 
-    /** RS2+ receiver connected over Bluetooth. */
-    RS2_BT,
+    /** External receiver over Bluetooth. Formerly RS2_BT. */
+    EXTERNAL_BT("External GNSS (Bluetooth)"),
 
-    /** RS2+ receiver connected over TCP/IP (e.g. Wi-Fi hotspot). */
-    RS2_TCP,
+    /** Fixes replayed from an NMEA log. Never averaged into a capture. */
+    REPLAY("NMEA replay"),
 
-    /** Any external receiver that does not fall into the RS2 categories. */
-    OTHER,
+    /** Position taken from embedded geometry in a linked 3D model file. */
+    MODEL("3D model"),
 
-    /** Coordinate position was sourced from embedded geometry in a linked 3D model file. */
-    MODEL
+    /** Anything not covered above (unknown or unrecognised stored values). */
+    OTHER("Other"),
 }

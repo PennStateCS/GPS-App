@@ -78,10 +78,11 @@ object GnssModule {
             "GST" to GstParser(),  // accuracy error statistics
             // MediaTek proprietary accuracy (e.g. Samsung SM-X940 internal GNSS) — fallback when no GST.
             "ACCURACY" to AccuracyParser(),
-            // Emlid Reach RS4 / RS4 Pro custom messages (diagnostics only; do not affect fixes).
-            "EBP" to EbpParser(),
-            "ETC" to EtcParser()
-        )
+        ) +
+            // Receiver-specific sentences declared by the profiles (Emlid: EBP, ETC — diagnostics only).
+            // TcpNmeaSource keeps this one registry for the app's lifetime, so it registers every
+            // profile's parsers; a sentence a receiver never sends simply never arrives.
+            app.surrealar.settings.model.ExternalReceiverProfile.allExtraParsers()
         // Live sources (Emlid TCP, Android internal NMEA) always send "*CS". Requiring it rejects a
         // partial line that readLine() returns when the socket drops mid-sentence. Replay builds its
         // own lenient registry (MainActivity) so checksum-less log files still play.
@@ -180,12 +181,21 @@ object GnssModule {
     fun provideExternalAdapter(
         appScope: CoroutineScope,
         nmea: NmeaSource,
-        @ExternalSatellites externalInventory: SatelliteInventory
-    ): ExternalAdapter = ExternalAdapter(
-        scope = appScope,
-        nmea  = nmea,
-        inv   = externalInventory
-    )
+        @ExternalSatellites externalInventory: SatelliteInventory,
+        settingsRepository: ExternalReceiverSettingsRepository,
+    ): ExternalAdapter {
+        // Latest saved profile, kept hot so stamping a fix never suspends.
+        val profile = settingsRepository.externalReceiverProfile.stateIn(
+            appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT
+        )
+        return ExternalAdapter(
+            scope = appScope,
+            nmea  = nmea,
+            inv   = externalInventory,
+            currentProfile = { profile.value },
+        )
+    }
 
     /** Lets GnssSourceCoordinator reconnect the external receiver when its saved host/port change. */
     @Provides

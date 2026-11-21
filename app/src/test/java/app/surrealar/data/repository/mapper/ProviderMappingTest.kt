@@ -21,13 +21,13 @@ class ProviderMappingTest {
 
     @Test
     fun rs2External_survivesRoundTrip() {
-        assertEquals(Provider.RS2_EXTERNAL, roundTripProvider("rs2-external"))
+        assertEquals(Provider.EXTERNAL_TCP, roundTripProvider("rs2-external"))
     }
 
     @Test
     fun rs2Tcp_andBt_mapDistinctly() {
-        assertEquals(Provider.RS2_TCP, roundTripProvider("rs2-tcp"))
-        assertEquals(Provider.RS2_BT, roundTripProvider("rs2-bt"))
+        assertEquals(Provider.EXTERNAL_TCP, roundTripProvider("rs2-tcp"))
+        assertEquals(Provider.EXTERNAL_BT, roundTripProvider("rs2-bt"))
     }
 
     @Test

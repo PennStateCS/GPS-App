@@ -13,7 +13,7 @@ import org.junit.Test
 class NmeaFuser5HzTest {
 
     private fun fuser(onFix: (Fix) -> Unit) = NmeaFuser(
-        provider = Provider.RS2_EXTERNAL,
+        provider = Provider.EXTERNAL_TCP,
         registry = DefaultNmeaRegistry.create(verifyChecksum = false),
         onFix = onFix,
         onGsv = { }

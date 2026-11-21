@@ -14,9 +14,9 @@ class UereTableTest {
 
     @Test fun rs2Transports_shareTheSameTable() {
         RtkStatus.values().forEach { mode ->
-            val ext = table.uere(Provider.RS2_EXTERNAL, mode)
-            assertEquals(ext, table.uere(Provider.RS2_TCP, mode))
-            assertEquals(ext, table.uere(Provider.RS2_BT, mode))
+            val ext = table.uere(Provider.EXTERNAL_TCP, mode)
+            assertEquals(ext, table.uere(Provider.EXTERNAL_TCP, mode))
+            assertEquals(ext, table.uere(Provider.EXTERNAL_BT, mode))
         }
     }
 
@@ -29,10 +29,10 @@ class UereTableTest {
     }
 
     @Test fun rs2Values_improveWithRtkQuality() {
-        val single = table.uere(Provider.RS2_EXTERNAL, RtkStatus.SINGLE)!!
-        val dgps = table.uere(Provider.RS2_EXTERNAL, RtkStatus.DGPS)!!
-        val float = table.uere(Provider.RS2_EXTERNAL, RtkStatus.FLOAT)!!
-        val fix = table.uere(Provider.RS2_EXTERNAL, RtkStatus.FIX)!!
+        val single = table.uere(Provider.EXTERNAL_TCP, RtkStatus.SINGLE)!!
+        val dgps = table.uere(Provider.EXTERNAL_TCP, RtkStatus.DGPS)!!
+        val float = table.uere(Provider.EXTERNAL_TCP, RtkStatus.FLOAT)!!
+        val fix = table.uere(Provider.EXTERNAL_TCP, RtkStatus.FIX)!!
         assertTrue(single > dgps && dgps > float && float > fix)
         assertEquals(0.02, fix, 0.0)
     }
@@ -40,9 +40,9 @@ class UereTableTest {
     @Test fun singleAndDeadReckoning_haveExplicitConservativeRows() {
         // RS2+ standalone used to fall back to the NONE value (1.0 m) — optimistic for a
         // first Emlid fix before any GST arrives.
-        assertEquals(2.5, table.uere(Provider.RS2_EXTERNAL, RtkStatus.SINGLE)!!, 0.0)
+        assertEquals(2.5, table.uere(Provider.EXTERNAL_TCP, RtkStatus.SINGLE)!!, 0.0)
         assertEquals(4.0, table.uere(Provider.INTERNAL, RtkStatus.SINGLE)!!, 0.0)
-        assertTrue(table.uere(Provider.RS2_EXTERNAL, RtkStatus.DEAD_RECKONING)!! > 2.5)
+        assertTrue(table.uere(Provider.EXTERNAL_TCP, RtkStatus.DEAD_RECKONING)!! > 2.5)
         assertTrue(table.uere(Provider.INTERNAL, RtkStatus.DEAD_RECKONING)!! > 4.0)
     }
 

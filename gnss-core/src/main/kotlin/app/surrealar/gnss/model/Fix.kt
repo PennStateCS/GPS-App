@@ -1,5 +1,6 @@
 package app.surrealar.gnss.model
 
+import app.surrealar.gnss.receiver.AccuracyClass
 import java.time.Instant
 
 /**
@@ -35,6 +36,10 @@ import java.time.Instant
  * @property correctionStationId differential/RTK base station ID, if reported.
  * @property multipathIndex multipath index, if reported.
  * @property rawNmeaSnapshot raw NMEA sentences behind this fix, if kept.
+ * @property accuracyClass accuracy class of the receiver that produced the fix, stamped by the source
+ *   from the active receiver profile; null = assume [AccuracyClass.defaultFor] the [provider].
+ * @property receiverLabel human-readable receiver name from the active profile (e.g. "Emlid Reach RS2+");
+ *   null = unknown (fall back to [Provider.label]).
  */
 public data class Fix(
     val provider: Provider,
@@ -61,5 +66,7 @@ public data class Fix(
     val courseDeg: Double?,
     val correctionStationId: String? = null,
     val multipathIndex: Double? = null,
-    val rawNmeaSnapshot: List<String> = emptyList()
+    val rawNmeaSnapshot: List<String> = emptyList(),
+    val accuracyClass: AccuracyClass? = null,
+    val receiverLabel: String? = null,
     )

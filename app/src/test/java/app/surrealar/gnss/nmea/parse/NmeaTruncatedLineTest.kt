@@ -64,7 +64,7 @@ class NmeaTruncatedLineTest {
         assertNull("no longitude without its hemisphere", gga?.lon)
 
         val fixes = mutableListOf<Fix>()
-        val fuser = NmeaFuser(Provider.RS2_EXTERNAL, DefaultNmeaRegistry.create(verifyChecksum = false),
+        val fuser = NmeaFuser(Provider.EXTERNAL_TCP, DefaultNmeaRegistry.create(verifyChecksum = false),
             onFix = { fixes.add(it) }, onGsv = {})
         fuser.accept(truncated); fuser.flush()
         assertTrue("no fix from a truncated line", fixes.isEmpty())

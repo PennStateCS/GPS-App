@@ -30,8 +30,10 @@ class CoordinateDetailUiMapperTest {
 
     @Test
     fun sourceBadge_externalRs2() {
-        assertEquals("RS2+", CoordinateDetailUiMapper.sourceBadge(coord(provider = "rs2-tcp")).text)
-        assertEquals("RS2+", CoordinateDetailUiMapper.sourceBadge(coord(captureMethod = "external_gnss")).text)
+        // No receiver label stored (older points): generic. The profile's short label when it is.
+        assertEquals("EXTERNAL GNSS", CoordinateDetailUiMapper.sourceBadge(coord(provider = "rs2-tcp")).text)
+        assertEquals("EXTERNAL GNSS", CoordinateDetailUiMapper.sourceBadge(coord(captureMethod = "external_gnss")).text)
+        assertEquals("RS2+", CoordinateDetailUiMapper.sourceBadge(coord(provider = "external-tcp").copy(sourceDevice = "Emlid Reach RS2+")).text)
     }
 
     @Test
@@ -123,7 +125,7 @@ class CoordinateDetailUiMapperTest {
         val c = coord(provider = "rs2-tcp", captureMethod = "external_gnss", rtkStatus = "FIX",
             horizontalAccuracyM = 0.03, averagedSamples = 10)
         val b = CoordinateDetailUiMapper.badges(c, showAccuracyIndicators = true)
-        assertEquals("RS2+", b.source?.text)
+        assertEquals("EXTERNAL GNSS", b.source?.text)
         assertEquals("FIXED", b.fix?.text)
         assertEquals("AVERAGED", b.extra?.text)
         assertEquals("H ±0.03 m", b.accuracy?.text)

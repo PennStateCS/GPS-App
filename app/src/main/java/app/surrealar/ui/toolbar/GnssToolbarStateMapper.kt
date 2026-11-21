@@ -53,9 +53,9 @@ object GnssToolbarStateMapper {
     internal const val INTERNAL_GOOD_M = 5.0
     internal const val INTERNAL_FAIR_M = 15.0
 
-    /** NMEA replay fixes ([Provider.OTHER]) are shown whichever source is selected. */
+    /** NMEA replay fixes ([Provider.REPLAY]) are shown whichever source is selected. */
     fun fixMatchesSource(source: LocationSourceType, fix: Fix): Boolean =
-        if (fix.provider == Provider.OTHER) true
+        if (fix.provider == Provider.REPLAY) true
         else if (source == LocationSourceType.INTERNAL) fix.provider == Provider.INTERNAL
         else fix.provider != Provider.INTERNAL
 
@@ -169,7 +169,7 @@ object GnssToolbarStateMapper {
             }
         }
 
-        val isReplay = fix.provider == Provider.OTHER
+        val isReplay = fix.provider == Provider.REPLAY
         return ToolbarMapResult.Render(
             GnssToolbarState(
                 sourceText = if (isReplay) "Replay" else GnssStatusFormatter.formatSource(isInternal, externalLabel),

@@ -58,7 +58,7 @@ class ObservationSessionTest {
     // ── Capture lifecycle (deterministic, via coroutines-test) ──────────────────
 
     private fun validFix(rtk: RtkStatus = RtkStatus.FIX, alt: Double? = 10.0) = Fix(
-        provider = Provider.RS2_EXTERNAL, timeUtc = Instant.now(), timestampSource = TimestampSource.DEVICE,
+        provider = Provider.EXTERNAL_TCP, timeUtc = Instant.now(), timestampSource = TimestampSource.DEVICE,
         latDeg = 41.0, lonDeg = -76.0, altEllipsoidalM = alt, altMslM = null, geoidSeparationM = null,
         hDop = 1.0, vDop = 1.0, pDop = 1.0, hAccM = 0.02, vAccM = 0.03,
         stdDevEastM = null, stdDevNorthM = null, stdDevUpM = null,

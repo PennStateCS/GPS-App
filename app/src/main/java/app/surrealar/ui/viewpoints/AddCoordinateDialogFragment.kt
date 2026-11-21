@@ -668,24 +668,24 @@ class AddCoordinateDialogFragment(
                 // so the stored altitude is the ground mark, not the antenna.
                 val antennaHeightM = if (isExternalMode) receiver?.antennaHeightM ?: 0.0
                     else receiver?.internalAntennaHeightM ?: 0.0
-                // Prefer the user's device name; otherwise record the selected receiver profile
-                // (e.g. "Emlid Reach RS4") rather than a hardcoded "RS2+".
+                // Receiver identity: the selected profile's label (e.g. "Emlid Reach RS4"), the same
+                // stable value the Capture screen stores.
                 val sourceDevice = if (!isExternalMode) "Internal GPS" else
-                    snap?.externalTcpName?.takeIf { it.isNotBlank() } ?: snap?.externalProfileLabel ?: "External GNSS"
+                    snap?.externalProfileLabel?.takeIf { it.isNotBlank() } ?: "External GNSS"
 
                 // Record the datum the averaged position is in (internal GNSS → WGS84; external per
                 // Settings → Coordinates → External receiver datum) so it is converted correctly later.
                 val coordSettings = snap?.coordinateSystemSettings
                     ?: app.surrealar.settings.model.CoordinateSystemSettings()
                 val datumEpsg = coordinateSystemService.storedDatumEpsg(
-                    if (isExternalMode) Provider.RS2_EXTERNAL else Provider.INTERNAL, coordSettings)
+                    if (isExternalMode) Provider.EXTERNAL_TCP else Provider.INTERNAL, coordSettings)
                 val coordinate = CoordinateFactory.fromCaptureResult(
                     id            = UUID.randomUUID().toString(),
                     name          = name,
                     note          = note,
                     color         = DEFAULT_COORDINATE_COLOR,
                     iconId        = legacyIcon,
-                    provider      = if (isExternalMode) Provider.RS2_EXTERNAL else Provider.INTERNAL,
+                    provider      = if (isExternalMode) Provider.EXTERNAL_TCP else Provider.INTERNAL,
                     result        = completedState.result,
                     captureMethod = (if (isExternalMode) CaptureMethod.EXTERNAL_GNSS else CaptureMethod.INTERNAL_GPS).storageValue,
                     sourceDevice  = sourceDevice,

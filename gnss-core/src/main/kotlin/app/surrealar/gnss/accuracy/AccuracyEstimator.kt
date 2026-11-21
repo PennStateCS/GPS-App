@@ -1,6 +1,7 @@
 package app.surrealar.gnss.accuracy
 
 import app.surrealar.gnss.model.Fix
+import app.surrealar.gnss.receiver.AccuracyClass
 
 /**
  * Estimates position accuracy for a fix: horizontal as a 68 % radius (app-wide meaning of hAccM,
@@ -43,7 +44,10 @@ public object AccuracyEstimator {
          * This is an estimate, not a replacement for receiver-provided error stats.
          */
         // No position solution (NONE/INVALID) → no estimate, rather than a number.
-        val uere = uereTable.uere(fix.provider, fix.rtkStatus) ?: return Accuracy1Sigma(null, null)
+        // The receiver's accuracy class, stamped on the fix by its source from the active profile;
+        // unstamped fixes use the class their provider always used.
+        val accuracyClass = fix.accuracyClass ?: AccuracyClass.defaultFor(fix.provider)
+        val uere = uereTable.uere(accuracyClass, fix.rtkStatus) ?: return Accuracy1Sigma(null, null)
         // HDOP × UERE is already a horizontal RMS (≈ 1.41σ per axis), so only the RMS → 68 %-radius
         // step applies (×1.515/√2 ≈ 1.071) to agree with GST, $..ACCURACY and Location.accuracy.
         // VDOP × UERE stays a 1σ vertical, like every other vertical source.

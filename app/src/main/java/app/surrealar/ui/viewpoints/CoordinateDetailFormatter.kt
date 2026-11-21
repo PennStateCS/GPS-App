@@ -41,6 +41,10 @@ object CoordinateDetailFormatter {
 
     fun providerLabel(p: String?): String? = when (p?.lowercase(Locale.US)) {
         "fused"        -> "Internal GPS (fused)"
+        "external-tcp" -> "External GNSS (TCP)"
+        "external-bt"  -> "External GNSS (Bluetooth)"
+        "replay"       -> "NMEA replay"
+        // Tokens written before the receiver-neutral rename: same labels as before.
         "rs2-tcp"      -> "External GNSS (TCP)"
         "rs2-bt"       -> "External GNSS (Bluetooth)"
         "rs2-external" -> "External GNSS"

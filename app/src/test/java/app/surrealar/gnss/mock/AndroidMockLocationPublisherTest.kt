@@ -44,7 +44,7 @@ class AndroidMockLocationPublisherTest {
     private fun externalFix(
         lat: Double        = 43.123456,
         lon: Double        = -76.987654,
-        provider: Provider = Provider.RS2_TCP,
+        provider: Provider = Provider.EXTERNAL_TCP,
         timeUtc: Instant   = Instant.now(),
         hAccM: Double?     = 0.015,
         vAccM: Double?     = 0.025,
@@ -83,15 +83,15 @@ class AndroidMockLocationPublisherTest {
     }
 
     @Test fun `RS2_TCP fix is external`() {
-        assertTrue(publisher.isExternalFix(externalFix(provider = Provider.RS2_TCP)))
+        assertTrue(publisher.isExternalFix(externalFix(provider = Provider.EXTERNAL_TCP)))
     }
 
     @Test fun `RS2_BT fix is external`() {
-        assertTrue(publisher.isExternalFix(externalFix(provider = Provider.RS2_BT)))
+        assertTrue(publisher.isExternalFix(externalFix(provider = Provider.EXTERNAL_BT)))
     }
 
     @Test fun `RS2_EXTERNAL fix is external`() {
-        assertTrue(publisher.isExternalFix(externalFix(provider = Provider.RS2_EXTERNAL)))
+        assertTrue(publisher.isExternalFix(externalFix(provider = Provider.EXTERNAL_TCP)))
     }
 
     @Test fun `OTHER provider fix is external`() {

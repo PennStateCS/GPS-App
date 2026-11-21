@@ -16,7 +16,7 @@ import kotlin.math.cos
 class FeedDatumTest {
 
     private fun fix(lat: Double, lon: Double, ellH: Double?, msl: Double?) = Fix(
-        provider = Provider.RS2_EXTERNAL, timeUtc = Instant.parse("2026-11-19T12:00:00Z"),
+        provider = Provider.EXTERNAL_TCP, timeUtc = Instant.parse("2026-11-19T12:00:00Z"),
         timestampSource = TimestampSource.UNKNOWN, latDeg = lat, lonDeg = lon,
         altEllipsoidalM = ellH, altMslM = msl, geoidSeparationM = null,
         hDop = null, vDop = null, pDop = null, hAccM = null, vAccM = null,

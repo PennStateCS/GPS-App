@@ -27,9 +27,9 @@ class CoordinateListFormatterTest {
         assertEquals("Reach6 · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
     }
 
-    @Test fun externalRtk_defaultsToRs2_whenNoDeviceName() {
+    @Test fun externalRtk_defaultsToGeneric_whenNoDeviceName() {
         val c = coord(captureMethod = "external_gnss", rtkStatus = "FLOAT", hAcc = 0.12)
-        assertEquals("RS2+ · Float · H ±0.12 m", CoordinateListFormatter.summaryLine(c, null))
+        assertEquals("External GNSS · Float · H ±0.12 m", CoordinateListFormatter.summaryLine(c, null))
     }
 
     @Test fun modelLinked_usesModelNameOrFallback() {
@@ -45,7 +45,7 @@ class CoordinateListFormatterTest {
 
     @Test fun omitsAccuracyWhenAbsent() {
         val c = coord(provider = "rs2-external", rtkStatus = "FIX")
-        assertEquals("RS2+ · Fixed", CoordinateListFormatter.summaryLine(c, null))
+        assertEquals("External GNSS · Fixed", CoordinateListFormatter.summaryLine(c, null))
     }
 
     @Test fun latLonLine_sixDecimals() {

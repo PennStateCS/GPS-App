@@ -21,9 +21,9 @@ class ConvertersTest {
         val other = listOf("OTHER", "other")
 
         internal.forEach { assertEquals(it, Provider.INTERNAL, Converters.toProvider(it)) }
-        external.forEach { assertEquals(it, Provider.RS2_EXTERNAL, Converters.toProvider(it)) }
-        bt.forEach { assertEquals(it, Provider.RS2_BT, Converters.toProvider(it)) }
-        tcp.forEach { assertEquals(it, Provider.RS2_TCP, Converters.toProvider(it)) }
+        external.forEach { assertEquals(it, Provider.EXTERNAL_TCP, Converters.toProvider(it)) }
+        bt.forEach { assertEquals(it, Provider.EXTERNAL_BT, Converters.toProvider(it)) }
+        tcp.forEach { assertEquals(it, Provider.EXTERNAL_TCP, Converters.toProvider(it)) }
         model.forEach { assertEquals(it, Provider.MODEL, Converters.toProvider(it)) }
         other.forEach { assertEquals(it, Provider.OTHER, Converters.toProvider(it)) }
     }

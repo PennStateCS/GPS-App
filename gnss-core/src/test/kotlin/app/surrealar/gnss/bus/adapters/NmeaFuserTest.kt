@@ -33,7 +33,7 @@ class NmeaFuserTest {
     @Test
     fun `epoch deduplication prevents duplicate fix emissions`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -57,7 +57,7 @@ class NmeaFuserTest {
     @Test
     fun `multi-constellation GSA tracking uses talker-aware SatId`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -80,7 +80,7 @@ class NmeaFuserTest {
     @Test
     fun `interleaved GSV messages from different constellations`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -105,7 +105,7 @@ class NmeaFuserTest {
     @Test
     fun `GSV accumulation counts satellites with constellation-aware used-in-fix`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -135,7 +135,7 @@ class NmeaFuserTest {
     @Test
     fun `stale ZDA timestamps are rejected`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -154,7 +154,7 @@ class NmeaFuserTest {
     @Test
     fun `reset clears all accumulated state`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -176,7 +176,7 @@ class NmeaFuserTest {
     @Test
     fun `missing satellite count is unknown, not zero`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }
@@ -190,7 +190,7 @@ class NmeaFuserTest {
     @Test
     fun `GGA satellite count is used when no GSA arrived`() {
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = registry,
             onFix = { emittedFixes.add(it) },
             onGsv = { emittedGsvMessages.add(it) }

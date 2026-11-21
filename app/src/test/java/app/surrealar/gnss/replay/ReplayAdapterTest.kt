@@ -46,7 +46,7 @@ class ReplayAdapterTest {
 
         assertTrue("replay emits fixes (${fixes.size})", fixes.size > 100)
         val f = fixes.first { it.hAccM != null }
-        assertEquals("replay fixes are tagged so captures refuse them", Provider.OTHER, f.provider)
+        assertEquals("replay fixes are tagged so captures refuse them", Provider.REPLAY, f.provider)
         assertEquals(RtkStatus.FIX, f.rtkStatus)
         // What FixAccumulator never produced for Emlid: accuracy from GST lat/lon σ (68 % radius).
         assertEquals(0.0152, f.hAccM!!, 1e-4)

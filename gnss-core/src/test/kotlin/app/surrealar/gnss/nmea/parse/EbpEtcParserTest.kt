@@ -88,7 +88,7 @@ class EbpEtcParserTest {
     fun `fuser sees EBP and ETC without affecting fix generation`() {
         val fixes = mutableListOf<Fix>()
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = DefaultNmeaRegistry.create(verifyChecksum = false),
             onFix = { fixes.add(it) },
             onGsv = { }

@@ -68,14 +68,14 @@ class AndroidGnssLoggerTest {
     @Test fun `fuser debug traces use the GnssDebug tag, area prefix and throttle`() {
         GnssDebugLog.enabled = true
         val fuser = NmeaFuser(
-            provider = Provider.RS2_EXTERNAL,
+            provider = Provider.EXTERNAL_TCP,
             registry = DefaultNmeaRegistry.create(verifyChecksum = true),
             onFix = { },
             onGsv = { },
         )
         javaClass.getResourceAsStream("/nmea/reach_nmea_capture.txt")!!
             .bufferedReader().useLines { seq -> seq.forEach { fuser.accept(it) } }
-        val fixLines = logs(GnssDebugLog.TAG).filter { it.second.startsWith("[fuser] RS2_EXTERNAL fix t=") }
+        val fixLines = logs(GnssDebugLog.TAG).filter { it.second.startsWith("[fuser] EXTERNAL_TCP fix t=") }
         assertTrue("expected a fuser trace line", fixLines.isNotEmpty())
         assertTrue(fixLines.all { it.first == Log.DEBUG })
         // The capture is shorter than the 15 s throttle, so the per-key summary is written once.
@@ -84,7 +84,7 @@ class AndroidGnssLoggerTest {
 
     @Test fun `nothing is traced when GnssDebugLog is disabled (release builds)`() {
         GnssDebugLog.enabled = false
-        val fuser = NmeaFuser(Provider.RS2_EXTERNAL, DefaultNmeaRegistry.create(verifyChecksum = true), onFix = { }, onGsv = { })
+        val fuser = NmeaFuser(Provider.EXTERNAL_TCP, DefaultNmeaRegistry.create(verifyChecksum = true), onFix = { }, onGsv = { })
         javaClass.getResourceAsStream("/nmea/reach_nmea_capture.txt")!!
             .bufferedReader().useLines { seq -> seq.forEach { fuser.accept(it) } }
         assertEquals(emptyList<Pair<Int, String>>(), logs(GnssDebugLog.TAG))

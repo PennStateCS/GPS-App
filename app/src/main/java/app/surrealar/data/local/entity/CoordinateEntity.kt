@@ -37,7 +37,7 @@ data class CoordinateEntity(
     val color: Int,                        // ARGB marker color — auto-assigned default; no longer user-selectable
 
     // --- Provenance & quality (now type-safe enums) ---
-    val provider: Provider = Provider.INTERNAL,     // INTERNAL | RS2_BT | RS2_TCP | OTHER
+    val provider: Provider = Provider.INTERNAL,     // INTERNAL | EXTERNAL_TCP | EXTERNAL_BT | REPLAY | MODEL | OTHER
     val rtkStatus: RtkStatus? = null,               // FIX | FLOAT | DGPS | SINGLE | INVALID
     val satsUsed: Int? = null,
     val satsVisible: Int? = null,                   // Total satellites in view

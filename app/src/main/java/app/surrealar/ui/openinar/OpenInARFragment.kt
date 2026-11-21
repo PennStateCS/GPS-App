@@ -2213,9 +2213,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val fixInfo = gnssFix?.let { f ->
             ArDebugReport.FixInfo(
                 provider = when (f.provider) {
-                    app.surrealar.gnss.model.Provider.INTERNAL     -> "Internal"
-                    app.surrealar.gnss.model.Provider.RS2_EXTERNAL -> "RS2+"
-                    else -> f.provider.toString()
+                    app.surrealar.gnss.model.Provider.INTERNAL -> "Internal"
+                    else -> f.receiverLabel ?: f.provider.label
                 },
                 rtk      = f.rtkStatus.name,
                 sats     = f.satsUsed,
@@ -2415,9 +2414,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private fun updateArGnssChip(fix: Fix) {
         val b = _binding ?: return
         val src = when (fix.provider) {
-            app.surrealar.gnss.model.Provider.RS2_EXTERNAL -> "RS2+"
-            app.surrealar.gnss.model.Provider.INTERNAL     -> "Phone GPS"
-            else -> fix.provider.name
+            app.surrealar.gnss.model.Provider.INTERNAL -> "Device GPS"
+            app.surrealar.gnss.model.Provider.EXTERNAL_TCP, app.surrealar.gnss.model.Provider.EXTERNAL_BT ->
+                app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(fix.receiverLabel)?.shortLabel ?: "EXT"
+            else -> fix.provider.label
         }
         val (solLabel, solColor) = when (fix.rtkStatus) {
             app.surrealar.gnss.model.RtkStatus.FIX    -> "RTK Fixed"  to requireContext().getColor(R.color.app_success)

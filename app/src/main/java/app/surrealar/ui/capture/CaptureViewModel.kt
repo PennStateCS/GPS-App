@@ -130,10 +130,10 @@ class CaptureViewModel @Inject constructor(
         // Also skip the fix replayed from before this session started (the fixes flow replays its
         // last value to new subscribers) — only fixes that arrive during the session are averaged.
         val replayedBeforeStart = fixSwitchboard.fixes.replayCache.lastOrNull()
-        // NMEA replay fixes (Provider.OTHER) are never averaged into a saved point.
+        // NMEA replay fixes (Provider.REPLAY) are never averaged into a saved point.
         val modeFixes = fixSwitchboard.fixes.filter {
             it !== replayedBeforeStart &&
-                it.provider != app.surrealar.gnss.model.Provider.OTHER &&
+                it.provider != app.surrealar.gnss.model.Provider.REPLAY &&
                 (it.provider == app.surrealar.gnss.model.Provider.INTERNAL) == internal
         }
         val s = ObservationSession(viewModelScope, modeFixes, policy)
@@ -193,7 +193,7 @@ class CaptureViewModel @Inject constructor(
         val src = snap?.locationSource ?: settingsRepository.locationSource.first()
         val provider = when (src) {
             LocationSourceType.INTERNAL  -> Provider.INTERNAL
-            LocationSourceType.EXTERNAL  -> Provider.RS2_EXTERNAL
+            LocationSourceType.EXTERNAL  -> Provider.EXTERNAL_TCP
             LocationSourceType.SIMULATOR -> Provider.OTHER
         }
 
@@ -203,12 +203,10 @@ class CaptureViewModel @Inject constructor(
             LocationSourceType.SIMULATOR -> "averaged"
         }
 
+        // Receiver identity: the active profile's label (stable strings such as "Emlid Reach RS2+"),
+        // from the capture-start snapshot. Existing rows keep whatever they stored.
         val sourceDevice = when (src) {
-            LocationSourceType.EXTERNAL -> {
-                val deviceName = snap?.externalTcpName?.takeIf { it.isNotBlank() }
-                val host = snap?.externalTcpHost
-                deviceName ?: host ?: "External GNSS"
-            }
+            LocationSourceType.EXTERNAL -> snap?.externalProfileLabel?.takeIf { it.isNotBlank() } ?: "External GNSS"
             LocationSourceType.INTERNAL  -> "Internal GPS"
             LocationSourceType.SIMULATOR -> null
         }

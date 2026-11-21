@@ -28,7 +28,7 @@ class CaptureCoordinateUseCaseTest {
         val repo = FakeCoordinateRepository()
         val saved = useCase(repo)(
             name = "Pt1", note = null, color = 0, iconId = "ic_pin",
-            provider = Provider.RS2_EXTERNAL, result = result(),
+            provider = Provider.EXTERNAL_TCP, result = result(),
             captureMethod = "external_gnss", sourceDevice = "RS2+",
         )
         assertEquals(1, repo.store.size)

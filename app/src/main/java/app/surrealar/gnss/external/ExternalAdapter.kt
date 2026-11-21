@@ -46,7 +46,13 @@ import kotlin.coroutines.coroutineContext
 class ExternalAdapter(
     private val scope: CoroutineScope,
     private val nmea: NmeaSource,
-    private val inv: SatelliteInventory
+    private val inv: SatelliteInventory,
+    /**
+     * The active receiver profile. Each fix is stamped with its label and accuracy class here (the
+     * NMEA source and fuser don't know which receiver they talk to), so accuracy fallbacks, exports
+     * and captures see the receiver that produced the fix even if the profile changes later.
+     */
+    private val currentProfile: () -> app.surrealar.settings.model.ExternalReceiverProfile,
 ) : SourceAdapter, SkyProvider, Startable, RawNmeaProvider, app.surrealar.gnss.source.ExternalReconnectable {
 
     companion object {
@@ -217,7 +223,10 @@ class ExternalAdapter(
                     firstDataArrived = true
                     lastDataTimeMs = System.currentTimeMillis()
                 }
-                .collect { fix -> _fixes.emit(fix) }
+                .collect { fix ->
+                    val profile = currentProfile()
+                    _fixes.emit(fix.copy(accuracyClass = profile.accuracyClass, receiverLabel = profile.label))
+                }
         }
 
         gsvJob = scope.launch {

@@ -68,7 +68,10 @@ class CaptureViewModelTest {
         tcpName: String? = "Reach RS2+",
         tcpHost: String? = "192.168.42.1",
         receiver: GnssReceiverSettings = GnssReceiverSettings(antennaHeightM = 1.8, internalAntennaHeightM = 0.5),
+        profile: app.surrealar.settings.model.ExternalReceiverProfile? =
+            app.surrealar.settings.model.ExternalReceiverProfile.REACH_RS2_PLUS,
     ): SettingsRepository = Mockito.mock(SettingsRepository::class.java).also {
+        if (profile != null) Mockito.`when`(it.externalReceiverProfile).thenReturn(flowOf(profile))
         Mockito.`when`(it.locationSource).thenReturn(flowOf(source))
         Mockito.`when`(it.externalTcpName).thenReturn(flowOf(tcpName))
         Mockito.`when`(it.externalTcpHost).thenReturn(flowOf(tcpHost))
@@ -90,7 +93,7 @@ class CaptureViewModelTest {
     }
 
     private fun fix(
-        provider: Provider = Provider.RS2_EXTERNAL,
+        provider: Provider = Provider.EXTERNAL_TCP,
         rtk: RtkStatus = RtkStatus.FIX,
         sats: Int = 20,
         alt: Double = 100.0,
@@ -148,7 +151,7 @@ class CaptureViewModelTest {
     fun internalCapture_averagesOnlyInternalFixes_andReportsSpread() = runBlocking {
         val vm = vm(settings(source = LocationSourceType.INTERNAL))
         vm.start(policy(minSamples = 2).copy(requiredMinStatus = RtkStatus.SINGLE), internal = true)
-        repeat(3) { push(fix(provider = Provider.RS2_EXTERNAL)) }   // external fixes are ignored
+        repeat(3) { push(fix(provider = Provider.EXTERNAL_TCP)) }   // external fixes are ignored
         assertFalse(vm.state.value is ObservationSession.State.Complete)
 
         push(fix(provider = Provider.INTERNAL, rtk = RtkStatus.SINGLE).copy(latDeg = 41.0))
@@ -232,19 +235,21 @@ class CaptureViewModelTest {
         assertEquals("Corner", c.name)
         assertEquals("note", c.note)
         assertEquals("external_gnss", c.captureMethod)
-        assertEquals("Reach RS2+", c.sourceDevice)
+        // sourceDevice is the active profile's label (not the user's device name / host).
+        assertEquals("Emlid Reach RS2+", c.sourceDevice)
         assertEquals(98.2, c.altitude, 1e-9)   // 100.0 − 1.8 m external pole height
         assertEquals(2, c.averagedSamples)
     }
 
     @Test
-    fun save_external_sourceDeviceFallsBackToHostThenGeneric() = runBlocking {
-        val hostVm = vm(settings(tcpName = "  ", tcpHost = "10.0.0.5"))
+    fun save_external_sourceDeviceIsProfileLabelThenGeneric() = runBlocking {
+        val hostVm = vm(settings(tcpName = "  ", tcpHost = "10.0.0.5",
+            profile = app.surrealar.settings.model.ExternalReceiverProfile.GENERIC_NMEA_TCP))
         completeCapture(hostVm)
         hostVm.save("A", null, 0, "ic_pin")
-        assertEquals("10.0.0.5", repo.store.last().sourceDevice)
+        assertEquals("Generic NMEA TCP", repo.store.last().sourceDevice)
 
-        val genericVm = vm(settings(tcpName = null, tcpHost = null))
+        val genericVm = vm(settings(tcpName = null, tcpHost = null, profile = null))
         completeCapture(genericVm)
         genericVm.save("B", null, 0, "ic_pin")
         assertEquals("External GNSS", repo.store.last().sourceDevice)

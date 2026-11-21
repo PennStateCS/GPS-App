@@ -51,7 +51,7 @@ class CsvExporter {
     private fun fixToCsvRow(fix: Fix): String {
         return listOf(
             fix.timeUtc.toString(),
-            fix.provider.name,
+            fix.receiverLabel ?: fix.provider.label,   // receiver name, e.g. "Emlid Reach RS2+"
             fix.timestampSource.name,
             fix.latDeg.toString(),
             fix.lonDeg.toString(),

@@ -55,7 +55,7 @@ class TcpNmeaSource(
     private val settingsRepository: ExternalReceiverSettingsRepository,
     @Suppress("UNUSED_PARAMETER") sourceSettings: SourceSettings,  // Reserved for future profile support
     registry: NmeaRegistry,
-    private val provider: Provider = Provider.RS2_EXTERNAL,
+    private val provider: Provider = Provider.EXTERNAL_TCP,
     private val diagnostics: DiagnosticsService? = null
 ) : NmeaSource {
 

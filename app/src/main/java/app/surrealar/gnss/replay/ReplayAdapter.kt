@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
  * toolbar, sky view and Developer page all show the replayed data. (The old FixAccumulator path fed
  * a StateFlow nothing observed, so replay displayed nothing.)
  *
- * Fixes carry [Provider.OTHER] so they are never averaged into a capture (see CaptureViewModel).
+ * Fixes carry [Provider.REPLAY] so they are never averaged into a capture (see CaptureViewModel).
  */
 class ReplayAdapter(
     private val scope: CoroutineScope,
@@ -49,7 +49,7 @@ class ReplayAdapter(
     override val sky: StateFlow<SkySnapshot> = _sky.asStateFlow()
 
     private val fuser = NmeaFuser(
-        provider = Provider.OTHER,
+        provider = Provider.REPLAY,
         registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = false),
         onFix = { _fixes.tryEmit(it) },
         onGsv = { _sky.value = inventory.consume(it) },
