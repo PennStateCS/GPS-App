@@ -194,6 +194,9 @@ dependencies {
         exclude(group = "org.json", module = "json")
     }
 
+    // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
+    implementation(project(":geo-core"))
+
     // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
