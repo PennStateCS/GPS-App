@@ -121,6 +121,29 @@ class NmeaFuserEpochTest {
     }
 
     @Test
+    fun `Galileo prefers the E1 signal (id 7) over E5a (id 1)`() {
+        val sky = mutableListOf<GsvMessage>()
+        val f = NmeaFuser(Provider.INTERNAL, NmeaRegistry(mapOf("GSV" to GsvParser()), verifyChecksum = false),
+            onFix = {}, onGsv = { sky.add(it) })
+        f.accept("\$GAGSV,1,1,01,05,40,083,30,1")   // E5a
+        f.accept("\$GAGSV,1,1,01,05,40,083,42,7")   // E1
+        assertEquals(42.0, sky.last().entries.single().snrDbHz!!, 0.0)
+        // Order of arrival must not matter.
+        f.accept("\$GAGSV,1,1,01,05,40,083,31,1")
+        assertEquals(42.0, sky.last().entries.single().snrDbHz!!, 0.0)
+    }
+
+    @Test
+    fun `GPS still prefers L1 (id 1) over L5 (id 8)`() {
+        val sky = mutableListOf<GsvMessage>()
+        val f = NmeaFuser(Provider.INTERNAL, NmeaRegistry(mapOf("GSV" to GsvParser()), verifyChecksum = false),
+            onFix = {}, onGsv = { sky.add(it) })
+        f.accept("\$GPGSV,1,1,01,05,40,083,33,8")
+        f.accept("\$GPGSV,1,1,01,05,40,083,41,1")
+        assertEquals(41.0, sky.last().entries.single().snrDbHz!!, 0.0)
+    }
+
+    @Test
     fun `stream without GST emits on GGA with no hold (SM-X940)`() {
         fuser.accept("\$GNGGA,172424.00,4118.4448800,N,07601.2345600,W,1,18,0.6,180.0,M,-33.0,M,,")
         assertEquals(1, fixes.size)

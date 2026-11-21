@@ -332,7 +332,9 @@ class NmeaFuser(
             signals.entries.removeIf { now - it.value.atMs > GSV_SIGNAL_STALE_MS }
             pendingGsvByTalker.remove(pendingKey)
 
-            val merged = mergeSignals(signals.values)
+            val merged = mergeSignals(
+                signals.entries.sortedBy { signalRank(talker, it.key) }.map { it.value }
+            )
             val entries = merged.mapNotNull { s ->
                 s.svid?.let { svid ->
                     val satId = SatId(talker, svid)
@@ -364,8 +366,25 @@ class NmeaFuser(
     }
 
     /**
-     * Merges per-signal satellite lists (iterated in ascending signal ID, so L1 comes first): each SVID
-     * appears once, taking the lowest signal's values and filling any blank elevation/azimuth/SNR
+     * Sort key for a constellation's NMEA 4.10 signal IDs: the L1-band civil signal first. The IDs
+     * differ per system — Galileo numbers E5a as 1 and E1-BC as 7, so "lowest ID" picked E5a.
+     *  GP/GL/GQ: 1 = L1 C/A (G1 C/A).  GA: 7 = E1-BC, 6 = E1-A.  GB: 1 = B1I, 3 = B1C.
+     * Unlisted IDs follow in ascending order; [NO_SIGNAL] (legacy, single sequence) sorts first.
+     */
+    private fun signalRank(talker: String, signal: Int): Int {
+        if (signal == NO_SIGNAL) return -1
+        val preferred = when (talker) {
+            "GA" -> listOf(7, 6)
+            "GB" -> listOf(1, 3)
+            else -> listOf(1)
+        }
+        val i = preferred.indexOf(signal)
+        return if (i >= 0) i else 100 + signal
+    }
+
+    /**
+     * Merges per-signal satellite lists (iterated in preference order, see [signalRank]): each SVID
+     * appears once, taking the preferred signal's values and filling any blank elevation/azimuth/SNR
      * from the other signals.
      */
     private fun mergeSignals(signals: Collection<CompletedGsv>): List<GSVSatellite> {
