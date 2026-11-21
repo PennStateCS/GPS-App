@@ -18,7 +18,7 @@ data class MapCameraState(
  * Transient map-page UI/display state that should survive navigating away from the map (to point
  * details, AR, etc.) and back, plus configuration changes — but NOT a full app restart.
  *
- * Intentionally holds only plain values: no live [app.surrealar.gnss.model.Fix], Android
+ * Intentionally holds only plain values: no live [io.github.pennstatecs.geokit.gnss.model.Fix], Android
  * views, `GoogleMap`, `Marker`, `Circle`, or `Context`. `mapType` uses the project's existing
  * `GoogleMap.MAP_TYPE_*` integer (never `MAP_TYPE_NONE`); the selected point is referenced by ID only.
  */

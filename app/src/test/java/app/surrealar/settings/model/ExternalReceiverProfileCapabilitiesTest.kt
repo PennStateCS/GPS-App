@@ -1,10 +1,10 @@
 package app.surrealar.settings.model
 
 import app.surrealar.di.GnssModule
-import app.surrealar.gnss.nmea.sentence.EBP
-import app.surrealar.gnss.receiver.AccuracyClass
-import app.surrealar.gnss.receiver.ReceiverCapabilities
-import app.surrealar.gnss.receiver.ReceiverVendor
+import io.github.pennstatecs.geokit.gnss.nmea.sentence.EBP
+import io.github.pennstatecs.geokit.gnss.receiver.AccuracyClass
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue

@@ -1,13 +1,13 @@
 package app.surrealar.gnss.internal
 
-import app.surrealar.gnss.bus.adapters.NmeaSource
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
 import app.surrealar.gnss.bus.PermissionRetryable
 import app.surrealar.gnss.bus.SourceAdapter
 import app.surrealar.gnss.bus.SkyProvider
-import app.surrealar.gnss.bus.adapters.Startable
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.SkySnapshot
-import app.surrealar.gnss.satellites.SatelliteInventory
+import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
+import io.github.pennstatecs.geokit.gnss.satellites.SatelliteInventory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow

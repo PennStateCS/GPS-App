@@ -1,7 +1,7 @@
 package app.surrealar.util.diagnostics
 
-import app.surrealar.gnss.bus.adapters.NmeaFuser
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 
 /**
  * Pure formatter for the "NMEA Stream Diagnostics" section of the diagnostic report.

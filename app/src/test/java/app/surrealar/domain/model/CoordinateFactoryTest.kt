@@ -1,9 +1,9 @@
 package app.surrealar.domain.model
 
-import app.surrealar.gnss.capture.CaptureResult
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.capture.CaptureResult
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import org.junit.Assert.*
 import org.junit.Test
 import java.time.Instant

@@ -1,10 +1,10 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.datum.Itrf2014ToNad83
-import app.surrealar.geo.ellipsoid.GeodeticPosition
-import app.surrealar.geo.ellipsoid.Ellipsoid
-import app.surrealar.geo.geoid.Geoid18Grid
-import app.surrealar.geo.projection.SpcsZones
+import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
+import io.github.pennstatecs.geokit.ellipsoid.Ellipsoid
+import io.github.pennstatecs.geokit.geoid.Geoid18Grid
+import io.github.pennstatecs.geokit.projection.SpcsZones
 
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.HorizontalSystem
@@ -28,11 +28,11 @@ class CoordinateSystemReferenceTest {
 
     // ── State Plane / UTM on NAD83(2011) (NCAT, confirmed by PROJ) ───────────────────────────────
 
-    // PA North/South LCC and the LCC inverse moved to geo-core's LambertConformalConicTest
+    // PA North/South LCC and the LCC inverse moved to geokit-core's LambertConformalConicTest
     // (LambertConformalConic is internal to the module).
 
     @Test fun `UTM 18N matches NCAT`() {
-        val u = app.surrealar.geo.projection.Utm.forward(41.3477, -76.0226)
+        val u = io.github.pennstatecs.geokit.projection.Utm.forward(41.3477, -76.0226)
         assertEquals(18, u.zone)
         assertEquals(414_450.726, u.eastingM, 0.002)
         assertEquals(4_577_860.600, u.northingM, 0.002)

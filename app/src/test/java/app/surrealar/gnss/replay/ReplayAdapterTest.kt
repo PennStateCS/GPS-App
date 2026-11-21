@@ -1,8 +1,8 @@
 package app.surrealar.gnss.replay
 
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asFlow

@@ -2,7 +2,7 @@ package app.surrealar.settings
 
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
-import app.surrealar.gnss.capture.GnssCaptureSettings
+import io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings
 import app.surrealar.gnss.settings.GnssReceiverSettings
 import app.surrealar.settings.model.AppearanceSettings
 import app.surrealar.settings.model.ArDisplaySettings

@@ -1,8 +1,8 @@
 package app.surrealar.ui.common
 
 import android.location.GnssStatus
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 
 import java.time.Duration
 import java.time.Instant

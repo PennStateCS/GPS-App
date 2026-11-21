@@ -2,14 +2,14 @@ package app.surrealar.gnss.external
 
 import android.util.Log
 import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
-import app.surrealar.gnss.bus.adapters.GsvMessage
-import app.surrealar.gnss.bus.adapters.NmeaFuser
-import app.surrealar.gnss.bus.adapters.NmeaSource
+import io.github.pennstatecs.geokit.gnss.bus.adapters.GsvMessage
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.gnss.diagnostics.DiagnosticsService
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.nmea.parse.NmeaRegistry
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.nmea.parse.NmeaRegistry
 import app.surrealar.gnss.source.SourceSettings
 import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.CancellationException

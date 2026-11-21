@@ -1,9 +1,9 @@
 package app.surrealar.gnss.bus
 
-import app.surrealar.gnss.bus.adapters.RawNmeaProvider
-import app.surrealar.gnss.bus.adapters.Startable
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.SkySnapshot
+import io.github.pennstatecs.geokit.gnss.bus.adapters.RawNmeaProvider
+import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import app.surrealar.gnss.source.SourceSettings
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.util.DiagnosticsLogger
@@ -45,7 +45,7 @@ class FixSwitchboard(
     private val EmptySky = SkySnapshot(
         satellites = emptyList(),
         epoch = Instant.EPOCH,
-        source = app.surrealar.gnss.model.SkySource.UNKNOWN,
+        source = io.github.pennstatecs.geokit.gnss.model.SkySource.UNKNOWN,
         smoothWindowMs = null
     )
 

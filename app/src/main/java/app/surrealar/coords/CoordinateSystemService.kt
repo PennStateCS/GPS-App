@@ -1,12 +1,12 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.datum.Itrf2014ToNad83
-import app.surrealar.geo.geoid.Geoid18Grid
+import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.geoid.Geoid18Grid
 
 import android.content.Context
 import app.surrealar.domain.model.Coordinate
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.ReceiverDatum
 import app.surrealar.util.DiagnosticsLogger

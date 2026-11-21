@@ -1,13 +1,13 @@
 package app.surrealar.receiver
 
-import app.surrealar.gnss.receiver.ReceiverBattery
-import app.surrealar.gnss.receiver.ReceiverCapabilities
-import app.surrealar.gnss.receiver.ReceiverCorrections
-import app.surrealar.gnss.receiver.ReceiverDevice
-import app.surrealar.gnss.receiver.ReceiverDeviceInfo
-import app.surrealar.gnss.receiver.ReceiverDiscovery
-import app.surrealar.gnss.receiver.ReceiverVendor
-import app.surrealar.gnss.log.GnssLog
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverBattery
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCorrections
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDevice
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDiscovery
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
+import io.github.pennstatecs.geokit.gnss.log.GnssLog
 import app.surrealar.settings.model.ExternalReceiverProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi

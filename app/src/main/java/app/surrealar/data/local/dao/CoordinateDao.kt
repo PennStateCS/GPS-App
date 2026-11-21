@@ -3,7 +3,7 @@ package app.surrealar.data.local.dao
 import androidx.lifecycle.LiveData
 import androidx.room.*
 import app.surrealar.data.local.entity.CoordinateEntity
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import kotlinx.coroutines.flow.Flow
 
 /**

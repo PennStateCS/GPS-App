@@ -2,8 +2,8 @@ package app.surrealar.ui.common
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import app.surrealar.gnss.model.Constellation
-import app.surrealar.gnss.model.SkyGeometry
+import io.github.pennstatecs.geokit.gnss.model.Constellation
+import io.github.pennstatecs.geokit.gnss.model.SkyGeometry
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith

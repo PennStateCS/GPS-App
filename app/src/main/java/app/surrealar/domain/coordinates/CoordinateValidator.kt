@@ -127,7 +127,7 @@ object CoordinateValidator {
         return duplicateGroups
     }
 
-    /** WGS84 geodesic distance in metres (geo-core; was a 6,371 km-sphere haversine). */
+    /** WGS84 geodesic distance in metres (geokit-core; was a 6,371 km-sphere haversine). */
     fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double =
-        app.surrealar.geo.ellipsoid.Geodesic.distanceM(lat1, lon1, lat2, lon2)
+        io.github.pennstatecs.geokit.ellipsoid.Geodesic.distanceM(lat1, lon1, lat2, lon2)
 }

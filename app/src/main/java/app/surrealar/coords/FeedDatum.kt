@@ -1,9 +1,9 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.ellipsoid.GeodeticPosition
-import app.surrealar.geo.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
+import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
 
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Fix
 
 /**
  * Normalises receiver output to WGS84 (ITRF2014) as it enters the GNSS feed.
@@ -27,7 +27,7 @@ object FeedDatum {
         val src = GeodeticPosition(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM ?: 0.0)
         val w = Itrf2014ToNad83.inverse(src, epoch)
         val ellH = fix.altEllipsoidalM?.let { w.heightM }
-        val msl = fix.altMslM   // local copy: Fix lives in gnss-core, so no smart cast across modules
+        val msl = fix.altMslM   // local copy: Fix lives in geokit-gnss, so no smart cast across modules
         val sep = if (ellH != null && msl != null) ellH - msl else fix.geoidSeparationM
         return fix.copy(latDeg = w.latDeg, lonDeg = w.lonDeg, altEllipsoidalM = ellH, geoidSeparationM = sep)
     }

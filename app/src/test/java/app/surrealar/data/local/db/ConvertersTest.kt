@@ -1,8 +1,8 @@
 package app.surrealar.data.local.db
 
 import app.surrealar.domain.model.CorrectionSource
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

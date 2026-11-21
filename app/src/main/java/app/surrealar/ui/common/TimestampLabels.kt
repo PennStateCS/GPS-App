@@ -1,6 +1,6 @@
 package app.surrealar.ui.common
 
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import java.text.SimpleDateFormat
 import java.util.*
 

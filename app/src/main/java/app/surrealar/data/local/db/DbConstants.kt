@@ -1,6 +1,6 @@
 package app.surrealar.data.local.db
 
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import java.util.Locale
 
 /**

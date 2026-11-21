@@ -1,6 +1,6 @@
 package app.surrealar.receiver
 
-import app.surrealar.receiver.emlid.ReachHttpClient
+import io.github.pennstatecs.geokit.receiver.emlid.ReachHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 

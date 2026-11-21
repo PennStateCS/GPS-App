@@ -3,13 +3,13 @@ package app.surrealar.ui.capture
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.surrealar.domain.model.LocationSourceType
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.capture.toAveragingPolicy
-import app.surrealar.gnss.capture.resolvePolicy
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.capture.toAveragingPolicy
+import io.github.pennstatecs.geokit.gnss.capture.resolvePolicy
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.capture.AveragingPolicy
-import app.surrealar.gnss.capture.ObservationSession
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.capture.AveragingPolicy
+import io.github.pennstatecs.geokit.gnss.capture.ObservationSession
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import app.surrealar.domain.repository.SettingsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -93,7 +93,7 @@ class CaptureViewModel @Inject constructor(
             // Saved preset (or Custom fields) for this mode. Fallback = the same defaults the Settings
             // screen shows, so a failed read never silently applies a different policy.
             val settings = runCatching { settingsRepository.gnssCaptureSettings.first() }
-                .getOrDefault(app.surrealar.gnss.capture.GnssCaptureSettings())
+                .getOrDefault(io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings())
             start(settings.resolvePolicy(internal), internal)
         }
     }
@@ -133,8 +133,8 @@ class CaptureViewModel @Inject constructor(
         // NMEA replay fixes (Provider.REPLAY) are never averaged into a saved point.
         val modeFixes = fixSwitchboard.fixes.filter {
             it !== replayedBeforeStart &&
-                it.provider != app.surrealar.gnss.model.Provider.REPLAY &&
-                (it.provider == app.surrealar.gnss.model.Provider.INTERNAL) == internal
+                it.provider != io.github.pennstatecs.geokit.gnss.model.Provider.REPLAY &&
+                (it.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) == internal
         }
         val s = ObservationSession(viewModelScope, modeFixes, policy)
         session = s

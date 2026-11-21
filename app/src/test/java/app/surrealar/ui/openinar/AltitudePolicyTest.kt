@@ -1,6 +1,6 @@
 package app.surrealar.ui.openinar
 
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.ui.openinar.AltitudePolicy.Choice
 import org.junit.Assert.assertEquals
 import org.junit.Test

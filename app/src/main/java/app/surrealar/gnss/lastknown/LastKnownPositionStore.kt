@@ -2,7 +2,7 @@ package app.surrealar.gnss.lastknown
 
 import android.content.Context
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.filterNotNull
@@ -73,8 +73,8 @@ class LastKnownPositionStore @Inject constructor(
             return approxDistanceM(prev.latDeg, prev.lonDeg, next.latDeg, next.lonDeg) >= MIN_MOVE_M
         }
 
-        /** WGS84 geodesic distance (geo-core; was an equirectangular 111,320 m/° approximation). */
+        /** WGS84 geodesic distance (geokit-core; was an equirectangular 111,320 m/° approximation). */
         internal fun approxDistanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double =
-            app.surrealar.geo.ellipsoid.Geodesic.distanceM(lat1, lon1, lat2, lon2)
+            io.github.pennstatecs.geokit.ellipsoid.Geodesic.distanceM(lat1, lon1, lat2, lon2)
     }
 }

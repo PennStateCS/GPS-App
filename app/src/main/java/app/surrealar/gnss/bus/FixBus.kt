@@ -1,7 +1,7 @@
 package app.surrealar.gnss.bus
 
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.SkySnapshot
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 

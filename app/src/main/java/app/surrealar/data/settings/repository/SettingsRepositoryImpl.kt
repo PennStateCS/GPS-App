@@ -4,11 +4,11 @@ import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.data.settings.datastore.SettingsLocalDataSource
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.model.ExternalConnectionType
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.settings.model.ArDisplaySettings
 import app.surrealar.settings.model.CoordinateDisplaySettings
 import app.surrealar.settings.model.DeveloperSettings
-import app.surrealar.gnss.capture.GnssCaptureSettings
+import io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings
 import app.surrealar.settings.model.AppThemeMode
 import app.surrealar.settings.model.AppearanceSettings
 import app.surrealar.gnss.settings.GnssReceiverSettings
@@ -105,7 +105,7 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             minSamples        = minSamples,
             maxFixAgeSec      = x.maxFix,
             maxDiffAgeSec     = x.maxDiff,
-            preset            = app.surrealar.gnss.capture.CapturePreset.fromPrefKey(x.preset),
+            preset            = io.github.pennstatecs.geokit.gnss.capture.CapturePreset.fromPrefKey(x.preset),
             precisionTargetM  = x.target
         )
     }

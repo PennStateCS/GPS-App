@@ -30,11 +30,11 @@ import app.surrealar.databinding.FragmentHomeBinding
 import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.domain.repository.SettingsRepository
-import app.surrealar.gnss.model.FixSnapshot
+import io.github.pennstatecs.geokit.gnss.model.FixSnapshot
 import app.surrealar.gnss.diagnostics.NmeaLogStats
 import app.surrealar.settings.model.ExternalReceiverSettings
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.ui.components.FixBadgeView
@@ -44,7 +44,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.LocationSource
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.util.DiagnosticsLogger
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -369,7 +369,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         source: LocationSourceType,
         receiver: ExternalReceiverSettings,
         diag: app.surrealar.gnss.diagnostics.DiagnosticData,
-        sky: app.surrealar.gnss.model.SkySnapshot,
+        sky: io.github.pennstatecs.geokit.gnss.model.SkySnapshot,
     ): HomeFieldStatusMapper.FieldStatus {
         // A usable fix is signalled by valid coordinates — NOT by comparing the fix's GNSS/UTC
         // timestamp to the device wall clock, which can be skewed (or even ahead of) device time

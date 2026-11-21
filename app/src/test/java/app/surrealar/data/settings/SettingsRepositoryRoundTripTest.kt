@@ -14,8 +14,8 @@ import app.surrealar.domain.repository.GnssCaptureSettingsRepository
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
-import app.surrealar.gnss.capture.GnssCaptureSettings
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.settings.SettingsDefaults
 import app.surrealar.settings.model.AppThemeMode
 import app.surrealar.settings.model.AppearanceSettings

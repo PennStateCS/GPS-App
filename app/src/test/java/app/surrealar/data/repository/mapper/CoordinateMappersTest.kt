@@ -3,10 +3,10 @@ package app.surrealar.data.repository.mapper
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.model.displayIconKey
 import app.surrealar.domain.model.linkedModelId
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows

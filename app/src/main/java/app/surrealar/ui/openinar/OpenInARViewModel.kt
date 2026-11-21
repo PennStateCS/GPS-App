@@ -9,7 +9,7 @@ import app.surrealar.domain.repository.GnssReceiverSettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.settings.model.ArDisplaySettings
 import app.surrealar.util.DiagnosticsLogger
-import app.surrealar.geo.ellipsoid.Geodesic
+import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

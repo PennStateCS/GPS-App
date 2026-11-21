@@ -1,13 +1,13 @@
 package app.surrealar.ui.toolbar
 
 import app.surrealar.domain.model.LocationSourceType
-import app.surrealar.gnss.accuracy.AccuracyEstimator
-import app.surrealar.gnss.accuracy.UereTable
+import io.github.pennstatecs.geokit.gnss.accuracy.AccuracyEstimator
+import io.github.pennstatecs.geokit.gnss.accuracy.UereTable
 import app.surrealar.gnss.format.GnssStatusFormatter
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.SkySnapshot
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import java.util.Locale
 
 /** Result of mapping live GNSS inputs: either render a state, or ignore this fix (with a reason). */

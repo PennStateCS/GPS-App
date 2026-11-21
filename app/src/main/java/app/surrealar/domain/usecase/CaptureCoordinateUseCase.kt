@@ -3,8 +3,8 @@ package app.surrealar.domain.usecase
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.model.CoordinateFactory
 import app.surrealar.domain.repository.CoordinateRepository
-import app.surrealar.gnss.capture.CaptureResult
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.capture.CaptureResult
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import java.util.UUID
 import javax.inject.Inject
 

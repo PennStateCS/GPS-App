@@ -1,7 +1,7 @@
 package app.surrealar.data.repository.mapper
 
 import app.surrealar.domain.model.Coordinate
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

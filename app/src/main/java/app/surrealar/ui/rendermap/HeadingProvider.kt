@@ -2,9 +2,9 @@ package app.surrealar.ui.rendermap
 
 import android.hardware.GeomagneticField
 import android.hardware.SensorManager
-import app.surrealar.geo.heading.HeadingMath
+import io.github.pennstatecs.geokit.heading.HeadingMath
 import app.surrealar.gnss.lastknown.LastKnownPosition
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Fix
 
 /**
  * Turns rotation-vector readings into a TRUE heading (degrees from true north, 0–360).

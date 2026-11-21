@@ -33,8 +33,8 @@ import app.surrealar.domain.model.displayIconKey
 import app.surrealar.domain.model.hasLinkedModel
 import app.surrealar.domain.model.linkedModelId
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.ui.map.MapThemeHelper
 import app.surrealar.ui.viewpoints.CoordinatesViewModel
 import com.google.android.gms.maps.CameraUpdateFactory
@@ -65,7 +65,7 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.atan2
-import app.surrealar.geo.projection.Utm
+import io.github.pennstatecs.geokit.projection.Utm
 import app.surrealar.util.diagnostics.MapRuntimeDiagnostics
 import kotlin.math.cos
 import kotlin.math.min
@@ -646,8 +646,8 @@ class RenderMapFragment : Fragment() {
                         .sample(250)
                         .collect { (fix, src) ->
                             val matches = if (src == app.surrealar.domain.model.LocationSourceType.INTERNAL)
-                                fix.provider == app.surrealar.gnss.model.Provider.INTERNAL
-                            else fix.provider != app.surrealar.gnss.model.Provider.INTERNAL
+                                fix.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL
+                            else fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL
                             if (matches) updateLiveTracking(fix) else clearLiveMarker()
                         }
                 } catch (e: Exception) {
@@ -758,7 +758,7 @@ class RenderMapFragment : Fragment() {
         if (!isStakeoutMode) return
         lastStakeoutFixElapsedMs = android.os.SystemClock.elapsedRealtime()
         try {
-            // Distance + bearing: WGS84 geodesic (geo-core Geodesic).
+            // Distance + bearing: WGS84 geodesic (geokit-core Geodesic).
             val distance = calculateDistance(currentPos, target)
             val bearing = calculateBearing(currentPos, target)
             // Distance in the units chosen under Settings → Coordinates.
@@ -826,8 +826,8 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    /** 8-point compass abbreviation for a bearing in degrees (display-only; geo-core helper). */
-    private fun compassPoint(bearing: Double): String = app.surrealar.geo.heading.Compass.point8(bearing)
+    /** 8-point compass abbreviation for a bearing in degrees (display-only; geokit-core helper). */
+    private fun compassPoint(bearing: Double): String = io.github.pennstatecs.geokit.heading.Compass.point8(bearing)
 
     /** Human-readable "move" word for a bearing (display-only). */
     private fun compassDirectionWord(bearing: Double): String = when (compassPoint(bearing)) {
@@ -843,7 +843,7 @@ class RenderMapFragment : Fragment() {
 
     /** Local north/east offsets (metres) from [from] to [to] — same WGS84 frame as distance/bearing. */
     private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> =
-        app.surrealar.geo.ellipsoid.Geodesic.northEastDeltaM(from.latitude, from.longitude, to.latitude, to.longitude).let { it.northM to it.eastM }
+        io.github.pennstatecs.geokit.ellipsoid.Geodesic.northEastDeltaM(from.latitude, from.longitude, to.latitude, to.longitude).let { it.northM to it.eastM }
 
     // ── Stakeout guidance mode (display + feedback only) ───────────────────────
 
@@ -1702,7 +1702,7 @@ class RenderMapFragment : Fragment() {
             txtSelectedDistance?.text = "Distance: " + formatDistanceMeters(dist)
             txtSelectedBearing?.text = String.format(
                 Locale.getDefault(), "Bearing: %s %.0f°",
-                app.surrealar.geo.heading.Compass.point8(bearing), bearing
+                io.github.pennstatecs.geokit.heading.Compass.point8(bearing), bearing
             )
             layoutSelectedLive?.visibility = View.VISIBLE
         } else {
@@ -2045,7 +2045,7 @@ class RenderMapFragment : Fragment() {
 
     /**
      * Draws a UTM-aligned metre grid: vertical lines on round easting multiples, horizontal lines on
-     * round northing multiples of [spacingMeters], using geo-core's [Utm] (forward +
+     * round northing multiples of [spacingMeters], using geokit-core's [Utm] (forward +
      * inverse). Lines are capped per axis for performance/readability. Straight polylines between the
      * converted endpoints are an acceptable approximation at survey zoom levels (single UTM zone).
      */
@@ -2274,16 +2274,16 @@ class RenderMapFragment : Fragment() {
 
     // ── Math helpers ───────────────────────────────────────────────────────────
 
-    // WGS84 geodesic (geo-core) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
+    // WGS84 geodesic (geokit-core) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
     private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double =
-        app.surrealar.geo.ellipsoid.Geodesic.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
+        io.github.pennstatecs.geokit.ellipsoid.Geodesic.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
 
     private fun calculateHeadingChange(h1: Double, h2: Double): Double {
         val diff = abs(h2 - h1); return min(diff, 360.0 - diff)
     }
 
     private fun calculateBearing(from: LatLng, to: LatLng): Double =
-        app.surrealar.geo.ellipsoid.Geodesic.initialBearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
+        io.github.pennstatecs.geokit.ellipsoid.Geodesic.initialBearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
 
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 

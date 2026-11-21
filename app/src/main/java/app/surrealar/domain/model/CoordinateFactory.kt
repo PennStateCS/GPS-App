@@ -1,10 +1,10 @@
 package app.surrealar.domain.model
 
-import app.surrealar.gnss.model.FixSnapshot
-import app.surrealar.gnss.capture.CaptureResult
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.TimestampSource
-import app.surrealar.geo.projection.Utm
+import io.github.pennstatecs.geokit.gnss.model.FixSnapshot
+import io.github.pennstatecs.geokit.gnss.capture.CaptureResult
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.projection.Utm
 import java.time.Duration
 
 /**
@@ -43,7 +43,7 @@ object CoordinateFactory {
         sourceDevice: String? = null,
         appVersion: String? = null
     ): Coordinate {
-        // Local copies: FixSnapshot lives in gnss-core, so its properties can't be smart-cast here.
+        // Local copies: FixSnapshot lives in geokit-gnss, so its properties can't be smart-cast here.
         val fixLat = fix.lat
         val fixLon = fix.lon
         val (utmEasting, utmNorthing, utmZone) = if (fixLat != null && fixLon != null &&

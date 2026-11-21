@@ -12,8 +12,8 @@ import androidx.annotation.ColorRes
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import app.surrealar.R
-import app.surrealar.gnss.model.SkyGeometry
-import app.surrealar.gnss.model.Constellation
+import io.github.pennstatecs.geokit.gnss.model.SkyGeometry
+import io.github.pennstatecs.geokit.gnss.model.Constellation
 import kotlin.math.max
 import kotlin.math.min
 

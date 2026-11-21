@@ -12,8 +12,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import androidx.core.graphics.toColorInt
-import app.surrealar.gnss.model.SkyGeometry
-import app.surrealar.gnss.model.Constellation
+import io.github.pennstatecs.geokit.gnss.model.SkyGeometry
+import io.github.pennstatecs.geokit.gnss.model.Constellation
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min

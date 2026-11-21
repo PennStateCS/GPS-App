@@ -1,10 +1,10 @@
 package app.surrealar.gnss.bus
 
-import app.surrealar.gnss.bus.adapters.Startable
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import app.surrealar.gnss.source.ConnectionProfile
 import app.surrealar.gnss.source.SourceSettings
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice

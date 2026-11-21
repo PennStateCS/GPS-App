@@ -16,7 +16,7 @@ import app.surrealar.gnss.mock.AndroidMockLocationPublisher
 import app.surrealar.settings.model.ArDisplaySettings
 import app.surrealar.settings.model.CoordinateDisplaySettings
 import app.surrealar.settings.model.DeveloperSettings
-import app.surrealar.gnss.capture.GnssCaptureSettings
+import io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings
 import app.surrealar.gnss.settings.GnssReceiverSettings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -29,9 +29,9 @@ import app.surrealar.R
 import app.surrealar.SurRealApplication
 import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.model.Coordinate
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
@@ -647,7 +647,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val zoneRow = view.findViewById<View>(R.id.row_coord_spcs_zone)
         val spinnerZ = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
         val zoneHint = view.findViewById<android.widget.TextView>(R.id.text_coord_zone_hint)
-        val zones = app.surrealar.geo.projection.SpcsZones.all.sortedBy { it.label }
+        val zones = io.github.pennstatecs.geokit.projection.SpcsZones.all.sortedBy { it.label }
         val zoneByLabel = zones.associateBy { it.label }
         val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter."
         var suggestedZoneEpsg: Int? = null
@@ -684,7 +684,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             spinnerU?.setText(s.unit.label, false)
             spinnerV?.setText(s.vertical.label, false)
             spinnerR?.setText(s.externalReceiverDatum.label, false)
-            val zone = app.surrealar.geo.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)
+            val zone = io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)
             zoneRow?.visibility = if (s.horizontal.isStatePlane) View.VISIBLE else View.GONE
             if (spinnerZ?.hasFocus() != true) spinnerZ?.setText(zone?.label.orEmpty(), false)
             // Hint: suggestion notice, or a warning when the live position is outside the chosen zone.
@@ -717,9 +717,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             // Switching to State Plane: if the saved zone doesn't cover the live position, suggest one.
             val fix = fixSwitchboard.currentFix.value
             if (h.isStatePlane && fix != null &&
-                app.surrealar.geo.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.contains(fix.latDeg, fix.lonDeg) != true
+                io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.contains(fix.latDeg, fix.lonDeg) != true
             ) {
-                app.surrealar.geo.projection.SpcsZone.suggestFor(fix.latDeg, fix.lonDeg)?.let {
+                io.github.pennstatecs.geokit.projection.SpcsZone.suggestFor(fix.latDeg, fix.lonDeg)?.let {
                     next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg
                 }
             }
@@ -734,7 +734,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
         // Leaving the field without picking restores the saved zone's name.
         spinnerZ?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) spinnerZ.setText(app.surrealar.geo.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
+            if (!hasFocus) spinnerZ.setText(io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
         }
         spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { save(current.copy(datum = it)) } }
         spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { save(current.copy(unit = it)) } }
@@ -905,21 +905,21 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val textPresetSummary = view.findViewById<android.widget.TextView>(R.id.text_capture_preset_summary)
             val editPrecision = view.findViewById<EditText>(R.id.edit_precision_target)
             val tilPrecision = editPrecision?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
-            val presets = app.surrealar.gnss.capture.CapturePreset.entries
+            val presets = io.github.pennstatecs.geokit.gnss.capture.CapturePreset.entries
             spinnerPreset?.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, presets.map { it.label }))
-            var currentPreset = app.surrealar.gnss.capture.CapturePreset.DEFAULT
+            var currentPreset = io.github.pennstatecs.geokit.gnss.capture.CapturePreset.DEFAULT
 
             /** One line per mode describing what the selected preset will do. */
-            fun describe(p: app.surrealar.gnss.capture.AveragingPolicy): String {
+            fun describe(p: io.github.pennstatecs.geokit.gnss.capture.AveragingPolicy): String {
                 val q = app.surrealar.gnss.format.GnssStatusFormatter.formatCaptureFixStatus(p.requiredMinStatus.name)
                 val precision = p.horizontalPrecisionTargetM?.let { " · spread ≤ ${"%.3f".format(java.util.Locale.US, it).trimEnd('0').trimEnd('.')} m" } ?: ""
                 return "${p.minDurationSec}–${p.maxDurationSec} s · ${p.minSamples} fixes · $q+$precision"
             }
-            fun applyPresetUi(preset: app.surrealar.gnss.capture.CapturePreset) {
+            fun applyPresetUi(preset: io.github.pennstatecs.geokit.gnss.capture.CapturePreset) {
                 currentPreset = preset
-                val custom = preset == app.surrealar.gnss.capture.CapturePreset.CUSTOM
+                val custom = preset == io.github.pennstatecs.geokit.gnss.capture.CapturePreset.CUSTOM
                 textPresetSummary?.text = if (custom)
-                    "Custom: external receiver uses the rules below. Device GNSS: ${describe(app.surrealar.gnss.capture.AveragingPolicy.INTERNAL)}."
+                    "Custom: external receiver uses the rules below. Device GNSS: ${describe(io.github.pennstatecs.geokit.gnss.capture.AveragingPolicy.INTERNAL)}."
                 else
                     "External receiver: ${describe(preset.external!!)}\nDevice GNSS: ${describe(preset.internal!!)}"
                 // The detailed fields only apply to Custom; show them read-only otherwise.
@@ -2431,7 +2431,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     }
 
     // ───────────────────────────── Model Conversion Helper ─────────────────────────────
-    private fun convertToEmlidDeviceInfo(reachInfo: app.surrealar.gnss.receiver.ReceiverDeviceInfo): EmlidDeviceInfo {
+    private fun convertToEmlidDeviceInfo(reachInfo: io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo): EmlidDeviceInfo {
         return EmlidDeviceInfo(
             deviceName = reachInfo.name ?: reachInfo.host ?: "Unknown Device",
             ipAddress = reachInfo.host ?: "Unknown IP",

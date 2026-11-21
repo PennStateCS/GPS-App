@@ -1,6 +1,6 @@
 package app.surrealar.ui.home
 
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.ui.home.HomeFieldStatusMapper.Action
 import app.surrealar.ui.home.HomeFieldStatusMapper.Severity
 import app.surrealar.ui.home.HomeFieldStatusMapper.State

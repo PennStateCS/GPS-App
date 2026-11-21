@@ -4,7 +4,7 @@ package app.surrealar.stakeout
  * Pure (Android-free) stakeout guidance state + logic.
  *
  * This is display/feedback logic only. It consumes distance/bearing values that are computed by the
- * map math (WGS84 geodesic distance + bearing from geo-core, called in `RenderMapFragment`) and turns
+ * map math (WGS84 geodesic distance + bearing from geokit-core, called in `RenderMapFragment`) and turns
  * them into a navigation status, a relative arrow angle, and direction text. It deliberately does
  * NOT compute distance or bearing itself, so the existing stakeout math is untouched.
  */
@@ -133,8 +133,8 @@ object StakeoutGuidance {
         return HeadingSource.NORTH_UP to null
     }
 
-    /** Human "move <word>" direction for a bearing (compass point from geo-core's [Compass]). */
-    fun directionWord(bearingDeg: Double): String = when (app.surrealar.geo.heading.Compass.point8(bearingDeg)) {
+    /** Human "move <word>" direction for a bearing (compass point from geokit-core's [Compass]). */
+    fun directionWord(bearingDeg: Double): String = when (io.github.pennstatecs.geokit.heading.Compass.point8(bearingDeg)) {
         "N" -> "north"
         "NE" -> "northeast"
         "E" -> "east"

@@ -1,8 +1,8 @@
 package app.surrealar.receiver
 
 import android.content.Context
-import app.surrealar.gnss.receiver.DiscoveredReceiver
-import app.surrealar.gnss.receiver.ReceiverDiscovery
+import io.github.pennstatecs.geokit.gnss.receiver.DiscoveredReceiver
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDiscovery
 import app.surrealar.settings.model.ExternalReceiverProfile
 import app.surrealar.util.ReachDiscoveryHelper
 import kotlinx.coroutines.flow.toList

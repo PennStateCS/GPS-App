@@ -1,7 +1,7 @@
-"""Generate UTM test vectors with PROJ (via pyproj) for geo-core's Utm tests.
+"""Generate UTM test vectors with PROJ (via pyproj) for geokit-core's Utm tests.
 
 Usage (repo root):
-    python geo-core/tools/utm/gen_utm_vectors.py geo-core/src/test/resources/utm/utm_vectors.csv
+    python libs/geokit-core/tools/utm/gen_utm_vectors.py libs/geokit-core/src/test/resources/utm/utm_vectors.csv
 
 Output columns: zone,hemisphere,lat,lon,easting,northing
   - WGS84 geographic (EPSG:4326) -> WGS 84 / UTM zone N (EPSG:326zz) or S (EPSG:327zz).

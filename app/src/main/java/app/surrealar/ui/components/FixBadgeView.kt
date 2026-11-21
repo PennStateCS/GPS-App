@@ -7,7 +7,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import app.surrealar.R
-import app.surrealar.gnss.model.FixSnapshot
+import io.github.pennstatecs.geokit.gnss.model.FixSnapshot
 import app.surrealar.gnss.diagnostics.NmeaLogStats
 import app.surrealar.ui.common.formatTimestampWithCompactBadge
 import java.util.Locale

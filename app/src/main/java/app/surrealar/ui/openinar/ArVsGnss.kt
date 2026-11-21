@@ -1,6 +1,6 @@
 package app.surrealar.ui.openinar
 
-import app.surrealar.geo.ellipsoid.Geodesic
+import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 import kotlin.math.hypot
 
 /**

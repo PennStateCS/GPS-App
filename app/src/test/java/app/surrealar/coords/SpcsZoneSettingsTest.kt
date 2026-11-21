@@ -1,6 +1,6 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.projection.SpcsZones
+import io.github.pennstatecs.geokit.projection.SpcsZones
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.HorizontalSystem
 import app.surrealar.settings.model.LinearUnit
@@ -11,7 +11,7 @@ import org.junit.Test
 
 /**
  * The app side of State Plane: the converter's use of the selected zone and the persisted setting.
- * (Moved out of SpcsZonesTest when the zone math moved to :geo-core; the pure zone tests live there.)
+ * (Moved out of SpcsZonesTest when the zone math moved to :geokit-core; the pure zone tests live there.)
  */
 class SpcsZoneSettingsTest {
 

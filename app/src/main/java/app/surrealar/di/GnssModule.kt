@@ -7,16 +7,16 @@ import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.bus.FixBus
 import app.surrealar.gnss.bus.SkyBus
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.bus.adapters.NmeaSource
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
 import app.surrealar.gnss.diagnostics.DiagnosticsService
 import app.surrealar.gnss.external.ExternalAdapter
 import app.surrealar.gnss.external.TcpNmeaSource
 import app.surrealar.gnss.internal.InternalAdapter
 import app.surrealar.gnss.internal.InternalNmeaSource
-import app.surrealar.gnss.nmea.parse.*
+import io.github.pennstatecs.geokit.gnss.nmea.parse.*
 import app.surrealar.gnss.source.SourceSettings
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
-import app.surrealar.gnss.satellites.SatelliteInventory
+import io.github.pennstatecs.geokit.gnss.satellites.SatelliteInventory
 import app.surrealar.util.DiagnosticsLogger
 import dagger.Module
 import dagger.Provides
@@ -227,7 +227,7 @@ object GnssModule {
                 ProviderChoice.REPLAY       to replayAdapter,
             ),
             fixTransform   = { fix ->
-                if (fix.provider != app.surrealar.gnss.model.Provider.INTERNAL &&
+                if (fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL &&
                     rxDatum.value == app.surrealar.settings.model.ReceiverDatum.NAD83_2011
                 ) app.surrealar.coords.FeedDatum.nad83ToWgs84(fix) else fix
             },

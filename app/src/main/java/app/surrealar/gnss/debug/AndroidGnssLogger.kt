@@ -1,12 +1,12 @@
 package app.surrealar.gnss.debug
 
 import android.util.Log
-import app.surrealar.gnss.log.DiagnosticLevel
-import app.surrealar.gnss.log.GnssLogger
+import io.github.pennstatecs.geokit.gnss.log.DiagnosticLevel
+import io.github.pennstatecs.geokit.gnss.log.GnssLogger
 import app.surrealar.util.DiagnosticsLogger
 
 /**
- * The app's [GnssLogger]: sends gnss-core's log calls to exactly the places they went before the
+ * The app's [GnssLogger]: sends geokit-gnss's log calls to exactly the places they went before the
  * module existed. Installed once in SurRealApplication.onCreate.
  *
  * - d/i/w/e → android.util.Log (logcat only), same tag and message.

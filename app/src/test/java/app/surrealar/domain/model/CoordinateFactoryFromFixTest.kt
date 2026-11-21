@@ -1,7 +1,7 @@
 package app.surrealar.domain.model
 
-import app.surrealar.gnss.model.FixSnapshot
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.model.FixSnapshot
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

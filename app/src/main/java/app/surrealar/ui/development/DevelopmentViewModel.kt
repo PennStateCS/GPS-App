@@ -2,16 +2,16 @@ package app.surrealar.ui.development
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import app.surrealar.gnss.receiver.ReceiverBattery
-import app.surrealar.gnss.receiver.ReceiverCapabilities
-import app.surrealar.gnss.receiver.ReceiverDeviceInfo
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverBattery
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo
 import app.surrealar.receiver.ReceiverDeviceManager
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.bus.SkyBus
 import app.surrealar.gnss.diagnostics.DiagnosticData
 import app.surrealar.gnss.diagnostics.DiagnosticsService
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.SkySnapshot
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import app.surrealar.gnss.source.SourceSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow

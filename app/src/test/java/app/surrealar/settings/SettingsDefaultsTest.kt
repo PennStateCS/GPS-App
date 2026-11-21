@@ -2,7 +2,7 @@ package app.surrealar.settings
 
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.settings.model.AppThemeMode
 import app.surrealar.settings.model.ExternalReceiverProfile
 import org.junit.Assert.assertEquals

@@ -11,9 +11,9 @@ import android.util.Log
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.capture.FixFreshnessGate
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.capture.FixFreshnessGate
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -250,10 +250,10 @@ class AndroidMockLocationPublisher(
      * Placeholder horizontal accuracy (m, ~68%) by solution type when the receiver sends no GST.
      * Conservative for each class: RTK fixed is cm-level, float decimetres, DGPS ~1 m.
      */
-    internal fun fallbackHorizontalAccuracyM(status: app.surrealar.gnss.model.RtkStatus): Float = when (status) {
-        app.surrealar.gnss.model.RtkStatus.FIX   -> 0.05f
-        app.surrealar.gnss.model.RtkStatus.FLOAT -> 0.5f
-        app.surrealar.gnss.model.RtkStatus.DGPS  -> 1.5f
+    internal fun fallbackHorizontalAccuracyM(status: io.github.pennstatecs.geokit.gnss.model.RtkStatus): Float = when (status) {
+        io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX   -> 0.05f
+        io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT -> 0.5f
+        io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS  -> 1.5f
         else -> 5.0f
     }
 

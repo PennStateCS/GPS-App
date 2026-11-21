@@ -2,12 +2,12 @@ package app.surrealar.di
 
 import android.content.Context
 import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
-import app.surrealar.gnss.receiver.ReceiverVendor
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
 import app.surrealar.gnss.source.SourceSettings
 import app.surrealar.receiver.EmlidDiscovery
 import app.surrealar.receiver.GenericNmeaDevice
 import app.surrealar.receiver.ReceiverDeviceManager
-import app.surrealar.receiver.emlid.EmlidReachDevice
+import io.github.pennstatecs.geokit.receiver.emlid.EmlidReachDevice
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn

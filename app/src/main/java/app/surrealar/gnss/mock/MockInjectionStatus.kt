@@ -41,7 +41,7 @@ object MockInjectionStatus {
     /** True when a placeholder accuracy was injected because the source fix had none. */
     @Volatile var lastInjectedHAccWasFallback: Boolean = false
 
-    /** The source GNSS [app.surrealar.gnss.model.Provider] name that drove the last injection. */
+    /** The source GNSS [io.github.pennstatecs.geokit.gnss.model.Provider] name that drove the last injection. */
     @Volatile var lastSourceFixProvider: String? = null
     /** Epoch ms of the source fix's own timestamp (fix.timeUtc); 0 = unknown. */
     @Volatile var lastSourceFixTimeMs: Long = 0L

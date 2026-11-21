@@ -1,17 +1,17 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.ellipsoid.GeodeticPosition
-import app.surrealar.geo.datum.Itrf2014ToNad83
-import app.surrealar.geo.geoid.Geoid18Grid
-import app.surrealar.geo.projection.SpcsZone
-import app.surrealar.geo.projection.SpcsZones
+import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
+import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.geoid.Geoid18Grid
+import io.github.pennstatecs.geokit.projection.SpcsZone
+import io.github.pennstatecs.geokit.projection.SpcsZones
 
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.HorizontalSystem
 import app.surrealar.settings.model.LinearUnit
 import app.surrealar.settings.model.OutputDatum
 import app.surrealar.settings.model.VerticalReference
-import app.surrealar.geo.projection.Utm
+import io.github.pennstatecs.geokit.projection.Utm
 import java.util.Locale
 
 /** EPSG codes recorded in Coordinate.crsEpsg for the datum of stored lat/lon/height. */

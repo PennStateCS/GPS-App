@@ -19,7 +19,7 @@ import app.surrealar.R
 import app.surrealar.data.export.CsvExporter
 import app.surrealar.data.export.GeoJsonExporter
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject

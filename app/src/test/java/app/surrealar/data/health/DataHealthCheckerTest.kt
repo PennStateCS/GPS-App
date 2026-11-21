@@ -4,7 +4,7 @@ import app.surrealar.data.local.dao.CoordinateDao
 import app.surrealar.data.local.dao.ModelDao
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.data.local.entity.ModelEntity
-import app.surrealar.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.Provider
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock

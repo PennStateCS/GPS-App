@@ -46,7 +46,7 @@ import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.ui.models.ModelViewerActivity
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.GlbGeoreferenceDetector
-import app.surrealar.geo.projection.Utm
+import io.github.pennstatecs.geokit.projection.Utm
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.imageview.ShapeableImageView

@@ -2,7 +2,7 @@ package app.surrealar.data.export
 
 import android.content.Context
 import android.os.Environment
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

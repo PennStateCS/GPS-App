@@ -10,7 +10,7 @@ import app.surrealar.data.settings.repository.SettingsRepositoryImpl
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.mock.AndroidMockLocationPublisher
-import app.surrealar.geo.projection.Utm
+import io.github.pennstatecs.geokit.projection.Utm
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.EntryPoint
@@ -19,7 +19,7 @@ import dagger.hilt.components.SingletonComponent
 import androidx.appcompat.app.AppCompatDelegate
 import app.surrealar.settings.model.AppThemeMode
 import app.surrealar.gnss.debug.AndroidGnssLogger
-import app.surrealar.gnss.log.GnssLog
+import io.github.pennstatecs.geokit.gnss.log.GnssLog
 import app.surrealar.util.DiagnosticsLogger
 import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
@@ -34,7 +34,7 @@ interface SurRealApplicationEntryPoint {
     fun sourceSettings(): app.surrealar.gnss.source.SourceSettings
     fun gnssSourceCoordinator(): app.surrealar.gnss.source.GnssSourceCoordinator
     /** The external TCP NMEA source (for reading its fuser's diagnostics stats). */
-    fun externalNmeaSource(): app.surrealar.gnss.bus.adapters.NmeaSource
+    fun externalNmeaSource(): io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
     fun settingsRepository(): SettingsRepository
     fun coordinateRepository(): app.surrealar.domain.repository.CoordinateRepository
     fun modelRepository(): app.surrealar.domain.repository.ModelRepository
@@ -77,7 +77,7 @@ class SurRealApplication : Application() {
     }
 
     override fun onCreate() {
-        // gnss-core logs through GnssLog; route it to logcat / DiagnosticsLogger / GnssDebugLog before
+        // geokit-gnss logs through GnssLog; route it to logcat / DiagnosticsLogger / GnssDebugLog before
         // Hilt (super.onCreate) builds any GNSS singleton.
         GnssLog.install(AndroidGnssLogger)
         super.onCreate()

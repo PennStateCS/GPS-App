@@ -67,8 +67,8 @@ private const val TOOLBAR_REFRESH_MS = 250L
 
 /** One toolbar update: live fix, sky, selected source, and the fix in the user's coordinate system. */
 private data class ToolbarInputs(
-    val fix: app.surrealar.gnss.model.Fix?,
-    val sky: app.surrealar.gnss.model.SkySnapshot,
+    val fix: io.github.pennstatecs.geokit.gnss.model.Fix?,
+    val sky: io.github.pennstatecs.geokit.gnss.model.SkySnapshot,
     val source: app.surrealar.domain.model.LocationSourceType,
     val coords: app.surrealar.coords.ConvertedPosition?,
 )
@@ -97,7 +97,7 @@ class MainActivity : AppCompatActivity() {
 
     // Track latest sky snapshot for accurate satellite counts
     @Volatile
-    private var latestSkySnapshot: app.surrealar.gnss.model.SkySnapshot? = null
+    private var latestSkySnapshot: io.github.pennstatecs.geokit.gnss.model.SkySnapshot? = null
 
     // Hilt injected GNSS components
     @Inject lateinit var switchboard: FixSwitchboard

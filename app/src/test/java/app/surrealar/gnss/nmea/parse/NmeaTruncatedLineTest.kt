@@ -1,10 +1,11 @@
 package app.surrealar.gnss.nmea.parse
 
 import app.surrealar.di.GnssModule
-import app.surrealar.gnss.bus.adapters.NmeaFuser
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.nmea.sentence.GGA
+import io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.nmea.sentence.GGA
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -56,7 +57,7 @@ class NmeaTruncatedLineTest {
         return "$" + payload + "*" + "%02X".format(cs)
     }
 
-    // "missing hemisphere is not read as positive" moved to gnss-core's NmeaCoordinateUtilsTest
+    // "missing hemisphere is not read as positive" moved to geokit-gnss's NmeaCoordinateUtilsTest
     // (NmeaCoordinateUtils is internal to the module).
 
     @Test fun `even a lenient registry gives no position for the truncated GGA`() {

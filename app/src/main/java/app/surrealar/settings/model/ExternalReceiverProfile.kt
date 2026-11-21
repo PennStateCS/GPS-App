@@ -1,12 +1,12 @@
 package app.surrealar.settings.model
 
-import app.surrealar.gnss.nmea.parse.EbpParser
-import app.surrealar.gnss.nmea.parse.EtcParser
-import app.surrealar.gnss.nmea.parse.SentenceParser
-import app.surrealar.gnss.nmea.sentence.NmeaSentence
-import app.surrealar.gnss.receiver.AccuracyClass
-import app.surrealar.gnss.receiver.ReceiverCapabilities
-import app.surrealar.gnss.receiver.ReceiverVendor
+import io.github.pennstatecs.geokit.gnss.nmea.parse.EbpParser
+import io.github.pennstatecs.geokit.gnss.nmea.parse.EtcParser
+import io.github.pennstatecs.geokit.gnss.nmea.parse.SentenceParser
+import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
+import io.github.pennstatecs.geokit.gnss.receiver.AccuracyClass
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
 
 /**
  * Selectable external-receiver *profile*. This is metadata only — every profile uses the same live

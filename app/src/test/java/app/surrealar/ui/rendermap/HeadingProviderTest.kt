@@ -2,11 +2,11 @@ package app.surrealar.ui.rendermap
 
 import android.hardware.SensorManager
 import android.view.Surface
-import app.surrealar.geo.heading.HeadingMath
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.heading.HeadingMath
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

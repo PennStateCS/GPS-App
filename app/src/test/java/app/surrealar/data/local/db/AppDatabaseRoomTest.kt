@@ -11,8 +11,8 @@ import app.surrealar.data.repository.impl.CoordinateRepositoryImpl
 import app.surrealar.data.repository.mapper.toDomain
 import app.surrealar.data.repository.mapper.toEntity
 import app.surrealar.domain.model.Coordinate
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After

@@ -41,12 +41,12 @@ import kotlin.math.*
 import androidx.fragment.app.viewModels
 import app.surrealar.ui.common.SatelliteSignalChartView
 import app.surrealar.ui.common.SkyplotView
-import app.surrealar.gnss.model.Constellation
-import app.surrealar.gnss.model.SkyGeometry
+import io.github.pennstatecs.geokit.gnss.model.Constellation
+import io.github.pennstatecs.geokit.gnss.model.SkyGeometry
 import app.surrealar.gnss.diagnostics.DiagnosticData
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.SkySnapshot
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -938,7 +938,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             sourceSection.values["Timestamp Source"]?.text = fix.timestampSource.name.replace('_', ' ')
             // Position. The feed is always WGS84; say when it was converted from receiver NAD83(2011).
             posSection.values["Datum"]?.text =
-                if (fix.provider != app.surrealar.gnss.model.Provider.INTERNAL &&
+                if (fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL &&
                     viewModel.receiverDatum.value == app.surrealar.settings.model.ReceiverDatum.NAD83_2011)
                     "WGS84 (converted from receiver NAD83(2011) at fix epoch)"
                 else "WGS84 / ITRF (as received)"
@@ -977,7 +977,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             correctionsSection.values["Correction Station ID"]?.text = field("station", fix.correctionStationId) { it }
         }
 
-        fun applyBattery(b: app.surrealar.gnss.receiver.ReceiverBattery?) {
+        fun applyBattery(b: io.github.pennstatecs.geokit.gnss.receiver.ReceiverBattery?) {
             batterySection.values["SoC"]?.text = b?.percent?.let { "$it%" } ?: "--"
             batterySection.values["Voltage"]?.text = b?.voltageV?.let { "%.2f V".format(it) } ?: "--"
             batterySection.values["Current"]?.text = b?.currentA?.let { "%.2f A".format(it) } ?: "--"
@@ -989,7 +989,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             batterySection.values["OTG Power"]?.text = b?.details?.get("OTG Power") ?: "--"
         }
 
-        fun applyDevice(d: app.surrealar.gnss.receiver.ReceiverDeviceInfo?) {
+        fun applyDevice(d: io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo?) {
             deviceSection.values["IP"]?.text = d?.host ?: "--"
             deviceSection.values["Hostname"]?.text = d?.hostname ?: "--"
             deviceSection.values["Name"]?.text = d?.name ?: "--"

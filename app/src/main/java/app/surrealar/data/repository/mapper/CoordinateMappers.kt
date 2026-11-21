@@ -4,9 +4,9 @@ import app.surrealar.data.local.db.ProviderTokens
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.domain.model.CorrectionSource
 import app.surrealar.domain.model.Coordinate
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import java.util.Locale
 import java.util.UUID
 

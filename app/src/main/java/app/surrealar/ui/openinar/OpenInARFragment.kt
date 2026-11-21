@@ -15,8 +15,8 @@ import android.os.Bundle
 import app.surrealar.util.ArSessionDiagnostics
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.argbIntToRgba
-import app.surrealar.geo.heading.Compass
-import app.surrealar.geo.ellipsoid.Geodesic
+import io.github.pennstatecs.geokit.heading.Compass
+import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -37,7 +37,7 @@ import app.surrealar.databinding.FragmentOpenInArBinding
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.mock.MockInjectionStatus
-import app.surrealar.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Fix
 import com.google.ar.core.*
 import com.google.ar.core.exceptions.*
 import dagger.hilt.android.AndroidEntryPoint
@@ -75,7 +75,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Current GNSS fix from switchboard (surveying-grade GPS)
     @Volatile private var currentGnssFix: Fix? = null
     /** Last logged GNSS provider — used to suppress repeated identical fix logs. */
-    private var lastLoggedProvider: app.surrealar.gnss.model.Provider? = null
+    private var lastLoggedProvider: io.github.pennstatecs.geokit.gnss.model.Provider? = null
 
     // Source/mock context for AR diagnostics (collected on the main thread; read anywhere).
     @Volatile private var selectedLocationSource: String? = null
@@ -232,7 +232,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Used to auto re-anchor when quality improves (e.g., SINGLE → RTK FIX).
      * Written and read exclusively on the GL thread.
      */
-    private var lastAnchorRtkStatus: app.surrealar.gnss.model.RtkStatus? = null
+    private var lastAnchorRtkStatus: io.github.pennstatecs.geokit.gnss.model.RtkStatus? = null
 
     /**
      * Timestamp (from [System.currentTimeMillis]) of the last anchor rebuild (manual or auto).
@@ -1286,9 +1286,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val trackingElapsed = System.currentTimeMillis() - earthTrackingSinceMs
         // RTK receiver → position is no longer the limit, heading is: demand ≤5° yaw (and wait longer).
         val profile = GeoAnchorGate.profileFor(
-            isExternal = gnssFix.provider != app.surrealar.gnss.model.Provider.INTERNAL,
-            rtkFixOrFloat = gnssFix.rtkStatus == app.surrealar.gnss.model.RtkStatus.FIX ||
-                gnssFix.rtkStatus == app.surrealar.gnss.model.RtkStatus.FLOAT,
+            isExternal = gnssFix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL,
+            rtkFixOrFloat = gnssFix.rtkStatus == io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX ||
+                gnssFix.rtkStatus == io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT,
         )
         if (profile != currentGateProfile) {
             DiagnosticsLogger.i(DIAG, "anchor gate profile ${currentGateProfile} → $profile " +
@@ -1689,12 +1689,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // ── onDrawFrame helpers (all called from the GL thread) ──────────────────
 
     /** Ordered quality levels for auto re-anchor; higher index = better quality. */
-    private fun rtkQualityRank(status: app.surrealar.gnss.model.RtkStatus?): Int =
+    private fun rtkQualityRank(status: io.github.pennstatecs.geokit.gnss.model.RtkStatus?): Int =
         when (status) {
-            app.surrealar.gnss.model.RtkStatus.FIX    -> 4
-            app.surrealar.gnss.model.RtkStatus.FLOAT  -> 3
-            app.surrealar.gnss.model.RtkStatus.DGPS   -> 2
-            app.surrealar.gnss.model.RtkStatus.SINGLE -> 1
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> 4
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> 3
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> 2
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> 1
             else                                                  -> 0
         }
 
@@ -2193,9 +2193,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private fun gnssGateAccuracyM(fix: Fix): Double? = fix.hAccM ?: fix.hDop?.let { hdop ->
         when (fix.rtkStatus) {
-            app.surrealar.gnss.model.RtkStatus.FIX   -> hdop * 0.02
-            app.surrealar.gnss.model.RtkStatus.FLOAT -> hdop * 0.1
-            app.surrealar.gnss.model.RtkStatus.DGPS  -> hdop * 0.5
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX   -> hdop * 0.02
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT -> hdop * 0.1
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS  -> hdop * 0.5
             else                                     -> hdop * 3.0
         }
     }
@@ -2213,7 +2213,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val fixInfo = gnssFix?.let { f ->
             ArDebugReport.FixInfo(
                 provider = when (f.provider) {
-                    app.surrealar.gnss.model.Provider.INTERNAL -> "Internal"
+                    io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL -> "Internal"
                     else -> f.receiverLabel ?: f.provider.label
                 },
                 rtk      = f.rtkStatus.name,
@@ -2414,16 +2414,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private fun updateArGnssChip(fix: Fix) {
         val b = _binding ?: return
         val src = when (fix.provider) {
-            app.surrealar.gnss.model.Provider.INTERNAL -> "Device GPS"
-            app.surrealar.gnss.model.Provider.EXTERNAL_TCP, app.surrealar.gnss.model.Provider.EXTERNAL_BT ->
+            io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL -> "Device GPS"
+            io.github.pennstatecs.geokit.gnss.model.Provider.EXTERNAL_TCP, io.github.pennstatecs.geokit.gnss.model.Provider.EXTERNAL_BT ->
                 app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(fix.receiverLabel)?.shortLabel ?: "EXT"
             else -> fix.provider.label
         }
         val (solLabel, solColor) = when (fix.rtkStatus) {
-            app.surrealar.gnss.model.RtkStatus.FIX    -> "RTK Fixed"  to requireContext().getColor(R.color.app_success)
-            app.surrealar.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.app_warning)
-            app.surrealar.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.app_info)
-            app.surrealar.gnss.model.RtkStatus.SINGLE -> "GPS"        to requireContext().getColor(android.R.color.white)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fixed"  to requireContext().getColor(R.color.app_success)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.app_warning)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.app_info)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "GPS"        to requireContext().getColor(android.R.color.white)
             else                                                  -> "No Fix"     to requireContext().getColor(R.color.app_error)
         }
         val acc = fix.hAccM?.let { " · H ±${"%.2f".format(it)} m" } ?: ""

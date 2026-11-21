@@ -1,6 +1,6 @@
 package app.surrealar.ui.common
 
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

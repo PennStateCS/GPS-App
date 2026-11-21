@@ -3,10 +3,10 @@ package app.surrealar.gnss.mock
 import android.location.LocationManager
 import androidx.test.core.app.ApplicationProvider
 import app.surrealar.gnss.bus.FixSwitchboard
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import app.surrealar.domain.repository.SettingsRepository
 import org.junit.Assert.*
 import org.junit.Before

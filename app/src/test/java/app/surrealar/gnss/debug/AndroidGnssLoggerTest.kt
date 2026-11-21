@@ -1,11 +1,11 @@
 package app.surrealar.gnss.debug
 
 import android.util.Log
-import app.surrealar.gnss.bus.adapters.NmeaFuser
-import app.surrealar.gnss.log.GnssLog
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.nmea.parse.DefaultNmeaRegistry
-import app.surrealar.gnss.satellites.SatelliteInventory
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
+import io.github.pennstatecs.geokit.gnss.log.GnssLog
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry
+import io.github.pennstatecs.geokit.gnss.satellites.SatelliteInventory
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -17,7 +17,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 
 /**
- * gnss-core logs through GnssLog; the app installs AndroidGnssLogger. These pin that the logcat
+ * geokit-gnss logs through GnssLog; the app installs AndroidGnssLogger. These pin that the logcat
  * output (level, tag, message) is what the code wrote directly before the module existed:
  * `Log.w("NmeaRegistry", …)`, `Log.d("SatelliteInventory", …)`, `DiagnosticsLogger.i("NMEA", …)` and
  * `GnssDebugLog` lines under tag "GnssDebug" with an "[area] " prefix.

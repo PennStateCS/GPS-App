@@ -11,8 +11,8 @@ class ArVsGnssTest {
     private val lon = -76.0226
     // Inputs built on the WGS84 ellipsoid (ArVsGnss now uses the geodesic; the old 111,132 m/° sphere read
     // a true 0.4013 m east offset as 0.4000 m).
-    private val mPerDegLon = app.surrealar.geo.ellipsoid.Ellipsoid.WGS84.metersPerDegLon(lat)
-    private val mPerDegLat = app.surrealar.geo.ellipsoid.Ellipsoid.WGS84.metersPerDegLat(lat)
+    private val mPerDegLon = io.github.pennstatecs.geokit.ellipsoid.Ellipsoid.WGS84.metersPerDegLon(lat)
+    private val mPerDegLat = io.github.pennstatecs.geokit.ellipsoid.Ellipsoid.WGS84.metersPerDegLat(lat)
 
     @Test fun `ARCore 0_4 m east of the fix reads 0_4 m at 90 degrees`() {
         val c = ArVsGnss.compute(lat, lon + 0.4 / mPerDegLon, 390.0, lat, lon, 390.6, antennaAboveCameraM = 0.6,

@@ -1,9 +1,9 @@
 package app.surrealar.util.diagnostics
 
-import app.surrealar.gnss.bus.adapters.NmeaFuser
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
-import app.surrealar.gnss.nmea.sentence.ETC
+import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.nmea.sentence.ETC
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

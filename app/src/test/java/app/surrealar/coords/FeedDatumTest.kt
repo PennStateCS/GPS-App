@@ -1,12 +1,12 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.datum.Itrf2014ToNad83
-import app.surrealar.geo.ellipsoid.GeodeticPosition
+import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
 
-import app.surrealar.gnss.model.Fix
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
-import app.surrealar.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.TimestampSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

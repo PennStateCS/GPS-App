@@ -2,8 +2,8 @@ package app.surrealar.data.local.db
 
 import androidx.room.TypeConverter
 import app.surrealar.domain.model.CorrectionSource
-import app.surrealar.gnss.model.Provider
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.Provider
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import java.time.Instant
 import java.util.Locale
 import kotlin.time.Duration

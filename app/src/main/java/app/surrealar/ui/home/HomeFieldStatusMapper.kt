@@ -1,7 +1,7 @@
 package app.surrealar.ui.home
 
 import app.surrealar.gnss.format.GnssStatusFormatter
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import java.util.Locale
 
 /**

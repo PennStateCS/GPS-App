@@ -1,6 +1,6 @@
 package app.surrealar.ui.openinar
 
-import app.surrealar.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 
 /**
  * How each point's AR anchor gets its height (Settings → AR Display → Default Altitude Mode, and the
