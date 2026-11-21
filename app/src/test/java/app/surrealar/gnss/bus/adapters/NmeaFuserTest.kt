@@ -5,6 +5,7 @@ import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.nmea.parse.*
 import app.surrealar.gnss.nmea.sentence.*
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.Assert.*
 
@@ -196,6 +197,57 @@ class NmeaFuserTest {
         )
         fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,1,14,0.9,545.4,M,46.9,M,,")
         assertEquals(14, emittedFixes[0].satsUsed)
+    }
+    // ── GSV page numbering across signals ─────────────────────────────────────────────────────
+    // If a chipset numbers GSV pages JOINTLY across signals (L1 + L5 in one 1..N sequence), the
+    // per-signal accumulator never completes the L1 sequence and only L5 satellites show. Whether the
+    // SM-X940 does this needs a raw log, so this stays ignored until one confirms it.
+
+    @Ignore("Waiting for a raw SM-X940 NMEA log to confirm joint GSV page numbering across signals")
+    @Test
+    fun `GSV numbered jointly across signals merges L1 and L5 into one sky`() {
+        val fuser = NmeaFuser(
+            provider = Provider.INTERNAL,
+            registry = registry,
+            onFix = { emittedFixes.add(it) },
+            onGsv = { emittedGsvMessages.add(it) }
+        )
+        // ONE 1..3 sequence for GP: pages 1-2 are L1 (signal 1), page 3 is L5 (signal 8).
+        fuser.accept("\$GPGSV,3,1,10,01,40,083,46,03,17,308,41,08,07,344,39,10,22,228,45,1")
+        fuser.accept("\$GPGSV,3,2,10,14,40,208,46,21,17,078,41,22,25,138,45,1")
+        fuser.accept("\$GPGSV,3,3,10,03,17,308,33,08,07,344,30,10,22,228,36,8")
+
+        val gp = emittedGsvMessages.lastOrNull { it.constellation == "GP" }
+        assertNotNull("A GP sky message should be emitted", gp)
+        assertEquals("All 7 distinct GPS satellites (L1 + L5 merged)",
+            setOf(1, 3, 8, 10, 14, 21, 22), gp!!.entries.map { it.svid }.toSet())
+        assertEquals("Merged SNR comes from L1 (signal 1), not L5",
+            41.0, gp.entries.first { it.svid == 3 }.snrDbHz!!, 0.01)
+
+        fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,1,05,0.9,545.4,M,46.9,M,,")
+        assertEquals("satsVisible counts distinct satellites, not signal sightings",
+            7, emittedFixes.last().satsVisible)
+    }
+
+    @Test
+    fun `GSV numbered per signal merges L1 and L5 into one sky (control)`() {
+        val fuser = NmeaFuser(
+            provider = Provider.INTERNAL,
+            registry = registry,
+            onFix = { emittedFixes.add(it) },
+            onGsv = { emittedGsvMessages.add(it) }
+        )
+        // L1 sequence 1..2 (signal 1), then a separate L5 sequence 1..1 (signal 8).
+        fuser.accept("\$GPGSV,2,1,07,01,40,083,46,03,17,308,41,08,07,344,39,10,22,228,45,1")
+        fuser.accept("\$GPGSV,2,2,07,14,40,208,46,21,17,078,41,22,25,138,45,1")
+        fuser.accept("\$GPGSV,1,1,03,03,17,308,33,08,07,344,30,10,22,228,36,8")
+
+        val gp = emittedGsvMessages.last { it.constellation == "GP" }
+        assertEquals(setOf(1, 3, 8, 10, 14, 21, 22), gp.entries.map { it.svid }.toSet())
+        assertEquals(41.0, gp.entries.first { it.svid == 3 }.snrDbHz!!, 0.01)
+
+        fuser.accept("\$GPGGA,123519.00,4807.038,N,01131.000,E,1,05,0.9,545.4,M,46.9,M,,")
+        assertEquals(7, emittedFixes.last().satsVisible)
     }
 }
 
