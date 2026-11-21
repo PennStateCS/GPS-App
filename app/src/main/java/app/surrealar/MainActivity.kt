@@ -32,6 +32,10 @@ import app.surrealar.ui.toolbar.GnssToolbarState
 import app.surrealar.ui.toolbar.GnssToolbarRenderer
 import app.surrealar.ui.toolbar.ToolbarTokens
 import app.surrealar.ui.toolbar.GnssToolbarStateMapper
+import app.surrealar.ui.toolbar.ToolbarFrame
+import app.surrealar.ui.toolbar.ToolbarInputs
+import app.surrealar.ui.toolbar.ToolbarPipeline
+import app.surrealar.ui.toolbar.ToolbarPipeline.retryForever
 import app.surrealar.ui.toolbar.ToolbarMapResult
 import app.surrealar.service.LocationService
 import app.surrealar.util.PermissionManager
@@ -62,17 +66,6 @@ private const val NAV_DRAWER_CLOSE_DELAY_MS = 120L
  * fragments under the `NavHostFragment`; this activity only wires chrome, navigation, and the
  * foreground [LocationService]/permission prompts around them.
  */
-/** Toolbar refresh period for live GNSS data. */
-private const val TOOLBAR_REFRESH_MS = 250L
-
-/** One toolbar update: live fix, sky, selected source, and the fix in the user's coordinate system. */
-private data class ToolbarInputs(
-    val fix: io.github.pennstatecs.geokit.gnss.model.Fix?,
-    val sky: io.github.pennstatecs.geokit.gnss.model.SkySnapshot,
-    val source: app.surrealar.domain.model.LocationSourceType,
-    val coords: app.surrealar.coords.ConvertedPosition?,
-)
-
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
@@ -125,7 +118,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toolbarRenderer: GnssToolbarRenderer
 
     /** Short label of the selected external receiver profile (e.g. "RS2+"/"RS4"); updated from settings. */
-    @Volatile private var externalReceiverLabel: String = ""
+    /** Active external profile's short label; "External" until settings load (never blank, never a vendor guess). */
+    @Volatile private var externalReceiverLabel: String = app.surrealar.gnss.format.GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL
 
     // Cache the battery drawable once and mutate in place
     private var batteryLayer: LayerDrawable? = null
@@ -662,91 +656,27 @@ class MainActivity : AppCompatActivity() {
         // "no live fix from the current provider yet" → show the waiting/blank state.
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var consecutiveErrors = 0
-
-                combine(
+                // Pipeline (see ToolbarPipeline): combine raw inputs → sample(250 ms) → convert + map on
+                // Dispatchers.Default → render here on Main. retryForever keeps it alive after an error
+                // (shows the error state, backs off 1 s → 5 s, resubscribes) instead of ending it.
+                val inputs = combine(
                     switchboard.currentFix,
                     switchboard.sky,
                     settingsRepository.locationSource,
-                    settingsRepository.coordinateSystemSettings
-                ) { fix, sky, source, coordSettings ->
-                    // Express the fix in the user's coordinate system (Settings → Coordinates).
-                    val coords = fix?.let { runCatching { coordinateSystemService.convertFix(it, coordSettings) }.getOrNull() }
-                    ToolbarInputs(fix, sky, source, coords)
-                }
-                    // Newest state at most every 250 ms: current within a quarter second, without
-                    // re-rendering on every epoch of a 5–10 Hz receiver. A lost fix (currentFix →
-                    // null from the feed's watchdog) still reaches the toolbar on the next tick.
-                    .sample(TOOLBAR_REFRESH_MS)
-                    .catch { e ->
-                        android.util.Log.e("MainActivity", "Error in GNSS status bar observer: ", e)
-                        consecutiveErrors++
-                        if (consecutiveErrors >= 3) {
-                            // After 3 consecutive errors, reset tokens
-                            withContext(Dispatchers.Main) {
-                                tokenSource.value.text = "Error"
-                                tokenFix.value.text = "--"
-                                tokenSats.value.text = "--"
-                                tokenCoord.value.text = "--"
-                                tokenAlt.value.text = "--"
-                                updateBatteryVisibility(false)
-                            }
-                        }
-                        // Emit a retry signal after delay
-                        delay(5000)
-                        emitAll(flowOf())
+                    settingsRepository.coordinateSystemSettings,
+                    externalLabelFlow(),
+                ) { fix, sky, source, coordSettings, label -> ToolbarInputs(source, fix, sky, coordSettings, label) }
+                ToolbarPipeline.frames(inputs, coordinateSystemService::convertFix)
+                    .onEach { frame -> renderToolbarFrame(frame) }
+                    .retryForever { e, attempt ->
+                        android.util.Log.e("MainActivity", "GNSS toolbar pipeline error (retry #${attempt + 1})", e)
+                        app.surrealar.util.DiagnosticsLogger.w("Toolbar", "toolbar pipeline error, retrying: ${e.javaClass.simpleName}")
+                        val source = runCatching { settingsRepository.locationSource.first() }.getOrDefault(LocationSourceType.INTERNAL)
+                        toolbarRenderer.render(GnssToolbarStateMapper.error(source, externalReceiverLabel))
                     }
-                    .collectLatest { (fix, sky, source, coords) ->
-                        consecutiveErrors = 0 // Reset error counter on success
-
-                        // All display decisions live in the mapper. MainActivity only collects,
-                        // maps, and renders — it no longer contains GNSS toolbar logic.
-                        when (val result = GnssToolbarStateMapper.map(source, fix, sky, externalReceiverLabel, coords)) {
-                            is ToolbarMapResult.Ignore -> {
-                                app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.ignore.${result.reason}", "toolbar") {
-                                    "fix ignored (${result.reason}): selected=$source fixProvider=${fix?.provider}"
-                                }
-                                // Wrong-provider / stale / invalid fix: keep the existing
-                                // placeholders untouched (throttled diagnostics only).
-                                logToolbarIgnore(result.reason)
-                            }
-                            is ToolbarMapResult.Render -> {
-                                val state = result.state
-                                app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.render", "toolbar") {
-                                    "shown: src=${state.sourceText} sol=${state.fixText} sats=${state.satelliteText} " +
-                                        "acc=${state.accuracyText} (${state.accuracyLevel}) ll=${state.latLonText} " +
-                                        "alt=${state.altitudeText} waiting=${state.isWaiting} | from fix: " +
-                                        (fix?.let { "${it.provider} msl=${it.altMslM} ellH=${it.altEllipsoidalM} " +
-                                            "hAcc=${it.hAccM} sats=${it.satsUsed}/${it.satsVisible} t=${it.timeUtc}" } ?: "none") +
-                                        " | sky used=${sky.totalUsed} visible=${sky.totalVisible}"
-                                }
-                                if (state.isWaiting) {
-                                    if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
-                                        loggedExternalWaiting = true
-                                        app.surrealar.util.DiagnosticsLogger.i(
-                                            "Toolbar", "External selected, waiting for current fix")
-                                    }
-                                    latestSkySnapshot = null
-                                } else {
-                                    latestSkySnapshot = sky
-                                    if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
-                                        loggedFirstExternalToolbarFix = true
-                                        loggedExternalWaiting = false
-                                        app.surrealar.util.DiagnosticsLogger.i(
-                                            "Toolbar", "First current external fix displayed after startup")
-                                    }
-                                }
-                                lastDataUpdateTime = System.currentTimeMillis()
-                                withContext(Dispatchers.Main) {
-                                    toolbarRenderer.render(state)
-                                    tokenSource.value.alpha = 1.0f
-                                }
-                            }
-                        }
-                    }
+                    .collect()
             }
         }
-
         // Immediate reset whenever the LIVE provider actually changes (the switchboard rebinds).
         // This complements the locationSource reset above: that one fires on the user's selection,
         // this one fires when routing actually flips (e.g. External finishing its connect), so the
@@ -818,6 +748,56 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Applies one pipeline frame (Main thread): diagnostics bookkeeping, then the renderer. */
+    private fun renderToolbarFrame(frame: ToolbarFrame) {
+        val (fix, sky, source) = Triple(frame.inputs.fix, frame.inputs.sky, frame.inputs.source)
+        when (val result = frame.result) {
+            is ToolbarMapResult.Ignore -> {
+                app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.ignore.${result.reason}", "toolbar") {
+                    "fix ignored (${result.reason}): selected=$source fixProvider=${fix?.provider}"
+                }
+                // Wrong-provider / stale / invalid fix: keep the existing placeholders untouched
+                // (throttled diagnostics only).
+                logToolbarIgnore(result.reason)
+            }
+            is ToolbarMapResult.Render -> {
+                val state = result.state
+                app.surrealar.gnss.debug.GnssDebugLog.every("toolbar.render", "toolbar") {
+                    "shown: src=${state.sourceText} sol=${state.fixText} sats=${state.satelliteText} " +
+                        "acc=${state.accuracyText} (${state.accuracyLevel}) ll=${state.latLonText} " +
+                        "alt=${state.altitudeText} waiting=${state.isWaiting} | from fix: " +
+                        (fix?.let { "${it.provider} msl=${it.altMslM} ellH=${it.altEllipsoidalM} " +
+                            "hAcc=${it.hAccM} sats=${it.satsUsed}/${it.satsVisible} t=${it.timeUtc}" } ?: "none") +
+                        " | sky used=${sky.totalUsed} visible=${sky.totalVisible}"
+                }
+                if (state.isWaiting) {
+                    if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
+                        loggedExternalWaiting = true
+                        app.surrealar.util.DiagnosticsLogger.i("Toolbar", "External selected, waiting for current fix")
+                    }
+                    latestSkySnapshot = null
+                } else {
+                    latestSkySnapshot = sky
+                    if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
+                        loggedFirstExternalToolbarFix = true
+                        loggedExternalWaiting = false
+                        app.surrealar.util.DiagnosticsLogger.i("Toolbar", "First current external fix displayed after startup")
+                    }
+                }
+                lastDataUpdateTime = System.currentTimeMillis()
+                toolbarRenderer.render(state)
+                tokenSource.value.alpha = 1.0f
+            }
+        }
+    }
+
+    /** The active external receiver profile's short label; "External" until settings have loaded. */
+    private fun externalLabelFlow(): Flow<String> =
+        settingsRepository.externalReceiverSettings
+            .map { it.profile.shortLabel.ifBlank { app.surrealar.gnss.format.GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL } }
+            .onStart { emit(externalReceiverLabel) }
+            .distinctUntilChanged()
 
     /**
      * Resets the toolbar to the waiting/placeholder state for [source] (label + blank live fields).

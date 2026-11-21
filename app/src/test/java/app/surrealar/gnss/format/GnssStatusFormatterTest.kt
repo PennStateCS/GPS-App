@@ -17,7 +17,7 @@ class GnssStatusFormatterTest {
     }
 
     @Test fun `source label - external`() {
-        assertEquals("RS2+", GnssStatusFormatter.formatSource(isInternal = false))
+        assertEquals("External", GnssStatusFormatter.formatSource(isInternal = false))   // neutral fallback
     }
 
     // ── fix status (external receiver: full RTK ladder) ──────────────────────────

@@ -17,7 +17,10 @@ object GnssStatusFormatter {
      * external receiver profile's short label). [externalLabel] defaults to "RS2+" so existing
      * callers and tests keep their previous wording until a profile label is supplied.
      */
-    fun formatSource(isInternal: Boolean, externalLabel: String = "RS2+"): String =
+    /** Source label for an external receiver whose profile isn't known yet (never a vendor name). */
+    const val EXTERNAL_FALLBACK_LABEL = "External"
+
+    fun formatSource(isInternal: Boolean, externalLabel: String = EXTERNAL_FALLBACK_LABEL): String =
         if (isInternal) "Internal" else externalLabel
 
     /**

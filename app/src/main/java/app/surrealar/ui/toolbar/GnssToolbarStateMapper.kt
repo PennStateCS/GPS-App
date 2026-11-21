@@ -60,7 +60,7 @@ object GnssToolbarStateMapper {
         else fix.provider != Provider.INTERNAL
 
     /** Display state shown while there is no current-provider fix (just switched / acquiring). */
-    fun waiting(source: LocationSourceType, externalLabel: String = "RS2+"): GnssToolbarState {
+    fun waiting(source: LocationSourceType, externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL): GnssToolbarState {
         val isInternal = source == LocationSourceType.INTERNAL
         return GnssToolbarState(
             sourceText = GnssStatusFormatter.formatSource(isInternal, externalLabel),
@@ -82,11 +82,18 @@ object GnssToolbarStateMapper {
         )
     }
 
+    /**
+     * Shown while the toolbar pipeline is recovering from an error (it resubscribes with backoff).
+     * Uses the existing ERROR level; live fields are cleared rather than left stale.
+     */
+    fun error(source: LocationSourceType, externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL): GnssToolbarState =
+        waiting(source, externalLabel).copy(fixText = "Error", fixLevel = GnssStatusLevel.ERROR, statusLevel = GnssStatusLevel.ERROR)
+
     fun map(
         selectedSource: LocationSourceType,
         fix: Fix?,
         sky: SkySnapshot,
-        externalLabel: String = "RS2+",
+        externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL,
         /** The fix expressed in the user's coordinate system (null = legacy lat/lon + MSL display). */
         coords: app.surrealar.coords.ConvertedPosition? = null,
     ): ToolbarMapResult {

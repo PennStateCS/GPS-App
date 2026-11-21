@@ -101,7 +101,7 @@ class GnssToolbarStateMapperTest {
     // 3 — External selected/active, no current fix yet → waiting
     @Test fun `external no fix shows waiting with RS2 label`() {
         val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL, null, SkySnapshot()))
-        assertEquals("RS2+", s.sourceText)
+        assertEquals("External", s.sourceText)   // no profile passed: neutral fallback, never "RS2+"
         assertTrue(s.isWaiting)
         assertEquals("Waiting", s.fixText)
         assertEquals("--", s.latLonText)             // no stale coordinates
@@ -119,7 +119,7 @@ class GnssToolbarStateMapperTest {
                 SkySnapshot()
             )
         )
-        assertEquals("RS2+", s.sourceText)
+        assertEquals("External", s.sourceText)   // no profile passed: neutral fallback, never "RS2+"
         assertEquals("Float", s.fixText)
         assertEquals("40.796300, -77.857000", s.latLonText)
         assertEquals("±0.18 m", s.accuracyText)
@@ -230,5 +230,25 @@ class GnssToolbarStateMapperTest {
             )
         )
         assertNull(s.accuracyText)
+    }
+    // ── 1c: source label comes from the active profile, else "External" ──────────
+
+    @Test fun `waiting shows the active profile's short label`() {
+        assertEquals("RS4", GnssToolbarStateMapper.waiting(LocationSourceType.EXTERNAL, "RS4").sourceText)
+        assertEquals("EXT", GnssToolbarStateMapper.waiting(LocationSourceType.EXTERNAL, "EXT").sourceText)
+    }
+
+    @Test fun `without a known profile the external label is External, never RS2+`() {
+        assertEquals("External", GnssToolbarStateMapper.waiting(LocationSourceType.EXTERNAL).sourceText)
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL, null, SkySnapshot()))
+        assertEquals("External", s.sourceText)
+    }
+
+    @Test fun `error state keeps the source label and clears live fields`() {
+        val s = GnssToolbarStateMapper.error(LocationSourceType.EXTERNAL, "RS2+")
+        assertEquals("RS2+", s.sourceText)
+        assertEquals("Error", s.fixText)
+        assertEquals(GnssStatusLevel.ERROR, s.fixLevel)
+        assertEquals("--", s.latLonText); assertEquals(null, s.accuracyText); assertEquals(null, s.satelliteText)
     }
 }
