@@ -224,8 +224,15 @@ class ExternalAdapter(
                     lastDataTimeMs = System.currentTimeMillis()
                 }
                 .collect { fix ->
-                    val profile = currentProfile()
-                    _fixes.emit(fix.copy(accuracyClass = profile.accuracyClass, receiverLabel = profile.label))
+                    // Per-item work is guarded so one bad item can't end the collector (or crash the
+                    // app scope); the emit stays outside so cancellation is never swallowed.
+                    val stamped = runCatching {
+                        val profile = currentProfile()
+                        fix.copy(accuracyClass = profile.accuracyClass, receiverLabel = profile.label)
+                    }.getOrElse {
+                        DiagnosticsLogger.e("Receiver", "fix stamping failed; publishing unstamped fix", it); fix
+                    }
+                    _fixes.emit(stamped)
                 }
         }
 
@@ -235,7 +242,11 @@ class ExternalAdapter(
                     firstDataArrived = true
                     lastDataTimeMs = System.currentTimeMillis()
                 }
-                .collect { gsv -> _sky.value = inv.consume(gsv) }
+                .collect { gsv ->
+                    runCatching { inv.consume(gsv) }
+                        .onSuccess { _sky.value = it }
+                        .onFailure { DiagnosticsLogger.e("Receiver", "GSV update failed; message skipped", it) }
+                }
         }
 
         rawNmeaJob = scope.launch {

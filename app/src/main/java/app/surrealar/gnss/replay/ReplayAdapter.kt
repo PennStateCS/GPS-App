@@ -52,7 +52,11 @@ class ReplayAdapter(
         provider = Provider.REPLAY,
         registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = false),
         onFix = { _fixes.tryEmit(it) },
-        onGsv = { _sky.value = inventory.consume(it) },
+        onGsv = { gsv ->
+            runCatching { inventory.consume(gsv) }
+                .onSuccess { _sky.value = it }
+                .onFailure { DiagnosticsLogger.e("SOURCE", "replay GSV update failed; message skipped", it) }
+        },
     )
 
     @Volatile private var source: NmeaLineSource? = null
@@ -71,7 +75,12 @@ class ReplayAdapter(
         DiagnosticsLogger.i("SOURCE", "replay started: ${src.name}")
         playJob = scope.launch(dispatcher) {
             try {
-                src.lines().collect { line -> if (line.isNotEmpty() && line[0] == '$') fuser.accept(line) }
+                src.lines().collect { line ->
+                    if (line.isNotEmpty() && line[0] == '$') {
+                        runCatching { fuser.accept(line) }
+                            .onFailure { DiagnosticsLogger.e("SOURCE", "replay line rejected by the fuser", it) }
+                    }
+                }
             } finally {
                 fuser.flush()   // end of input: emit a fix still held for its GST
             }

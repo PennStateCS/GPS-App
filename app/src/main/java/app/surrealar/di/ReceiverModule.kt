@@ -44,7 +44,7 @@ object ReceiverModule {
             },
             discoveryFor = { profile -> if (profile.vendor == ReceiverVendor.EMLID) discovery else null },
             // Same kind of scope the former ReachDeviceRepository owned: IO, survives the UI.
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineModule.LogUncaught),
         )
     }
 }

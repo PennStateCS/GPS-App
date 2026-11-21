@@ -20,7 +20,8 @@ import kotlin.math.max
  * The EMA smoothing prevents the chart from flickering when the receiver reports
  * slightly different SNR values between updates.
  *
- * Not thread-safe — confine all calls to a single coroutine or add a Mutex.
+ * Thread-safe: [consume] and [reset] are serialised on one internal lock (a few calls a second), so a
+ * reconnect can reset the inventory while the previous collector is still consuming.
  */
 public class SatelliteInventory(
     private val halfLifeSeconds: Double = 10.0,
@@ -33,6 +34,9 @@ public class SatelliteInventory(
 
     /** Namespaced key to avoid SVID collisions across constellations (GPS and GLONASS can share numbers). */
     private data class SatId(val c: Constellation, val svid: Int)
+
+    /** Guards [snrBySat] and [geometryBySat]. */
+    private val lock = Any()
 
     private val snrBySat = mutableMapOf<SatId, Pair<Double, Double>>()   // SatId → (smoothedSnr, lastSeenSec)
     private val geometryBySat = mutableMapOf<SatId, GeometryData>()
@@ -47,10 +51,11 @@ public class SatelliteInventory(
 
     /**
      * Merges one completed GSV epoch into the inventory (SNR smoothed with the configured half-life;
-     * satellites unseen for evictionSeconds dropped) and returns the current sky. Not thread-safe:
-     * call from one collector.
+     * satellites unseen for evictionSeconds dropped) and returns the current sky. Thread-safe.
      */
-    public fun consume(gsv: GsvMessage): SkySnapshot {
+    public fun consume(gsv: GsvMessage): SkySnapshot = synchronized(lock) { consumeLocked(gsv) }
+
+    private fun consumeLocked(gsv: GsvMessage): SkySnapshot {
         val t = nowSeconds()
         val const = mapConstellationName(gsv.constellation)
 
@@ -152,8 +157,10 @@ public class SatelliteInventory(
      * to avoid stale satellites from the previous source appearing in the sky view.
      */
     public fun reset() {
-        snrBySat.clear()
-        geometryBySat.clear()
+        synchronized(lock) {
+            snrBySat.clear()
+            geometryBySat.clear()
+        }
         GnssLog.d("SatelliteInventory", "Reset: cleared all satellite state")
     }
 

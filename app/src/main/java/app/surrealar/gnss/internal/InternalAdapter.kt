@@ -82,7 +82,10 @@ class InternalAdapter(
              */
             nmea.gsvStream()
                 .collect { gsv ->
-                    _sky.value = inv.consume(gsv)
+                    // Guarded: one bad message must not end the collector or crash the app scope.
+                    runCatching { inv.consume(gsv) }
+                        .onSuccess { _sky.value = it }
+                        .onFailure { app.surrealar.util.DiagnosticsLogger.e("SOURCE", "GSV update failed; message skipped", it) }
                 }
         }
     }
