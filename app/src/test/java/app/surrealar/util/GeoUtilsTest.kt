@@ -39,4 +39,11 @@ class GeoUtilsTest {
     @Test fun `bearingToCompass 315 is NW`(){ assertEquals("NW", bearingToCompass(315.0)) }
 
     @Test fun `bearingToCompass 360 wraps to N`() { assertEquals("N", bearingToCompass(360.0)) }
+
+    @Test fun `bearingToCompass handles negative and large angles`() {
+        assertEquals("W", bearingToCompass(-90.0))     // used to crash (index −1)
+        assertEquals("NW", bearingToCompass(-30.0))    // used to read "N"
+        assertEquals("E", bearingToCompass(450.0))
+        assertEquals("N", bearingToCompass(Double.NaN))
+    }
 }

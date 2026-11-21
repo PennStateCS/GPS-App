@@ -42,7 +42,10 @@ fun bearingDeg(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
  */
 fun bearingToCompass(deg: Double): String {
     val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
-    return dirs[((deg + 22.5) / 45.0).toInt() % 8]
+    if (!deg.isFinite()) return "N"
+    // Normalise first: −90 used to index −1 (crash) and −30 (= 330°) read "N" instead of "NW".
+    val norm = ((deg % 360.0) + 360.0) % 360.0
+    return dirs[(Math.floor((norm + 22.5) / 45.0).toInt()) % 8]
 }
 
 /**
