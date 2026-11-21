@@ -38,6 +38,7 @@ class ReachNmeaCaptureReplayTest {
             onGsv = { }
         )
         stream.bufferedReader().useLines { seq -> seq.forEach { fuser.accept(it) } }
+        fuser.flush()
         return Replay(fixes, fuser)
     }
 

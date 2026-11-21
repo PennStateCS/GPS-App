@@ -117,14 +117,52 @@ class NmeaFuser(
         synchronized(lock) { handle(sentence) }
     }
 
+    /*
+     * Epoch alignment. Emlid sends RMC, GGA, GSA, GSV, VTG, GST, ZDA, so GST (accuracy) and GSA
+     * (DOP / used satellites) for epoch T arrive AFTER GGA(T). Emitting on GGA would attach T−1's
+     * values. When the stream carries GST and one is expected for this GGA's time, the fix is held
+     * and released by the first of: a GST with the same time, the first sentence of the next epoch,
+     * or GST_HOLD_MS. Enrichment is evaluated at release. Streams without GST are never held.
+     */
+    private var pendingGga: GGA? = null
+    private var pendingAtMs = 0L
+    private var lastGstAtMs = 0L
+    private var lastGstTodMs: Long? = null
+    private var gstPeriodMs = 1_000L
+    /** RTK status of the fix the latest GST was attached to (exact-time match). */
+    private var gstEpochRtk: RtkStatus? = null
+
     private fun handle(sentence: NmeaSentence) {
+        val now = System.currentTimeMillis()
+        pendingGga?.let { p ->
+            if (now - pendingAtMs > GST_HOLD_MS || startsNextEpoch(sentence, p)) releasePending()
+        }
         when (sentence) {
-            is GGA -> { ggaCount++; lastGga = sentence; ggaSinceLastGsa = true; maybeEmitFix() }
+            is GGA -> {
+                ggaCount++; lastGga = sentence; ggaSinceLastGsa = true
+                val gstInHand = lastGst?.let { timesMatch(it.timeRaw, sentence.timeRaw) } == true
+                if (!gstInHand && expectGstFor(sentence, now)) {
+                    pendingGga = sentence; pendingAtMs = now
+                } else {
+                    maybeEmitFix(sentence)
+                }
+            }
             is RMC -> { rmcCount++; lastRmc = sentence }  // Enrich speed/course; does not trigger a fix
             is GSA -> handleGsa(sentence)
             is GSV -> handleGsv(sentence)
             is ZDA -> { zdaCount++; handleZda(sentence) }
-            is GST -> { gstCount++; lastGst = sentence }  // accuracy ellipse; used in next fix emission
+            is GST -> {
+                gstCount++; lastGst = sentence; lastGstAtMs = now
+                NmeaDateTimeUtils.parseNmeaTime(sentence.timeRaw)?.let { t ->
+                    val tod = t.toNanoOfDay() / 1_000_000L
+                    lastGstTodMs?.let { prev ->
+                        val d = Math.floorMod(tod - prev, DAY_MS)
+                        if (d in 100L..10_000L) gstPeriodMs = d
+                    }
+                    lastGstTodMs = tod
+                }
+                pendingGga?.let { if (timesMatch(sentence.timeRaw, it.timeRaw)) releasePending() }
+            }
             // MediaTek proprietary accuracy: no timestamp, so freshness is judged by arrival time.
             is ACCURACY -> { lastAccuracy = sentence; lastAccuracyAtMs = System.currentTimeMillis() }
             is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
@@ -345,8 +383,56 @@ class NmeaFuser(
         return bySvid.values.toList()
     }
 
-    private fun maybeEmitFix() {
-        val gga = lastGga ?: return
+    private fun releasePending() {
+        val p = pendingGga ?: return
+        pendingGga = null
+        maybeEmitFix(p)
+    }
+
+    /** True when this stream sends GST and its cadence puts one at this GGA's time. */
+    private fun expectGstFor(gga: GGA, now: Long): Boolean {
+        if (lastGstAtMs == 0L || now - lastGstAtMs > GST_ACTIVE_MS) return false
+        val prev = lastGstTodMs ?: return true
+        val t = NmeaDateTimeUtils.parseNmeaTime(gga.timeRaw) ?: return false
+        val phase = Math.floorMod(t.toNanoOfDay() / 1_000_000L - prev, gstPeriodMs)
+        return phase <= EPOCH_MATCH_MS || phase >= gstPeriodMs - EPOCH_MATCH_MS
+    }
+
+    /** True when [s] carries a time-of-day different from the pending GGA's (a later epoch began). */
+    private fun startsNextEpoch(s: NmeaSentence, pending: GGA): Boolean {
+        val t = when (s) {
+            is GGA -> s.timeRaw
+            is RMC -> s.timeRaw
+            is ZDA -> s.timeRaw
+            else   -> return false   // GST handled by exact match; GSA/GSV/VTG carry no time
+        }
+        val a = NmeaDateTimeUtils.parseNmeaTime(t) ?: return s is GGA
+        val b = NmeaDateTimeUtils.parseNmeaTime(pending.timeRaw) ?: return true
+        return a != b
+    }
+
+    /** Same epoch: time-of-day within [EPOCH_MATCH_MS]. A missing time matches (tolerant, as before). */
+    private fun timesMatch(timeRaw: String?, ggaTimeRaw: String?): Boolean {
+        val a = NmeaDateTimeUtils.parseNmeaTime(timeRaw) ?: return true
+        val b = NmeaDateTimeUtils.parseNmeaTime(ggaTimeRaw) ?: return true
+        val diff = Math.abs(a.toNanoOfDay() - b.toNanoOfDay()) / 1_000_000L
+        return minOf(diff, DAY_MS - diff) <= EPOCH_MATCH_MS
+    }
+
+    /** Milliseconds from [earlierRaw] to [laterRaw] (midnight-aware), or null if either is unparseable. */
+    private fun msAfter(earlierRaw: String?, laterRaw: String?): Long? {
+        val a = NmeaDateTimeUtils.parseNmeaTime(earlierRaw) ?: return null
+        val b = NmeaDateTimeUtils.parseNmeaTime(laterRaw) ?: return null
+        return Math.floorMod((b.toNanoOfDay() - a.toNanoOfDay()) / 1_000_000L, DAY_MS)
+    }
+
+    /**
+     * Releases a fix held for its GST, if any. The live stream releases it with the next epoch's
+     * first sentence; call this at end of input (replay, tests) so the last epoch is not lost.
+     */
+    fun flush() = synchronized(lock) { releasePending() }
+
+    private fun maybeEmitFix(gga: GGA) {
         val lat = gga.lat ?: return
         val lon = gga.lon ?: return
         // Quality 0 = "fix not valid". Some chipsets keep repeating the last coordinates with
@@ -405,7 +491,14 @@ class NmeaFuser(
         // empty and populates lat/lon instead. Null when GST carried neither — never fabricated as 0.0.
         // Enrichment sentences only apply if they belong to (roughly) this epoch. Otherwise a receiver
         // that stops sending GST/RMC/GSA would leave the last accuracy/speed/DOP frozen on every fix.
-        val gst = lastGst?.takeIf { sameEpoch(it.timeRaw, gga.timeRaw) }
+        // GST from exactly this epoch (waited for above). Between GSTs (5 Hz GGA, 1 Hz GST) the latest
+        // GST is carried for at most one GST period, and only while the RTK status is unchanged since
+        // the epoch it belonged to — so a FIX → FLOAT change never keeps the FIX accuracy.
+        val exactGst = lastGst?.takeIf { timesMatch(it.timeRaw, gga.timeRaw) }
+        val gst = exactGst ?: lastGst?.takeIf { g ->
+            gstEpochRtk == rtk && msAfter(g.timeRaw, gga.timeRaw)?.let { it in 1..(gstPeriodMs + EPOCH_MATCH_MS) } == true
+        }
+        if (exactGst != null) gstEpochRtk = rtk
         val rmc = lastRmc?.takeIf { sameEpoch(it.timeRaw, gga.timeRaw) }
         val gsa = lastGsa?.takeIf { System.currentTimeMillis() - lastGsaAtMs <= GSA_STALE_MS }
 
@@ -507,6 +600,7 @@ class NmeaFuser(
         gsvSignalsByTalker.clear(); ggaSinceLastGsa = false; lastGsaAtMs = 0L
         lastAccuracy = null; lastAccuracyAtMs = 0L
         lastGga = null; lastRmc = null; lastGsa = null; lastZda = null; lastGst = null
+        pendingGga = null; pendingAtMs = 0L; lastGstAtMs = 0L; lastGstTodMs = null; gstPeriodMs = 1_000L; gstEpochRtk = null
         lastEmittedGgaTimeUtc = null; lastTimestampSource = null
         ggaCount = 0; rmcCount = 0; zdaCount = 0; gstCount = 0; emittedFixCount = 0
         gsaCountByTalker.clear(); gsvCountByTalker.clear()
@@ -605,6 +699,12 @@ class NmeaFuser(
         const val GSA_STALE_MS = 5_000L
         /** GST/RMC must be within this of the GGA time to enrich it (covers 1 Hz RMC with 5 Hz GGA). */
         const val ENRICHMENT_WINDOW_MS = 2_500L
+        /** Longest a GGA is held waiting for its same-time GST before emitting without it. */
+        const val GST_HOLD_MS = 300L
+        /** The stream counts as GST-capable while a GST arrived within this window. */
+        const val GST_ACTIVE_MS = 5_000L
+        /** Two NMEA times within this are the same epoch (covers centisecond rounding). */
+        const val EPOCH_MATCH_MS = 50L
     }
 
     private fun sumIfFinite(a: Double?, b: Double?): Double? =

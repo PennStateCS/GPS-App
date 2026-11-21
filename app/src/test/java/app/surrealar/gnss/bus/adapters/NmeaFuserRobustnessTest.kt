@@ -68,6 +68,7 @@ class NmeaFuserRobustnessTest {
         assertNotNull(fixes.last().hAccM)
         // Receiver stops sending GST; 10 s later the accuracy must not stay frozen.
         fuser.accept(gga("120010.00"))
+        fuser.flush()   // the 120010 GGA may be held for a GST that never comes
         assertNull(fixes.last().hAccM)
     }
 
