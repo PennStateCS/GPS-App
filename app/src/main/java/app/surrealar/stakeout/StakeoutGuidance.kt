@@ -1,12 +1,10 @@
 package app.surrealar.stakeout
 
-import kotlin.math.roundToInt
-
 /**
  * Pure (Android-free) stakeout guidance state + logic.
  *
  * This is display/feedback logic only. It consumes distance/bearing values that are computed by the
- * existing map math (haversine distance + great-circle bearing in `RenderMapFragment`) and turns
+ * map math (WGS84 geodesic distance + bearing from geo-core, called in `RenderMapFragment`) and turns
  * them into a navigation status, a relative arrow angle, and direction text. It deliberately does
  * NOT compute distance or bearing itself, so the existing stakeout math is untouched.
  */
@@ -135,14 +133,8 @@ object StakeoutGuidance {
         return HeadingSource.NORTH_UP to null
     }
 
-    /** 8-point compass abbreviation for a bearing (e.g. "NE"). */
-    fun compassPoint(bearingDeg: Double): String {
-        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
-        return dirs[(normalize360(bearingDeg) / 45.0).roundToInt() % 8]
-    }
-
-    /** Human "move <word>" direction for a bearing. */
-    fun directionWord(bearingDeg: Double): String = when (compassPoint(bearingDeg)) {
+    /** Human "move <word>" direction for a bearing (compass point from geo-core's [Compass]). */
+    fun directionWord(bearingDeg: Double): String = when (app.surrealar.geo.heading.Compass.point8(bearingDeg)) {
         "N" -> "north"
         "NE" -> "northeast"
         "E" -> "east"

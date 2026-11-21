@@ -4,7 +4,7 @@ import app.surrealar.gnss.model.FixSnapshot
 import app.surrealar.gnss.capture.CaptureResult
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.TimestampSource
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import java.time.Duration
 
 /**
@@ -46,8 +46,8 @@ object CoordinateFactory {
         val (utmEasting, utmNorthing, utmZone) = if (fix.lat != null && fix.lon != null &&
             !fix.lat.isNaN() && !fix.lon.isNaN()) {
             try {
-                val utmCoord = UtmConverter.latLonToUtm(fix.lat, fix.lon)
-                Triple(utmCoord.easting, utmCoord.northing, utmCoord.utmZone)
+                val utmCoord = Utm.forward(fix.lat, fix.lon)
+                Triple(utmCoord.eastingM, utmCoord.northingM, utmCoord.zoneLabel)
             } catch (e: Exception) {
                 Triple(null, null, null)
             }
@@ -132,7 +132,7 @@ object CoordinateFactory {
             Provider.MODEL        -> "model"
             Provider.OTHER        -> "other"
         }
-        val utm = runCatching { UtmConverter.latLonToUtm(result.latDeg, result.lonDeg) }.getOrNull()
+        val utm = runCatching { Utm.forward(result.latDeg, result.lonDeg) }.getOrNull()
         // Wall-clock save time for the audit fields (createdAt/updatedAt).
         val capturedAtMs = result.endedAt.toEpochMilli()
         // The coordinate's timestamp is the last accepted fix's own time, so it matches the
@@ -177,9 +177,9 @@ object CoordinateFactory {
             stdLonM             = result.stdDevEastM,
             stdAltM             = result.stdDevUpM,
             crsEpsg             = crsEpsg,
-            easting             = utm?.easting,
-            northing            = utm?.northing,
-            utmZone             = utm?.utmZone,
+            easting             = utm?.eastingM,
+            northing            = utm?.northingM,
+            utmZone             = utm?.zoneLabel,
             averagedSamples     = result.samples,
             averageDurationMs   = Duration.between(result.startedAt, result.endedAt).toMillis(),
             note                = note,

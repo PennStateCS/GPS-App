@@ -73,12 +73,8 @@ class LastKnownPositionStore @Inject constructor(
             return approxDistanceM(prev.latDeg, prev.lonDeg, next.latDeg, next.lonDeg) >= MIN_MOVE_M
         }
 
-        /** Equirectangular distance — plenty for a 10 m throttle. */
-        internal fun approxDistanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-            val mPerDegLat = 111_320.0
-            val dy = (lat2 - lat1) * mPerDegLat
-            val dx = (lon2 - lon1) * mPerDegLat * cos(Math.toRadians((lat1 + lat2) / 2))
-            return sqrt(dx * dx + dy * dy)
-        }
+        /** WGS84 geodesic distance (geo-core; was an equirectangular 111,320 m/° approximation). */
+        internal fun approxDistanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double =
+            app.surrealar.geo.ellipsoid.Geodesic.distanceM(lat1, lon1, lat2, lon2)
     }
 }

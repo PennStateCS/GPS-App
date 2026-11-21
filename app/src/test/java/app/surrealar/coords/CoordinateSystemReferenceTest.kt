@@ -2,8 +2,8 @@ package app.surrealar.coords
 
 import app.surrealar.geo.projection.LambertConformalConic
 import app.surrealar.geo.datum.Itrf2014ToNad83
-import app.surrealar.geo.datum.GeodeticPosition
-import app.surrealar.geo.datum.Grs80
+import app.surrealar.geo.ellipsoid.GeodeticPosition
+import app.surrealar.geo.ellipsoid.Ellipsoid
 import app.surrealar.geo.geoid.Geoid18Grid
 
 import app.surrealar.settings.model.CoordinateSystemSettings
@@ -51,10 +51,10 @@ class CoordinateSystemReferenceTest {
     }
 
     @Test fun `UTM 18N matches NCAT`() {
-        val u = app.surrealar.geo.projection.UtmConverter.latLonToUtm(41.3477, -76.0226)
+        val u = app.surrealar.geo.projection.Utm.forward(41.3477, -76.0226)
         assertEquals(18, u.zone)
-        assertEquals(414_450.726, u.easting, 0.002)
-        assertEquals(4_577_860.600, u.northing, 0.002)
+        assertEquals(414_450.726, u.eastingM, 0.002)
+        assertEquals(4_577_860.600, u.northingM, 0.002)
     }
 
     // ── Datum transformation (PROJ) ─────────────────────────────────────────────────────────────
@@ -76,10 +76,10 @@ class CoordinateSystemReferenceTest {
     }
 
     @Test fun `GRS80 geocentric matches NCAT XYZ`() {
-        val xyz = Grs80.toEcef(GeodeticPosition(41.3477, -76.0226, 390.0))
-        assertEquals(1_158_291.825, xyz[0], 0.001)
-        assertEquals(-4_653_473.583, xyz[1], 0.001)
-        assertEquals(4_191_746.616, xyz[2], 0.001)
+        val xyz = Ellipsoid.GRS80.toEcef(GeodeticPosition(41.3477, -76.0226, 390.0))
+        assertEquals(1_158_291.825, xyz.xM, 0.001)
+        assertEquals(-4_653_473.583, xyz.yM, 0.001)
+        assertEquals(4_191_746.616, xyz.zM, 0.001)
     }
 
     @Test fun `decimal year`() {

@@ -6,9 +6,8 @@ import org.junit.Test
 class GeodesyEnuTest {
 
     private fun enuOf(lat: Double, lon: Double, h: Double, refLat: Double, refLon: Double, refH: Double): Triple<Double, Double, Double> {
-        val (x0, y0, z0) = Geodesy.llaToEcef(refLat, refLon, refH)
-        val (x, y, z) = Geodesy.llaToEcef(lat, lon, h)
-        return Geodesy.ecefDeltaToEnu(x - x0, y - y0, z - z0, refLat, refLon)
+        val v = app.surrealar.geo.local.LocalEnu(refLat, refLon, refH).toEnu(lat, lon, h)
+        return Triple(v[0], v[1], v[2])
     }
 
     @Test fun `a point north of the reference is pure north`() {

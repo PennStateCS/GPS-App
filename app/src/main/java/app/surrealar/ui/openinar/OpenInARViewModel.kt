@@ -9,7 +9,7 @@ import app.surrealar.domain.repository.GnssReceiverSettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.settings.model.ArDisplaySettings
 import app.surrealar.util.DiagnosticsLogger
-import app.surrealar.util.haversineM
+import app.surrealar.geo.ellipsoid.Geodesic
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -254,7 +254,7 @@ class OpenInARViewModel @Inject constructor(
     ) { coords, pos, range, mode, visibleIds ->
         coords.filter { it.modelFilePath != null }.map { cwm ->
             val c = cwm.coordinate
-            val dist = if (pos != null) haversineM(pos[0], pos[1], c.latitude, c.longitude) else null
+            val dist = if (pos != null) Geodesic.distanceM(pos[0], pos[1], c.latitude, c.longitude) else null
             val inRange = ArVisibilityLogic.inRange(mode, dist, range)
             val selected = c.id in visibleIds
             val renderable = ArVisibilityLogic.renderable(mode, inRange, selected)

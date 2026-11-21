@@ -2,7 +2,8 @@ package app.surrealar.gnss.capture
 
 import app.surrealar.gnss.accuracy.AccuracyEstimator
 import app.surrealar.gnss.accuracy.UereTable
-import app.surrealar.geo.ellipsoid.Geodesy
+import app.surrealar.geo.ellipsoid.Ellipsoid
+import app.surrealar.geo.local.LocalEnu
 import app.surrealar.geo.stats.RunningStats
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.RtkStatus
@@ -209,11 +210,11 @@ class ObservationSession(
                      * Convert the accepted geodetic position to ECEF before averaging.
                      * This puts the samples into a meter-based 3D coordinate system.
                      */
-                    val (x, y, z) = Geodesy.llaToEcef(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM!!)
+                    val (x, y, z) = Ellipsoid.WGS84.toEcef(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM!!)
                     xs.push(x); ys.push(y); zs.push(z)
                     val r = ref ?: Triple(x, y, z).also { ref = it; refLatLon = fix.latDeg to fix.lonDeg }
                     val (rl, rn) = refLatLon!!
-                    val (de, dn, du) = Geodesy.ecefDeltaToEnu(x - r.first, y - r.second, z - r.third, rl, rn)
+                    val (de, dn, du) = LocalEnu(rl, rn).enuFromEcefDelta(x - r.first, y - r.second, z - r.third)
                     es.push(de); ns.push(dn); us.push(du)
                     samples++
 
@@ -288,7 +289,7 @@ class ObservationSession(
          * Convert the averaged ECEF coordinate back to latitude, longitude, and
          * ellipsoidal height for storage and display.
          */
-        val (lat, lon, h) = Geodesy.ecefToLla(xs.mean(), ys.mean(), zs.mean())
+        val (lat, lon, h) = Ellipsoid.WGS84.fromEcef(xs.mean(), ys.mean(), zs.mean())
         val meanN = if (geoidN.n > 0) geoidN.mean() else null
 
         val result = CaptureResult(

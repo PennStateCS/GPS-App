@@ -1,6 +1,6 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.datum.GeodeticPosition
+import app.surrealar.geo.ellipsoid.GeodeticPosition
 import app.surrealar.geo.datum.Itrf2014ToNad83
 import app.surrealar.geo.geoid.Geoid18Grid
 import app.surrealar.geo.projection.SpcsZone
@@ -11,7 +11,7 @@ import app.surrealar.settings.model.HorizontalSystem
 import app.surrealar.settings.model.LinearUnit
 import app.surrealar.settings.model.OutputDatum
 import app.surrealar.settings.model.VerticalReference
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import java.util.Locale
 
 /** EPSG codes recorded in Coordinate.crsEpsg for the datum of stored lat/lon/height. */
@@ -107,8 +107,8 @@ class CoordinateConverter(private val geoidN: (latDeg: Double, lonDeg: Double) -
         when (s.horizontal) {
             HorizontalSystem.GEOGRAPHIC -> Unit
             HorizontalSystem.UTM -> {
-                val u = UtmConverter.latLonToUtm(geo.latDeg, geo.lonDeg)
-                easting = unit.fromMeters(u.easting); northing = unit.fromMeters(u.northing)
+                val u = Utm.forward(geo.latDeg, geo.lonDeg)
+                easting = unit.fromMeters(u.eastingM); northing = unit.fromMeters(u.northingM)
                 zone = "UTM ${u.zone}${if (geo.latDeg >= 0) "N" else "S"}"
             }
             HorizontalSystem.STATE_PLANE -> {

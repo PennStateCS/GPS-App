@@ -92,14 +92,6 @@ object HeadingMath {
     ): Boolean {
         if (lastLat == null || lastLon == null || lastTimeMs == null) return true
         if (nowMs - lastTimeMs > maxAgeMs) return true
-        return distanceM(lastLat, lastLon, lat, lon) > maxMoveM
-    }
-
-    /** Great-circle distance (m); a 10 km threshold doesn't need the ellipsoid. */
-    private fun distanceM(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val p1 = Math.toRadians(lat1); val p2 = Math.toRadians(lat2)
-        val dp = p2 - p1; val dl = Math.toRadians(lon2 - lon1)
-        val a = sin(dp / 2).let { it * it } + cos(p1) * cos(p2) * sin(dl / 2).let { it * it }
-        return 2 * 6_371_000.0 * asin(sqrt(a.coerceIn(0.0, 1.0)))
+        return app.surrealar.geo.ellipsoid.Geodesic.distanceM(lastLat, lastLon, lat, lon) > maxMoveM
     }
 }

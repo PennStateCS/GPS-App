@@ -26,7 +26,7 @@ import app.surrealar.domain.model.Model
 import app.surrealar.domain.model.ModelLocationConfidence
 import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.util.GlbGeoreferenceDetector
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
@@ -227,7 +227,7 @@ class EditCoordinateDialogFragment(
                         modelPlacementOrigin = newPlacementOrigin
                     )
                     val updated = if (locationMoved) {
-                        val utm = try { UtmConverter.latLonToUtm(lat, lon) } catch (_: Exception) { null }
+                        val utm = try { Utm.forward(lat, lon) } catch (_: Exception) { null }
                         // Position now comes from the model file, so mark provenance accordingly
                         // (mirrors the Add dialog's "Use Model Location" behavior).
                         base.copy(
@@ -236,9 +236,9 @@ class EditCoordinateDialogFragment(
                             altitude = alt,
                             provider = "model",
                             captureMethod = CaptureMethod.MODEL_EMBEDDED.storageValue,
-                            easting = utm?.easting,
-                            northing = utm?.northing,
-                            utmZone = utm?.utmZone
+                            easting = utm?.eastingM,
+                            northing = utm?.northingM,
+                            utmZone = utm?.zoneLabel
                         )
                     } else {
                         base

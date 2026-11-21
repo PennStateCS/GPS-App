@@ -1,13 +1,15 @@
 package app.surrealar.geo.local
 
+import app.surrealar.geo.ellipsoid.Ellipsoid
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LocalEnuTest {
 
     @Test fun `metres per degree at 41N match the WGS84 radii`() {
-        assertEquals(111_054.0, Wgs84.metersPerDegLat(41.0), 1.0)   // sphere: 111,320
-        assertEquals(84_135.0, Wgs84.metersPerDegLon(41.0), 1.0)    // sphere: 84,015
+        assertEquals(111_054.0, Ellipsoid.WGS84.metersPerDegLat(41.0), 1.0)   // sphere: 111,320
+        assertEquals(84_135.0, Ellipsoid.WGS84.metersPerDegLon(41.0), 1.0)    // sphere: 84,015
     }
 
     @Test fun `ENU offsets about an origin at 41N`() {
@@ -24,7 +26,7 @@ class LocalEnuTest {
 
     @Test fun `200 m model - sphere error the old reprojector had`() {
         // 200 m N–S at 41°N: the 111,320 m/° sphere made it ~0.48 m too long.
-        val dLat = 200.0 / Wgs84.metersPerDegLat(41.0)
+        val dLat = 200.0 / Ellipsoid.WGS84.metersPerDegLat(41.0)
         assertEquals(0.48, dLat * 111_320.0 - 200.0, 0.01)
     }
 }

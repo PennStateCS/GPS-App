@@ -181,10 +181,10 @@ class StakeoutGuidanceTest {
 
     @Test
     fun `compass point and direction word`() {
-        assertEquals("N", StakeoutGuidance.compassPoint(0.0))
-        assertEquals("NE", StakeoutGuidance.compassPoint(42.0))
-        assertEquals("E", StakeoutGuidance.compassPoint(90.0))
-        assertEquals("N", StakeoutGuidance.compassPoint(359.0))
+        assertEquals("N", app.surrealar.geo.heading.Compass.point8(0.0))
+        assertEquals("NE", app.surrealar.geo.heading.Compass.point8(42.0))
+        assertEquals("E", app.surrealar.geo.heading.Compass.point8(90.0))
+        assertEquals("N", app.surrealar.geo.heading.Compass.point8(359.0))
         assertEquals("northeast", StakeoutGuidance.directionWord(42.0))
         assertEquals("west", StakeoutGuidance.directionWord(270.0))
     }

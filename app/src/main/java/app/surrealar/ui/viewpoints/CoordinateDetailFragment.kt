@@ -46,7 +46,7 @@ import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.ui.models.ModelViewerActivity
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.GlbGeoreferenceDetector
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.imageview.ShapeableImageView
@@ -1072,7 +1072,7 @@ class CoordinateDetailFragment : Fragment() {
             val lat = embedded.latitude
             val lon = embedded.longitude
             val alt = embedded.altitudeMeters ?: coord.altitude
-            val utm = try { UtmConverter.latLonToUtm(lat, lon) } catch (_: Exception) { null }
+            val utm = try { Utm.forward(lat, lon) } catch (_: Exception) { null }
             // Position now comes from the model file, so mark provenance accordingly.
             coord.copy(
                 icon = CoordinateModelLink.toLegacyIcon(modelId),
@@ -1082,7 +1082,7 @@ class CoordinateDetailFragment : Fragment() {
                 provider = "model",
                 captureMethod = CaptureMethod.MODEL_EMBEDDED.storageValue,
                 updatedAt = System.currentTimeMillis(),
-                easting = utm?.easting, northing = utm?.northing, utmZone = utm?.utmZone
+                easting = utm?.eastingM, northing = utm?.northingM, utmZone = utm?.zoneLabel
             )
         } else {
             coord.copy(

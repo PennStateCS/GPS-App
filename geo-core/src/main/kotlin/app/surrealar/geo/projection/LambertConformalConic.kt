@@ -1,6 +1,6 @@
 package app.surrealar.geo.projection
 
-import app.surrealar.geo.datum.Grs80
+import app.surrealar.geo.ellipsoid.Ellipsoid
 
 import kotlin.math.PI
 import kotlin.math.abs
@@ -23,7 +23,7 @@ class LambertConformalConic(
     lat1Deg: Double, lat2Deg: Double,
     private val falseEastingM: Double, private val falseNorthingM: Double,
 ) {
-    private val e = sqrt(Grs80.E2)
+    private val e = sqrt(Ellipsoid.GRS80.eccentricitySquared)
     private val n: Double
     private val aF: Double
     private val rho0: Double
@@ -33,11 +33,11 @@ class LambertConformalConic(
         val m1 = m(p1); val m2 = m(p2)
         val t1 = t(p1); val t2 = t(p2)
         n = (ln(m1) - ln(m2)) / (ln(t1) - ln(t2))
-        aF = Grs80.A * m1 / (n * t1.pow(n))
+        aF = Ellipsoid.GRS80.semiMajorAxisM * m1 / (n * t1.pow(n))
         rho0 = aF * t(p0).pow(n)
     }
 
-    private fun m(phi: Double) = cos(phi) / sqrt(1 - Grs80.E2 * sin(phi) * sin(phi))
+    private fun m(phi: Double) = cos(phi) / sqrt(1 - Ellipsoid.GRS80.eccentricitySquared * sin(phi) * sin(phi))
     private fun t(phi: Double): Double {
         val es = e * sin(phi)
         return tan(PI / 4 - phi / 2) / ((1 - es) / (1 + es)).pow(e / 2)

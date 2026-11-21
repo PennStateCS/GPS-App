@@ -10,7 +10,7 @@ import app.surrealar.data.settings.repository.SettingsRepositoryImpl
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.mock.AndroidMockLocationPublisher
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.EntryPoint
@@ -161,8 +161,8 @@ class SurRealApplication : Application() {
                 list.forEach { c ->
                     if (c.easting == null || c.northing == null || c.utmZone == null) {
                         try {
-                            val utm = UtmConverter.latLonToUtm(c.latitude, c.longitude)
-                            repo.update(c.copy(easting = utm.easting, northing = utm.northing, utmZone = utm.utmZone))
+                            val utm = Utm.forward(c.latitude, c.longitude)
+                            repo.update(c.copy(easting = utm.eastingM, northing = utm.northingM, utmZone = utm.zoneLabel))
                             updated++
                         } catch (_: Exception) { /* ignore bad lat/lon */ }
                     }

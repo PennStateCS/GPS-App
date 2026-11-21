@@ -5,6 +5,7 @@ ksp = "2.3.14"
 dokka = "2.3.0"
 coreKtx = "1.19.1"
 junit = "4.13.2"
+geographiclib = "2.0"  # MIT; geodesics on WGS84 for :geo-core
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
 appcompat = "1.8.0"
@@ -34,6 +35,7 @@ fragmentTesting = "1.9.1"
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+geographiclib = { group = "net.sf.geographiclib", name = "GeographicLib-Java", version.ref = "geographiclib" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }

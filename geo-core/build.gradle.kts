@@ -22,6 +22,8 @@ kotlin {
 }
 
 dependencies {
+    // Geodesics on the ellipsoid (Karney). MIT-licensed, compatible with GPL-3.0.
+    implementation(libs.geographiclib)
     testImplementation(libs.junit)
 }
 

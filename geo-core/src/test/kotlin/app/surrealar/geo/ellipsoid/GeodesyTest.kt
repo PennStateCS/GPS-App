@@ -10,8 +10,8 @@ class GeodesyTest {
         latDeg: Double, lonDeg: Double, hM: Double,
         latTol: Double = 1e-9, lonTol: Double = 1e-9, hTol: Double = 1e-3
     ) {
-        val (x, y, z) = Geodesy.llaToEcef(latDeg, lonDeg, hM)
-        val (lat2, lon2, h2) = Geodesy.ecefToLla(x, y, z)
+        val (x, y, z) = Ellipsoid.WGS84.toEcef(latDeg, lonDeg, hM)
+        val (lat2, lon2, h2) = Ellipsoid.WGS84.fromEcef(x, y, z)
         assertEquals("latitude",  latDeg, lat2, latTol)
         assertEquals("longitude", lonDeg, lon2, lonTol)
         assertEquals("height",    hM,     h2,   hTol)

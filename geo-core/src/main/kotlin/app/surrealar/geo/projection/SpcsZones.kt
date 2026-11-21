@@ -1,6 +1,6 @@
 package app.surrealar.geo.projection
 
-import app.surrealar.geo.datum.Grs80
+import app.surrealar.geo.ellipsoid.Ellipsoid
 
 import kotlin.math.PI
 import kotlin.math.abs
@@ -17,6 +17,7 @@ import kotlin.math.sin
 import kotlin.math.sinh
 import kotlin.math.sqrt
 import kotlin.math.tan
+import kotlin.math.tanh
 
 /** A map projection on GRS80: NAD83(2011) latitude/longitude (degrees) → (easting, northing) metres. */
 sealed interface SpcsProjection {
@@ -42,10 +43,11 @@ class Lcc2(latOrigin: Double, private val lonOrigin: Double, lat1: Double, lat2:
  * "JHS" formulas) — sub-millimetre within State Plane zone widths.
  */
 class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Double,
-         private val fe: Double, private val fn: Double) : SpcsProjection {
-    private val e = sqrt(Grs80.E2)
-    private val n = Grs80.F / (2 - Grs80.F)
-    private val b = Grs80.A / (1 + n) * (1 + n * n / 4 + n.pow(4) / 64)
+         private val fe: Double, private val fn: Double,
+         private val ellipsoid: Ellipsoid = Ellipsoid.GRS80) : SpcsProjection {
+    private val e = sqrt(ellipsoid.eccentricitySquared)
+    private val n = ellipsoid.thirdFlattening
+    private val b = ellipsoid.semiMajorAxisM / (1 + n) * (1 + n * n / 4 + n.pow(4) / 64)
     private val h = doubleArrayOf(
         n / 2 - 2.0 / 3 * n * n + 5.0 / 16 * n.pow(3) + 41.0 / 180 * n.pow(4),
         13.0 / 48 * n * n - 3.0 / 5 * n.pow(3) + 557.0 / 1440 * n.pow(4),
@@ -76,12 +78,43 @@ class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Doubl
         }
         return (fe + k0 * b * eta) to (fn + k0 * (b * xi - m0))
     }
+
+    /** Inverse-series coefficients h1'..h4' (EPSG Guidance Note 7-2, Krüger n-series, 4th order). */
+    private val hInv = doubleArrayOf(
+        n / 2 - 2.0 / 3 * n * n + 37.0 / 96 * n.pow(3) - 1.0 / 360 * n.pow(4),
+        1.0 / 48 * n * n + 1.0 / 15 * n.pow(3) - 437.0 / 1440 * n.pow(4),
+        17.0 / 480 * n.pow(3) - 37.0 / 840 * n.pow(4),
+        4397.0 / 161280 * n.pow(4),
+    )
+
+    /**
+     * Inverse: (easting, northing) metres → (latitude, longitude) degrees, by the Krüger inverse
+     * series (EPSG Guidance Note 7-2). Longitude is returned in −180..180.
+     */
+    fun inverse(eastingM: Double, northingM: Double): Pair<Double, Double> {
+        val etaP = (eastingM - fe) / (b * k0)
+        val xiP = ((northingM - fn) + k0 * m0) / (b * k0)
+        var xi0 = xiP; var eta0 = etaP
+        for (i in 1..4) {
+            xi0 -= hInv[i - 1] * sin(2 * i * xiP) * cosh(2 * i * etaP)
+            eta0 -= hInv[i - 1] * cos(2 * i * xiP) * sinh(2 * i * etaP)
+        }
+        val betaP = asin(sin(xi0) / cosh(eta0))
+        val qP = asinh(tan(betaP))
+        var qPP = qP + e * atanh(e * tanh(qP))
+        repeat(12) { qPP = qP + e * atanh(e * tanh(qPP)) }
+        val phi = atan(sinh(qPP))
+        var lonDeg = lonOrigin + Math.toDegrees(asin(tanh(eta0) / cos(betaP)))
+        while (lonDeg > 180.0) lonDeg -= 360.0
+        while (lonDeg < -180.0) lonDeg += 360.0
+        return Math.toDegrees(phi) to lonDeg
+    }
 }
 
 /** Hotine Oblique Mercator variant A, EPSG 9812 (EPSG Guidance Note 7-2) — SPCS83 Alaska zone 1. */
 class HomA(latCentre: Double, lonCentre: Double, azimuthDeg: Double, rectifiedToSkewDeg: Double,
            kc: Double, private val fe: Double, private val fn: Double) : SpcsProjection {
-    private val e = sqrt(Grs80.E2)
+    private val e = sqrt(Ellipsoid.GRS80.eccentricitySquared)
     private val bb: Double
     private val aa: Double
     private val hh: Double
@@ -92,9 +125,9 @@ class HomA(latCentre: Double, lonCentre: Double, azimuthDeg: Double, rectifiedTo
     init {
         val phiC = Math.toRadians(latCentre)
         val alphaC = Math.toRadians(azimuthDeg)
-        val e2 = Grs80.E2
+        val e2 = Ellipsoid.GRS80.eccentricitySquared
         bb = sqrt(1 + e2 * cos(phiC).pow(4) / (1 - e2))
-        aa = Grs80.A * bb * kc * sqrt(1 - e2) / (1 - e2 * sin(phiC).pow(2))
+        aa = Ellipsoid.GRS80.semiMajorAxisM * bb * kc * sqrt(1 - e2) / (1 - e2 * sin(phiC).pow(2))
         val t0 = tsf(phiC)
         val d = bb * sqrt(1 - e2) / (cos(phiC) * sqrt(1 - e2 * sin(phiC).pow(2)))
         val dd = if (d < 1) 1.0 else d

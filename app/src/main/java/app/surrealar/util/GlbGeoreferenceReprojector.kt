@@ -4,7 +4,7 @@ import android.util.Log
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.domain.model.ModelLocationConfidence
 import app.surrealar.geo.local.LocalEnu
-import app.surrealar.geo.local.Wgs84
+import app.surrealar.geo.ellipsoid.Ellipsoid
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
@@ -126,8 +126,8 @@ object GlbGeoreferenceReprojector {
 
         // Property of the source file, not something we can fix: its vertices are float32 degrees,
         // so their resolution near the origin is one float ulp.
-        val latResM = Math.ulp(lat0.toFloat()).toDouble() * Wgs84.metersPerDegLat(lat0)
-        val lonResM = Math.ulp(lon0.toFloat()).toDouble() * Wgs84.metersPerDegLon(lat0)
+        val latResM = Math.ulp(lat0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLat(lat0)
+        val lonResM = Math.ulp(lon0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLon(lat0)
         Log.w(TAG, "${file.name}: float32 degree vertices limit the source model to about " +
             "${"%.1f".format(latResM)} m (lat) / ${"%.1f".format(lonResM)} m (lon)")
 

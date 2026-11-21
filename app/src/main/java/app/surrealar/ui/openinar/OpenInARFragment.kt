@@ -15,10 +15,8 @@ import android.os.Bundle
 import app.surrealar.util.ArSessionDiagnostics
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.argbIntToRgba
-import app.surrealar.util.bearingDeg
-import app.surrealar.util.bearingToCompass
-import app.surrealar.util.formatDist
-import app.surrealar.util.haversineM
+import app.surrealar.geo.heading.Compass
+import app.surrealar.geo.ellipsoid.Geodesic
 
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -1318,7 +1316,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Expected sideways error at the farthest model right now (h + d·tan yaw) — the number that
         // says whether this placement can be trusted at range.
         // Every anchored point (pins too — a pin placed wrong is as misleading as a model).
-        val farthestM = geoItems.maxOfOrNull { haversineM(gnssFix.latDeg, gnssFix.lonDeg, it.lat, it.lng) }
+        val farthestM = geoItems.maxOfOrNull { Geodesic.distanceM(gnssFix.latDeg, gnssFix.lonDeg, it.lat, it.lng) }
         val expErr = farthestM?.let { GeoAnchorGate.expectedErrorM(arHAcc, arYawAcc, it) }
         DiagnosticsLogger.i(DIAG, "anchor gate passed decision=$gate profile=$profile " +
             "arHAccM=${"%.2f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} elapsedMs=$trackingElapsed " +
@@ -1373,8 +1371,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // (for display/diagnosis only — these never feed the model transform).
         for (item in geoItems) {
             val c = item.coordWithModel.coordinate
-            val dM  = haversineM(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
-            val brg = bearingDeg(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
+            val dM  = Geodesic.distanceM(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
+            val brg = Geodesic.initialBearingDeg(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
             DiagnosticsLogger.i(DIAG, "  anchor input coordId=${c.id} name=\"${c.name}\" " +
                 "lat=${"%.7f".format(c.latitude)} lon=${"%.7f".format(c.longitude)} " +
                 "altM=${if (c.altitude.isFinite()) "%.2f".format(c.altitude) else "unknown"} " +
@@ -1847,7 +1845,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         for (entry in geoAnchors) {
             val coord = entry.coordWithModel.coordinate
             val entryModelFilePath = entry.modelFilePath
-            val distM = haversineM(userLat, userLon, coord.latitude, coord.longitude)
+            val distM = Geodesic.distanceM(userLat, userLon, coord.latitude, coord.longitude)
             // Model-visibility decision (shared with the bottom sheet via ArVisibilityLogic): eligibility
             // (has model + in range unless ALL) AND selection (SELECTED mode). Computed regardless of this
             // anchor's tracking so a visible-but-not-tracking model stays in the Filament scene (no
@@ -1890,8 +1888,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 cubeRenderer?.draw(mvp, entry.rgba[0], entry.rgba[1], entry.rgba[2], entry.rgba[3])
             }
 
-            val bearing = bearingDeg(userLat, userLon, coord.latitude, coord.longitude)
-            val subtext = "${coordinateSystemService.distanceText(distM)} ${bearingToCompass(bearing)}"   // units per Settings → Coordinates
+            val bearing = Geodesic.initialBearingDeg(userLat, userLon, coord.latitude, coord.longitude)
+            val subtext = "${coordinateSystemService.distanceText(distM)} ${Compass.point8(bearing)}"   // units per Settings → Coordinates
 
             val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
             val screenProj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
@@ -2032,9 +2030,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val anchorDebug: List<AnchorDebugEntry> = geoAnchors.map { entry ->
             val coord = entry.coordWithModel.coordinate
             val distM = if (camLat != null && camLon != null)
-                haversineM(camLat, camLon, coord.latitude, coord.longitude) else -1.0
+                Geodesic.distanceM(camLat, camLon, coord.latitude, coord.longitude) else -1.0
             val bear = if (camLat != null && camLon != null)
-                bearingDeg(camLat, camLon, coord.latitude, coord.longitude) else 0.0
+                Geodesic.initialBearingDeg(camLat, camLon, coord.latitude, coord.longitude) else 0.0
             AnchorDebugEntry(
                 name     = coord.name,
                 coordId  = coord.id,

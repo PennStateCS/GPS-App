@@ -65,7 +65,7 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.atan2
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import app.surrealar.util.diagnostics.MapRuntimeDiagnostics
 import kotlin.math.cos
 import kotlin.math.min
@@ -758,7 +758,7 @@ class RenderMapFragment : Fragment() {
         if (!isStakeoutMode) return
         lastStakeoutFixElapsedMs = android.os.SystemClock.elapsedRealtime()
         try {
-            // Distance + bearing use the EXISTING haversine/great-circle helpers — unchanged math.
+            // Distance + bearing: WGS84 geodesic (geo-core Geodesic).
             val distance = calculateDistance(currentPos, target)
             val bearing = calculateBearing(currentPos, target)
             // Distance in the units chosen under Settings → Coordinates.
@@ -826,12 +826,8 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    /** 8-point compass abbreviation for a bearing in degrees (display-only). */
-    private fun compassPoint(bearing: Double): String {
-        val dirs = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")
-        val idx = ((((bearing % 360) + 360) % 360) / 45.0).roundToInt() % 8
-        return dirs[idx]
-    }
+    /** 8-point compass abbreviation for a bearing in degrees (display-only; geo-core helper). */
+    private fun compassPoint(bearing: Double): String = app.surrealar.geo.heading.Compass.point8(bearing)
 
     /** Human-readable "move" word for a bearing (display-only). */
     private fun compassDirectionWord(bearing: Double): String = when (compassPoint(bearing)) {
@@ -847,7 +843,7 @@ class RenderMapFragment : Fragment() {
 
     /** Local north/east offsets (metres) from [from] to [to] — same WGS84 frame as distance/bearing. */
     private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> =
-        app.surrealar.geo.local.StakeoutGeometry.northEast(from.latitude, from.longitude, to.latitude, to.longitude)
+        app.surrealar.geo.ellipsoid.Geodesic.northEastDeltaM(from.latitude, from.longitude, to.latitude, to.longitude).let { it.northM to it.eastM }
 
     // ── Stakeout guidance mode (display + feedback only) ───────────────────────
 
@@ -1706,7 +1702,7 @@ class RenderMapFragment : Fragment() {
             txtSelectedDistance?.text = "Distance: " + formatDistanceMeters(dist)
             txtSelectedBearing?.text = String.format(
                 Locale.getDefault(), "Bearing: %s %.0f°",
-                app.surrealar.stakeout.StakeoutGuidance.compassPoint(bearing), bearing
+                app.surrealar.geo.heading.Compass.point8(bearing), bearing
             )
             layoutSelectedLive?.visibility = View.VISIBLE
         } else {
@@ -2047,7 +2043,7 @@ class RenderMapFragment : Fragment() {
 
     /**
      * Draws a UTM-aligned metre grid: vertical lines on round easting multiples, horizontal lines on
-     * round northing multiples of [spacingMeters], using the existing [UtmConverter] (forward +
+     * round northing multiples of [spacingMeters], using geo-core's [Utm] (forward +
      * inverse). Lines are capped per axis for performance/readability. Straight polylines between the
      * converted endpoints are an acceptable approximation at survey zoom levels (single UTM zone).
      */
@@ -2055,15 +2051,15 @@ class RenderMapFragment : Fragment() {
         val map = googleMap ?: return
         try {
             val bounds = map.projection.visibleRegion.latLngBounds
-            val sw = UtmConverter.latLonToUtm(bounds.southwest.latitude, bounds.southwest.longitude)
-            val ne = UtmConverter.latLonToUtm(bounds.northeast.latitude, bounds.northeast.longitude)
+            val sw = Utm.forward(bounds.southwest.latitude, bounds.southwest.longitude)
+            val ne = Utm.forward(bounds.northeast.latitude, bounds.northeast.longitude)
             // Use the centre zone/hemisphere so all lines convert consistently within one zone.
-            val centre = UtmConverter.latLonToUtm(
+            val centre = Utm.forward(
                 (bounds.southwest.latitude + bounds.northeast.latitude) / 2.0,
                 (bounds.southwest.longitude + bounds.northeast.longitude) / 2.0,
             )
-            val minE = minOf(sw.easting, ne.easting); val maxE = maxOf(sw.easting, ne.easting)
-            val minN = minOf(sw.northing, ne.northing); val maxN = maxOf(sw.northing, ne.northing)
+            val minE = minOf(sw.eastingM, ne.eastingM); val maxE = maxOf(sw.eastingM, ne.eastingM)
+            val minN = minOf(sw.northingM, ne.northingM); val maxN = maxOf(sw.northingM, ne.northingM)
 
             val color = ContextCompat.getColor(requireContext(), R.color.map_grid_line)
             fun line(a: LatLng, b: LatLng) {
@@ -2074,8 +2070,8 @@ class RenderMapFragment : Fragment() {
             var e = Math.ceil(minE / spacingMeters) * spacingMeters
             var n = 0
             while (e <= maxE && n < MapGrid.MAX_LINES_PER_AXIS) {
-                val (lat1, lon1) = UtmConverter.utmToLatLon(e, minN, centre.zone, centre.hemisphere)
-                val (lat2, lon2) = UtmConverter.utmToLatLon(e, maxN, centre.zone, centre.hemisphere)
+                val (lat1, lon1) = Utm.inverse(e, minN, centre.zone, centre.hemisphere)
+                val (lat2, lon2) = Utm.inverse(e, maxN, centre.zone, centre.hemisphere)
                 line(LatLng(lat1, lon1), LatLng(lat2, lon2))
                 e += spacingMeters; n++
             }
@@ -2083,8 +2079,8 @@ class RenderMapFragment : Fragment() {
             var north = Math.ceil(minN / spacingMeters) * spacingMeters
             n = 0
             while (north <= maxN && n < MapGrid.MAX_LINES_PER_AXIS) {
-                val (lat1, lon1) = UtmConverter.utmToLatLon(minE, north, centre.zone, centre.hemisphere)
-                val (lat2, lon2) = UtmConverter.utmToLatLon(maxE, north, centre.zone, centre.hemisphere)
+                val (lat1, lon1) = Utm.inverse(minE, north, centre.zone, centre.hemisphere)
+                val (lat2, lon2) = Utm.inverse(maxE, north, centre.zone, centre.hemisphere)
                 line(LatLng(lat1, lon1), LatLng(lat2, lon2))
                 north += spacingMeters; n++
             }
@@ -2276,16 +2272,16 @@ class RenderMapFragment : Fragment() {
 
     // ── Math helpers ───────────────────────────────────────────────────────────
 
-    // Ellipsoidal (WGS84 local ENU) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
+    // WGS84 geodesic (geo-core) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
     private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double =
-        app.surrealar.geo.local.StakeoutGeometry.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
+        app.surrealar.geo.ellipsoid.Geodesic.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
 
     private fun calculateHeadingChange(h1: Double, h2: Double): Double {
         val diff = abs(h2 - h1); return min(diff, 360.0 - diff)
     }
 
     private fun calculateBearing(from: LatLng, to: LatLng): Double =
-        app.surrealar.geo.local.StakeoutGeometry.bearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
+        app.surrealar.geo.ellipsoid.Geodesic.initialBearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
 
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 

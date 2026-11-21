@@ -5,7 +5,7 @@ import org.junit.Test
 import kotlin.math.abs
 
 /**
- * Tests for UtmConverter: zone clamping, representative projections, and round-trip accuracy.
+ * Tests for Utm (formerly UtmConverter): zone clamping, representative projections, and round-trip accuracy.
  * These also serve as regression tests confirming that the meridionalArc refactor did not
  * change computed easting/northing values.
  */
@@ -15,40 +15,40 @@ class UtmZoneTest {
 
     @Test
     fun `latLonToUtm lon -180 produces zone 1`() {
-        assertEquals(1, UtmConverter.latLonToUtm(0.0, -180.0).zone)
+        assertEquals(1, Utm.forward(0.0, -180.0).zone)
     }
 
     @Test
     fun `latLonToUtm lon 180 produces zone 60`() {
-        assertEquals(60, UtmConverter.latLonToUtm(0.0, 180.0).zone)
+        assertEquals(60, Utm.forward(0.0, 180.0).zone)
     }
 
     @Test
     fun `latLonToUtm lon 179_999999 produces zone 60`() {
-        assertEquals(60, UtmConverter.latLonToUtm(0.0, 179.999999).zone)
+        assertEquals(60, Utm.forward(0.0, 179.999999).zone)
     }
 
     // ── Representative projections (zone + utmZone string) ───────────────────
 
     @Test
     fun `latLonToUtm New York City is zone 18 band T`() {
-        val r = UtmConverter.latLonToUtm(40.7128, -74.0060)
+        val r = Utm.forward(40.7128, -74.0060)
         assertEquals(18, r.zone)
         assertEquals('N', r.hemisphere)
         // utmZone is zone + MGRS latitude-band letter ("$zone$zoneLetter"); 40.7°N is band T.
-        assertEquals("18T", r.utmZone)
+        assertEquals("18T", r.zoneLabel)
     }
 
     @Test
     fun `latLonToUtm Munich is zone 32N`() {
-        val r = UtmConverter.latLonToUtm(48.1351, 11.5820)
+        val r = Utm.forward(48.1351, 11.5820)
         assertEquals(32, r.zone)
         assertEquals('N', r.hemisphere)
     }
 
     @Test
     fun `latLonToUtm southern hemisphere point has S hemisphere`() {
-        val r = UtmConverter.latLonToUtm(-33.8688, 151.2093) // Sydney
+        val r = Utm.forward(-33.8688, 151.2093) // Sydney
         assertEquals('S', r.hemisphere)
     }
 
@@ -58,23 +58,23 @@ class UtmZoneTest {
 
     @Test
     fun `latLonToUtm New York easting is near 583960 m`() {
-        val r = UtmConverter.latLonToUtm(40.7128, -74.0060)
-        assertEquals(583960.0, r.easting, 1.0)   // ±1 m tolerance
+        val r = Utm.forward(40.7128, -74.0060)
+        assertEquals(583960.0, r.eastingM, 1.0)   // ±1 m tolerance
     }
 
     @Test
     fun `latLonToUtm New York northing is near 4507351 m`() {
-        val r = UtmConverter.latLonToUtm(40.7128, -74.0060)
+        val r = Utm.forward(40.7128, -74.0060)
         // Authoritative WGS84 UTM northing for 40.7128N, -74.0060 (zone 18) = 4507351.0 m.
-        assertEquals(4507351.0, r.northing, 1.0)
+        assertEquals(4507351.0, r.northingM, 1.0)
     }
 
     @Test
     fun `latLonToUtm equator prime meridian easting is 500000 m`() {
         // At lat=0, lon=3 (central meridian of zone 31), easting should be exactly 500 000 m.
-        val r = UtmConverter.latLonToUtm(0.0, 3.0)
+        val r = Utm.forward(0.0, 3.0)
         assertEquals(31, r.zone)
-        assertEquals(500000.0, r.easting, 0.001)
+        assertEquals(500000.0, r.eastingM, 0.001)
     }
 
     // ── Round-trip: forward then inverse recovers original coordinates ────────
@@ -82,8 +82,8 @@ class UtmZoneTest {
     @Test
     fun `round-trip New York recovers lat and lon within 1 mm`() {
         val lat0 = 40.7128; val lon0 = -74.0060
-        val fwd = UtmConverter.latLonToUtm(lat0, lon0)
-        val (lat1, lon1) = UtmConverter.utmToLatLon(fwd.easting, fwd.northing, fwd.zone, fwd.hemisphere)
+        val fwd = Utm.forward(lat0, lon0)
+        val (lat1, lon1) = Utm.inverse(fwd.eastingM, fwd.northingM, fwd.zone, fwd.hemisphere)
         assertEquals(lat0, lat1, 1e-7)  // ~1 cm at equator
         assertEquals(lon0, lon1, 1e-7)
     }
@@ -91,8 +91,8 @@ class UtmZoneTest {
     @Test
     fun `round-trip Sydney recovers lat and lon within 1 mm`() {
         val lat0 = -33.8688; val lon0 = 151.2093
-        val fwd = UtmConverter.latLonToUtm(lat0, lon0)
-        val (lat1, lon1) = UtmConverter.utmToLatLon(fwd.easting, fwd.northing, fwd.zone, fwd.hemisphere)
+        val fwd = Utm.forward(lat0, lon0)
+        val (lat1, lon1) = Utm.inverse(fwd.eastingM, fwd.northingM, fwd.zone, fwd.hemisphere)
         assertEquals(lat0, lat1, 1e-7)
         assertEquals(lon0, lon1, 1e-7)
     }
@@ -100,8 +100,8 @@ class UtmZoneTest {
     @Test
     fun `round-trip equator boundary lon -180 recovers coordinates`() {
         val lat0 = 0.0; val lon0 = -180.0
-        val fwd = UtmConverter.latLonToUtm(lat0, lon0)
-        val (lat1, lon1) = UtmConverter.utmToLatLon(fwd.easting, fwd.northing, fwd.zone, fwd.hemisphere)
+        val fwd = Utm.forward(lat0, lon0)
+        val (lat1, lon1) = Utm.inverse(fwd.eastingM, fwd.northingM, fwd.zone, fwd.hemisphere)
         assertEquals(lat0, lat1, 1e-7)
         // lon -180 and +180 are the same meridian; accept either
         assertEquals(0.0, abs(lon1) - 180.0, 1e-5)
@@ -115,48 +115,48 @@ class UtmZoneTest {
     @Test
     fun `latLonToUtm northern hemisphere northing unchanged after M0 addition`() {
         // London — northern hemisphere, mid-latitude
-        val r = UtmConverter.latLonToUtm(51.5074, -0.1278)
+        val r = Utm.forward(51.5074, -0.1278)
         assertEquals(30, r.zone)
         assertEquals('N', r.hemisphere)
         // Authoritative WGS84 UTM northing for London 51.5074N, -0.1278 (zone 30) = 5710163.76 m.
-        assertEquals(5710163.76, r.northing, 1.0)   // ±1 m
+        assertEquals(5710163.76, r.northingM, 1.0)   // ±1 m
     }
 
     @Test
     fun `latLonToUtm southern hemisphere northing unchanged after M0 addition`() {
         // Cape Town — southern hemisphere, uses 10,000,000 m false northing
-        val r = UtmConverter.latLonToUtm(-33.9249, 18.4241)
+        val r = Utm.forward(-33.9249, 18.4241)
         assertEquals('S', r.hemisphere)
         // Southern hemisphere applies the 10,000,000 m false northing: northing = 10e6 - arc.
         // At -33.9° the arc from the equator is ~3.76e6 m, so northing ≈ 6,243,182 m
         // (authoritative WGS84). This confirms the false northing was applied (value < 10e6).
-        assertEquals(6243182.35, r.northing, 1.0)
+        assertEquals(6243182.35, r.northingM, 1.0)
     }
 
     @Test
     fun `latLonToUtm equator northing is near zero for northern hemisphere`() {
         // A point right on the equator in the northern hemisphere grid should
         // have northing close to 0 (false northing = 0 for N hemisphere).
-        val r = UtmConverter.latLonToUtm(0.0, 3.0)   // equator, central meridian of zone 31
+        val r = Utm.forward(0.0, 3.0)   // equator, central meridian of zone 31
         assertEquals('N', r.hemisphere)
-        assertEquals(0.0, r.northing, 1.0)
+        assertEquals(0.0, r.northingM, 1.0)
     }
 
     // ── Zone letter boundaries ────────────────────────────────────────────────
 
     @Test
     fun `latLonToUtm lat -80 produces zone letter C`() {
-        assertEquals('C', UtmConverter.latLonToUtm(-80.0, 0.0).zoneLetter)
+        assertEquals('C', Utm.forward(-80.0, 0.0).bandLetter)
     }
 
     @Test
     fun `latLonToUtm lat 0 produces zone letter N`() {
-        assertEquals('N', UtmConverter.latLonToUtm(0.0, 0.0).zoneLetter)
+        assertEquals('N', Utm.forward(0.0, 0.0).bandLetter)
     }
 
     @Test
     fun `latLonToUtm lat 84 produces zone letter X`() {
-        assertEquals('X', UtmConverter.latLonToUtm(84.0, 0.0).zoneLetter)
+        assertEquals('X', Utm.forward(84.0, 0.0).bandLetter)
     }
 
     // ── Round-trip through northern and southern hemisphere ───────────────────
@@ -164,8 +164,8 @@ class UtmZoneTest {
     @Test
     fun `round-trip London recovers lat and lon within 1 mm`() {
         val lat0 = 51.5074; val lon0 = -0.1278
-        val fwd = UtmConverter.latLonToUtm(lat0, lon0)
-        val (lat1, lon1) = UtmConverter.utmToLatLon(fwd.easting, fwd.northing, fwd.zone, fwd.hemisphere)
+        val fwd = Utm.forward(lat0, lon0)
+        val (lat1, lon1) = Utm.inverse(fwd.eastingM, fwd.northingM, fwd.zone, fwd.hemisphere)
         assertEquals(lat0, lat1, 1e-7)
         assertEquals(lon0, lon1, 1e-7)
     }
@@ -173,8 +173,8 @@ class UtmZoneTest {
     @Test
     fun `round-trip Cape Town recovers lat and lon within 1 mm`() {
         val lat0 = -33.9249; val lon0 = 18.4241
-        val fwd = UtmConverter.latLonToUtm(lat0, lon0)
-        val (lat1, lon1) = UtmConverter.utmToLatLon(fwd.easting, fwd.northing, fwd.zone, fwd.hemisphere)
+        val fwd = Utm.forward(lat0, lon0)
+        val (lat1, lon1) = Utm.inverse(fwd.eastingM, fwd.northingM, fwd.zone, fwd.hemisphere)
         assertEquals(lat0, lat1, 1e-7)
         assertEquals(lon0, lon1, 1e-7)
     }

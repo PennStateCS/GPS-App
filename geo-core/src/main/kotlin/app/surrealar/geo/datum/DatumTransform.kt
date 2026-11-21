@@ -1,49 +1,14 @@
 package app.surrealar.geo.datum
 
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
-
-/** A geodetic position: latitude/longitude in degrees, ellipsoidal height in metres. */
-data class GeodeticPosition(val latDeg: Double, val lonDeg: Double, val heightM: Double)
+import app.surrealar.geo.ellipsoid.Ellipsoid
+import app.surrealar.geo.ellipsoid.GeodeticPosition
 
 /**
- * GRS80 ellipsoid (NAD83). WGS84 differs only in the 6th significant digit of the flattening —
- * < 0.1 mm in position — so this is also used for WGS84/ITRF geocentric conversions.
+ * Geocentric conversions for the Helmert transform use GRS80 (NAD83). WGS84 differs only in the 6th
+ * significant digit of the flattening (< 0.1 mm in position), so GRS80 is used for both sides, as
+ * before the ellipsoid code was merged into [Ellipsoid].
  */
-object Grs80 {
-    const val A = 6378137.0
-    const val INV_F = 298.257222101
-    const val F = 1.0 / INV_F
-    val E2 = F * (2 - F)
-
-    fun toEcef(p: GeodeticPosition): DoubleArray {
-        val lat = Math.toRadians(p.latDeg); val lon = Math.toRadians(p.lonDeg)
-        val sLat = sin(lat); val cLat = cos(lat)
-        val n = A / sqrt(1 - E2 * sLat * sLat)
-        return doubleArrayOf(
-            (n + p.heightM) * cLat * cos(lon),
-            (n + p.heightM) * cLat * sin(lon),
-            (n * (1 - E2) + p.heightM) * sLat,
-        )
-    }
-
-    /** Iterative inverse; converges to well below 0.1 mm in a few iterations for terrestrial points. */
-    fun fromEcef(x: Double, y: Double, z: Double): GeodeticPosition {
-        val lon = atan2(y, x)
-        val p = sqrt(x * x + y * y)
-        var lat = atan2(z, p * (1 - E2))
-        var h = 0.0
-        repeat(10) {
-            val sLat = sin(lat)
-            val n = A / sqrt(1 - E2 * sLat * sLat)
-            h = p / cos(lat) - n
-            lat = atan2(z, p * (1 - E2 * n / (n + h)))
-        }
-        return GeodeticPosition(Math.toDegrees(lat), Math.toDegrees(lon), h)
-    }
-}
+private val GRS80 = Ellipsoid.GRS80
 
 /**
  * ITRF2014 ⇄ NAD83(2011): the 14-parameter time-dependent Helmert transformation "ITRF2014 to
@@ -82,19 +47,19 @@ object Itrf2014ToNad83 {
 
     /** ITRF2014 (≈ WGS84) at [epoch] → NAD83(2011). */
     fun forward(p: GeodeticPosition, epoch: Double): GeodeticPosition {
-        val (x, y, z) = Grs80.toEcef(p).let { Triple(it[0], it[1], it[2]) }
+        val (x, y, z) = GRS80.toEcef(p)
         val q = at(epoch)
         val k = 1 + q.s
         // Coordinate-frame convention (EPSG 1056 / PROJ convention=coordinate_frame).
         val x2 = q.tx + k * (x + q.rz * y - q.ry * z)
         val y2 = q.ty + k * (-q.rz * x + y + q.rx * z)
         val z2 = q.tz + k * (q.ry * x - q.rx * y + z)
-        return Grs80.fromEcef(x2, y2, z2)
+        return GRS80.fromEcef(x2, y2, z2)
     }
 
     /** NAD83(2011) → ITRF2014 (≈ WGS84) at [epoch]: exact inverse to first order (error ≪ 0.1 mm). */
     fun inverse(p: GeodeticPosition, epoch: Double): GeodeticPosition {
-        val (x2, y2, z2) = Grs80.toEcef(p).let { Triple(it[0], it[1], it[2]) }
+        val (x2, y2, z2) = GRS80.toEcef(p)
         val q = at(epoch)
         val k = 1 + q.s
         val vx = (x2 - q.tx) / k; val vy = (y2 - q.ty) / k; val vz = (z2 - q.tz) / k
@@ -102,7 +67,7 @@ object Itrf2014ToNad83 {
         val x = vx - q.rz * vy + q.ry * vz
         val y = q.rz * vx + vy - q.rx * vz
         val z = -q.ry * vx + q.rx * vy + vz
-        return Grs80.fromEcef(x, y, z)
+        return GRS80.fromEcef(x, y, z)
     }
 
     /** Decimal year for an instant (e.g. 2026-11-20T00:00Z ≈ 2026.886), the epoch argument above. */

@@ -48,7 +48,7 @@ import app.surrealar.ui.capture.CaptureViewModel
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.util.GlbGeoreferenceDetector
-import app.surrealar.geo.projection.UtmConverter
+import app.surrealar.geo.projection.Utm
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint
@@ -703,7 +703,7 @@ class AddCoordinateDialogFragment(
                 DiagnosticsLogger.w("Capture", "Save blocked: model location has no altitude")
                 return
             }
-            val utm = try { UtmConverter.latLonToUtm(latitude, longitude) } catch (_: Exception) { null }
+            val utm = try { Utm.forward(latitude, longitude) } catch (_: Exception) { null }
             val coordinate = Coordinate(
                 id                  = UUID.randomUUID().toString(),
                 name                = name,
@@ -732,9 +732,9 @@ class AddCoordinateDialogFragment(
                 altitudeMsl         = altitudeMslVal,
                 geoidSeparationM    = geoidSeparationVal,
                 crsEpsg             = crsEpsgVal,
-                easting             = utm?.easting,
-                northing            = utm?.northing,
-                utmZone             = utm?.utmZone,
+                easting             = utm?.eastingM,
+                northing            = utm?.northingM,
+                utmZone             = utm?.zoneLabel,
                 note                = note,
                 captureMethod       = captureMethodStr,
                 stdLatM             = stdLatVal,

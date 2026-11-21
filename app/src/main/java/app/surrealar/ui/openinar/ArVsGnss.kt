@@ -1,7 +1,6 @@
 package app.surrealar.ui.openinar
 
-import kotlin.math.atan2
-import kotlin.math.cos
+import app.surrealar.geo.ellipsoid.Geodesic
 import kotlin.math.hypot
 
 /**
@@ -39,8 +38,6 @@ data class ArVsGnss(
     }
 
     companion object {
-        private const val M_PER_DEG_LAT = 111_132.0
-
         fun compute(
             arLat: Double, arLon: Double, arAlt: Double?,
             gnssLat: Double, gnssLon: Double, gnssEllipsoidalM: Double?,
@@ -49,11 +46,10 @@ data class ArVsGnss(
             farthestModelM: Double?, speedMps: Double?,
         ): ArVsGnss? {
             if (!arLat.isFinite() || !arLon.isFinite() || !gnssLat.isFinite() || !gnssLon.isFinite()) return null
-            // Local tangent plane: fine at the metres-to-tens-of-metres scale compared here.
-            val dn = (arLat - gnssLat) * M_PER_DEG_LAT
-            val de = (arLon - gnssLon) * M_PER_DEG_LAT * cos(Math.toRadians(gnssLat))
-            val h = hypot(dn, de)
-            val bearing = (Math.toDegrees(atan2(de, dn)) + 360.0) % 360.0
+            // WGS84 geodesic from the GNSS fix to ARCore's camera position (was 111,132 m/° on a sphere).
+            val ne = Geodesic.northEastDeltaM(gnssLat, gnssLon, arLat, arLon)
+            val h = hypot(ne.northM, ne.eastM)
+            val bearing = Geodesic.initialBearingDeg(gnssLat, gnssLon, arLat, arLon)
             val v = if (arAlt != null && arAlt.isFinite() && gnssEllipsoidalM != null && gnssEllipsoidalM.isFinite())
                 arAlt - (gnssEllipsoidalM - antennaAboveCameraM) else null
             val hAcc = arHAccM?.takeIf { it.isFinite() }

@@ -9,7 +9,10 @@ class ArVsGnssTest {
 
     private val lat = 41.3477
     private val lon = -76.0226
-    private val mPerDegLon = 111_132.0 * cos(Math.toRadians(lat))
+    // Inputs built on the WGS84 ellipsoid (ArVsGnss now uses the geodesic; the old 111,132 m/° sphere read
+    // a true 0.4013 m east offset as 0.4000 m).
+    private val mPerDegLon = app.surrealar.geo.ellipsoid.Ellipsoid.WGS84.metersPerDegLon(lat)
+    private val mPerDegLat = app.surrealar.geo.ellipsoid.Ellipsoid.WGS84.metersPerDegLat(lat)
 
     @Test fun `ARCore 0_4 m east of the fix reads 0_4 m at 90 degrees`() {
         val c = ArVsGnss.compute(lat, lon + 0.4 / mPerDegLon, 390.0, lat, lon, 390.6, antennaAboveCameraM = 0.6,
@@ -22,7 +25,7 @@ class ArVsGnssTest {
     }
 
     @Test fun `grades by horizontal offset`() {
-        fun grade(m: Double) = ArVsGnss.compute(lat + m / 111_132.0, lon, null, lat, lon, null, 0.0,
+        fun grade(m: Double) = ArVsGnss.compute(lat + m / mPerDegLat, lon, null, lat, lon, null, 0.0,
             null, null, null, null)!!.grade
         assertEquals("GOOD", grade(0.4))
         assertEquals("FAIR", grade(1.5))
