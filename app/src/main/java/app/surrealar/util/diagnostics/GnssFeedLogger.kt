@@ -18,9 +18,11 @@ import javax.inject.Singleton
 class GnssFeedLogger @Inject constructor(
     private val switchboard: FixSwitchboard,
     private val sourceSettings: SourceSettings,
+    private val externalAdapter: app.surrealar.gnss.external.ExternalAdapter,
     private val appScope: CoroutineScope,
 ) {
     val feed = GnssFeedTracker { level, msg -> log(level, DiagTags.GNSS, msg) }
+    val link = ReceiverLinkTracker { level, tag, msg -> log(level, tag, msg) }
     @Volatile private var started = false
 
     fun start() {
@@ -35,7 +37,14 @@ class GnssFeedLogger @Inject constructor(
             }
         }
         appScope.launch { switchboard.sky.collect { feed.onSky(it.totalUsed, it.totalVisible) } }
-        appScope.launch { switchboard.rawNmea.collect { feed.onNmea(now()) } }
+        appScope.launch {
+            switchboard.rawNmea.collect {
+                val t = now()
+                feed.onNmea(t)
+                if (sourceSettings.activeProvider.value == SourceSettings.ProviderChoice.EXTERNAL_TCP) link.onData(t)
+            }
+        }
+        appScope.launch { externalAdapter.connectionState.collect { link.onConnectionState(it.name, now()) } }
         appScope.launch {
             while (isActive) {
                 delay(HEARTBEAT_MS)
