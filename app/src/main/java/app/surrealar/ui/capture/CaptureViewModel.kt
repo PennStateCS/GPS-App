@@ -114,6 +114,7 @@ class CaptureViewModel @Inject constructor(
         // fixes or emitting state into the UI after a new capture begins.
         if (session != null) {
             DiagnosticsLogger.i("CAPTURE", "Previous capture session canceled before new start")
+            captureCancelled()
         }
         stopSession()
         _state.value = ObservationSession.State.Idle
@@ -138,9 +139,17 @@ class CaptureViewModel @Inject constructor(
         }
         val s = ObservationSession(viewModelScope, modeFixes, policy)
         session = s
+        // Diagnostics only: a separate read-only collector (the session's own flow is untouched).
+        resetCaptureDiag()
+        val diag = app.surrealar.util.diagnostics.CaptureDiagnostics(policy, if (internal) "INTERNAL" else "EXTERNAL")
+        captureDiag = diag
+        DiagnosticsLogger.i("CAPTURE", diag.startLine())
+        captureDiagJob = viewModelScope.launch { modeFixes.collect { diag.onFix(it) } }
         sessionForwardJob = viewModelScope.launch {
             s.state.collect { st ->
                 _state.value = st
+                diag.onState(st)
+                if (st is ObservationSession.State.Complete) captureFinished(diag, st)
                 if (st is ObservationSession.State.Complete) {
                     if (st.requirementsMet) {
                         DiagnosticsLogger.i("CAPTURE",
@@ -155,8 +164,48 @@ class CaptureViewModel @Inject constructor(
         s.start()
     }
 
+    // ── diagnostics (log lines only) ──
+    private var captureDiag: app.surrealar.util.diagnostics.CaptureDiagnostics? = null
+    private var captureDiagJob: kotlinx.coroutines.Job? = null
+    private var captureOutcomeLogged = false
+    private var completedNotSavedLine: String? = null
+
+    private fun captureFinished(diag: app.surrealar.util.diagnostics.CaptureDiagnostics, st: ObservationSession.State.Complete) {
+        if (captureOutcomeLogged) return
+        captureOutcomeLogged = true
+        captureDiagJob?.cancel()
+        val r = st.result
+        DiagnosticsLogger.i("CAPTURE", diag.rejectedSummary(r.samples))
+        val line = diag.outcomeLine(if (st.requirementsMet) "completed" else "timed out", r.samples,
+            java.time.Duration.between(r.startedAt, r.endedAt).seconds, r.rtkStatus, r.hAccM, r.vAccM)
+        if (st.requirementsMet) DiagnosticsLogger.i("CAPTURE", line) else DiagnosticsLogger.w("CAPTURE", line)
+        if (st.requirementsMet) completedNotSavedLine = line.replace("Capture completed", "Capture completed, not saved")
+        else app.surrealar.util.diagnostics.CaptureLog.append(line)
+    }
+
+    private fun captureCancelled() {
+        val diag = captureDiag ?: return
+        if (!captureOutcomeLogged) {
+            val cap = state.value as? ObservationSession.State.Capturing
+            DiagnosticsLogger.i("CAPTURE", diag.rejectedSummary(cap?.samples))
+            val line = diag.outcomeLine("cancelled", cap?.samples, cap?.elapsedSec?.toLong(),
+                cap?.rtkStatus?.let { io.github.pennstatecs.geokit.gnss.model.RtkStatus.fromPrefKey(it) }, cap?.hAccM, cap?.vAccM)
+            DiagnosticsLogger.i("CAPTURE", line)
+            app.surrealar.util.diagnostics.CaptureLog.append(line)
+        } else {
+            completedNotSavedLine?.let { app.surrealar.util.diagnostics.CaptureLog.append(it) }
+        }
+        resetCaptureDiag()
+    }
+
+    private fun resetCaptureDiag() {
+        captureDiagJob?.cancel(); captureDiagJob = null
+        captureDiag = null; captureOutcomeLogged = false; completedNotSavedLine = null
+    }
+
     fun cancel() {
         if (session != null) DiagnosticsLogger.i("CAPTURE", "Capture canceled")
+        captureCancelled()
         stopSession()
         _state.value = ObservationSession.State.Idle
     }
@@ -240,5 +289,11 @@ class CaptureViewModel @Inject constructor(
 
         DiagnosticsLogger.i("CAPTURE", "Coordinate saved name=\"$name\" source=${provider.name} " +
             "samples=${finished.samples} hAcc=${finished.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${finished.rtkStatus}")
+        captureDiag?.let { d ->
+            app.surrealar.util.diagnostics.CaptureLog.append(d.outcomeLine("saved", finished.samples,
+                java.time.Duration.between(finished.startedAt, finished.endedAt).seconds, finished.rtkStatus,
+                finished.hAccM, finished.vAccM, name = name))
+        }
+        resetCaptureDiag()
     }
 }
