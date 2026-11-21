@@ -50,4 +50,13 @@ class NmeaDateTimeUtilsTest {
         assertNull(NmeaDateTimeUtils.parseNmeaDateTime(null, "191126"))
         assertNull(NmeaDateTimeUtils.parseNmeaDateTime("bad", "191126"))
     }
+
+    @Test fun time_shorterThanSixDigits_isRejectedNotPadded() {
+        assertNull("\"1234\" used to become 12:34:00", NmeaDateTimeUtils.parseNmeaTime("1234"))
+        assertNull(NmeaDateTimeUtils.parseNmeaTime("17281"))
+        assertNull(NmeaDateTimeUtils.parseNmeaTime("1728.5"))
+        assertNull(NmeaDateTimeUtils.parseNmeaTime("17a814"))
+        assertEquals(LocalTime.of(17, 28, 14), NmeaDateTimeUtils.parseNmeaTime("172814"))
+        assertEquals(LocalTime.of(17, 28, 14, 800_000_000), NmeaDateTimeUtils.parseNmeaTime("172814.80"))
+    }
 }

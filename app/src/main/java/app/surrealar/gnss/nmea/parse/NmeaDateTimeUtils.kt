@@ -30,9 +30,10 @@ object NmeaDateTimeUtils {
         if (timeRaw.isNullOrEmpty()) return null
 
         try {
-            // Ensure at least 6 digits for HHMMSS
-            val timeStr = timeRaw.padEnd(6, '0')
-            if (timeStr.length < 6) return null
+            // HHMMSS must be six real digits. Padding a short field ("1234" → "123400") invented
+            // a time from a truncated or malformed sentence.
+            val timeStr = timeRaw
+            if (timeStr.length < 6 || !timeStr.substring(0, 6).all { it.isDigit() }) return null
 
             val hours = timeStr.substring(0, 2).toInt()
             val minutes = timeStr.substring(2, 4).toInt()
