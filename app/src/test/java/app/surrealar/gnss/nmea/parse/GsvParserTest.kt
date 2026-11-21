@@ -211,4 +211,27 @@ class GsvParserTest {
         assertEquals(67, gsv.satellites[0].elevationDeg)
         assertEquals(291, gsv.satellites[0].azimuthDeg)
         assertEquals(25.0, gsv.satellites[0].snrDb!!, 0.0)
-    }}
+    }
+
+    @Test
+    fun `omitted final SNR plus a signal ID - the ID is not read as SNR`() {
+        // 4n data fields: last quartet is "07,20,100" (SNR field missing) + signal ID "1".
+        val gsv = GsvParser().parse("GP", "GPGSV,1,1,02,05,40,083,46,07,20,100,1".split(","))!!
+        assertEquals(1, gsv.signalId)
+        assertEquals(2, gsv.satellites.size)
+        assertEquals(46.0, gsv.satellites[0].snrDb!!, 0.0)
+        assertEquals(7, gsv.satellites[1].svid)
+        assertNull("signal id must not become SNR 1 dB-Hz", gsv.satellites[1].snrDb)
+    }
+
+    @Test
+    fun `complete quartets without a signal ID are unchanged`() {
+        val gsv = GsvParser().parse("GP", "GPGSV,1,1,02,05,40,083,46,07,20,100,45".split(","))!!
+        assertNull(gsv.signalId)
+        assertEquals(45.0, gsv.satellites[1].snrDb!!, 0.0)
+        // Samsung-style blank final SNR + signal ID (4n+1 fields) still parses as before.
+        val s = GsvParser().parse("GL", "GLGSV,3,1,9,88,57,024,28.3,65,41,106,23.5,79,39,289,,81,36,298,19.8,1".split(","))!!
+        assertEquals(1, s.signalId)
+        assertEquals(4, s.satellites.size)
+    }
+}
