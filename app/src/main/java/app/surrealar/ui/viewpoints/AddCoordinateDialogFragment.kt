@@ -48,7 +48,7 @@ import app.surrealar.ui.capture.CaptureViewModel
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.ui.models.ModelPickerActivity
 import app.surrealar.util.GlbGeoreferenceDetector
-import app.surrealar.util.UtmConverter
+import app.surrealar.geo.projection.UtmConverter
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.AndroidEntryPoint

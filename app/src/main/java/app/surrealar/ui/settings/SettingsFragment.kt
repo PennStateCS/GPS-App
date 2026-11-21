@@ -646,7 +646,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val zoneRow = view.findViewById<View>(R.id.row_coord_spcs_zone)
         val spinnerZ = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
         val zoneHint = view.findViewById<android.widget.TextView>(R.id.text_coord_zone_hint)
-        val zones = app.surrealar.coords.SpcsZones.all.sortedBy { it.label }
+        val zones = app.surrealar.geo.projection.SpcsZones.all.sortedBy { it.label }
         val zoneByLabel = zones.associateBy { it.label }
         val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter."
         var suggestedZoneEpsg: Int? = null
@@ -683,7 +683,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             spinnerU?.setText(s.unit.label, false)
             spinnerV?.setText(s.vertical.label, false)
             spinnerR?.setText(s.externalReceiverDatum.label, false)
-            val zone = app.surrealar.coords.SpcsZones.byEpsg(s.spcsZoneEpsg)
+            val zone = app.surrealar.geo.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)
             zoneRow?.visibility = if (s.horizontal.isStatePlane) View.VISIBLE else View.GONE
             if (spinnerZ?.hasFocus() != true) spinnerZ?.setText(zone?.label.orEmpty(), false)
             // Hint: suggestion notice, or a warning when the live position is outside the chosen zone.
@@ -716,9 +716,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             // Switching to State Plane: if the saved zone doesn't cover the live position, suggest one.
             val fix = fixSwitchboard.currentFix.value
             if (h.isStatePlane && fix != null &&
-                app.surrealar.coords.SpcsZones.byEpsg(current.spcsZoneEpsg)?.contains(fix.latDeg, fix.lonDeg) != true
+                app.surrealar.geo.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.contains(fix.latDeg, fix.lonDeg) != true
             ) {
-                app.surrealar.coords.SpcsZone.suggestFor(fix.latDeg, fix.lonDeg)?.let {
+                app.surrealar.geo.projection.SpcsZone.suggestFor(fix.latDeg, fix.lonDeg)?.let {
                     next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg
                 }
             }
@@ -733,7 +733,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
         // Leaving the field without picking restores the saved zone's name.
         spinnerZ?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) spinnerZ.setText(app.surrealar.coords.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
+            if (!hasFocus) spinnerZ.setText(app.surrealar.geo.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
         }
         spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { save(current.copy(datum = it)) } }
         spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { save(current.copy(unit = it)) } }

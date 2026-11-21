@@ -657,7 +657,7 @@ class NmeaFuser(
 
     /**
      * 68 % horizontal radius from GST, in metres (the app-wide meaning of hAccM — same as Android's
-     * Location.accuracy; see [app.surrealar.geo.HorizontalAccuracy]), or null when GST provides neither
+     * Location.accuracy; see [app.surrealar.geo.accuracy.HorizontalAccuracy]), or null when GST provides neither
      * the error-ellipse semi-axes nor the lat/lon standard deviations (accuracy genuinely unknown —
      * callers must treat null as "unknown", never 0.0).
      *
@@ -670,10 +670,10 @@ class NmeaFuser(
         if (gst == null) return null
         val major = gst.stdDevMajor
         val minor = gst.stdDevMinor
-        if (major != null && minor != null) return app.surrealar.geo.HorizontalAccuracy.r68(major, minor)
+        if (major != null && minor != null) return app.surrealar.geo.accuracy.HorizontalAccuracy.r68(major, minor)
         val lat = gst.stdDevLat
         val lon = gst.stdDevLon
-        if (lat != null && lon != null) return app.surrealar.geo.HorizontalAccuracy.r68(lat, lon)
+        if (lat != null && lon != null) return app.surrealar.geo.accuracy.HorizontalAccuracy.r68(lat, lon)
         return null
     }
 

@@ -3,8 +3,8 @@ package app.surrealar.util
 import android.util.Log
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.domain.model.ModelLocationConfidence
-import app.surrealar.geo.LocalEnu
-import app.surrealar.geo.Wgs84
+import app.surrealar.geo.local.LocalEnu
+import app.surrealar.geo.local.Wgs84
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer

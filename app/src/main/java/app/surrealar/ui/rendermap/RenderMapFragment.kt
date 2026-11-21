@@ -65,7 +65,7 @@ import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.atan2
-import app.surrealar.util.UtmConverter
+import app.surrealar.geo.projection.UtmConverter
 import app.surrealar.util.diagnostics.MapRuntimeDiagnostics
 import kotlin.math.cos
 import kotlin.math.min
@@ -847,7 +847,7 @@ class RenderMapFragment : Fragment() {
 
     /** Local north/east offsets (metres) from [from] to [to] — same WGS84 frame as distance/bearing. */
     private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> =
-        app.surrealar.stakeout.StakeoutGeometry.northEast(from.latitude, from.longitude, to.latitude, to.longitude)
+        app.surrealar.geo.local.StakeoutGeometry.northEast(from.latitude, from.longitude, to.latitude, to.longitude)
 
     // ── Stakeout guidance mode (display + feedback only) ───────────────────────
 
@@ -2278,14 +2278,14 @@ class RenderMapFragment : Fragment() {
 
     // Ellipsoidal (WGS84 local ENU) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
     private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double =
-        app.surrealar.stakeout.StakeoutGeometry.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
+        app.surrealar.geo.local.StakeoutGeometry.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
 
     private fun calculateHeadingChange(h1: Double, h2: Double): Double {
         val diff = abs(h2 - h1); return min(diff, 360.0 - diff)
     }
 
     private fun calculateBearing(from: LatLng, to: LatLng): Double =
-        app.surrealar.stakeout.StakeoutGeometry.bearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
+        app.surrealar.geo.local.StakeoutGeometry.bearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
 
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 

@@ -4,7 +4,7 @@ import app.surrealar.gnss.model.FixSnapshot
 import app.surrealar.gnss.capture.CaptureResult
 import app.surrealar.gnss.model.Provider
 import app.surrealar.gnss.model.TimestampSource
-import app.surrealar.util.UtmConverter
+import app.surrealar.geo.projection.UtmConverter
 import java.time.Duration
 
 /**

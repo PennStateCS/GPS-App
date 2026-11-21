@@ -12,7 +12,7 @@ data class CoordinateSystemSettings(
     val horizontal: HorizontalSystem = HorizontalSystem.GEOGRAPHIC,
     /**
      * SPCS83 zone used when [horizontal] is STATE_PLANE: EPSG code of the zone's NAD83(2011) metre CRS
-     * (see app.surrealar.coords.SpcsZones). Default Pennsylvania North (3701).
+     * (see app.surrealar.geo.projection.SpcsZones). Default Pennsylvania North (3701).
      */
     val spcsZoneEpsg: Int = DEFAULT_SPCS_ZONE_EPSG,
     /** Datum for Geographic/UTM output. State Plane is always NAD83(2011). */

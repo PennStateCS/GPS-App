@@ -1,5 +1,11 @@
 package app.surrealar.coords
 
+import app.surrealar.geo.projection.LambertConformalConic
+import app.surrealar.geo.datum.Itrf2014ToNad83
+import app.surrealar.geo.datum.GeodeticPosition
+import app.surrealar.geo.datum.Grs80
+import app.surrealar.geo.geoid.Geoid18Grid
+
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.HorizontalSystem
 import app.surrealar.settings.model.LinearUnit
@@ -45,7 +51,7 @@ class CoordinateSystemReferenceTest {
     }
 
     @Test fun `UTM 18N matches NCAT`() {
-        val u = app.surrealar.util.UtmConverter.latLonToUtm(41.3477, -76.0226)
+        val u = app.surrealar.geo.projection.UtmConverter.latLonToUtm(41.3477, -76.0226)
         assertEquals(18, u.zone)
         assertEquals(414_450.726, u.easting, 0.002)
         assertEquals(4_577_860.600, u.northing, 0.002)

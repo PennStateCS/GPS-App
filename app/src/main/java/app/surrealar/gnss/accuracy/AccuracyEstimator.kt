@@ -4,7 +4,7 @@ import app.surrealar.gnss.model.Fix
 
 /**
  * Estimates position accuracy for a fix: horizontal as a 68 % radius (app-wide meaning of hAccM,
- * see [app.surrealar.geo.HorizontalAccuracy]), vertical as 1σ.
+ * see [app.surrealar.geo.accuracy.HorizontalAccuracy]), vertical as 1σ.
  *
  * Receiver-reported values are preferred (GST is already converted to a 68 % radius in NmeaFuser;
  * $..ACCURACY and Android Location.accuracy are 68 % radii as reported). When none is available,
@@ -46,7 +46,7 @@ object AccuracyEstimator {
         // HDOP × UERE is already a horizontal RMS (≈ 1.41σ per axis), so only the RMS → 68 %-radius
         // step applies (×1.515/√2 ≈ 1.071) to agree with GST, $..ACCURACY and Location.accuracy.
         // VDOP × UERE stays a 1σ vertical, like every other vertical source.
-        val horizontalMeters = fix.hDop?.let { app.surrealar.geo.HorizontalAccuracy.r68FromHorizontalRms(it * uere) }
+        val horizontalMeters = fix.hDop?.let { app.surrealar.geo.accuracy.HorizontalAccuracy.r68FromHorizontalRms(it * uere) }
         val verticalMeters = fix.vDop?.times(uere)
 
         return Accuracy1Sigma(horizontalMeters, verticalMeters)

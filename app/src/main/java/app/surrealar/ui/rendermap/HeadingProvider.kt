@@ -2,7 +2,7 @@ package app.surrealar.ui.rendermap
 
 import android.hardware.GeomagneticField
 import android.hardware.SensorManager
-import app.surrealar.geo.HeadingMath
+import app.surrealar.geo.heading.HeadingMath
 import app.surrealar.gnss.lastknown.LastKnownPosition
 import app.surrealar.gnss.model.Fix
 

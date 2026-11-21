@@ -10,7 +10,7 @@ import app.surrealar.data.settings.repository.SettingsRepositoryImpl
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.mock.AndroidMockLocationPublisher
-import app.surrealar.util.UtmConverter
+import app.surrealar.geo.projection.UtmConverter
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.EntryPoint

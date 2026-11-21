@@ -2,8 +2,8 @@ package app.surrealar.gnss.capture
 
 import app.surrealar.gnss.accuracy.AccuracyEstimator
 import app.surrealar.gnss.accuracy.UereTable
-import app.surrealar.gnss.capture.math.Geodesy
-import app.surrealar.gnss.capture.math.RunningStats
+import app.surrealar.geo.ellipsoid.Geodesy
+import app.surrealar.geo.stats.RunningStats
 import app.surrealar.gnss.model.Fix
 import app.surrealar.gnss.model.RtkStatus
 import kotlinx.coroutines.CoroutineScope
