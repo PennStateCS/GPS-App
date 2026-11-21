@@ -73,6 +73,17 @@ object HeadingMath {
         }
     }
 
+    /**
+     * Height for GeomagneticField, which expects height above sea level: MSL, else ellipsoidal − N
+     * when both are known, else 0. (Effect on declination is tiny; this just passes the right thing.)
+     */
+    fun altitudeForDeclination(altMslM: Double?, altEllipsoidalM: Double?, geoidSeparationM: Double?): Double = when {
+        altMslM != null && altMslM.isFinite() -> altMslM
+        altEllipsoidalM != null && geoidSeparationM != null &&
+            altEllipsoidalM.isFinite() && geoidSeparationM.isFinite() -> altEllipsoidalM - geoidSeparationM
+        else -> 0.0
+    }
+
     /** Recompute declination when moved > [maxMoveM] or older than [maxAgeMs]. */
     fun needsDeclinationUpdate(
         lastLat: Double?, lastLon: Double?, lastTimeMs: Long?,

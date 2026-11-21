@@ -50,7 +50,8 @@ class HeadingProvider(private val latestFix: () -> Fix?) {
         val fix = latestFix()
         if (fix != null && fix.latDeg.isFinite() && fix.lonDeg.isFinite() &&
             HeadingMath.needsDeclinationUpdate(declLat, declLon, declTimeMs, fix.latDeg, fix.lonDeg, nowMs)) {
-            lastDeclinationDeg = declinationAt(fix.latDeg, fix.lonDeg, fix.altEllipsoidalM ?: fix.altMslM ?: 0.0, nowMs)
+            lastDeclinationDeg = declinationAt(fix.latDeg, fix.lonDeg,
+                HeadingMath.altitudeForDeclination(fix.altMslM, fix.altEllipsoidalM, fix.geoidSeparationM), nowMs)
             declLat = fix.latDeg; declLon = fix.lonDeg; declTimeMs = nowMs
         }
         return lastDeclinationDeg

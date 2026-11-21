@@ -48,6 +48,13 @@ class HeadingMathTest {
         assertTrue("face-down tilt counts the same", HeadingMath.isUpright(-0.05, wasUpright = false))
     }
 
+    @Test fun `declination altitude prefers MSL, then ellipsoidal minus N, then 0`() {
+        assertEquals(363.0, HeadingMath.altitudeForDeclination(altMslM = 363.0, altEllipsoidalM = 330.0, geoidSeparationM = -33.0), 0.0)
+        assertEquals(363.0, HeadingMath.altitudeForDeclination(altMslM = null, altEllipsoidalM = 330.0, geoidSeparationM = -33.0), 1e-9)
+        assertEquals(0.0, HeadingMath.altitudeForDeclination(altMslM = null, altEllipsoidalM = 330.0, geoidSeparationM = null), 0.0)
+        assertEquals(0.0, HeadingMath.altitudeForDeclination(null, null, null), 0.0)
+    }
+
     @Test fun `declination is recomputed only after moving 10 km or 5 minutes`() {
         assertTrue(HeadingMath.needsDeclinationUpdate(null, null, null, 40.95, -75.97, 0))
         assertFalse(HeadingMath.needsDeclinationUpdate(40.95, -75.97, 0, 40.96, -75.97, 60_000))   // 1.1 km, 1 min
