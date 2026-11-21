@@ -160,4 +160,35 @@ class GlbGeoreferenceReprojectorTest {
     @Test fun `non-glb extension is skipped`() =
         assertNull(GlbGeoreferenceReprojector.reprojectIfGeoreferenced(
             GlbTestFixtures.tempGlb(GlbTestFixtures.glbGeoreferenced(georeferencedVertices()), suffix = ".gltf")))
+
+    // ── scale + orientation of the local frame ────────────────────────────────────────────────
+
+    private val lat0 = 41.0
+    private val alt0 = 300.0
+    private val d = 1.0 / 1024.0          // exactly representable in float32
+
+    /** North, south, east, west of (41° N, 76° W, 300 m) — bbox centre = origin. */
+    private fun compassVertices() = listOf(
+        floatArrayOf(-76f, alt0.toFloat(), -(lat0 + d).toFloat()),
+        floatArrayOf(-76f, alt0.toFloat(), -(lat0 - d).toFloat()),
+        floatArrayOf((-76.0 + d).toFloat(), alt0.toFloat(), -lat0.toFloat()),
+        floatArrayOf((-76.0 - d).toFloat(), alt0.toFloat(), -lat0.toFloat()),
+    )
+
+    private fun reprojectedCompass(): List<FloatArray> {
+        val file = GlbTestFixtures.tempGlb(GlbTestFixtures.glbGeoreferenced(compassVertices()))
+        assertNotNull(GlbGeoreferenceReprojector.reprojectIfGeoreferenced(file))
+        return GlbTestFixtures.verticesOf(GlbTestFixtures.parse(file.readBytes()).bin!!)
+    }
+
+    @Test fun `distances use the WGS84 ellipsoid, not a 111,320 m per degree sphere`() {
+        val v = reprojectedCompass()
+        val northSouth = Math.hypot((v[0][0] - v[1][0]).toDouble(), (v[0][2] - v[1][2]).toDouble())
+        val eastWest = Math.hypot((v[2][0] - v[3][0]).toDouble(), (v[2][2] - v[3][2]).toDouble())
+        // Metric scale at height h is (M + h) and (N + h)·cos φ per radian — the model sits 300 m up.
+        val mLat = Math.toRadians(app.surrealar.geo.Wgs84.meridianRadius(lat0) + alt0)
+        val mLon = Math.toRadians((app.surrealar.geo.Wgs84.primeVerticalRadius(lat0) + alt0) * Math.cos(Math.toRadians(lat0)))
+        assertEquals(2 * d * mLat, northSouth, 0.002)   // sphere was +0.52 m
+        assertEquals(2 * d * mLon, eastWest, 0.002)     // sphere was −0.23 m
+    }
 }

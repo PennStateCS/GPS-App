@@ -3,12 +3,13 @@ package app.surrealar.util
 import android.util.Log
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.domain.model.ModelLocationConfidence
+import app.surrealar.geo.LocalEnu
+import app.surrealar.geo.Wgs84
 import org.json.JSONObject
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
-import kotlin.math.cos
 
 /**
  * Rewrites a GLB whose mesh POSITION vertices are baked WGS84 coordinates (longitude in X,
@@ -36,9 +37,6 @@ object GlbGeoreferenceReprojector {
     private const val CHUNK_TYPE_JSON = 0x4E4F534A
     private const val CHUNK_TYPE_BIN = 0x004E4942
     private const val COMPONENT_TYPE_FLOAT = 5126
-
-    // Matches the app's existing metres-per-degree approximation (see CoordinatesViewModel).
-    private const val METERS_PER_DEG = 111_320.0
 
     private const val MAX_FILE_BYTES = 128 * 1024 * 1024
 
@@ -118,8 +116,16 @@ object GlbGeoreferenceReprojector {
         if (abs(lon0) < 1e-6 && abs(lat0) < 1e-6) return null
         if (spanX > 0.05 || spanZ > 0.05) return null
 
-        val metersPerDegLon = METERS_PER_DEG * cos(Math.toRadians(lat0))
-        val metersPerDegLat = METERS_PER_DEG
+        // WGS84 local ENU about the origin (ellipsoidal, Double) — a 111,320 m/° sphere was +0.24 %
+        // N–S and −0.14 % E–W at 41° N. Convert to float only when writing.
+        val enu = LocalEnu(lat0, lon0, alt0)
+
+        // Property of the source file, not something we can fix: its vertices are float32 degrees,
+        // so their resolution near the origin is one float ulp.
+        val latResM = Math.ulp(lat0.toFloat()).toDouble() * Wgs84.metersPerDegLat(lat0)
+        val lonResM = Math.ulp(lon0.toFloat()).toDouble() * Wgs84.metersPerDegLon(lat0)
+        Log.w(TAG, "${file.name}: float32 degree vertices limit the source model to about " +
+            "${"%.1f".format(latResM)} m (lat) / ${"%.1f".format(lonResM)} m (lon)")
 
         // Transform each unique POSITION accessor's vertices in the BIN chunk.
         for (idx in posAccessorIdx) {
@@ -152,10 +158,11 @@ object GlbGeoreferenceReprojector {
                 val y = buf.getFloat(off + 4).toDouble()
                 val z = buf.getFloat(off + 8).toDouble()
 
-                // Reproject degrees → local metres, recentred on the origin.
-                val nx = ((x - lon0) * metersPerDegLon).toFloat()
-                val ny = (y - alt0).toFloat()
-                val nz = ((z - z0) * metersPerDegLat).toFloat()
+                // Reproject degrees → local ENU metres about the origin (lat = −Z, lon = X, h = Y).
+                val p = enu.toEnu(-z, x, y)
+                val nx = p[0].toFloat()          // east  → +X
+                val ny = p[2].toFloat()          // up    → +Y
+                val nz = (-p[1]).toFloat()       // north → −Z
 
                 buf.putFloat(off, nx)
                 buf.putFloat(off + 4, ny)
