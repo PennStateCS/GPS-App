@@ -1,9 +1,11 @@
-# gnss-core
+# geokit-gnss
+
+`io.github.pennstatecs.geokit:geokit-gnss` · version `GEOKIT_VERSION` (0.1.0-SNAPSHOT) · package `io.github.pennstatecs.geokit.gnss` · Gradle project `:geokit-gnss` in `libs/geokit-gnss`. Part of the [geokit](../README.md) libraries.
 
 Android-free GNSS core for SurReal AR: NMEA 0183 parsing, epoch fusion into position fixes, the
 satellite inventory, accuracy estimation and averaged point capture. Plain Kotlin/JVM (no Android,
 Hilt, Room or app UI types), so it can be reused by other JVM projects and tested on a desktop. It
-depends on [`:geo-core`](../geo-core/README.md) for the Earth math.
+depends on [`:geokit-core`](../geokit-core/README.md) for the Earth math.
 
 ## What it handles
 
@@ -26,14 +28,14 @@ Conventions: units in names (`latDeg`, `altMslM`, `diffAgeS`), `null` means unkn
 
 | Package | Contents |
 |---|---|
-| `app.surrealar.gnss.nmea.parse` | `NmeaRegistry`, `DefaultNmeaRegistry`, `SentenceParser` and one parser per sentence |
-| `app.surrealar.gnss.nmea.sentence` | `GGA`, `RMC`, `GSA`, `GSV`, `ZDA`, `GST`, `ACCURACY`, `EBP`, `ETC` |
-| `app.surrealar.gnss.bus.adapters` | `NmeaFuser` (+ `FuserTimingStats`, `NmeaCustomStats`), `GsvMessage`, source contracts (`NmeaSource`, `Startable`, `RawNmeaProvider`) |
-| `app.surrealar.gnss.model` | `Fix`, `RtkStatus`, `Provider`, `TimestampSource`, `SkySnapshot`, `SatInfo`, `SkyGeometry`, `Constellation`, `FixSnapshot` |
-| `app.surrealar.gnss.satellites` | `SatelliteInventory` (smoothed SNR, used flags, stale eviction → `SkySnapshot`) |
-| `app.surrealar.gnss.accuracy` | `AccuracyEstimator`, `UereTable` |
-| `app.surrealar.gnss.capture` | `ObservationSession` (averaging), `AveragingPolicy`, `CapturePreset`, `CaptureResult`, `FixFreshnessGate`, `GnssCaptureSettings` |
-| `app.surrealar.gnss.log` | `GnssLog`, `GnssLogger` |
+| `io.github.pennstatecs.geokit.gnss.nmea.parse` | `NmeaRegistry`, `DefaultNmeaRegistry`, `SentenceParser` and one parser per sentence |
+| `io.github.pennstatecs.geokit.gnss.nmea.sentence` | `GGA`, `RMC`, `GSA`, `GSV`, `ZDA`, `GST`, `ACCURACY`, `EBP`, `ETC` |
+| `io.github.pennstatecs.geokit.gnss.bus.adapters` | `NmeaFuser` (+ `FuserTimingStats`, `NmeaCustomStats`), `GsvMessage`, source contracts (`NmeaSource`, `Startable`, `RawNmeaProvider`) |
+| `io.github.pennstatecs.geokit.gnss.model` | `Fix`, `RtkStatus`, `Provider`, `TimestampSource`, `SkySnapshot`, `SatInfo`, `SkyGeometry`, `Constellation`, `FixSnapshot` |
+| `io.github.pennstatecs.geokit.gnss.satellites` | `SatelliteInventory` (smoothed SNR, used flags, stale eviction → `SkySnapshot`) |
+| `io.github.pennstatecs.geokit.gnss.accuracy` | `AccuracyEstimator`, `UereTable` |
+| `io.github.pennstatecs.geokit.gnss.capture` | `ObservationSession` (averaging), `AveragingPolicy`, `CapturePreset`, `CaptureResult`, `FixFreshnessGate`, `GnssCaptureSettings` |
+| `io.github.pennstatecs.geokit.gnss.log` | `GnssLog`, `GnssLogger` |
 
 ## Feeding it
 
@@ -103,32 +105,32 @@ a test-resource directory).
 
 ## Using it from another Gradle project
 
-For now, use either a composite build or a git submodule. `gnss-core` depends on `geo-core`, so
+For now, use either a composite build or a git submodule. `geokit-gnss` depends on `geokit-core`, so
 include both.
 
 ```kotlin
 // settings.gradle.kts of the other project (composite build)
 includeBuild("../GPS-App") {
     dependencySubstitution {
-        substitute(module("app.surrealar:gnss-core")).using(project(":gnss-core"))
-        substitute(module("app.surrealar:geo-core")).using(project(":geo-core"))
+        substitute(module("io.github.pennstatecs.geokit:geokit-gnss")).using(project(":geokit-gnss"))
+        substitute(module("io.github.pennstatecs.geokit:geokit-core")).using(project(":geokit-core"))
     }
 }
 // build.gradle.kts
-dependencies { implementation("app.surrealar:gnss-core") }
+dependencies { implementation("io.github.pennstatecs.geokit:geokit-gnss") }
 ```
 
-Or add this repository as a submodule and include `:geo-core` and `:gnss-core` with their
+Or add this repository as a submodule and include `:geokit-core` and `:geokit-gnss` with their
 `projectDir` pointing into it. Publishing through JitPack or GitHub Packages may come later; it is
 not set up yet.
 
 ## Build and test
 
 ```
-.\gradlew.bat :gnss-core:build     # compiles and runs the module's tests on its own
+.\gradlew.bat :geokit-gnss:build     # compiles and runs the module's tests on its own
 ```
 
 ## Licence
 
 GPL-3.0, like the rest of the repository (see the repository `LICENSE`). Runtime dependencies are
-`:geo-core` and kotlinx-coroutines-core (Apache-2.0).
+`:geokit-core` and kotlinx-coroutines-core (Apache-2.0).

@@ -1,4 +1,6 @@
-# geo-core
+# geokit-core
+
+`io.github.pennstatecs.geokit:geokit-core` · version `GEOKIT_VERSION` (0.1.0-SNAPSHOT) · package `io.github.pennstatecs.geokit` · Gradle project `:geokit-core` in `libs/geokit-core`. Part of the [geokit](../README.md) libraries.
 
 Android-free geodesy for SurReal AR: ellipsoids and geocentric conversions, the ITRF2014 ⇄ NAD83(2011)
 Helmert transform, State Plane / UTM / transverse Mercator projections, the GEOID18 grid, local ENU
@@ -6,7 +8,7 @@ frames, WGS84 geodesics (distance and bearing), the 68 % horizontal-accuracy con
 heading math, and running statistics. Plain Kotlin/JVM (no Android, ARCore, Room or Hilt), so it can
 be reused by other JVM projects and tested on a desktop.
 
-Package root `app.surrealar.geo`:
+Package root `io.github.pennstatecs.geokit`:
 
 | Package | Contents |
 |---|---|
@@ -26,7 +28,7 @@ Conventions: angles in degrees, lengths in metres, `Double` everywhere, units in
 ## Verified accuracy
 
 Reference: PROJ 9.8.1 (pyproj 3.8.0), NGS NCAT and the NGS geoid service. The tests that check each
-row live in `geo-core/src/test` unless noted.
+row live in `libs/geokit-core/src/test` unless noted.
 
 | What | Result | How it is checked |
 |---|---|---|
@@ -44,21 +46,21 @@ Now: either a composite build or a git submodule.
 ```kotlin
 // settings.gradle.kts of the other project (composite build)
 includeBuild("../GPS-App") {
-    dependencySubstitution { substitute(module("app.surrealar:geo-core")).using(project(":geo-core")) }
+    dependencySubstitution { substitute(module("io.github.pennstatecs.geokit:geokit-core")).using(project(":geokit-core")) }
 }
 // build.gradle.kts
-dependencies { implementation("app.surrealar:geo-core") }
+dependencies { implementation("io.github.pennstatecs.geokit:geokit-core") }
 ```
 
-or add this repository as a submodule and `include(":geo-core")` with
-`project(":geo-core").projectDir = file("GPS-App/geo-core")`.
+or add this repository as a submodule and `include(":geokit-core")` with
+`project(":geokit-core").projectDir = file("GPS-App/libs/geokit-core")`.
 
 Later: publish through JitPack or GitHub Packages (not set up yet).
 
 ## Build and test
 
 ```
-.\gradlew.bat :geo-core:build      # compiles and runs the module's tests on its own
+.\gradlew.bat :geokit-core:build      # compiles and runs the module's tests on its own
 ```
 
 The GEOID18 test reads the app asset `app/src/main/assets/geoid/geoid18.srgt` through the

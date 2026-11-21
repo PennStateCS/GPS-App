@@ -1,7 +1,9 @@
-# receiver-emlid
+# geokit-receiver-emlid
+
+`io.github.pennstatecs.geokit:geokit-receiver-emlid` · version `GEOKIT_VERSION` (0.1.0-SNAPSHOT) · package `io.github.pennstatecs.geokit.receiver.emlid` · Gradle project `:geokit-receiver-emlid` in `libs/geokit-receiver-emlid`. Part of the [geokit](../README.md) libraries.
 
 Emlid Reach support for SurReal AR, behind the receiver-neutral `ReceiverDevice` contract in
-[`:gnss-core`](../gnss-core/README.md). Plain Kotlin/JVM: no Android, Hilt or app types.
+[`:geokit-gnss`](../geokit-gnss/README.md). Plain Kotlin/JVM: no Android, Hilt or app types.
 
 ## What it covers
 
@@ -20,7 +22,7 @@ them and closes the socket. `EmlidMapping` converts the Reach JSON results to th
 without dropping fields: anything without a neutral slot goes in `details`. The HTTP and socket.io
 endpoints sit behind `EmlidReachDevice.EmlidApi`, so tests can replace them.
 
-## The ReceiverDevice contract (gnss-core)
+## The ReceiverDevice contract (geokit-gnss)
 
 ```kotlin
 interface ReceiverDevice {
@@ -42,7 +44,7 @@ host changes. The UI reads only the manager's neutral flows and capability flags
 ## Adding another receiver
 
 1. **A module** such as `receiver-ublox`, set up like this one (plain Kotlin JVM, `explicitApi()`,
-   `api(project(":gnss-core"))`). In it, implement `ReceiverDevice` for whatever status the receiver
+   `api(project(":geokit-gnss"))`). In it, implement `ReceiverDevice` for whatever status the receiver
    offers. Log through `GnssLog` (never `android.util.Log`). Add a `ReceiverDiscovery` if it can be
    found on the network; Android-only discovery (NSD, Wi-Fi) goes in the app, like `EmlidDiscovery`.
 2. **Proprietary NMEA sentences**: write a `SentenceParser` for each and return them from the
@@ -66,10 +68,10 @@ excluded for the same reason.
 ## Build and test
 
 ```
-.\gradlew.bat :receiver-emlid:test
+.\gradlew.bat :geokit-receiver-emlid:test
 ```
 
 ## Licence
 
 GPL-3.0, like the rest of the repository (see the repository `LICENSE`). Runtime dependencies are
-`:gnss-core`, kotlinx-coroutines and socket.io-client (MIT).
+`:geokit-gnss`, kotlinx-coroutines and socket.io-client (MIT).
