@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +81,12 @@ public class EmlidReachDevice(
         correctionsLink = link
         try {
             link.connect()
-            link.info.collect { info -> _corrections.value = info?.let(EmlidMapping::corrections) }
+            // Age out a status no broadcast has refreshed (half-open socket, receiver gone quiet).
+            // Runs in this device's scope, so stop() cancels it with everything else.
+            coroutineScope {
+                launch { while (isActive) { delay(1_000L); link.expireIfStale() } }
+                link.info.collect { info -> _corrections.value = info?.let(EmlidMapping::corrections) }
+            }
         } finally {
             // stop() disconnects synchronously; this covers a stop() that raced the line above.
             if (correctionsLink === link) { correctionsLink = null; link.disconnect() }
@@ -141,6 +147,8 @@ public class EmlidReachDevice(
             public val info: StateFlow<ReachCorrectionsInfo?>
             public fun connect()
             public fun disconnect()
+            /** Clears a status no broadcast has refreshed recently; called about once a second. */
+            public fun expireIfStale() {}
         }
 
         /** The real receiver. */
@@ -163,6 +171,7 @@ public class EmlidReachDevice(
                     override val info: StateFlow<ReachCorrectionsInfo?> = svc.correctionsInfo
                     override fun connect() = svc.connect()
                     override fun disconnect() = svc.disconnect()
+                    override fun expireIfStale() = svc.expireIfStale()
                 }
             }
         }

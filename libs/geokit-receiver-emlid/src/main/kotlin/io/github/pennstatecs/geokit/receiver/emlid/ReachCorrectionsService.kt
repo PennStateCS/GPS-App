@@ -24,19 +24,35 @@ private const val TAG = "ReachCorrectionsService"
  *   svc.disconnect()
  *
  * The /battery REST endpoint is NOT touched here; keep using [ReachBatteryService] for that.
+ *
+ * **Outages.** The socket reconnects indefinitely (2 s backoff growing to 15 s), so the status comes
+ * back after a receiver reboot, battery swap or a spell out of Wi-Fi range. While the link is down
+ * the status is unknown: [correctionsInfo] is cleared on disconnect, and [expireIfStale] clears it
+ * when no broadcast has arrived for [STALE_AFTER_MS] (the receiver normally broadcasts every second).
+ *
+ * Socket callbacks arrive on socket.io's own thread; [expireIfStale] is called from the device's
+ * coroutine. All state is guarded by one lock.
  */
-internal class ReachCorrectionsService(private val host: String) {
+internal class ReachCorrectionsService(
+    private val host: String,
+    /** Monotonic clock (ms) for broadcast age. */
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    /** Creates the socket; replaced by a fake in tests. */
+    private val socketFactory: (URI, IO.Options) -> CorrectionsSocket = SocketIoCorrectionsSocket::create,
+) {
 
     private val _correctionsInfo = MutableStateFlow<ReachCorrectionsInfo?>(null)
     val correctionsInfo: StateFlow<ReachCorrectionsInfo?> = _correctionsInfo.asStateFlow()
 
-    private var socket: Socket? = null
+    private val lock = Any()
+    private var socket: CorrectionsSocket? = null
 
     // Cached fields merged from different broadcast names so we never lose
     // navigation data when a stream_status message arrives (and vice-versa).
     private var cachedNav: NavSnapshot? = null
     private var cachedChannel: String? = null
     private var cachedIsReceiving: Boolean = false
+    private var lastBroadcastAtMs: Long? = null
 
     // Last values written to the diagnostics log (GnssLog.diagnostic) — used to log only state CHANGES (corrections
     // broadcasts arrive continuously; logging each one would flood the diagnostic export).
@@ -55,12 +71,14 @@ internal class ReachCorrectionsService(private val host: String) {
             val options = IO.Options().apply {
                 transports = arrayOf("polling")   // RS2+ supports polling; skip websocket upgrade
                 reconnection = true
-                reconnectionAttempts = 5
+                // Never give up: a reboot or a minute out of range must not end corrections status
+                // for the rest of the session.
+                reconnectionAttempts = Int.MAX_VALUE
                 reconnectionDelay = 2_000
                 reconnectionDelayMax = 15_000
             }
             val uri = URI.create("http://$host")
-            val s = IO.socket(uri, options)
+            val s = socketFactory(uri, options)
 
             s.on(Socket.EVENT_CONNECT) {
                 GnssLog.d(TAG, "socket.io connected to $host")
@@ -74,13 +92,15 @@ internal class ReachCorrectionsService(private val host: String) {
             s.on("reconnect_failed") {
                 GnssLog.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
                 GnssLog.diagnosticWarn("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
+                clearStatus()
             }
             s.on(Socket.EVENT_DISCONNECT) { args ->
                 val reason = args.firstOrNull()?.toString() ?: "unknown"
                 GnssLog.d(TAG, "socket.io disconnected: $reason")
                 GnssLog.diagnostic("CORRECTIONS", "socket disconnected host=$host reason=$reason")
+                clearStatus()        // link down → status unknown until broadcasts resume
             }
-            s.on("broadcast", broadcastListener)
+            s.on("broadcast") { args -> onBroadcast(args) }
 
             s.connect()
             socket = s
@@ -94,38 +114,69 @@ internal class ReachCorrectionsService(private val host: String) {
 
     fun disconnect() {
         socket?.let { s ->
-            s.off("broadcast", broadcastListener)
+            s.off("broadcast")
             s.disconnect()
             GnssLog.d(TAG, "socket.io disconnected from $host")
             GnssLog.diagnostic("CORRECTIONS", "disconnect requested host=$host")
         }
         socket = null
+        synchronized(lock) {
+            cachedNav = null
+            cachedChannel = null
+            cachedIsReceiving = false
+            lastBroadcastAtMs = null
+            lastLoggedSolution = null
+            lastLoggedStreamKey = null
+        }
+    }
+
+    /**
+     * Clears the status when no broadcast has arrived for [STALE_AFTER_MS] (a half-open socket or a
+     * receiver that stopped broadcasting). The next broadcast restores it. Call about once a second.
+     */
+    fun expireIfStale() {
+        synchronized(lock) {
+            if (_correctionsInfo.value == null) return
+            val last = lastBroadcastAtMs ?: return clearStatusLocked()
+            if (nowMs() - last > STALE_AFTER_MS) {
+                GnssLog.diagnostic("CORRECTIONS", "no broadcast for ${STALE_AFTER_MS / 1000}s host=$host — status cleared")
+                clearStatusLocked()
+            }
+        }
+    }
+
+    private fun clearStatus() = synchronized(lock) { clearStatusLocked() }
+
+    private fun clearStatusLocked() {
         cachedNav = null
         cachedChannel = null
         cachedIsReceiving = false
         lastLoggedSolution = null
         lastLoggedStreamKey = null
+        _correctionsInfo.value = null
     }
 
     // ── Socket.IO listener ────────────────────────────────────────────────────
 
-    private val broadcastListener = Emitter.Listener { args ->
+    private fun onBroadcast(args: Array<out Any?>) {
         val payload = args.firstOrNull() as? JSONObject ?: run {
             // Some socket.io broadcasts arrive as plain strings (handshake/other events) — expected.
             GnssLog.d(TAG, "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}")
-            return@Listener
+            return
         }
         val name = payload.optString("name", "")
         val data = payload.optJSONObject("payload") ?: run {
             // Broadcasts we don't consume (e.g. time_marks) may omit a payload object — expected.
             GnssLog.d(TAG, "broadcast '$name': no payload object (ignored)")
-            return@Listener
+            return
         }
 
-        when (name) {
-            "navigation"    -> handleNavigation(data)
-            "stream_status" -> handleStreamStatus(data)
-            else -> { /* ignore unrelated broadcasts */ }
+        synchronized(lock) {
+            when (name) {
+                "navigation"    -> { lastBroadcastAtMs = nowMs(); handleNavigation(data) }
+                "stream_status" -> { lastBroadcastAtMs = nowMs(); handleStreamStatus(data) }
+                else -> { /* ignore unrelated broadcasts */ }
+            }
         }
     }
 
@@ -241,6 +292,35 @@ internal class ReachCorrectionsService(private val host: String) {
         val baseLon: Double?,
         val baseH: Double?
     )
+
+    companion object {
+        /** No broadcast for this long → status unknown (the receiver broadcasts about once a second). */
+        const val STALE_AFTER_MS: Long = 10_000L
+    }
+}
+
+/** The bit of a socket.io client the corrections service uses (a seam for tests). */
+internal interface CorrectionsSocket {
+    fun on(event: String, listener: (Array<out Any?>) -> Unit)
+    fun off(event: String)
+    fun connect()
+    fun disconnect()
+    fun connected(): Boolean
+}
+
+/** [CorrectionsSocket] over the real socket.io client. */
+internal class SocketIoCorrectionsSocket private constructor(private val socket: Socket) : CorrectionsSocket {
+    override fun on(event: String, listener: (Array<out Any?>) -> Unit) {
+        socket.on(event, Emitter.Listener { args -> listener(args) })
+    }
+    override fun off(event: String) { socket.off(event) }
+    override fun connect() { socket.connect() }
+    override fun disconnect() { socket.disconnect() }
+    override fun connected(): Boolean = socket.connected()
+
+    companion object {
+        fun create(uri: URI, options: IO.Options): CorrectionsSocket = SocketIoCorrectionsSocket(IO.socket(uri, options))
+    }
 }
 
 // ── JSONObject helpers ────────────────────────────────────────────────────────
