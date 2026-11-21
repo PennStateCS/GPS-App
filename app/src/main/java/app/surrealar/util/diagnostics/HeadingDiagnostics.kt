@@ -14,7 +14,12 @@ object HeadingDiagnostics {
     }
 
     /** [source] = "rotation vector + declination (LIVE_FIX)", "GNSS course", "north-up"… */
+    /** Last heading source logged (for the report). */
+    @Volatile var lastSource: String? = null
+        private set
+
     fun onSource(source: String) {
+        lastSource = source
         DiagnosticsLogger.logOnChange(DiagTags.AR, "heading.source", source) { "Heading source: $source" }
     }
 

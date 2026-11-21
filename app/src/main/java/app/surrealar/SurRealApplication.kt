@@ -40,6 +40,7 @@ interface SurRealApplicationEntryPoint {
     fun modelRepository(): app.surrealar.domain.repository.ModelRepository
     fun gnssFeedLogger(): app.surrealar.util.diagnostics.GnssFeedLogger
     fun diagnosticsService(): app.surrealar.gnss.diagnostics.DiagnosticsService
+    fun receiverDeviceManager(): app.surrealar.receiver.ReceiverDeviceManager
 }
 
 /**

@@ -100,7 +100,23 @@ object DiagnosticReportExporter {
         override suspend fun summary() = buildSummary(context, warnings, reportId)
         override suspend fun settingsSnapshot() = app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
         override suspend fun permissions() = buildPermissionsStatus(context)
-        override suspend fun appState() = buildStateSummary(context)
+        override suspend fun appState(): String {
+            val g = app.surrealar.util.diagnostics.GnssFeedLogger.instance
+            val ep = runCatching {
+                dagger.hilt.android.EntryPointAccessors.fromApplication(context.applicationContext,
+                    app.surrealar.SurRealApplicationEntryPoint::class.java)
+            }.getOrNull()
+            val extras = app.surrealar.util.diagnostics.report.AppStateExtrasCollector.Extras(
+                receiverDevice = runCatching { ep?.receiverDeviceManager()?.activeDevice?.value?.javaClass?.simpleName }.getOrNull(),
+                receiverProfile = runCatching { ep?.settingsRepository()?.externalReceiverProfile?.first()?.label }.getOrNull(),
+                receiverLink = g?.link?.lastLinkState,
+                corrections = g?.link?.correctionsSummary,
+                clockOffsetMs = app.surrealar.util.diagnostics.ClockOffset.lastOffsetMs,
+                headingSource = app.surrealar.util.diagnostics.HeadingDiagnostics.lastSource,
+                currentScreen = DiagnosticsLogger.currentScreen,
+            )
+            return buildStateSummary(context) + app.surrealar.util.diagnostics.report.AppStateExtrasCollector.render(extras)
+        }
         override suspend fun coordinates() = buildCoordinatesReport(data)
         override suspend fun models() = buildModelsReport(data)
         // Most recent AR/model session (persisted file survives event-log rotation).
