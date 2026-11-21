@@ -28,7 +28,12 @@ class GnssFeedLogger @Inject constructor(
         started = true
         instance = this
         appScope.launch { sourceSettings.activeProvider.collect { feed.onSource(it.name, now()) } }
-        appScope.launch { switchboard.fixes.collect { feed.onFix(it, now()) } }
+        appScope.launch {
+            switchboard.fixes.collect { fix ->
+                feed.onFix(fix, now())
+                ClockOffset.onFix(fix, System.currentTimeMillis())
+            }
+        }
         appScope.launch { switchboard.sky.collect { feed.onSky(it.totalUsed, it.totalVisible) } }
         appScope.launch { switchboard.rawNmea.collect { feed.onNmea(now()) } }
         appScope.launch {
