@@ -88,6 +88,7 @@ class SurRealApplication : Application() {
 
         // Init diagnostic file logger before anything else so startup events are captured.
         DiagnosticsLogger.init(this)
+        app.surrealar.util.BuildInfo.init(this)
         // SESSION_START: session + install IDs, version, device, locale/zone, last session clean?
         app.surrealar.util.diagnostics.SessionTracker.startProcess(this)
         app.surrealar.util.diagnostics.LifecycleLogger.install(this)

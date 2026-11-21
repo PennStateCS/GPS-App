@@ -63,11 +63,13 @@ android {
 
         // Local build metadata — stamped at compile time from the git working tree.
         // Change versionName above manually for human-readable release tagging.
-        buildConfigField("String",  "BUILD_GIT_HASH",   "\"$gitHash\"")
-        buildConfigField("String",  "BUILD_GIT_BRANCH", "\"$gitBranch\"")
-        buildConfigField("boolean", "BUILD_GIT_DIRTY",  "$gitDirty")
-        buildConfigField("String",  "BUILD_TIME",       "\"$buildTime\"")
-        buildConfigField("int",     "BUILD_NUMBER",     "$buildNumber")
+        // These change on every build (time) or commit, so they are string resources read by BuildInfo
+        // at startup, not BuildConfig constants: a BuildConfig change makes Kotlin recompile its users.
+        resValue("string", "build_git_hash", gitHash)
+        resValue("string", "build_git_branch", gitBranch)
+        resValue("string", "build_git_dirty", gitDirty.toString())
+        resValue("string", "build_time", buildTime)
+        resValue("string", "build_number", buildNumber.toString())
         // Where testers send diagnostic reports: -PDIAG_REPORT_EMAIL=… / gradle.properties / local.properties.
         // Blank (default) leaves the email's To field empty.
         val diagReportEmail = (providers.gradleProperty("DIAG_REPORT_EMAIL").orNull
@@ -126,7 +128,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
-    buildFeatures { viewBinding = true; buildConfig = true }
+    buildFeatures { viewBinding = true; buildConfig = true; resValues = true }
 
     bundle {
         language { enableSplit = true }

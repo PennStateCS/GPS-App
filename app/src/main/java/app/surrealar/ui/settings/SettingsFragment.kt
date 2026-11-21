@@ -1,5 +1,6 @@
 package app.surrealar.ui.settings
 
+import app.surrealar.util.BuildInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -839,21 +840,21 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     private fun setupAboutContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_about, contentContainer, false)
         try {
-            val hash  = BuildConfig.BUILD_GIT_HASH
-            val dirty = BuildConfig.BUILD_GIT_DIRTY
+            val hash  = BuildInfo.gitHash
+            val dirty = BuildInfo.gitDirty
 
             view.findViewById<TextView>(R.id.text_about_version)?.text =
                 BuildConfig.VERSION_NAME
             view.findViewById<TextView>(R.id.text_about_build_number)?.text =
-                BuildConfig.BUILD_NUMBER.toString()
+                BuildInfo.buildNumber.toString()
             view.findViewById<TextView>(R.id.text_about_commit)?.text =
                 if (dirty) "$hash-dirty" else hash
             view.findViewById<TextView>(R.id.text_about_branch)?.text =
-                BuildConfig.BUILD_GIT_BRANCH
+                BuildInfo.gitBranch
             view.findViewById<TextView>(R.id.text_about_dirty)?.text =
                 if (dirty) "Yes" else "No"
             view.findViewById<TextView>(R.id.text_about_built)?.text =
-                BuildConfig.BUILD_TIME
+                BuildInfo.buildTime
 
             val btnExport = view.findViewById<com.google.android.material.button.MaterialButton>(
                 R.id.btn_export_diagnostic

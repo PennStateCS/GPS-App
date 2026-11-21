@@ -1,5 +1,6 @@
 package app.surrealar.util.diagnostics
 
+import app.surrealar.util.BuildInfo
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
@@ -66,7 +67,7 @@ class SessionTracker(private val prefs: SharedPreferences) {
             val session = tracker.start(Info(
                 versionName = BuildConfig.VERSION_NAME, versionCode = BuildConfig.VERSION_CODE,
                 buildType = BuildConfig.BUILD_TYPE,
-                gitHash = BuildConfig.BUILD_GIT_HASH + if (BuildConfig.BUILD_GIT_DIRTY) "-dirty" else "",
+                gitHash = BuildInfo.gitHash + if (BuildInfo.gitDirty) "-dirty" else "",
                 device = "${Build.MANUFACTURER} ${Build.MODEL}", android = Build.VERSION.RELEASE ?: "?",
                 sdk = Build.VERSION.SDK_INT, locale = Locale.getDefault().toLanguageTag(),
                 timeZone = TimeZone.getDefault().id,

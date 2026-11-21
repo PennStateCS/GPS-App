@@ -1,5 +1,6 @@
 package app.surrealar.util.diagnostics
 
+import app.surrealar.util.BuildInfo
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -34,9 +35,9 @@ object MapDiagnosticCollector {
         // --- Build / identity ---
         sb.appendLine("--- App identity ---")
         sb.appendLine("Package / applicationId : ${context.packageName}")
-        sb.appendLine("Version                 : ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE}, build ${BuildConfig.BUILD_NUMBER})")
+        sb.appendLine("Version                 : ${BuildConfig.VERSION_NAME} (code ${BuildConfig.VERSION_CODE}, build ${BuildInfo.buildNumber})")
         sb.appendLine("Build type              : ${if (BuildConfig.DEBUG) "DEBUG" else "RELEASE"}")
-        sb.appendLine("Git / built             : ${BuildConfig.BUILD_GIT_HASH}${if (BuildConfig.BUILD_GIT_DIRTY) "-dirty" else ""} @ ${BuildConfig.BUILD_TIME}")
+        sb.appendLine("Git / built             : ${BuildInfo.gitHash}${if (BuildInfo.gitDirty) "-dirty" else ""} @ ${BuildInfo.buildTime}")
         sb.appendLine("Installer source        : ${installerSource(context)}")
         sb.appendLine()
 
