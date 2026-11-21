@@ -73,6 +73,12 @@ class ReplayAdapter(
         if (playJob != null) return
         inventory.reset()
         DiagnosticsLogger.i("SOURCE", "replay started: ${src.name}")
+        // Same 300 ms GST-hold cap as the live sources — only while the file plays. Started first so a
+        // file that ends at once still finds it to cancel.
+        val tick = scope.launch(dispatcher) {
+            while (isActive) { delay(HOLD_TICK_MS); fuser.flushIfStale() }
+        }
+        tickJob = tick
         playJob = scope.launch(dispatcher) {
             try {
                 src.lines().collect { line ->
@@ -83,11 +89,8 @@ class ReplayAdapter(
                 }
             } finally {
                 fuser.flush()   // end of input: emit a fix still held for its GST
+                tick.cancel()   // nothing more can be held: stop the 10 Hz ticker
             }
-        }
-        // Same 300 ms GST-hold cap as the live sources.
-        tickJob = scope.launch(dispatcher) {
-            while (isActive) { delay(HOLD_TICK_MS); fuser.flushIfStale() }
         }
     }
 
@@ -100,6 +103,9 @@ class ReplayAdapter(
         _sky.value = SkySnapshot()
         DiagnosticsLogger.i("SOURCE", "replay stopped")
     }
+
+    /** True while the GST-hold ticker runs (tests: it must stop when the file ends). */
+    internal val isTicking: Boolean get() = tickJob?.isActive == true
 
     private companion object { const val HOLD_TICK_MS = 100L }
 }
