@@ -46,8 +46,8 @@ public class RmcParser : SentenceParser<RMC> {
             dddmmToDecimal(lonRaw, lonHem)
         } else null
 
-        val speedKnots = fields.getOrNull(7).toDoubleOrNullSafe()
-        val courseDeg  = fields.getOrNull(8).toDoubleOrNullSafe()
+        val speedKnots = fields.getOrNull(7).toFiniteDoubleOrNull()
+        val courseDeg  = fields.getOrNull(8).toFiniteDoubleOrNull()
         val dateRaw    = fields.getOrNull(9).orEmpty().ifBlank { null }
 
         val time = parseTime(timeRaw)
@@ -75,9 +75,6 @@ public class RmcParser : SentenceParser<RMC> {
     /** Longitude in (d)ddmm.mmmm and hemisphere E/W → decimal degrees (tolerates no leading zero). */
     private fun dddmmToDecimal(dddmm: String?, hemisphere: String?): Double? =
         NmeaCoordinateUtils.toDecimalDegrees(dddmm, hemisphere, isLatitude = false)
-
-    private fun String?.toDoubleOrNullSafe(): Double? =
-        this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 
     /** Parse NMEA time format hhmmss[.sss] to LocalTime. */
     private fun parseTime(timeRaw: String?): LocalTime? {

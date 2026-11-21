@@ -23,13 +23,15 @@ public class GstParser : SentenceParser<GST> {
         if (fields.isEmpty()) return null
 
         val timeRaw = fields.getOrNull(1).orEmpty().ifBlank { null }
-        val rmsStdDev = fields.getOrNull(2).toDoubleOrNullSafe()
-        val stdDevMajor = fields.getOrNull(3).toDoubleOrNullSafe()
-        val stdDevMinor = fields.getOrNull(4).toDoubleOrNullSafe()
-        val orientationDeg = fields.getOrNull(5).toDoubleOrNullSafe()
-        val stdDevLat = fields.getOrNull(6).toDoubleOrNullSafe()
-        val stdDevLon = fields.getOrNull(7).toDoubleOrNullSafe()
-        val stdDevAlt = fields.getOrNull(8).toDoubleOrNullSafe()
+        // Standard deviations can't be 0 or negative: a receiver sending 0.000 hasn't computed them, so
+        // they are absent (no accuracy from this GST) rather than a perfect 0 m.
+        val rmsStdDev = fields.getOrNull(2).toPositiveDoubleOrNull()
+        val stdDevMajor = fields.getOrNull(3).toPositiveDoubleOrNull()
+        val stdDevMinor = fields.getOrNull(4).toPositiveDoubleOrNull()
+        val orientationDeg = fields.getOrNull(5).toFiniteDoubleOrNull()
+        val stdDevLat = fields.getOrNull(6).toPositiveDoubleOrNull()
+        val stdDevLon = fields.getOrNull(7).toPositiveDoubleOrNull()
+        val stdDevAlt = fields.getOrNull(8).toPositiveDoubleOrNull()
 
         return GST(
             talker = talker,
@@ -43,7 +45,4 @@ public class GstParser : SentenceParser<GST> {
             stdDevAlt = stdDevAlt
         )
     }
-
-    private fun String?.toDoubleOrNullSafe(): Double? =
-        this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 }

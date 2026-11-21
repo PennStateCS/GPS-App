@@ -36,9 +36,9 @@ public class GsaParser : SentenceParser<GSA> {
         }
 
         // Parse DOP values from fields 15-17
-        val pDop = fields.getOrNull(15).toDoubleOrNullSafe()
-        val hDop = fields.getOrNull(16).toDoubleOrNullSafe()
-        val vDop = fields.getOrNull(17).toDoubleOrNullSafe()
+        val pDop = fields.getOrNull(15).toFiniteDoubleOrNull()
+        val hDop = fields.getOrNull(16).toFiniteDoubleOrNull()
+        val vDop = fields.getOrNull(17).toFiniteDoubleOrNull()
 
         return GSA(
             talker = talker,
@@ -55,7 +55,4 @@ public class GsaParser : SentenceParser<GSA> {
 
     private fun String?.toIntOrNullSafe(): Int? =
         this?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
-
-    private fun String?.toDoubleOrNullSafe(): Double? =
-        this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 }

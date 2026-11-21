@@ -21,7 +21,7 @@ public class EbpParser : SentenceParser<EBP> {
             fields.getOrNull(3).orEmpty().ifBlank { null },
             fields.getOrNull(4).orEmpty().ifBlank { null }?.uppercase()
         )
-        val altM = fields.getOrNull(5)?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+        val altM = fields.getOrNull(5).toFiniteDoubleOrNull()
 
         return EBP(talker = talker, baseLat = lat, baseLon = lon, baseAltM = altM)
     }

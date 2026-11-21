@@ -17,12 +17,12 @@ public class AccuracyParser : SentenceParser<ACCURACY> {
         return ACCURACY(
             talker = talker,
             hAccM = h,
-            field2 = fields.getOrNull(2)?.trim()?.toDoubleOrNull(),
-            speedAccMps = fields.getOrNull(3)?.trim()?.toDoubleOrNull(),
+            field2 = fields.getOrNull(2).toFiniteDoubleOrNull(),
+            speedAccMps = fields.getOrNull(3).toFiniteDoubleOrNull(),
             vAccM = v,
         )
     }
 
     private fun String?.positiveOrNull(): Double? =
-        this?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
+        toPositiveDoubleOrNull()
 }

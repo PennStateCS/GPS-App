@@ -43,20 +43,20 @@ public class GgaParser : SentenceParser<GGA> {
         // Fix quality, satellites, HDOP
         val fixQuality = fields.getOrNull(6).toIntOrNullSafe()
         val satsUsed   = fields.getOrNull(7).toIntOrNullSafe()
-        val hdop       = fields.getOrNull(8).toDoubleOrNullSafe()
+        val hdop       = fields.getOrNull(8).toPositiveDoubleOrNull()   // DOP is always > 0
 
         // Altitude MSL and Geoid separation (meters)
-        val altMslVal   = fields.getOrNull(9).toDoubleOrNullSafe()
+        val altMslVal   = fields.getOrNull(9).toFiniteDoubleOrNull()
         // A blank unit field ("…,395.5,,-33.1,,…") is the same as a missing one: assume meters.
         // Only an explicit non-meter unit rejects the value.
         val altMslUnit  = fields.getOrNull(10)?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
-        val geoidVal    = fields.getOrNull(11).toDoubleOrNullSafe()
+        val geoidVal    = fields.getOrNull(11).toFiniteDoubleOrNull()
         val geoidUnit   = fields.getOrNull(12)?.trim()?.uppercase()?.takeIf { it.isNotEmpty() }
 
         val altMsl = if (altMslVal != null && (altMslUnit == null || altMslUnit == "M")) altMslVal else null
         val geoidSeparation = if (geoidVal != null && (geoidUnit == null || geoidUnit == "M")) geoidVal else null
 
-        val diffAge   = fields.getOrNull(13).toDoubleOrNullSafe()
+        val diffAge   = fields.getOrNull(13).toFiniteDoubleOrNull()
         val stationId = fields.getOrNull(14).orEmpty().ifBlank { null }
 
         return GGA(
@@ -84,7 +84,4 @@ public class GgaParser : SentenceParser<GGA> {
 
     private fun String?.toIntOrNullSafe(): Int? =
         this?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
-
-    private fun String?.toDoubleOrNullSafe(): Double? =
-        this?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
 }
