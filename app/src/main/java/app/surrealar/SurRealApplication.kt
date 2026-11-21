@@ -84,13 +84,8 @@ class SurRealApplication : Application() {
 
         // Init diagnostic file logger before anything else so startup events are captured.
         DiagnosticsLogger.init(this)
-        DiagnosticsLogger.i("App", "Started version=${BuildConfig.VERSION_NAME}" +
-            " build=${BuildConfig.BUILD_NUMBER}" +
-            " commit=${BuildConfig.BUILD_GIT_HASH}${if (BuildConfig.BUILD_GIT_DIRTY) "-dirty" else ""}" +
-            " branch=${BuildConfig.BUILD_GIT_BRANCH}" +
-            " device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}" +
-            " android=${android.os.Build.VERSION.RELEASE}(API ${android.os.Build.VERSION.SDK_INT})" +
-            " debug=${BuildConfig.DEBUG}")
+        // SESSION_START: session + install IDs, version, device, locale/zone, last session clean?
+        app.surrealar.util.diagnostics.SessionTracker.startProcess(this)
         // Surfaced for tester support: in debug builds Room is allowed to wipe & recreate the
         // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
         // coordinates/models. Release builds keep data via real migrations.
