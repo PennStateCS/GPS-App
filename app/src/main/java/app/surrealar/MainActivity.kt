@@ -84,10 +84,6 @@ class MainActivity : AppCompatActivity() {
     /** What the source asked for (external selected); the receiver must also report a battery. */
     private var batteryRequested = false
 
-    // Track last GNSS data update time for stale detection
-    @Volatile
-    private var lastDataUpdateTime = System.currentTimeMillis()
-
     // Track latest sky snapshot for accurate satellite counts
     @Volatile
     private var latestSkySnapshot: io.github.pennstatecs.geokit.gnss.model.SkySnapshot? = null
@@ -127,8 +123,6 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var externalReceiverLabel: String = app.surrealar.gnss.format.GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL
 
     // Cache the battery drawable once and mutate in place
-    private var batteryLayer: LayerDrawable? = null
-    private var batteryFillClip: ClipDrawable? = null
     // Last battery reading, cached so the token can be re-rendered on orientation change
     // (MainActivity handles configChanges itself, so it is not recreated on rotation).
     private var lastBatteryPercent: Int? = null
@@ -211,29 +205,6 @@ class MainActivity : AppCompatActivity() {
         )
         setupToolbarActions()
 
-        // Static labels
-        tokenSource.label.setText(R.string.status_token_src)
-        tokenFix.label.text = ""   // dynamic: "GPS" / "RTK Float" / etc.
-        tokenSats.label.setText(R.string.status_token_sats)
-        tokenAcc.label.setText(R.string.status_token_hacc)
-        tokenAge.label.setText(R.string.status_token_age)
-        tokenAge.root.isVisible = false
-        tokenCoord.label.setText(R.string.status_token_ll)
-        tokenAlt.label.setText(R.string.status_token_alt)
-
-        // Battery icon setup
-        tokenBatt.label.text = ""
-        tokenBatt.icon.setImageResource(R.drawable.battery_level)
-        androidx.core.widget.ImageViewCompat.setImageTintList(tokenBatt.icon, null)
-        tokenBatt.icon.scaleType = ImageView.ScaleType.FIT_XY
-        tokenBatt.icon.adjustViewBounds = false
-        tokenBatt.icon.minimumWidth = (32 * resources.displayMetrics.density).toInt()
-        tokenBatt.icon.setPadding(0, 0, 0, 0)
-        (tokenBatt.root as? View)?.minimumWidth = (48 * resources.displayMetrics.density).toInt()
-        tokenBatt.icon.isVisible = true
-        moveBatteryIconToRight()
-        tokenBatt.root.isVisible = false
-
         // Battery comes from the active ReceiverDevice (one poller, shared with Settings and the
         // Developer page). Null while the receiver is unreachable or not selected; the token is hidden
         // entirely for receivers that don't report a battery.
@@ -248,14 +219,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Trailing separators (managed dynamically in renderGnssToolbarState)
-        tokenSats.separator?.isVisible = false
-        tokenAcc.separator?.isVisible = false
-        tokenAlt.separator?.isVisible = false
-        tokenBatt.separator?.isVisible = false
-
         // Hide the SRC label in portrait to save horizontal space.
-        applyStatusBarOrientationLayout()
+        toolbarRenderer.setPortrait(isPortrait)
 
         setSupportActionBar(binding.appBarMain.toolbar)
 
@@ -357,42 +322,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Pre-populate initial status tokens with placeholders
+        // Initial placeholders: the mapper's waiting state for the starting provider, via the renderer.
         lifecycleScope.launch {
-            val initialProvider = try { 
-                sourceSettings.activeProvider.first() 
-            } catch (_: Exception) { 
-                app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL 
+            val initialProvider = try {
+                sourceSettings.activeProvider.first()
+            } catch (_: Exception) {
+                app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL
             }
-            
             val isInternal = initialProvider == app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL
-            val srcLabel = if (isInternal) "Internal" else externalReceiverLabel
-
-            // Set initial source label
-            tokenSource.value.text = srcLabel
-            tokenSource.separator?.isVisible = true
-
-            // SOL token: Internal shows "--" (acquires quickly); External shows "Waiting" so the
-            // RS2+ label is never paired with a blank/ambiguous status while the receiver connects.
-            tokenFix.root.isVisible = true
-            tokenFix.label.text = "SOL"
-            tokenFix.value.text = if (isInternal) "--" else "Waiting"
-            tokenFix.value.setTextColor(getColor(R.color.app_on_status_strip_variant))
-
-            tokenSats.root.isVisible = false // Hidden until first fix with sat data
-            tokenAcc.root.isVisible = false  // Hidden until first fix with accuracy data
-
-            // Show coordinate placeholder
-            tokenCoord.value.text = "--"
-            tokenCoord.root.isVisible = true
-
-            // Show altitude placeholder (label + --) like the LL token
-            tokenAlt.value.text = "--"
-            tokenAlt.root.isVisible = true
-
-            // Battery only for external
-            tokenBatt.root.isVisible = false
-            updateBatteryVisibility(!isInternal)
+            toolbarRenderer.render(GnssToolbarStateMapper.waiting(
+                if (isInternal) LocationSourceType.INTERNAL else LocationSourceType.EXTERNAL, externalReceiverLabel))
         }
 
         // Permissions flow
@@ -425,22 +364,6 @@ class MainActivity : AppCompatActivity() {
         // Replay is app-scoped now; leaving the app ends it and restores the previous source.
         providerBeforeReplay?.let { gnssSourceCoordinator.endReplay(it, "activity destroyed") }
         providerBeforeReplay = null
-    }
-
-    private fun moveBatteryIconToRight() {
-        val batteryContainer = tokenBatt.root as? android.widget.LinearLayout ?: return
-        batteryContainer.removeView(tokenBatt.icon)
-        val labelIndex = batteryContainer.indexOfChild(tokenBatt.label)
-        batteryContainer.addView(tokenBatt.icon, labelIndex + 1)
-        (tokenBatt.icon.layoutParams as? android.widget.LinearLayout.LayoutParams)?.let { lp ->
-            val marginPx = (10 * resources.displayMetrics.density).toInt()
-            lp.width = (32 * resources.displayMetrics.density).toInt()
-            lp.height = (12 * resources.displayMetrics.density).toInt()
-            lp.setMargins(marginPx, 0, 0, 0)
-            tokenBatt.icon.layoutParams = lp
-            tokenBatt.icon.requestLayout()
-            batteryContainer.requestLayout()
-        }
     }
 
     private fun findToken(id: Int): ToolbarTokens {
@@ -716,27 +639,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Stale data detection - dim source token if no updates for 15 seconds
-        lifecycleScope.launch {
-            lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (true) {
-                    delay(5_000) // Check every 5 seconds
-                    val now = System.currentTimeMillis()
-                    val elapsed = now - lastDataUpdateTime
-
-                    // If we haven't seen an update in 15+ seconds, show stale indicator
-                    withContext(Dispatchers.Main) {
-                        if (elapsed > 15_000) {
-                            // Dim the source token to indicate stale data
-                            tokenSource.value.alpha = 0.5f
-                        } else {
-                            tokenSource.value.alpha = 1.0f
-                        }
-                    }
-                }
-            }
-        }
-
         // Show/hide the entire status bar based on Appearance setting (suppressed while in AR)
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -802,10 +704,8 @@ class MainActivity : AppCompatActivity() {
                         app.surrealar.util.DiagnosticsLogger.i("Toolbar", "First current external fix displayed after startup")
                     }
                 }
-                lastDataUpdateTime = System.currentTimeMillis()
                 lastToolbarState = state
                 toolbarRenderer.render(state)
-                tokenSource.value.alpha = 1.0f
             }
         }
     }
@@ -849,23 +749,13 @@ class MainActivity : AppCompatActivity() {
     // ── Toolbar tap actions (wiring only; what's available comes from the mapped state) ──
 
     private fun setupToolbarActions() {
-        val openStatus = View.OnClickListener { openToolbarGnssStatus() }
-        tokenFix.root.setOnClickListener(openStatus)
-        tokenSats.root.setOnClickListener(openStatus)
-        tokenBatt.root.setOnClickListener { openReceiverDetails() }
-        tokenCoord.root.setOnClickListener {
+        toolbarRenderer.bindActions(app.surrealar.ui.toolbar.ToolbarActions(
+            onStatus = ::openToolbarGnssStatus,
+            onBattery = ::openReceiverDetails,
             // Lat/lon ↔ grid only when a grid system is configured; otherwise a no-op.
-            if (lastToolbarState?.coordToggleAvailable == true) toolbarPreferLatLon.value = !toolbarPreferLatLon.value
-        }
-        tokenCoord.root.setOnLongClickListener { copyToolbarPosition(); true }
-        // Long-press help on the other tokens.
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenSource.root, app.surrealar.ui.toolbar.ToolbarHelp.SOURCE)
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenFix.root, app.surrealar.ui.toolbar.ToolbarHelp.SOL)
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenAcc.root, app.surrealar.ui.toolbar.ToolbarHelp.ACC)
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenAge.root, app.surrealar.ui.toolbar.ToolbarHelp.AGE)
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenSats.root, app.surrealar.ui.toolbar.ToolbarHelp.SATS)
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenAlt.root, app.surrealar.ui.toolbar.ToolbarHelp.ALT)
-        androidx.appcompat.widget.TooltipCompat.setTooltipText(tokenBatt.root, app.surrealar.ui.toolbar.ToolbarHelp.BATTERY)
+            onCoordTap = { if (lastToolbarState?.coordToggleAvailable == true) toolbarPreferLatLon.value = !toolbarPreferLatLon.value },
+            onCoordLongPress = ::copyToolbarPosition,
+        ))
     }
 
     /** SOL / SATS: the sky + satellite view (Developer Tools) when enabled, else Settings › Receiver status. */
@@ -916,13 +806,11 @@ class MainActivity : AppCompatActivity() {
         source: LocationSourceType
     ) {
         latestSkySnapshot = null
-        lastDataUpdateTime = System.currentTimeMillis()
         // Reset the one-shot transition logs so each new source session (after an INTERNAL ↔ EXTERNAL
         // switch) re-logs its waiting → first-fix flow accurately instead of staying silent.
         loggedExternalWaiting = false
         loggedFirstExternalToolbarFix = false
         toolbarRenderer.render(GnssToolbarStateMapper.waiting(source, externalReceiverLabel))
-        tokenSource.value.alpha = 1.0f
     }
 
     // Throttle for wrong-provider/stale/invalid-fix diagnostics so a steady stream of dropped
@@ -944,19 +832,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateBatteryVisibility(requested: Boolean) {
         batteryRequested = requested
-        val shouldShow = requested && receiverDevices.capabilities.value.hasBattery
-        batteryShouldShow = shouldShow
-        if (shouldShow) {
-            // External source: render the repository's latest reading. The token stays hidden
-            // until real battery data arrives — updateBatteryIcon() reveals it (and its separator)
-            // once there is a percentage, and hides it again if the data is lost.
-            val b = receiverDevices.battery.value
-            updateBatteryIcon(b?.percent, b?.isCharging)
-        } else {
-            // Internal source (or no receiver): hide the token + its separator.
-            tokenAlt.separator?.isVisible = false
-            tokenBatt.root.isVisible = false
-        }
+        // Shown for an external source whose receiver reports a battery (ReceiverDevice capability).
+        batteryShouldShow = requested && receiverDevices.capabilities.value.hasBattery
+        val b = receiverDevices.battery.value
+        updateBatteryIcon(b?.percent, b?.isCharging)
     }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
@@ -966,7 +845,7 @@ class MainActivity : AppCompatActivity() {
         //  - show/hide the SRC label (hidden in portrait to save horizontal space), and
         //  - re-render the battery token so its graphical icon is shown (landscape) or hidden
         //    (portrait, percentage text only) to match the new orientation.
-        applyStatusBarOrientationLayout()
+        toolbarRenderer.setPortrait(isPortrait)
         if (lastBatteryPercent != null) {
             updateBatteryIcon(lastBatteryPercent, lastBatteryCharging)
         }
@@ -976,78 +855,7 @@ class MainActivity : AppCompatActivity() {
         // Cache the latest reading so onConfigurationChanged() can re-render for the new orientation.
         lastBatteryPercent = percentage
         lastBatteryCharging = charging
-
-        // No data: hide the token entirely (along with its separator) instead of showing "--".
-        if (percentage == null) {
-            tokenBatt.root.isVisible = false
-            tokenAlt.separator?.isVisible = false
-            return
-        }
-        // Data available: reveal the token and the separator that precedes it.
-        tokenBatt.root.isVisible = true
-        tokenAlt.separator?.isVisible = true
-        tokenBatt.value.text = "${percentage.coerceIn(0, 100)}%"
-
-        // Narrow width or portrait: percentage text is sufficient; skip the graphical icon.
-        tokenBatt.icon.isVisible = !batteryTextOnly
-        if (batteryTextOnly) return
-
-        if (batteryLayer == null) {
-            val base = tokenBatt.icon.drawable ?: return
-            batteryLayer = (base.mutate() as? LayerDrawable)
-            tokenBatt.icon.setImageDrawable(batteryLayer)
-            batteryFillClip = (batteryLayer?.findDrawableByLayerId(R.id.battery_fill) as? ClipDrawable)
-                ?: run {
-                    var found: ClipDrawable? = null
-                    try {
-                        val count = batteryLayer?.numberOfLayers ?: 0
-                        for (i in 0 until count) {
-                            val d = batteryLayer?.getDrawable(i)
-                            if (d is ClipDrawable) { found = d; break }
-                        }
-                    } catch (_: Exception) {}
-                    found
-                }
-        }
-
-        batteryFillClip?.level = (percentage.coerceIn(0, 100) * 100)
-
-        // Charging turns the fill green, except below 20 %: a critical level keeps its warning
-        // color and only gains the bolt, so plugging in never hides a nearly-dead battery.
-        val fillColor = when {
-            charging == true && percentage >= 20 -> 0xFF4CAF50.toInt()
-            percentage <= 15 -> 0xFFF44336.toInt()
-            percentage <= 30 -> 0xFFFFC107.toInt()
-            else -> 0xFF4CAF50.toInt()
-        }
-
-        try {
-            batteryLayer?.findDrawableByLayerId(R.id.battery_bolt)?.alpha = if (charging == true) 0xFF else 0x00
-        } catch (_: Exception) {}
-
-        val clip = batteryFillClip
-        val inner = try { clip?.drawable } catch (_: Exception) { null }
-        var tinted = false
-        try {
-            if (inner is android.graphics.drawable.GradientDrawable) {
-                inner.setColor(fillColor); tinted = true
-            }
-        } catch (_: Exception) {}
-        try {
-            if (inner != null) {
-                androidx.core.graphics.drawable.DrawableCompat.setTint(inner, fillColor); tinted = true
-            }
-        } catch (_: Exception) {}
-        if (!tinted) {
-            try { clip?.let { androidx.core.graphics.drawable.DrawableCompat.setTint(it, fillColor) } } catch (_: Exception) {}
-        }
-
-        try {
-            batteryLayer?.findDrawableByLayerId(R.id.battery_bg)?.alpha = if (percentage <= 15) 0x66 else 0x22
-        } catch (_: Exception) {}
-
-        batteryLayer?.invalidateSelf()
-        tokenBatt.icon.invalidate()
+        toolbarRenderer.renderBattery(batteryShouldShow, percentage, charging, textOnly = batteryTextOnly)
     }
 
     /**
@@ -1119,14 +927,6 @@ class MainActivity : AppCompatActivity() {
     /** When true, the battery token shows the percentage text only (no graphical icon). */
     private val batteryTextOnly: Boolean
         get() = isCompact || isPortrait
-
-    /**
-     * Hides the "SRC" label in portrait to save horizontal space so the status strip fits on one
-     * line; the source value (e.g. "RS2+") and all other token labels stay visible.
-     */
-    private fun applyStatusBarOrientationLayout() {
-        tokenSource.label.isVisible = !isPortrait
-    }
 
     /** Resolves a mapper [GnssStatusLevel] to the toolbar color. View concern only. */
     private fun levelColor(level: GnssStatusLevel): Int = when (level) {
@@ -1209,9 +1009,6 @@ class MainActivity : AppCompatActivity() {
                 providerBeforeReplay = gnssSourceCoordinator.startReplay("user started replay of $fileName")
             }
 
-            // Update status to show replay is active
-            tokenSource.value.text = "Replay"
-
             // Show confirmation dialog with option to stop
             AlertDialog.Builder(this)
                 .setTitle("NMEA Replay Started")
@@ -1241,13 +1038,6 @@ class MainActivity : AppCompatActivity() {
         try {
             providerBeforeReplay?.let { gnssSourceCoordinator.endReplay(it, "user stopped replay") }
             providerBeforeReplay = null
-
-            // Reset status display
-            lifecycleScope.launch {
-                val prov = try { sourceSettings.activeProvider.first() } catch (_: Exception) { app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL }
-                val srcLabel = if (prov == app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL) "Internal" else externalReceiverLabel
-                tokenSource.value.text = srcLabel
-            }
 
             android.util.Log.i("MainActivity", "Stopped NMEA replay")
 

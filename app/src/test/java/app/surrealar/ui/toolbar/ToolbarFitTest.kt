@@ -54,8 +54,8 @@ class ToolbarFitTest {
     private val full = GnssToolbarState(
         sourceText = "RS2+", fixText = "Fixed", fixLevel = GnssStatusLevel.SUCCESS, satelliteText = "18/24",
         accuracyText = "±0.01 m", accuracyLevel = GnssStatusLevel.SUCCESS, latLonText = "41.234567, -76.123456",
-        altitudeText = "422.81 m", correctionAgeText = "1.2s", batteryVisible = true, batteryText = null,
-        statusLevel = GnssStatusLevel.SUCCESS, isExternal = true, isWaiting = false, isStale = false,
+        altitudeText = "422.81 m", correctionAgeText = "1.2s", batteryVisible = true,
+        isExternal = true, isWaiting = false, isStale = false,
         coordLabel = "LL", altitudeLabel = "NAVD88",
     )
 

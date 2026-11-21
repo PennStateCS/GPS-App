@@ -106,8 +106,6 @@ object GnssToolbarStateMapper {
             altitudeText = "--",
             correctionAgeText = null,
             batteryVisible = !isInternal,
-            batteryText = null,
-            statusLevel = GnssStatusLevel.NONE,
             isExternal = !isInternal,
             isWaiting = true,
             isStale = false,
@@ -123,7 +121,7 @@ object GnssToolbarStateMapper {
      * Uses the existing ERROR level; live fields are cleared rather than left stale.
      */
     fun error(source: LocationSourceType, externalLabel: String = GnssStatusFormatter.EXTERNAL_FALLBACK_LABEL): GnssToolbarState =
-        waiting(source, externalLabel).copy(fixText = "Error", fixLevel = GnssStatusLevel.ERROR, statusLevel = GnssStatusLevel.ERROR,
+        waiting(source, externalLabel).copy(fixText = "Error", fixLevel = GnssStatusLevel.ERROR,
             fixDescription = "GNSS status error, retrying")
 
     /** The link status for [source] at [nowMs] (monotonic). */
@@ -161,7 +159,6 @@ object GnssToolbarStateMapper {
                 return shown.copy(
                     fixText = "${shown.fixText} (lost ${seconds(nowMs - usable.atMs)}s)",
                     fixLevel = GnssStatusLevel.NONE,
-                    statusLevel = GnssStatusLevel.NONE,
                     satelliteText = null,
                     accuracyText = null,
                     accuracyLevel = GnssStatusLevel.NONE,
@@ -359,8 +356,6 @@ object GnssToolbarStateMapper {
                 altitudeText = altitudeText,
                 correctionAgeText = correctionAgeText,
                 batteryVisible = !isInternal && !isReplay,   // no receiver battery for a log file
-                batteryText = null,
-                statusLevel = fixLevel,
                 isExternal = !isInternal,
                 isWaiting = false,
                 isStale = false,

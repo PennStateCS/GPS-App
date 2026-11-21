@@ -1,9 +1,14 @@
 package app.surrealar.ui.toolbar
 
+import android.graphics.drawable.ClipDrawable
+import android.graphics.drawable.LayerDrawable
 import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.widget.TooltipCompat
 import androidx.core.view.isVisible
+import app.surrealar.R
 
 /**
  * View holder for one toolbar status "token" (label + value, optional icon/separator).
@@ -17,19 +22,21 @@ data class ToolbarTokens(
     val separator: TextView? = null
 )
 
+/** What the toolbar's taps and long-presses do (the host decides; the renderer only wires them). */
+data class ToolbarActions(
+    val onStatus: () -> Unit,
+    val onBattery: () -> Unit,
+    val onCoordTap: () -> Unit,
+    val onCoordLongPress: () -> Unit,
+)
+
 /**
- * Applies a [GnssToolbarState] to the toolbar status tokens. **Pure view updates only** — it does
- * not collect flows, access repositories, or make GNSS decisions (those live in
- * [GnssToolbarStateMapper]).
+ * The only code that touches the toolbar token views. It applies a [GnssToolbarState] (and the
+ * battery reading) and does no GNSS decisions — those live in [GnssToolbarStateMapper].
  *
- * Extracted from `MainActivity` so the toolbar rendering is isolated from lifecycle/collection.
- * The Activity still owns:
- *  - flow collection and calling [render],
- *  - status-level → color resolution (passed as [colorFor], so this class needs no Context),
- *  - battery polling lifecycle (invoked via [onBatteryVisibilityChanged]; the Job stays in the
- *    Activity).
- *
- * Wording/visibility rules are preserved exactly from the previous in-Activity implementation.
+ * The Activity owns flow collection (calling [render] / [renderBattery]), status-level → colour
+ * resolution ([colorFor], so this class needs no colour lookups of its own), and whether the battery
+ * should show at all ([onBatteryVisibilityChanged] → [renderBattery]).
  */
 class GnssToolbarRenderer(
     private val source: ToolbarTokens,
@@ -47,8 +54,11 @@ class GnssToolbarRenderer(
 ) {
     private var lastState: GnssToolbarState? = null
     private var lastStripWidth = 0
+    private var batteryLayer: LayerDrawable? = null
+    private var batteryFillClip: ClipDrawable? = null
 
     init {
+        setUpStaticViews()
         // Stable widths: each value view is at least as wide as its typical longest value (tabular
         // digits are on in item_token), so ordinary value changes never change a token's width.
         minWidthFor(fix.value, "Single")
@@ -61,17 +71,77 @@ class GnssToolbarRenderer(
         }
     }
 
+    /** Labels, battery icon and separators that never change (moved here from MainActivity). */
+    private fun setUpStaticViews() {
+        val ctx = source.root.context
+        val dp = ctx.resources.displayMetrics.density
+        source.label.setText(R.string.status_token_src)
+        fix.label.setText(R.string.status_token_fix)
+        sats.label.setText(R.string.status_token_sats)
+        acc.label.setText(R.string.status_token_hacc)
+        age.label.setText(R.string.status_token_age)
+        coord.label.setText(R.string.status_token_ll)
+        alt.label.setText(R.string.status_token_alt)
+        age.root.isVisible = false
+
+        batt.label.text = ""
+        batt.icon.setImageResource(R.drawable.battery_level)
+        androidx.core.widget.ImageViewCompat.setImageTintList(batt.icon, null)
+        batt.icon.scaleType = ImageView.ScaleType.FIT_XY
+        batt.icon.adjustViewBounds = false
+        batt.icon.minimumWidth = (32 * dp).toInt()
+        batt.icon.setPadding(0, 0, 0, 0)
+        batt.root.minimumWidth = (48 * dp).toInt()
+        batt.icon.isVisible = true
+        // Battery graphic to the right of the percentage.
+        (batt.root as? LinearLayout)?.let { container ->
+            container.removeView(batt.icon)
+            container.addView(batt.icon, container.indexOfChild(batt.label) + 1)
+            (batt.icon.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+                lp.width = (32 * dp).toInt(); lp.height = (12 * dp).toInt()
+                lp.setMargins((10 * dp).toInt(), 0, 0, 0)
+                batt.icon.layoutParams = lp
+            }
+        }
+        batt.root.isVisible = false
+
+        sats.separator?.isVisible = false
+        acc.separator?.isVisible = false
+        alt.separator?.isVisible = false
+        batt.separator?.isVisible = false
+    }
+
+    /** Wires taps and long-press help. SOL/SATS → status, battery → receiver, LL/NE → toggle / copy. */
+    fun bindActions(actions: ToolbarActions) {
+        fix.root.setOnClickListener { actions.onStatus() }
+        sats.root.setOnClickListener { actions.onStatus() }
+        batt.root.setOnClickListener { actions.onBattery() }
+        coord.root.setOnClickListener { actions.onCoordTap() }
+        coord.root.setOnLongClickListener { actions.onCoordLongPress(); true }
+        TooltipCompat.setTooltipText(source.root, ToolbarHelp.SOURCE)
+        TooltipCompat.setTooltipText(fix.root, ToolbarHelp.SOL)
+        TooltipCompat.setTooltipText(acc.root, ToolbarHelp.ACC)
+        TooltipCompat.setTooltipText(age.root, ToolbarHelp.AGE)
+        TooltipCompat.setTooltipText(sats.root, ToolbarHelp.SATS)
+        TooltipCompat.setTooltipText(alt.root, ToolbarHelp.ALT)
+        TooltipCompat.setTooltipText(batt.root, ToolbarHelp.BATTERY)
+    }
+
+    /** Portrait: the "SRC" label is hidden to save width (the source value stays). */
+    fun setPortrait(portrait: Boolean) {
+        source.label.isVisible = !portrait
+    }
+
     fun render(state: GnssToolbarState) {
         lastState = state
         // Source label (+ replay icon while an NMEA log replays; no strip colour change)
         source.value.text = state.sourceText
-        if (state.isReplay) source.icon.setImageResource(app.surrealar.R.drawable.ic_replay_16)
+        if (state.isReplay) source.icon.setImageResource(R.drawable.ic_replay_16)
         source.icon.isVisible = state.isReplay
         source.separator?.isVisible = true
 
         // Fix / SOL (always shown)
         fix.root.isVisible = true
-        fix.label.text = "SOL"
         fix.value.text = state.fixText
         fix.value.setTextColor(colorFor(state.fixLevel))
 
@@ -104,7 +174,7 @@ class GnssToolbarRenderer(
         acc.separator?.isVisible = accVisible && ageVisible
         age.separator?.isVisible = false
 
-        // Battery (its spoken description is set with the battery reading, see renderBattery)
+        // Battery: the host decides whether it shows and calls renderBattery with the reading.
         onBatteryVisibilityChanged(state.batteryVisible)
 
         // Coordinates ("LL" lat/lon or "NE" grid, per Settings → Coordinates)
@@ -132,6 +202,85 @@ class GnssToolbarRenderer(
         alt.root.contentDescription = state.altitudeDescription
 
         fitToWidth()
+    }
+
+    /**
+     * The battery token (moved from MainActivity, same drawing and colours). Hidden when [visible] is
+     * false or there's no reading; [textOnly] (narrow / portrait) shows the percentage without the graphic.
+     */
+    fun renderBattery(visible: Boolean, percent: Int?, charging: Boolean?, textOnly: Boolean) {
+        batt.root.contentDescription = GnssToolbarStateMapper.batteryDescription(percent, charging)
+        if (!visible || percent == null) {
+            batt.root.isVisible = false
+            alt.separator?.isVisible = false
+            return
+        }
+        val p = percent.coerceIn(0, 100)
+        batt.root.isVisible = true
+        alt.separator?.isVisible = true
+        batt.value.text = "$p%"
+        batt.icon.isVisible = !textOnly
+        if (!textOnly) drawBattery(p, charging)
+        fitToWidth()
+    }
+
+    private fun drawBattery(percentage: Int, charging: Boolean?) {
+        if (batteryLayer == null) {
+            val base = batt.icon.drawable ?: return
+            batteryLayer = (base.mutate() as? LayerDrawable)
+            batt.icon.setImageDrawable(batteryLayer)
+            batteryFillClip = (batteryLayer?.findDrawableByLayerId(R.id.battery_fill) as? ClipDrawable)
+                ?: run {
+                    var found: ClipDrawable? = null
+                    try {
+                        val count = batteryLayer?.numberOfLayers ?: 0
+                        for (i in 0 until count) {
+                            val d = batteryLayer?.getDrawable(i)
+                            if (d is ClipDrawable) { found = d; break }
+                        }
+                    } catch (_: Exception) {}
+                    found
+                }
+        }
+
+        batteryFillClip?.level = percentage * 100
+
+        // Charging turns the fill green, except below 20 %: a critical level keeps its warning
+        // color and only gains the bolt, so plugging in never hides a nearly-dead battery.
+        val fillColor = when {
+            charging == true && percentage >= 20 -> 0xFF4CAF50.toInt()
+            percentage <= 15 -> 0xFFF44336.toInt()
+            percentage <= 30 -> 0xFFFFC107.toInt()
+            else -> 0xFF4CAF50.toInt()
+        }
+
+        try {
+            batteryLayer?.findDrawableByLayerId(R.id.battery_bolt)?.alpha = if (charging == true) 0xFF else 0x00
+        } catch (_: Exception) {}
+
+        val clip = batteryFillClip
+        val inner = try { clip?.drawable } catch (_: Exception) { null }
+        var tinted = false
+        try {
+            if (inner is android.graphics.drawable.GradientDrawable) {
+                inner.setColor(fillColor); tinted = true
+            }
+        } catch (_: Exception) {}
+        try {
+            if (inner != null) {
+                androidx.core.graphics.drawable.DrawableCompat.setTint(inner, fillColor); tinted = true
+            }
+        } catch (_: Exception) {}
+        if (!tinted) {
+            try { clip?.let { androidx.core.graphics.drawable.DrawableCompat.setTint(it, fillColor) } } catch (_: Exception) {}
+        }
+
+        try {
+            batteryLayer?.findDrawableByLayerId(R.id.battery_bg)?.alpha = if (percentage <= 15) 0x66 else 0x22
+        } catch (_: Exception) {}
+
+        batteryLayer?.invalidateSelf()
+        batt.icon.invalidate()
     }
 
     // ── Stable widths ──────────────────────────────────────────────────────────
@@ -178,5 +327,6 @@ class GnssToolbarRenderer(
             t.root.isVisible = false
         }
     }
+
     private companion object { const val STALE_ALPHA = 0.5f }
 }

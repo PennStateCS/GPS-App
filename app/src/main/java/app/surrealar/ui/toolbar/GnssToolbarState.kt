@@ -22,8 +22,6 @@ data class GnssToolbarState(
     val altitudeText: String,          // "x.xx m" or "--" (always shown)
     val correctionAgeText: String?,    // "1.2s" / "13s" correction age (external only), or null to hide
     val batteryVisible: Boolean,       // external → poll/show; internal → hide
-    val batteryText: String?,          // battery value is rendered by the separate polling pipeline
-    val statusLevel: GnssStatusLevel,  // overall level (mirrors fixLevel today)
     val isExternal: Boolean,
     val isWaiting: Boolean,            // no current-provider fix yet (acquiring/reconnecting)
     val isStale: Boolean,
