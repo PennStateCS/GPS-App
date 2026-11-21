@@ -14,11 +14,16 @@ import kotlin.math.floor
  * g2018p0 (PR/VI, 15–21 °N, 69–64 °W), both 1′ and taken from the Format_unix (big-endian) files —
  * into 1°×1° tiles of integer millimetres, zlib-compressed (5 MB instead of 34 MB). Tiles are
  * inflated on first use and cached. Rounding to mm adds ≤ 0.5 mm; interpolation is bilinear, as in
- * NGS's own tools. Format and generator: tools/coords/pack_geoid.py ("SRGT" v1).
+ * NGS's own tools. Format and generator: geo-core/tools/coords/pack_geoid.py ("SRGT" v1).
  *
  * Thread-safe: tile decoding is synchronised; decoded tiles are immutable.
+ *
+ * Valid range: CONUS 24–58 °N, 130–60 °W and PR/VI 15–21 °N, 69–64 °W; null elsewhere.
+ * Accuracy vs the NGS geoid service: < 2 mm (mm rounding ≤ 0.5 mm + bilinear interpolation).
+ *
+ * @param bytes the packed SRGT file (the app ships it as the asset [ASSET_PATH]).
  */
-class Geoid18Grid(private val bytes: ByteArray) {
+public class Geoid18Grid(private val bytes: ByteArray) {
 
     private class Region(
         val south: Double, val westE: Double, val dLat: Double, val dLon: Double,
@@ -45,8 +50,11 @@ class Geoid18Grid(private val bytes: ByteArray) {
         }
     }
 
-    /** N in metres at the point, or null outside GEOID18 coverage. */
-    fun undulation(latDeg: Double, lonDeg: Double): Double? {
+    /**
+     * Geoid undulation N (metres) at a NAD83(2011) latitude/longitude (degrees), or null outside
+     * GEOID18 coverage. Orthometric height = ellipsoidal height − N.
+     */
+    public fun undulation(latDeg: Double, lonDeg: Double): Double? {
         val lonE = if (lonDeg < 0) lonDeg + 360 else lonDeg
         for (r in regions) {
             val fr = (latDeg - r.south) / r.dLat
@@ -98,11 +106,15 @@ class Geoid18Grid(private val bytes: ByteArray) {
         return v
     }
 
-    companion object {
-        const val ASSET_PATH = "geoid/geoid18.srgt"
+    public companion object {
+        /** Path of the packed grid inside the app's assets. */
+        public const val ASSET_PATH: String = "geoid/geoid18.srgt"
 
-        /** Name of the orthometric datum GEOID18 yields at a point (labels only). */
-        fun verticalDatumName(latDeg: Double, lonDeg: Double): String = when {
+        /** Reads a packed SRGT grid from [input] (the stream is read fully, not closed). */
+        public fun fromInputStream(input: java.io.InputStream): Geoid18Grid = Geoid18Grid(input.readBytes())
+
+        /** Orthometric datum GEOID18 yields at a point (degrees), for labels: NAVD88, PRVD02 or VIVD09. */
+        public fun verticalDatumName(latDeg: Double, lonDeg: Double): String = when {
             latDeg >= 24.0 -> "NAVD88"
             lonDeg >= -65.15 -> "VIVD09"   // St Thomas / St John / St Croix lie east of Culebra
             else -> "PRVD02"

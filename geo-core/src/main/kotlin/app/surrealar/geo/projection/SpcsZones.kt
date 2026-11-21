@@ -20,8 +20,9 @@ import kotlin.math.tan
 import kotlin.math.tanh
 
 /** A map projection on GRS80: NAD83(2011) latitude/longitude (degrees) → (easting, northing) metres. */
-sealed interface SpcsProjection {
-    fun forward(latDeg: Double, lonDeg: Double): Pair<Double, Double>
+public sealed interface SpcsProjection {
+    /** NAD83(2011) latitude/longitude (degrees) → (easting, northing) metres. */
+    public fun forward(latDeg: Double, lonDeg: Double): Pair<Double, Double>
 }
 
 /** [lonDeg] shifted by ±360° to lie within 180° of [originDeg] (Alaska zone 10 spans the antimeridian). */
@@ -32,17 +33,29 @@ internal fun lonNear(lonDeg: Double, originDeg: Double): Double {
     return originDeg + d
 }
 
-/** Lambert Conic Conformal (2SP), EPSG 9802. */
-class Lcc2(latOrigin: Double, private val lonOrigin: Double, lat1: Double, lat2: Double, fe: Double, fn: Double) : SpcsProjection {
+/**
+ * Lambert Conic Conformal (2SP), EPSG 9802, on GRS80 (NAD83(2011)). Angles in degrees, lengths in
+ * metres. Matches PROJ to < 1 µm over each SPCS zone (spcs83_vectors.csv).
+ * @param latOrigin latitude of false origin. @param lonOrigin longitude of false origin.
+ * @param lat1 first standard parallel. @param lat2 second standard parallel.
+ * @param fe false easting. @param fn false northing.
+ */
+public class Lcc2(latOrigin: Double, private val lonOrigin: Double, lat1: Double, lat2: Double, fe: Double, fn: Double) : SpcsProjection {
     private val lcc = LambertConformalConic(latOrigin, lonOrigin, lat1, lat2, fe, fn)
-    override fun forward(latDeg: Double, lonDeg: Double) = lcc.forward(latDeg, lonNear(lonDeg, lonOrigin))
+    override fun forward(latDeg: Double, lonDeg: Double): Pair<Double, Double> = lcc.forward(latDeg, lonNear(lonDeg, lonOrigin))
+
+    /** Inverse: (easting, northing) metres → (latitude, longitude) degrees. */
+    public fun inverse(eastingM: Double, northingM: Double): Pair<Double, Double> = lcc.inverse(eastingM, northingM)
 }
 
 /**
  * Transverse Mercator, EPSG 9807, by the Krüger n-series to 4th order (EPSG Guidance Note 7-2,
- * "JHS" formulas) — sub-millimetre within State Plane zone widths.
+ * "JHS" formulas) — sub-millimetre within State Plane zone widths (UTM: < 1 µm vs PROJ within ±3°).
+ * Angles in degrees, lengths in metres; GRS80 unless another [ellipsoid] is given (UTM uses WGS84).
+ * @param latOrigin latitude of natural origin. @param lonOrigin central meridian. @param k0 scale factor.
+ * @param fe false easting. @param fn false northing.
  */
-class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Double,
+public class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Double,
          private val fe: Double, private val fn: Double,
          private val ellipsoid: Ellipsoid = Ellipsoid.GRS80) : SpcsProjection {
     private val e = sqrt(ellipsoid.eccentricitySquared)
@@ -91,7 +104,7 @@ class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Doubl
      * Inverse: (easting, northing) metres → (latitude, longitude) degrees, by the Krüger inverse
      * series (EPSG Guidance Note 7-2). Longitude is returned in −180..180.
      */
-    fun inverse(eastingM: Double, northingM: Double): Pair<Double, Double> {
+    public fun inverse(eastingM: Double, northingM: Double): Pair<Double, Double> {
         val etaP = (eastingM - fe) / (b * k0)
         val xiP = ((northingM - fn) + k0 * m0) / (b * k0)
         var xi0 = xiP; var eta0 = etaP
@@ -111,8 +124,14 @@ class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Doubl
     }
 }
 
-/** Hotine Oblique Mercator variant A, EPSG 9812 (EPSG Guidance Note 7-2) — SPCS83 Alaska zone 1. */
-class HomA(latCentre: Double, lonCentre: Double, azimuthDeg: Double, rectifiedToSkewDeg: Double,
+/**
+ * Hotine Oblique Mercator variant A, EPSG 9812 (EPSG Guidance Note 7-2) — SPCS83 Alaska zone 1. GRS80;
+ * angles in degrees, lengths in metres. Forward only.
+ * @param latCentre latitude of projection centre. @param lonCentre longitude of projection centre.
+ * @param azimuthDeg azimuth of the initial line. @param rectifiedToSkewDeg angle from rectified to skew grid.
+ * @param kc scale factor on the initial line. @param fe false easting. @param fn false northing.
+ */
+public class HomA(latCentre: Double, lonCentre: Double, azimuthDeg: Double, rectifiedToSkewDeg: Double,
            kc: Double, private val fe: Double, private val fn: Double) : SpcsProjection {
     private val e = sqrt(Ellipsoid.GRS80.eccentricitySquared)
     private val bb: Double
@@ -164,15 +183,19 @@ class HomA(latCentre: Double, lonCentre: Double, azimuthDeg: Double, rectifiedTo
  * One official SPCS83 zone on NAD83(2011).
  * @param epsg EPSG code of the zone's metre CRS (persisted in settings — stable).
  * @param ngsZone NGS/FIPS zone number, e.g. 3701.
+ * @param name state/zone name, e.g. "Pennsylvania North".
+ * @param projection the zone's projection (NAD83(2011) degrees → metres).
  * @param areaOfUse EPSG area of use: west, south, east, north (degrees).
  */
-class SpcsZone(val epsg: Int, val ngsZone: Int, val name: String, val projection: SpcsProjection,
-               val areaOfUse: DoubleArray) {
-    val zoneCode: String get() = "%04d".format(ngsZone)
+public class SpcsZone(public val epsg: Int, public val ngsZone: Int, public val name: String,
+               public val projection: SpcsProjection, public val areaOfUse: DoubleArray) {
+    /** Zero-padded NGS zone number, e.g. "3701". */
+    public val zoneCode: String get() = "%04d".format(ngsZone)
     /** "Pennsylvania North (3701)". */
-    val label: String get() = "$name ($zoneCode)"
+    public val label: String get() = "$name ($zoneCode)"
 
-    fun contains(latDeg: Double, lonDeg: Double): Boolean {
+    /** True if the point (degrees) lies inside the zone's EPSG area-of-use box (antimeridian-aware). */
+    public fun contains(latDeg: Double, lonDeg: Double): Boolean {
         val (w, s, e, n) = areaOfUse.toList()
         if (latDeg < s || latDeg > n) return false
         return if (e >= w) lonDeg in w..e else lonDeg >= w || lonDeg <= e   // antimeridian
@@ -183,16 +206,18 @@ class SpcsZone(val epsg: Int, val ngsZone: Int, val name: String, val projection
         return (n - s) * (if (e >= w) e - w else e - w + 360)
     }
 
-    companion object {
+    public companion object {
         /** Smallest-area zone whose area of use contains the point (state-border overlaps → the more specific). */
-        fun suggestFor(latDeg: Double, lonDeg: Double): SpcsZone? =
+        public fun suggestFor(latDeg: Double, lonDeg: Double): SpcsZone? =
             SpcsZones.all.filter { it.contains(latDeg, lonDeg) }.minByOrNull { it.areaDeg2 }
     }
 }
 
 /** Registry of all official SPCS83 zones (generated table: SpcsZoneTable). */
-object SpcsZones {
-    val all: List<SpcsZone> get() = SpcsZoneTable.zones
+public object SpcsZones {
+    /** All 118 official SPCS83 zones on NAD83(2011). */
+    public val all: List<SpcsZone> get() = SpcsZoneTable.zones
     private val byEpsg by lazy { all.associateBy { it.epsg } }
-    fun byEpsg(epsg: Int): SpcsZone? = byEpsg[epsg]
+    /** Zone by the EPSG code of its metre CRS, or null. */
+    public fun byEpsg(epsg: Int): SpcsZone? = byEpsg[epsg]
 }

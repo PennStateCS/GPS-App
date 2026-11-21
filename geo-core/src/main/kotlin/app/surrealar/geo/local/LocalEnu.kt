@@ -10,6 +10,9 @@ import kotlin.math.sin
  * Points go geodetic → ECEF and the difference from the origin is rotated into the origin's local
  * tangent plane. For short-range local work (capture spread, GLB reprojection). For distances and
  * bearings between two points use [app.surrealar.geo.ellipsoid.Geodesic].
+ *
+ * @property originLatDeg origin latitude, degrees. @property originLonDeg origin longitude, degrees.
+ * @property originHeightM origin ellipsoidal height, metres. @property ellipsoid the ellipsoid (WGS84 by default).
  */
 public class LocalEnu(
     public val originLatDeg: Double,

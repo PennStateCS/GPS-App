@@ -1,10 +1,10 @@
 package app.surrealar.coords
 
-import app.surrealar.geo.projection.LambertConformalConic
 import app.surrealar.geo.datum.Itrf2014ToNad83
 import app.surrealar.geo.ellipsoid.GeodeticPosition
 import app.surrealar.geo.ellipsoid.Ellipsoid
 import app.surrealar.geo.geoid.Geoid18Grid
+import app.surrealar.geo.projection.SpcsZones
 
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.HorizontalSystem
@@ -28,27 +28,8 @@ class CoordinateSystemReferenceTest {
 
     // ── State Plane / UTM on NAD83(2011) (NCAT, confirmed by PROJ) ───────────────────────────────
 
-    @Test fun `PA North matches NCAT`() {
-        val (e, n) = LambertConformalConic.PA_NORTH.forward(41.3477, -76.0226)
-        assertEquals(744_552.966, e, 0.001)
-        assertEquals(132_599.685, n, 0.001)
-        assertEquals(2_442_754.191, e / usft, 0.002)    // NCAT ftUS
-        assertEquals(435_037.467, n / usft, 0.002)
-        assertEquals(2_442_759.076, e / 0.3048, 0.002)  // NCAT international ft
-    }
-
-    @Test fun `PA South matches NCAT`() {
-        val (e, n) = LambertConformalConic.PA_SOUTH.forward(39.9526, -75.1652)
-        assertEquals(820_846.396, e, 0.001)
-        assertEquals(71_992.354, n, 0.001)
-    }
-
-    @Test fun `LCC inverse round-trips to sub-millimetre`() {
-        val (e, n) = LambertConformalConic.PA_NORTH.forward(41.3477, -76.0226)
-        val (lat, lon) = LambertConformalConic.PA_NORTH.inverse(e, n)
-        assertEquals(41.3477, lat, 1e-9)
-        assertEquals(-76.0226, lon, 1e-9)
-    }
+    // PA North/South LCC and the LCC inverse moved to geo-core's LambertConformalConicTest
+    // (LambertConformalConic is internal to the module).
 
     @Test fun `UTM 18N matches NCAT`() {
         val u = app.surrealar.geo.projection.Utm.forward(41.3477, -76.0226)
@@ -145,7 +126,7 @@ class CoordinateSystemReferenceTest {
             vertical = VerticalReference.NAVD88_GEOID18))
         assertEquals(OutputDatum.NAD83_2011, out.datum)                 // State Plane forces NAD83
         // Expected: project PROJ's NAD83 position with the NCAT-verified zone.
-        val (e, n) = LambertConformalConic.PA_NORTH.forward(41.3476902755, -76.0225917754)
+        val (e, n) = SpcsZones.byEpsg(6562)!!.projection.forward(41.3476902755, -76.0225917754)   // PA North
         assertEquals(e / usft, out.easting!!, 0.005)
         assertEquals(n / usft, out.northing!!, 0.005)
         // NAVD88 = NAD83 h − N  ≈ 391.206 − (−31.60) ≈ 422.81 m.

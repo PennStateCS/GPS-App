@@ -5,10 +5,14 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** A geodetic position: latitude/longitude in degrees, ellipsoidal height in metres. */
+/**
+ * A geodetic position on some ellipsoid/datum (the caller knows which: WGS84/ITRF or NAD83(2011)).
+ * @property latDeg latitude, degrees (−90..90). @property lonDeg longitude, degrees (−180..180).
+ * @property heightM ellipsoidal height, metres.
+ */
 public data class GeodeticPosition(val latDeg: Double, val lonDeg: Double, val heightM: Double)
 
-/** Earth-centred, Earth-fixed Cartesian coordinates, metres. */
+/** Earth-centred, Earth-fixed Cartesian coordinates (metres) on the ellipsoid's geocentric frame. */
 public data class EcefPosition(val xM: Double, val yM: Double, val zM: Double)
 
 /**
@@ -18,6 +22,7 @@ public data class EcefPosition(val xM: Double, val yM: Double, val zM: Double)
  * helper and the stakeout geometry). [fromEcef] iterates to convergence, so it agrees with the old
  * Bowring and iterative versions to well under a micrometre for terrestrial points.
  *
+ * @property name short label, e.g. "WGS84".
  * @property semiMajorAxisM equatorial radius a, metres.
  * @property inverseFlattening 1/f.
  */
@@ -47,6 +52,7 @@ public class Ellipsoid(
         )
     }
 
+    /** [GeodeticPosition] → ECEF metres (same as the three-argument form). */
     public fun toEcef(p: GeodeticPosition): EcefPosition = toEcef(p.latDeg, p.lonDeg, p.heightM)
 
     /**
@@ -69,6 +75,7 @@ public class Ellipsoid(
         return GeodeticPosition(Math.toDegrees(lat), Math.toDegrees(lon), h)
     }
 
+    /** ECEF → geodetic (same as the three-argument form). */
     public fun fromEcef(e: EcefPosition): GeodeticPosition = fromEcef(e.xM, e.yM, e.zM)
 
     /** Meridian radius of curvature M at [latDeg], metres. */

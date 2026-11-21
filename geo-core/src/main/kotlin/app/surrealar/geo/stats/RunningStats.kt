@@ -12,8 +12,9 @@ package app.surrealar.geo.stats
  * `E[x²] - E[x]²` can lose precision when values are large and tightly clustered.
  * Welford's method avoids most of that cancellation error.
  */
-class RunningStats {
-    var n: Long = 0; private set    // Number of samples included in the running statistics.
+public class RunningStats {
+    /** Number of samples pushed so far. */
+    public var n: Long = 0; private set
     private var mean = 0.0
 
     /*
@@ -28,7 +29,8 @@ class RunningStats {
      */
     private var m2 = 0.0
 
-    fun push(x: Double) {
+    /** Adds one sample. */
+    public fun push(x: Double) {
         n++
 
         /*
@@ -47,16 +49,15 @@ class RunningStats {
         m2 += delta * delta2
     }
 
-    fun mean(): Double = mean
+    /** Mean of the samples (0.0 before the first sample). */
+    public fun mean(): Double = mean
 
-    /*
-     * Returns sample variance, using Bessel's correction.
-     *
-     * Dividing by n - 1 estimates the variance of the underlying population from
-     * the captured sample set. With fewer than two samples, variance is undefined,
-     * so this returns 0.0 for safe downstream use.
+    /**
+     * Sample variance with Bessel's correction (divides by n − 1). With fewer than two samples the
+     * variance is undefined and 0.0 is returned for safe downstream use.
      */
-    fun variance(): Double = if (n > 1) m2 / (n - 1) else 0.0
+    public fun variance(): Double = if (n > 1) m2 / (n - 1) else 0.0
 
-    fun stddev(): Double = kotlin.math.sqrt(variance())
+    /** Sample standard deviation, √[variance]. */
+    public fun stddev(): Double = kotlin.math.sqrt(variance())
 }

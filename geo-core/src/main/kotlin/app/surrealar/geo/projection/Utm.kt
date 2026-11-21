@@ -9,7 +9,13 @@ import app.surrealar.geo.ellipsoid.Ellipsoid
  */
 public object Utm {
 
-    /** UTM grid coordinate. [bandLetter] is the MGRS latitude band (C..X, no I/O). */
+    /**
+     * UTM grid coordinate (WGS84).
+     * @property eastingM easting, metres (500 000 at the central meridian).
+     * @property northingM northing, metres (10 000 000 false northing in the south).
+     * @property zone UTM zone 1..60. @property hemisphere 'N' or 'S'.
+     * @property bandLetter MGRS latitude band (C..X, no I/O).
+     */
     public data class UtmPosition(
         val eastingM: Double,
         val northingM: Double,

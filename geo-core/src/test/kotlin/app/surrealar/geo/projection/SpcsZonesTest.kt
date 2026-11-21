@@ -34,6 +34,7 @@ class SpcsZonesTest {
             val err = maxOf(abs(e - f[3].toDouble()), abs(n - f[4].toDouble()))
             if (err > worst) { worst = err; worstAt = "${zone.label} @ ${f[1]}, ${f[2]}" }
         }
+        println("SPCS vs PROJ: worst ${"%.3e".format(worst)} m at $worstAt")
         assertTrue("worst error ${"%.4f".format(worst)} m at $worstAt", worst < 0.001)
     }
 

@@ -18,7 +18,7 @@ import kotlin.math.tan
  * the US State Plane Coordinate System 1983 zones used here. Formulas: Snyder, "Map Projections —
  * A Working Manual" (USGS PP 1395), §15. Inputs/outputs in degrees and metres.
  */
-class LambertConformalConic(
+internal class LambertConformalConic(
     latOriginDeg: Double, private val lonOriginDeg: Double,
     lat1Deg: Double, lat2Deg: Double,
     private val falseEastingM: Double, private val falseNorthingM: Double,

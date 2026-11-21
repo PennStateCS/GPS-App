@@ -19,18 +19,18 @@ import kotlin.math.sqrt
  *
  * Vertical accuracy stays a plain 1σ (GST σ_alt, Android verticalAccuracyMeters, VDOP × UERE).
  */
-object HorizontalAccuracy {
+public object HorizontalAccuracy {
 
     /** Radius / per-axis σ for 68.27 % of a circular 2-D normal: sqrt(−2·ln(1 − 0.6827)). */
-    const val R68_PER_SIGMA = 1.515
+    public const val R68_PER_SIGMA: Double = 1.515
 
     /** Radius / horizontal RMS (DRMS = √2·σ) for 68.27 %: 1.515 / √2 ≈ 1.071. */
-    val R68_PER_HORIZONTAL_RMS = R68_PER_SIGMA / sqrt(2.0)
+    public val R68_PER_HORIZONTAL_RMS: Double = R68_PER_SIGMA / sqrt(2.0)
 
     /** 68 % horizontal radius from two per-axis 1σ values (ellipse semi-axes or lat/lon σ). */
-    fun r68(sigma1M: Double, sigma2M: Double): Double =
+    public fun r68(sigma1M: Double, sigma2M: Double): Double =
         R68_PER_SIGMA * sqrt((sigma1M * sigma1M + sigma2M * sigma2M) / 2.0)
 
     /** 68 % horizontal radius from a horizontal RMS (DRMS), e.g. HDOP × UERE. */
-    fun r68FromHorizontalRms(horizontalRmsM: Double): Double = R68_PER_HORIZONTAL_RMS * horizontalRmsM
+    public fun r68FromHorizontalRms(horizontalRmsM: Double): Double = R68_PER_HORIZONTAL_RMS * horizontalRmsM
 }

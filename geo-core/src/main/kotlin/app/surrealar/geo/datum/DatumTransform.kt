@@ -22,7 +22,7 @@ private val GRS80 = Ellipsoid.GRS80
  * so receiver "WGS84" coordinates are treated as ITRF2014. The transformation must be evaluated at
  * the OBSERVATION epoch (decimal year): NAD83(2011) is fixed to the North American plate, ITRF is not.
  */
-object Itrf2014ToNad83 {
+public object Itrf2014ToNad83 {
     private const val T0 = 2010.0
     private const val MAS = Math.PI / 180.0 / 3600.0 / 1000.0   // milliarc-second → radians
 
@@ -45,8 +45,11 @@ object Itrf2014ToNad83 {
         )
     }
 
-    /** ITRF2014 (≈ WGS84) at [epoch] → NAD83(2011). */
-    fun forward(p: GeodeticPosition, epoch: Double): GeodeticPosition {
+    /**
+     * ITRF2014 (≈ WGS84) at observation [epoch] (decimal year) → NAD83(2011). Positions in degrees and
+     * ellipsoidal metres. Matches PROJ to < 1 nm (geocentric).
+     */
+    public fun forward(p: GeodeticPosition, epoch: Double): GeodeticPosition {
         val (x, y, z) = GRS80.toEcef(p)
         val q = at(epoch)
         val k = 1 + q.s
@@ -58,7 +61,7 @@ object Itrf2014ToNad83 {
     }
 
     /** NAD83(2011) → ITRF2014 (≈ WGS84) at [epoch]: exact inverse to first order (error ≪ 0.1 mm). */
-    fun inverse(p: GeodeticPosition, epoch: Double): GeodeticPosition {
+    public fun inverse(p: GeodeticPosition, epoch: Double): GeodeticPosition {
         val (x2, y2, z2) = GRS80.toEcef(p)
         val q = at(epoch)
         val k = 1 + q.s
@@ -71,7 +74,7 @@ object Itrf2014ToNad83 {
     }
 
     /** Decimal year for an instant (e.g. 2026-11-20T00:00Z ≈ 2026.886), the epoch argument above. */
-    fun decimalYear(epochMillis: Long): Double {
+    public fun decimalYear(epochMillis: Long): Double {
         val dt = java.time.Instant.ofEpochMilli(epochMillis).atZone(java.time.ZoneOffset.UTC)
         val start = dt.withDayOfYear(1).toLocalDate().atStartOfDay(java.time.ZoneOffset.UTC)
         val end = start.plusYears(1)
