@@ -79,7 +79,7 @@ enum class LinearUnit(val prefKey: String, val label: String, val metersPerUnit:
 enum class VerticalReference(val prefKey: String, val label: String, val shortLabel: String) {
     ELLIPSOIDAL("ellipsoidal", "Ellipsoidal height", "Ellip"),
     NAVD88_GEOID18("navd88_geoid18", "NAVD88 (GEOID18)", "NAVD88"),
-    RECEIVER_MSL("receiver_msl", "Receiver MSL (as reported)", "MSL");
+    RECEIVER_MSL("receiver_msl", "MSL (receiver geoid), at ground", "MSL");
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: RECEIVER_MSL }
 }

@@ -1,7 +1,10 @@
 package app.surrealar.ui.viewpoints
 
+import app.surrealar.settings.model.VerticalReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CoordinateDetailFormatterTest {
@@ -219,5 +222,26 @@ class CoordinateDetailFormatterTest {
             "origin (0.10, 0.20, 0.00) m",
             CoordinateDetailFormatter.modelPlacementSummaryText(null, null, null, null, null, 0.1, 0.2, null)
         )
+    }
+
+    @Test
+    fun locationLabels_useDotSeparator_noNestedBrackets() {
+        assertEquals("Lat / Lon · WGS84 (ITRF2014)",
+            CoordinateDetailFormatter.qualifiedLabel("Lat / Lon", "WGS84 (ITRF2014)"))
+        assertEquals("Height · MSL (receiver geoid), at ground",
+            CoordinateDetailFormatter.qualifiedLabel("Height", VerticalReference.RECEIVER_MSL.label))
+    }
+
+    @Test
+    fun receiverMslRow_hiddenOnlyWhenHeightAlreadyShowsIt() {
+        assertFalse(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.RECEIVER_MSL))
+        assertTrue(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.ELLIPSOIDAL))
+        assertTrue(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.NAVD88_GEOID18))
+    }
+
+    @Test
+    fun receiverMslReference_keepsPrefKeyAndShortLabel() {
+        assertEquals("receiver_msl", VerticalReference.RECEIVER_MSL.prefKey)
+        assertEquals("MSL", VerticalReference.RECEIVER_MSL.shortLabel)
     }
 }

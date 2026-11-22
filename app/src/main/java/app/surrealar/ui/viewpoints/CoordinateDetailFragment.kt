@@ -603,9 +603,10 @@ class CoordinateDetailFragment : Fragment() {
                 rows += DetailRow("Northing", String.format(Locale.US, "%,.${d}f %s", p.northing, p.unit.suffix))
                 rows += DetailRow("Easting", String.format(Locale.US, "%,.${d}f %s", p.easting, p.unit.suffix))
             } else {
-                rows += DetailRow("Lat / Lon (${p.datum.label})", app.surrealar.coords.CoordinateFormat.horizontal(p))
+                rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel("Lat / Lon", p.datum.label),
+                    app.surrealar.coords.CoordinateFormat.horizontal(p))
             }
-            rows += DetailRow("Height (${p.vertical.label})",
+            rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel("Height", p.vertical.label),
                 p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } ?: (p.heightUnavailableReason ?: naText))
             renderPlainFieldRow(container, rows)
         }
@@ -619,7 +620,10 @@ class CoordinateDetailFragment : Fragment() {
 
         // Altitude details are supporting values (in the chosen units). Only shown when present.
         val altRows = mutableListOf<DetailRow>()
-        c.altitudeMsl?.let { altRows += DetailRow("Receiver MSL height", len(it, 2)) }
+        // Skipped when the Height row above already shows receiver MSL (same value twice otherwise).
+        if (CoordinateDetailFormatter.showReceiverMslRow(coordSystemSettings.vertical)) {
+            c.altitudeMsl?.let { altRows += DetailRow("Receiver MSL height", len(it, 2)) }
+        }
         c.geoidSeparationM?.let { altRows += DetailRow("Receiver geoid separation", len(it, 3)) }
         // Antenna/pole offset applied at capture — shown so the user can see what it was set to.
         c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", len(it, 3)) }

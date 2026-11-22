@@ -156,6 +156,15 @@ object CoordinateDetailFormatter {
         return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
     }
 
+    // ── Location card labels ───────────────────────────────────────────────────────────
+
+    /** "Lat / Lon · WGS84 (ITRF2014)" — a dot separator, so labels never nest brackets. */
+    fun qualifiedLabel(name: String, reference: String): String = "$name · $reference"
+
+    /** The separate "Receiver MSL height" row is redundant when the Height row already shows it. */
+    fun showReceiverMslRow(vertical: app.surrealar.settings.model.VerticalReference): Boolean =
+        vertical != app.surrealar.settings.model.VerticalReference.RECEIVER_MSL
+
     // ── Compact values for the Survey/GNSS stat tiles ──────────────────────────────────
 
     /** Short fix-status label for a stat tile: "Fixed", "Float", "DGPS", "Single", … Null when absent. */
