@@ -777,7 +777,13 @@ class MainActivity : AppCompatActivity() {
     private fun navigateFromToolbar(destId: Int, args: android.os.Bundle? = null) {
         if (!::navController.isInitialized) return
         runCatching {
-            navController.navigate(destId, args, androidx.navigation.navOptions { launchSingleTop = true })
+            // Pop back to Home first so toolbar taps don't stack screens. No restoreState here: these
+            // taps can carry arguments (e.g. open Settings on the receiver category) that a restored
+            // copy would ignore.
+            navController.navigate(destId, args, androidx.navigation.navOptions {
+                popUpTo(navController.graph.startDestinationId)
+                launchSingleTop = true
+            })
         }.onFailure { app.surrealar.util.DiagnosticsLogger.w("GNSS", "toolbar navigation failed: ${it.message}") }
     }
 
