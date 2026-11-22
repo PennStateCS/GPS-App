@@ -97,4 +97,30 @@ class CoordinateBackupTest {
         assertEquals(2, result.skippedInvalid.size)
         assertTrue(result.skippedInvalid.all { "no altitude" in it })
     }
+
+    @Test
+    fun nonFiniteDoubles_areExportedAsNull_insteadOfFailingTheExport() {
+        val c = richCoord().copy(hdop = Double.NaN, stdAltM = Double.POSITIVE_INFINITY, modelScale = Double.NEGATIVE_INFINITY)
+        val json = CoordinateBackup.export(listOf(c), listOf(model()), "1.0")
+        val row = org.json.JSONObject(json).getJSONArray("coordinates").getJSONObject(0)
+        assertTrue(row.isNull("hdop"))
+        assertTrue(row.isNull("stdAltM"))
+        assertTrue(row.isNull("modelScale"))
+        val back = CoordinateBackup.parse(json).coordinates.single()
+        assertEquals(null, back.hdop)
+        assertEquals(0.02, back.horizontalAccuracyM!!, 1e-9)
+    }
+
+    @Test
+    fun malformedRow_isSkippedAndReported_restStillImport() {
+        val json = """{"schemaVersion":1,"coordinates":[
+            {"id":"ok","name":"Good","latitude":41.3,"longitude":-76.0,"altitude":363.4},
+            {"id":"bad","name":"Bad","latitude":41.3,"longitude":-76.0,"altitude":363.4,"satsUsed":"lots"},
+            {"id":"ok2","name":"Good 2","latitude":41.4,"longitude":-76.1,"altitude":360.0}
+        ]}"""
+        val result = CoordinateBackup.parse(json)
+        assertEquals(listOf("ok", "ok2"), result.coordinates.map { it.id })
+        assertEquals(1, result.skippedInvalid.size)
+        assertTrue(result.skippedInvalid.single().startsWith("entry #1: malformed ("))
+    }
 }

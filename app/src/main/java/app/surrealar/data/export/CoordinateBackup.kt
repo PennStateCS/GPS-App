@@ -45,11 +45,11 @@ object CoordinateBackup {
                 put("fileName", m.fileName)
                 put("fileSize", m.fileSize)
                 put("checksum", m.checksum ?: JSONObject.NULL)
-                put("defaultScale", m.defaultScale)
-                put("defaultYawDeg", m.defaultYawDeg)
-                put("originOffsetXM", m.originOffsetXM)
-                put("originOffsetYM", m.originOffsetYM)
-                put("originOffsetZM", m.originOffsetZM)
+                putN("defaultScale", m.defaultScale)
+                putN("defaultYawDeg", m.defaultYawDeg)
+                putN("originOffsetXM", m.originOffsetXM)
+                putN("originOffsetYM", m.originOffsetYM)
+                putN("originOffsetZM", m.originOffsetZM)
                 put("units", m.units ?: JSONObject.NULL)
             })
         }
@@ -66,9 +66,9 @@ object CoordinateBackup {
         put("id", c.id)
         put("name", c.name)
         putN("note", c.note)
-        put("latitude", c.latitude)
-        put("longitude", c.longitude)
-        put("altitude", c.altitude)
+        putN("latitude", c.latitude)
+        putN("longitude", c.longitude)
+        putN("altitude", c.altitude)
         putN("altitudeMsl", c.altitudeMsl)
         putN("geoidSeparationM", c.geoidSeparationM)
         putN("antennaHeightM", c.antennaHeightM)
@@ -153,14 +153,21 @@ object CoordinateBackup {
         val arr = root.optJSONArray("coordinates") ?: JSONArray()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            // A row with no altitude is skipped and reported: importing it at 0.0 m would place the
-            // point ~360 m too low in PA (altitude is ellipsoidal and its column is non-null).
-            if (o.optDoubleN("altitude") == null) {
-                val label = o.optString("name").ifBlank { "entry #$i" }
-                skipped += "'$label' (${o.optString("id").ifBlank { "#$i" }}): no altitude in backup"
+            // One bad row (e.g. a number field holding text) is skipped and reported instead of
+            // aborting the whole import. Only the exception type is kept: messages can quote values.
+            val c = try {
+                // A row with no altitude is skipped and reported: importing it at 0.0 m would place the
+                // point ~360 m too low in PA (altitude is ellipsoidal and its column is non-null).
+                if (o.optDoubleN("altitude") == null) {
+                    val label = o.optString("name").ifBlank { "entry #$i" }
+                    skipped += "'$label' (${o.optString("id").ifBlank { "#$i" }}): no altitude in backup"
+                    continue
+                }
+                jsonToCoord(o)
+            } catch (e: Exception) {
+                skipped += "entry #$i: malformed (${e.javaClass.simpleName})"
                 continue
-            }
-            val c = jsonToCoord(o) ?: run {
+            } ?: run {
                 skipped += "entry #$i: malformed"
                 null
             } ?: continue
@@ -246,8 +253,15 @@ object CoordinateBackup {
 
 // ── JSON null-preserving helpers ────────────────────────────────────────────────
 
+/** Null, NaN and ±Infinity are written as JSON null (org.json throws on non-finite numbers). */
 private fun JSONObject.putN(key: String, value: Any?) {
-    put(key, value ?: JSONObject.NULL)
+    val safe = when (value) {
+        null -> JSONObject.NULL
+        is Double -> if (value.isFinite()) value else JSONObject.NULL
+        is Float -> if (value.isFinite()) value else JSONObject.NULL
+        else -> value
+    }
+    put(key, safe)
 }
 
 private fun JSONObject.has2(key: String): Boolean = has(key) && !isNull(key)
