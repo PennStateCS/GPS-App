@@ -246,7 +246,6 @@
     <string name="overlay_top_off">Draw Overlays On Top</string>
 
     <!-- Model diagnostics dialog -->
-    <string name="model_diag_ar_readiness">AR Readiness: %1$s</string>
     <string name="model_diag_file_size">File size: %1$s</string>
     <string name="model_diag_triangles">Triangle count: %1$s</string>
     <string name="model_diag_dimensions">Model dimensions: %1$s</string>
