@@ -69,9 +69,28 @@ object CaptureLog {
 
     fun file(dir: File? = DiagnosticsLogger.diagnosticsDir()): File? = dir?.let { File(it, FILE) }
 
-    @Synchronized
+    /** One background writer: callers are on the main thread (viewModelScope); lines keep call order. */
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "captures-log").apply { isDaemon = true }
+    }
+
+    /**
+     * Queues [line] for captures.log and returns at once. The timestamp and directory are taken now,
+     * on the caller's thread, so the line reads the same as a synchronous write.
+     */
     fun append(line: String, dir: File? = DiagnosticsLogger.diagnosticsDir(), nowMs: Long = System.currentTimeMillis()) {
         val f = file(dir) ?: return
+        runCatching { writer.execute { write(f, line, nowMs) } }
+    }
+
+    /** Waits until every queued line is written (tests, and before reading the file). False on timeout. */
+    fun flush(timeoutMs: Long = 5_000L): Boolean {
+        val done = java.util.concurrent.CountDownLatch(1)
+        if (runCatching { writer.execute { done.countDown() } }.isFailure) return false
+        return done.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    private fun write(f: File, line: String, nowMs: Long) {
         runCatching {
             if (f.length() > MAX_BYTES) {
                 File(f.parentFile, "captures-1.log").delete()

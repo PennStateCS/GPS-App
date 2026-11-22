@@ -54,7 +54,17 @@ class CaptureDiagnosticsTest {
         val dir = tmp.newFolder("diagnostics")
         File(dir, CaptureLog.FILE).writeText("x".repeat((CaptureLog.MAX_BYTES + 10).toInt()))
         CaptureLog.append("Capture saved name=\"A\"", dir, 0L)
+        assertTrue(CaptureLog.flush())
         assertTrue(File(dir, "captures-1.log").exists())
         assertTrue(File(dir, CaptureLog.FILE).readText().trim().endsWith("Capture saved name=\"A\""))
+    }
+
+    @Test fun `background appends keep call order`() {
+        val dir = tmp.newFolder("diagnostics2")
+        repeat(50) { CaptureLog.append("line $it", dir, it.toLong()) }
+        assertTrue(CaptureLog.flush())
+        val lines = File(dir, CaptureLog.FILE).readLines()
+        assertEquals(50, lines.size)
+        lines.forEachIndexed { i, l -> assertTrue(l, l.endsWith(" line $i")) }
     }
 }
