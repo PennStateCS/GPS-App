@@ -281,6 +281,13 @@ class ModelViewerActivity : AppCompatActivity() {
             // ── All heavy work off the main thread ──────────────────────────
             val modelBuffer = withContext(Dispatchers.IO) { loadFile(modelFile.absolutePath) }
             val ktxBuffer   = withContext(Dispatchers.IO) { loadAsset("ktx/test.ktx") }
+            // .gltf: read the .bin/texture files here too, so the loader callback doesn't hit
+            // the disk on the main thread.
+            val gltfResources = if (isGltf(modelFile)) {
+                withContext(Dispatchers.IO) { preloadGltfResources(modelFile) }
+            } else {
+                null
+            }
 
             // Guard: if the activity was destroyed while IO was in flight, abort.
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) return@launch
@@ -338,7 +345,7 @@ class ModelViewerActivity : AppCompatActivity() {
             }
 
             // Load model geometry. .gltf needs a sidecar resolver for texture/bin files.
-            val loaded = loadModelIntoViewer(viewer, modelFile, modelBuffer)
+            val loaded = loadModelIntoViewer(viewer, modelFile, modelBuffer, gltfResources)
             if (!loaded) {
                 showLoadFailure()
                 return@launch
@@ -383,13 +390,39 @@ class ModelViewerActivity : AppCompatActivity() {
         return true
     }
 
-    private fun loadModelIntoViewer(viewer: ModelViewer, modelFile: File, modelBuffer: ByteBuffer): Boolean {
+    private fun isGltf(modelFile: File): Boolean = modelFile.name.lowercase().endsWith(".gltf")
+
+    /**
+     * Reads every external buffer/image the .gltf at [modelFile] references (same path-safety
+     * rules as [resolveGltfResource]). Call off the main thread. Keys are the URIs as written
+     * in the file, which is what the loader callback receives.
+     */
+    private fun preloadGltfResources(modelFile: File): Map<String, ByteBuffer> {
         return try {
-            val lower = modelFile.name.lowercase()
-            if (lower.endsWith(".gltf")) {
+            val baseDir = modelFile.parentFile?.canonicalFile
+            GltfResources.externalResourceUris(modelFile.readText())
+                .associateWith { uri -> resolveGltfResource(baseDir, uri) }
+        } catch (t: Throwable) {
+            Log.w("ModelViewerActivity", "Could not pre-read glTF resources", t)
+            emptyMap()
+        }
+    }
+
+    private fun loadModelIntoViewer(
+        viewer: ModelViewer,
+        modelFile: File,
+        modelBuffer: ByteBuffer,
+        gltfResources: Map<String, ByteBuffer>? = null
+    ): Boolean {
+        return try {
+            if (isGltf(modelFile)) {
                 val baseDir = modelFile.parentFile?.canonicalFile
                 viewer.loadModelGltf(modelBuffer) { uriString ->
-                    resolveGltfResource(baseDir, uriString)
+                    gltfResources?.get(uriString) ?: run {
+                        // Not in the pre-read set (unusual reference) — read it now.
+                        Log.w("ModelViewerActivity", "glTF resource not pre-read, loading on demand: $uriString")
+                        resolveGltfResource(baseDir, uriString)
+                    }
                 }
             } else {
                 viewer.loadModelGlb(modelBuffer)
