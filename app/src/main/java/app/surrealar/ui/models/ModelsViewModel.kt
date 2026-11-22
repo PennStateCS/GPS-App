@@ -1,14 +1,20 @@
 package app.surrealar.ui.models
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
+import app.surrealar.data.files.ModelFileCleaner
 import app.surrealar.data.local.dao.CoordinateDao
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.domain.model.Model
 import app.surrealar.domain.model.FileType
 import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,9 +27,12 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class ModelsViewModel @Inject constructor(
+    @ApplicationContext context: Context,
     private val repository: ModelRepository,
     private val coordinateDao: CoordinateDao
 ) : ViewModel() {
+
+    private val modelsRoot = File(context.filesDir, ModelFileCleaner.MODELS_DIR_NAME)
 
     val allModels = repository.getAllModels().asLiveData()
 
@@ -119,6 +128,14 @@ class ModelsViewModel @Inject constructor(
             try {
                 repository.deleteModel(model)
                 DiagnosticsLogger.i("MODEL", "db record deleted id=${model.id} name=\"${model.name}\"")
+                // Only remove the file once the row is gone, so a failed DB delete never leaves
+                // a record pointing at a missing file.
+                val fileDeleted = withContext(Dispatchers.IO) {
+                    ModelFileCleaner.deleteModelFile(model.filePath, modelsRoot)
+                }
+                if (!fileDeleted) {
+                    DiagnosticsLogger.w("MODEL", "model file not deleted id=${model.id} (missing or outside models/)")
+                }
                 _statusMessage.value = "Model '${model.name}' deleted"
             } catch (e: Exception) {
                 DiagnosticsLogger.e("MODEL", "db delete failed id=${model.id}: ${e.javaClass.simpleName} ${e.message}", e)

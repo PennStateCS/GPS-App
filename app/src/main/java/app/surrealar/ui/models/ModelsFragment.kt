@@ -14,7 +14,6 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import app.surrealar.data.files.ModelFileCleaner
 import androidx.lifecycle.Lifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
@@ -124,10 +123,9 @@ class ModelsFragment : Fragment() {
                                 .setTitle("Delete Model")
                                 .setMessage("Are you sure you want to delete '${model.name}'?")
                                 .setPositiveButton("Delete") { _, _ ->
-                                    // ViewModel deletes the DB row + thumbnail (via the repository);
-                                    // remove the imported model file here. Both go through ModelFileCleaner.
+                                    // ViewModel deletes the DB row + thumbnail, then the model
+                                    // file/bundle once the row is gone (via ModelFileCleaner).
                                     viewModel.deleteModel(model)
-                                    ModelFileCleaner.deleteModelFile(model.filePath)
                                 }
                                 .setNegativeButton("Cancel", null)
                                 .show()
