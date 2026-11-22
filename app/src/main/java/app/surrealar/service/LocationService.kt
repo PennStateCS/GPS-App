@@ -31,13 +31,33 @@ class LocationService : Service() {
         @Volatile var isRunning: Boolean = false
             private set
 
-        /** Starts the foreground service immediately. */
-        fun start(context: Context) {
+        /** Whether the location permission a location foreground service needs is granted. */
+        fun canStart(context: Context): Boolean =
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        /**
+         * Starts the foreground service. Skipped without location permission (Android 14 throws a
+         * SecurityException for a location service without it); a start the system refuses (e.g. from
+         * the background on Android 12+) is logged instead of crashing. Returns true if requested.
+         */
+        fun start(context: Context): Boolean {
+            if (!canStart(context)) {
+                app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
+                    "LocationService not started: location permission not granted")
+                return false
+            }
             val intent = Intent(context, LocationService::class.java).setAction(ACTION_START)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            return runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+                else context.startService(intent)
+                true
+            }.getOrElse {
+                app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
+                    "LocationService start refused: ${it.javaClass.simpleName}: ${it.message}")
+                false
             }
         }
 
@@ -59,7 +79,15 @@ class LocationService : Service() {
         }.getOrDefault(false)
         app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
             "LocationService started (foreground notification ${if (notificationsAllowed) "allowed" else "NOT allowed - hidden"})")
-        startForeground(NOTIF_ID, buildNotification())
+        try {
+            androidx.core.app.ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+        } catch (e: Exception) {
+            // SecurityException (permission revoked) or ForegroundServiceStartNotAllowedException.
+            app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
+                "LocationService could not go foreground: ${e.javaClass.simpleName}: ${e.message}")
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -67,15 +95,15 @@ class LocationService : Service() {
             ACTION_START -> {
                 // Already started in onCreate; nothing else needed.
             }
-            null -> app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
-                "LocationService restarted by the system (sticky)")
             ACTION_STOP -> {
                 app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "LocationService stop requested")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
-        return START_STICKY
+        // Not sticky: Android 14 refuses a location service restarted from the background, and the app
+        // starts it again when it is opened.
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
