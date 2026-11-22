@@ -65,6 +65,18 @@ class ExternalAdapter(
         private const val CONNECT_TIMEOUT_MS = 10_000L
         private const val HEALTH_INTERVAL_MS = 1_000L
         private const val HEALTH_DATA_TIMEOUT_MS = 30_000L
+
+        /**
+         * Exponential backoff with jitter. [attempt] is floored at 1: after a drop from CONNECTED
+         * the loop's counter is 0, and `1L shl -1` shifted by 63 (a huge negative delay).
+         */
+        internal fun calculateBackoffDelay(attempt: Int, random: Random = Random.Default): Long {
+            val n = attempt.coerceAtLeast(1)
+            val exp = INITIAL_DELAY_MS * (1L shl (n - 1).coerceAtMost(5))
+            val capped = min(exp, MAX_BACKOFF_SECONDS * 1000L)
+            val jitter = random.nextLong(0, MAX_JITTER_MS)
+            return capped + jitter
+        }
     }
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -189,17 +201,26 @@ class ExternalAdapter(
 
                 monitorConnectionHealth()
             } catch (ce: CancellationException) {
-                _connectionState.value = ConnectionState.CANCELLED
+                // Only the live loop may report CANCELLED: a stop()/reconnectNow() that cancelled
+                // us has already set DISCONNECTED/CONNECTING, which must not be overwritten.
+                val thisJob = coroutineContext[Job]
+                synchronized(lifecycleLock) {
+                    if (thisJob != null && thisJob === reconnectJob) {
+                        _connectionState.value = ConnectionState.CANCELLED
+                    }
+                }
                 throw ce
             } catch (e: Exception) {
-                Log.w(TAG, "connection attempt #$attempts failed: ${e.message}", e)
-                DiagnosticsLogger.w("RECEIVER", "Connection attempt #$attempts failed: ${e.message}")
+                // After a drop from CONNECTED the counter was reset to 0; this is still attempt #1.
+                val attempt = attempts.coerceAtLeast(1)
+                Log.w(TAG, "connection attempt #$attempt failed: ${e.message}", e)
+                DiagnosticsLogger.w("RECEIVER", "Connection attempt #$attempt failed: ${e.message}")
                 _connectionState.value = ConnectionState.ERROR
                 synchronized(lifecycleLock) { stopInternalJobs() }
                 if (!coroutineContext.isActive) break
-                val backoff = calculateBackoffDelay(attempts)
+                val backoff = calculateBackoffDelay(attempt)
                 app.surrealar.gnss.debug.GnssDebugLog.event("external") {
-                    "attempt #$attempts failed (${e.javaClass.simpleName}: ${e.message}); " +
+                    "attempt #$attempt failed (${e.javaClass.simpleName}: ${e.message}); " +
                         "connectionActive=${nmea.isConnectionActive()} firstData=$firstDataArrived " +
                         "lastDataAgo=${if (lastDataTimeMs == 0L) "-" else "${monotonicNowMs() - lastDataTimeMs}ms"} " +
                         "retry in ${backoff}ms"
@@ -306,13 +327,6 @@ class ExternalAdapter(
         fixesJob?.cancel();    fixesJob = null
         gsvJob?.cancel();      gsvJob = null
         rawNmeaJob?.cancel();  rawNmeaJob = null
-    }
-
-    private fun calculateBackoffDelay(attempt: Int): Long {
-        val exp = INITIAL_DELAY_MS * (1L shl (attempt - 1).coerceAtMost(5))
-        val capped = min(exp, MAX_BACKOFF_SECONDS * 1000L)
-        val jitter = Random.Default.nextLong(0, MAX_JITTER_MS)
-        return capped + jitter
     }
 
     private fun emptySky(): SkySnapshot =
