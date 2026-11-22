@@ -52,7 +52,7 @@
             android:id="@+id/loading_overlay"
             android:layout_width="0dp"
             android:layout_height="0dp"
-            android:background="@color/white"
+            android:background="#EEEEEE"
             app:layout_constraintBottom_toBottomOf="@id/modelSurface"
             app:layout_constraintEnd_toEndOf="@id/modelSurface"
             app:layout_constraintStart_toStartOf="@id/modelSurface"

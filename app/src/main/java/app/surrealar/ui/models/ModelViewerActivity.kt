@@ -138,8 +138,15 @@ class ModelViewerActivity : AppCompatActivity() {
         private const val PRESENCE_MAX_PROBES = 40
         private const val REVEAL_TIMEOUT_MS = 10_000L
 
-        private const val WHITE_LEVEL = 245
         private const val BLACK_LEVEL = 12
+        // How far (0-255, any channel) a probe pixel must differ from the background to count
+        // as model content.
+        private const val BACKGROUND_TOLERANCE = 10
+
+        // Viewer look: light-grey background, image-based light at full and "Disable Light" levels.
+        private const val BACKGROUND_GREY = 0.93f
+        private const val IBL_INTENSITY = 30_000f
+        private const val IBL_DIM_INTENSITY = 8_000f
 
         // Minimum nanoseconds between consecutive renders. Set to ~33_333_333ns (30 FPS) to
         // reduce CPU on slower devices / emulators and avoid skipped-frame churn.
@@ -298,27 +305,35 @@ class ModelViewerActivity : AppCompatActivity() {
                 handled
             }
 
-            // Solid white background via a colour Skybox.
+            // PBR Neutral tone mapping keeps base colours close to what the author picked
+            // (the default filmic curve washes out and shifts saturated colours).
+            viewer.view.colorGrading = ColorGrading.Builder()
+                .toneMapper(ToneMapper.PBRNeutral())   // Filament 1.81 name for PBRNeutralToneMapper
+                .build(viewer.engine)
+
+            // Solid light-grey background via a colour Skybox (pure white made light models
+            // vanish into the background).
             // • skybox = null leaves the background undefined — Filament will not clear those
             //   pixels, so the previous frame bleeds through ("ghost image") as the model rotates.
             // • A colour Skybox is rendered as the background layer every frame, which is the
             //   correct way to get a solid-colour background in Filament.
             viewer.scene.skybox = Skybox.Builder()
-                .color(1f, 1f, 1f, 1f)
+                .color(BACKGROUND_GREY, BACKGROUND_GREY, BACKGROUND_GREY, 1f)
                 .build(viewer.engine)
 
             // Also properly re-assign clearOptions.
             // renderer.clearOptions returns a *copy* of the struct; mutating it with .apply
             // without re-assigning is a no-op — the renderer never sees the change.
+            val grey = BACKGROUND_GREY.toDouble()
             viewer.renderer.clearOptions = Renderer.ClearOptions().apply {
-                clearColor = doubleArrayOf(1.0, 1.0, 1.0, 1.0)
+                clearColor = doubleArrayOf(grey, grey, grey, 1.0)
                 clear = true
             }
 
             // Indirect lighting (buffer already loaded off-thread)
             if (ktxBuffer != null) {
                 val ibl = KTX1Loader.createIndirectLight(viewer.engine, ktxBuffer)
-                ibl.indirectLight?.intensity = 50_000f
+                ibl.indirectLight?.intensity = IBL_INTENSITY
                 viewer.scene.indirectLight = ibl.indirectLight
             }
 
@@ -798,7 +813,7 @@ class ModelViewerActivity : AppCompatActivity() {
         // Thin rod for each line
         val half = 0.004f * scale
 
-        // Gray color - good contrast against white background
+        // Mid grey - visible against the light-grey background
         val r = 0.5f; val g = 0.5f; val b = 0.5f
 
         val vertexList = mutableListOf<Float>()
@@ -952,16 +967,21 @@ class ModelViewerActivity : AppCompatActivity() {
         }
     }
 
-    // True once the frame holds something that is neither the
-    // white background nor an unpainted (black) surface
+    // True once the frame holds something other than the background. The background colour
+    // is read from the top-left corner (the model is framed in the centre); a black corner
+    // means Filament hasn't painted the surface yet.
     private fun probeHasModelContent(bmp: Bitmap): Boolean {
         val size = PRESENCE_PROBE_SIZE
         if (bmp.width != size || bmp.height != size) return false
 
         bmp.getPixels(presenceProbePixels, 0, size, 0, 0, size, size)
 
-        var sawNonWhite = false
-        var sawNonBlack = false
+        val bg = presenceProbePixels[0]
+        val bgR = (bg shr 16) and 0xFF
+        val bgG = (bg shr 8) and 0xFF
+        val bgB = bg and 0xFF
+        if (bgR <= BLACK_LEVEL && bgG <= BLACK_LEVEL && bgB <= BLACK_LEVEL) return false
+
         for (y in 0 until size step PRESENCE_PROBE_STEP) {
             val row = y * size
             for (x in 0 until size step PRESENCE_PROBE_STEP) {
@@ -970,9 +990,9 @@ class ModelViewerActivity : AppCompatActivity() {
                 val g = (px shr 8) and 0xFF
                 val b = px and 0xFF
 
-                if (r < WHITE_LEVEL || g < WHITE_LEVEL || b < WHITE_LEVEL) sawNonWhite = true
-                if (r > BLACK_LEVEL || g > BLACK_LEVEL || b > BLACK_LEVEL) sawNonBlack = true
-                if (sawNonWhite && sawNonBlack) return true
+                if (abs(r - bgR) > BACKGROUND_TOLERANCE ||
+                    abs(g - bgG) > BACKGROUND_TOLERANCE ||
+                    abs(b - bgB) > BACKGROUND_TOLERANCE) return true
             }
         }
         return false
@@ -1088,6 +1108,11 @@ class ModelViewerActivity : AppCompatActivity() {
     private fun processCapturedBitmap(bmp: Bitmap, attempt: Int, finishAfter: Boolean) {
         lifecycleScope.launch(Dispatchers.Default) {
             val cx = bmp.width / 2; val cy = bmp.height / 2
+            // Background colour from the corner (the model is framed in the centre).
+            val bg = bmp.getPixel(0, 0)
+            val bgR = (bg shr 16) and 0xFF
+            val bgG = (bg shr 8) and 0xFF
+            val bgB = bg and 0xFF
             var hasContent = false
             outer@ for (dy in -30..30 step 10) {
                 for (dx in -30..30 step 10) {
@@ -1097,12 +1122,14 @@ class ModelViewerActivity : AppCompatActivity() {
                     val r = (px shr 16) and 0xFF
                     val g = (px shr 8) and 0xFF
                     val b = px and 0xFF
-                    if (!(r > 245 && g > 245 && b > 245)) { hasContent = true; break@outer }
+                    if (abs(r - bgR) > BACKGROUND_TOLERANCE ||
+                        abs(g - bgG) > BACKGROUND_TOLERANCE ||
+                        abs(b - bgB) > BACKGROUND_TOLERANCE) { hasContent = true; break@outer }
                 }
             }
             if (!hasContent) {
                 bmp.recycle()
-                Log.w("ModelViewerActivity", "Thumb: all-white frame, retrying…")
+                Log.w("ModelViewerActivity", "Thumb: background-only frame, retrying…")
                 withContext(Dispatchers.Main) { tryCaptureThumbnail(attempt + 1, finishAfter) }
                 return@launch
             }
@@ -1254,10 +1281,11 @@ class ModelViewerActivity : AppCompatActivity() {
 
         indirectLightEnabled = !indirectLightEnabled
         if (indirectLightEnabled) {
-            viewer.scene.indirectLight?.intensity = 50_000f
+            viewer.scene.indirectLight?.intensity = IBL_INTENSITY
             controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_on))
         } else {
-            viewer.scene.indirectLight?.intensity = 0f
+            // Keep a dim ambient fill: at 0 every face the sun doesn't hit went pure black.
+            viewer.scene.indirectLight?.intensity = IBL_DIM_INTENSITY
             controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_off))
         }
         Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
