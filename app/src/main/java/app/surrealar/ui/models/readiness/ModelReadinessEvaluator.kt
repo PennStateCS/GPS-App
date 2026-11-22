@@ -40,7 +40,6 @@ object ModelReadinessEvaluator : ReadinessRules {
     const val TEXTURE_BYTES_FAIL = 512L * 1024 * 1024
     const val FILE_SIZE_WARN_BYTES = 100L * 1024 * 1024
     const val FILE_SIZE_CAP_MB = 150
-    const val ANCHOR_HACC_MAX_M = 0.5
     const val GEOREF_MATCH_M = 1.0
 
     /** Required extensions Filament gltfio 1.81 handles (plus any KHR_materials_*). */
@@ -74,7 +73,6 @@ object ModelReadinessEvaluator : ReadinessRules {
         )
         checks += complexity(facts)
         checks += linked(facts)
-        checks += anchorAccuracy(facts)
         georeference(facts)?.let { checks += it }
 
         val ordered = checks.sortedBy { rank(it.status) }
@@ -396,56 +394,6 @@ object ModelReadinessEvaluator : ReadinessRules {
         return ReadinessCheck(
             "linked", "Linked points", CheckStatus.PASS,
             "Linked to ${plural(links.size, "point")}: ${list(links.map { q(it.coordinateName) }, 5)}.",
-        )
-    }
-
-    // ------------------------------------------------------------------ 10. anchor accuracy
-
-    private fun isRtk(status: String?): Boolean {
-        val tokens = status.orEmpty().lowercase(Locale.ROOT).split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
-        if ("no" in tokens || "none" in tokens) return false
-        return tokens.any { it == "fix" || it == "fixed" || it == "float" }
-    }
-
-    private fun fixLabel(status: String?): String {
-        val s = status?.trim().orEmpty()
-        if (s.isEmpty()) return "an unknown fix type"
-        val tokens = s.lowercase(Locale.ROOT).split(Regex("[^a-z]+")).filter { it.isNotEmpty() }
-        return when {
-            isRtk(s) && tokens.any { it == "float" } -> "RTK Float"
-            isRtk(s) -> "RTK Fix"
-            tokens == listOf("single") -> "Single"
-            else -> scrub(s)
-        }
-    }
-
-    private fun anchorAccuracy(facts: ModelFacts): List<ReadinessCheck> {
-        if (facts.links.isEmpty()) return emptyList()
-        val bad = facts.links.filter { l ->
-            val h = l.horizontalAccuracyM
-            !isRtk(l.rtkStatus) || (h != null && h > ANCHOR_HACC_MAX_M)
-        }
-        if (bad.isEmpty()) {
-            val detail = if (facts.links.size == 1) "The point was captured with RTK to ${len(ANCHOR_HACC_MAX_M)} or better."
-            else "All linked points were captured with RTK to ${len(ANCHOR_HACC_MAX_M)} or better."
-            return listOf(ReadinessCheck("anchorAccuracy", "Anchor accuracy", CheckStatus.PASS, detail))
-        }
-        val checks = bad.take(MAX_PLACEMENT_CHECKS).map { l ->
-            val acc = l.horizontalAccuracyM?.let {
-                " ±" + (if (it >= 10) String.format(Locale.US, "%,.0f", it) else num(it)) + " m"
-            } ?: " with unknown accuracy"
-            val tail = if (l.horizontalAccuracyM != null) ", so the model can sit that far off." else ", so the model may sit off the spot."
-            ReadinessCheck(
-                "anchorAccuracy", "Anchor accuracy", CheckStatus.WARN,
-                "${q(l.coordinateName)} was captured as ${fixLabel(l.rtkStatus)}$acc$tail",
-                fix = "Re-capture the point with an RTK fix.",
-            )
-        }
-        val rest = bad.size - checks.size
-        return if (rest <= 0) checks else checks + ReadinessCheck(
-            "anchorAccuracy", "Anchor accuracy", CheckStatus.WARN,
-            "${plural(rest, "more point")} were not captured with an RTK fix to ${len(ANCHOR_HACC_MAX_M)}.",
-            fix = "Re-capture those points with an RTK fix.",
         )
     }
 

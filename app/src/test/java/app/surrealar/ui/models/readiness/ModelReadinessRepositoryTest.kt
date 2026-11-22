@@ -78,8 +78,6 @@ class ModelReadinessRepositoryTest {
         assertEquals(3.0, l.rollDeg!!, 0.0)
         assertEquals(0.5, l.verticalOffsetM!!, 0.0)
         assertEquals(3.0, l.originOffsetZM!!, 0.0)
-        assertEquals("FIX", l.rtkStatus)
-        assertEquals(0.02, l.horizontalAccuracyM!!, 0.0)
     }
 
     @Test

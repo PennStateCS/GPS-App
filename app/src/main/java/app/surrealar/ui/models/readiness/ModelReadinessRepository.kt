@@ -169,8 +169,6 @@ class ModelReadinessRepository internal constructor(
             originOffsetXM = modelOriginOffsetXM,
             originOffsetYM = modelOriginOffsetYM,
             originOffsetZM = modelOriginOffsetZM,
-            rtkStatus = rtkStatus,
-            horizontalAccuracyM = horizontalAccuracyM,
             latDeg = latitude,
             lonDeg = longitude,
         )

@@ -76,7 +76,11 @@ data class GltfFacts(
     val parseError: String? = null,
 )
 
-/** One point that links the model, with its placement settings (as AR reads them). */
+/**
+ * One point that links the model, with its placement settings (as AR reads them). A model can be
+ * linked to many points, so readiness judges the MODEL and its per-point placement only; how
+ * accurately a point was captured belongs to that point, not to the model's readiness.
+ */
 data class LinkFacts(
     val coordinateId: String,
     val coordinateName: String,
@@ -90,8 +94,6 @@ data class LinkFacts(
     val originOffsetXM: Double?,
     val originOffsetYM: Double?,
     val originOffsetZM: Double?,
-    val rtkStatus: String?,
-    val horizontalAccuracyM: Double?,
     /** Used only to compare with the model's embedded location; never shown or logged. */
     val latDeg: Double,
     val lonDeg: Double,

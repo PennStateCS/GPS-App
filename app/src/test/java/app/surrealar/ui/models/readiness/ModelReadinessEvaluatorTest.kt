@@ -40,14 +40,12 @@ class ModelReadinessEvaluatorTest {
         scale: Double? = null,
         verticalOffset: Double? = null,
         pitch: Double? = null,
-        rtk: String? = "FIX",
-        hAcc: Double? = 0.02,
         lat: Double = 40.123456,
         lon: Double = -75.654321,
     ) = LinkFacts(
         coordinateId = id, coordinateName = name, placementOrigin = origin, scale = scale, yawDeg = null,
         pitchDeg = pitch, rollDeg = null, verticalOffsetM = verticalOffset, originOffsetXM = null, originOffsetYM = null,
-        originOffsetZM = null, rtkStatus = rtk, horizontalAccuracyM = hAcc, latDeg = lat, lonDeg = lon,
+        originOffsetZM = null, latDeg = lat, lonDeg = lon,
     )
 
     private fun facts(
@@ -81,7 +79,6 @@ class ModelReadinessEvaluatorTest {
         assertEquals("It sits on the point.", r.one("placement").detail)
         assertEquals("12 triangles, 1 texture (max 2,048 px).", r.one("complexity").detail)
         assertEquals("Linked to 1 point: ‘Corner’.", r.one("linked").detail)
-        assertEquals(CheckStatus.PASS, r.one("anchorAccuracy").status)
         assertEquals(
             "In AR the model's +Z axis points north; rotate with Yaw if it faces the wrong way.",
             r.one("north").detail,
@@ -291,18 +288,13 @@ class ModelReadinessEvaluatorTest {
         assertEquals(CheckStatus.WARN, c.status)
         assertEquals("Not linked to any point, so it won't appear in AR.", c.detail)
         assertEquals(FixAction.LINK_POINT, c.fixAction)
-        assertTrue(r.all("anchorAccuracy").isEmpty())
     }
 
     @Test
-    fun `single-fix anchor warns how far off the model can sit`() {
-        val c = eval(facts(links = listOf(link(rtk = "SINGLE", hAcc = 12.0)))).one("anchorAccuracy")
-        assertEquals(CheckStatus.WARN, c.status)
-        assertEquals("‘Corner’ was captured as Single ±12 m, so the model can sit that far off.", c.detail)
-        val float = eval(facts(links = listOf(link(rtk = "RTK_FLOAT", hAcc = 0.8)))).one("anchorAccuracy")
-        assertEquals("‘Corner’ was captured as RTK Float ±0.80 m, so the model can sit that far off.", float.detail)
-        assertEquals(CheckStatus.WARN, eval(facts(links = listOf(link(rtk = "NO_FIX", hAcc = null)))).one("anchorAccuracy").status)
-        assertEquals(CheckStatus.PASS, eval(facts(links = listOf(link(rtk = "float", hAcc = 0.3)))).one("anchorAccuracy").status)
+    fun `point accuracy is not part of model readiness`() {
+        // A model can be linked to many points; how well each was captured belongs to the point.
+        val r = eval(facts(links = listOf(link(id = "a", name = "Precise"), link(id = "b", name = "Rough"))))
+        assertTrue(r.checks.none { it.detail.contains("captured") || it.title.contains("accuracy", ignoreCase = true) })
     }
 
     // ------------------------------------------------------------ 11. georeference
@@ -338,7 +330,7 @@ class ModelReadinessEvaluatorTest {
     @Test
     fun `no message contains a latitude or longitude`() {
         val links = listOf(
-            link(origin = null, rtk = "SINGLE", hAcc = 3.0),
+            link(origin = null),
             link(id = "c2", name = "Gate 40.123456", origin = "ORIGIN", lat = 40.2, lon = -75.7),
         )
         val r = eval(

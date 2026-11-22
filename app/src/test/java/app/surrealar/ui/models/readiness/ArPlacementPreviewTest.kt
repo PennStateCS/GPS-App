@@ -75,7 +75,7 @@ class ArPlacementPreviewTest {
     fun placementForFallsBackToModelDefaultsAndCenter() {
         assertEquals(ModelPlacementOrigin.CENTER, ArPlacementPreview.placementFor(null, null).placementOrigin)
         val link = LinkFacts("c", "Point 5", "BOTTOM_CENTER", null, 15.0, null, null, 0.5, null, null, null,
-            null, null, 0.0, 0.0)
+            0.0, 0.0)
         val pl = ArPlacementPreview.placementFor(link, null)
         assertEquals(ModelPlacementOrigin.BOTTOM_CENTER, pl.placementOrigin)
         assertEquals(1f, pl.scale, 0f)
