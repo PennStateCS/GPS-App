@@ -227,10 +227,21 @@ class TcpNmeaSource(
                             firstDataLogged = true
                             DiagnosticsLogger.i("RECEIVER", "First NMEA sentence received from $host:$port")
                         }
-                        diagnostics?.recordLine(clean)
-                        _rawNmea.tryEmit(Unit)
-                        fuser.accept(clean)
-                        debugSampler.accept(clean) { "$host:$port" }
+                        // An exception from an odd sentence anywhere downstream (fusion, fix
+                        // listeners) used to end the connection and force a reconnect. Drop just
+                        // that sentence and log it (throttled, never the sentence text).
+                        try {
+                            diagnostics?.recordLine(clean)
+                            _rawNmea.tryEmit(Unit)
+                            fuser.accept(clean)
+                            debugSampler.accept(clean) { "$host:$port" }
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (e: Exception) {
+                            DiagnosticsLogger.every("NMEA", "tcp.sentence.error", 60_000L, 'E') {
+                                "TCP NMEA processing error (sentence dropped, repeats suppressed 60 s): ${e.javaClass.simpleName}: ${e.message}"
+                            }
+                        }
                     }
                 } catch (_: SocketTimeoutException) {
                     if (!coroutineContext.isActive) break
