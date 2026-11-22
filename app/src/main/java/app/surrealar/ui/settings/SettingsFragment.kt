@@ -2076,15 +2076,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
     // ───────────────────────────── Import / Export ─────────────────────────────
     /** Writes the official full JSON backup to the document the user chose in the save dialog. */
     private fun writeBackupTo(uri: Uri) {
-        lifecycleScope.launch {
+        // Captured now: the save scope outlives the fragment, so requireContext() may fail later.
+        val appContext = requireContext().applicationContext
+        saveScope.launch {
             runCatching {
                 val appVersion = runCatching {
-                    requireContext().packageManager.getPackageInfo(requireContext().packageName, 0).versionName
+                    appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
                 }.getOrNull()
                 // Use case loads the data and builds the JSON; the fragment owns the URI write.
                 val result = exportBackup(appVersion)
                 withContext(Dispatchers.IO) {
-                    requireContext().contentResolver.openOutputStream(uri)?.use {
+                    // "wt" truncates: overwriting a longer existing file must not leave its tail behind.
+                    appContext.contentResolver.openOutputStream(uri, "wt")?.use {
                         it.write(result.json.toByteArray(StandardCharsets.UTF_8))
                     } ?: error("Unable to open output stream")
                 }
@@ -2099,7 +2102,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
     /** Writes all points as CSV in the configured coordinate system, units and height reference. */
     private fun writePointsCsvTo(uri: Uri) {
-        lifecycleScope.launch {
+        val appContext = requireContext().applicationContext
+        saveScope.launch {
             runCatching {
                 val coordSettings = settingsRepo.coordinateSystemSettings.first()
                 val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
@@ -2110,7 +2114,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                 }
                 withContext(Dispatchers.IO) {
-                    requireContext().contentResolver.openOutputStream(uri)?.use {
+                    appContext.contentResolver.openOutputStream(uri, "wt")?.use {
                         it.write(csv.toByteArray(StandardCharsets.UTF_8))
                     } ?: error("Unable to open output stream")
                 }
