@@ -12,7 +12,8 @@ public data class ReachCorrectionsInfo(
     val channel: String?,
     val satellitesInView: Int?,
     val ageSeconds: Double?,
-    val baselineKm: Double?,
+    /** Distance to the base in METRES, as the Reach `navigation` broadcast sends it. */
+    val baselineM: Double?,
     val baseLatDeg: Double?,
     val baseLonDeg: Double?,
     val baseAltM: Double?,

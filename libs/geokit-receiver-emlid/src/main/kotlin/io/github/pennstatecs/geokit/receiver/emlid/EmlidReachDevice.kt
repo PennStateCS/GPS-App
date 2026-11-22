@@ -236,7 +236,7 @@ public object EmlidMapping {
         channel        = c.channel,
         stationId      = null,          // Reach broadcasts don't carry a station ID (GGA does)
         ageS           = c.ageSeconds,
-        baselineKm     = c.baselineKm,
+        baselineKm     = c.baselineM?.let { it / 1000.0 },   // the Reach reports metres
         baseLatDeg     = c.baseLatDeg,
         baseLonDeg     = c.baseLonDeg,
         baseHeightM    = c.baseAltM,

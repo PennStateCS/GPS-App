@@ -132,7 +132,10 @@ class EmlidMappingTest {
     }
 
     @Test fun `corrections map field by field and render the same in Settings`() {
-        val c = ReachCorrectionsInfo(true, "NTRIP", 18, 1.4, 2.3, 41.0, -76.0, 380.0, "fix")
+        // The Reach sends the baseline in metres; the neutral model carries km.
+        val c = ReachCorrectionsInfo(true, "NTRIP", 18, 1.4, 2300.0, 41.0, -76.0, 380.0, "fix")
+        assertEquals(4.5948, EmlidMapping.corrections(c.copy(baselineM = 4594.8)).baselineKm!!, 1e-9)
+        assertEquals(null, EmlidMapping.corrections(c.copy(baselineM = null)).baselineKm)
         assertEquals(ReceiverCorrections(true, "NTRIP", null, 1.4, 2.3, 41.0, -76.0, 380.0, 18, "fix"), EmlidMapping.corrections(c))
         fun oldRow(i: ReachCorrectionsInfo) = if (i.isReceiving) "${i.channel ?: "Connected"}${i.ageSeconds?.let { " (${it.toInt()}s)" } ?: ""}" else "Not connected"
         fun newRow(i: ReceiverCorrections) = if (i.isReceiving) "${i.channel ?: "Connected"}${i.ageS?.let { " (${it.toInt()}s)" } ?: ""}" else "Not connected"

@@ -38,7 +38,7 @@ class ReachCorrectionsLoggingTest {
     @After fun tearDown() = GnssLog.uninstall()
 
     private val navigation = JSONObject(
-        """{"name":"navigation","payload":{"aod":1.2,"solution":"fix","baseline":0.8,"satellites":{"base":18},
+        """{"name":"navigation","payload":{"aod":1.2,"solution":"fix","baseline":4594.8,"satellites":{"base":18},
            "base_position":{"coordinates":{"lat":41.2345678,"lon":-76.1234567,"h":380.1}}}}"""
     )
 
@@ -62,5 +62,18 @@ class ReachCorrectionsLoggingTest {
         broadcastMany(r)
         assertEquals(1, r.lines.count { it.startsWith("D/ReachCorrectionsService: navigation broadcast:") })
         assertEquals(1, r.lines.count { it.startsWith("D/ReachCorrectionsService: navigation parsed:") })
+    }
+
+    @Test fun `the CORRECTIONS line prints the metre baseline in km`() {
+        val r = Recording(enabled = false)
+        broadcastMany(r)
+        val line = r.lines.single { it.startsWith("DIAG/CORRECTIONS: rtk solution=fix") }
+        assertTrue(line, "baselineKm=4.59 " in line)
+    }
+
+    @Test fun `formatBaselineKm converts metres and marks unknown`() {
+        assertEquals("4.59", formatBaselineKm(4594.8))
+        assertEquals("0.00", formatBaselineKm(0.0))
+        assertEquals("?", formatBaselineKm(null))
     }
 }

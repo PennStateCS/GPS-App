@@ -260,7 +260,7 @@ internal class ReachCorrectionsService(
         if (nav.solution != lastLoggedSolution) {
             lastLoggedSolution = nav.solution
             GnssLog.diagnostic("CORRECTIONS", "rtk solution=${nav.solution ?: "none"} " +
-                "ageS=${nav.aod ?: "?"} baselineKm=${nav.baseline ?: "?"} baseSats=${nav.satsBase ?: "?"}")
+                "ageS=${nav.aod ?: "?"} baselineKm=${formatBaselineKm(nav.baseline)} baseSats=${nav.satsBase ?: "?"}")
         }
 
         pushUpdate()
@@ -339,7 +339,7 @@ internal class ReachCorrectionsService(
             channel          = cachedChannel,
             satellitesInView = nav?.satsBase,
             ageSeconds       = nav?.aod,
-            baselineKm       = nav?.baseline,
+            baselineM        = nav?.baseline,
             baseLatDeg       = nav?.baseLat,
             baseLonDeg       = nav?.baseLon,
             baseAltM         = nav?.baseH,
@@ -352,6 +352,7 @@ internal class ReachCorrectionsService(
     internal data class NavSnapshot(
         val aod: Double?,
         val solution: String?,
+        /** Distance to the base in metres (the Reach sends metres, e.g. 4594.8 for a 4.6 km baseline). */
         val baseline: Double?,
         val satsBase: Int?,
         val baseLat: Double?,
@@ -407,3 +408,7 @@ private fun JSONObject.optIntOrNull(key: String): Int? {
     val v = optInt(key, Int.MIN_VALUE)
     return if (v != Int.MIN_VALUE) v else null
 }
+
+/** A Reach baseline (metres) for the log, in km with two decimals ("4.59"), or "?" when unknown. */
+internal fun formatBaselineKm(baselineM: Double?): String =
+    baselineM?.let { String.format(java.util.Locale.US, "%.2f", it / 1000.0) } ?: "?"
