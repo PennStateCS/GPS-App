@@ -27,7 +27,8 @@ object ArLighting {
     /** Floor on the ambient DC term, so no face can go black even in a dark estimate. */
     const val MIN_AMBIENT_DC = 0.35f
     /** Lux per unit of ARCore's main-light intensity (largest channel), clamped below. */
-    const val SUN_LUX_PER_UNIT = 60_000f
+    // 60k pinned at SUN_LUX_MAX the whole backyard test (2026-11-22): ARCore reported > 1.8 units.
+    const val SUN_LUX_PER_UNIT = 30_000f
     const val SUN_LUX_MIN = 15_000f
     const val SUN_LUX_MAX = 110_000f
     /** Exponential smoothing per update (0..1; higher = faster). Updates arrive ~5×/s. */
@@ -63,6 +64,8 @@ object ArLighting {
         val ambientSh: FloatArray,
         val ambientIntensity: Float,
         val fromEstimate: Boolean,
+        /** ARCore's raw main-light intensity (largest channel), for tuning; 0 for the fallback. */
+        val rawSunIntensity: Float = 0f,
     )
 
     fun fallback(): State = State(
@@ -89,6 +92,7 @@ object ArLighting {
             ambientSh = lerp(previous.ambientSh, target.ambientSh, a),
             ambientIntensity = target.ambientIntensity,
             fromEstimate = true,
+            rawSunIntensity = target.rawSunIntensity,
         )
     }
 
@@ -111,6 +115,7 @@ object ArLighting {
             ambientSh = toIrradiance(sh),
             ambientIntensity = AMBIENT_INTENSITY,
             fromEstimate = true,
+            rawSunIntensity = maxC,
         )
     }
 
