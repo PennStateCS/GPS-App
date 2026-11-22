@@ -540,6 +540,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             editScale?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
             editAntenna?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
             editAntenna?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
+            // Also save while typing (debounced), but only once the box holds a valid value.
+            editScale?.saveWhileTyping(saveScope) {
+                if (editScale.text?.toString()?.toFloatOrNull()?.let { it in 0.1f..10.0f } == true) saveAll()
+            }
+            editAntenna?.saveWhileTyping(saveScope) {
+                if (editAntenna.text?.toString()?.trim()?.toDoubleOrNull()?.let { it in -3.0..3.0 } == true) saveAll()
+            }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupARDisplayContent failed", e)
         }
@@ -840,6 +847,10 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
             editPrefix?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) savePrefix() }
             editPrefix?.setOnEditorActionListener { _, _, _ -> savePrefix(); false }
+            // Save while typing too (debounced); a momentarily empty box is not saved as "Point".
+            editPrefix?.saveWhileTyping(saveScope) {
+                if (editPrefix.text?.toString()?.trim().isNullOrEmpty().not()) savePrefix()
+            }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupCoordinateDisplayContent failed", e)
         }
@@ -1056,6 +1067,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             listOf(editMinDur, editMaxDur, editSamples, editFixAge, editDiffAge, editPrecision).forEach { edit ->
                 edit?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) trySave() }
                 edit?.setOnEditorActionListener { _, _, _ -> trySave(); false }
+                // Save while typing too (debounced); trySave only writes when every rule is valid.
+                edit?.saveWhileTyping(saveScope) { if (currentPreset == io.github.pennstatecs.geokit.gnss.capture.CapturePreset.CUSTOM) trySave() }
             }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupGnssCaptureContent failed", e)
@@ -1661,6 +1674,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
             setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAntenna() }
             setOnEditorActionListener { _, _, _ -> saveAntenna(); false }
+            // Save while typing (debounced), only for a valid height: partial input ("", "1.") is left alone.
+            saveWhileTyping(saveScope) { if (AntennaHeightInput.parseMeters(text) != null) saveAntenna() }
         }
 
         // Tablet / internal-GNSS antenna height — applied to internal-GPS captures (pole-mounted tablet).
@@ -1693,6 +1708,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
             setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveInternalAntenna() }
             setOnEditorActionListener { _, _, _ -> saveInternalAntenna(); false }
+            saveWhileTyping(saveScope) { if (AntennaHeightInput.parseMeters(text) != null) saveInternalAntenna() }
         }
 
         // ── Advanced: mock location publishing ──
