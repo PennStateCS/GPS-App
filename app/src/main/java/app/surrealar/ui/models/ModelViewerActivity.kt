@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Log
 import android.view.Choreographer
 import android.view.MenuItem
 import android.view.PixelCopy
@@ -57,10 +56,14 @@ import java.nio.ByteBuffer
 import java.nio.FloatBuffer
 import java.nio.ShortBuffer
 import java.util.Locale
+import app.surrealar.util.DevLog
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+/** Logcat tag for this file's DevLog traces. */
+private const val VIEWER_TAG = "ModelViewerActivity"
 
 @AndroidEntryPoint
 class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
@@ -302,7 +305,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         // Load the model viewer surface view
         if (!setupModelViewer())
         {
-            Log.e("ModelViewerActivity", "Something went wrong while loading the model viewer.")
+            DiagnosticsLogger.e("MODEL", "viewer setup failed — model file missing or no path")
             showLoadFailure()
             return
         }
@@ -346,7 +349,8 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             if (!lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) return@launch
 
             if (modelBuffer == null) {
-                Log.e("ModelViewerActivity", "Could not read model file: ${modelFile.absolutePath}")
+                // loadFile already logged why (with the exception); this records which file.
+                DiagnosticsLogger.e("MODEL", "viewer could not read model file=${modelFile.name}")
                 showLoadFailure()
                 return@launch
             }
@@ -354,7 +358,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             // ModelViewer must be created on the main thread (it attaches to the SurfaceView).
             val viewer = ModelViewer(surfaceView)
 
-            Log.d("ModelViewerActivity", viewer.scene.indirectLight.toString())
+            DevLog.d(VIEWER_TAG) { "indirectLight=${viewer.scene.indirectLight}" }
 
 
             // Touch handler — use newModelViewer (nullable) rather than the closed-over
@@ -459,7 +463,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             GltfResources.externalResourceUris(modelFile.readText())
                 .associateWith { uri -> resolveGltfResource(baseDir, uri) }
         } catch (t: Throwable) {
-            Log.w("ModelViewerActivity", "Could not pre-read glTF resources", t)
+            DiagnosticsLogger.w("MODEL", "viewer: glTF resources not pre-read file=${modelFile.name} — loading on demand", t)
             emptyMap()
         }
     }
@@ -476,7 +480,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 viewer.loadModelGltf(modelBuffer) { uriString ->
                     gltfResources?.get(uriString) ?: run {
                         // Not in the pre-read set (unusual reference) — read it now.
-                        Log.w("ModelViewerActivity", "glTF resource not pre-read, loading on demand: $uriString")
+                        DevLog.d(VIEWER_TAG) { "glTF resource not pre-read, loading on demand: $uriString" }
                         resolveGltfResource(baseDir, uriString)
                     }
                 }
@@ -485,8 +489,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }
             true
         } catch (e: Throwable) {
-            Log.e("ModelViewerActivity", "Failed to load model: ${modelFile.absolutePath}", e)
-            DiagnosticsLogger.e("MODEL", "viewer load failed: ${e.javaClass.simpleName} ${e.message}")
+            DiagnosticsLogger.e("MODEL", "viewer load failed file=${modelFile.name}: ${e.javaClass.simpleName} ${e.message}", e)
             false
         }
     }
@@ -499,12 +502,13 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             val decoded = Uri.decode(uriString).substringBefore('#').substringBefore('?')
             val candidate = File(baseDir, decoded).canonicalFile
             if (!candidate.path.startsWith(baseDir.path) || !candidate.exists()) {
-                Log.w("ModelViewerActivity", "Missing glTF resource: $uriString")
+                // Per resource: logcat only (missing sidecars are reported once at import).
+                DevLog.d(VIEWER_TAG) { "Missing glTF resource: $uriString" }
                 return ByteBuffer.allocateDirect(0)
             }
             loadFile(candidate.absolutePath) ?: ByteBuffer.allocateDirect(0)
         } catch (e: Exception) {
-            Log.w("ModelViewerActivity", "Failed to resolve glTF resource: $uriString", e)
+            DiagnosticsLogger.w("MODEL", "viewer: glTF resource unreadable: ${e.javaClass.simpleName}", e)
             ByteBuffer.allocateDirect(0)
         }
     }
@@ -562,7 +566,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             orbitManipulator = manipulator
 
         } catch (t: Throwable) {
-            Log.e("ModelViewerActivity", "Failed to install orbit manipulator", t)
+            DiagnosticsLogger.e("MODEL", "viewer: orbit manipulator install failed — camera gestures unavailable", t)
         }
 
         if (isThumbnailFraming) {
@@ -598,7 +602,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             FilamentChannelDepth.setChannelDepthClearEnabled(viewer.view, OVERLAY_CHANNEL, enabled)
             enabled
         } catch (t: Throwable) {
-            Log.e("ModelViewerActivity", "Failed to set depth clear for overlay channel", t)
+            DiagnosticsLogger.w("MODEL", "viewer: overlay depth clear unavailable — overlays not drawn on top", t)
             false
         }
 
@@ -1131,7 +1135,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                     result == PixelCopy.ERROR_SOURCE_NO_DATA -> Unit
 
                     else -> {
-                        Log.w("ModelViewerActivity", "Reveal probe failed: result = $result")
+                        DevLog.d(VIEWER_TAG) { "Reveal probe failed: result = $result" }   // retried; outcome logged below
                         if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
                             revealModel("PixelCopy kept failing (result=$result)")
                         }
@@ -1140,7 +1144,9 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }, mainHandler)
         } catch (t: Throwable) {
             presenceProbeInFlight = false
-            Log.w("ModelViewerActivity", "Reveal probe threw", t)
+            DiagnosticsLogger.every("MODEL", "viewer.revealProbe.threw", 60_000L, 'W', throwable = t) {
+                "viewer reveal probe threw (attempt=$presenceProbeAttempts)"
+            }
             if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
                 revealModel("PixelCopy kept throwing")
             }
@@ -1186,7 +1192,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         binding.textLoading.visibility = View.GONE
         binding.loadingOverlay.visibility = View.GONE
 
-        Log.d("ModelViewerActivity", "Revealing model because $reason (after $presenceProbeAttempts probe(s))")
+        DevLog.d(VIEWER_TAG) { "Revealing model because $reason (after $presenceProbeAttempts probe(s))" }
 
         // Safe to drop only when no copy is reading it, otherwise onDestroy cleans up
         if (!presenceProbeInFlight) {
@@ -1226,7 +1232,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             ModelDiagnosticsDialogFragment.newInstance()
                 .show(supportFragmentManager, ModelDiagnosticsDialogFragment.TAG)
         } catch (e: Exception) {
-            Log.e("ModelViewerActivity", "Failed to show readiness dialog", e)
+            DiagnosticsLogger.w("MODEL", "viewer: readiness dialog not shown: ${e.javaClass.simpleName}", e)
         }
     }
 
@@ -1264,7 +1270,8 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 facts = f
                 withContext(Dispatchers.Default) { readinessRepository.evaluate(f) }
             }.onFailure {
-                Log.w("ModelViewerActivity", "Readiness evaluation failed", it)
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                DiagnosticsLogger.w("MODEL", "viewer: readiness evaluation failed: ${it.javaClass.simpleName}", it)
             }.getOrNull()
             val f = facts
             _readinessState.value = ReadinessUiState(
@@ -1282,7 +1289,12 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
     private suspend fun onReadinessFacts(facts: ModelFacts?) {
         val id = modelId
         val model = if (id != null && facts != null && facts.modelId.isNotEmpty()) {
-            runCatching { withContext(Dispatchers.IO) { modelRepository.getModelById(id) } }.getOrNull()
+            runCatching { withContext(Dispatchers.IO) { modelRepository.getModelById(id) } }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    DiagnosticsLogger.w("MODEL", "viewer: model lookup failed id=$id — AR placement preview skipped", it)
+                }
+                .getOrNull()
         } else {
             null
         }
@@ -1298,7 +1310,10 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         _readinessState.update { it.copy(applying = true) }
         lifecycleScope.launch {
             val names = runCatching { readinessRepository.applyFix(modelId, check) }
-                .onFailure { Log.w("ModelViewerActivity", "Readiness fix failed", it) }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    DiagnosticsLogger.w("MODEL", "MODEL_READINESS_FIX failed check=${check.id}: ${it.javaClass.simpleName}", it)
+                }
                 .getOrNull()
             _readinessState.update { it.copy(applying = false) }
             when {
@@ -1329,13 +1344,12 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
     private fun scheduleThumbnailCapture(finishAfter: Boolean) {
         thumbnailCaptureScheduled = true
-        Log.d("ModelViewerActivity", "Thumb: scheduling thumbnail capture (finishAfter=$finishAfter)")
+        DevLog.d(VIEWER_TAG) { "Thumb: scheduling thumbnail capture (finishAfter=$finishAfter)" }
         tryCaptureThumbnail(attempt = 1, finishAfter = finishAfter)
     }
 
     private fun tryCaptureThumbnail(attempt: Int, finishAfter: Boolean) {
         if (attempt > CAPTURE_MAX_ATTEMPTS) {
-            Log.e("ModelViewerActivity", "Thumb: giving up after $CAPTURE_MAX_ATTEMPTS attempts")
             thumbnailCaptureScheduled = false
 
             // Fallback: if on-screen PixelCopy failed repeatedly, delegate to the
@@ -1347,10 +1361,11 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 val modelFileName = intent.getStringExtra(EXTRA_MODEL_PATH)
                     ?.substringAfterLast('/')?.substringAfterLast('\\') ?: "model"
 
-                Log.w("ModelViewerActivity", "Thumb: falling back to off-screen capture for $modelFileName")
+                DiagnosticsLogger.w("MODEL", "viewer thumbnail capture failed after $CAPTURE_MAX_ATTEMPTS attempts " +
+                    "file=$modelFileName — falling back to off-screen capture")
                 ThumbnailCaptureActivity.start(this, modelPath, modelName, modelFileName)
             } catch (e: Exception) {
-                Log.e("ModelViewerActivity", "Failed to start ThumbnailCaptureActivity", e)
+                DiagnosticsLogger.e("MODEL", "viewer: off-screen thumbnail capture could not start: ${e.javaClass.simpleName}", e)
 
                 binding.btnCaptureThumbnail.isEnabled = true
                 binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
@@ -1361,7 +1376,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             return
         }
 
-        Log.d("ModelViewerActivity", "Thumb: capture attempt=$attempt")
+        DevLog.d(VIEWER_TAG) { "Thumb: capture attempt=$attempt" }
 
         Handler(Looper.getMainLooper()).postDelayed({
             val w = surfaceView.width
@@ -1381,7 +1396,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 @Suppress("DEPRECATION")
                 PixelCopy.request(surfaceView, bmp, { result ->
                     if (result != PixelCopy.SUCCESS) {
-                        Log.e("ModelViewerActivity", "Thumb: PixelCopy failed result=$result; retrying")
+                        DevLog.d(VIEWER_TAG) { "Thumb: PixelCopy failed result=$result; retrying" }
                         bmp.recycle()
                         tryCaptureThumbnail(attempt + 1, finishAfter)
                         return@request
@@ -1389,7 +1404,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                     processCapturedBitmap(bmp, attempt, finishAfter)
                 }, Handler(Looper.getMainLooper()))
             } catch (t: Throwable) {
-                Log.e("ModelViewerActivity", "Thumb: PixelCopy threw; retrying", t)
+                DiagnosticsLogger.w("MODEL", "viewer thumbnail: PixelCopy threw on attempt=$attempt; retrying", t)
                 bmp.recycle()
                 tryCaptureThumbnail(attempt + 1, finishAfter)
             }
@@ -1421,7 +1436,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }
             if (!hasContent) {
                 bmp.recycle()
-                Log.w("ModelViewerActivity", "Thumb: background-only frame, retrying…")
+                DevLog.d(VIEWER_TAG) { "Thumb: background-only frame, retrying…" }
                 withContext(Dispatchers.Main) { tryCaptureThumbnail(attempt + 1, finishAfter) }
                 return@launch
             }
@@ -1473,26 +1488,27 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("ModelViewerActivity", "Failed to update DB thumbnail", e)
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.e("MODEL", "viewer: thumbnail DB update failed", e)
                 }
 
                 withContext(Dispatchers.Main) {
                     thumbnailExists = true
                     thumbnailCaptureScheduled = false
-                    Log.d("ModelViewerActivity", "Thumbnail saved OK: $thumbFileName  viewerAlive=${newModelViewer != null}  surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}")
+                    DevLog.d(VIEWER_TAG) { "Thumbnail saved OK: $thumbFileName  viewerAlive=${newModelViewer != null}  surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}" }
 
                     Toast.makeText(this@ModelViewerActivity, "Thumbnail saved!", Toast.LENGTH_SHORT).show()
                     binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
                     binding.btnCaptureThumbnail.isEnabled = true
-                    Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (captureMode)")
 
                     if (finishAfter) {
-                        Log.d("ModelViewerActivity", "saveThumbnail: calling finish() (finishAfter=true)")
+                        DevLog.d(VIEWER_TAG) { "saveThumbnail: calling finish() (finishAfter=true)" }
                         finish()
                     }
                 }
             } catch (e: Exception) {
-                Log.e("ModelViewerActivity", "Failed to save thumbnail", e)
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                DiagnosticsLogger.e("MODEL", "viewer: thumbnail save failed: ${e.javaClass.simpleName}", e)
                 thumbnailCaptureScheduled = false
             }
         }
@@ -1511,9 +1527,8 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         return try {
             ModelFileIo.readToDirectBuffer(file)
         } catch (t: Throwable) {
-            Log.e("ModelViewerActivity", "Could not read model file (${file.length()} bytes)", t)
             DiagnosticsLogger.e("MODEL", "viewer read failed sizeBytes=${file.length()}: " +
-                "${t.javaClass.simpleName} ${t.message}")
+                "${t.javaClass.simpleName} ${t.message}", t)
             null
         }
     }
@@ -1524,7 +1539,10 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             val buffer = ByteBuffer.allocateDirect(bytes.size)
             buffer.put(bytes); buffer.rewind()
             buffer
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            DiagnosticsLogger.w("MODEL", "viewer asset unreadable asset=$filePath — viewer continues without it", e)
+            null
+        }
     }
 
     private fun getModelFileNameWithoutExtension(): String? =
@@ -1538,13 +1556,13 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
     }
 
     private fun expandControls() {
-        Log.d("ModelViewerActivity", "expandControls: showing controls")
+        DevLog.d(VIEWER_TAG) { "expandControls: showing controls" }
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_out)
         binding.cardViewerControls.visibility = View.VISIBLE
     }
 
     private fun collapseControls() {
-        Log.d("ModelViewerActivity", "collapseControls: hiding controls")
+        DevLog.d(VIEWER_TAG) { "collapseControls: hiding controls" }
         binding.btnControlsExpand.setImageResource(R.drawable.ic_zoom_in)
         binding.cardViewerControls.visibility = View.INVISIBLE
     }
@@ -1564,7 +1582,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         autoRotate = !autoRotate
         controlsAdapter.setLabel(ModelViewerControl.AUTO_ROTATE, if (autoRotate) "Stop Rotation" else getString(R.string.auto_rotate))
         grabPixelAccum = 0.0
-        Log.d("ModelViewerActivity", "autoRotate set to $autoRotate")
+        DevLog.d(VIEWER_TAG) { "autoRotate set to $autoRotate" }
     }
 
     private fun clickedToggleIndirectLight() {
@@ -1580,7 +1598,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             viewer.scene.indirectLight?.intensity = IBL_DIM_INTENSITY
             controlsAdapter.setLabel(ModelViewerControl.LIGHTING, getString(R.string.lighting_off))
         }
-        Log.d("ModelViewerActivity", "dynamicLighting set to $indirectLightEnabled")
+        DevLog.d(VIEWER_TAG) { "dynamicLighting set to $indirectLightEnabled" }
     }
 
     private fun clickedToggleGizmo() {
@@ -1595,7 +1613,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             viewer.scene.remove(gizmoEntity)
             controlsAdapter.setLabel(ModelViewerControl.AXIS, getString(R.string.axis_off))
         }
-        Log.d("ModelViewerActivity", "gizmoVisible set to $gizmoVisible")
+        DevLog.d(VIEWER_TAG) { "gizmoVisible set to $gizmoVisible" }
     }
 
     private fun clickedToggleOffsetMarker() {
@@ -1610,7 +1628,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             viewer.scene.remove(offsetMarkerEntity)
             controlsAdapter.setLabel(ModelViewerControl.OFFSET, getString(R.string.offset_off))
         }
-        Log.d("ModelViewerActivity", "offsetMarkerVisible set to $offsetMarkerVisible")
+        DevLog.d(VIEWER_TAG) { "offsetMarkerVisible set to $offsetMarkerVisible" }
     }
 
     private fun clickedToggleBoundingBox() {
@@ -1625,7 +1643,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             viewer.scene.remove(boundingBoxEntity)
             controlsAdapter.setLabel(ModelViewerControl.BOUNDING_BOX, getString(R.string.bbox_off))
         }
-        Log.d("ModelViewerActivity", "boundingBoxVisible set to $boundingBoxVisible")
+        DevLog.d(VIEWER_TAG) { "boundingBoxVisible set to $boundingBoxVisible" }
     }
 
     private fun clickedToggleGridPlane() {
@@ -1640,7 +1658,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             viewer.scene.remove(gridEntity)
             controlsAdapter.setLabel(ModelViewerControl.GRID, getString(R.string.grid_off))
         }
-        Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
+        DevLog.d(VIEWER_TAG) { "gridVisible set to $gridVisible" }
     }
 
     private fun clickedToggleArPlacement() {
@@ -1654,14 +1672,14 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         binding.textArPlacement.visibility = if (arPlacementVisible) View.VISIBLE else View.GONE
         controlsAdapter.setLabel(ModelViewerControl.AR_PLACEMENT,
             getString(if (arPlacementVisible) R.string.ar_placement_on else R.string.ar_placement_off))
-        Log.d("ModelViewerActivity", "arPlacementVisible set to $arPlacementVisible")
+        DevLog.d(VIEWER_TAG) { "arPlacementVisible set to $arPlacementVisible" }
     }
 
     private fun clickedToggleOverlayOnTop() {
         val viewer = newModelViewer ?: return
 
         applyOverlayDepthClear(viewer, !overlayAlwaysOnTop)
-        Log.d("ModelViewerActivity", "overlayAlwaysOnTop set to $overlayAlwaysOnTop")
+        DevLog.d(VIEWER_TAG) { "overlayAlwaysOnTop set to $overlayAlwaysOnTop" }
     }
 
     private fun clickedModelDiagnosticsButton() {
@@ -1800,19 +1818,19 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
     override fun onResume() {
         super.onResume()
-        Log.d("ModelViewerActivity", "onResume: isFinishing=$isFinishing")
+        DevLog.d(VIEWER_TAG) { "onResume: isFinishing=$isFinishing" }
         choreographer = Choreographer.getInstance()
         choreographer?.postFrameCallback(frameCallback)
     }
 
     override fun onStop() {
         super.onStop()
-        Log.d("ModelViewerActivity", "onStop: isFinishing=$isFinishing viewerAlive=${newModelViewer != null} surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}")
+        DevLog.d(VIEWER_TAG) { "onStop: isFinishing=$isFinishing viewerAlive=${newModelViewer != null} surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}" }
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d("ModelViewerActivity", "onPause: isFinishing=$isFinishing viewerAlive=${newModelViewer != null} surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}")
+        DevLog.d(VIEWER_TAG) { "onPause: isFinishing=$isFinishing viewerAlive=${newModelViewer != null} surfaceValid=${if (::surfaceView.isInitialized) surfaceView.holder.surface.isValid else false}" }
         choreographer?.removeFrameCallback(frameCallback)
         choreographer = null
 
@@ -1821,7 +1839,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d("ModelViewerActivity", "onDestroy: isFinishing=$isFinishing viewerAlive=${newModelViewer != null}")
+        DevLog.d(VIEWER_TAG) { "onDestroy: isFinishing=$isFinishing viewerAlive=${newModelViewer != null}" }
 
         choreographer?.removeFrameCallback(frameCallback)
         choreographer = null
@@ -1838,12 +1856,12 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         newModelViewer = null   // null first — stops any further rendering use
 
         if (viewer == null) {
-            Log.d("ModelViewerActivity", "onDestroy: viewer was null, nothing to destroy")
+            DevLog.d(VIEWER_TAG) { "onDestroy: viewer was null, nothing to destroy" }
             return
         }
 
         val surfaceValid = ::surfaceView.isInitialized && surfaceView.holder.surface.isValid
-        Log.d("ModelViewerActivity", "onDestroy: surfaceValid=$surfaceValid")
+        DevLog.d(VIEWER_TAG) { "onDestroy: surfaceValid=$surfaceValid" }
 
         // Destroy model assets immediately — safe while engine is still alive.
         try {
@@ -1910,9 +1928,9 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             gridIndexBuffer = null
 
             viewer.destroyModel()
-            Log.d("ModelViewerActivity", "onDestroy: destroyModel OK")
+            DevLog.d(VIEWER_TAG) { "onDestroy: destroyModel OK" }
         } catch (t: Throwable) {
-            Log.w("ModelViewerActivity", "onDestroy: destroyModel threw", t)
+            DiagnosticsLogger.w("MODEL", "viewer teardown: destroyModel threw", t)
         }
 
         // WHY DEFERRED:
@@ -1929,14 +1947,13 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 viewer.engine.flushAndWait()   // drain any remaining GPU commands
-                Log.d("ModelViewerActivity", "deferred: flushAndWait OK")
                 viewer.engine.destroy()
-                Log.d("ModelViewerActivity", "deferred: engine.destroy OK")
+                DevLog.d(VIEWER_TAG) { "deferred: flushAndWait + engine.destroy OK" }
             } catch (t: Throwable) {
-                Log.w("ModelViewerActivity", "deferred: engine destroy threw", t)
+                DiagnosticsLogger.w("MODEL", "viewer teardown: Filament engine destroy threw", t)
             }
         }, 250)
 
-        Log.d("ModelViewerActivity", "onDestroy: returning — engine.destroy() deferred 250ms")
+        DevLog.d(VIEWER_TAG) { "onDestroy: returning — engine.destroy() deferred 250ms" }
     }
 }

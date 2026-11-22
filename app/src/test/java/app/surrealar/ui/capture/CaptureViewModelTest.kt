@@ -281,6 +281,21 @@ class CaptureViewModelTest {
     }
 
     @Test
+    fun save_antennaOffsetUnreadable_isBlockedWithError() = runBlocking {
+        val repoSettings = settings(source = LocationSourceType.EXTERNAL).also {
+            Mockito.`when`(it.gnssReceiverSettings).thenReturn(kotlinx.coroutines.flow.flow { throw java.io.IOException("datastore") })
+        }
+        val vm = vm(repoSettings)
+        completeCapture(vm, alt = 100.0)
+        vm.save("Pt", null, 0, "ic_pin")
+
+        assertTrue("no point may be saved with a made-up 0 m antenna height", repo.store.isEmpty())
+        assertEquals(CaptureViewModel.ANTENNA_OFFSET_ERROR, vm.saveError.value)
+        vm.clearSaveError()
+        assertNull(vm.saveError.value)
+    }
+
+    @Test
     fun save_simulator_appliesNoAntennaHeight() = runBlocking {
         val vm = vm(settings(source = LocationSourceType.SIMULATOR))
         completeCapture(vm, alt = 100.0)

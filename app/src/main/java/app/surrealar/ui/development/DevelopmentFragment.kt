@@ -108,7 +108,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 else -> null
             }
         } catch (e: Exception) {
-            android.util.Log.e("DevelopmentFragment", "buildCategoryContent failed for id=${category.id}", e)
+            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.APP, "Developer page: building category failed id=${category.id}", e)
             null
         }
 
@@ -381,13 +381,19 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 setOnClickListener { btn ->
                     btn.isEnabled = false
                     categoryScope.launch {
-                        val report = runCatching { dataHealthChecker.check() }.getOrNull()
+                        val report = runCatching { dataHealthChecker.check() }
+                            .onFailure {
+                                if (it is kotlinx.coroutines.CancellationException) throw it
+                                app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.DATA, "Data health check failed", it)
+                            }
+                            .getOrNull()
                         btn.isEnabled = true
                         if (report == null) {
                             Snackbar.make(view, "Health check failed (see logcat)", Snackbar.LENGTH_SHORT).show()
                             return@launch
                         }
-                        android.util.Log.i("DataHealth", report.format())
+                        // logcat only: the report can name records, so it stays out of the diagnostics file.
+                        app.surrealar.util.DevLog.d("DataHealth") { report.format() }
                         MaterialAlertDialogBuilder(ctx)
                             .setTitle("Data Health · ${report.errorCount} errors, ${report.warningCount} warnings")
                             .setMessage(report.format())

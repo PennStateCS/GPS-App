@@ -117,7 +117,10 @@ object GnssModule {
         // through SettingsFragment's validated reconnect flow (connectViaTcpFlow), which confirms
         // the receiver is present before calling setActiveProvider(EXTERNAL_TCP).
         val persistedSource = runBlocking {
-            try { settingsRepository.locationSource.first() } catch (_: Exception) { LocationSourceType.INTERNAL }
+            try { settingsRepository.locationSource.first() } catch (e: Exception) {
+                DiagnosticsLogger.w("GNSS", "Startup: could not read the persisted source; assuming INTERNAL", e)
+                LocationSourceType.INTERNAL
+            }
         }
         val startupProvider = ProviderChoice.INTERNAL
         DiagnosticsLogger.i(

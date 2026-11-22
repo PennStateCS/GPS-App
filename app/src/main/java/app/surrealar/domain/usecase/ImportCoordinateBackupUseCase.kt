@@ -49,7 +49,7 @@ class ImportCoordinateBackupUseCase @Inject constructor(
         } else {
             val valid = mutableListOf<Coordinate>()
             val bad = mutableListOf<String>()
-            parseLegacyJsonArray(raw).forEach { c ->
+            parseLegacyJsonArray(raw, bad).forEach { c ->
                 if (validate(c).isValid) valid += c else bad += "'${c.name}' (${c.id})"
             }
             parsed = valid
@@ -67,8 +67,11 @@ class ImportCoordinateBackupUseCase @Inject constructor(
         plan
     }
 
-    /** Parses a legacy "basic" JSON array (id/name/lat/lon/alt/timestamp/icon/color). Malformed rows are skipped. */
-    private fun parseLegacyJsonArray(raw: String): List<Coordinate> {
+    /**
+     * Parses a legacy "basic" JSON array (id/name/lat/lon/alt/timestamp/icon/color). Malformed rows are
+     * skipped and added to [skipped] so they count in the import summary.
+     */
+    private fun parseLegacyJsonArray(raw: String, skipped: MutableList<String>): List<Coordinate> {
         val arr = JSONArray(raw)
         val list = mutableListOf<Coordinate>()
         val now = System.currentTimeMillis()
@@ -91,7 +94,8 @@ class ImportCoordinateBackupUseCase @Inject constructor(
                 val color = obj.optInt("color", 0xFF64B5F6.toInt())
                 list.add(Coordinate(id, name, lat, lon, alt, ts, icon, color))
             } catch (_: Exception) {
-                // Skip malformed array entries, matching the previous import behavior.
+                // Expected for malformed entries: skip the row (previous behavior) but count it.
+                skipped += "row ${i + 1} (malformed)"
             }
         }
         return list

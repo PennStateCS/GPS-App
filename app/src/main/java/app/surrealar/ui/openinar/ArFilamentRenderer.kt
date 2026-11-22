@@ -3,9 +3,10 @@ package app.surrealar.ui.openinar
 import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import android.os.SystemClock
 import android.view.TextureView
 import app.surrealar.util.ArSessionDiagnostics
+import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import com.google.android.filament.*
 import com.google.android.filament.gltfio.AssetLoader
@@ -197,6 +198,21 @@ class ArFilamentRenderer {
     /** Whether isReadyToRender was false on the last renderFrame call — avoids log spam. */
     private var lastReadyToRender = true
 
+    // Logging-only state (no effect on loading or rendering).
+    /** "renderer not initialized" is logged once, not per preload key. */
+    private var loggedNotInitialized = false
+    /** Test-grid preload batch, summarised in one line when it settles. Guarded by [testBatchLock]. */
+    private val testBatchLock = Any()
+    private var testPreloadPending = 0
+    private var testPreloadOk = 0
+    private var testPreloadFailed = 0
+    /** Key + placement + scale combos whose MODEL_* lines were logged, so hide/unhide re-adds don't re-log. */
+    private val placementLogged = HashSet<String>()
+    /** Preload start time per real-model key until it first reaches the scene or fails (stuck-loading warning). */
+    private val loadStartMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    /** Keys already reported as stuck loading. */
+    private val stuckLogged = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     // -------------------------------------------------------------------------
     // Debug / diagnostics
 
@@ -278,23 +294,47 @@ class ArFilamentRenderer {
                     // pixels — without this flag the clear alpha is ignored and the
                     // surface appears as solid black over the camera feed.
                     swapChain = engine.createSwapChain(surface, SwapChainFlags.CONFIG_TRANSPARENT)
-                    Log.d(TAG, "SwapChain created via UiHelper (transparent)")
+                    DevLog.d(TAG) { "SwapChain created via UiHelper (transparent)" }
                 }
                 override fun onDetachedFromSurface() {
                     swapChain?.let { engine.destroySwapChain(it) }
                     swapChain = null
-                    Log.d(TAG, "SwapChain destroyed (surface detached)")
+                    DevLog.d(TAG) { "SwapChain destroyed (surface detached)" }
                 }
                 override fun onResized(width: Int, height: Int) {
                     view.viewport = Viewport(0, 0, width, height)
-                    Log.d(TAG, "Viewport resized: ${width}×${height}")
+                    DevLog.d(TAG) { "Viewport resized: ${width}×${height}" }
                 }
             }
             h.attachTo(textureView)
         }
 
         initialized = true
-        Log.d(TAG, "Initialised")
+        DevLog.d(TAG) { "Initialised" }
+    }
+
+    private fun isTestKey(key: String) = key.startsWith(TEST_GRID_KEY_PREFIX)
+
+    /**
+     * Logging only: a preload for [key] finished ([ok]) or failed. Real models leave the stuck-loading
+     * watch on failure; test-grid keys are counted and one summary line is written when the batch settles.
+     */
+    private fun settlePreload(key: String, ok: Boolean) {
+        if (!isTestKey(key)) {
+            if (!ok) loadStartMs.remove(key)
+            return
+        }
+        var summary: String? = null
+        synchronized(testBatchLock) {
+            if (ok) testPreloadOk++ else testPreloadFailed++
+            testPreloadPending = (testPreloadPending - 1).coerceAtLeast(0)
+            if (testPreloadPending == 0) {
+                summary = "test grid preload done ok=$testPreloadOk failed=$testPreloadFailed"
+                testPreloadOk = 0
+                testPreloadFailed = 0
+            }
+        }
+        summary?.let { DiagnosticsLogger.i(DIAG, it) }
     }
 
     // -------------------------------------------------------------------------
@@ -306,20 +346,32 @@ class ArFilamentRenderer {
      */
     fun preload(key: String, filePath: String, scope: CoroutineScope, placement: ModelPlacement = ModelPlacement()) {
         if (!initialized) {
-            DiagnosticsLogger.w(DIAG, "preload($key) skipped — renderer not initialized")
+            if (!loggedNotInitialized) {
+                loggedNotInitialized = true
+                DiagnosticsLogger.w(DIAG, "preload skipped — renderer not initialized (first key=$key; further keys not logged)")
+            }
             return
         }
         if (anchorAssets.containsKey(key)) {
-            Log.d(DIAG, "preload($key) skipped — already in anchorAssets (state=${modelLoadState(key)})")
+            DevLog.d(TAG) { "preload($key) skipped — already in anchorAssets (state=${modelLoadState(key)})" }
             return
         }
         if (!loadingKeys.add(key)) {
-            Log.d(DIAG, "preload($key) skipped — already in loadingKeys")
+            DevLog.d(TAG) { "preload($key) skipped — already in loadingKeys" }
             return
         }
-        val srcFile = File(filePath)
-        DiagnosticsLogger.i(DIAG, "preload start key=$key path=\"$filePath\" " +
-            "exists=${srcFile.exists()} sizeBytes=${if (srcFile.exists()) srcFile.length() else -1L}")
+        val testKey = isTestKey(key)
+        val fileName = File(filePath).name
+        if (testKey) {
+            synchronized(testBatchLock) { testPreloadPending++ }
+            // Per test pin: logcat only (the batch summary goes to the file).
+            app.surrealar.util.DevLog.d(TAG) { "preload start key=$key" }
+        } else {
+            // No file stat here (main thread); OpenInARFragment's "preload dispatch" line has the file facts.
+            loadStartMs[key] = SystemClock.elapsedRealtime()
+            stuckLogged.remove(key)
+            DiagnosticsLogger.i(DIAG, "preload start key=$key file=$fileName")
+        }
         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.LOADING)
         scope.launch {
             try {
@@ -338,21 +390,25 @@ class ArFilamentRenderer {
                             }
                         }
                     }
-                    Log.d(DIAG, "preload($key) IO done — ${bytes.size}B read")
+                    DevLog.d(TAG) { "preload($key) IO done — ${bytes.size}B read" }
                     withContext(Dispatchers.Main) {
                         if (!initialized) {
                             // Lifecycle cancellation: the user left AR before the GLB finished loading.
-                            DiagnosticsLogger.w(DIAG, "preload aborted key=$key reason=\"renderer destroyed while loading\"")
+                            if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload aborted key=$key reason=\"renderer destroyed while loading\"" }
+                            else DiagnosticsLogger.w(DIAG, "preload aborted key=$key reason=\"renderer destroyed while loading\"")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
+                            settlePreload(key, ok = false)
                             return@withContext
                         }
                         val buffer = ByteBuffer.wrap(bytes)
                         // createAsset parses the GLB/GLTF; null means parse / asset creation failed.
                         val asset = assetLoader.createAsset(buffer)
                         if (asset == null) {
-                            DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"createAsset returned null (GLB parse/asset creation failed)\" path=\"$filePath\"")
+                            DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"createAsset returned null (GLB parse/asset creation failed)\" " +
+                                "file=$fileName ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
+                            settlePreload(key, ok = false)
                             return@withContext
                         }
                         loaderFor(key).asyncBeginLoad(asset)
@@ -365,14 +421,23 @@ class ArFilamentRenderer {
                         // The cache still de-dups concurrent reads of a shared file; a later re-preload of
                         // the same path simply re-reads it from disk.
                         fileReadMutex.withLock { fileBytesCache.remove(filePath) }
-                        DiagnosticsLogger.i(DIAG, "preload success key=$key entities=${asset.entities.size}")
+                        if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload success key=$key entities=${asset.entities.size}" }
+                        else DiagnosticsLogger.i(DIAG, "preload success key=$key entities=${asset.entities.size}")
                         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
+                        settlePreload(key, ok = true)
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Scope cancelled (screen left): not a model failure. Same cleanup, no error line.
+                loadingKeys.remove(key)
+                ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
+                settlePreload(key, ok = false)
+                throw e
             } catch (e: Exception) {
                 loadingKeys.remove(key)
-                DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"exception\" path=\"$filePath\"", e)
+                DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"exception\" file=$fileName", e)
                 ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
+                settlePreload(key, ok = false)
             }
         }
     }
@@ -414,17 +479,20 @@ class ArFilamentRenderer {
         val allLoaded = progress >= 1.0f
         val allTestLoaded = testProgress >= 1.0f
 
-        if (logThisFrame) {
+        // Developer trace: one aggregated logcat line per ~second (debug builds only), built only then.
+        val trace: StringBuilder? = if (logThisFrame && DevLog.enabled) StringBuilder() else null
+        if (trace != null) {
             val states = anchorAssets.entries.joinToString { (k, v) ->
                 "$k→${if (v.addedToScene) "IN_SCENE" else "LOADING"}"
             }
-            Log.d(DIAG, "tick#$tickCount  poses=${poses.size}  cached=${anchorAssets.size}" +
+            trace.append("tick#$tickCount  poses=${poses.size}  cached=${anchorAssets.size}" +
                     "  loading=${loadingKeys.size}  progress=${"%.2f".format(progress)}" +
                     "  testProgress=${"%.2f".format(testProgress)}" +
                     "  allLoaded=$allLoaded  swapChain=${swapChain != null}" +
                     "  ready=${uiHelper.isReadyToRender}" +
                     if (anchorAssets.isNotEmpty()) "  assets=[$states]" else "  assets=[]")
         }
+        if (logThisFrame) checkStuckLoading(progress)
 
         // Remove stale test-grid assets when their anchors are gone (so "Clear Tests" actually
         // removes already-added entities). A key with no pose this frame but a live anchor is NOT
@@ -450,18 +518,25 @@ class ArFilamentRenderer {
                     scene.removeEntities(cached.asset.entities)
                 }
                 runCatching { assetLoader.destroyAsset(cached.asset) }
+                    .onFailure { DiagnosticsLogger.w(DIAG, "stale test asset destroy failed key=$key", it) }
                 loadingKeys.remove(key)
-                Log.d(TAG, "Stale test asset removed: $key")
             }
+            app.surrealar.util.DevLog.d(TAG) { "stale test assets removed n=${staleTestKeys.size}" }
             if (anyStillLoading) {
                 // Re-start uploads for non-stale assets whose loads were interrupted above.
                 // Only assets that never reached the scene: a model the user merely HID
                 // (addedToScene=false) already finished uploading, and re-submitting it to
                 // asyncBeginLoad would re-upload its resources.
+                var restartFailed = 0
+                var firstRestartError: Throwable? = null
                 for ((key, cached) in anchorAssets) {
                     if (key.startsWith(TEST_GRID_KEY_PREFIX) && !cached.everAddedToScene) {
                         runCatching { testResourceLoader.asyncBeginLoad(cached.asset) }
+                            .onFailure { restartFailed++; if (firstRestartError == null) firstRestartError = it }
                     }
+                }
+                if (restartFailed > 0) {
+                    DiagnosticsLogger.w(DIAG, "test asset load restart failed n=$restartFailed", firstRestartError)
                 }
             }
         }
@@ -475,7 +550,7 @@ class ArFilamentRenderer {
             if (cached.addedToScene && key !in visibleKeys) {
                 runCatching { scene.removeEntities(cached.asset.entities) }
                 cached.addedToScene = false
-                if (logThisFrame) Log.d(DIAG, "  model $key → HIDDEN (removed from scene, kept cached)")
+                DevLog.d(TAG) { "model $key → HIDDEN (removed from scene, kept cached)" }
             }
         }
 
@@ -489,7 +564,7 @@ class ArFilamentRenderer {
         for (pose in poses) {
             val cached = anchorAssets[pose.key]
             if (cached == null) {
-                if (logThisFrame) Log.d(DIAG, "  pose ${pose.key} → NOT in anchorAssets (preload pending or failed)")
+                trace?.append("  | ${pose.key} not cached")
                 continue
             }
             if (!cached.addedToScene) {
@@ -497,13 +572,13 @@ class ArFilamentRenderer {
                 val readyByProgress = if (pose.key.startsWith(TEST_GRID_KEY_PREFIX)) allTestLoaded else allLoaded
                 val readyByTicks    = cached.ticksSinceLoad >= MIN_TICKS_BEFORE_SCENE_ADD
                 if (!readyByProgress && !readyByTicks) {
-                    if (logThisFrame) Log.d(DIAG, "  pose ${pose.key} → LOADING  progress=${"%.2f".format(progress)}" +
-                            "  ticks=${cached.ticksSinceLoad}/$MIN_TICKS_BEFORE_SCENE_ADD")
+                    trace?.append("  | ${pose.key} LOADING ticks=${cached.ticksSinceLoad}/$MIN_TICKS_BEFORE_SCENE_ADD")
                     continue
                 }
                 val reason = if (readyByProgress) "progress=1.0" else "ticks=${cached.ticksSinceLoad}"
                 cached.addedToScene = true
                 cached.everAddedToScene = true
+                loadStartMs.remove(pose.key)   // logging only: no longer a stuck-loading candidate
                 scene.addEntities(cached.asset.entities)
                 val bb = cached.asset.boundingBox
                 val bbc = bb.center
@@ -527,19 +602,21 @@ class ArFilamentRenderer {
                     val bounds = ModelBounds.fromCenterHalfExtent(bbc[0], bbc[1], bbc[2], bbh[0], bbh[1], bbh[2])
                     val placement = cached.placement
                     val origin = placement.placementOrigin
+                    // MODEL_* lines once per model + placement + scale: re-adds after hide/unhide don't re-log.
+                    val firstPlacementLog = placementLogged.add("${pose.key}#${placement.hashCode()}#${pose.coordScale}")
 
-                    DiagnosticsLogger.i(DIAG, "MODEL_BOUNDS model=$fileName coordId=${pose.key} " +
+                    if (firstPlacementLog) DiagnosticsLogger.d(DIAG) { "MODEL_BOUNDS model=$fileName coordId=${pose.key} " +
                         "boundsMin=(${f(bounds.min.x)},${f(bounds.min.y)},${f(bounds.min.z)}) " +
                         "boundsMax=(${f(bounds.max.x)},${f(bounds.max.y)},${f(bounds.max.z)}) " +
                         "size=(${f(bounds.size.x)},${f(bounds.size.y)},${f(bounds.size.z)}) " +
                         "center=(${f(bounds.center.x)},${f(bounds.center.y)},${f(bounds.center.z)}) " +
                         "bottomCenter=(${f(bounds.bottomCenter.x)},${f(bounds.bottomCenter.y)},${f(bounds.bottomCenter.z)}) " +
-                        "originToBottomCenter=${f(bounds.originToBottomCenterM)}m")
+                        "originToBottomCenter=${f(bounds.originToBottomCenterM)}m" }
                     // Warn only when the geometry is far from the origin AND the (default) ORIGIN/CENTER
                     // presets would leave it misplaced — steer the user to Bottom Center / Custom Offset.
                     if (bounds.originToBottomCenterM > ModelBounds.FAR_FROM_ORIGIN_M &&
                         (origin == ModelPlacementOrigin.ORIGIN || origin == ModelPlacementOrigin.CUSTOM)) {
-                        DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=$fileName " +
+                        if (firstPlacementLog) DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=$fileName " +
                             "originToBottomCenter=${f(bounds.originToBottomCenterM)}m; visible geometry is far " +
                             "from origin. Use Bottom Center or Custom Offset.")
                         onModelPlacementWarning?.invoke(pose.key, fileName, bounds.originToBottomCenterM)
@@ -596,31 +673,36 @@ class ArFilamentRenderer {
                         placement.scale != 1f -> "per_model_scale=${f(placement.scale)}"
                         else -> "trueScale"
                     }
-                    val scaleMsg = "MODEL_SCALE model=$fileName coordId=${pose.key} fileSizeM=${f(maxHalfExtent * 2f)} " +
-                        "worldSizeM=${f(worldSizeM)} effScale=${f(effScale)} ns=${"%.6f".format(ns)} " +
-                        "perModel=${f(placement.scale)} global=${f(pose.coordScale)} state=$scaleCause"
-                    if (scaleCause == "trueScale") DiagnosticsLogger.i(DIAG, scaleMsg) else DiagnosticsLogger.w(DIAG, scaleMsg)
+                    if (firstPlacementLog) {
+                        val scaleMsg = "MODEL_SCALE model=$fileName coordId=${pose.key} fileSizeM=${f(maxHalfExtent * 2f)} " +
+                            "worldSizeM=${f(worldSizeM)} effScale=${f(effScale)} ns=${"%.6f".format(ns)} " +
+                            "perModel=${f(placement.scale)} global=${f(pose.coordScale)} state=$scaleCause"
+                        if (scaleCause == "trueScale") DiagnosticsLogger.i(DIAG, scaleMsg) else DiagnosticsLogger.w(DIAG, scaleMsg)
 
-                    DiagnosticsLogger.i(DIAG, "MODEL_PLACEMENT model=$fileName coordId=${pose.key} origin=$origin " +
-                        "anchorPoint=(${f(ap.x)},${f(ap.y)},${f(ap.z)}) " +
-                        "computedOffset=(${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}) " +
-                        "customOffset=(${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}) " +
-                        "nudge=(${f(nudgeX)},${f(nudgeY)},${f(nudgeZ)}) scale=${f(effScale)} " +
-                        "yawCCW=${f(placement.yawDeg)} pitch=${f(placement.pitchDeg)} roll=${f(placement.rollDeg)} " +
-                        "anchorType=geospatial transformSource=anchor-driven")
+                        DiagnosticsLogger.d(DIAG) { "MODEL_PLACEMENT model=$fileName coordId=${pose.key} origin=$origin " +
+                            "anchorPoint=(${f(ap.x)},${f(ap.y)},${f(ap.z)}) " +
+                            "computedOffset=(${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}) " +
+                            "customOffset=(${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}) " +
+                            "nudge=(${f(nudgeX)},${f(nudgeY)},${f(nudgeZ)}) scale=${f(effScale)} " +
+                            "yawCCW=${f(placement.yawDeg)} pitch=${f(placement.pitchDeg)} roll=${f(placement.rollDeg)} " +
+                            "anchorType=geospatial transformSource=anchor-driven" }
+                    }
                 }
-                Log.d(DIAG, "  pose ${pose.key} → ADDED TO SCENE ($reason)" +
+                DevLog.d(TAG) { "pose ${pose.key} → ADDED TO SCENE ($reason)" +
                     "  entities=${cached.asset.entities.size}" +
                     "  bbCenter=(%.2f,%.2f,%.2f)  halfExtent=(%.2f,%.2f,%.2f)" +
                     "  ns=%.6f  center=%b  northFacing=%b".format(
                         bbc[0], bbc[1], bbc[2], bbh[0], bbh[1], bbh[2],
-                        ns, needsCenter, !isTestKey))
+                        ns, needsCenter, !isTestKey) }
             }
             // Asset is in scene — update its world transform every frame.
             val tm = engine.transformManager
             val ti = tm.getInstance(cached.asset.root)
             if (ti == 0) {
-                Log.e(DIAG, "  pose ${pose.key} → root entity has NO transform component!")
+                // Per frame: logged once per key.
+                DiagnosticsLogger.logOnChange(DIAG, "ar.notransform.${pose.key}", true, level = 'E') {
+                    "model root entity has no transform component key=${pose.key} — model cannot be positioned"
+                }
                 continue
             }
             val cm = cached.correctionMatrix
@@ -631,6 +713,30 @@ class ArFilamentRenderer {
             } else {
                 tm.setTransform(ti, pose.worldMatrix)
             }
+        }
+        trace?.let { t -> DevLog.d(TAG) { t.toString() } }
+    }
+
+    /**
+     * Logging only (about once a second): warns once per real-model key that is still not in the scene
+     * [STUCK_LOADING_MS] after its preload started. phase says where it is waiting.
+     */
+    private fun checkStuckLoading(progress: Float) {
+        if (loadStartMs.isEmpty()) return
+        val now = SystemClock.elapsedRealtime()
+        for ((key, since) in loadStartMs) {
+            val ageMs = now - since
+            if (ageMs < STUCK_LOADING_MS || key in stuckLogged) continue
+            stuckLogged.add(key)
+            val cached = anchorAssets[key]
+            val phase = when {
+                key in loadingKeys -> "reading_or_parsing"
+                cached == null -> "unknown"
+                cached.ticksSinceLoad == 0 -> "awaiting_pose"
+                else -> "uploading"
+            }
+            DiagnosticsLogger.w(DIAG, "model stuck loading key=$key after ${ageMs / 1000}s phase=$phase " +
+                "progress=${"%.2f".format(progress)} ticks=${cached?.ticksSinceLoad ?: 0}")
         }
     }
 
@@ -680,12 +786,14 @@ class ArFilamentRenderer {
             lastIblSh = state.ambientSh.copyOf()
             lastIblRebuildMs = now
         }
+        val source = if (state.fromEstimate) "arcore" else "fallback"
+        DiagnosticsLogger.logOnChange(DIAG, "ar.light.source", source) { "Light source=$source" }
         if (force || now - lastLightLogMs >= 30_000L) {
             lastLightLogMs = now
-            DiagnosticsLogger.i(DIAG, "LIGHT_ESTIMATE source=${if (state.fromEstimate) "arcore" else "fallback"} " +
+            DiagnosticsLogger.d(DIAG) { "LIGHT_ESTIMATE source=$source " +
                 "sunLux=${"%.0f".format(state.sunLux)} rawSun=${"%.2f".format(state.rawSunIntensity)} sunRgb=${"%.2f,%.2f,%.2f".format(state.sunColor[0], state.sunColor[1], state.sunColor[2])} " +
                 "sunDir=${"%.2f,%.2f,%.2f".format(state.sunDirection[0], state.sunDirection[1], state.sunDirection[2])} " +
-                "ambientDc=${"%.2f,%.2f,%.2f".format(state.ambientSh[0], state.ambientSh[1], state.ambientSh[2])}")
+                "ambientDc=${"%.2f,%.2f,%.2f".format(state.ambientSh[0], state.ambientSh[1], state.ambientSh[2])}" }
         }
     }
 
@@ -713,12 +821,14 @@ class ArFilamentRenderer {
 
         val ready = uiHelper.isReadyToRender
         if (ready != lastReadyToRender) {
-            Log.d(DIAG, "renderFrame: isReadyToRender changed → $ready  swapChain=${swapChain != null}")
+            DevLog.d(TAG) { "renderFrame: isReadyToRender changed → $ready  swapChain=${swapChain != null}" }
             lastReadyToRender = ready
         }
         if (!ready) return
         val sc = swapChain ?: run {
-            Log.w(DIAG, "renderFrame: swapChain is null despite isReadyToRender=true")
+            DiagnosticsLogger.every(DIAG, "ar.render.noswapchain", 10_000L, 'W') {
+                "renderFrame: swapChain is null despite isReadyToRender=true — models not drawn"
+            }
             return
         }
 
@@ -727,7 +837,9 @@ class ArFilamentRenderer {
         // but a singular matrix would produce NaN/Inf values that trigger PreconditionPanic).
         val cameraWorld = FloatArray(16)
         if (!Matrix.invertM(cameraWorld, 0, viewMatrix, 0)) {
-            Log.w(TAG, "renderFrame: view matrix is singular — skipping frame")
+            DiagnosticsLogger.every(DIAG, "ar.render.singular", 10_000L, 'W') {
+                "renderFrame: view matrix is singular — skipping frame"
+            }
             return
         }
         camera.setModelMatrix(cameraWorld)
@@ -772,6 +884,12 @@ class ArFilamentRenderer {
         testResourceLoader.asyncCancelLoad()
         loadingKeys.clear()
         fileBytesCache.clear()
+        loadStartMs.clear()
+        stuckLogged.clear()
+        placementLogged.clear()
+        DiagnosticsLogger.resetThrottles("ar.notransform.")
+        DiagnosticsLogger.resetThrottles("ar.light.")
+        synchronized(testBatchLock) { testPreloadPending = 0; testPreloadOk = 0; testPreloadFailed = 0 }
         anchorAssets.values.forEach { cached ->
             runCatching { scene.removeEntities(cached.asset.entities) }
             runCatching { assetLoader.destroyAsset(cached.asset) }
@@ -798,9 +916,9 @@ class ArFilamentRenderer {
         // Explicitly destroy gltfio utility objects BEFORE the engine.
         // Their JVM finalizers call back into native; if the engine is already
         // gone when finalizers run, Filament throws PreconditionPanic.
-        runCatching { resourceLoader.destroy() }.onFailure { Log.w(TAG, "resourceLoader.destroy() threw", it) }
-        runCatching { testResourceLoader.destroy() }.onFailure { Log.w(TAG, "testResourceLoader.destroy() threw", it) }
-        runCatching { assetLoader.destroy()    }.onFailure { Log.w(TAG, "assetLoader.destroy() threw", it) }
+        runCatching { resourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "resourceLoader.destroy() threw", it) }
+        runCatching { testResourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "testResourceLoader.destroy() threw", it) }
+        runCatching { assetLoader.destroy()    }.onFailure { DiagnosticsLogger.w(DIAG, "assetLoader.destroy() threw", it) }
 
         // Detach UiHelper — triggers onDetachedFromSurface() → destroySwapChain().
         runCatching { uiHelper.detach() }
@@ -819,13 +937,13 @@ class ArFilamentRenderer {
             try {
                 eng.flushAndWait()
                 eng.destroy()
-                Log.d(TAG, "Engine destroyed")
+                DevLog.d(TAG) { "Engine destroyed" }
             } catch (t: Throwable) {
-                Log.w(TAG, "Engine destroy threw", t)
+                DiagnosticsLogger.w(DIAG, "Filament engine destroy threw", t)
             }
         }, 50)
 
-        Log.d(TAG, "Destroyed")
+        DevLog.d(TAG) { "Destroyed" }
     }
 
     // -------------------------------------------------------------------------
@@ -837,6 +955,8 @@ class ArFilamentRenderer {
         private const val NEAR_PLANE = 0.1
         private const val FAR_PLANE  = 2000.0
         private const val TEST_GRID_KEY_PREFIX = "test_grid_"
+        /** A real model still not in the scene this long after preload start is reported once. */
+        private const val STUCK_LOADING_MS = 30_000L
         /**
          * Minimum number of [tickAndApplyLoads] calls that must occur after `asyncBeginLoad`
          * before an asset is added to the scene via the tick-based fallback path.

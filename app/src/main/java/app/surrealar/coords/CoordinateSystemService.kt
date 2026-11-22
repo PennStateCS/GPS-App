@@ -11,6 +11,7 @@ import io.github.pennstatecs.geokit.gnss.model.Provider
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.ReceiverDatum
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -50,10 +51,10 @@ class CoordinateSystemService @Inject constructor(
     init {
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val t0 = System.nanoTime()
-            DiagnosticsLogger.i("DATA", "GEOID18 grid load start")
+            DiagnosticsLogger.d(DiagTags.DATA) { "GEOID18 grid load start" }
             geoid = runCatching {
                 context.assets.open(Geoid18Grid.ASSET_PATH).use { Geoid18Grid(it.readBytes()) }
-            }.onSuccess { DiagnosticsLogger.i("DATA", "GEOID18 grid loaded in ${(System.nanoTime() - t0) / 1_000_000}ms") }.onFailure { DiagnosticsLogger.e("DATA", "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
+            }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded in ${(System.nanoTime() - t0) / 1_000_000}ms") }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
                 .getOrNull()
         }
     }
@@ -76,7 +77,7 @@ class CoordinateSystemService @Inject constructor(
                 ellipsoidalHeightM = fix.altEllipsoidalM, receiverMslM = fix.altMslM,
                 isNad83 = false,
                 epochYear = Itrf2014ToNad83.decimalYear(fix.timeUtc.toEpochMilli()),
-            ), s,
+            ), s, live = true,
         )
 
     /**
@@ -96,10 +97,13 @@ class CoordinateSystemService @Inject constructor(
 
     // ── Formatting in the current settings (one place, so every screen agrees) ──────────────────
 
-    /** Converts and reports failures / zone changes to the COORD log (throttled, no positions). */
-    private fun track(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition =
+    /**
+     * Converts and reports failures / zone changes to the COORD log (throttled, no positions). Only the
+     * [live] fix feeds the zone/height state; stored-point conversions report failures only.
+     */
+    private fun track(src: SourcePosition, s: CoordinateSystemSettings, live: Boolean = false): ConvertedPosition =
         try {
-            converter.convert(src, s).also { CoordDiagnostics.onResult(it) }
+            converter.convert(src, s).also { CoordDiagnostics.onResult(it, live, geoidLoaded) }
         } catch (e: Exception) {
             CoordDiagnostics.onFailure(s, e); throw e
         }

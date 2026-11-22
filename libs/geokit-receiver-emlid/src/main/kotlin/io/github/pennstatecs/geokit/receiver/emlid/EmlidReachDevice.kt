@@ -96,24 +96,29 @@ public class EmlidReachDevice(
     private suspend fun pollBattery(ip: String) {
         val read = api.batteryReader(ip)
         var failures = 0
+        var lastError: Exception? = null
         while (currentCoroutineContext().isActive) {
             val battery = try {
                 read()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                lastError = e
                 null
             }
             // A blocking HTTP read can finish after stop() cancelled us — don't republish.
             if (!currentCoroutineContext().isActive) return
 
             if (battery != null) {
+                if (failures >= 3) GnssLog.diagnostic("RECEIVER", "Battery readable again after $failures failed reads")
                 failures = 0
+                lastError = null
                 _battery.value = EmlidMapping.battery(battery)
                 delay(15_000)
             } else {
                 failures++
-                if (failures == 3) GnssLog.w(TAG, "Battery read failed 3 times for $ip — hiding battery")
+                // Once per outage, with the last exception (if the read threw rather than returned nothing).
+                if (failures == 3) GnssLog.diagnosticWarn("RECEIVER", "Battery read failed 3 times — hiding battery", lastError)
                 if (failures >= 3) _battery.value = null
                 delay(
                     when (failures) {

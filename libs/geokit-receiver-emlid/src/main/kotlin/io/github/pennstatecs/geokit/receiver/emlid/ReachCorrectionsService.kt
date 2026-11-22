@@ -60,8 +60,15 @@ internal class ReachCorrectionsService(
     private var lastLoggedStreamKey: String? = null
 
     // Connect-error throttling: socket.io retries every 2-15 s for as long as the receiver is unreachable,
-    // so only the first error is logged, then one "still failing" line per [ERROR_LOG_INTERVAL_MS].
+    // so only the first error is logged, then one "still failing" line per [ERROR_LOG_INTERVAL_MS]. The
+    // count is reset only once the link really works (a broadcast arrived) or on an intentional
+    // disconnect — not on a bare socket "connect" or a stall restart, which flap while the receiver is
+    // half-reachable and used to make every error a "first" error.
     private var connectErrors = 0
+    // Link state last written to the log ("connecting", "connected", "disconnected"), so connect /
+    // disconnect lines are written on a change only; and whether a broadcast arrived since the connect.
+    private var loggedLink: String? = null
+    private var dataSinceConnect = false
     // Stall recovery: any socket traffic (broadcasts every few seconds, connect, connect_error) counts as
     // activity. A long-poll can hang with no error at all; after [STALL_RESTART_MS] of silence the socket
     // is replaced (seen on an RS2+: broadcasts stopped and never resumed until the app restarted).
@@ -79,7 +86,7 @@ internal class ReachCorrectionsService(
         }
         // Never leave an old socket reconnecting in the background (it would retry forever).
         closeSocket()
-        GnssLog.diagnostic("CORRECTIONS", "connect attempt host=$host")
+        if (changeLink("connecting")) GnssLog.diagnostic("CORRECTIONS", "connect attempt host=$host")
         try {
             val options = IO.Options().apply {
                 // Own Manager per socket: socket.io 1.x caches Managers by URL otherwise, and a closed
@@ -98,30 +105,37 @@ internal class ReachCorrectionsService(
 
             s.on(Socket.EVENT_CONNECT) {
                 lastActivityAtMs = nowMs()
-                val failed = synchronized(lock) { connectErrors.also { connectErrors = 0 } }
-                GnssLog.d(TAG, "socket.io connected to $host")
-                GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host" +
-                    if (failed > 0) " after $failed failed attempts" else "")
+                val failed = synchronized(lock) { dataSinceConnect = false; connectErrors }
+                if (changeLink("connected")) {
+                    GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host" +
+                        if (failed > 0) " after $failed failed attempts" else "")
+                } else {
+                    GnssLog.d(TAG) { "socket.io connected again to $host (not logged: link state unchanged)" }
+                }
             }
             s.on(Socket.EVENT_CONNECT_ERROR) { args -> onConnectError(args.firstOrNull()?.toString() ?: "unknown") }
             s.on("reconnect_failed") {
-                GnssLog.w(TAG, "socket.io gave up connecting to $host after repeated failures — corrections info unavailable")
                 GnssLog.diagnosticWarn("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
                 clearStatus()
             }
             s.on(Socket.EVENT_DISCONNECT) { args ->
                 val reason = args.firstOrNull()?.toString() ?: "unknown"
-                GnssLog.d(TAG, "socket.io disconnected: $reason")
-                GnssLog.diagnostic("CORRECTIONS", "socket disconnected host=$host reason=$reason")
+                // Logged only when the link had really worked (data arrived); a socket that connects and
+                // drops without ever delivering data is a flapping connect, covered by the error lines.
+                val wasUp = synchronized(lock) { dataSinceConnect }
+                if (wasUp && changeLink("disconnected")) {
+                    GnssLog.diagnostic("CORRECTIONS", "socket disconnected host=$host reason=$reason")
+                } else {
+                    GnssLog.d(TAG) { "socket.io disconnected: $reason" }
+                }
                 clearStatus()        // link down → status unknown until broadcasts resume
             }
             s.on("broadcast") { args -> onBroadcast(args) }
 
             synchronized(lock) { socket = s; lastActivityAtMs = nowMs() }
             s.connect()
-            GnssLog.d(TAG, "socket.io connecting to http://$host")
+            GnssLog.d(TAG) { "socket.io connecting to http://$host" }
         } catch (e: Exception) {
-            GnssLog.e(TAG, "Failed to create socket.io connection to $host: ${e.message}", e)
             GnssLog.diagnosticError("CORRECTIONS",
                 "failed to create socket host=$host: ${e.javaClass.simpleName} ${e.message}", e)
         }
@@ -145,10 +159,12 @@ internal class ReachCorrectionsService(
                 else -> null
             }
         }
-        if (line != null) {
-            GnssLog.w(TAG, line)
-            GnssLog.diagnosticWarn("CORRECTIONS", line)
-        }
+        if (line != null) GnssLog.diagnosticWarn("CORRECTIONS", line)
+    }
+
+    /** Records [state] as the logged link state; true when it changed (the caller then writes its line). */
+    private fun changeLink(state: String): Boolean = synchronized(lock) {
+        (loggedLink != state).also { loggedLink = state }
     }
 
     /** Detaches every listener and closes the current socket (its Manager closes with it). */
@@ -158,12 +174,24 @@ internal class ReachCorrectionsService(
         return true
     }
 
+    /** Intentional disconnect (device stopped): the next connect starts a fresh error count and log state. */
     fun disconnect() {
-        synchronized(lock) { connectErrors = 0 }
-        if (closeSocket()) {
-            GnssLog.d(TAG, "socket.io disconnected from $host")
-            GnssLog.diagnostic("CORRECTIONS", "disconnect requested host=$host")
+        if (closeSocket()) GnssLog.diagnostic("CORRECTIONS", "disconnect requested host=$host")
+        synchronized(lock) {
+            connectErrors = 0
+            loggedLink = null
+            dataSinceConnect = false
         }
+        resetCaches()
+    }
+
+    /** Closes the socket and clears the cached status without resetting the error count (stall restart). */
+    private fun closeForRestart() {
+        closeSocket()
+        resetCaches()
+    }
+
+    private fun resetCaches() {
         synchronized(lock) {
             cachedNav = null
             cachedChannel = null
@@ -201,7 +229,9 @@ internal class ReachCorrectionsService(
         }
         if (!stalled) return
         GnssLog.diagnosticWarn("CORRECTIONS", "socket silent for ${(now - lastActivityAtMs) / 1000}s host=$host — reconnecting")
-        disconnect()
+        // Not an intentional disconnect: keep the error count and logged link state, so a receiver that
+        // stays unreachable doesn't log a fresh "first error" / "connect attempt" every restart.
+        closeForRestart()
         connect()
     }
 
@@ -225,10 +255,15 @@ internal class ReachCorrectionsService(
             return
         }
         lastActivityAtMs = nowMs()
+        synchronized(lock) {
+            // Data arrived: the link really works, so a later failure is a new outage with a fresh count.
+            dataSinceConnect = true
+            connectErrors = 0
+        }
         val name = payload.optString("name", "")
         val data = payload.optJSONObject("payload") ?: run {
             // Broadcasts we don't consume (e.g. time_marks) may omit a payload object — expected.
-            GnssLog.d(TAG) { "broadcast '$name': no payload object (ignored)" }
+            GnssLog.every("corrections.nopayload.$name", "corrections", 60_000L) { "broadcast '$name': no payload object (ignored)" }
             return
         }
 
@@ -244,13 +279,14 @@ internal class ReachCorrectionsService(
     // ── Payload handlers ──────────────────────────────────────────────────────
 
     private fun handleNavigation(data: JSONObject) {
-        // Per-broadcast detail (raw JSON, base position) only in debug builds, at most every 15 s.
-        GnssLog.dEvery(TAG, "corrections.nav.raw") { "navigation broadcast: ${data.toString().take(300)}" }
+        // Per-broadcast detail (raw JSON, rover/base position) goes to the GNSS debug trace — the only
+        // place coordinates may appear ("GnssDebug [corrections] …", debug builds, at most every 15 s).
+        GnssLog.every("corrections.nav.raw", "corrections") { "navigation broadcast: ${data.toString().take(300)}" }
 
         val nav = parseNavigation(data)
         cachedNav = nav
 
-        GnssLog.dEvery(TAG, "corrections.nav.parsed") {
+        GnssLog.every("corrections.nav.parsed", "corrections") {
             "navigation parsed: aod=${nav.aod} sol=${nav.solution} baseline=${nav.baseline} " +
                 "satsBase=${nav.satsBase} baseLat=${nav.baseLat} baseLon=${nav.baseLon} baseH=${nav.baseH}"
         }
@@ -281,14 +317,14 @@ internal class ReachCorrectionsService(
     }
 
     private fun handleStreamStatus(data: JSONObject) {
-        GnssLog.dEvery(TAG, "corrections.stream.raw") { "stream_status broadcast: ${data.toString().take(300)}" }
+        GnssLog.every("corrections.stream.raw", "corrections") { "stream_status broadcast: ${data.toString().take(300)}" }
 
         val parsed = parseStreamStatus(data)
         if (parsed != null) {
             cachedIsReceiving = parsed.isReceiving
             cachedChannel     = parsed.channel
 
-            GnssLog.dEvery(TAG, "corrections.stream.parsed") {
+            GnssLog.every("corrections.stream.parsed", "corrections") {
                 "stream_status parsed: state=${parsed.state} connected=${parsed.isReceiving} channel=${parsed.channel}"
             }
 

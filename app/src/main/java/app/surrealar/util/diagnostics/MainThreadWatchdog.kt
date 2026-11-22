@@ -64,7 +64,7 @@ object MainThreadWatchdog {
                         else -> Unit
                     }
                 })
-        }.onFailure { DiagnosticsLogger.w(DiagTags.ERROR, "Watchdog: no process lifecycle, runs in background too: ${it.message}") }
+        }.onFailure { DiagnosticsLogger.w(DiagTags.ERROR, "Watchdog: no process lifecycle, runs in background too", it) }
         Thread({
             var detector = Detector()
             while (true) {
@@ -88,7 +88,8 @@ object MainThreadWatchdog {
                 } catch (_: InterruptedException) {
                     return@Thread
                 } catch (t: Throwable) {
-                    runCatching { DiagnosticsLogger.w(DiagTags.ERROR, "Watchdog error: ${t.message}") }
+                    // Loops every tick: a repeating error is logged at most once a minute.
+                    runCatching { DiagnosticsLogger.every(DiagTags.ERROR, "watchdog.error", 60_000L, 'W', t) { "Watchdog loop error" } }
                 }
             }
         }, "main-watchdog").apply { isDaemon = true; priority = Thread.MAX_PRIORITY }.start()

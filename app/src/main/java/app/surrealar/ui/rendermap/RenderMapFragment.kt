@@ -7,7 +7,6 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.RectF
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
@@ -67,6 +66,9 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import io.github.pennstatecs.geokit.projection.Utm
 import app.surrealar.util.diagnostics.MapRuntimeDiagnostics
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.pow
@@ -98,6 +100,14 @@ class RenderMapFragment : Fragment() {
         private const val LABEL_MAX_COUNT = 60
         private const val LABEL_MIN_ZOOM = 14f
         private const val LABEL_DISTANCE_THROTTLE_MS = 2000L
+
+        /**
+         * Logs a failed map step with its exception. Many steps run per fix, per frame or per marker,
+         * so each step writes at most one line a minute; a one-off failure is still logged in full.
+         */
+        private fun logFail(step: String, e: Throwable, level: Char = 'W') {
+            DiagnosticsLogger.every(DiagTags.MAP, "rendermap.$step", 60_000L, level, e) { "Map: $step failed" }
+        }
     }
 
     @Inject
@@ -402,7 +412,7 @@ class RenderMapFragment : Fragment() {
 
         mapView?.onCreate(savedInstanceState)
         mapView?.getMapAsync { map ->
-            Log.d(TAG, "onMapReady: map ready, mapType=$currentMapType")
+            DevLog.d(TAG) { "onMapReady: map ready, mapType=$currentMapType" }
             googleMap = map
             map.mapType = currentMapType
             MapThemeHelper.applyTheme(requireContext(), map, currentMapType)
@@ -583,21 +593,21 @@ class RenderMapFragment : Fragment() {
 
     // ── Lifecycle pass-throughs ────────────────────────────────────────────────
 
-    override fun onStart()  { super.onStart();  try { mapView?.onStart() } catch (e: Exception) { Log.e(TAG, "onStart", e) } }
-    override fun onLowMemory() { super.onLowMemory(); try { mapView?.onLowMemory() } catch (e: Exception) { Log.e(TAG, "onLowMemory", e) } }
+    override fun onStart()  { super.onStart();  try { mapView?.onStart() } catch (e: Exception) { logFail("onStart", e) } }
+    override fun onLowMemory() { super.onLowMemory(); try { mapView?.onLowMemory() } catch (e: Exception) { logFail("onLowMemory", e) } }
     override fun onResume() {
         super.onResume()
         try { mapView?.onResume(); fragmentResumed = true; resumeGuidanceFeedback(); syncCompass() }
-        catch (e: Exception) { Log.e(TAG, "onResume", e) }
+        catch (e: Exception) { logFail("onResume", e) }
     }
     override fun onPause() {
         try { saveCameraState(); mapView?.onPause(); fragmentResumed = false; pauseGuidanceFeedback(); syncCompass() }
-        catch (e: Exception) { Log.e(TAG, "onPause", e) }
+        catch (e: Exception) { logFail("onPause", e) }
         super.onPause()
     }
 
     override fun onStop() {
-        try { clearLiveTrail(); clearAccuracyCircle(); mapView?.onStop() } catch (e: Exception) { Log.e(TAG, "onStop", e) }
+        try { clearLiveTrail(); clearAccuracyCircle(); mapView?.onStop() } catch (e: Exception) { logFail("onStop", e) }
         super.onStop()
     }
 
@@ -611,7 +621,7 @@ class RenderMapFragment : Fragment() {
             currentMarker?.remove(); currentMarker = null
             headingMarker?.remove(); headingMarker = null; lastAppliedHeadingDeg = null
             stakeoutLine?.remove(); stakeoutLine = null
-        } catch (e: Exception) { Log.e(TAG, "onDestroyView cleanup", e) }
+        } catch (e: Exception) { logFail("onDestroyView cleanup", e) }
         markerDescriptorCache.clear()
         lastCurrentMarkerHue = null
         lastStakeoutMarkerHue = null
@@ -624,7 +634,7 @@ class RenderMapFragment : Fragment() {
         coordinateMap.clear()
         lastLatLngs = emptyList()
         dataObserved = false
-        try { mapView?.onDestroy() } catch (e: Exception) { Log.e(TAG, "mapView.onDestroy", e) }
+        try { mapView?.onDestroy() } catch (e: Exception) { logFail("mapView.onDestroy", e) }
         mapView = null; placeholder = null
         super.onDestroyView()
     }
@@ -670,7 +680,8 @@ class RenderMapFragment : Fragment() {
                         }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    Log.w(TAG, "Error collecting fixes", e)
+                    // The map stops following GNSS until the screen restarts.
+                    logFail("fix collector", e, 'E')
                 }
             }
         }
@@ -703,22 +714,23 @@ class RenderMapFragment : Fragment() {
             // The current-location overlays are display-only; the toggle hides them without affecting
             // fix collection, recenter, or stakeout (which run below/elsewhere off the latest fix).
             if (showCurrentLocationOnMap) {
-                try { updateCurrentMarker(fix.latDeg, fix.lonDeg, fix.rtkStatus) } catch (e: Exception) { Log.w(TAG, "updateCurrentMarker", e) }
-                try { updateAccuracyCircle(pos, fix.hAccM) } catch (e: Exception) { Log.w(TAG, "updateAccuracyCircle", e) }
-                try { updateLiveTrail(pos, fix) } catch (e: Exception) { Log.w(TAG, "updateLiveTrail", e) }
-                try { updateHeadingIndicator() } catch (e: Exception) { Log.w(TAG, "updateHeadingIndicator", e) }
+                // Per fix: each step logs at most once a minute (logFail).
+                try { updateCurrentMarker(fix.latDeg, fix.lonDeg, fix.rtkStatus) } catch (e: Exception) { logFail("live.updateCurrentMarker", e) }
+                try { updateAccuracyCircle(pos, fix.hAccM) } catch (e: Exception) { logFail("live.updateAccuracyCircle", e) }
+                try { updateLiveTrail(pos, fix) } catch (e: Exception) { logFail("live.updateLiveTrail", e) }
+                try { updateHeadingIndicator() } catch (e: Exception) { logFail("live.updateHeadingIndicator", e) }
             }
-            try { updateStakeoutCalculations(pos) } catch (e: Exception) { Log.w(TAG, "updateStakeoutCalculations", e) }
+            try { updateStakeoutCalculations(pos) } catch (e: Exception) { logFail("live.updateStakeoutCalculations", e) }
             // Distance labels follow the live position, throttled to avoid heavy marker rebuilds.
             if (pointLabelMode == PointLabelMode.DISTANCE) {
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (now - lastDistanceLabelMs >= LABEL_DISTANCE_THROTTLE_MS) {
                     lastDistanceLabelMs = now
-                    try { applyPointLabels() } catch (e: Exception) { Log.w(TAG, "applyPointLabels", e) }
+                    try { applyPointLabels() } catch (e: Exception) { logFail("live.applyPointLabels", e) }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "updateLiveTracking error", e)
+            logFail("live.updateLiveTracking", e, 'E')
         }
     }
 
@@ -808,7 +820,7 @@ class RenderMapFragment : Fragment() {
             updateStakeoutLine(currentPos, target)
             updateGuidance(distance, bearing)
         } catch (e: Exception) {
-            Log.w(TAG, "updateStakeoutCalculations error", e)
+            logFail("stakeout.calculations", e)
         }
     }
 
@@ -1008,7 +1020,7 @@ class RenderMapFragment : Fragment() {
             } else {
                 compassHeadingDeg = null  // no rotation-vector sensor → callers fall back to COG/north-up
             }
-        } catch (e: Exception) { Log.w(TAG, "registerCompass failed", e); compassHeadingDeg = null }
+        } catch (e: Exception) { logFail("registerCompass", e); compassHeadingDeg = null }
     }
 
     private fun unregisterCompass() {
@@ -1023,7 +1035,7 @@ class RenderMapFragment : Fragment() {
         if (toneGenerator == null) {
             toneGenerator = try {
                 android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
-            } catch (e: Exception) { Log.w(TAG, "ToneGenerator init failed", e); null }
+            } catch (e: Exception) { logFail("ToneGenerator init", e); null }
         }
     }
 
@@ -1045,12 +1057,12 @@ class RenderMapFragment : Fragment() {
         try {
             if (arrived) toneGenerator?.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 200)
             else toneGenerator?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 80)
-        } catch (e: Exception) { Log.w(TAG, "beep failed", e) }
+        } catch (e: Exception) { logFail("stakeout beep", e) }
     }
 
     /** Uses a per-view keep-screen-on request so it never clobbers a global window flag. */
     private fun setKeepScreenOn(on: Boolean) {
-        try { view?.keepScreenOn = on } catch (e: Exception) { Log.w(TAG, "keepScreenOn failed", e) }
+        try { view?.keepScreenOn = on } catch (e: Exception) { logFail("keepScreenOn", e) }
     }
 
     private fun updateStakeoutMarkerColor(distance: Double) {
@@ -1071,7 +1083,7 @@ class RenderMapFragment : Fragment() {
         val existing = stakeoutLine
         if (existing != null) {
             try { existing.points = listOf(from, to); return }
-            catch (e: Exception) { Log.w(TAG, "stakeoutLine update failed, recreating", e); try { existing.remove() } catch (_: Exception) {}; stakeoutLine = null }
+            catch (e: Exception) { logFail("stakeoutLine update (recreating)", e); try { existing.remove() } catch (_: Exception) {}; stakeoutLine = null }
         }
         stakeoutLine = try {
             map.addPolyline(
@@ -1107,7 +1119,7 @@ class RenderMapFragment : Fragment() {
                     currentMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
                     lastCurrentMarkerHue = hue
                 }
-            } catch (e: Exception) { Log.w(TAG, "Update current marker position failed", e) }
+            } catch (e: Exception) { logFail("live.currentMarker position", e) }
         }
     }
 
@@ -1123,14 +1135,14 @@ class RenderMapFragment : Fragment() {
         val existing = accuracyCircle
         if (existing != null) {
             try { existing.center = position; existing.radius = accuracy; return }
-            catch (e: Exception) { Log.w(TAG, "accuracyCircle update failed, recreating", e); existing.remove(); accuracyCircle = null }
+            catch (e: Exception) { logFail("live.accuracyCircle update (recreating)", e); existing.remove(); accuracyCircle = null }
         }
         try {
             accuracyCircle = map.addCircle(
                 CircleOptions().center(position).radius(accuracy)
                     .strokeColor(0x880000FF.toInt()).fillColor(0x220000FF.toInt()).strokeWidth(2f)
             )
-        } catch (e: Exception) { Log.w(TAG, "Failed to add accuracy circle", e) }
+        } catch (e: Exception) { logFail("live.accuracyCircle add", e) }
     }
 
     private fun clearAccuracyCircle() { accuracyCircle?.remove(); accuracyCircle = null }
@@ -1147,14 +1159,14 @@ class RenderMapFragment : Fragment() {
             val existing = liveTrail
             if (existing != null) {
                 try { existing.points = trailPoints; return }
-                catch (e: Exception) { Log.w(TAG, "liveTrail update failed, recreating", e); existing.remove(); liveTrail = null }
+                catch (e: Exception) { logFail("live.liveTrail update (recreating)", e); existing.remove(); liveTrail = null }
             }
             liveTrail = map.addPolyline(
                 // Not geodesic: at survey scale the great-circle and straight segments are identical, and the
                 // geodesic version is recomputed for up to MAX_TRAIL_POINTS points on every new point.
                 PolylineOptions().addAll(trailPoints).color(0xFFFF6B35.toInt()).width(4f).geodesic(false)
             )
-        } catch (e: Exception) { Log.w(TAG, "updateLiveTrail error", e) }
+        } catch (e: Exception) { logFail("live.liveTrail", e) }
     }
 
     private fun shouldAddTrailPoint(pos: LatLng, fix: Fix): Boolean {
@@ -1269,10 +1281,16 @@ class RenderMapFragment : Fragment() {
                 // from details). Clears the selection if that coordinate no longer exists.
                 restoreSelectedCard()
                 applyPointLabels()
-                logMapEvent("MAP", "markersLoaded total=${points.size} visible=${latLngsVisible.size} hidden=${points.size - latLngsVisible.size}")
+                // Every DB emission lands here; log only when the counts change.
+                val total = points.size
+                val visibleCount = latLngsVisible.size
+                DiagnosticsLogger.logOnChange(DiagTags.MAP, "rendermap.markers", total to visibleCount) {
+                    "markersLoaded total=$total visible=$visibleCount hidden=${total - visibleCount}"
+                }
+                refreshMapDiag()
             } catch (e: Exception) {
                 MapRuntimeDiagnostics.update { it.copy(lastError = "observer: ${e.javaClass.simpleName}: ${e.message}") }
-                Log.e(TAG, "Error in data binding observer", e)
+                logFail("coordinate observer", e, 'E')
             }
         }
     }
@@ -1292,7 +1310,7 @@ class RenderMapFragment : Fragment() {
                     val descriptor = withContext(Dispatchers.Main) { buildModelMarkerBitmap(thumbBmp) }
                     markerDescriptorCache[cacheKey] = descriptor
                     descriptor
-                } catch (e: Exception) { Log.w(TAG, "Failed to load model thumbnail for marker", e); null }
+                } catch (e: Exception) { logFail("marker model thumbnail load", e); null }
             }
         }
         if (iconKey.isNullOrBlank()) return null
@@ -1346,14 +1364,14 @@ class RenderMapFragment : Fragment() {
                 mapView?.post { try { map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100)) } catch (_: Exception) {} }
             }
             cameraInitialized = true
-        } catch (e: Exception) { Log.e(TAG, "Camera update error", e) }
+        } catch (e: Exception) { logFail("camera update", e) }
     }
 
     // ── Map diagnostics (privacy-safe: counts/modes/booleans only, never coordinates) ──────────
 
     /** Logs a low-frequency map state transition and refreshes the diagnostic-report snapshot. */
     private fun logMapEvent(category: String, message: String) {
-        try { app.surrealar.util.DiagnosticsLogger.i(category, message) } catch (_: Exception) {}
+        DiagnosticsLogger.i(category, message)   // never throws
         refreshMapDiag()
     }
 
@@ -1380,7 +1398,7 @@ class RenderMapFragment : Fragment() {
                     guidanceActive = isGuidanceActive,
                 )
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) { logFail("diagnostic snapshot refresh", e) }
     }
 
     /** Saves the current camera into the session ViewModel so it can be restored on return. */
@@ -1491,7 +1509,7 @@ class RenderMapFragment : Fragment() {
                     headingMarker?.rotation = heading.toFloat()
                     lastAppliedHeadingDeg = heading
                 }
-            } catch (e: Exception) { Log.w(TAG, "heading marker update failed", e) }
+            } catch (e: Exception) { logFail("live.headingMarker update", e) }
         }
     }
 
@@ -1512,7 +1530,7 @@ class RenderMapFragment : Fragment() {
             d.setBounds(0, 0, size, size)
             d.draw(canvas)
             BitmapDescriptorFactory.fromBitmap(bmp).also { headingDescriptor = it }
-        } catch (e: Exception) { Log.w(TAG, "headingArrowDescriptor failed", e); null }
+        } catch (e: Exception) { logFail("headingArrowDescriptor", e); null }
     }
 
     private fun fitVisibleCoordinates() {
@@ -1601,7 +1619,7 @@ class RenderMapFragment : Fragment() {
             refreshToggleList()
             updateVisibleCount()
             applyPointLabels()
-        } catch (e: Exception) { Log.w(TAG, "showSelectedOnly error", e) }
+        } catch (e: Exception) { logFail("showSelectedOnly", e) }
     }
 
     private fun showAllCoordinates() {
@@ -1613,7 +1631,7 @@ class RenderMapFragment : Fragment() {
             refreshToggleList()
             updateVisibleCount()
             applyPointLabels()
-        } catch (e: Exception) { Log.w(TAG, "showAllCoordinates error", e) }
+        } catch (e: Exception) { logFail("showAllCoordinates", e) }
     }
 
     private fun hideAllCoordinates() {
@@ -1626,7 +1644,7 @@ class RenderMapFragment : Fragment() {
             updateVisibleCount()
             applyPointLabels()
             showSnackbar("All coordinates hidden")
-        } catch (e: Exception) { Log.w(TAG, "hideAllCoordinates error", e) }
+        } catch (e: Exception) { logFail("hideAllCoordinates", e) }
     }
 
     private fun refreshToggleList() {
@@ -1641,7 +1659,7 @@ class RenderMapFragment : Fragment() {
                 )
             }
             applyDrawerFilter()
-        } catch (e: Exception) { Log.w(TAG, "refreshToggleList error", e) }
+        } catch (e: Exception) { logFail("refreshToggleList", e) }
     }
 
     /** Submits the drawer list filtered by the search query (display-only — never changes marker
@@ -1796,7 +1814,7 @@ class RenderMapFragment : Fragment() {
     /** Opens the global AR scene (all saved points, including the selected one). */
     private fun openSelectedInAr() {
         try { findNavController().navigate(R.id.nav_open_in_ar) }
-        catch (e: Exception) { Log.w(TAG, "open in AR failed", e) }
+        catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map: open in AR failed", e) }
     }
 
     /** Opens the existing rich coordinate-detail screen for the selected point. */
@@ -1805,7 +1823,7 @@ class RenderMapFragment : Fragment() {
         try {
             val args = android.os.Bundle().apply { putString("arg_id", id) }
             findNavController().navigate(R.id.nav_coordinate_detail, args)
-        } catch (e: Exception) { Log.w(TAG, "open details failed", e) }
+        } catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map: open point details failed", e) }
     }
 
     private fun dismissSelectedCoordinate() {
@@ -1874,7 +1892,7 @@ class RenderMapFragment : Fragment() {
         lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
 
         refreshStakeout()
-        logMapEvent("STAKEOUT", "stakeout started target=\"${coord.name}\" id=${coord.id}")
+        logMapEvent("STAKEOUT", "stakeout started targetId=${coord.id}")   // id only: no point names in logs
         showSnackbar("Stakeout started: ${coord.name}")
         dismissSelectedCoordinate()
     }
@@ -1921,10 +1939,10 @@ class RenderMapFragment : Fragment() {
                                 .zIndex(5f)   // keep the active target above the regular coordinate markers
                         )
                     } else {
-                        try { stakeoutMarker?.position = latLng } catch (e: Exception) { Log.w(TAG, "stakeout marker move", e) }
+                        try { stakeoutMarker?.position = latLng } catch (e: Exception) { logFail("stakeout marker move", e) }
                     }
                     refreshStakeout()
-                } catch (e: Exception) { Log.w(TAG, "Map click stakeout error", e) }
+                } catch (e: Exception) { logFail("map click stakeout", e) }
             } else {
                 dismissSelectedCoordinate()
             }
@@ -2109,7 +2127,7 @@ class RenderMapFragment : Fragment() {
                 line(LatLng(lat1, lon1), LatLng(lat2, lon2))
                 north += spacingMeters; n++
             }
-        } catch (e: Exception) { Log.w(TAG, "drawMeterGrid error", e) }
+        } catch (e: Exception) { logFail("drawMeterGrid", e) }
     }
 
     /** Updates the Grid toolbar row label (e.g. "Auto 10 m"), active state, and content description. */
@@ -2227,7 +2245,7 @@ class RenderMapFragment : Fragment() {
             var y = pad - fm.ascent
             for (line in lines) { canvas.drawText(line, width / 2f, y, textPaint); y += lineH }
             BitmapDescriptorFactory.fromBitmap(bmp).also { if (cache) labelDescriptorCache[text] = it }
-        } catch (e: Exception) { Log.w(TAG, "buildLabelDescriptor failed", e); null }
+        } catch (e: Exception) { logFail("buildLabelDescriptor", e); null }
     }
 
     private fun toggleBoundaryLines() {
@@ -2252,7 +2270,7 @@ class RenderMapFragment : Fragment() {
                 try { googleMap?.addPolyline(PolylineOptions().add(s, e).color(0xFF2196F3.toInt()).width(3f).geodesic(true)
                     .pattern(listOf(Dash(20f), Gap(10f))))?.let { boundaryLines.add(it) } } catch (_: Exception) {}
             }
-        } catch (e: Exception) { Log.w(TAG, "drawBoundaryLines error", e) }
+        } catch (e: Exception) { logFail("drawBoundaryLines", e) }
     }
 
     // ── Info window ────────────────────────────────────────────────────────────
@@ -2286,7 +2304,7 @@ class RenderMapFragment : Fragment() {
                 }
             }
             view
-        } catch (e: Exception) { Log.w(TAG, "createInfoWindowView error", e); null }
+        } catch (e: Exception) { logFail("createInfoWindowView", e); null }
     }
 
     // ── Snackbar ───────────────────────────────────────────────────────────────

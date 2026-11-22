@@ -1,9 +1,9 @@
 package app.surrealar.ui.viewpoints
 
 import android.os.Bundle
-import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import app.surrealar.R
+import app.surrealar.util.DevLog
 
 /**
  * Host activity for the coordinate list/detail two-pane flow.
@@ -23,14 +23,12 @@ class CoordinatesActivity : AppCompatActivity() {
     }
 
     fun showDetail(id: String) {
-        Log.d("CoordinatesActivity", "showDetail called with id=$id")
         val fm = supportFragmentManager
         val existing = fm.findFragmentById(R.id.detail_container) as? CoordinateDetailFragment
+        DevLog.d("CoordinatesActivity") { "showDetail id=$id reuse=${existing != null}" }
         if (existing != null) {
-            Log.d("CoordinatesActivity", "Updating existing detail fragment")
             existing.updateId(id)
         } else {
-            Log.d("CoordinatesActivity", "Creating new detail fragment")
             // Immediate commit to reduce perceived delay
             fm.beginTransaction()
                 .replace(R.id.detail_container, CoordinateDetailFragment.newInstance(id))

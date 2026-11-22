@@ -3,8 +3,9 @@ package app.surrealar.ui.models
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.util.Log
 import android.view.View
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -94,7 +95,7 @@ class ModelPickerActivity : AppCompatActivity() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("ModelPicker", "Failed to load models", e)
+                DiagnosticsLogger.e(DiagTags.MODEL, "Model picker: failed to load models: ${e.javaClass.simpleName}", e)
             }
         }
     }

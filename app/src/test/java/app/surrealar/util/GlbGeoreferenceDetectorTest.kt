@@ -45,6 +45,21 @@ class GlbGeoreferenceDetectorTest {
         assertEquals("GLB_POSITION_WGS_LIKE", loc.source)
     }
 
+    @Test fun `detection log line has no coordinates`() {
+        val dir = java.nio.file.Files.createTempDirectory("diaglog").toFile()
+        DiagnosticsLogger.initForTest(dir)
+        try {
+            assertNotNull(detect(meshJson("[-76.001,299.0,-41.001]", "[-75.999,301.0,-40.999]")))
+            DiagnosticsLogger.flush()
+            val log = java.io.File(dir, "app-log-current.txt").readText()
+            org.junit.Assert.assertTrue(log.contains("georeferenced=true"))
+            // No longitude (-76…) or lat=/lon=/alt= fields (a timestamp could contain "41.0", so not checked).
+            org.junit.Assert.assertFalse(log.contains("-76") || log.contains("lat=") || log.contains("lon=") || log.contains("alt="))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
     @Test fun `wider span yields medium confidence`() {
         // spans 0.02 (between 0.005 and 0.05) → MEDIUM.
         val loc = detect(meshJson("[-76.01,299.0,-41.01]", "[-75.99,301.0,-40.99]"))

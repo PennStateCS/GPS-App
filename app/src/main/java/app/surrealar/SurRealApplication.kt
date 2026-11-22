@@ -4,7 +4,6 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
-import android.util.Log
 import app.surrealar.data.settings.datastore.SettingsLocalDataSource
 import app.surrealar.data.settings.repository.SettingsRepositoryImpl
 import app.surrealar.domain.repository.SettingsRepository
@@ -21,6 +20,8 @@ import app.surrealar.settings.model.AppThemeMode
 import app.surrealar.gnss.debug.AndroidGnssLogger
 import io.github.pennstatecs.geokit.gnss.log.GnssLog
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.DevLog
+import app.surrealar.util.diagnostics.DiagTags
 import com.google.android.gms.maps.MapsInitializer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
@@ -98,7 +99,7 @@ class SurRealApplication : Application() {
         // Surfaced for tester support: only when a developer opts in (Gradle property
         // ALLOW_DESTRUCTIVE_MIGRATION) may Room wipe & recreate the database on a schema mismatch,
         // which would clear saved coordinates/models. Otherwise data is kept via real migrations.
-        DiagnosticsLogger.i("DATA", "Destructive migration allowed: ${BuildConfig.ALLOW_DESTRUCTIVE_MIGRATION}")
+        DiagnosticsLogger.i(DiagTags.DATA, "Destructive migration allowed: ${BuildConfig.ALLOW_DESTRUCTIVE_MIGRATION}")
         app.surrealar.util.diagnostics.ExitReasonRecorder.recordAtStartup(this)
 
         // Explicitly select the Maps renderer before any MapView is created.
@@ -108,8 +109,7 @@ class SurRealApplication : Application() {
             MapsInitializer.Renderer.LEGACY else MapsInitializer.Renderer.LATEST
         MapsInitializer.initialize(this, preferredRenderer) { renderer ->
             activeMapsRenderer = renderer.name
-            Log.d("SurRealApplication", "Maps renderer initialised: ${renderer.name} (preferred=${preferredRenderer.name})")
-            DiagnosticsLogger.i("APP", "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
+            DiagnosticsLogger.i(DiagTags.APP, "Maps renderer: ${renderer.name} (preferred=${preferredRenderer.name})")
         }
         // Global crash guard. Persists a SANITIZED crash record to DiagnosticsLogger so it lands in
         // the exported diagnostic ZIP (timestamp + thread + exception type/message + stack trace +
@@ -124,7 +124,7 @@ class SurRealApplication : Application() {
             } catch (_: Throwable) { /* never let crash logging mask the original crash */ }
             previousCrashHandler?.uncaughtException(thread, throwable)
         }
-        Log.d("SurRealApplication","Application started; global crash handler installed")
+        DevLog.d("SurRealApplication") { "Application started; global crash handler installed" }
 
         setupSettings()
         // Background: deletes model files no saved model points to (older than 10 min, so never mid-import).
@@ -136,7 +136,7 @@ class SurRealApplication : Application() {
         // Before the restore, so the restored source switch is logged.
         runCatching {
             EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java).gnssFeedLogger().start()
-        }.onFailure { DiagnosticsLogger.w("GNSS", "GNSS feed log not started: ${it.message}") }
+        }.onFailure { DiagnosticsLogger.w(DiagTags.GNSS, "GNSS feed log not started", it) }
         restoreSavedGnssSource()
         runUtmBackfill()
     }
@@ -152,10 +152,13 @@ class SurRealApplication : Application() {
             val entryPoint = EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
             appScope.launch {
                 runCatching { entryPoint.gnssSourceCoordinator().restoreSavedSourceOnStartup() }
-                    .onFailure { Log.e("SurRealApplication", "Startup GNSS source restore failed", it) }
+                    .onFailure {
+                        if (it is CancellationException) throw it
+                        DiagnosticsLogger.e(DiagTags.GNSS, "Startup GNSS source restore failed", it)
+                    }
             }
         } catch (e: Exception) {
-            Log.e("SurRealApplication", "Failed to launch GNSS source restore", e)
+            DiagnosticsLogger.e(DiagTags.GNSS, "Startup GNSS source restore not launched", e)
         }
     }
 
@@ -167,21 +170,38 @@ class SurRealApplication : Application() {
                 val repo = EntryPointAccessors
                     .fromApplication(this@SurRealApplication, SurRealApplicationEntryPoint::class.java)
                     .coordinateRepository()
-                val list = kotlin.runCatching { repo.getAllCoordinatesList() }.getOrNull() ?: return@launch
+                val list = try {
+                    repo.getAllCoordinatesList()
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    DiagnosticsLogger.e(DiagTags.DATA, "UTM backfill: reading coordinates failed", e)
+                    return@launch
+                }
                 var updated = 0
+                var badPosition = 0
+                var writeFailed = 0
                 list.forEach { c ->
                     if (c.easting == null || c.northing == null || c.utmZone == null) {
-                        try {
-                            val utm = Utm.forward(c.latitude, c.longitude)
-                            repo.update(c.copy(easting = utm.eastingM, northing = utm.northingM, utmZone = utm.zoneLabel))
-                            updated++
-                        } catch (_: Exception) { /* ignore bad lat/lon */ }
+                        // Expected for a bad lat/lon: that row is skipped (counted in the summary).
+                        val utm = try { Utm.forward(c.latitude, c.longitude) } catch (_: Exception) { badPosition++; null }
+                        if (utm != null) {
+                            try {
+                                repo.update(c.copy(easting = utm.eastingM, northing = utm.northingM, utmZone = utm.zoneLabel))
+                                updated++
+                            } catch (e: Exception) {
+                                if (e is CancellationException) throw e
+                                // First failure in full; the rest are counted in the summary. Row is skipped.
+                                if (writeFailed++ == 0) DiagnosticsLogger.e(DiagTags.DATA, "UTM backfill: saving coordinate failed id=${c.id}", e)
+                            }
+                        }
                     }
                 }
-                if (updated > 0) Log.d("SurRealApplication", "UTM backfill updated $updated coordinate(s)")
+                if (updated + badPosition + writeFailed > 0) {
+                    DiagnosticsLogger.i(DiagTags.DATA, "UTM backfill updated=$updated skippedBadPosition=$badPosition writeFailed=$writeFailed")
+                }
             }
         } catch (t: Throwable) {
-            Log.w("SurRealApplication", "UTM backfill skipped: ${t.message}")
+            DiagnosticsLogger.w(DiagTags.DATA, "UTM backfill not started", t)
         }
     }
 
@@ -228,7 +248,7 @@ class SurRealApplication : Application() {
                 }
             )
         } catch (e: Exception) {
-            Log.w("SurRealApplication", "Failed to apply theme from settings: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.SETTINGS, "Theme from settings not applied, following system", e)
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         }
     }
@@ -239,14 +259,14 @@ class SurRealApplication : Application() {
             mockLocationPublisher = AndroidMockLocationPublisher(this, entryPoint.fixSwitchboard(), settingsRepo)
             mockLocationPublisher.start(appScope)
         } catch (e: Exception) {
-            Log.e("SurRealApplication", "Failed to start mock location publisher", e)
+            DiagnosticsLogger.e(DiagTags.GNSS, "Mock location publisher not started", e)
         }
         // Remember the last GNSS position so the Home map can open there while waiting for a fix.
         try {
             val entryPoint = EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
             entryPoint.lastKnownPositionStore().start(appScope, entryPoint.fixSwitchboard())
         } catch (e: Exception) {
-            Log.e("SurRealApplication", "Failed to start last-known position store", e)
+            DiagnosticsLogger.e(DiagTags.GNSS, "Last-known position store not started", e)
         }
     }
 

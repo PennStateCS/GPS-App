@@ -7,7 +7,9 @@ import android.location.GnssStatus
 import android.location.LocationManager
 import android.location.OnNmeaMessageListener
 import android.os.Build
-import android.util.Log
+import app.surrealar.gnss.debug.GnssDebugLog
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
 import androidx.core.app.ActivityCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +58,7 @@ class NmeaDiagnostics(private val context: Context) {
     }
 
     suspend fun runDiagnostic(durationMs: Long = 30_000): DiagnosticResult {
-        Log.d(TAG, "Starting NMEA diagnostic test for ${durationMs}ms")
+        DevLog.d(TAG) { "Starting NMEA diagnostic test for ${durationMs}ms" }
         _diagnosticResult.value = DiagnosticResult.Testing
 
         // Check permissions
@@ -82,12 +84,10 @@ class NmeaDiagnostics(private val context: Context) {
             nmeaCount++
             if (firstNmea == null && message.isNotEmpty()) {
                 firstNmea = message.trim()
-                // Raw sentences can hold the position: debug builds only.
-                if (app.surrealar.gnss.debug.GnssDebugLog.enabled) Log.d(TAG, "First NMEA received: $firstNmea")
+                // Raw sentences can hold the position: GnssDebugLog only (debug builds).
+                GnssDebugLog.event("nmea-diag") { "First NMEA received: $firstNmea" }
             }
-            if (nmeaCount <= 5 && app.surrealar.gnss.debug.GnssDebugLog.enabled) {
-                Log.d(TAG, "NMEA #$nmeaCount: $message")
-            }
+            if (nmeaCount <= 5) GnssDebugLog.event("nmea-diag") { "NMEA #$nmeaCount: $message" }
         }
         nmeaListener = nmea
 
@@ -96,7 +96,7 @@ class NmeaDiagnostics(private val context: Context) {
             object : GnssStatus.Callback() {
                 override fun onSatelliteStatusChanged(status: GnssStatus) {
                     satelliteCount = status.satelliteCount
-                    Log.d(TAG, "Satellites visible: $satelliteCount")
+                    DevLog.every(TAG, "nmea-diag.sats", 5_000L) { "Satellites visible: $satelliteCount" }
                 }
             }
         } else null
@@ -111,16 +111,16 @@ class NmeaDiagnostics(private val context: Context) {
             ) {
                 @Suppress("DEPRECATION")
                 locationManager.addNmeaListener(nmea)
-                Log.d(TAG, "NMEA listener registered")
+                DevLog.d(TAG) { "NMEA listener registered" }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && gnssCallback != null) {
                     locationManager.registerGnssStatusCallback(gnssCallback)
-                    Log.d(TAG, "GNSS status callback registered")
+                    DevLog.d(TAG) { "GNSS status callback registered" }
                 }
             }
 
             // Wait for data
-            Log.d(TAG, "Waiting ${durationMs}ms for NMEA data...")
+            DevLog.d(TAG) { "Waiting ${durationMs}ms for NMEA data..." }
             delay(durationMs)
 
             // Evaluate results
@@ -148,7 +148,9 @@ class NmeaDiagnostics(private val context: Context) {
                 }
             }
 
-            Log.d(TAG, "Diagnostic complete: $result")
+            // Counts only: Success carries a raw NMEA sample, which must not reach the file log or logcat.
+            DiagnosticsLogger.i("GNSS", "NMEA self-test complete: result=${result.javaClass.simpleName} " +
+                "nmeaMessages=$nmeaCount satellites=$satelliteCount durationMs=$durationMs")
             _diagnosticResult.value = result
             return result
 
@@ -168,7 +170,7 @@ class NmeaDiagnostics(private val context: Context) {
         }
         nmeaListener = null
         gnssStatusCallback = null
-        Log.d(TAG, "Diagnostic cleanup complete")
+        DevLog.d(TAG) { "Diagnostic cleanup complete" }
     }
 
     private fun hasLocationPermission(): Boolean {

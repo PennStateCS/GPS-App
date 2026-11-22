@@ -40,6 +40,9 @@ import app.surrealar.ui.toolbar.ToolbarMapResult
 import app.surrealar.ui.navigation.topLevelNavOptions
 import app.surrealar.service.LocationService
 import app.surrealar.util.PermissionManager
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import com.google.android.material.navigation.NavigationView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -53,7 +56,9 @@ import app.surrealar.gnss.diagnostics.DiagnosticsService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-private const val LOG_GNSS_UI = false
+/** Permission names for the log: short names only ("ACCESS_FINE_LOCATION"), e.g. "[A,B]". */
+internal fun permissionNames(perms: Collection<String>): String =
+    perms.joinToString(",", "[", "]") { it.substringAfterLast('.') }
 
 // Short beat between a drawer item tap and the drawer closing, so the item's ripple/pressed
 // state is visible before the panel slides away (Material 3 feel). Kept small to avoid lag.
@@ -148,7 +153,8 @@ class MainActivity : AppCompatActivity() {
     ) { permissions ->
         val granted = permissions.filterValues { it }.keys
         val denied  = permissions.filterValues { !it }.keys
-        android.util.Log.d("MainActivity", "Essential permission result: granted=$granted, denied=$denied")
+        // Permission names only (no user data).
+        DiagnosticsLogger.i(DiagTags.SYSTEM, "Permission result granted=${permissionNames(granted)} denied=${permissionNames(denied)}")
 
         // Reset guard so future requests are never blocked
         showingEssentialRationale = false
@@ -156,12 +162,13 @@ class MainActivity : AppCompatActivity() {
         // Use ground-truth check (covers permissions not in this batch)
         val stillMissing = PermissionManager.getMissingEssentialPermissions(this)
         if (stillMissing.isEmpty()) {
-            android.util.Log.d("MainActivity", "All essential permissions granted")
+            DevLog.d("MainActivity") { "All essential permissions granted" }
             ensureLocationServiceStarted()
             // Permission just became available — recover an internal provider that was waiting for it.
             runCatching { switchboard.retryActiveSourceIfStalled("permission-granted") }
+                .onFailure { DiagnosticsLogger.w(DiagTags.GNSS, "GNSS source retry after permission grant failed", it) }
         } else {
-            android.util.Log.d("MainActivity", "Still missing: ${stillMissing.joinToString()}")
+            DevLog.d("MainActivity") { "Still missing: ${permissionNames(stillMissing)}" }
             // Distinguish: can we still ask, or did the user permanently deny?
             if (PermissionManager.isPermanentlyDenied(this, stillMissing)) {
                 showPermanentlyDeniedDialog(stillMissing)
@@ -289,7 +296,7 @@ class MainActivity : AppCompatActivity() {
                 navController.navigate(destId, null, topLevelNavOptions(navController.graph.startDestinationId))
                 true
             } catch (e: IllegalArgumentException) {
-                android.util.Log.w("MainActivity", "Drawer destination not found: $destId", e)
+                DiagnosticsLogger.w(DiagTags.NAV, "Drawer destination not found id=$destId", e)
                 false
             }
 
@@ -329,7 +336,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val initialProvider = try {
                 sourceSettings.activeProvider.first()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                DiagnosticsLogger.w(DiagTags.GNSS, "Toolbar placeholder: active provider read failed, assuming INTERNAL", e)
                 app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL
             }
             val isInternal = initialProvider == app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL
@@ -354,7 +363,7 @@ class MainActivity : AppCompatActivity() {
         try {
             switchboard.start()
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error starting GNSS switchboard: ", e)
+            DiagnosticsLogger.e(DiagTags.GNSS, "GNSS switchboard start failed", e)
         }
     }
 
@@ -384,7 +393,7 @@ class MainActivity : AppCompatActivity() {
         if (missing.isEmpty()) {
             ensureLocationServiceStarted()
         } else {
-            android.util.Log.d("MainActivity", "Requesting essential permissions: ${missing.joinToString()}")
+            DevLog.d("MainActivity") { "Requesting essential permissions: ${permissionNames(missing)}" }
             essentialPermissionLauncher.launch(missing.toTypedArray())
         }
     }
@@ -405,7 +414,6 @@ class MainActivity : AppCompatActivity() {
     fun requestStoragePermissions() {
         // Nothing to do — app-scoped storage (getFilesDir / getExternalFilesDir) requires
         // no runtime permission, and user file-picking uses SAF (ACTION_OPEN_DOCUMENT).
-        android.util.Log.d("MainActivity", "requestStoragePermissions: using scoped storage — no runtime permission needed")
     }
 
     override fun onResume() {
@@ -416,6 +424,7 @@ class MainActivity : AppCompatActivity() {
         // returns after granting permission / enabling location in system settings. No-op when the
         // active source is already streaming or not waiting, so it never double-registers.
         runCatching { switchboard.retryActiveSourceIfStalled("app-resume") }
+            .onFailure { DiagnosticsLogger.w(DiagTags.GNSS, "GNSS source retry on resume failed", it) }
 
         // Note: choreographer/frame callbacks belong in ModelViewerActivity; do not call them from MainActivity
     }
@@ -430,7 +439,7 @@ class MainActivity : AppCompatActivity() {
         if (showingEssentialRationale) return
         showingEssentialRationale = true
 
-        android.util.Log.d("MainActivity", "Showing permission rationale for: ${missingPermissions.joinToString()}")
+        DevLog.d("MainActivity") { "Showing permission rationale for: ${permissionNames(missingPermissions)}" }
 
         val message = buildString {
             append("This app needs the following permissions to work properly:\n\n")
@@ -464,7 +473,7 @@ class MainActivity : AppCompatActivity() {
      * We cannot show the system dialog again; only Settings can fix this.
      */
     private fun showPermanentlyDeniedDialog(missingPermissions: List<String>) {
-        android.util.Log.d("MainActivity", "Permissions permanently denied: ${missingPermissions.joinToString()}")
+        DiagnosticsLogger.i(DiagTags.SYSTEM, "Permissions permanently denied ${permissionNames(missingPermissions)}")
 
         val names = missingPermissions.joinToString(", ") { PermissionManager.getPermissionDisplayName(it) }
         AlertDialog.Builder(this)
@@ -481,7 +490,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     startActivity(intent)
                 } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Cannot open app settings", e)
+                    DiagnosticsLogger.e(DiagTags.NAV, "Cannot open app settings for permissions", e)
                 }
             }
             .setNegativeButton("Continue without") { _, _ ->
@@ -612,8 +621,10 @@ class MainActivity : AppCompatActivity() {
                     nowMs = { android.os.SystemClock.elapsedRealtime() })
                     .onEach { frame -> renderToolbarFrame(frame) }
                     .retryForever { e, attempt ->
-                        android.util.Log.e("MainActivity", "GNSS toolbar pipeline error (retry #${attempt + 1})", e)
-                        app.surrealar.util.DiagnosticsLogger.w("GNSS", "toolbar pipeline error, retrying: ${e.javaClass.simpleName}")
+                        // Retried forever with back-off: the first failure in full, then at most once a minute.
+                        DiagnosticsLogger.every(DiagTags.GNSS, "toolbar.pipeline.error", 60_000L, 'E', e) {
+                            "GNSS toolbar pipeline failed, retrying attempt=${attempt + 1}"
+                        }
                         val source = runCatching { settingsRepository.locationSource.first() }.getOrDefault(LocationSourceType.INTERNAL)
                         toolbarRenderer.render(GnssToolbarStateMapper.error(source, externalReceiverLabel))
                     }
@@ -631,9 +642,9 @@ class MainActivity : AppCompatActivity() {
                     if (previousProvider != null && previousProvider != provider) {
                         val isExternalLive =
                             provider == app.surrealar.gnss.source.SourceSettings.ProviderChoice.EXTERNAL_TCP
-                        app.surrealar.util.DiagnosticsLogger.i(
-                            "GNSS", "Reset due to provider switch $previousProvider -> $provider"
-                        )
+                        // The switch itself is logged once by GnssFeedTracker ("Source A → B"); this is detail.
+                        val from = previousProvider
+                        DiagnosticsLogger.d(DiagTags.GNSS) { "Toolbar reset after provider switch $from -> $provider" }
                         val liveSource = if (isExternalLive) LocationSourceType.EXTERNAL else LocationSourceType.INTERNAL
                         withContext(Dispatchers.Main) { resetStatusTokensForSource(liveSource) }
                     }
@@ -697,7 +708,7 @@ class MainActivity : AppCompatActivity() {
                 if (state.isWaiting) {
                     if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
                         loggedExternalWaiting = true
-                        app.surrealar.util.DiagnosticsLogger.i("GNSS", "External selected, waiting for current fix")
+                        DiagnosticsLogger.i(DiagTags.GNSS, "External selected, waiting for current fix")
                     }
                     latestSkySnapshot = null
                 } else {
@@ -705,7 +716,7 @@ class MainActivity : AppCompatActivity() {
                     if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
                         loggedFirstExternalToolbarFix = true
                         loggedExternalWaiting = false
-                        app.surrealar.util.DiagnosticsLogger.i("GNSS", "First current external fix displayed after startup")
+                        DiagnosticsLogger.i(DiagTags.GNSS, "First current external fix displayed in toolbar")
                     }
                 }
                 lastToolbarState = state
@@ -784,7 +795,7 @@ class MainActivity : AppCompatActivity() {
                 popUpTo(navController.graph.startDestinationId)
                 launchSingleTop = true
             })
-        }.onFailure { app.surrealar.util.DiagnosticsLogger.w("GNSS", "toolbar navigation failed: ${it.message}") }
+        }.onFailure { DiagnosticsLogger.w(DiagTags.NAV, "Toolbar navigation failed dest=$destId", it) }
     }
 
     /** Long-press on the coordinates: copy what's shown (position + height) to the clipboard. */
@@ -823,21 +834,18 @@ class MainActivity : AppCompatActivity() {
         toolbarRenderer.render(GnssToolbarStateMapper.waiting(source, externalReceiverLabel))
     }
 
-    // Throttle for wrong-provider/stale/invalid-fix diagnostics so a steady stream of dropped
-    // fixes (e.g. internal fixes during the External-connecting window) can't flood the log.
-    private var lastToolbarIgnoreLogMs = 0L
-    private var lastToolbarIgnoreReason: String? = null
-
     // One-shot transition logs for the External waiting → first-fix flow at startup.
     private var loggedExternalWaiting = false
     private var loggedFirstExternalToolbarFix = false
+
+    /**
+     * Dropped-fix diagnostics, throttled per reason to once a minute. Wrong-provider fixes are normal
+     * while an External source connects (internal fixes keep arriving), so that reason is debug-only;
+     * stale / invalid fixes get one info line a minute. The Home map logs the same gate debug-only.
+     */
     private fun logToolbarIgnore(reason: String) {
-        val now = System.currentTimeMillis()
-        if (reason != lastToolbarIgnoreReason || now - lastToolbarIgnoreLogMs >= 10_000L) {
-            lastToolbarIgnoreLogMs = now
-            lastToolbarIgnoreReason = reason
-            app.surrealar.util.DiagnosticsLogger.w("GNSS", "Ignored $reason fix for live display")
-        }
+        val level = if (reason == "wrong-provider") 'D' else 'I'
+        DiagnosticsLogger.every(DiagTags.GNSS, "toolbar.ignore.$reason", 60_000L, level) { "Toolbar ignored $reason fix" }
     }
 
     private fun updateBatteryVisibility(requested: Boolean) {
@@ -982,7 +990,7 @@ class MainActivity : AppCompatActivity() {
                         .show()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Error listing NMEA files", e)
+                DiagnosticsLogger.e(DiagTags.GNSS, "NMEA replay: listing asset files failed", e)
                 runOnUiThread {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle("Error")
@@ -1029,10 +1037,11 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("Keep Running", null)
                 .show()
 
-            android.util.Log.i("MainActivity", "Started NMEA replay from $fileName")
+            // The source switch to REPLAY is logged by the coordinator / GnssFeedTracker.
+            DevLog.d("MainActivity") { "Started NMEA replay from $fileName" }
 
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error starting NMEA replay", e)
+            DiagnosticsLogger.e(DiagTags.GNSS, "NMEA replay start failed file=$fileName", e)
             AlertDialog.Builder(this)
                 .setTitle("Replay Error")
                 .setMessage("Failed to start NMEA replay: ${e.message}")
@@ -1049,10 +1058,10 @@ class MainActivity : AppCompatActivity() {
             providerBeforeReplay?.let { gnssSourceCoordinator.endReplay(it, "user stopped replay") }
             providerBeforeReplay = null
 
-            android.util.Log.i("MainActivity", "Stopped NMEA replay")
+            DevLog.d("MainActivity") { "Stopped NMEA replay" }
 
         } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Error stopping NMEA replay", e)
+            DiagnosticsLogger.e(DiagTags.GNSS, "NMEA replay stop failed", e)
         }
     }
 }

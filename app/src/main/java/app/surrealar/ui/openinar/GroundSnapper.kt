@@ -29,6 +29,8 @@ internal class GroundSnapper {
     private var mainFloorY: Float? = null
     private var camX = 0f
     private var camZ = 0f
+    /** Logging only: true once a floor has been seen, so "lost" is reported only after a detection. */
+    private var floorEverDetected = false
 
     /** Main floor height in ARCore world metres, or null until a suitable surface is detected. */
     val floorY: Float? get() = mainFloorY
@@ -42,19 +44,28 @@ internal class GroundSnapper {
                 it.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
                 it.centerPose.ty() < camY - MIN_BELOW_CAMERA_M
         }
-        val prev = mainFloorY
-        mainFloorY = chooseMainFloor(planes.map { Surface(it.centerPose.ty(), it.extentX * it.extentZ) })
-        if ((prev == null) != (mainFloorY == null)) {
-            app.surrealar.util.DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
-                if (mainFloorY != null) "ground_snap floor detected y=${"%.2f".format(mainFloorY)} " +
-                    "(${"%.2f".format(camY - mainFloorY!!)} m below camera, surfaces=${planes.size})"
-                else "ground_snap floor lost — content keeps its anchor height until a surface is seen")
+        val floor = chooseMainFloor(planes.map { Surface(it.centerPose.ty(), it.extentX * it.extentZ) })
+        mainFloorY = floor
+        // Per frame: log detected/lost only once the state holds 3 s (planes flicker). Nothing is logged
+        // before the first detection, so start-up doesn't report a spurious "lost".
+        if (floor != null) floorEverDetected = true
+        if (floorEverDetected) {
+            val detected = floor != null
+            val surfaces = planes.size
+            app.surrealar.util.DiagnosticsLogger.logOnChange(ArFilamentRenderer.DIAG, FLOOR_LOG_KEY, detected,
+                stableMs = 3_000L) {
+                if (detected && floor != null) "ground_snap floor detected " +
+                    "(${"%.2f".format(camY - floor)} m below camera, surfaces=$surfaces)"
+                else "ground_snap floor lost — content keeps its anchor height until a surface is seen"
+            }
         }
     }
 
     fun reset() {
         planes = emptyList()
         mainFloorY = null
+        floorEverDetected = false
+        app.surrealar.util.DiagnosticsLogger.resetThrottles(FLOOR_LOG_KEY)
     }
 
     /** Ground height (ARCore world Y, metres) for the point at world (x, z), or null when unknown. */
@@ -76,6 +87,7 @@ internal class GroundSnapper {
         const val MIN_FLOOR_AREA_M2 = 0.5f
         /** Points within this horizontal distance of the camera use the main floor when not over a surface. */
         const val NEAR_RADIUS_M = 15f
+        private const val FLOOR_LOG_KEY = "ar.groundsnap.floor"
 
         /**
          * Main floor = the LOWEST reasonably large surface below the camera (a floor sits below

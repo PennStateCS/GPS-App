@@ -57,7 +57,14 @@ class DiagnosticsService @Inject constructor() {
     private val ticker = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "nmea-diagnostics-tick").apply { isDaemon = true }
     }.also { exec ->
-        exec.scheduleWithFixedDelay({ runCatching { tick() } }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
+        // Guarded so a failure can't cancel the schedule; logged at most once a minute.
+        exec.scheduleWithFixedDelay({
+            runCatching { tick() }.onFailure {
+                app.surrealar.util.DiagnosticsLogger.every("NMEA", "diagnostics.tick", 60_000L, 'E', throwable = it) {
+                    "NMEA rate tick failed"
+                }
+            }
+        }, 1, 1, java.util.concurrent.TimeUnit.SECONDS)
     }
 
     private fun tick() {

@@ -47,6 +47,8 @@ import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.LocationSource
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.DevLog
+import app.surrealar.util.diagnostics.DiagTags
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.AndroidEntryPoint
@@ -59,7 +61,6 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-private const val LOG_GNSS_UI = false
 private const val TAG = "HomeFragment"
 
 /**
@@ -103,7 +104,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private var lastCameraMoveMs = 0L
     private var lastCameraLocation: LatLng? = null
     private var loggedFirstMapFix = false // logs the first current-source fix applied to the map
-    private var lastMapIgnoreLogMs = 0L   // throttle for ignored-fix diagnostics
+    private var initialCameraKind = "none" // last initial-camera choice, reported in the MAP_LOADED line
 
     // Fix Badge component
     private var fixBadge: FixBadgeView? = null
@@ -125,16 +126,14 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onCreateView called, hasCenteredCamera=$hasCenteredCamera")
-
         // Inflate the layout using view binding
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         val root: View = binding.root
 
-        // Force reset of camera flag on view creation
+        // Force reset of camera flag on view creation. loggedFirstMapFix is NOT reset here: the
+        // fragment survives on the back stack, so the first-fix line is logged once per fragment
+        // (and again after a provider switch), not on every return to Home.
         hasCenteredCamera = false
-        loggedFirstMapFix = false
-        if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "onCreateView: hasCenteredCamera reset to false")
 
 
         // Initialize UI components
@@ -146,7 +145,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             mapView?.onCreate(savedInstanceState)
             mapView?.getMapAsync(this)
         } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "MapView init failed", e)
+            DiagnosticsLogger.e(DiagTags.MAP, "Home MapView init failed", e)
         }
 
         // Set up UI
@@ -167,39 +166,42 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         nav.navigate(destId, null, topLevelNavOptions(nav.graph.startDestinationId))
     }
 
+    private fun logNavFailure(target: String, e: Exception) =
+        DiagnosticsLogger.e(DiagTags.NAV, "Home navigation to $target failed", e)
+
     private fun setupQuickActionButtons() {
         // Quick Actions chips
         binding.chipQuickMap.setOnClickListener {
             try { navigateTopLevel(R.id.nav_render_map) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to map failed", e) }
+            catch (e: Exception) { logNavFailure("map", e) }
         }
 
         // Current Location card header action — same destination as the Quick Actions chip,
         // giving the prominent map preview a clear "this opens the full map" affordance.
         binding.btnOpenFullMap.setOnClickListener {
             try { navigateTopLevel(R.id.nav_render_map) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to map failed", e) }
+            catch (e: Exception) { logNavFailure("map", e) }
         }
 
         binding.chipQuickAr.setOnClickListener {
             try { navigateTopLevel(R.id.nav_open_in_ar) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to AR failed", e) }
+            catch (e: Exception) { logNavFailure("AR", e) }
         }
 
         binding.chipQuickSettings.setOnClickListener {
             try { navigateTopLevel(R.id.nav_settings) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to settings failed", e) }
+            catch (e: Exception) { logNavFailure("settings", e) }
         }
 
         // View chips for Survey Data card
         binding.chipViewCoordinates.setOnClickListener {
             try { navigateTopLevel(R.id.nav_view_coordinates) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to coordinates failed", e) }
+            catch (e: Exception) { logNavFailure("coordinates", e) }
         }
 
         binding.chipViewModels.setOnClickListener {
             try { navigateTopLevel(R.id.nav_models) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to models failed", e) }
+            catch (e: Exception) { logNavFailure("models", e) }
         }
     }
 
@@ -233,16 +235,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                             if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) {
                                 logMapIgnore("invalid-coords"); return@collect
                             }
-                            if (!loggedFirstMapFix) {
-                                loggedFirstMapFix = true
-                                // No coordinates in the diagnostic log (project rule).
-                                DiagnosticsLogger.i("MAP", "First current-source fix applied to map provider=${fix.provider}")
-                            }
                             updateMapLocation(fix)
                         }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting GNSS fixes", e)
+                    DiagnosticsLogger.e(DiagTags.MAP, "Home map stopped following GNSS: fix collector failed", e)
                 }
             }
         }
@@ -255,7 +252,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 var previousProvider: app.surrealar.gnss.source.SourceSettings.ProviderChoice? = null
                 sourceSettings.activeProvider.collect { provider ->
                     if (previousProvider != null && previousProvider != provider) {
-                        DiagnosticsLogger.i("MAP", "Live location reset due to provider switch $previousProvider -> $provider")
+                        // The source switch itself is logged once by GnssFeedTracker; this is detail.
+                        val from = previousProvider
+                        DiagnosticsLogger.d(DiagTags.MAP) { "Home map live location reset after provider switch $from -> $provider" }
                         resetMapLiveLocation()
                     }
                     previousProvider = provider
@@ -275,13 +274,13 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         loggedFirstMapFix = false
     }
 
-    /** Throttled (≤ once / 10 s) diagnostic for fixes the map dropped. */
+    /**
+     * Debug-only, throttled per reason (≤ once a minute) trace for fixes the map dropped. Dropping
+     * wrong-provider fixes is normal while an External source connects, and the toolbar already logs
+     * the same gate (MainActivity.logToolbarIgnore), so this is not an event-log line.
+     */
     private fun logMapIgnore(reason: String) {
-        val now = System.currentTimeMillis()
-        if (now - lastMapIgnoreLogMs >= 10_000L) {
-            lastMapIgnoreLogMs = now
-            DiagnosticsLogger.w("MAP", "Ignored $reason fix for live map")
-        }
+        DiagnosticsLogger.every(DiagTags.MAP, "home.ignore.$reason", 60_000L, 'D') { "Home map ignored $reason fix" }
     }
 
     /** True when [fix]'s provider matches the user-selected [source]. */
@@ -310,7 +309,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting fix snapshot", e)
+                    DiagnosticsLogger.e(DiagTags.GNSS, "Home fix badge stopped: fix snapshot collector failed", e)
                 }
             }
         }
@@ -324,7 +323,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting NMEA stats", e)
+                    DiagnosticsLogger.e(DiagTags.GNSS, "Home fix badge stopped: NMEA stats collector failed", e)
                 }
             }
         }
@@ -346,7 +345,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 HomeFieldStatusMapper.Action.OPEN_MAP -> R.id.nav_render_map
             }
             try { navigateTopLevel(dest) }
-            catch (e: Exception) { android.util.Log.e(TAG, "Field status navigation failed", e) }
+            catch (e: Exception) { logNavFailure("field status action", e) }
         }
 
         viewLifecycleOwner.lifecycleScope.launch {
@@ -367,7 +366,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e(TAG, "Error collecting field status", e)
+                    DiagnosticsLogger.e(DiagTags.GNSS, "Home Field Status stopped: collector failed", e)
                 }
             }
         }
@@ -476,14 +475,14 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     binding.chipMapType.text = mapTypeName(map.mapType)
                 }
             } catch (e: Exception) {
-                android.util.Log.e("HomeFragment", "Error changing map type", e)
+                DiagnosticsLogger.w(DiagTags.MAP, "Home map type change failed", e)
             }
         }
 
         // 3D toggle
         binding.chipToggle3d.setOnCheckedChangeListener { _, isChecked ->
             try { apply3D(enable = isChecked, animate = true) }
-            catch (e: Exception) { android.util.Log.e("HomeFragment", "Error toggling 3D", e) }
+            catch (e: Exception) { DiagnosticsLogger.w(DiagTags.MAP, "Home map 3D toggle failed", e) }
         }
     }
 
@@ -520,7 +519,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             val update = CameraUpdateFactory.newCameraPosition(builder.build())
             if (animate) map.animateCamera(update) else map.moveCamera(update)
         } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "apply3D failed", e)
+            DiagnosticsLogger.w(DiagTags.MAP, "Home map apply3D failed enable=$enable", e)
         }
     }
 
@@ -533,7 +532,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting coordinate count", e)
+                    DiagnosticsLogger.e(DiagTags.DATA, "Home coordinate count collector failed", e)
                 }
             }
         }
@@ -546,7 +545,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("HomeFragment", "Error collecting model count", e)
+                    DiagnosticsLogger.e(DiagTags.DATA, "Home model count collector failed", e)
                 }
             }
         }
@@ -574,14 +573,13 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         try {
             if (map.isMyLocationEnabled != visible) map.isMyLocationEnabled = visible
         } catch (e: SecurityException) {
-            android.util.Log.w(TAG, "My Location layer toggle failed", e)
+            // Called per fix: one line a minute is enough to show a repeating failure.
+            DiagnosticsLogger.every(DiagTags.MAP, "home.myLocation", 60_000L, 'W', e) { "Home My Location layer toggle failed visible=$visible" }
         }
     }
 
     private fun updateMapLocation(fix: Fix?) {
         try {
-            if (LOG_GNSS_UI) android.util.Log.d("HomeFragment", "updateMapLocation: fix=${fix?.let { "lat=${it.latDeg}, lon=${it.lonDeg}" } ?: "null"}")
-
             if (fix != null && googleMap != null) {
                 if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
                 val locationForDot = fixToLocation(fix)
@@ -589,13 +587,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 showGnssStatusChip(null)   // live position: no waiting chip
                 onLocationChangedListener?.onLocationChanged(locationForDot)
 
+                if (!loggedFirstMapFix) {
+                    loggedFirstMapFix = true
+                    // One line per fragment / provider switch. No coordinates in the diagnostic log (project rule).
+                    DiagnosticsLogger.i(DiagTags.MAP, "First fix applied to Home map provider=${fix.provider} " +
+                        "status=${fix.rtkStatus} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} sats=${fix.satsUsed}")
+                }
+
                 val location = LatLng(fix.latDeg, fix.lonDeg)
                 val map = googleMap
                 if (map != null) {
                     if (!hasCenteredCamera) {
-                        android.util.Log.d(TAG, "First fix to map: hAcc=${fix.hAccM} status=${fix.rtkStatus} sats=${fix.satsUsed}")
-                        // Privacy: do not log exact live coordinates to the persistent diagnostic ZIP.
-                        DiagnosticsLogger.i("MAP", "First fix applied to map status=${fix.rtkStatus} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} sats=${fix.satsUsed}")
                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(location, desiredFollowZoom))
                         hasCenteredCamera = true
                         lastCameraMoveMs = System.currentTimeMillis()
@@ -618,7 +620,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 binding.layoutMapPlaceholder.visibility = View.VISIBLE
             }
         } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "updateMapLocation failed", e)
+            // Runs per fix: log the failure at most once a minute.
+            DiagnosticsLogger.every(DiagTags.MAP, "home.updateMap", 60_000L, 'E', e) { "Home map location update failed" }
         }
     }
 
@@ -631,7 +634,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         val live = fixSwitchboard.currentFix.value
             ?.takeIf { it.latDeg in -90.0..90.0 && it.lonDeg in -180.0..180.0 }
             ?.let { it.latDeg to it.lonDeg }
-        val lastKnown = runCatching { lastKnownPositionStore.get() }.getOrNull()
+        val lastKnown = runCatching { lastKnownPositionStore.get() }
+            .onFailure { DiagnosticsLogger.w(DiagTags.MAP, "Home initial camera: last-known position read failed", it) }
+            .getOrNull()
         // Saved points are only needed when there is neither a live fix nor a last position.
         if (live != null || lastKnown != null) {
             moveToInitial(map, HomeInitialCamera.choose(live, lastKnown, emptyList()))
@@ -643,6 +648,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     coordinateRepository.getAllCoordinatesList().map { it.latitude to it.longitude }
                 }
+            }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                DiagnosticsLogger.w(DiagTags.MAP, "Home initial camera: saved points read failed", it)
             }.getOrDefault(emptyList())
             // A live fix may have arrived meanwhile — don't pull the camera away from it.
             if (!hasCenteredCamera && googleMap === map) {
@@ -681,9 +689,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         LatLng(HomeInitialCamera.Overview.LAT, HomeInitialCamera.Overview.LON), HomeInitialCamera.Overview.ZOOM))
             }
             showGnssStatusChip(choice.waitingText)
-            DiagnosticsLogger.i("MAP", "Initial camera: ${choice::class.simpleName}")
+            // Reported once in the MAP_LOADED line; the step itself is debug detail.
+            initialCameraKind = choice::class.simpleName ?: "unknown"
+            DiagnosticsLogger.d(DiagTags.MAP) { "Home initial camera: $initialCameraKind" }
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "applyInitialCamera failed", e)
+            DiagnosticsLogger.w(DiagTags.MAP, "Home initial camera move failed choice=${choice::class.simpleName}", e)
         }
     }
 
@@ -721,7 +731,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             loc.time = fix.timeUtc.toEpochMilli()
             loc
         } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "fixToLocation failed, returning bare location", e)
+            DiagnosticsLogger.every(DiagTags.MAP, "home.fixToLocation", 60_000L, 'W', e) { "Home fixToLocation failed, using bare location" }
             Location("LocationManagerFix").also {
                 it.latitude = fix.latDeg
                 it.longitude = fix.lonDeg
@@ -732,19 +742,23 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @SuppressLint("MissingPermission")
     override fun onMapReady(map: GoogleMap) {
         try {
-            android.util.Log.d(TAG, "onMapReady: map ready, renderer=${map.javaClass.simpleName}, mapsRenderer=${app.surrealar.SurRealApplication.activeMapsRenderer}")
-            DiagnosticsLogger.i("MAP", "MAP_READY mapsRenderer=${SurRealApplication.activeMapsRenderer}")
+            // MAP_READY is debug detail; the one event-log line per map open is MAP_LOADED (or the
+            // 10 s timeout warning), which carries the renderer, network and initial camera.
+            DiagnosticsLogger.d(DiagTags.MAP) { "Home MAP_READY mapsRenderer=${SurRealApplication.activeMapsRenderer}" }
             SurRealApplication.reportMapLoadStatus("MAP_READY")
             googleMap = map
 
-            val playServicesVersion = try {
-                requireContext().packageManager.getPackageInfo("com.google.android.gms", 0).versionName ?: "unknown"
-            } catch (_: Exception) { "unavailable" }
-            android.util.Log.d(TAG, "onMapReady: Play Services version=$playServicesVersion")
+            DevLog.d(TAG) {
+                val playServicesVersion = try {
+                    requireContext().packageManager.getPackageInfo("com.google.android.gms", 0).versionName ?: "unknown"
+                } catch (_: Exception) { "unavailable" }   // best-effort trace only
+                "onMapReady: Play Services version=$playServicesVersion"
+            }
 
-            // Log network connectivity state — internet-without-validation means tiles won't load
-            // (e.g. device is on a receiver Wi-Fi network with no real internet access)
-            run {
+            // Network state at map open — internet-without-validation means tiles won't load (e.g. the
+            // device is on a receiver Wi-Fi with no real internet). Network changes themselves are
+            // logged by SystemEventsLogger; here it only goes into the MAP_LOADED / timeout line.
+            val network = run {
                 val cm = requireContext().getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
                 val active = cm.activeNetwork
                 val caps = active?.let { cm.getNetworkCapabilities(it) }
@@ -754,20 +768,18 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
                 val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
                 val transport = when { active == null -> "none"; isVpn -> "VPN"; isWifi -> "WiFi"; isCellular -> "cellular"; else -> "other" }
-                android.util.Log.d(TAG, "onMapReady: network transport=$transport internet=$hasInternet validated=$hasValidated")
-                if (hasInternet && !hasValidated) {
-                    android.util.Log.w(TAG, "onMapReady: network not validated — likely receiver WiFi; map tiles may not load")
-                    DiagnosticsLogger.w("SYSTEM", "internet=true validated=false transport=$transport — tiles may not load (receiver WiFi?)")
-                }
-                DiagnosticsLogger.i("MAP", "Network transport=$transport internet=$hasInternet validated=$hasValidated")
+                "network=$transport internet=$hasInternet validated=$hasValidated"
             }
+            DiagnosticsLogger.d(DiagTags.MAP) { "Home map $network" }
 
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
-            val nightMode = (requireContext().resources.configuration.uiMode and
-                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-            android.util.Log.d(TAG, "onMapReady: mapType=${map.mapType} nightMode=$nightMode, applying theme")
+            DevLog.d(TAG) {
+                val nightMode = (requireContext().resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+                "onMapReady: mapType=${map.mapType} nightMode=$nightMode, applying theme"
+            }
             MapThemeHelper.applyTheme(requireContext(), map, map.mapType)
 
             // Opening camera (replaces the old hardcoded campus position): live fix → last GNSS
@@ -782,16 +794,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 mapTilesLoaded = true
                 val elapsed = System.currentTimeMillis() - mapReadyAt
                 val cam = map.cameraPosition
-                android.util.Log.d(TAG, "Map tiles loaded: ${elapsed}ms after onMapReady, " +
-                    "zoom=${cam.zoom}, lat=${cam.target.latitude}, lon=${cam.target.longitude}")
-                DiagnosticsLogger.i("MAP", "MAP_LOADED elapsed=${elapsed}ms zoom=%.1f".format(cam.zoom))
+                // The one event-log line per Home map open. No camera target (coordinates).
+                DiagnosticsLogger.i(DiagTags.MAP, "Home MAP_LOADED elapsedMs=$elapsed renderer=${SurRealApplication.activeMapsRenderer} " +
+                    "camera=$initialCameraKind zoom=${"%.1f".format(cam.zoom)} $network")
                 SurRealApplication.reportMapLoadStatus("MAP_LOADED (${elapsed}ms)")
             }
             // Warn if tiles never load within 10 s (blank/gray map scenario)
             viewLifecycleOwner.lifecycleScope.launch {
                 delay(10_000)
                 if (!mapTilesLoaded) {
-                    DiagnosticsLogger.w("MAP", "MAP_LOADED did not fire after 10 seconds — tiles may be blank")
+                    DiagnosticsLogger.w(DiagTags.MAP, "Home MAP_LOADED did not fire after 10 seconds — tiles may be blank " +
+                        "renderer=${SurRealApplication.activeMapsRenderer} $network")
                     SurRealApplication.reportMapLoadStatus("MAP_READY but MAP_LOADED did not fire (10s)")
                 }
             }
@@ -799,11 +812,11 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             // Provide a custom LocationSource so the blue dot follows our GNSS location data
             mapLocationSource = object : LocationSource {
                 override fun activate(listener: LocationSource.OnLocationChangedListener) {
-                    android.util.Log.d(TAG, "LocationSource activated — blue dot wired to GNSS stream")
+                    DevLog.d(TAG) { "LocationSource activated — blue dot wired to GNSS stream" }
                     onLocationChangedListener = listener
                 }
                 override fun deactivate() {
-                    if (LOG_GNSS_UI) android.util.Log.d(TAG, "LocationSource deactivated")
+                    DevLog.d(TAG) { "LocationSource deactivated" }
                     onLocationChangedListener = null
                 }
             }
@@ -815,7 +828,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     Manifest.permission.ACCESS_FINE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                android.util.Log.d(TAG, "onMapReady: location permission granted — My Location layer fed by GNSS")
+                DevLog.d(TAG) { "onMapReady: location permission granted — My Location layer fed by GNSS" }
                 // Shown once the GNSS feed has a live fix (setLiveDotVisible); hidden until then so
                 // the map never shows a dot from any other source or a frozen position.
                 map.isMyLocationEnabled = fixSwitchboard.currentFix.value != null
@@ -839,8 +852,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     it.root.findViewById<android.widget.TextView>(R.id.text_map_placeholder)
                         ?.text = "Location services required"
                 }
-                // If you see this log and the map is blank: grant location permission and restart
-                android.util.Log.w(TAG, "onMapReady: location permission not granted — placeholder shown, map tiles visible but My Location disabled")
+                // Location permission state is logged by SystemEventsLogger; this is a developer trace.
+                // If you see this and the map is blank: grant location permission and restart.
+                DevLog.d(TAG) { "onMapReady: location permission not granted — placeholder shown, My Location disabled" }
             }
 
             // Apply the current-provider fix right now (if one exists), without waiting for the
@@ -852,17 +866,17 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val validCoords = fix.latDeg in -90.0..90.0 && fix.lonDeg in -180.0..180.0
                 when {
                     isFixStale(fix) ->
-                        android.util.Log.d(TAG, "onMapReady: current fix is stale — ignoring")
+                        DevLog.d(TAG) { "onMapReady: current fix is stale — ignoring" }
                     !validCoords ->
-                        android.util.Log.d(TAG, "onMapReady: current fix has invalid coords — ignoring")
+                        DevLog.d(TAG) { "onMapReady: current fix has invalid coords — ignoring" }
                     else -> {
-                        android.util.Log.d(TAG, "onMapReady: current fix available lat=${fix.latDeg}, lon=${fix.lonDeg} — applying immediately")
+                        DevLog.d(TAG) { "onMapReady: current fix available — applying immediately" }
                         updateMapLocation(fix)
                     }
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("HomeFragment", "onMapReady failed", e)
+            DiagnosticsLogger.e(DiagTags.MAP, "Home onMapReady failed", e)
         }
     }
 

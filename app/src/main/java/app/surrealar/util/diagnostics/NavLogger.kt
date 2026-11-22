@@ -20,10 +20,19 @@ object NavLogger : NavController.OnDestinationChangedListener {
     fun line(screen: String, argNames: Collection<String>): String =
         "Screen $screen" + if (argNames.isEmpty()) "" else " args=[${argNames.sorted().joinToString(",")}]"
 
+    /**
+     * Identity of a visit: the screen plus its back-stack entry id. A recreated Activity re-adds the
+     * listener and NavController re-reports the current (restored) entry with the same id, so that
+     * repeat is not logged; a real navigation, even back to the same screen, gets a new entry id.
+     */
+    fun visitKey(screen: String, entryId: String?): String = "$screen#${entryId ?: "?"}"
+
     override fun onDestinationChanged(controller: NavController, destination: NavDestination, arguments: Bundle?) {
+        // displayName throws for an id with no resource name; screenName then falls back.
         val screen = screenName(runCatching { destination.displayName }.getOrNull(), destination.label, destination.id)
         DiagnosticsLogger.currentScreen = screen
         val names = arguments?.keySet()?.filterNot { it.startsWith("android-support-nav:") }.orEmpty()
-        DiagnosticsLogger.i(DiagTags.NAV, line(screen, names))
+        val entryId = runCatching { controller.currentBackStackEntry?.id }.getOrNull()
+        DiagnosticsLogger.logOnChange(DiagTags.NAV, "nav.screen", visitKey(screen, entryId)) { line(screen, names) }
     }
 }

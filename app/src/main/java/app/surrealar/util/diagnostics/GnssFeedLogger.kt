@@ -48,17 +48,19 @@ class GnssFeedLogger @Inject constructor(
         appScope.launch {
             while (isActive) {
                 delay(HEARTBEAT_MS)
-                DiagnosticsLogger.i(DiagTags.GNSS, feed.heartbeat(now()))
+                // Written only when a bucket changed (or every 10 min), and never without a source/fix.
+                feed.heartbeatIfDue(now())?.let { DiagnosticsLogger.i(DiagTags.GNSS, it) }
             }
         }
     }
 
     companion object {
+        /** How often the heartbeat is checked; see [GnssFeedTracker.heartbeatIfDue]. */
         const val HEARTBEAT_MS = 60_000L
-        /** Set once started; the report reads live stats from it. */
         /** Set by ReceiverDeviceManager so its corrections flow reaches [link] without an early inject. */
         fun onCorrections(c: io.github.pennstatecs.geokit.gnss.receiver.ReceiverCorrections?) { instance?.link?.onCorrections(c) }
 
+        /** Set once started; the report reads live stats from it. */
         @Volatile var instance: GnssFeedLogger? = null
             private set
 

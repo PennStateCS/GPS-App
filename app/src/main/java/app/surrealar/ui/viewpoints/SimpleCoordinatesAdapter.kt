@@ -5,7 +5,9 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.util.Log
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import android.util.LruCache
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -261,7 +263,8 @@ class SimpleCoordinatesAdapter(
         }
 
         if (accent == null) {
-            Log.w("SimpleCoordinatesAdapter", "Accent view still missing after injection attempt")
+            // Per row: developer trace only, throttled.
+            DevLog.every("SimpleCoordinatesAdapter", "coordlist.accent", 60_000L) { "Accent view still missing after injection attempt" }
         }
     }
 
@@ -287,7 +290,8 @@ class SimpleCoordinatesAdapter(
             bitmapCache.put(cacheKey, scaled)
             scaled
         } catch (e: Exception) {
-            Log.w("SimpleCoordinatesAdapter", "Failed to decode thumbnail: $thumbPath", e)
+            // Per row: at most one line a minute (no path: it can name the user's files).
+            DiagnosticsLogger.every(DiagTags.MODEL, "coordlist.thumb", 60_000L, 'W', e) { "Coordinate list thumbnail decode failed" }
             null
         }
     }
@@ -354,7 +358,7 @@ class SimpleCoordinatesAdapter(
 
     fun setSelectedId(newId: String?) {
         if (selectedId == newId) return
-        Log.d("SimpleCoordinatesAdapter", "Selection change: old=$selectedId new=$newId")
+        DevLog.d("SimpleCoordinatesAdapter") { "Selection change: old=$selectedId new=$newId" }
         val oldId = selectedId
         selectedId = newId
         oldId?.let { id ->

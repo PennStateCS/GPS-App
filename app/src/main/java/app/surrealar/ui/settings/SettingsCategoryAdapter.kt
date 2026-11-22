@@ -92,7 +92,9 @@ class SettingsCategoryAdapter(
 
             (holder.body ?: holder.itemView).setOnClickListener { handleClick(category) }
         } catch (e: Exception) {
-            android.util.Log.e("SettingsCategoryAdapter", "onBindViewHolder error at $position", e)
+            // Per row: at most one line a minute.
+            app.surrealar.util.DiagnosticsLogger.every(app.surrealar.util.diagnostics.DiagTags.SETTINGS,
+                "settings.category.bind", 60_000L, 'E', e) { "Settings category row bind failed position=$position" }
         }
     }
 
@@ -113,7 +115,8 @@ class SettingsCategoryAdapter(
 
             onCategorySelected(category)
         } catch (e: Exception) {
-            android.util.Log.e("SettingsCategoryAdapter", "handleClick error", e)
+            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.SETTINGS,
+                "Settings category select failed id=${category.id}", e)
         }
     }
 

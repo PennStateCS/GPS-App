@@ -61,7 +61,7 @@ class ExitReasonRecorder(
             exitsDir.mkdirs()
             val file = File(exitsDir, "${fileStamp(e.timestampMs)}-$name.txt")
             input.use { inp -> file.outputStream().use { inp.copyTo(it) } }
-        }.onFailure { log(true, "Could not save the $name trace: ${it.message}") }
+        }.onFailure { log(true, "Could not save the $name trace: ${it.javaClass.simpleName}: ${it.message}") }
     }
 
     /** Keeps the newest [MAX_TRACES] trace files. */
@@ -101,7 +101,7 @@ class ExitReasonRecorder(
                     val am = app.getSystemService(ActivityManager::class.java) ?: return@runCatching
                     val exits = am.getHistoricalProcessExitReasons(app.packageName, 0, 10).map { it.toExit() }
                     ExitReasonRecorder(exitsDir(app), app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)).record(exits)
-                }.onFailure { DiagnosticsLogger.w("APP", "Could not read exit reasons: ${it.message}") }
+                }.onFailure { DiagnosticsLogger.w(DiagTags.APP, "Could not read exit reasons", it) }
             }, "diag-exits").start()
         }
 

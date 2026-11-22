@@ -5,6 +5,7 @@ import io.github.pennstatecs.geokit.gnss.accuracy.UereTable
 import io.github.pennstatecs.geokit.ellipsoid.Ellipsoid
 import io.github.pennstatecs.geokit.local.LocalEnu
 import io.github.pennstatecs.geokit.stats.RunningStats
+import io.github.pennstatecs.geokit.gnss.log.GnssLog
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import kotlinx.coroutines.CoroutineScope
@@ -279,7 +280,10 @@ public class ObservationSession(
                      */
                     evaluate(elapsed)
                 }
-                .catch { e -> _state.value = State.Paused("error: ${e.message}") }
+                .catch { e ->
+                    GnssLog.diagnosticError("CAPTURE", "Observation capture stopped by an error; session paused", e)
+                    _state.value = State.Paused("error: ${e.message}")
+                }
                 .collect()
         }
     }

@@ -284,7 +284,8 @@ public class NmeaFuser(
             lastZda = zda
             lastZdaAtMs = clock()
         } else {
-            GnssLog.w("NmeaFuser", "ZDA ignored: time ${zda.timeRaw} doesn't match GGA/RMC $ref")
+            // Can repeat per ZDA (each second): throttled, debug builds only.
+            GnssLog.dEvery("NmeaFuser", "fuser.zda.ignored", 60_000L) { "ZDA ignored: time ${zda.timeRaw} doesn't match GGA/RMC $ref" }
         }
     }
 

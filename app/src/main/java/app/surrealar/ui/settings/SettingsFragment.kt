@@ -6,7 +6,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import android.view.LayoutInflater
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -212,8 +214,23 @@ class SettingsFragment : BaseTwoPaneFragment() {
             box?.visibility = View.VISIBLE
             statusTv?.visibility = View.VISIBLE
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "updateDeviceBox failed", e)
+            settingsError("updateDeviceBox failed", e)
         }
+    }
+
+    /**
+     * Logs a Settings failure at E with its exception. A cancelled coroutine (category switched, screen
+     * closed) is rethrown instead of logged, so callers can use it in any catch / onFailure.
+     */
+    private fun settingsError(message: String, e: Throwable, tag: String = DiagTags.SETTINGS) {
+        if (e is CancellationException) throw e
+        DiagnosticsLogger.e(tag, message, e)
+    }
+
+    /** [settingsError] at W, for handled problems (a UI refresh skipped, a best-effort lookup failed). */
+    private fun settingsWarn(message: String, e: Throwable, tag: String = DiagTags.SETTINGS) {
+        if (e is CancellationException) throw e
+        DiagnosticsLogger.w(tag, message, e)
     }
 
     companion object {
@@ -280,7 +297,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "buildCategoryContent failed for category ${category.id}", e)
+            settingsError("buildCategoryContent failed for category ${category.id}", e)
             null
         }
 
@@ -314,7 +331,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     switchKeepAwake?.isChecked = current.keepScreenAwake
                     switchMaxBright?.isChecked = current.maxBrightnessWhileOpen
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "Failed to load appearance settings", e)
+                    settingsError("Failed to load appearance settings", e)
                 }
             }
 
@@ -332,7 +349,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             }
                         )
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save appearance settings", e)
+                        settingsError("Failed to save appearance settings", e)
                         showSettingsMessage("Failed to save theme.")
                     }
                 }
@@ -344,7 +361,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(showLiveGnssStatusBar = isChecked))
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save GNSS status bar setting", e)
+                        settingsError("Failed to save GNSS status bar setting", e)
                     }
                 }
             }
@@ -355,7 +372,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(keepScreenAwake = isChecked))
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save keep screen awake setting", e)
+                        settingsError("Failed to save keep screen awake setting", e)
                     }
                 }
             }
@@ -366,19 +383,19 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(maxBrightnessWhileOpen = isChecked))
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save max brightness setting", e)
+                        settingsError("Failed to save max brightness setting", e)
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupAppearanceContent failed", e)
+            settingsError("setupAppearanceContent failed", e)
         }
         return view
     }
 
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
-        try { setupLocationSourceUi(view) } catch (e: Exception) { Log.e("SettingsFragment", "setupLocationSourceUi failed", e) }
+        try { setupLocationSourceUi(view) } catch (e: Exception) { settingsError("setupLocationSourceUi failed", e) }
         return view
     }
 
@@ -388,23 +405,23 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener {
                 try {
                     exportBackupLauncher.launch("coordinates_backup_${System.currentTimeMillis()}.json")
-                } catch (e: Exception) { Log.e("SettingsFragment", "export launch failed", e) }
+                } catch (e: Exception) { settingsError("export launch failed", e) }
             }
             view.findViewById<Button>(R.id.btn_export_points_csv)?.setOnClickListener {
                 try {
                     exportPointsCsvLauncher.launch("survey_points_${System.currentTimeMillis()}.csv")
-                } catch (e: Exception) { Log.e("SettingsFragment", "points CSV export launch failed", e) }
+                } catch (e: Exception) { settingsError("points CSV export launch failed", e) }
             }
             view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener {
                 try {
                     // Most providers label .json as application/json; the broader types are a
                     // fallback for providers that mislabel it (the parser still validates content).
                     importBackupLauncher.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream"))
-                } catch (e: Exception) { Log.e("SettingsFragment", "import launch failed", e) }
+                } catch (e: Exception) { settingsError("import launch failed", e) }
             }
-            view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { Log.e("SettingsFragment", "cancelActiveImport failed", e) } }
+            view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { settingsError("cancelActiveImport failed", e) } }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupDataContent wiring failed", e)
+            settingsError("setupDataContent wiring failed", e)
         }
         return view
     }
@@ -418,7 +435,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     try {
                         switchDevTools.isChecked = settingsRepo.developerSettings.first().developerToolsEnabled
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "dev tools initial load error", e)
+                        settingsError("dev tools initial load error", e)
                     }
                 }
                 switchDevTools.setOnCheckedChangeListener { _, v ->
@@ -427,16 +444,16 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             try {
                                 settingsRepo.setDeveloperSettings(DeveloperSettings(developerToolsEnabled = v))
                             } catch (e: Exception) {
-                                Log.e("SettingsFragment", "dev tools save error", e)
+                                settingsError("dev tools save error", e)
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "dev tools switch error", e)
+                        settingsError("dev tools switch error", e)
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupDeveloperContent wiring failed", e)
+            settingsError("setupDeveloperContent wiring failed", e)
         }
         return view
     }
@@ -486,7 +503,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     try {
                         settingsRepo.setArDisplaySettings(settings)
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save AR display settings", e)
+                        settingsError("Failed to save AR display settings", e)
                     }
                 }
             }
@@ -507,7 +524,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
-                    Log.e("SettingsFragment", "Failed to load AR display settings", e)
+                    settingsError("Failed to load AR display settings", e)
                 }
             }
 
@@ -528,7 +545,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 if (editScale.text?.toString()?.toFloatOrNull()?.let { it in 0.1f..10.0f } == true) saveAll()
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupARDisplayContent failed", e)
+            settingsError("setupARDisplayContent failed", e)
         }
         return view
     }
@@ -559,7 +576,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             var currentMap = app.surrealar.settings.SettingsDefaults.map
             fun persistMap(updated: app.surrealar.ui.rendermap.MapSettings) {
                 currentMap = updated
-                saveScope.launch { runCatching { settingsRepo.setMapSettings(updated) } }
+                saveScope.launch { runCatching { settingsRepo.setMapSettings(updated) }.onFailure { settingsError("save map settings failed", it) } }
             }
 
             // ── Stakeout defaults (StakeoutSettings) ────────────────────────────────
@@ -585,7 +602,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 if (updated == currentStakeout) return
                 currentStakeout = updated
                 // Save scope (not the view's): a save started as the user leaves the screen still completes.
-                saveScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) } }
+                saveScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) }.onFailure { settingsError("save stakeout settings failed", it) } }
             }
 
             categoryScope.launch {
@@ -629,11 +646,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         edit.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persistStakeout() }
                     }
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "Failed to load map settings", e)
+                    settingsError("Failed to load map settings", e)
                 }
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupMapContent failed", e)
+            settingsError("setupMapContent failed", e)
         }
         return view
     }
@@ -714,7 +731,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             bind(s)
             saveScope.launch {
                 runCatching { settingsRepo.setCoordinateSystemSettings(s) }
-                    .onFailure { Log.e("SettingsFragment", "Failed to save coordinate system", it) }
+                    .onFailure { settingsError("Failed to save coordinate system", it) }
             }
         }
 
@@ -750,7 +767,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         categoryScope.launch {
             runCatching { bind(settingsRepo.coordinateSystemSettings.first()) }
-                .onFailure { Log.e("SettingsFragment", "Failed to load coordinate system", it) }
+                .onFailure { settingsError("Failed to load coordinate system", it) }
         }
         // Keep the preview live while the page is open.
         categoryScope.launch {
@@ -762,7 +779,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
     private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
-        try { setupCoordinateSystemCard(view) } catch (e: Exception) { Log.e("SettingsFragment", "coordinate system card failed", e) }
+        try { setupCoordinateSystemCard(view) } catch (e: Exception) { settingsError("coordinate system card failed", e) }
         try {
             val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
             val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
@@ -785,7 +802,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             defaultNamePrefix = prefix.ifEmpty { "Point" }
                         ))
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save coordinate name prefix", e)
+                        settingsError("Failed to save coordinate name prefix", e)
                     }
                 }
             }
@@ -799,7 +816,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             autoIncrementNames     = autoInc
                         ))
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save coordinate display settings", e)
+                        settingsError("Failed to save coordinate display settings", e)
                     }
                 }
             }
@@ -815,7 +832,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
-                    Log.e("SettingsFragment", "Failed to load coordinate display settings", e)
+                    settingsError("Failed to load coordinate display settings", e)
                 }
             }
 
@@ -832,7 +849,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 if (editPrefix.text?.toString()?.trim().isNullOrEmpty().not()) savePrefix()
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupCoordinateDisplayContent failed", e)
+            settingsError("setupCoordinateDisplayContent failed", e)
         }
         return view
     }
@@ -863,12 +880,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 btnExport.isEnabled = false
                 btnExport.text = "Exporting…"
                 categoryScope.launch {
-                    val report = try {
-                        app.surrealar.util.DiagnosticReportExporter.buildReport(requireContext())
-                    } catch (ex: Exception) {
-                        app.surrealar.util.DiagnosticsLogger.e("EXPORT", "Export error", ex)
-                        null
-                    }
+                    // buildReport logs its own failure and returns null.
+                    val report = app.surrealar.util.DiagnosticReportExporter.buildReport(requireContext())
                     btnExport.isEnabled = true
                     btnExport.text = "Export Diagnostic Report"
                     if (report == null) {
@@ -896,13 +909,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         startActivity(Intent.createChooser(shareIntent, "Share diagnostic report"))
                         showSettingsMessage("Diagnostic report ready.")
                     } catch (ex: Exception) {
-                        app.surrealar.util.DiagnosticsLogger.e("EXPORT", "Share failed", ex)
+                        settingsError("Diagnostic report share failed", ex, DiagTags.EXPORT)
                         showSettingsMessage("Could not create diagnostic report.")
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupAboutContent failed", e)
+            settingsError("setupAboutContent failed", e)
         }
         return view
     }
@@ -1009,7 +1022,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     try {
                         settingsRepo.setGnssCaptureSettings(settings)
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "Failed to save GNSS capture settings", e)
+                        settingsError("Failed to save GNSS capture settings", e)
                     }
                 }
             }
@@ -1027,7 +1040,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     spinnerPreset?.setText(saved.preset.label, false)
                     applyPresetUi(saved.preset)
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "Failed to load GNSS capture settings", e)
+                    settingsError("Failed to load GNSS capture settings", e)
                 }
             }
 
@@ -1040,7 +1053,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     runCatching {
                         val stored = settingsRepo.gnssCaptureSettings.first()
                         settingsRepo.setGnssCaptureSettings(stored.copy(preset = chosen))
-                    }.onFailure { Log.e("SettingsFragment", "Failed to save capture preset", it) }
+                    }.onFailure { settingsError("Failed to save capture preset", it) }
                 }
             }
             spinner?.setOnItemClickListener { _, _, _, _ -> trySave() }
@@ -1051,7 +1064,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 edit?.saveWhileTyping(saveScope) { if (currentPreset == io.github.pennstatecs.geokit.gnss.capture.CapturePreset.CUSTOM) trySave() }
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "setupGnssCaptureContent failed", e)
+            settingsError("setupGnssCaptureContent failed", e)
         }
         return view
     }
@@ -1102,6 +1115,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         .getOrDefault(app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
                     if (persisted != profile) {
                         runCatching { settingsRepo.setExternalReceiverProfile(profile) }
+                            .onFailure { settingsError("save receiver profile failed", it) }
                         if (this@SettingsFragment.view == null) return@launch
                         // Conservative: only apply the new profile's default port if the current
                         // port is missing/invalid or wasn't user-customized (a custom port is kept).
@@ -1171,14 +1185,14 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                                 val name = selectedDeviceName ?: "Unknown Device"
                                 saveScope.launch {
                                     runCatching { settingsRepo.setExternalTcp(host, port, name) }
-                                        .onFailure { Log.e("SettingsFragment", "Failed to save receiver name", it) }
+                                        .onFailure { settingsError("Failed to save receiver name", it) }
                                 }
                             }
                             updateDeviceBox()
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "deviceInfo collect error", e)
+                    settingsWarn("receiver device info display failed", e, DiagTags.RECEIVER)
                 }
             }
         }
@@ -1201,17 +1215,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                                     selectedDeviceName = resolved
                                     saveScope.launch {
                                         runCatching { settingsRepo.setExternalTcp(host, port, resolved) }
-                                            .onFailure { Log.e("SettingsFragment", "Failed to save receiver name", it) }
+                                            .onFailure { settingsError("Failed to save receiver name", it) }
                                     }
                                     updateDeviceBox()
                                 }
                             } catch (e: Exception) {
-                                Log.w("SettingsFragment", "resolveReachName failed", e)
+                                settingsWarn("receiver name lookup failed", e, DiagTags.RECEIVER)
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w("SettingsFragment", "runDiagnostic failed for $host:$port", e)
+                    settingsError("receiver diagnostic probe failed port=$port", e, DiagTags.RECEIVER)
                 }
             }
         }
@@ -1238,7 +1252,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     showSettingsMessage(getString(R.string.host_required))
                 }
             } catch (e: Exception) {
-                Log.e("SettingsFragment", "attemptConnectFromInline failed", e)
+                settingsError("attemptConnectFromInline failed", e)
             }
         }
 
@@ -1272,7 +1286,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
                     settingsRepo.clearExternalTcp()
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "disconnect failed", e)
+                    settingsError("disconnect failed", e)
                 }
             }
         }
@@ -1597,10 +1611,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             lastExternalFixTimeMs = System.currentTimeMillis()
                             lastExternalFixRtkStatus = fix.rtkStatus
                             provisionalConnectedUntil = 0L
-                            try { refresh(lastExternalFixTimeMs) } catch (e: Exception) { Log.w("SettingsFragment", "status refresh error", e) }
+                            // Per fix: at most one line a minute.
+                            try { refresh(lastExternalFixTimeMs) } catch (e: Exception) {
+                                DiagnosticsLogger.every(DiagTags.SETTINGS, "settings.status.refresh", 60_000L, 'W', e) { "Receiver status refresh failed (on fix)" }
+                            }
                         }
                     } catch (e: Exception) {
-                        Log.w("SettingsFragment", "fix collect error in status job", e)
+                        settingsWarn("fix collect error in status job", e)
                     }
                 }
             }
@@ -1615,7 +1632,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
             // Periodic refresh to age out status
             while (isActive) {
-                try { refresh(System.currentTimeMillis()) } catch (e: Exception) { Log.w("SettingsFragment", "periodic refresh error", e) }
+                try { refresh(System.currentTimeMillis()) } catch (e: Exception) {
+                    DiagnosticsLogger.every(DiagTags.SETTINGS, "settings.status.periodic", 60_000L, 'W', e) { "Receiver status refresh failed (periodic)" }
+                }
                 delay(1_000L)
             }
         }
@@ -1636,7 +1655,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     settingsRepo.setGnssReceiverSettings(transform(settingsRepo.gnssReceiverSettings.first()))
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "antenna setup save error", e)
+                    settingsError("antenna setup save error", e)
                 }
             }
         }
@@ -1673,7 +1692,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().poleHeightM))
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "pole height load error", e)
+                    settingsError("pole height load error", e)
                 }
             }
             val saveAntenna = {
@@ -1696,7 +1715,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "pole height save error", e)
+                        settingsError("pole height save error", e)
                     }
                 }
             }
@@ -1712,7 +1731,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().cameraBelowReceiverM))
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "camera distance load error", e)
+                    settingsError("camera distance load error", e)
                 }
             }
             val saveCamera = {
@@ -1730,7 +1749,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "camera distance save error", e)
+                        settingsError("camera distance save error", e)
                     }
                 }
             }
@@ -1760,7 +1779,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "phase-centre offset save error", e)
+                        settingsError("phase-centre offset save error", e)
                     }
                 }
             }
@@ -1775,7 +1794,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM))
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "internal antenna height load error", e)
+                    settingsError("internal antenna height load error", e)
                 }
             }
             val saveInternalAntenna = {
@@ -1793,7 +1812,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "internal antenna height save error", e)
+                        settingsError("internal antenna height save error", e)
                     }
                 }
             }
@@ -1811,7 +1830,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             try {
                 switchMock?.isChecked = settingsRepo.mockLocationEnabled.first()
             } catch (e: Exception) {
-                Log.e("SettingsFragment", "Failed to load mock location setting", e)
+                settingsError("Failed to load mock location setting", e)
             }
         }
 
@@ -1821,7 +1840,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     settingsRepo.setMockLocationEnabled(checked)
                     if (!checked && this@SettingsFragment.view != null) errorBanner?.visibility = View.GONE
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "Failed to save mock location setting", e)
+                    settingsError("Failed to save mock location setting", e)
                 }
             }
         }
@@ -1833,7 +1852,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
                 } catch (ex: Exception) {
-                    Log.w("SettingsFragment", "Could not open developer settings", ex)
+                    settingsWarn("Could not open developer settings", ex)
                 }
             }
         }
@@ -1857,7 +1876,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "mock location error observer failed", e)
+                    settingsError("mock location error observer failed", e)
                 }
             }
         }
@@ -1922,9 +1941,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             if (initializing) return@setOnCheckedChangeListener
             when (checkedId) {
                 R.id.radio_internal -> {
-                    Log.d("SettingsFragment", "Radio switched to INTERNAL")
-                    app.surrealar.util.DiagnosticsLogger.i(
-                        "GNSS", "Switched back to Internal — cancelling external connect attempt #$tcpConnectAttemptId"
+                    DiagnosticsLogger.i(
+                        DiagTags.GNSS, "Switched back to Internal — cancelling external connect attempt #$tcpConnectAttemptId"
                     )
                     // Invalidate and cancel any in-progress TCP connection attempt
                     ++tcpConnectAttemptId
@@ -1933,7 +1951,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     resetExternalReceiverStatus()
                     // Update switchboard provider to internal
                     gnssSourceCoordinator.activateInternalProvider("settings")
-                    Log.d("SettingsFragment", "Called activateInternalProvider(INTERNAL)")
                     // Update categories immediately when switching to internal (hide RS2+)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
@@ -1947,12 +1964,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         runCatching {
                             settingsRepo.setMockLocationEnabled(false)
                             settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
-                        }.onFailure { Log.e("SettingsFragment", "Failed to save location source", it) }
+                        }.onFailure { settingsError("Failed to save location source", it) }
                     }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
                 R.id.radio_es2_tcp -> {
-                    Log.d("SettingsFragment", "Radio switched to EXTERNAL_TCP")
+                    DevLog.d("SettingsFragment") { "Radio switched to EXTERNAL_TCP" }
                     // Re-enable mock switch (user must still turn it on explicitly)
                     switchMock?.isEnabled = true
                     // Update categories immediately when switching to external (show RS2+)
@@ -1966,7 +1983,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         runCatching {
                             settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                             settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
-                        }.onFailure { Log.e("SettingsFragment", "Failed to save location source", it) }
+                        }.onFailure { settingsError("Failed to save location source", it) }
                     }
                     // Reconnect using the device already loaded from stored settings.
                     // Calling connectViaTcpFlow directly (not inside a separate launch) ensures
@@ -1997,7 +2014,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             try {
                 socket.connect(InetSocketAddress(host, port), 4000)
             } catch (e: Exception) {
-                Log.d("TCP", "Connect failed to $host:$port: ${e.javaClass.simpleName}")
+                // Expected when the receiver is off / unreachable; the caller logs the probe outcome.
+                DevLog.d("SettingsFragment") { "TCP probe connect failed port=$port: ${e.javaClass.simpleName}" }
                 return@withContext TcpTestResult.CONNECT_FAILED
             }
 
@@ -2015,7 +2033,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.d("TCP", "TCP probe error for $host:$port: ${e.javaClass.simpleName}")
+            DevLog.d("SettingsFragment") { "TCP probe error port=$port: ${e.javaClass.simpleName}" }
             TcpTestResult.CONNECT_FAILED
         } finally {
             runCatching { reader?.close() }
@@ -2070,8 +2088,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
                     settingsRepo.setExternalTcp(host, port)
                     settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
-                    app.surrealar.util.DiagnosticsLogger.i(
-                        "GNSS", "External TCP settings saved host=$host port=$port (attempt #$attemptId)"
+                    // No host: the Setting lines already record the saved values.
+                    DiagnosticsLogger.i(
+                        DiagTags.GNSS, "External TCP settings saved port=$port (attempt #$attemptId) tcp=$tcpResult http=$httpReachable"
                     )
 
                     // Final stale-attempt guard before flipping the live provider. If the user
@@ -2079,8 +2098,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     // id has advanced — abort so this old attempt can't activate External after the
                     // user already returned to Internal.
                     if (attemptId != tcpConnectAttemptId) {
-                        app.surrealar.util.DiagnosticsLogger.i(
-                            "GNSS", "Stale external connect attempt #$attemptId ignored before activation"
+                        DiagnosticsLogger.i(
+                            DiagTags.GNSS, "Stale external connect attempt #$attemptId ignored before activation"
                         )
                         return@launch
                     }
@@ -2125,12 +2144,14 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                Log.w("SettingsFragment", "resolveReachName failed", e)
+                                settingsWarn("receiver name lookup failed", e, DiagTags.RECEIVER)
                             }
                         }
                     }
                 } else {
                     // Both TCP and HTTP failed — receiver unreachable.
+                    DiagnosticsLogger.w(DiagTags.RECEIVER,
+                        "connect probe tcp=$tcpResult http=$httpReachable port=$port attempt=#$attemptId: receiver unavailable")
                     view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
                         tv.text = "Receiver unavailable"
@@ -2145,7 +2166,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 throw e
             } catch (e: Exception) {
                 if (attemptId == tcpConnectAttemptId) {
-                    Log.e("SettingsFragment", "connectViaTcpFlow[$attemptId] error", e)
+                    settingsWarn("connect probe failed port=$port attempt=#$attemptId", e, DiagTags.RECEIVER)
                 }
             }
         }
@@ -2174,18 +2195,25 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val appVersion = runCatching {
                     appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
                 }.getOrNull()
-                // Use case loads the data and builds the JSON; the fragment owns the URI write.
+                // Use case loads the data and builds the JSON (and logs its own failure); the
+                // fragment owns the URI write, logged here.
                 val result = exportBackup(appVersion)
-                withContext(Dispatchers.IO) {
-                    // "wt" truncates: overwriting a longer existing file must not leave its tail behind.
-                    appContext.contentResolver.openOutputStream(uri, "wt")?.use {
-                        it.write(result.json.toByteArray(StandardCharsets.UTF_8))
-                    } ?: error("Unable to open output stream")
+                try {
+                    withContext(Dispatchers.IO) {
+                        // "wt" truncates: overwriting a longer existing file must not leave its tail behind.
+                        appContext.contentResolver.openOutputStream(uri, "wt")?.use {
+                            it.write(result.json.toByteArray(StandardCharsets.UTF_8))
+                        } ?: error("Unable to open output stream")
+                    }
+                } catch (e: Exception) {
+                    settingsError("JSON backup write failed rows=${result.coordinateCount} dest=SAF", e, DiagTags.EXPORT)
+                    throw e
                 }
                 result.coordinateCount
             }.onSuccess { n ->
                 showSettingsMessage("JSON backup exported: $n coordinates", Snackbar.LENGTH_LONG)
             }.onFailure { e ->
+                if (e is CancellationException) throw e
                 showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
@@ -2196,23 +2224,27 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val appContext = requireContext().applicationContext
         saveScope.launch {
             runCatching {
-                val coordSettings = settingsRepo.coordinateSystemSettings.first()
-                val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
-                val csv = withContext(Dispatchers.Default) {
-                    app.surrealar.data.export.PointsCsvExporter.build(points) {
-                        coordinateSystemService.convertCoordinate(it, coordSettings)
+                // DataOpLog: start / done rows=n / failed (E, with the exception) lines.
+                app.surrealar.util.diagnostics.DataOpLog.run("Points CSV export", "csv", { n: Int -> n }) {
+                    val coordSettings = settingsRepo.coordinateSystemSettings.first()
+                    val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
+                    // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
+                    val csv = withContext(Dispatchers.Default) {
+                        app.surrealar.data.export.PointsCsvExporter.build(points) {
+                            coordinateSystemService.convertCoordinate(it, coordSettings)
+                        }
                     }
+                    withContext(Dispatchers.IO) {
+                        appContext.contentResolver.openOutputStream(uri, "wt")?.use {
+                            it.write(csv.toByteArray(StandardCharsets.UTF_8))
+                        } ?: error("Unable to open output stream")
+                    }
+                    points.size
                 }
-                withContext(Dispatchers.IO) {
-                    appContext.contentResolver.openOutputStream(uri, "wt")?.use {
-                        it.write(csv.toByteArray(StandardCharsets.UTF_8))
-                    } ?: error("Unable to open output stream")
-                }
-                points.size
             }.onSuccess { n ->
                 showSettingsMessage("Points CSV exported: $n points", Snackbar.LENGTH_LONG)
             }.onFailure { e ->
+                if (e is CancellationException) throw e
                 showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
@@ -2224,7 +2256,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             try {
                 prepareImportCoordinatesWithConfirmation(uri)
             } catch (e: Exception) {
-                Log.e("SettingsFragment", "import failed", e)
+                settingsError("Backup import failed (preparing)", e, DiagTags.DATA)
                 showSettingsMessage("Import failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
@@ -2261,17 +2293,25 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         runCatching {
             // Fragment owns the URI read; the use case parses, plans (duplicates/missing models),
             // and writes via the repositories.
-            val raw = withContext(Dispatchers.IO) {
-                appContext.contentResolver.openInputStream(uri)?.use { inp ->
-                    BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
-                } ?: error("Unable to open input stream")
+            val raw = try {
+                withContext(Dispatchers.IO) {
+                    appContext.contentResolver.openInputStream(uri)?.use { inp ->
+                        BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
+                    } ?: error("Unable to open input stream")
+                }
+            } catch (e: Exception) {
+                // The use case logs parse/write failures itself (DataOpLog); the file read is logged here.
+                settingsError("Backup import failed (reading file)", e, DiagTags.DATA)
+                throw e
             }
             showImportProgress(true, 70, "Writing…")
             importBackup(raw, replace)
         }.onSuccess { plan ->
             showImportProgress(false, 100, if (plan.isNoOp) "Nothing to import" else "Completed")
-            if (plan.skippedInvalid.isNotEmpty()) Log.w("SettingsFragment", "Import skipped (invalid): ${plan.skippedInvalid.joinToString()}")
-            if (plan.missingModelRefs.isNotEmpty()) Log.w("SettingsFragment", "Import missing models: ${plan.missingModelRefs.joinToString()}")
+            // Counts only: the lists hold point names.
+            if (plan.skippedInvalid.isNotEmpty() || plan.missingModelRefs.isNotEmpty()) {
+                DiagnosticsLogger.w(DiagTags.DATA, "Import skipped=${plan.skippedInvalid.size} missingModels=${plan.missingModelRefs.size}")
+            }
             showSettingsMessage(plan.summaryMessage(), Snackbar.LENGTH_LONG)
         }.onFailure { e ->
             if (e is CancellationException) {
@@ -2296,7 +2336,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
         } catch (e: Exception) {
-            Log.w("SettingsFragment", "showImportProgress failed", e)
+            settingsWarn("showImportProgress failed", e)
         }
     }
 
@@ -2311,7 +2351,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 showSettingsMessage(getString(R.string.import_cancel))
             }
         } catch (e: Exception) {
-            Log.w("SettingsFragment", "cancelActiveImport failed", e)
+            settingsWarn("cancelActiveImport failed", e)
         }
     }
 
@@ -2492,12 +2532,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 textSelfTestsSummary?.text = SelfTestDisplay.summaryText(deviceInfo.selfTests)
                 try { textSelfTestsSummary?.setTextColor(ContextCompat.getColor(requireContext(), summaryColor)) } catch (_: Exception) {}
                 layoutSelfTestsGrid?.removeAllViews()
-                try { populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests) } catch (e: Exception) { Log.w("SettingsFragment", "populateSelfTestsGrid failed", e) }
+                try { populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests) } catch (e: Exception) { settingsWarn("populateSelfTestsGrid failed", e) }
             } else {
                 layoutSelfTests?.visibility = View.GONE
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "updateDeviceInfoDisplay failed", e)
+            settingsError("updateDeviceInfoDisplay failed", e)
         }
 
     }
@@ -2523,7 +2563,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             }
                             rowLayout.addView(testItemLayout)
                         } catch (e: Exception) {
-                            Log.w("SettingsFragment", "createSelfTestItem failed for ${test.name}", e)
+                            settingsWarn("createSelfTestItem failed for ${test.name}", e)
                         }
                     }
                     if (rowTests.size < testsPerRow) {
@@ -2533,11 +2573,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                     container.addView(rowLayout)
                 } catch (e: Exception) {
-                    Log.w("SettingsFragment", "populateSelfTestsGrid row failed", e)
+                    settingsWarn("populateSelfTestsGrid row failed", e)
                 }
             }
         } catch (e: Exception) {
-            Log.e("SettingsFragment", "populateSelfTestsGrid failed", e)
+            settingsError("populateSelfTestsGrid failed", e)
         }
     }
 
@@ -2575,7 +2615,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             .setPositiveButton("OK", null)
                             .show()
                     } catch (e: Exception) {
-                        Log.w("SettingsFragment", "self test detail dialog failed", e)
+                        settingsWarn("self test detail dialog failed", e)
                     }
                 }
                 try { foreground = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background) } catch (_: Exception) {}

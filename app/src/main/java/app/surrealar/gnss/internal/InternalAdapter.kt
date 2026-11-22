@@ -34,10 +34,6 @@ class InternalAdapter(
     private val inv: SatelliteInventory
 ) : SourceAdapter, SkyProvider, Startable, PermissionRetryable {
 
-    private companion object {
-        const val TAG = "InternalAdapter"
-    }
-
     private val _fixes = MutableSharedFlow<Fix>(
         replay = 0,
         extraBufferCapacity = 64,
@@ -54,7 +50,6 @@ class InternalAdapter(
     override fun start() {
         if (collectJob != null) return
 
-        android.util.Log.d(TAG, "Starting internal GNSS adapter")
         DiagnosticsLogger.i("GNSS", "internal GNSS adapter started")
 
         /*
@@ -85,7 +80,10 @@ class InternalAdapter(
                     // Guarded: one bad message must not end the collector or crash the app scope.
                     runCatching { inv.consume(gsv) }
                         .onSuccess { _sky.value = it }
-                        .onFailure { app.surrealar.util.DiagnosticsLogger.e("GNSS", "GSV update failed; message skipped", it) }
+                        .onFailure {
+                            // Per message: first error in full, then at most once a minute.
+                            DiagnosticsLogger.every("GNSS", "internal.gsv", 60_000L, 'E', throwable = it) { "GSV update failed; message skipped" }
+                        }
                 }
         }
     }
@@ -100,7 +98,8 @@ class InternalAdapter(
     }
 
     override fun stop() {
-        android.util.Log.d(TAG, "Stopping internal GNSS adapter")
+        // Not started (or already stopped): nothing to stop, and no "stopped" line.
+        if (collectJob == null) return
         DiagnosticsLogger.i("GNSS", "internal GNSS adapter stopped")
 
         collectJob?.cancel()

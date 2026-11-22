@@ -5,6 +5,7 @@ import io.github.pennstatecs.geokit.gnss.log.GnssLog
 import io.github.pennstatecs.geokit.gnss.log.GnssLogger
 import io.socket.client.IO
 import io.socket.client.Socket
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -55,9 +56,30 @@ class ReachCorrectionsErrorLogTest {
             "socket connected host=192.168.2.174 after 13 failed attempts",
         ), log.diag)
 
-        // A later outage starts a fresh count.
+        // Data arrives (the link really works), so a later outage starts a fresh count.
+        socket.fire("broadcast", JSONObject("{\"name\":\"time_marks\"}"))
         log.diag.clear()
         now = 300_000L; socket.fire(Socket.EVENT_CONNECT_ERROR, "timeout")
         assertEquals(listOf("socket connect error host=192.168.2.174 (will retry): timeout"), log.diag)
+    }
+
+    @Test fun `a socket that connects and fails without data does not repeat the first error`() {
+        val log = Recording().also { GnssLog.install(it) }
+        var now = 0L
+        val socket = FakeSocket()
+        val svc = ReachCorrectionsService("192.168.2.174", nowMs = { now }, socketFactory = { _: URI, _: IO.Options -> socket })
+        svc.connect()
+        // Flapping every 2 s for 50 s: connect, then error/disconnect, never any broadcast.
+        for (i in 0 until 25) {
+            now = i * 2_000L
+            socket.fire(Socket.EVENT_CONNECT_ERROR, "xhr poll error")
+            socket.fire(Socket.EVENT_CONNECT)
+            socket.fire(Socket.EVENT_DISCONNECT, "transport error")
+        }
+        assertEquals(listOf(
+            "connect attempt host=192.168.2.174",
+            "socket connect error host=192.168.2.174 (will retry): xhr poll error",
+            "socket connected host=192.168.2.174 after 1 failed attempts",
+        ), log.diag)
     }
 }

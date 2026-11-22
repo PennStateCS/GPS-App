@@ -55,7 +55,7 @@ class ReplayAdapter(
         onGsv = { gsv ->
             runCatching { inventory.consume(gsv) }
                 .onSuccess { _sky.value = it }
-                .onFailure { DiagnosticsLogger.e("GNSS", "replay GSV update failed; message skipped", it) }
+                .onFailure { DiagnosticsLogger.every("GNSS", "replay.gsv", 60_000L, 'E', throwable = it) { "replay GSV update failed; message skipped" } }
         },
     )
 
@@ -84,7 +84,7 @@ class ReplayAdapter(
                 src.lines().collect { line ->
                     if (line.isNotEmpty() && line[0] == '$') {
                         runCatching { fuser.accept(line) }
-                            .onFailure { DiagnosticsLogger.e("GNSS", "replay line rejected by the fuser", it) }
+                            .onFailure { DiagnosticsLogger.every("GNSS", "replay.line", 60_000L, 'E', throwable = it) { "replay line rejected by the fuser" } }
                     }
                 }
             } finally {

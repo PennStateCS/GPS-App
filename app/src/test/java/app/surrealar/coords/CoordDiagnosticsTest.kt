@@ -26,8 +26,8 @@ class CoordDiagnosticsTest {
 
     @Test fun `zone changes and height failures are logged once, without positions`() {
         val dir = tmp.newFolder("logs"); DiagnosticsLogger.initForTest(dir); DiagnosticsLogger.resetThrottles("coord"); CoordDiagnostics.reset()
-        repeat(50) { CoordDiagnostics.onResult(p) }
-        repeat(50) { CoordDiagnostics.onResult(p.copy(zoneLabel = "SPCS 3702", height = null, heightUnavailableReason = "outside GEOID18 coverage")) }
+        repeat(50) { CoordDiagnostics.onResult(p, live = true) }
+        repeat(50) { CoordDiagnostics.onResult(p.copy(zoneLabel = "SPCS 3702", height = null, heightUnavailableReason = "outside GEOID18 coverage"), live = true) }
         DiagnosticsLogger.flush()
         val lines = File(dir, "app-log-current.txt").readLines().filter { " COORD " in it }.map { it.substringAfter("] ") }
         assertEquals(listOf(
@@ -36,5 +36,29 @@ class CoordDiagnosticsTest {
             "Height unavailable for NAVD88_GEOID18: outside GEOID18 coverage",
         ), lines)
         assertFalse(lines.any { it.contains("744") || it.contains("132") || it.contains("41.34") })
+    }
+
+    @Test fun `stored-point conversions do not log, so live state does not flap`() {
+        val dir = tmp.newFolder("logs2"); DiagnosticsLogger.initForTest(dir); DiagnosticsLogger.resetThrottles("coord"); CoordDiagnostics.reset()
+        val stored = p.copy(zoneLabel = "SPCS 3702", height = null, heightUnavailableReason = "outside GEOID18 coverage")
+        repeat(10) {
+            CoordDiagnostics.onResult(p, live = true)
+            CoordDiagnostics.onResult(stored, live = false)
+        }
+        DiagnosticsLogger.flush()
+        val lines = File(dir, "app-log-current.txt").readLines().filter { " COORD " in it }.map { it.substringAfter("] ") }
+        assertEquals(listOf(
+            "Coordinate system STATE_PLANE datum=NAD83_2011 zone=SPCS 3701 vertical=NAVD88_GEOID18 unit=METERS",
+        ), lines)
+    }
+
+    @Test fun `geoid still loading is not reported as outside coverage`() {
+        val dir = tmp.newFolder("logs3"); DiagnosticsLogger.initForTest(dir); DiagnosticsLogger.resetThrottles("coord"); CoordDiagnostics.reset()
+        val noHeight = p.copy(height = null, heightUnavailableReason = "outside GEOID18 coverage")
+        repeat(5) { CoordDiagnostics.onResult(noHeight, live = true, geoidLoaded = false) }
+        repeat(5) { CoordDiagnostics.onResult(p, live = true, geoidLoaded = true) }
+        DiagnosticsLogger.flush()
+        val lines = File(dir, "app-log-current.txt").readLines().filter { " COORD " in it }
+        assertFalse(lines.any { "outside GEOID18 coverage" in it || "Height available again" in it || " W COORD" in it })
     }
 }

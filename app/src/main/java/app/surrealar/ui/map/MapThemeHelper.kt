@@ -2,8 +2,10 @@ package app.surrealar.ui.map
 
 import android.content.Context
 import android.content.res.Configuration
-import android.util.Log
 import app.surrealar.R
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.MapColorScheme
 import com.google.android.gms.maps.model.MapStyleOptions
@@ -42,10 +44,11 @@ object MapThemeHelper {
             runCatching {
                 map.setMapStyle(MapStyleOptions.loadRawResourceStyle(context, R.raw.map_style_dark))
             }.onSuccess {
-                Log.d(TAG, "Dark map style applied (mapType=$mapType)")
+                DevLog.d(TAG) { "Dark map style applied (mapType=$mapType)" }
             }.onFailure {
-                Log.w(TAG, "Failed to apply dark map style: ${it.message}")
+                DiagnosticsLogger.w(DiagTags.MAP, "Dark map style not applied, using default mapType=$mapType", it)
                 // Clear any partially-applied style so the map falls back to default rendering
+                // (best effort: if this fails too the map keeps whatever it had).
                 runCatching { map.setMapStyle(null) }
             }
         } else {
@@ -54,7 +57,7 @@ object MapThemeHelper {
                 !isNight -> "light mode"
                 else -> "satellite/hybrid type"
             }
-            Log.d(TAG, "Applying default map style ($reason, mapType=$mapType)")
+            DevLog.d(TAG) { "Applying default map style ($reason, mapType=$mapType)" }
             map.setMapStyle(null)
         }
     }

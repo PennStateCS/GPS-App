@@ -11,7 +11,8 @@ import android.graphics.PorterDuff
 import android.graphics.RectF
 import androidx.core.content.ContextCompat
 import android.os.Bundle
-import android.util.Log
+import app.surrealar.util.DevLog
+import app.surrealar.util.diagnostics.DiagTags
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -364,7 +365,7 @@ class CoordinateDetailFragment : Fragment() {
     }
 
     fun updateId(newId: String) {
-        Log.d("CoordinateDetailFragment", "updateId: $currentId → $newId")
+        DevLog.d("CoordinateDetailFragment") { "updateId: $currentId → $newId" }
         if (newId == currentId) return
         currentId = newId
         loadCurrentId()
@@ -913,7 +914,8 @@ class CoordinateDetailFragment : Fragment() {
                 try {
                     modelRepository.getModelById(modelId)
                 } catch (e: Exception) {
-                    Log.w("CoordinateDetailFragment", "Failed to load linked model $modelId", e)
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.w(DiagTags.MODEL, "linked model load failed modelId=$modelId", e)
                     null
                 }
             }
@@ -1020,7 +1022,8 @@ class CoordinateDetailFragment : Fragment() {
                 try {
                     modelRepository.getModelById(modelId)
                 } catch (e: Exception) {
-                    DiagnosticsLogger.w("MODEL", "lookup failed for modelId=$modelId: ${e.javaClass.simpleName} ${e.message}")
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.w(DiagTags.MODEL, "lookup failed for modelId=$modelId", e)
                     null
                 }
             }
@@ -1102,8 +1105,8 @@ class CoordinateDetailFragment : Fragment() {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
-            DiagnosticsLogger.i("MODEL", "linked modelId=$modelId to coordinateId=${updated.id} " +
-                "name=\"${updated.name}\" useModelLocation=$useModelLocation")
+            DiagnosticsLogger.i(DiagTags.MODEL, "linked modelId=$modelId to coordinateId=${updated.id} " +
+                "useModelLocation=$useModelLocation")
             showSnackbar(if (useModelLocation) "Model linked · coordinate moved to model location" else "Model linked")
         }
     }
@@ -1134,7 +1137,7 @@ class CoordinateDetailFragment : Fragment() {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
-            DiagnosticsLogger.i("MODEL", "unlinked modelId=$priorModelId from coordinateId=${updated.id}")
+            DiagnosticsLogger.i(DiagTags.MODEL, "unlinked modelId=$priorModelId from coordinateId=${updated.id}")
             showSnackbar("Model link removed")
         }
     }
@@ -1143,7 +1146,7 @@ class CoordinateDetailFragment : Fragment() {
         try {
             startActivity(ModelViewerActivity.newIntent(requireContext(), model.filePath, model.name, modelId = model.id))
         } catch (e: Exception) {
-            Log.w("CoordinateDetailFragment", "openModelViewer failed", e)
+            DiagnosticsLogger.e(DiagTags.MODEL, "Model viewer open failed modelId=${model.id}", e)
             showSnackbar("Unable to open model")
         }
     }
@@ -1156,7 +1159,7 @@ class CoordinateDetailFragment : Fragment() {
             if (nav != null) nav.navigate(R.id.nav_open_in_ar)
             else showSnackbar("Open the AR tab to view models")
         } catch (e: Exception) {
-            Log.w("CoordinateDetailFragment", "openInAr failed", e)
+            DiagnosticsLogger.e(DiagTags.AR, "Open in AR from coordinate detail failed", e)
             showSnackbar("Unable to open AR")
         }
     }
@@ -1215,7 +1218,8 @@ class CoordinateDetailFragment : Fragment() {
                     val thumbBmp = BitmapFactory.decodeFile(thumbPath) ?: return@withContext null
                     withContext(Dispatchers.Main) { buildModelMarkerBitmap(thumbBmp, ctx) }
                 } catch (e: Exception) {
-                    Log.w("CoordinateDetailFragment", "Failed to load model thumbnail for marker", e)
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail for map marker failed", e)
                     null
                 }
             }

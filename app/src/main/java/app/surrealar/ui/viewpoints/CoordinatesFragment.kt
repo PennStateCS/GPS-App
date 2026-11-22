@@ -15,7 +15,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import android.view.HapticFeedbackConstants
 import android.view.LayoutInflater
 import android.view.View
@@ -108,7 +110,7 @@ class CoordinatesFragment : Fragment() {
         adapter = SimpleCoordinatesAdapter(
             onClick = { coordinate ->
                 try {
-                    Log.d("CoordinatesFragment", "Item clicked: ${coordinate.id}")
+                    DevLog.d("CoordinatesFragment") { "Item clicked: ${coordinate.id}" }
                     currentSelectionId = coordinate.id
                     saveLastOpenedId(coordinate.id)
                     adapter.setSelectedId(coordinate.id)
@@ -116,7 +118,6 @@ class CoordinatesFragment : Fragment() {
                     if (pos >= 0) binding.pointsRecyclerView.smoothScrollToPosition(pos)
 
                     val hostActivity = activity
-                    Log.d("CoordinatesFragment", "Host activity: $hostActivity")
 
                     if (hostActivity is CoordinatesActivity) {
                         hostActivity.showDetail(coordinate.id)
@@ -131,7 +132,7 @@ class CoordinatesFragment : Fragment() {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("CoordinatesFragment", "Click handler error: ${e.message}", e)
+                    DiagnosticsLogger.e(DiagTags.COORD, "Coordinate open failed id=${coordinate.id}", e)
                 }
             },
             onDelete = { coordinate ->
@@ -197,10 +198,7 @@ class CoordinatesFragment : Fragment() {
         // Observe DB
         viewModel.allCoordinates.observe(viewLifecycleOwner) { coordinates ->
             try {
-                Log.d(
-                    "CoordinatesFragment",
-                    "Loaded ${coordinates.size} coordinates: ${coordinates.joinToString { it.id }}"
-                )
+                DevLog.d("CoordinatesFragment") { "Loaded ${coordinates.size} coordinates" }
                 adapter.submit(coordinates)
                 binding.emptyCoordinatesText.visibility =
                     if (coordinates.isEmpty()) View.VISIBLE else View.GONE
@@ -252,7 +250,7 @@ class CoordinatesFragment : Fragment() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("CoordinatesFragment", "allCoordinates observer failed", e)
+                DiagnosticsLogger.e(DiagTags.COORD, "Coordinate list update failed n=${coordinates.size}", e)
             }
         }
 
@@ -274,7 +272,8 @@ class CoordinatesFragment : Fragment() {
                         showAddCoordinateDialog(viewModel)
                     }
                 } catch (e: Exception) {
-                    Log.e("CoordinatesFragment", "FAB click handler failed", e)
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.e(DiagTags.CAPTURE, "Add Coordinate open failed", e)
                 }
             }
         }
@@ -305,7 +304,7 @@ class CoordinatesFragment : Fragment() {
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.e("CoordinatesFragment", "Error collecting model thumbnails", e)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Coordinate list model names/thumbnails unavailable", e)
             }
         }
 
@@ -342,8 +341,8 @@ class CoordinatesFragment : Fragment() {
                     }
                 }
                 dialog.show(parentFragmentManager, "AddCoordinateDialog")
-            } catch (_: Exception) {
-                // no-op
+            } catch (e: Exception) {
+                DiagnosticsLogger.e(DiagTags.CAPTURE, "Add Coordinate dialog show failed", e)
             }
         }
     }
@@ -382,18 +381,18 @@ class CoordinatesFragment : Fragment() {
                                     saveLastOpenedId(coordinate.id)
                                     adapter.setSelectedId(coordinate.id)
                                 } catch (e: Exception) {
-                                    Log.e("CoordinatesFragment", "UNDO failed", e)
+                                    DiagnosticsLogger.e(DiagTags.COORD, "delete UNDO failed id=${coordinate.id}", e)
                                 }
                             }
                             .show()
                     } catch (e: Exception) {
-                        Log.e("CoordinatesFragment", "Delete confirm action failed", e)
+                        DiagnosticsLogger.e(DiagTags.COORD, "delete failed id=${coordinate.id}", e)
                     }
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
         } catch (e: Exception) {
-            Log.e("CoordinatesFragment", "confirmDeleteWithSelection failed", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "delete dialog failed id=${coordinate.id}", e)
         }
     }
 
@@ -414,7 +413,7 @@ class CoordinatesFragment : Fragment() {
         try {
             if (::adapter.isInitialized) adapter.notifyDataSetChanged()
         } catch (e: Exception) {
-            Log.e("CoordinatesFragment", "onResume adapter refresh failed", e)
+            DiagnosticsLogger.w(DiagTags.COORD, "Coordinate list refresh on resume failed", e)
         }
     }
 
@@ -480,7 +479,7 @@ class CoordinatesFragment : Fragment() {
                 // New fragment pulls its initial state via onDetailViewReady() once its view exists.
             }
         } catch (e: Exception) {
-            Log.e("CoordinatesFragment", "showEmbeddedDetail failed: ${e.message}")
+            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate detail open failed id=$id", e)
         }
     }
 

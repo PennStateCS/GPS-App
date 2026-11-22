@@ -37,8 +37,10 @@ class NmeaRegistryParseSummaryTest {
         val reg = DefaultNmeaRegistry.create(verifyChecksum = true)
         reg.parse("garbage")                 // malformed=1
         reg.drainSummaryLine("test")         // drains + resets
+        assertNull("nothing considered since the drain", reg.drainSummaryLine("test"))
+        reg.parse(validGga)
         val second = reg.drainSummaryLine("test")!!
-        assertTrue(second, second.contains("considered=0"))
+        assertTrue(second, second.contains("considered=1"))
         assertTrue(second, second.contains("malformed=0"))
     }
 
@@ -47,5 +49,23 @@ class NmeaRegistryParseSummaryTest {
         reg.parse("")   // blank only — nothing considered, nothing failed
         // A clean window emits nothing for the periodic throttle (avoids log noise).
         assertNull(reg.drainSummaryLine("periodic"))
+    }
+
+    @Test fun `periodic summary ignores unknown sentence types alone`() {
+        val reg = DefaultNmeaRegistry.create(verifyChecksum = true)
+        reg.parse(validGga)
+        reg.parse("\$PTKXY,1,2,3")           // proprietary / unknown tag only
+        assertNull(reg.drainSummaryLine("periodic"))
+    }
+
+    @Test fun `periodic summary logs when a real failure grew, with unknown types in the line`() {
+        val reg = DefaultNmeaRegistry.create(verifyChecksum = true)
+        reg.parse(validGga)
+        reg.parse("\$GPXYZ,1,2,3")
+        reg.parse(validGga.dropLast(2) + "00")      // checksumFail
+        val line = reg.drainSummaryLine("periodic")!!
+        assertTrue(line, line.contains("checksumFail=1"))
+        assertTrue(line, line.contains("unknownType=1"))
+        assertTrue(line, line.contains("ok=1"))
     }
 }

@@ -8,10 +8,12 @@ import java.util.Locale
 
 /**
  * Turns the shared fix stream into a few GNSS log lines (no coordinates, ever):
- *  - RTK status transitions (from → to, sats used, HDOP, correction-age bucket)
+ *  - RTK status transitions (from → to, sats used, HDOP, correction-age bucket), logged only once
+ *    the new status has held for [RTK_HOLD_MS] so FIX↔FLOAT flapping doesn't flood the log
  *  - correction age crossing 5 s / 10 s / 30 s, and its recovery
  *  - source switches
- *  - a heartbeat line (built on request, the caller logs it every 60 s)
+ *  - a heartbeat line ([heartbeatIfDue]: only when source/RTK/sats/hAcc/corrAge buckets changed, or
+ *    every [HEARTBEAT_EVERY_MS]; nothing while there is no source or no recent fix)
  * and keeps per-session stats for gnss-stats.txt. Per fix it does a few comparisons; it writes only
  * on a change. Thread-safe (the fix collector and the heartbeat timer run on different threads).
  */
@@ -36,6 +38,12 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
     private var source: String? = null
     private var sourceSwitches = 0
     private var lastRtk: RtkStatus? = null
+    /** RTK status in the last transition line, and a different status waiting out [RTK_HOLD_MS]. */
+    private var loggedRtk: RtkStatus? = null
+    private var pendingRtk: RtkStatus? = null
+    private var pendingRtkSinceMs = 0L
+    private var lastBeatKey: List<Any?>? = null
+    private var lastBeatAtMs = 0L
     private var rtkSinceMs = 0L
     private val timeInStatus = EnumMap<RtkStatus, Long>(RtkStatus::class.java)
     private var rtkDrops = 0
@@ -56,6 +64,7 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         if (old != null) { sourceSwitches++; sink('I', "Source $old → $name") }
         closeStatus(nowMs)
         lastRtk = null; corrBucket = null; lastFix = null; fixTimes.clear()
+        loggedRtk = null; pendingRtk = null; lastBeatKey = null
         skyUsed = null; skyVisible = null
     }
 
@@ -74,9 +83,17 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
             val from = lastRtk
             closeStatus(nowMs)
             lastRtk = rtk; rtkSinceMs = nowMs
-            val drop = from == RtkStatus.FIX
-            if (drop) rtkDrops++
-            sink(if (drop) 'W' else 'I', "RTK ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "?"}" +
+            if (from == RtkStatus.FIX) rtkDrops++
+        }
+        // Log a transition only once the new status has held for RTK_HOLD_MS (a flap back is never logged).
+        if (rtk == loggedRtk) {
+            pendingRtk = null
+        } else if (rtk != pendingRtk) {
+            pendingRtk = rtk; pendingRtkSinceMs = nowMs
+        } else if (nowMs - pendingRtkSinceMs >= RTK_HOLD_MS) {
+            val from = loggedRtk
+            loggedRtk = rtk; pendingRtk = null
+            sink(if (from == RtkStatus.FIX) 'W' else 'I', "RTK ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "?"}" +
                 " hdop=${fmt1(fix.hDop)} corrAge=${bucket?.label ?: "none"}")
         }
 
@@ -96,7 +113,23 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
 
     fun onNmea(nowMs: Long) { lastNmeaAtMs = nowMs }   // one field write per line, nothing else
 
-    /** The 60 s heartbeat line (no coordinates). */
+    /**
+     * The heartbeat line when one is due, else null: only when the source, RTK status, sats bucket,
+     * hAcc bucket or correction-age bucket changed since the last one, or [HEARTBEAT_EVERY_MS] passed.
+     * Null while there is no source or no fix in the last 60 s (the link tracker covers a lost feed).
+     */
+    fun heartbeatIfDue(nowMs: Long): String? = synchronized(lock) {
+        val f = lastFix?.takeIf { nowMs - lastFixAtMs <= 60_000L }
+        if (source == null || f == null) { lastBeatKey = null; return@synchronized null }
+        val used = skyUsed?.takeIf { it > 0 } ?: f.satsUsed
+        // Sats bucket 0-4 / 5-9 / 10-14 / 15+: an RTK survey normally sits in the top one.
+        val key = listOf(source, f.rtkStatus, used?.let { minOf(it / 5, 3) }, hAccBucket(f.hAccM), CorrectionBucket.of(f.diffAgeS))
+        if (key == lastBeatKey && nowMs - lastBeatAtMs < HEARTBEAT_EVERY_MS) return@synchronized null
+        lastBeatKey = key; lastBeatAtMs = nowMs
+        heartbeat(nowMs)
+    }
+
+    /** The heartbeat line (no coordinates), always built; see [heartbeatIfDue]. */
     fun heartbeat(nowMs: Long): String = synchronized(lock) {
         val f = lastFix?.takeIf { nowMs - lastFixAtMs <= 60_000L }
         while (fixTimes.isNotEmpty() && nowMs - fixTimes.first > 60_000L) fixTimes.removeFirst()
@@ -124,6 +157,11 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
     }
 
     companion object {
+        /** A new RTK status must hold this long before its transition is logged. */
+        const val RTK_HOLD_MS = 5_000L
+        /** Heartbeat even when nothing changed, this often. */
+        const val HEARTBEAT_EVERY_MS = 600_000L
+
         fun hAccBucket(m: Double?): String = when {
             m == null || !m.isFinite() -> "?"
             m < 0.02 -> "<2cm"; m < 0.05 -> "<5cm"; m < 0.10 -> "<10cm"; m < 0.30 -> "<30cm"

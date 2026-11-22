@@ -53,9 +53,9 @@ object SystemEventsLogger {
 
     fun install(context: Context) {
         val app = context.applicationContext
-        runCatching { watchNetwork(app) }.onFailure { DiagnosticsLogger.w(TAG, "Network watch unavailable: ${it.message}") }
-        runCatching { watchBroadcasts(app) }.onFailure { DiagnosticsLogger.w(TAG, "System broadcasts unavailable: ${it.message}") }
-        runCatching { watchThermal(app) }
+        runCatching { watchNetwork(app) }.onFailure { DiagnosticsLogger.w(TAG, "Network watch unavailable", it) }
+        runCatching { watchBroadcasts(app) }.onFailure { DiagnosticsLogger.w(TAG, "System broadcasts unavailable", it) }
+        runCatching { watchThermal(app) }.onFailure { DiagnosticsLogger.w(TAG, "Thermal status watch unavailable", it) }
         runCatching {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 // Permissions can only change while the app is away, so re-check on every return.
@@ -107,6 +107,9 @@ object SystemEventsLogger {
                         Intent.ACTION_TIMEZONE_CHANGED -> DiagnosticsLogger.w(TAG,
                             "Time zone changed to ${intent.getStringExtra("time-zone") ?: TimeZone.getDefault().id}")
                     }
+                }.onFailure {
+                    // Battery broadcasts arrive often; one line a minute is enough to see a repeat failure.
+                    DiagnosticsLogger.every(TAG, "sys.broadcast.fail", 60_000L, 'W', it) { "System broadcast handling failed action=${intent.action}" }
                 }
             }
         }

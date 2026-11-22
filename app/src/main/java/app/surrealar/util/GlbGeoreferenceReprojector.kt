@@ -1,7 +1,7 @@
 package app.surrealar.util
 
-import android.util.Log
 import app.surrealar.domain.model.EmbeddedModelLocation
+import app.surrealar.util.diagnostics.DiagTags
 import app.surrealar.domain.model.ModelLocationConfidence
 import io.github.pennstatecs.geokit.local.LocalEnu
 import io.github.pennstatecs.geokit.ellipsoid.Ellipsoid
@@ -30,8 +30,6 @@ import kotlin.math.abs
  */
 object GlbGeoreferenceReprojector {
 
-    private const val TAG = "GlbReprojector"
-
     private const val GLB_MAGIC = 0x46546C67
     private const val GLB_VERSION_2 = 2
     private const val CHUNK_TYPE_JSON = 0x4E4F534A
@@ -51,7 +49,7 @@ object GlbGeoreferenceReprojector {
         return try {
             reprojectInternal(file)
         } catch (e: Exception) {
-            Log.w(TAG, "${file.name}: reprojection skipped — ${e.javaClass.simpleName}: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.MODEL, "GLB reprojection skipped file=${file.name}: ${e.javaClass.simpleName}", e)
             null
         }
     }
@@ -128,8 +126,8 @@ object GlbGeoreferenceReprojector {
         // so their resolution near the origin is one float ulp.
         val latResM = Math.ulp(lat0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLat(lat0)
         val lonResM = Math.ulp(lon0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLon(lat0)
-        Log.w(TAG, "${file.name}: float32 degree vertices limit the source model to about " +
-            "${"%.1f".format(latResM)} m (lat) / ${"%.1f".format(lonResM)} m (lon)")
+        DiagnosticsLogger.w(DiagTags.MODEL, "GLB reprojection file=${file.name}: float32 degree vertices limit " +
+            "the source model to about ${"%.1f".format(latResM)} m (lat) / ${"%.1f".format(lonResM)} m (lon)")
 
         // Transform each unique POSITION accessor's vertices in the BIN chunk.
         for (idx in posAccessorIdx) {
@@ -227,8 +225,8 @@ object GlbGeoreferenceReprojector {
             spanX in 1e-7..0.005 && spanZ in 1e-7..0.005 -> ModelLocationConfidence.HIGH
             else -> ModelLocationConfidence.MEDIUM
         }
-        Log.i(TAG, "${file.name}: reprojected to local ENU; origin lat=%.7f lon=%.7f alt=%.2f"
-            .format(lat0, lon0, alt0))
+        DiagnosticsLogger.i(DiagTags.MODEL, "GLB reprojected to local ENU file=${file.name} " +
+            "georeferenced=true method=GLB_POSITION_WGS_LIKE confidence=$confidence")   // no origin coordinates
 
         return EmbeddedModelLocation(
             latitude = lat0,

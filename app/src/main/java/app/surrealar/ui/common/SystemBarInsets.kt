@@ -41,12 +41,13 @@ object SystemBarInsets {
             val b = barsOf(rootInsets)
             val bars = Insets.of(maxOf(a.left, b.left), maxOf(a.top, b.top), maxOf(a.right, b.right), maxOf(a.bottom, b.bottom))
             // Debug builds: exactly what each pass saw, so an overlap can be traced from logcat (tag Insets).
-            if (app.surrealar.BuildConfig.DEBUG) android.util.Log.d("Insets",
+            app.surrealar.util.DevLog.d("Insets") {
                 "${root.context.javaClass.simpleName} pass=${if (dispatched != null) "dispatch" else "post"} " +
                     "dispatched=$a root=$b (rootInsets=${if (rootInsets == null) "null" else "ok"}, " +
                     "statusVisible=${rootInsets?.isVisible(WindowInsetsCompat.Type.statusBars())}) " +
                     "applied=$bars attached=${root.isAttachedToWindow} bar=${topBar?.javaClass?.simpleName} " +
-                    "barH=${topBar?.layoutParams?.height} barPadTop=${topBar?.paddingTop}")
+                    "barH=${topBar?.layoutParams?.height} barPadTop=${topBar?.paddingTop}"
+            }
             if (bars == Insets.NONE) return   // nothing known yet; keep whatever is applied
             root.setPadding(
                 rootPad[0] + bars.left,

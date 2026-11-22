@@ -20,4 +20,25 @@ class SettingsChangeLoggerTest {
         assertEquals(listOf("Setting location_source: EXTERNAL → (default)"),
             SettingsChangeLogger.changes(mapOf("location_source" to "EXTERNAL"), emptyMap()))
     }
+
+    @Test fun `keys not included on either side produce no line`() {
+        assertEquals(emptyList<String>(), SettingsChangeLogger.changes(mapOf("unknown_key" to "a"), mapOf("unknown_key" to "b")))
+    }
+
+    @Test fun `typing is coalesced per key to first old and final new`() {
+        val c = SettingsChangeLogger.Coalescer(windowMs = 2_000L)
+        c.add(SettingsChangeLogger.changeList(mapOf("location_source" to "INTERNAL"), mapOf("location_source" to "EXTERNAL")), nowMs = 0L)
+        c.add(SettingsChangeLogger.changeList(mapOf("location_source" to "EXTERNAL"), mapOf("location_source" to "REPLAY")), nowMs = 500L)
+        assertEquals(emptyList<SettingsChangeLogger.Change>(), c.due(nowMs = 1_000L))
+        val lines = c.due(nowMs = 2_600L).map(SettingsChangeLogger::line)
+        assertEquals(listOf("Setting location_source: INTERNAL → REPLAY"), lines)
+        assertEquals(true, c.isEmpty())
+    }
+
+    @Test fun `a key edited back within the window logs nothing`() {
+        val c = SettingsChangeLogger.Coalescer(windowMs = 2_000L)
+        c.add(SettingsChangeLogger.changeList(mapOf("location_source" to "INTERNAL"), mapOf("location_source" to "EXTERNAL")), nowMs = 0L)
+        c.add(SettingsChangeLogger.changeList(mapOf("location_source" to "EXTERNAL"), mapOf("location_source" to "INTERNAL")), nowMs = 100L)
+        assertEquals(emptyList<SettingsChangeLogger.Change>(), c.due(nowMs = 5_000L))
+    }
 }

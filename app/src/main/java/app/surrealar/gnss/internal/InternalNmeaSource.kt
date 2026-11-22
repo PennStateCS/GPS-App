@@ -43,7 +43,6 @@ class InternalNmeaSource(
 ) : NmeaSource, PermissionRetryable {
 
     private companion object {
-        const val TAG = "InternalNmeaSource"
         /** How often the fuser's GST hold cap (300 ms) is checked. */
         const val HOLD_TICK_MS = 100L
     }
@@ -231,7 +230,6 @@ class InternalNmeaSource(
     override fun start() {
         if (started) return
 
-        android.util.Log.d(TAG, "Starting internal GNSS NMEA listener")
         DiagnosticsLogger.i("GNSS", "internal GPS: start requested " +
             "(locationPermission=${if (hasLocationPermission()) "granted" else "MISSING"})")
 
@@ -241,7 +239,8 @@ class InternalNmeaSource(
         // recovers from — no provider restart / source switch required.
         if (!hasLocationPermission()) {
             awaitingPermission = true
-            DiagnosticsLogger.w("GNSS",
+            // A normal waiting state at cold start (permission prompt pending), not a fault.
+            DiagnosticsLogger.i("GNSS",
                 "internal GPS: WAITING — location permission not granted; will retry on resume/grant")
             return
         }
@@ -290,9 +289,7 @@ class InternalNmeaSource(
             markWaiting("requestLocationUpdates blocked by permission", e)
             return
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Could not request GPS updates: ${e.message}")
-            DiagnosticsLogger.w("GNSS", "internal GPS: requestLocationUpdates failed " +
-                "(non-permission): ${e.javaClass.simpleName} ${e.message}")
+            DiagnosticsLogger.w("GNSS", "internal GPS: requestLocationUpdates failed (non-permission)", e)
             // Continue — on some devices/OS versions the NMEA listener alone still delivers data.
         }
 
@@ -305,7 +302,7 @@ class InternalNmeaSource(
                 fuser.accept(message)
                 debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
             } catch (e: Exception) {
-                DiagnosticsLogger.every("NMEA", "internal.listener.error", 60_000L, 'E') {
+                DiagnosticsLogger.every("NMEA", "internal.listener.error", 60_000L, 'E', throwable = e) {
                     "internal NMEA listener error (sentence dropped, repeats suppressed 60 s): ${e.javaClass.simpleName}: ${e.message}"
                 }
             }
@@ -324,7 +321,6 @@ class InternalNmeaSource(
             holdHandler.removeCallbacks(holdTick)
             holdHandler.postDelayed(holdTick, HOLD_TICK_MS)
             awaitingPermission = false
-            android.util.Log.d(TAG, "Internal NMEA listener registered")
             DiagnosticsLogger.i("GNSS", "internal GPS: ACTIVE — NMEA listener registered, awaiting first fix")
         } catch (e: SecurityException) {
             runCatching { lm.removeUpdates(gpsActivationListener) }
@@ -336,8 +332,7 @@ class InternalNmeaSource(
             nmeaListener = null
             started = true
             awaitingPermission = false
-            DiagnosticsLogger.w("GNSS", "internal GPS: addNmeaListener failed " +
-                "(${e.javaClass.simpleName} ${e.message}); running on platform Location fallback")
+            DiagnosticsLogger.w("GNSS", "internal GPS: addNmeaListener failed; running on platform Location fallback", e)
         }
 
         // Satellite status for the fallback sky view and the fallback fix's satellite counts.
@@ -346,7 +341,7 @@ class InternalNmeaSource(
                 gnssStatusRegistered = lm.registerGnssStatusCallback(gnssStatusCallback, Handler(Looper.getMainLooper()))
             }
         } catch (e: Exception) {
-            DiagnosticsLogger.w("GNSS", "internal GPS: GnssStatus callback unavailable (${e.javaClass.simpleName})")
+            DiagnosticsLogger.w("GNSS", "internal GPS: GnssStatus callback unavailable", e)
         }
 
         requestFullGnssTracking()
@@ -369,7 +364,7 @@ class InternalNmeaSource(
             )
             DiagnosticsLogger.i("GNSS", "internal GPS: full GNSS tracking requested (registered=$fullTrackingRegistered)")
         } catch (e: Exception) {
-            DiagnosticsLogger.w("GNSS", "internal GPS: full GNSS tracking unavailable (${e.javaClass.simpleName} ${e.message})")
+            DiagnosticsLogger.w("GNSS", "internal GPS: full GNSS tracking unavailable", e)
         }
     }
 
@@ -388,7 +383,7 @@ class InternalNmeaSource(
             try {
                 fuser.flushIfStale()
             } catch (e: Exception) {
-                DiagnosticsLogger.every("NMEA", "internal.hold.error", 60_000L, 'E') {
+                DiagnosticsLogger.every("NMEA", "internal.hold.error", 60_000L, 'E', throwable = e) {
                     "internal GST hold tick error: ${e.javaClass.simpleName}: ${e.message}"
                 }
             }
@@ -410,7 +405,6 @@ class InternalNmeaSource(
     private fun markWaiting(why: String, e: Throwable? = null) {
         started = false
         awaitingPermission = true
-        android.util.Log.w(TAG, "internal GPS waiting: $why", e)
         DiagnosticsLogger.w("GNSS", "internal GPS: WAITING — $why; will retry on resume/grant", e)
     }
 
@@ -431,6 +425,12 @@ class InternalNmeaSource(
     }
 
     override fun stop() {
+        // Not running: nothing is registered (a start still waiting for permission registers nothing),
+        // so there is nothing to remove and no "listener removed" line or parse summary to write.
+        if (!started) {
+            awaitingPermission = false
+            return
+        }
         nmeaListener?.let { listener ->
             runCatching {
                 lm.removeNmeaListener(listener)
@@ -463,7 +463,6 @@ class InternalNmeaSource(
          */
         _fixes.resetReplayCache()
 
-        android.util.Log.d(TAG, "Internal NMEA listener removed")
         DiagnosticsLogger.i("GNSS", "internal GPS: NMEA listener removed")
         // Emit a final NMEA parse summary so a poor/unparseable stream is visible in the export.
         registry.logParseSummary("internal stream stopped")

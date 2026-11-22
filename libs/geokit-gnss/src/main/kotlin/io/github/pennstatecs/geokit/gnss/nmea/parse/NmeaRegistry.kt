@@ -123,9 +123,11 @@ public class NmeaRegistry(
 
     /**
      * Drains the current parse-failure window counters and returns the formatted summary line, or
-     * null for a `"periodic"` reason when nothing failed (so periodic windows stay silent). Resets
-     * the window as a side effect. `internal` for unit tests — production callers go through the
-     * throttled [maybeEmitSummary] / [logParseSummary].
+     * null when there is nothing worth logging: a `"periodic"` window where nothing was malformed,
+     * failed its checksum or failed to parse (unknown sentence types alone — e.g. Emlid's proprietary
+     * sentences — don't count; they go to the debug log), and any window with nothing considered.
+     * Resets the window as a side effect. `internal` for unit tests — production callers go through
+     * the throttled [maybeEmitSummary] / [logParseSummary].
      */
     internal fun drainSummaryLine(reason: String): String? {
         val considered = wConsidered.getAndSet(0)
@@ -133,12 +135,15 @@ public class NmeaRegistry(
         val checksum   = wChecksum.getAndSet(0)
         val unknown    = wUnknown.getAndSet(0)
         val parseFail  = wParseFail.getAndSet(0)
-        val failures   = malformed + checksum + unknown + parseFail
-        // For the periodic window, stay silent unless something actually failed (avoid noise).
-        if (failures == 0L && reason == "periodic") return null
+        val errors     = malformed + checksum + parseFail
+        if (considered == 0L) return null
         val types = synchronized(recentUnknownTypes) { recentUnknownTypes.toList() }
+        if (errors == 0L && reason == "periodic") {
+            if (unknown > 0L) GnssLog.d("NmeaRegistry") { "unknown sentence types this window: n=$unknown recent=$types" }
+            return null
+        }
         return "parse summary ($reason): considered=$considered " +
-            "ok=${considered - failures} malformed=$malformed checksumFail=$checksum " +
+            "ok=${considered - errors - unknown} malformed=$malformed checksumFail=$checksum " +
             "unknownType=$unknown parseFail=$parseFail recentUnknownTypes=$types"
     }
 

@@ -80,4 +80,13 @@ class ImportCoordinateBackupUseCaseTest {
         assertEquals(listOf("Good"), repo.store.map { it.name })
         assertTrue(plan.skippedInvalid.any { it.contains("bad") })
     }
+
+    @Test fun legacyJsonArray_malformedRowCountsAsSkipped() = runTest {
+        val repo = FakeCoordinateRepository()
+        // The second entry is not an object: getJSONObject throws, so the row is skipped and counted.
+        val raw = """[{"id":"good","name":"Good","latitude":41.0,"longitude":-76.0,"altitude":10.0,"timestamp":1}, 5]"""
+        val plan = useCase(repo)(raw, replace = false)
+        assertEquals(listOf("Good"), repo.store.map { it.name })
+        assertEquals(1, plan.skippedCount)
+    }
 }

@@ -10,6 +10,7 @@ import app.surrealar.SurRealApplication
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.source.SourceRoutingDecisions
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
+import app.surrealar.util.diagnostics.DiagTags
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -59,7 +60,8 @@ object DiagnosticReportExporter {
 
             // Gather app data once; never let a single failing section abort the whole export.
             val data = runCatching { gatherDiagData(context) }.getOrElse {
-                DiagnosticsLogger.w("EXPORT", "gatherDiagData failed: ${it.message}", it)
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                DiagnosticsLogger.w(DiagTags.EXPORT, "gatherDiagData failed: ${it.message}", it)
                 DiagData(null, null, false, emptyList(), emptyList())
             }
             val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())
@@ -73,8 +75,11 @@ object DiagnosticReportExporter {
             })
 
             Report(zipFile, reportId)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e("EXPORT", "Failed to build report", e)
+            // The one log line for a failed export (callers only show the message).
+            DiagnosticsLogger.e(DiagTags.EXPORT, "Diagnostic report build failed", e)
             null
         }
     }

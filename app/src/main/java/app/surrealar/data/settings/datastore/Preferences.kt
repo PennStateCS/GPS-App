@@ -21,7 +21,7 @@ private const val DATASTORE_NAME = "app_settings"
  * launch until the user cleared app data. Fall back to defaults and log it instead.
  */
 val settingsCorruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { e ->
-    app.surrealar.util.DiagnosticsLogger.e("SETTINGS", "Settings file was corrupt and has been reset to defaults", e)
+    app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.SETTINGS,"Settings file was corrupt and has been reset to defaults", e)
     androidx.datastore.preferences.core.emptyPreferences()
 }
 

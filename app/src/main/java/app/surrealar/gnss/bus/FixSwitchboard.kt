@@ -127,27 +127,21 @@ class FixSwitchboard(
         // Idempotent: restarting the watcher while it runs could interleave two rebinds (a cancelled
         // collector still inside rebindTo while the new one enters), orphaning jobs.
         if (providerCollectJob?.isActive == true) return
-        android.util.Log.d("FixSwitchboard", "Starting switchboard")
+        app.surrealar.util.DevLog.d("FixSwitchboard") { "Starting switchboard" }
 
         providerCollectJob = scope.launch {
             var previousChoice: ProviderChoice? = null
             sourceSettings.activeProvider.collect { choice ->
-                android.util.Log.d("FixSwitchboard", "Provider changed: $choice")
                 if (previousChoice != null && previousChoice != choice) {
                     lastProviderSwitchAtMs = System.currentTimeMillis()
-                    DiagnosticsLogger.i(
-                        "GNSS",
-                        "Provider changed $previousChoice -> $choice; cleared current fix and sky"
-                    )
+                    // The switch itself is logged once at I by GnssFeedTracker ("Source A → B").
+                    DiagnosticsLogger.d("GNSS") { "Switchboard rebinding $previousChoice -> $choice; cleared current fix and sky" }
                 }
                 previousChoice = choice
 
                 val adapter = adapters[choice]
                 if (adapter == null) {
-                    android.util.Log.w(
-                        "FixSwitchboard",
-                        "No adapter registered for $choice. GNSS stream will be empty."
-                    )
+                    DiagnosticsLogger.e("GNSS", "No adapter registered for $choice; GNSS stream will be empty")
                     rebindTo(null)
                 } else {
                     bind(adapter)
@@ -170,7 +164,7 @@ class FixSwitchboard(
      * Stops provider observation and disconnects from the active adapter.
      */
     fun stop() {
-        android.util.Log.d("FixSwitchboard", "Stopping switchboard")
+        app.surrealar.util.DevLog.d("FixSwitchboard") { "Stopping switchboard" }
 
         providerCollectJob?.cancel()
         providerCollectJob = null
@@ -184,10 +178,9 @@ class FixSwitchboard(
     }
 
     private fun rebindTo(next: SourceAdapter?) {
-        android.util.Log.d(
-            "FixSwitchboard",
+        app.surrealar.util.DevLog.d("FixSwitchboard") {
             "Rebinding source: ${currentAdapter?.let { it::class.simpleName }} -> ${next?.let { it::class.simpleName }}"
-        )
+        }
 
         /*
          * Stop collectors before stopping the adapter. That prevents old source
@@ -263,7 +256,10 @@ class FixSwitchboard(
                 }
                 // Datum normalisation (NAD83(2011) receiver output → WGS84) before anyone sees it.
                 val out = runCatching { fixTransform(fix) }.getOrElse {
-                    DiagnosticsLogger.e("GNSS", "fix transform failed; publishing untransformed fix", it); fix
+                    // Would repeat per fix: first error in full, then at most once a minute.
+                    DiagnosticsLogger.every("GNSS", "switchboard.transform", 60_000L, 'E', throwable = it) {
+                        "fix transform failed; publishing untransformed fix"
+                    }; fix
                 }
                 _currentFix.value = out
                 _fixes.emit(out)

@@ -56,7 +56,10 @@ class AssetNmeaReplaySource(
                     delay(delayBetweenLines)
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
+            app.surrealar.util.DiagnosticsLogger.w("GNSS", "replay asset read failed; emitting a placeholder no-fix sentence", e)
             // Emit a placeholder invalid fix so the pipeline does not stall silently
             emit("\$GPGGA,000000,0000.000,N,00000.000,E,0,00,99.9,0.0,M,0.0,M,,*62")
         } finally {

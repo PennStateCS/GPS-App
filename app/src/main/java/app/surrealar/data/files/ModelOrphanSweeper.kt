@@ -1,9 +1,9 @@
 package app.surrealar.data.files
 
 import android.app.Application
-import android.util.Log
 import app.surrealar.SurRealApplicationEntryPoint
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,10 +38,12 @@ object ModelOrphanSweeper {
                 val root = File(app.filesDir, ModelFileCleaner.MODELS_DIR_NAME)
                 val removed = sweep(root, paths, System.currentTimeMillis())
                 if (removed.isNotEmpty()) {
-                    DiagnosticsLogger.i("MODEL", "orphan sweep removed ${removed.size} unreferenced model file(s)")
+                    DiagnosticsLogger.i(DiagTags.MODEL, "orphan sweep removed ${removed.size} unreferenced model file(s)")
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (t: Throwable) {
-                Log.w(TAG, "Orphan sweep skipped: ${t.javaClass.simpleName} ${t.message}")
+                DiagnosticsLogger.w(DiagTags.MODEL, "Orphan model sweep skipped", t)
             }
         }
     }

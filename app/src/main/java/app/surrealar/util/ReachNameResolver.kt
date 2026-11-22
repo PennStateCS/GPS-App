@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
-import android.util.Log
+import app.surrealar.util.diagnostics.DiagTags
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,7 +29,7 @@ object ReachNameResolver {
         val lock = try {
             wifi.createMulticastLock("reach-mdns").apply { setReferenceCounted(false); acquire() }
         } catch (e: Exception) {
-            Log.w(TAG, "MulticastLock failed: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "Reach name lookup: multicast lock failed", e)
             null
         }
 
@@ -67,7 +67,7 @@ object ReachNameResolver {
             nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
             withTimeoutOrNull(timeoutMs) { result.await() }
         } catch (e: Exception) {
-            Log.w(TAG, "NSD start failed: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "Reach name lookup: NSD discovery failed", e)
             null
         } finally {
             try { nsd.stopServiceDiscovery(listener) } catch (_: Exception) {}

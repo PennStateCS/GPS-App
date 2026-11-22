@@ -166,6 +166,8 @@
     <string name="hint_port">Port</string>
     <string name="connect">Connect</string>
     <string name="host_required">Host is required</string>
+    <!-- Capture save refused: the antenna/pole height setting could not be read (never save with 0 m). -->
+    <string name="capture_antenna_offset_unavailable">Can\'t save: the antenna height setting couldn\'t be read. Try again.</string>
 
     <!-- Diagnostic strings -->
     <string name="diag_title">Diagnostic</string>

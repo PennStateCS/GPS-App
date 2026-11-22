@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.res.AssetFileDescriptor
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
+import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import android.view.LayoutInflater
 import android.view.View
@@ -96,7 +96,8 @@ class ModelsFragment : Fragment() {
                     val linkedCount = try {
                         viewModel.linkedCoordinateCount(model.id)
                     } catch (e: Exception) {
-                        -1
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        -1   // the ViewModel already logs query failures; -1 = fail safe below
                     }
                     when {
                         linkedCount < 0 -> {
@@ -269,7 +270,7 @@ class ModelsFragment : Fragment() {
                 if (fromPath.isNotBlank()) fileName = fromPath
             }
 
-            Log.d("ModelsFragment", "Selected URI: $uri  fileName: $fileName  size: $fileSize")
+            DevLog.d("ModelsFragment") { "Selected URI: $uri  fileName: $fileName  size: $fileSize" }
             DiagnosticsLogger.i("MODEL",
                 "import started name=\"$fileName\" sizeBytes=$fileSize uriScheme=${uri.scheme}")
 
@@ -296,7 +297,8 @@ class ModelsFragment : Fragment() {
                         if (afd.length != AssetFileDescriptor.UNKNOWN_LENGTH) fileSize = afd.length
                     }
                 } catch (e: Exception) {
-                    Log.w("ModelsFragment", "Could not determine file size: ${e.message}")
+                    // Expected for some providers: the copied size is checked after the copy instead.
+                    DevLog.d("ModelsFragment") { "Could not determine file size: ${e.javaClass.simpleName}" }
                 }
             }
 
@@ -317,7 +319,7 @@ class ModelsFragment : Fragment() {
                         .getOrNull()
                 }
                 if (targetFile == null) {
-                    DiagnosticsLogger.e("MODEL", "file copy failed for \"$fileName\" — target null")
+                    // The copy failure was logged (with the exception) by onFailure above.
                     Toast.makeText(requireContext(), "Failed to import model file", Toast.LENGTH_LONG).show()
                     return@launch
                 }
@@ -347,7 +349,10 @@ class ModelsFragment : Fragment() {
                 // can all display the model. Ordinary models are detected as non-georeferenced and
                 // left untouched.
                 val embedded = withContext(Dispatchers.IO) {
-                    runCatching { GlbGeoreferenceReprojector.reprojectIfGeoreferenced(targetFile) }.getOrNull()
+                    runCatching { GlbGeoreferenceReprojector.reprojectIfGeoreferenced(targetFile) }
+                        .onFailure { DiagnosticsLogger.w("MODEL", "georeference reprojection failed file=${targetFile.name}: " +
+                            "${it.javaClass.simpleName} — model kept as imported", it) }
+                        .getOrNull()
                 }
                 // File may have been rewritten by reprojection; use its current size.
                 val finalSize = targetFile.length()
@@ -366,7 +371,6 @@ class ModelsFragment : Fragment() {
             }
 
         } catch (e: Exception) {
-            Log.e("ModelsFragment", "Failed to import model", e)
             DiagnosticsLogger.e("MODEL", "import exception: ${e.javaClass.simpleName} ${e.message}", e)
             Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -452,7 +456,7 @@ class ModelsFragment : Fragment() {
                 .map { URLDecoder.decode(it.substringBefore('#').substringBefore('?'), StandardCharsets.UTF_8.name()) }
                 .toSet()
         } catch (e: Exception) {
-            Log.w("ModelsFragment", "Failed to parse glTF resource list", e)
+            DiagnosticsLogger.w("MODEL", "glTF resource list unreadable file=${gltfFile.name} — sidecar files not copied", e)
             emptySet()
         }
     }
@@ -466,9 +470,8 @@ class ModelsFragment : Fragment() {
                 if (resolved.exists()) resolved else null
             }
         } catch (e: Exception) {
-            Log.w("ModelsFragment", "Could not resolve source file for URI: $uri", e)
             // glTF sidecar resources cannot be copied without the source dir — surface in export.
-            DiagnosticsLogger.w("MODEL", "URI resolution failed for gltf sidecars: ${e.javaClass.simpleName} ${e.message}")
+            DiagnosticsLogger.w("MODEL", "URI resolution failed for gltf sidecars: ${e.javaClass.simpleName}", e)
             null
         }
     }
@@ -476,16 +479,23 @@ class ModelsFragment : Fragment() {
     private fun copyGltfResources(sourceRoot: File?, targetRoot: File, resources: Set<String>) {
         if (sourceRoot == null || !sourceRoot.exists()) return
 
+        // Per resource: logcat detail only; one summary line for the export.
+        var missing = 0
+        var unsafe = 0
+        var failed = 0
+        var firstError: Exception? = null
         resources.forEach { relative ->
             try {
                 val source = File(sourceRoot, relative).canonicalFile
                 if (!source.path.startsWith(sourceRoot.canonicalPath) || !source.exists()) {
-                    Log.w("ModelsFragment", "Missing glTF sidecar resource: $relative")
+                    missing++
+                    DevLog.d("ModelsFragment") { "Missing glTF sidecar resource: $relative" }
                     return@forEach
                 }
                 val target = File(targetRoot, relative).canonicalFile
                 if (!target.path.startsWith(targetRoot.canonicalPath)) {
-                    Log.w("ModelsFragment", "Skipping unsafe glTF resource path: $relative")
+                    unsafe++
+                    DevLog.d("ModelsFragment") { "Skipping unsafe glTF resource path: $relative" }
                     return@forEach
                 }
                 target.parentFile?.mkdirs()
@@ -493,8 +503,14 @@ class ModelsFragment : Fragment() {
                     FileOutputStream(target).use { output -> input.copyTo(output) }
                 }
             } catch (e: Exception) {
-                Log.w("ModelsFragment", "Failed to copy glTF resource: $relative", e)
+                failed++
+                if (firstError == null) firstError = e
+                DevLog.d("ModelsFragment") { "Failed to copy glTF resource: $relative" }
             }
+        }
+        if (missing + unsafe + failed > 0) {
+            DiagnosticsLogger.w("MODEL", "glTF sidecar copy incomplete total=${resources.size} " +
+                "missing=$missing unsafe=$unsafe failed=$failed — model may render without some textures", firstError)
         }
     }
 

@@ -1,4 +1,6 @@
 package io.github.pennstatecs.geokit.receiver.emlid
+
+import io.github.pennstatecs.geokit.gnss.log.GnssLog
 import org.json.JSONObject
 
 /**
@@ -35,7 +37,16 @@ internal class ReachBatteryService(private val client: ReachHttpClient) {
         tryEndpoint("/battery") ?: tryEndpoint("/status")
 
     private suspend fun tryEndpoint(path: String): BatteryStatus? {
-        val text = runCatching { client.get(path) }.getOrNull() ?: return null
+        val result = runCatching { client.get(path) }
+        result.exceptionOrNull()?.let { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            // Expected on firmware without /battery and while the receiver is out of reach; the caller
+            // tracks repeated failures. Debug detail only, throttled (polled every 15-30 s).
+            GnssLog.dEvery("ReachBatteryService", "emlid.battery.get$path", 60_000L) {
+                "GET $path failed: ${e.javaClass.simpleName} ${e.message}"
+            }
+        }
+        val text = result.getOrNull() ?: return null
         return parse(text)
     }
 
@@ -45,7 +56,10 @@ internal class ReachBatteryService(private val client: ReachHttpClient) {
          * malformed JSON or when no `state_of_charge` is present in this layout.
          */
         internal fun parse(text: String): BatteryStatus? {
-            val root = try { JSONObject(text) } catch (_: Exception) { return null }
+            val root = try { JSONObject(text) } catch (e: Exception) {
+                GnssLog.dEvery("ReachBatteryService", "emlid.battery.json", 60_000L) { "battery body is not JSON: ${e.message}" }
+                return null
+            }
 
             // For /status the battery fields may be nested under a "battery" key;
             // for /battery (or older firmware) they are at the root level.

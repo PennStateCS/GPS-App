@@ -23,7 +23,7 @@ object DataOpLog {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            DiagnosticsLogger.w(DiagTags.DATA, failLine(op, format, (System.nanoTime() - t0) / 1_000_000, e))
+            DiagnosticsLogger.e(DiagTags.DATA, failLine(op, format, (System.nanoTime() - t0) / 1_000_000, e), e)
             throw e
         }
     }
@@ -54,10 +54,10 @@ object DbDiagnostics {
                     val prev = prefs.getInt(KEY_LAST_DB_VERSION, -1).takeIf { it >= 0 }
                     DiagnosticsLogger.i(DiagTags.DATA, openLine(prev, db.version, (System.nanoTime() - builtAt) / 1_000_000))
                     prefs.edit().putInt(KEY_LAST_DB_VERSION, db.version).apply()
-                }
+                }.onFailure { DiagnosticsLogger.w(DiagTags.DATA, "Database open record failed", it) }
             }
             override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
-                DiagnosticsLogger.w(DiagTags.DATA, "Database reset by destructive migration (ALLOW_DESTRUCTIVE_MIGRATION) — saved data cleared")
+                DiagnosticsLogger.e(DiagTags.DATA, "Database reset by destructive migration (ALLOW_DESTRUCTIVE_MIGRATION) — saved data cleared")
             }
         }
     }

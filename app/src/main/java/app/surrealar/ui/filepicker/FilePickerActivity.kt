@@ -1,6 +1,8 @@
 package app.surrealar.ui.filepicker
 
-import android.util.Log
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -56,7 +58,7 @@ class FilePickerActivity : AppCompatActivity() {
                     )
                 } catch (e: SecurityException) {
                     // URI from ACTION_GET_CONTENT fallback doesn't support persistable perms — ignore
-                    Log.d("FilePicker", "URI does not support persistable permission: $e")
+                    DevLog.d("FilePicker") { "URI does not support persistable permission: $e" }
                 }
                 returnSelectedFile(uri)
             } else {
@@ -227,11 +229,11 @@ class FilePickerActivity : AppCompatActivity() {
         } catch (e: android.content.ActivityNotFoundException) {
             // No document provider installed — fall back to GET_CONTENT which is handled
             // by the browser/gallery on older devices
-            Log.w("FilePicker", "No ACTION_OPEN_DOCUMENT handler, falling back to GET_CONTENT", e)
+            DiagnosticsLogger.w(DiagTags.DATA, "File picker: no ACTION_OPEN_DOCUMENT handler, falling back to GET_CONTENT mode=$filterMode", e)
             try {
                 safPickerLauncher.launch(getContent)
             } catch (e2: android.content.ActivityNotFoundException) {
-                Log.e("FilePicker", "No file picker available at all", e2)
+                DiagnosticsLogger.e(DiagTags.DATA, "File picker: no file picker available mode=$filterMode", e2)
                 Toast.makeText(this, "No file manager found on this device", Toast.LENGTH_LONG).show()
                 setResult(Activity.RESULT_CANCELED)
                 finish()
@@ -273,7 +275,7 @@ class FilePickerActivity : AppCompatActivity() {
             binding.textCurrentPath.text = directory.absolutePath
 
             val allFiles: Array<File> = directory.listFiles() ?: run {
-                Log.w("FilePicker", "listFiles() null: ${directory.absolutePath}")
+                DiagnosticsLogger.w(DiagTags.DATA, "File picker: directory not readable (listFiles null)")
                 Toast.makeText(this, "Cannot read this directory", Toast.LENGTH_SHORT).show()
                 goBack()
                 return
@@ -305,7 +307,7 @@ class FilePickerActivity : AppCompatActivity() {
             }
 
         } catch (e: SecurityException) {
-            Log.e("FilePicker", "Access denied: ${directory.absolutePath}", e)
+            DiagnosticsLogger.w(DiagTags.DATA, "File picker: directory access denied", e)
             Toast.makeText(this, "Access denied to this directory", Toast.LENGTH_SHORT).show()
             goBack()
         }
@@ -351,7 +353,7 @@ class FilePickerActivity : AppCompatActivity() {
             )
         } catch (e: Exception) {
             // Fall back to file:// if FileProvider is not configured for this path
-            Log.w("FilePicker", "FileProvider failed, using file URI: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.DATA, "File picker: FileProvider failed, using file URI", e)
             Uri.fromFile(file)
         }
     }

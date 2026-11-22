@@ -1,6 +1,6 @@
 package app.surrealar.gnss.external
 
-import android.util.Log
+import app.surrealar.util.DevLog
 import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
 import io.github.pennstatecs.geokit.gnss.bus.adapters.GsvMessage
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
@@ -63,6 +63,8 @@ class TcpNmeaSource(
 
     companion object {
         private const val TAG = "TcpNmeaSource"
+        /** Throttle keys for the connect / retry lines; ExternalAdapter resets them on a real connect. */
+        private const val RETRY = ExternalAdapter.RETRY_LOG_PREFIX
         private const val SOCKET_TIMEOUT_MS = 5_000
         /** How often the fuser's GST hold cap (300 ms) is checked while reading. */
         private const val HOLD_TICK_MS = 100L
@@ -133,22 +135,22 @@ class TcpNmeaSource(
      */
     override fun start() {
         if (started) return
-        Log.d(TAG, "Starting TCP NMEA source (single-connect)")
+        DevLog.d(TAG) { "Starting TCP NMEA source (single-connect)" }
         connectionJob = scope.launch(Dispatchers.IO) {
             try {
                 val host = settingsRepository.externalTcpHost.first()
                 val port = settingsRepository.externalTcpPort.first()
 
                 if (host.isNullOrBlank() || port == null) {
-                    Log.w(TAG, "No TCP host/port configured")
-                    DiagnosticsLogger.w("RECEIVER", "TCP NMEA: no host/port configured")
+                    // Repeats every reconnect attempt: once per outage (keys reset on a real connect).
+                    DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "nohost", true, 'W') { "TCP NMEA: no host/port configured" }
                     return@launch
                 }
 
                 started = true
                 firstDataLogged = false
-                Log.d(TAG, "Connecting to $host:$port")
-                DiagnosticsLogger.i("RECEIVER", "Connecting to $host:$port")
+                // Once per target per outage; ExternalAdapter's throttled summary covers the retries.
+                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "connecting", "$host:$port") { "Connecting to $host:$port" }
                 connectAndRead(host, port)
 
             } catch (ce: CancellationException) {
@@ -156,8 +158,12 @@ class TcpNmeaSource(
             } catch (e: Exception) {
                 // stop() closes the socket, which surfaces here as "Socket closed" — not an error.
                 if (!isActive) return@launch
-                Log.e(TAG, "Connection error: ${e.message}")
-                DiagnosticsLogger.e("RECEIVER", "TCP connection error: ${e.message}")
+                // Refused / unreachable is expected while the receiver is off or out of range, and is
+                // retried: the first failure of an outage in full, then ExternalAdapter's summary.
+                val logged = DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "tcp.error", "failing", 'W', throwable = e) {
+                    "TCP connect failed (will retry): ${e.javaClass.simpleName}: ${e.message}"
+                }
+                if (!logged) DevLog.d(TAG) { "TCP connect failed again: ${e.javaClass.simpleName}: ${e.message}" }
                 started = false
                 // Let ExternalAdapter's reconnect loop handle the retry
             }
@@ -165,7 +171,7 @@ class TcpNmeaSource(
     }
 
     override fun stop() {
-        Log.d(TAG, "Stopping TCP NMEA source")
+        DevLog.d(TAG) { "Stopping TCP NMEA source" }
         generation++            // first: an in-flight sentence from the old reader is now discarded
         started = false
         firstDataLogged = false
@@ -190,14 +196,15 @@ class TcpNmeaSource(
         var reader: BufferedReader? = null
         val myGeneration = generation
         readerGeneration.set(myGeneration)
+        var socketConnected = false   // only for the "disconnected" log line
         try {
             socket = Socket().also { activeSocket = it }.apply {
                 soTimeout = readTimeoutMs
                 keepAlive = true   // OS-level probe for a peer that vanished without closing
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
-            Log.d(TAG, "Connected to $host:$port")
-            DiagnosticsLogger.i("RECEIVER", "TCP socket connected to $host:$port")
+            socketConnected = true
+            DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "socket", "$host:$port") { "TCP socket connected to $host:$port" }
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8), 1024)
 
             // Enforce the fuser's GST hold cap in time (readLine() blocks, so the cap can't rely on the
@@ -216,8 +223,9 @@ class TcpNmeaSource(
                     val line = reader.readLine()
                     silentTimeouts = 0
                     if (line == null) {
-                        Log.w(TAG, "Connection closed by remote")
-                        DiagnosticsLogger.w("RECEIVER", "TCP connection closed by remote ($host:$port)")
+                        DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "remoteclosed", true, 'W') {
+                            "TCP connection closed by remote ($host:$port)"
+                        }
                         break
                     }
                     if (myGeneration != generation) break   // stopped while reading this line
@@ -238,7 +246,7 @@ class TcpNmeaSource(
                         } catch (ce: CancellationException) {
                             throw ce
                         } catch (e: Exception) {
-                            DiagnosticsLogger.every("NMEA", "tcp.sentence.error", 60_000L, 'E') {
+                            DiagnosticsLogger.every("NMEA", "tcp.sentence.error", 60_000L, 'E', throwable = e) {
                                 "TCP NMEA processing error (sentence dropped, repeats suppressed 60 s): ${e.javaClass.simpleName}: ${e.message}"
                             }
                         }
@@ -247,8 +255,9 @@ class TcpNmeaSource(
                     if (!coroutineContext.isActive) break
                     if (++silentTimeouts >= DEAD_LINK_TIMEOUTS) {
                         val silentMs = silentTimeouts.toLong() * readTimeoutMs
-                        Log.w(TAG, "No data for ${silentMs}ms — treating the link as dead")
-                        DiagnosticsLogger.w("RECEIVER", "TCP: no data for ${silentMs}ms from $host:$port — link dead, reconnecting")
+                        DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "deadlink", true, 'W') {
+                            "TCP: no data for ${silentMs}ms from $host:$port — link dead, reconnecting"
+                        }
                         break
                     }
                 }
@@ -268,8 +277,10 @@ class TcpNmeaSource(
             runCatching { socket?.close() }
             if (activeSocket === socket) activeSocket = null
             readerGeneration.remove()
-            Log.d(TAG, "Disconnected from $host:$port")
-            DiagnosticsLogger.i("RECEIVER", "TCP disconnected from $host:$port")
+            // Only after a socket that actually connected; once per outage.
+            if (socketConnected) {
+                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "disconnected", "$host:$port") { "TCP disconnected from $host:$port" }
+            }
         }
     }
 }

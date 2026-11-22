@@ -17,6 +17,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -51,18 +52,38 @@ class CaptureViewModel @Inject constructor(
 
     private var startSnapshot: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>? = null
 
+    /** Reads one snapshot field; a failure is logged (W, with the exception) and reads as null. */
+    private suspend inline fun <T> readOrNull(field: String, read: () -> T): T? = try {
+        read()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture settings read failed field=$field, using default", e)
+        null
+    }
+
     private suspend fun readSnapshot() = CaptureSettingsSnapshot(
-        locationSource = runCatching { settingsRepository.locationSource.first() }.getOrNull(),
-        receiver = runCatching { settingsRepository.gnssReceiverSettings.first() }.getOrNull(),
-        externalTcpName = runCatching { settingsRepository.externalTcpName.first() }.getOrNull(),
-        externalTcpHost = runCatching { settingsRepository.externalTcpHost.first() }.getOrNull(),
-        externalProfileLabel = runCatching { settingsRepository.externalReceiverProfile.first().label }.getOrNull(),
-        coordinateSystemSettings = runCatching { settingsRepository.coordinateSystemSettings.first() }.getOrNull(),
+        locationSource = readOrNull("locationSource") { settingsRepository.locationSource.first() },
+        receiver = readOrNull("receiver") { settingsRepository.gnssReceiverSettings.first() },
+        externalTcpName = readOrNull("externalTcpName") { settingsRepository.externalTcpName.first() },
+        externalTcpHost = readOrNull("externalTcpHost") { settingsRepository.externalTcpHost.first() },
+        externalProfileLabel = readOrNull("externalProfile") { settingsRepository.externalReceiverProfile.first().label },
+        coordinateSystemSettings = readOrNull("coordinateSystem") { settingsRepository.coordinateSystemSettings.first() },
     )
 
     /** The settings snapshot taken when the current capture started (read now if none was taken). */
     suspend fun settingsAtStart(): CaptureSettingsSnapshot? =
-        runCatching { startSnapshot?.await() ?: readSnapshot() }.getOrNull()
+        readOrNull("snapshot") { startSnapshot?.await() ?: readSnapshot() }
+
+    /**
+     * Why the last [save] was refused, for the UI to show (null = no error). Set when the antenna
+     * offset can't be determined: saving with a made-up 0 m would store wrong heights.
+     */
+    private val _saveError = MutableStateFlow<String?>(null)
+    val saveError: StateFlow<String?> = _saveError.asStateFlow()
+
+    /** The UI showed [saveError]. */
+    fun clearSaveError() { _saveError.value = null }
 
     private val _state = MutableStateFlow<ObservationSession.State>(ObservationSession.State.Idle)
     val state: StateFlow<ObservationSession.State> = _state.asStateFlow()
@@ -75,7 +96,8 @@ class CaptureViewModel @Inject constructor(
             sourceSettings.activeProvider.collect { provider ->
                 if (previousProvider != null && previousProvider != provider) {
                     if (session != null) {
-                        DiagnosticsLogger.i("CAPTURE", "Capture canceled/reset due to provider switch $previousProvider -> $provider")
+                        // cancel() writes the outcome line; the source switch itself is logged by GNSS.
+                        DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture canceled/reset due to provider switch $previousProvider -> $provider" }
                         cancel()
                     }
                 }
@@ -92,8 +114,8 @@ class CaptureViewModel @Inject constructor(
         viewModelScope.launch {
             // Saved preset (or Custom fields) for this mode. Fallback = the same defaults the Settings
             // screen shows, so a failed read never silently applies a different policy.
-            val settings = runCatching { settingsRepository.gnssCaptureSettings.first() }
-                .getOrDefault(io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings())
+            val settings = readOrNull("captureSettings") { settingsRepository.gnssCaptureSettings.first() }
+                ?: io.github.pennstatecs.geokit.gnss.capture.GnssCaptureSettings()
             start(settings.resolvePolicy(internal), internal)
         }
     }
@@ -113,7 +135,7 @@ class CaptureViewModel @Inject constructor(
         // Cancel any existing session FIRST so a previous ObservationSession can't keep collecting
         // fixes or emitting state into the UI after a new capture begins.
         if (session != null) {
-            DiagnosticsLogger.i("CAPTURE", "Previous capture session canceled before new start")
+            DiagnosticsLogger.i(DiagTags.CAPTURE, "Previous capture session canceled before new start")
             captureCancelled()
         }
         stopSession()
@@ -122,9 +144,8 @@ class CaptureViewModel @Inject constructor(
         startSnapshot = viewModelScope.async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { readSnapshot() }
 
         val provider = sourceSettings.activeProvider.value
-        DiagnosticsLogger.i("CAPTURE", "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} " +
-            "activeProvider=$provider minDur=${policy.minDurationSec}s maxDur=${policy.maxDurationSec}s " +
-            "minFixes=${policy.minSamples} required=${policy.requiredMinStatus}")
+        // The policy is in diag.startLine() below; this adds the live provider (debug builds).
+        DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} activeProvider=$provider" }
         // Feed the session ONLY the selected mode's provider, so internal GPS fixes can never be
         // averaged into an external capture (even with quality lowered to Single/DGPS, or while
         // External is selected but the live provider is still Internal) and vice versa.
@@ -143,22 +164,14 @@ class CaptureViewModel @Inject constructor(
         resetCaptureDiag()
         val diag = app.surrealar.util.diagnostics.CaptureDiagnostics(policy, if (internal) "INTERNAL" else "EXTERNAL")
         captureDiag = diag
-        DiagnosticsLogger.i("CAPTURE", diag.startLine())
+        DiagnosticsLogger.i(DiagTags.CAPTURE, diag.startLine())
         captureDiagJob = viewModelScope.launch { modeFixes.collect { diag.onFix(it) } }
         sessionForwardJob = viewModelScope.launch {
             s.state.collect { st ->
                 _state.value = st
                 diag.onState(st)
+                // One outcome line (completed / timed out) is written by captureFinished.
                 if (st is ObservationSession.State.Complete) captureFinished(diag, st)
-                if (st is ObservationSession.State.Complete) {
-                    if (st.requirementsMet) {
-                        DiagnosticsLogger.i("CAPTURE",
-                            "Capture ready (requirements met) acceptedFixes=${st.result.samples}")
-                    } else {
-                        DiagnosticsLogger.w("CAPTURE",
-                            "Capture timed out before requirements met acceptedFixes=${st.result.samples}/${policy.minSamples}")
-                    }
-                }
             }
         }
         s.start()
@@ -175,10 +188,10 @@ class CaptureViewModel @Inject constructor(
         captureOutcomeLogged = true
         captureDiagJob?.cancel()
         val r = st.result
-        DiagnosticsLogger.i("CAPTURE", diag.rejectedSummary(r.samples))
+        DiagnosticsLogger.i(DiagTags.CAPTURE, diag.rejectedSummary(r.samples))
         val line = diag.outcomeLine(if (st.requirementsMet) "completed" else "timed out", r.samples,
             java.time.Duration.between(r.startedAt, r.endedAt).seconds, r.rtkStatus, r.hAccM, r.vAccM)
-        if (st.requirementsMet) DiagnosticsLogger.i("CAPTURE", line) else DiagnosticsLogger.w("CAPTURE", line)
+        if (st.requirementsMet) DiagnosticsLogger.i(DiagTags.CAPTURE, line) else DiagnosticsLogger.w(DiagTags.CAPTURE, line)
         if (st.requirementsMet) completedNotSavedLine = line.replace("Capture completed", "Capture completed, not saved")
         else app.surrealar.util.diagnostics.CaptureLog.append(line)
     }
@@ -187,10 +200,10 @@ class CaptureViewModel @Inject constructor(
         val diag = captureDiag ?: return
         if (!captureOutcomeLogged) {
             val cap = state.value as? ObservationSession.State.Capturing
-            DiagnosticsLogger.i("CAPTURE", diag.rejectedSummary(cap?.samples))
+            DiagnosticsLogger.i(DiagTags.CAPTURE, diag.rejectedSummary(cap?.samples))
             val line = diag.outcomeLine("cancelled", cap?.samples, cap?.elapsedSec?.toLong(),
                 cap?.rtkStatus?.let { io.github.pennstatecs.geokit.gnss.model.RtkStatus.fromPrefKey(it) }, cap?.hAccM, cap?.vAccM)
-            DiagnosticsLogger.i("CAPTURE", line)
+            DiagnosticsLogger.i(DiagTags.CAPTURE, line)
             app.surrealar.util.diagnostics.CaptureLog.append(line)
         } else {
             completedNotSavedLine?.let { app.surrealar.util.diagnostics.CaptureLog.append(it) }
@@ -204,7 +217,8 @@ class CaptureViewModel @Inject constructor(
     }
 
     fun cancel() {
-        if (session != null) DiagnosticsLogger.i("CAPTURE", "Capture canceled")
+        // A running session with diagnostics gets its "Capture cancelled" outcome line from captureCancelled().
+        if (session != null && (captureDiag == null || captureOutcomeLogged)) DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture canceled")
         captureCancelled()
         stopSession()
         _state.value = ObservationSession.State.Idle
@@ -232,9 +246,10 @@ class CaptureViewModel @Inject constructor(
         // Defense-in-depth: never persist a timed-out, under-sampled capture. The UI disables
         // Save in that case; this guards the data path too.
         if (!completed.requirementsMet) {
-            DiagnosticsLogger.w("CAPTURE", "Save blocked: requirements not met (timed out)")
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Save blocked: requirements not met (timed out)")
             return
         }
+        _saveError.value = null
         val finished = completed.result
         // Everything below comes from the settings as they were when the capture started.
         val snap = settingsAtStart()
@@ -262,25 +277,31 @@ class CaptureViewModel @Inject constructor(
 
         // Pole/antenna vertical offset: subtract the height of the antenna that produced this fix.
         // External and internal have separate heights (the RS2 antenna and the pole-mounted tablet
-        // sit at different heights); simulator/replay has none.
-        val antennaHeightM = runCatching {
-            val receiver = snap?.receiver ?: return@runCatching 0.0
+        // sit at different heights); simulator/replay has none. If the offset can't be determined the
+        // save is refused: a made-up 0 m would silently store the antenna height as the ground mark.
+        val antennaHeightM = try {
             when (src) {
+                LocationSourceType.SIMULATOR -> 0.0
                 // Pole height to the bottom of the receiver + the receiver model's phase-centre offset.
                 LocationSourceType.EXTERNAL  -> app.surrealar.settings.model.AntennaSetup.resolve(
-                    receiver,
+                    snap?.receiver ?: error("receiver settings unavailable"),
                     app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(snap?.externalProfileLabel)
                         ?: app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT,
                 ).captureOffsetM
-                LocationSourceType.INTERNAL  -> receiver.internalAntennaHeightM
-                LocationSourceType.SIMULATOR -> 0.0
+                LocationSourceType.INTERNAL  -> (snap?.receiver ?: error("receiver settings unavailable")).internalAntennaHeightM
             }
-        }.getOrDefault(0.0)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DiagnosticsLogger.e(DiagTags.CAPTURE, "antenna offset failed; save blocked source=${src.name}", e)
+            _saveError.value = ANTENNA_OFFSET_ERROR
+            return
+        }
 
         // Build → validate → save is centralized in the use case (it rejects an invalid coordinate
         // rather than persisting it). The source/provider/device mapping above stays here because it
         // reads UI/settings state.
-        captureCoordinate(
+        val saved = captureCoordinate(
             name           = name,
             note           = note,
             color          = color,
@@ -292,7 +313,8 @@ class CaptureViewModel @Inject constructor(
             antennaHeightM = antennaHeightM,
         )
 
-        DiagnosticsLogger.i("CAPTURE", "Coordinate saved name=\"$name\" source=${provider.name} " +
+        // Id only: point names stay out of the event log.
+        DiagnosticsLogger.i(DiagTags.CAPTURE, "Coordinate saved id=${saved.id} source=${provider.name} " +
             "samples=${finished.samples} hAcc=${finished.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${finished.rtkStatus}")
         captureDiag?.let { d ->
             app.surrealar.util.diagnostics.CaptureLog.append(d.outcomeLine("saved", finished.samples,
@@ -300,5 +322,10 @@ class CaptureViewModel @Inject constructor(
                 finished.hAccM, finished.vAccM, name = name))
         }
         resetCaptureDiag()
+    }
+
+    companion object {
+        /** [saveError] when the antenna / phase-centre offset can't be read (same text as R.string.capture_antenna_offset_unavailable). */
+        const val ANTENNA_OFFSET_ERROR = "Can't save: the antenna height setting couldn't be read. Try again."
     }
 }

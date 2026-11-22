@@ -57,11 +57,13 @@ class ReachCorrectionsLoggingTest {
         assertTrue("no debug lines in release", r.lines.none { it.startsWith("D/") })
     }
 
-    @Test fun `debug builds log each broadcast kind at most once per interval`() {
+    @Test fun `debug builds trace each broadcast kind at most once per interval, under the corrections area`() {
         val r = Recording(enabled = true)
         broadcastMany(r)
-        assertEquals(1, r.lines.count { it.startsWith("D/ReachCorrectionsService: navigation broadcast:") })
-        assertEquals(1, r.lines.count { it.startsWith("D/ReachCorrectionsService: navigation parsed:") })
+        assertEquals(1, r.lines.count { it.startsWith("[corrections] navigation broadcast:") })
+        assertEquals(1, r.lines.count { it.startsWith("[corrections] navigation parsed:") })
+        // Coordinates appear only in the GNSS debug trace, never in a plain debug line.
+        assertTrue(r.lines.filter { it.startsWith("D/") }.none { "41.234" in it || "base_position" in it })
     }
 
     @Test fun `the CORRECTIONS line prints the metre baseline in km`() {

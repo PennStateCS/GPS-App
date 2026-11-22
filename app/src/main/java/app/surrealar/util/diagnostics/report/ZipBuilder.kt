@@ -25,6 +25,7 @@ class ZipBuilder(private val zos: ZipOutputStream, private val scrub: (String) -
 
     suspend fun textSafe(name: String, build: suspend () -> String) {
         val content = runCatching { build() }.getOrElse {
+            if (it is kotlinx.coroutines.CancellationException) throw it
             DiagnosticsLogger.w(DiagTags.EXPORT, "section $name failed: ${it.message}", it)
             "Section failed to generate: ${it.javaClass.simpleName}: ${it.message}\n"
         }
@@ -45,6 +46,6 @@ class ZipBuilder(private val zos: ZipOutputStream, private val scrub: (String) -
             }
             zos.closeEntry()
             _entries += name to size
-        }.onFailure { DiagnosticsLogger.w(DiagTags.EXPORT, "file $name failed: ${it.message}") }
+        }.onFailure { DiagnosticsLogger.w(DiagTags.EXPORT, "file $name failed: ${it.message}", it) }
     }
 }

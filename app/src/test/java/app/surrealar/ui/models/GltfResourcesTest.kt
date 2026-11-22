@@ -43,4 +43,18 @@ class GltfResourcesTest {
         assertTrue(GltfResources.externalResourceUris("not json").isEmpty())
         assertTrue(GltfResources.externalResourceUris("").isEmpty())
     }
+
+    @Test
+    fun externalResourceUris_badJson_isLoggedNotSwallowed() {
+        val dir = java.nio.file.Files.createTempDirectory("diaglog").toFile()
+        app.surrealar.util.DiagnosticsLogger.initForTest(dir)
+        try {
+            assertTrue(GltfResources.externalResourceUris("not json").isEmpty())
+            app.surrealar.util.DiagnosticsLogger.flush()
+            val log = java.io.File(dir, "app-log-current.txt").readText()
+            assertTrue(log.contains("glTF JSON unparseable"))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

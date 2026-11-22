@@ -92,10 +92,12 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
                 try { drawable?.setColorFilter(color, PorterDuff.Mode.SRC_IN) } catch (_: Exception) {}
                 iconView.setImageDrawable(drawable)
             } catch (e: Exception) {
-                android.util.Log.w("CoordinateInfoBottomSheet", "Failed to load icon", e)
+                app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.MAP,
+                    "Point info sheet: icon load failed icon=$iconName", e)
             }
         } catch (e: Exception) {
-            android.util.Log.e("CoordinateInfoBottomSheet", "onViewCreated error", e)
+            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.MAP,
+                "Point info sheet: view setup failed", e)
         }
     }
 }

@@ -33,18 +33,40 @@ private const val TAG = "ReachDeviceService"
  */
 internal class ReachDeviceService(private val client: ReachHttpClient) {
 
+    /**
+     * Last outcome logged per endpoint path ("ok", "failed:<type>", "non-json", "no-fields"). The device
+     * is polled every 30 s, so a missing endpoint or an unreachable receiver is logged once when the
+     * outcome changes, not on every poll.
+     */
+    private val lastOutcome = HashMap<String, String>()
+
     suspend fun read(): ReachDeviceInfoDto? =
         tryEndpoint("/info") ?: tryEndpoint("/status")
 
     private suspend fun tryEndpoint(path: String): ReachDeviceInfoDto? {
-        val text = runCatching { client.get(path) }
-            .onFailure {
-                GnssLog.w(TAG, "GET $path failed: ${it.message}")
-                GnssLog.diagnosticWarn("CORRECTIONS",
-                    "device endpoint $path failed: ${it.javaClass.simpleName} ${it.message}")
-            }
-            .getOrNull() ?: return null
+        val result = runCatching { client.get(path) }
+        result.exceptionOrNull()?.let { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            logOutcome(path, "failed:${e.javaClass.simpleName}", e) { "device endpoint $path failed: ${e.javaClass.simpleName} ${e.message}" }
+        }
+        val text = result.getOrNull() ?: return null
         return parseReachDeviceInfo(path, text)
+    }
+
+    /**
+     * Writes a CORRECTIONS warning only when [outcome] differs from the last one logged for [path]; a
+     * return to "ok" after a failure is logged once at info. Returns true if it wrote. `internal` for tests.
+     */
+    internal fun logOutcome(path: String, outcome: String, throwable: Throwable? = null, message: () -> String): Boolean {
+        val previous = synchronized(lastOutcome) { lastOutcome.put(path, outcome) }
+        if (previous == outcome) return false
+        if (outcome == OK) {
+            if (previous == null) return false   // first success: nothing to report
+            GnssLog.diagnostic("CORRECTIONS", message())
+        } else {
+            GnssLog.diagnosticWarn("CORRECTIONS", message(), throwable)
+        }
+        return true
     }
 
     /**
@@ -53,11 +75,10 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
      * malformed JSON. `internal` so unit tests can exercise it without a live HTTP client.
      */
     internal fun parseReachDeviceInfo(path: String, text: String): ReachDeviceInfoDto? {
-        GnssLog.d(TAG, "GET $path → ${text.length} chars: ${text.take(300)}")
+        GnssLog.every("receiver.get.$path", "receiver", 60_000L) { "GET $path → ${text.length} chars: ${text.take(300)}" }
 
         val root = try { JSONObject(text) } catch (e: Exception) {
-            GnssLog.w(TAG, "JSON parse failed for $path: ${e.message}")
-            GnssLog.diagnosticWarn("CORRECTIONS", "device endpoint $path returned non-JSON: ${e.message}")
+            logOutcome(path, "non-json", e) { "device endpoint $path returned non-JSON: ${e.message}" }
             return null
         }
 
@@ -128,14 +149,16 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
         val hostname = deviceObj?.str("local_address")
                     ?: root.str("local_address", "hostname")
 
-        GnssLog.d(TAG, "Parsed [$path]: name=$name  model=$model  fw=$firmware  serial=$serial  uptime=$uptime  storage=${storageTotalMb}/${storageFreeMb} MB")
+        GnssLog.every("receiver.parsed.$path", "receiver", 60_000L) { "Parsed [$path]: name=$name  model=$model  fw=$firmware  serial=$serial  uptime=$uptime  storage=${storageTotalMb}/${storageFreeMb} MB" }
 
         // If nothing at all was parsed, this endpoint doesn't have device info
         if (name == null && model == null && firmware == null && serial == null) {
-            GnssLog.w(TAG, "No device fields found in $path response – top-level keys: ${root.keys().asSequence().toList()}")
-            GnssLog.diagnosticWarn("CORRECTIONS", "device endpoint $path had no device fields (endpoint may be missing/404)")
+            logOutcome(path, "no-fields") {
+                "device endpoint $path had no device fields (endpoint may be missing/404) keys=${root.keys().asSequence().take(12).toList()}"
+            }
             return null
         }
+        logOutcome(path, OK) { "device endpoint $path ok again" }
 
         return ReachDeviceInfoDto(
             name                 = name,
@@ -154,6 +177,8 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
     }
 
     internal companion object {
+        private const val OK = "ok"
+
         /**
          * Parses uptime text into seconds: "2 days, 1:08:08", "1:08:08", or a bare number "86400".
          * Returns null — not 0 — when the text matches none of these forms.

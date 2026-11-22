@@ -2,7 +2,7 @@ package app.surrealar.ui.openinar
 
 import android.content.Context
 import android.opengl.Matrix
-import android.util.Log
+import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import com.google.ar.core.Anchor
 import com.google.ar.core.Earth
@@ -37,6 +37,7 @@ class TestAnchorController(private val context: Context) {
 
     companion object {
         private const val TAG = "TestAnchorController"
+        private const val TRACKING_LOG_KEY = "ar.testgrid.tracking"
         const val ASSET_PATH = "model_images/pin.glb"
         const val PIN_SCALE = 0.3048f
         const val PIN_GROUND_DROP_M = 0.1524f
@@ -97,14 +98,15 @@ class TestAnchorController(private val context: Context) {
                         }
                     }
                     dst
+                }.onFailure {
+                    DiagnosticsLogger.e(ArFilamentRenderer.DIAG,
+                        "Test pin model prepare failed asset=$ASSET_PATH: ${it.javaClass.simpleName}", it)
                 }.getOrNull()
             }
             if (outFile != null) {
                 pinModelFilePath = outFile.absolutePath
-                Log.d(TAG, "Test pin model ready: ${outFile.absolutePath}")
+                DevLog.d(TAG) { "Test pin model ready" }
                 onReady(outFile.absolutePath)
-            } else {
-                Log.e(TAG, "Failed to prepare $ASSET_PATH")
             }
         }
     }
@@ -115,6 +117,10 @@ class TestAnchorController(private val context: Context) {
      */
     fun preloadModelKeys(filamentRenderer: ArFilamentRenderer, scope: CoroutineScope) {
         val filePath = pinModelFilePath ?: return
+        // One summary line; per-key preload lines for test keys are debug-only in the renderer,
+        // which logs one completion line (ok/failed) when the batch settles.
+        val n = (2 * GRID_RADIUS + 1) * (2 * GRID_RADIUS + 1)
+        DiagnosticsLogger.i(ArFilamentRenderer.DIAG, "test grid preload n=$n")
         for (latOff in -GRID_RADIUS..GRID_RADIUS) {
             for (lonOff in -GRID_RADIUS..GRID_RADIUS) {
                 filamentRenderer.preload(gridKey(latOff, lonOff), filePath, scope)
@@ -267,8 +273,14 @@ class TestAnchorController(private val context: Context) {
             }
         }
 
-        if (isActive && rendered == 0) {
-            Log.w(TAG, "⚠️ Test anchors active but NONE are TRACKING — check altitude & GNSS accuracy.")
+        if (isActive) {
+            // Per GL frame: log only when "none tracking" vs "tracking" changes and holds for 3 s.
+            val noneTracking = rendered == 0
+            DiagnosticsLogger.logOnChange(ArFilamentRenderer.DIAG, TRACKING_LOG_KEY, noneTracking,
+                level = if (noneTracking) 'W' else 'I', stableMs = 3_000L) {
+                if (noneTracking) "Test anchors active but none TRACKING total=${anchors.size} — check altitude & GNSS accuracy"
+                else "Test anchors tracking $rendered/${anchors.size}"
+            }
         }
     }
 
@@ -312,6 +324,8 @@ class TestAnchorController(private val context: Context) {
         val pinPath = pinModelFilePath
         var created = 0
         val total   = (2 * GRID_RADIUS + 1) * (2 * GRID_RADIUS + 1)
+        var failed = 0
+        var firstFailure: Exception? = null
 
         for (latOff in -GRID_RADIUS..GRID_RADIUS) {
             for (lonOff in -GRID_RADIUS..GRID_RADIUS) {
@@ -337,9 +351,15 @@ class TestAnchorController(private val context: Context) {
                     )
                     created++
                 } catch (e: Exception) {
-                    Log.e(TAG, "Test anchor creation failed for $label (terrain=$useTerrainNow)", e)
+                    failed++
+                    if (firstFailure == null) firstFailure = e
                 }
             }
+        }
+        if (failed > 0) {
+            DiagnosticsLogger.w(ArFilamentRenderer.DIAG,
+                "Test anchor creation failed for $failed/$total pins (terrain=$useTerrainNow); first error below",
+                firstFailure)
         }
 
         isActive = true
@@ -354,8 +374,9 @@ class TestAnchorController(private val context: Context) {
     }
 
     private fun clearGrid() {
-        for (te in anchors) try { te.anchor.detach() } catch (_: Exception) {}
+        for (te in anchors) try { te.anchor.detach() } catch (_: Exception) {}   // already detached: nothing to do
         anchors.clear()
+        DiagnosticsLogger.resetThrottles(TRACKING_LOG_KEY)
         isActive = false
         activeMode = null
     }

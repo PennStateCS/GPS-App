@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.Dialog
 import android.graphics.BitmapFactory
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
@@ -81,7 +80,7 @@ class EditCoordinateDialogFragment(
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         if (coordinateOrNull == null) {
-            app.surrealar.util.DiagnosticsLogger.i("COORD", "Edit Coordinate dialog closed after Android recreated it")
+            app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.COORD,"Edit Coordinate dialog closed after Android recreated it")
             dismissAllowingStateLoss()
             return Dialog(requireContext())
         }
@@ -354,7 +353,7 @@ class EditCoordinateDialogFragment(
                     val file = File(thumbnailPath)
                     if (file.exists()) BitmapFactory.decodeFile(thumbnailPath) else null
                 } catch (e: Exception) {
-                    Log.w("EditCoordinateDialog", "Failed to decode thumbnail: $thumbnailPath", e)
+                    app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.MODEL, "Model thumbnail decode failed in Edit Coordinate", e)
                     null
                 }
             }

@@ -93,9 +93,11 @@ class ModelsViewModel @Inject constructor(
                         }
                     }
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 // Non-fatal: thumbnail spinner state may not clear automatically,
                 // but it won't affect core functionality.
+                DiagnosticsLogger.w("MODEL", "thumbnail-state observer stopped: ${e.javaClass.simpleName}", e)
             }
         }
     }
@@ -165,7 +167,8 @@ class ModelsViewModel @Inject constructor(
                 DiagnosticsLogger.i("MODEL", ReadinessStyle.logLine(facts.fileName, report))
                 if (report.verdict == Verdict.NOT_READY) onNotReady(facts.modelName)
             } catch (e: Exception) {
-                DiagnosticsLogger.w("MODEL", "readiness check failed id=$modelId: ${e.javaClass.simpleName} ${e.message}")
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                DiagnosticsLogger.w("MODEL", "readiness check failed id=$modelId: ${e.javaClass.simpleName}", e)
             }
         }
     }
@@ -207,6 +210,8 @@ class ModelsViewModel @Inject constructor(
                     _statusMessage.value = "Model not found — it may have been deleted"
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                DiagnosticsLogger.e("MODEL", "model update failed id=$modelId: ${e.javaClass.simpleName}", e)
                 _statusMessage.value = "Failed to update model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
@@ -226,7 +231,9 @@ class ModelsViewModel @Inject constructor(
     suspend fun linkedCoordinateCount(modelId: String): Int {
         return try {
             coordinateDao.countByModelId(modelId)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            DiagnosticsLogger.w("MODEL", "linked-coordinate count query failed id=$modelId: ${e.javaClass.simpleName}", e)
             -1
         }
     }

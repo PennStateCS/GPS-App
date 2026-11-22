@@ -14,7 +14,6 @@
 
 package app.surrealar.ui.viewpoints
 
-import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -22,7 +21,9 @@ import app.surrealar.domain.coordinates.CoordinateValidator
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -44,11 +45,13 @@ class CoordinatesViewModel @Inject constructor(
         if (rejectIfInvalid(coordinate, "addCoordinate")) return@launch
         try {
             repository.insert(coordinate)
-            // COORD diagnostics: id/name/model link only — never the user's note.
-            DiagnosticsLogger.i("COORD", "saved id=${coordinate.id} name=\"${coordinate.name}\" " +
+            // COORD diagnostics: id/model link only — never the point's name or note.
+            DiagnosticsLogger.i(DiagTags.COORD, "saved id=${coordinate.id} " +
                 "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e("COORD", "save failed id=${coordinate.id}", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "save failed id=${coordinate.id}", e)
         }
     }
 
@@ -56,10 +59,12 @@ class CoordinatesViewModel @Inject constructor(
         if (rejectIfInvalid(coordinate, "updateCoordinate")) return@launch
         try {
             repository.update(coordinate)
-            DiagnosticsLogger.i("COORD", "updated id=${coordinate.id} name=\"${coordinate.name}\" " +
+            DiagnosticsLogger.i(DiagTags.COORD, "updated id=${coordinate.id} " +
                 "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e("COORD", "update failed id=${coordinate.id}", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "update failed id=${coordinate.id}", e)
         }
     }
 
@@ -71,7 +76,7 @@ class CoordinatesViewModel @Inject constructor(
     private fun rejectIfInvalid(coordinate: Coordinate, op: String): Boolean {
         val result = CoordinateValidator.validate(coordinate)
         if (!result.isValid) {
-            DiagnosticsLogger.w("COORD", "$op rejected — validation failed: ${result.errors.joinToString()}")
+            DiagnosticsLogger.w(DiagTags.COORD, "$op rejected id=${coordinate.id} — validation failed: ${result.errors.joinToString()}")
             return true
         }
         return false
@@ -80,25 +85,31 @@ class CoordinatesViewModel @Inject constructor(
     fun deleteCoordinate(id: String) = viewModelScope.launch {
         try {
             repository.deleteById(id)
-            DiagnosticsLogger.i("COORD", "deleted id=$id")
+            DiagnosticsLogger.i(DiagTags.COORD, "deleted id=$id")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e("COORD", "delete failed id=$id", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "delete failed id=$id", e)
         }
     }
 
     fun deleteAllCoordinates() = viewModelScope.launch {
         try {
             repository.deleteAll()
-            DiagnosticsLogger.i("COORD", "deleted all coordinates")
+            DiagnosticsLogger.i(DiagTags.COORD, "deleted all coordinates")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e("COORD", "deleteAll failed", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "deleteAll failed", e)
         }
     }
 
     suspend fun getById(id: String): Coordinate? = try {
         repository.getById(id)
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
-        Log.e("CoordinatesViewModel", "getById failed for id=$id", e)
+        DiagnosticsLogger.e(DiagTags.COORD, "getById failed id=$id", e)
         null
     }
 }

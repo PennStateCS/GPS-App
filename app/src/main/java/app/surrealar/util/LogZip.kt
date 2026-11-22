@@ -1,7 +1,6 @@
 package app.surrealar.util
 
 import android.content.Context
-import android.util.Log
 import androidx.core.content.pm.PackageInfoCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -65,7 +64,8 @@ class LogZip(
                     currentFileSizeBytes += lineBytes.size
 
                 } catch (e: IOException) {
-                    Log.e(TAG, "Error writing to log file", e)
+                    // Per NMEA line while the disk fails: first error in full, then once a minute.
+                    DiagnosticsLogger.every("NMEA", "logzip.io", 60_000L, 'E', throwable = e) { "NMEA log write failed (line dropped)" }
                 }
             }
         }
@@ -83,7 +83,7 @@ class LogZip(
                     currentFile = null
                     currentFileSizeBytes = 0L
                 } catch (e: IOException) {
-                    Log.e(TAG, "Error closing log file", e)
+                    DiagnosticsLogger.w("NMEA", "NMEA log close failed", e)
                 }
             }
         }
@@ -126,10 +126,10 @@ class LogZip(
                         }
                     }
 
-                    Log.d(TAG, "Exported logs to: ${zipFile.absolutePath}")
+                    DevLog.d(TAG) { "Exported logs to: ${zipFile.name}" }
                     zipFile
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error exporting logs to ZIP", e)
+                    DiagnosticsLogger.e("EXPORT", "NMEA log ZIP export failed", e)
                     null
                 }
             }
@@ -179,10 +179,10 @@ class LogZip(
                         zos.closeEntry()
                     }
 
-                    Log.d(TAG, "Created recent logs zip: ${zipFile.absolutePath}")
+                    DevLog.d(TAG) { "Created recent logs zip: ${zipFile.name}" }
                     zipFile
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error creating recent logs zip", e)
+                    DiagnosticsLogger.e("EXPORT", "Recent NMEA logs ZIP failed", e)
                     null
                 }
             }
@@ -219,7 +219,7 @@ class LogZip(
             }
             recentLines.joinToString("\n")
         } catch (e: Exception) {
-            Log.e(TAG, "Error reading recent log lines from ${file.name}", e)
+            DiagnosticsLogger.w("NMEA", "Reading recent NMEA log lines failed file=${file.name}", e)
             "Error reading log file: ${e.message}\n"
         }
     }
@@ -398,7 +398,7 @@ class LogZip(
             currentWriter = BufferedWriter(FileWriter(currentFile, true))
             currentFileSizeBytes = currentFile?.length() ?: 0L
 
-            Log.d(TAG, "Opened log file: ${currentFile?.absolutePath}")
+            DevLog.d(TAG) { "Opened log file: ${currentFile?.name}" }
         }
     }
 
@@ -421,7 +421,7 @@ class LogZip(
             cleanup()
 
         } catch (e: IOException) {
-            Log.e(TAG, "Error during file rollover", e)
+            DiagnosticsLogger.w("NMEA", "NMEA log rollover failed", e)
         }
     }
 
@@ -440,11 +440,11 @@ class LogZip(
 
             // Delete original file after successful compression
             if (compressedFile.exists() && file.delete()) {
-                Log.d(TAG, "Compressed and deleted: ${file.name} -> ${compressedFile.name}")
+                DevLog.d(TAG) { "Compressed and deleted: ${file.name} -> ${compressedFile.name}" }
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error compressing file: ${file.name}", e)
+            DiagnosticsLogger.w("NMEA", "NMEA log compression failed file=${file.name}", e)
         }
     }
 
@@ -461,7 +461,7 @@ class LogZip(
                     }
                     totalBytes.toDouble() / (1024.0 * 1024.0)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error calculating total log size", e)
+                    DiagnosticsLogger.w("NMEA", "NMEA log size calculation failed", e)
                     0.0
                 }
             }
@@ -482,13 +482,13 @@ class LogZip(
 
                     filesToDelete.forEach { file ->
                         if (file.delete()) {
-                            Log.d(TAG, "Deleted old log file: ${file.name}")
+                            DevLog.d(TAG) { "Deleted old log file: ${file.name}" }
                         } else {
-                            Log.w(TAG, "Failed to delete old log file: ${file.name}")
+                            DiagnosticsLogger.w("NMEA", "Could not delete old NMEA log file=${file.name}")
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error during cleanup", e)
+                    DiagnosticsLogger.w("NMEA", "NMEA log cleanup failed", e)
                 }
             }
         }

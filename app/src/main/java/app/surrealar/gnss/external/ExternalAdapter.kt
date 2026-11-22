@@ -1,6 +1,6 @@
 package app.surrealar.gnss.external
 
-import android.util.Log
+import app.surrealar.util.DevLog
 import app.surrealar.gnss.bus.SourceAdapter
 import io.github.pennstatecs.geokit.gnss.bus.adapters.GsvMessage
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
@@ -67,6 +67,14 @@ class ExternalAdapter(
         private const val HEALTH_DATA_TIMEOUT_MS = 30_000L
 
         /**
+         * Prefix of the DiagnosticsLogger throttle keys for the connect / retry lines (here and in
+         * TcpNmeaSource). Each is logged once per outage; all are reset when data flows again.
+         */
+        internal const val RETRY_LOG_PREFIX = "rx.retry."
+        private const val RETRY_SUMMARY_KEY = RETRY_LOG_PREFIX + "summary"
+        private const val RETRY_SUMMARY_MS = 60_000L
+
+        /**
          * Exponential backoff with jitter. [attempt] is floored at 1: after a drop from CONNECTED
          * the loop's counter is 0, and `1L shl -1` shifted by 63 (a huge negative delay).
          */
@@ -125,7 +133,7 @@ class ExternalAdapter(
 
     private fun startLocked() {
         if (reconnectJob != null) return
-        Log.d(TAG, "start()")
+        DevLog.d(TAG) { "start()" }
         _connectionState.value = ConnectionState.CONNECTING
         _attemptCount.value = 0
         // LAZY + start() after assignment: the loop checks `reconnectJob` to know it is the live one,
@@ -158,8 +166,9 @@ class ExternalAdapter(
     override fun stop() = synchronized(lifecycleLock) { stopLocked() }
 
     private fun stopLocked() {
-        Log.d(TAG, "stop()")
         DiagnosticsLogger.i("RECEIVER", "External adapter stopped")
+        failuresSinceUp = 0
+        DiagnosticsLogger.resetThrottles(RETRY_LOG_PREFIX)   // a new session logs its first failure in full
         reconnectJob?.cancel(); reconnectJob = null
         stopInternalJobs()
         runCatching { nmea.stop() }
@@ -172,6 +181,9 @@ class ExternalAdapter(
 
     // ---- internals ----
 
+    /** Failed attempts since the link was last up (log throttling only). */
+    @Volatile private var failuresSinceUp = 0
+
     private suspend fun startWithReconnect() {
         var attempts = 0
         while (coroutineContext.isActive) {
@@ -179,7 +191,8 @@ class ExternalAdapter(
                 attempts++
                 _attemptCount.value = attempts
                 _connectionState.value = if (attempts == 1) ConnectionState.CONNECTING else ConnectionState.RECONNECTING
-                if (attempts > 1) DiagnosticsLogger.w("RECEIVER", "Reconnecting external receiver attempt #$attempts")
+                // Folded into the throttled "still unreachable" summary below.
+                if (attempts > 1) DevLog.d(TAG) { "Reconnecting external receiver attempt #$attempts" }
 
                 // Under the lifecycle lock, and only if this loop is still the live one (a stop()
                 // that won the lock has already cancelled us).
@@ -193,7 +206,11 @@ class ExternalAdapter(
 
                 waitForFirstDataOrTimeout()
                 _connectionState.value = ConnectionState.CONNECTED
-                DiagnosticsLogger.i("RECEIVER", "External receiver connected (attempt #$attempts)")
+                // Recovery, once: data is flowing, so the next failure is a new outage logged in full.
+                DiagnosticsLogger.i("RECEIVER", "External receiver connected (attempt #$attempts" +
+                    if (failuresSinceUp > 1) ", after $failuresSinceUp failed attempts)" else ")")
+                failuresSinceUp = 0
+                DiagnosticsLogger.resetThrottles(RETRY_LOG_PREFIX)
                 app.surrealar.gnss.debug.GnssDebugLog.event("external") {
                     "CONNECTED after $attempts attempt(s); fuser stats ${nmea.nmeaTimingStats()}"
                 }
@@ -213,8 +230,18 @@ class ExternalAdapter(
             } catch (e: Exception) {
                 // After a drop from CONNECTED the counter was reset to 0; this is still attempt #1.
                 val attempt = attempts.coerceAtLeast(1)
-                Log.w(TAG, "connection attempt #$attempt failed: ${e.message}", e)
-                DiagnosticsLogger.w("RECEIVER", "Connection attempt #$attempt failed: ${e.message}")
+                val failures = ++failuresSinceUp
+                if (failures == 1) {
+                    // First failure of an outage: in full, with the exception.
+                    DiagnosticsLogger.w("RECEIVER", "Connection attempt #$attempt failed (will retry): ${e.message}", e)
+                    // Start the summary interval now, so the first summary comes a minute later.
+                    DiagnosticsLogger.resetThrottles(RETRY_SUMMARY_KEY)
+                    DiagnosticsLogger.every("RECEIVER", RETRY_SUMMARY_KEY, RETRY_SUMMARY_MS, 'D') { "retry summary interval started" }
+                } else {
+                    DiagnosticsLogger.every("RECEIVER", RETRY_SUMMARY_KEY, RETRY_SUMMARY_MS, 'W') {
+                        "Receiver still unreachable: attempts=$failures last=${e.javaClass.simpleName}: ${e.message}"
+                    }
+                }
                 _connectionState.value = ConnectionState.ERROR
                 synchronized(lifecycleLock) { stopInternalJobs() }
                 if (!coroutineContext.isActive) break
@@ -260,7 +287,10 @@ class ExternalAdapter(
                         val profile = currentProfile()
                         fix.copy(accuracyClass = profile.accuracyClass, receiverLabel = profile.label)
                     }.getOrElse {
-                        DiagnosticsLogger.e("RECEIVER", "fix stamping failed; publishing unstamped fix", it); fix
+                        // Per fix: first error in full, then at most once a minute.
+                        DiagnosticsLogger.every("RECEIVER", "external.stamp", 60_000L, 'E', throwable = it) {
+                            "fix stamping failed; publishing unstamped fix"
+                        }; fix
                     }
                     _fixes.emit(stamped)
                 }
@@ -275,7 +305,9 @@ class ExternalAdapter(
                 .collect { gsv ->
                     runCatching { inv.consume(gsv) }
                         .onSuccess { _sky.value = it }
-                        .onFailure { DiagnosticsLogger.e("RECEIVER", "GSV update failed; message skipped", it) }
+                        .onFailure {
+                            DiagnosticsLogger.every("RECEIVER", "external.gsv", 60_000L, 'E', throwable = it) { "GSV update failed; message skipped" }
+                        }
                 }
         }
 
@@ -295,12 +327,13 @@ class ExternalAdapter(
             // Connect refused / host unreachable / no host configured: retry on the backoff
             // schedule now rather than sitting out the full connect timeout.
             if (!nmea.isConnectionActive()) {
-                DiagnosticsLogger.w("RECEIVER", "External connection ended before any NMEA data — will retry")
+                // The thrown message reaches the attempt-failed / summary line; detail only here.
+                DiagnosticsLogger.d("RECEIVER") { "External connection ended before any NMEA data — will retry" }
                 throw IllegalStateException("Connection ended before data")
             }
             delay(250)
         }
-        DiagnosticsLogger.w("RECEIVER", "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry")
+        DiagnosticsLogger.d("RECEIVER") { "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry" }
         throw IllegalStateException("Timeout: no data within ${CONNECT_TIMEOUT_MS} ms")
     }
 

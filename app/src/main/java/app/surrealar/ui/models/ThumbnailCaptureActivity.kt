@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.Choreographer
 import android.view.PixelCopy
 import android.view.SurfaceView
@@ -19,7 +18,9 @@ import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import app.surrealar.domain.repository.ModelRepository
+import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import com.google.android.filament.Camera
 import com.google.android.filament.EntityManager
 import com.google.android.filament.LightManager
@@ -151,7 +152,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         surfaceView.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
             val w = right - left
             val h = bottom - top
-            Log.d(TAG, "SurfaceView laid out: ${w}x${h}")
+            DevLog.d(TAG) { "SurfaceView laid out: ${w}x${h}" }
         }
 
         initFilament()
@@ -220,7 +221,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 il.indirectLight?.intensity = 50_000f
                 viewer.scene.indirectLight = il.indirectLight
             } catch (e: Exception) {
-                Log.w(TAG, "Could not load indirect light: ${e.message}")
+                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: indirect light unavailable — model lit by key light only", e)
             }
 
             // IBL alone leaves dark/rough materials (e.g. the wooden crate) almost black.
@@ -236,7 +237,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 viewer.scene.addEntity(light)
                 keyLight = light
             } catch (e: Exception) {
-                Log.w(TAG, "Could not add directional light: ${e.message}")
+                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: directional light unavailable", e)
             }
 
             lifecycleScope.launch(Dispatchers.IO) {
@@ -246,7 +247,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 try {
                     val glbFile = File(modelPath)
                     if (!glbFile.exists()) {
-                        Log.e(TAG, "GLB file not found: $modelPath")
+                        DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: model file not found file=${glbFile.name}")
                         withContext(Dispatchers.Main) { finish() }
                         return@launch
                     }
@@ -266,16 +267,15 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 } catch (c: kotlinx.coroutines.CancellationException) {
                     throw c
                 } catch (t: Throwable) {
-                    Log.e(TAG, "Thumbnail model load failed", t)
                     DiagnosticsLogger.e("MODEL", "thumbnail load failed sizeBytes=${File(modelPath).length()}: " +
-                        "${t.javaClass.simpleName} ${t.message}")
+                        "${t.javaClass.simpleName} ${t.message}", t)
                     withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
                         if (!isFinishing) finish()
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Filament init failed", e)
+            DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: Filament init failed: ${e.javaClass.simpleName}", e)
             finish()
         }
     }
@@ -293,7 +293,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             }
             true
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to load model: ${modelFile.absolutePath}", e)
+            DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: model load failed file=${modelFile.name}: ${e.javaClass.simpleName}", e)
             false
         }
     }
@@ -306,12 +306,13 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             val decoded = Uri.decode(uriString).substringBefore('#').substringBefore('?')
             val candidate = File(baseDir, decoded).canonicalFile
             if (!candidate.path.startsWith(baseDir.path) || !candidate.exists()) {
-                Log.w(TAG, "Missing glTF resource: $uriString")
+                // Per resource: logcat only (the viewer and import already report missing sidecars).
+                DevLog.d(TAG) { "Missing glTF resource: $uriString" }
                 return ByteBuffer.allocateDirect(0)
             }
             loadFileToBuffer(candidate) ?: ByteBuffer.allocateDirect(0)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to resolve glTF resource: $uriString", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: glTF resource unreadable: ${e.javaClass.simpleName}", e)
             ByteBuffer.allocateDirect(0)
         }
     }
@@ -321,7 +322,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         return try {
             ModelFileIo.readToDirectBuffer(file)
         } catch (oom: OutOfMemoryError) {
-            Log.e(TAG, "Out of memory reading glTF resource (${file.length()} bytes)", oom)
+            DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: out of memory reading glTF resource sizeBytes=${file.length()}", oom)
             null
         }
     }
@@ -336,7 +337,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             )
 
             val cam = viewer.view.camera ?: run {
-                Log.w(TAG, "Camera is null - skipping framing")
+                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: camera is null — skipping framing")
                 return
             }
 
@@ -400,7 +401,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                     .apply { isAccessible = true }
                     .set(viewer, manipulator)
             } catch (t: Throwable) {
-                Log.e(TAG, "Failed to install orbit manipulator", t)
+                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: orbit manipulator not installed", t)
             }
 
             cam.lookAt(
@@ -409,7 +410,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 0.0, 1.0, 0.0
             )
         } catch (e: Exception) {
-            Log.w(TAG, "Camera setup failed: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: camera setup failed — default framing", e)
         }
     }
 
@@ -446,16 +447,17 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
     private fun tryCapture(attempt: Int) {
         if (attempt > CAPTURE_MAX_ATTEMPTS) {
-            Log.e(TAG, "Giving up after $CAPTURE_MAX_ATTEMPTS attempts")
+            DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail capture gave up after $CAPTURE_MAX_ATTEMPTS attempts " +
+                "file=$modelFileName — no thumbnail")
             finishWithCleanup()
             return
         }
-        Log.d(TAG, "Capture attempt=$attempt")
+        DevLog.d(TAG) { "Capture attempt=$attempt" }
 
         Handler(Looper.getMainLooper()).postDelayed({
             val w = surfaceView.width; val h = surfaceView.height
             if (w <= 0 || h <= 0) {
-                Log.w(TAG, "Surface not laid out (w=$w h=$h); retrying")
+                DevLog.d(TAG) { "Surface not laid out (w=$w h=$h); retrying" }
                 tryCapture(attempt + 1)
                 return@postDelayed
             }
@@ -465,7 +467,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             // display scaling — clamp to the actual surface size so the Rect is valid.
             val captureSize = minOf(w, h, THUMB_SIZE)
             val srcRect = android.graphics.Rect(0, 0, captureSize, captureSize)
-            Log.d(TAG, "PixelCopy srcRect=$srcRect surface=${w}x${h}")
+            DevLog.d(TAG) { "PixelCopy srcRect=$srcRect surface=${w}x${h}" }
 
             // Allocate bitmap at exactly captureSize×captureSize (square) — no scaling needed.
             val bmp = Bitmap.createBitmap(captureSize, captureSize, Bitmap.Config.ARGB_8888)
@@ -476,7 +478,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                         surfaceView, srcRect, bmp,
                         { result ->
                             if (result != PixelCopy.SUCCESS) {
-                                Log.w(TAG, "PixelCopy failed: $result; retrying")
+                                DevLog.d(TAG) { "PixelCopy failed: $result; retrying" }
                                 bmp.recycle()
                                 tryCapture(attempt + 1)
                                 return@request
@@ -488,11 +490,11 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 } else {
                     // API < 26: fall back to drawing the SurfaceView into a canvas
                     bmp.recycle()
-                    Log.w(TAG, "API < 26, PixelCopy unavailable; giving up")
+                    DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: PixelCopy unavailable (API < 26) — no thumbnail")
                     finishWithCleanup()
                 }
             } catch (t: Throwable) {
-                Log.e(TAG, "PixelCopy threw; retrying", t)
+                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: PixelCopy threw on attempt=$attempt; retrying", t)
                 bmp.recycle()
                 tryCapture(attempt + 1)
             }
@@ -532,13 +534,12 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
             if (!hasContent) {
                 bmp.recycle()
-                //Log.w(TAG, "Frame is all-white; retrying attempt=$attempt")
-                Log.w(TAG, "Frame is transparent; retrying attempt=$attempt")
+                DevLog.d(TAG) { "Frame is transparent; retrying attempt=$attempt" }
                 withContext(Dispatchers.Main) { tryCapture(attempt + 1) }
                 return@launch
             }
 
-            Log.d(TAG, "Frame has model content, saving thumbnail")
+            DevLog.d(TAG) { "Frame has model content, saving thumbnail" }
             val thumb = if (bmp.width == THUMB_SIZE && bmp.height == THUMB_SIZE) {
                 bmp
             } else {
@@ -584,17 +585,19 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                                 thumbnailFilePath = thumbFile.absolutePath
                             )
                         )
-                        Log.d(TAG, "Thumbnail saved and DB updated: $thumbFileName")
+                        DevLog.d(TAG) { "Thumbnail saved and DB updated: $thumbFileName" }
                     } else {
-                        Log.w(TAG, "No DB record found for: $modelFileName")
+                        DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail saved but no model record file=$modelFileName")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "DB update failed", e)
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail DB update failed file=$modelFileName", e)
                 }
 
                 withContext(Dispatchers.Main) { finishWithCleanup() }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to save thumbnail", e)
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail save failed file=$modelFileName: ${e.javaClass.simpleName}", e)
                 withContext(Dispatchers.Main) { finishWithCleanup() }
             }
         }
@@ -604,7 +607,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         frameCallback?.let { choreographer?.removeFrameCallback(it) }
         frameCallback = null
         destroyKeyLight()
-        try { modelViewer?.destroyModel() } catch (e: Exception) { }
+        try { modelViewer?.destroyModel() } catch (_: Exception) { }   // teardown: best effort
         modelViewer = null
         // No animation on finish.
         finish()
@@ -614,7 +617,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
     override fun onDestroy() {
         frameCallback?.let { choreographer?.removeFrameCallback(it) }
         destroyKeyLight()
-        try { modelViewer?.destroyModel() } catch (e: Exception) { }
+        try { modelViewer?.destroyModel() } catch (_: Exception) { }   // teardown: best effort
         super.onDestroy()
     }
 

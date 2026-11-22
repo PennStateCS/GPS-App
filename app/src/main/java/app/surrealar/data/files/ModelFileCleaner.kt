@@ -1,5 +1,8 @@
 package app.surrealar.data.files
 
+import app.surrealar.util.DevLog
+import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.DiagTags
 import java.io.File
 
 /**
@@ -36,7 +39,7 @@ object ModelFileCleaner {
             if (!target.exists()) return false
             if (target.isDirectory) target.deleteRecursively() else target.delete()
         } catch (e: Exception) {
-            android.util.Log.w(TAG, "Model file deletion failed: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model file deletion failed", e)
             false
         }
     }
@@ -70,13 +73,13 @@ object ModelFileCleaner {
             if (file.exists() && file.isFile) {
                 val deleted = file.delete()
                 if (!deleted) {
-                    android.util.Log.w(TAG, "Failed to delete thumbnail: $filePath")
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail delete failed file=${file.name}")
                 } else {
-                    android.util.Log.d(TAG, "Deleted thumbnail: $filePath")
+                    DevLog.d(TAG) { "Deleted thumbnail: ${file.name}" }
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e(TAG, "Error deleting thumbnail file: $filePath", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail delete failed", e)
         }
     }
 }

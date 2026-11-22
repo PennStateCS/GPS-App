@@ -1,6 +1,7 @@
 package app.surrealar.util.diagnostics
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class NavLoggerTest {
@@ -13,5 +14,12 @@ class NavLoggerTest {
     @Test fun `only argument names are logged`() {
         assertEquals("Screen nav_point args=[coordinateId,name]", NavLogger.line("nav_point", listOf("name", "coordinateId")))
         assertEquals("Screen nav_home", NavLogger.line("nav_home", emptyList()))
+    }
+
+    @Test fun `a visit is the screen plus its back stack entry`() {
+        assertEquals("nav_home#abc", NavLogger.visitKey("nav_home", "abc"))
+        assertEquals("nav_home#?", NavLogger.visitKey("nav_home", null))
+        // Same screen, new entry (a real navigation back to it) → a different key, so it is logged.
+        assertNotEquals(NavLogger.visitKey("nav_home", "abc"), NavLogger.visitKey("nav_home", "def"))
     }
 }

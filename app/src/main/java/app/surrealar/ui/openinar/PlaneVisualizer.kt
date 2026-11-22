@@ -111,12 +111,13 @@ internal class PlaneVisualizer {
         if (nowMs - lastStatsLogMs >= STATS_LOG_INTERVAL_MS) {
             lastStatsLogMs = nowMs
             // Counts and distances only — no positions.
-            app.surrealar.util.DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
+            app.surrealar.util.DiagnosticsLogger.d(ArFilamentRenderer.DIAG) {
                 "AR_PLANES floors=$floors walls=$walls ceilings=$ceilings drawn=${entries.size} " +
                     "hiddenSmall=$small hiddenFar=$faded " +
                     "raw=${all.size} rawVertical=$rawVertical rawVerticalTracking=$rawVerticalTracking " +
                     "rawSubsumed=$rawSubsumed rawNotTracking=$rawNotTracking " +
-                    "nearestWallM=${if (nearestWallM.isFinite()) "%.1f".format(nearestWallM) else "n/a"}")
+                    "nearestWallM=${if (nearestWallM.isFinite()) "%.1f".format(nearestWallM) else "n/a"}"
+            }
         }
         if (entries.isEmpty()) return 0
         PlaneFill.sortFarToNear(entries, entries.size) { it.centerDistance }

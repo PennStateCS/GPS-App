@@ -12,7 +12,9 @@ import java.util.concurrent.ConcurrentHashMap
  * - One tag, [TAG], with an `[area]` prefix:  `adb logcat -s GnssDebug`
  *   Areas: `nmea-int` / `nmea-ext` (raw sentence samples), `fuser` (computed fix), `sky` (satellite
  *   inventory), `switchboard` (binding / liveness), `internal` (fallback / enrichment), `external`
- *   (connection), `mock` (mock publishing), `toolbar` (what is on screen).
+ *   (connection), `mock` (mock publishing), `toolbar` (what is on screen), `corrections` (Reach
+ *   socket.io broadcasts), `receiver` (Reach HTTP /info, /status). Library code reaches this through
+ *   GnssLog.every(key, area).
  * - [every] throttles per key, so periodic samples stay readable (default 15 s).
  *
  * Message lambdas are only evaluated when a line is actually written, so disabled/throttled calls

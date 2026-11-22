@@ -7,7 +7,6 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Build
 import android.os.SystemClock
-import android.util.Log
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
@@ -15,6 +14,7 @@ import io.github.pennstatecs.geokit.gnss.capture.FixFreshnessGate
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.GnssFeedTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -69,8 +69,6 @@ class AndroidMockLocationPublisher(
     private var lastPublishedUtc: Instant = Instant.EPOCH
     /** Settings → AR Display → Antenna Height Above Tablet (m); subtracted from the injected altitude. */
     @Volatile private var antennaAboveCameraM: Double = 0.0
-    /** Throttle for the per-injection export log — status is updated every injection, file log is not. */
-    private var lastInjectionLogMs: Long = 0L
 
     private val _errorEvents = MutableSharedFlow<MockLocationError>(extraBufferCapacity = 8)
 
@@ -118,7 +116,6 @@ class AndroidMockLocationPublisher(
                     if (providerAdded) {
                         DiagnosticsLogger.i(DIAG, "Mock publishing off: " +
                             if (locationSource != LocationSourceType.EXTERNAL) "source is $locationSource" else "turned off")
-                        Log.i(TAG, "Stopping mock publishing — source=$locationSource mockEnabled=$mockEnabled")
                     }
                     teardownProvider()
                     return@collect
@@ -304,26 +301,7 @@ class AndroidMockLocationPublisher(
                 lastSourceFixTimeMs = fixTimeMs
             }
 
-            // Throttle the export log to ~INJECT_LOG_INTERVAL_MS (fixes arrive at up to 10 Hz — logging
-            // every one would flood the rolling log). The in-memory status above updates every fix.
-            if (appRecvMs - lastInjectionLogMs >= INJECT_LOG_INTERVAL_MS) {
-                lastInjectionLogMs = appRecvMs
-                val backdatedMs = plausibleFixAgeMs(fixTimeMs, appRecvMs)
-                // No lat/lon here: this line reaches release logcat and the exportable diagnostics log.
-                app.surrealar.gnss.debug.GnssDebugLog.event("mock") {
-                    "injected lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)}"
-                }
-                DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_INJECTED sourceProvider=${fix.provider} " +
-                    "fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
-                    "backdatedMs=${backdatedMs ?: "none(implausible age)"} " +
-                    // No heights either: they are coordinates.
-                    "altitude=${if (location.hasAltitude()) "set" else "none"} " +
-                    "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +
-                    "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
-                    (if (hAccWasFallback) "(placeholder ${location.accuracy}m injected)" else "") +
-                    " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus} " +
-                    "injections=${MockInjectionStatus.injectionCount}")
-            }
+            logInjection(fix, location, fixTimeMs, appRecvMs, hAccWasFallback)
             injectFailureLog.reset()
         } catch (e: SecurityException) {
             logInjectFailure("not_permitted", e) {
@@ -337,6 +315,38 @@ class AndroidMockLocationPublisher(
                 "MOCK_LOCATION test provider configuration error: ${e.javaClass.simpleName}: ${e.message}"
             }
             _errorEvents.tryEmit(MockLocationError.PROVIDER_ERROR)
+        }
+    }
+
+    /**
+     * Injection logging (fixes arrive at up to 10 Hz; the in-memory status updates every fix):
+     * - I when the injected state (rtk, hAcc bucket, altitude set, placeholder accuracy) changes and
+     *   holds [INJECT_STATE_HOLD_MS], plus a heartbeat every [INJECT_HEARTBEAT_MS];
+     * - the full timing detail at D (debug builds only), at most every [INJECT_DETAIL_INTERVAL_MS].
+     * Coordinates appear only in the debug-only GnssDebugLog trace; the DiagnosticsLogger lines carry
+     * none (no lat/lon and no heights).
+     */
+    private fun logInjection(fix: Fix, location: Location, fixTimeMs: Long, appRecvMs: Long, hAccWasFallback: Boolean) {
+        val hAcc = GnssFeedTracker.hAccBucket(fix.hAccM)
+        val altitude = if (location.hasAltitude()) "set" else "none"
+        val accuracy = if (hAccWasFallback) "placeholder" else "receiver"
+        val summary = { "MOCK_LOCATION_INJECTED rtk=${fix.rtkStatus} hAcc=$hAcc accuracy=$accuracy altitude=$altitude " +
+            "sourceProvider=${fix.provider} injections=${MockInjectionStatus.injectionCount}" }
+        DiagnosticsLogger.logOnChange(DIAG, "mock.inject.state", listOf(fix.rtkStatus, hAcc, altitude, accuracy),
+            stableMs = INJECT_STATE_HOLD_MS, message = summary)
+        DiagnosticsLogger.every(DIAG, "mock.inject.every", INJECT_HEARTBEAT_MS, message = summary)
+        if (!DiagnosticsLogger.debugEnabled) return
+        DiagnosticsLogger.every(DIAG, "mock.inject.detail", INJECT_DETAIL_INTERVAL_MS, level = 'D') {
+            val backdatedMs = plausibleFixAgeMs(fixTimeMs, appRecvMs)
+            app.surrealar.gnss.debug.GnssDebugLog.event("mock") {
+                "injected lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)}"
+            }
+            "MOCK_LOCATION_INJECTED detail fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
+                "backdatedMs=${backdatedMs ?: "none(implausible age)"} altitude=$altitude " +
+                "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +
+                "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
+                (if (hAccWasFallback) "(placeholder ${location.accuracy}m injected)" else "") +
+                " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus}"
         }
     }
 
@@ -403,7 +413,7 @@ class AndroidMockLocationPublisher(
         } catch (_: SecurityException) {
             // Not selected as the mock location app: this app could not have left one behind.
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_CLEANUP failed: ${e.message}")
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_CLEANUP failed", e)
         }
         providerAdded = false
         MockInjectionStatus.providerActive = false
@@ -417,7 +427,7 @@ class AndroidMockLocationPublisher(
             DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_STOP — GPS test provider removed " +
                 "(injections=${MockInjectionStatus.injectionCount})")
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_STOP teardown failed (provider already gone?): ${e.message}")
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_STOP teardown failed (provider already gone?)", e)
         } finally {
             providerAdded = false
             MockInjectionStatus.providerActive = false
@@ -441,11 +451,14 @@ class AndroidMockLocationPublisher(
     }
 
     companion object {
-        private const val TAG = "MockLocPublisher"
         /** Diagnostic export tag for all mock-location lifecycle/injection events. */
         private const val DIAG = "GNSS"
-        /** Minimum spacing between per-injection export logs (status still updates every fix). */
-        private const val INJECT_LOG_INTERVAL_MS = 3_000L
+        /** An injected state change (rtk / hAcc bucket / altitude / placeholder) must hold this long to be logged. */
+        private const val INJECT_STATE_HOLD_MS = 5_000L
+        /** Injection heartbeat line while publishing, even when nothing changed. */
+        private const val INJECT_HEARTBEAT_MS = 300_000L
+        /** Debug-build detail line spacing (timing, accuracy values). */
+        private const val INJECT_DETAIL_INTERVAL_MS = 60_000L
         /** Repeated injection failures are logged at most this often after the first. */
         private const val INJECT_FAILURE_LOG_INTERVAL_MS = 60_000L
         /** Fix ages beyond this (or negative = device clock ahead) are treated as clock skew, not latency. */

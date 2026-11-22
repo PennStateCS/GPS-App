@@ -1,8 +1,8 @@
 package app.surrealar.util
 
-import android.util.Log
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.domain.model.ModelLocationConfidence
+import app.surrealar.util.diagnostics.DiagTags
 import org.json.JSONObject
 import java.io.EOFException
 import java.io.File
@@ -42,16 +42,16 @@ object GlbGeoreferenceDetector {
         if (!file.exists() || !file.canRead()) return null
         val ext = file.name.substringAfterLast('.', "").lowercase()
         if (ext != "glb") {
-            Log.d(TAG, "${file.name}: skipping non-GLB file")
+            DevLog.d(TAG) { "${file.name}: skipping non-GLB file" }
             return null
         }
         return try {
             detectInternal(file)
         } catch (e: EOFException) {
-            Log.w(TAG, "${file.name}: unexpected EOF while parsing GLB")
+            DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection: unexpected EOF file=${file.name}", e)
             null
         } catch (e: Exception) {
-            Log.w(TAG, "${file.name}: error during detection — ${e.javaClass.simpleName}: ${e.message}")
+            DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection failed file=${file.name}: ${e.javaClass.simpleName}", e)
             null
         }
     }
@@ -61,12 +61,12 @@ object GlbGeoreferenceDetector {
             // ── GLB header ──────────────────────────────────────────────────────
             val magic = raf.readIntLE()
             if (magic != GLB_MAGIC) {
-                Log.d(TAG, "${file.name}: not a GLB (magic 0x${magic.toString(16)})")
+                DevLog.d(TAG) { "${file.name}: not a GLB (magic 0x${magic.toString(16)})" }
                 return null
             }
             val version = raf.readIntLE()
             if (version != GLB_VERSION_2) {
-                Log.w(TAG, "${file.name}: unsupported GLB version $version")
+                DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection skipped file=${file.name}: unsupported GLB version $version")
                 return null
             }
             raf.readIntLE() // total length — skip
@@ -75,11 +75,13 @@ object GlbGeoreferenceDetector {
             val chunkLen = raf.readIntLE()
             val chunkType = raf.readIntLE()
             if (chunkType != CHUNK_TYPE_JSON) {
-                Log.w(TAG, "${file.name}: first chunk is not JSON (type 0x${chunkType.toString(16)})")
+                DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection skipped file=${file.name}: " +
+                    "first chunk is not JSON (type 0x${chunkType.toString(16)})")
                 return null
             }
             if (chunkLen <= 0 || chunkLen > MAX_JSON_BYTES) {
-                Log.w(TAG, "${file.name}: JSON chunk length $chunkLen is out of safe range")
+                DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection skipped file=${file.name}: " +
+                    "JSON chunk length $chunkLen out of safe range")
                 return null
             }
 
@@ -91,7 +93,7 @@ object GlbGeoreferenceDetector {
 
     private fun parseGltfJson(fileName: String, json: String): EmbeddedModelLocation? {
         val root = try { JSONObject(json) } catch (e: Exception) {
-            Log.w(TAG, "$fileName: failed to parse JSON — ${e.message}")
+            DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection: JSON parse failed file=$fileName", e)
             return null
         }
 
@@ -105,7 +107,7 @@ object GlbGeoreferenceDetector {
         val attributes = primitives.getJSONObject(0).optJSONObject("attributes") ?: return null
         val posIdx = attributes.optInt("POSITION", -1)
         if (posIdx < 0) {
-            Log.d(TAG, "$fileName: no POSITION attribute in first primitive")
+            DevLog.d(TAG) { "$fileName: no POSITION attribute in first primitive" }
             return null
         }
 
@@ -117,7 +119,7 @@ object GlbGeoreferenceDetector {
         val minArr = accessor.optJSONArray("min")
         val maxArr = accessor.optJSONArray("max")
         if (minArr == null || maxArr == null || minArr.length() < 3 || maxArr.length() < 3) {
-            Log.d(TAG, "$fileName: POSITION accessor missing min/max; skipping binary read")
+            DevLog.d(TAG) { "$fileName: POSITION accessor missing min/max; skipping binary read" }
             return null
         }
 
@@ -131,8 +133,8 @@ object GlbGeoreferenceDetector {
         val spanX = maxX - minX
         val spanZ = maxZ - minZ
 
-        Log.d(TAG, "$fileName: POSITION center=(%.6f, %.6f, %.6f) spanX=%.6f spanZ=%.6f"
-            .format(centerX, centerY, centerZ, spanX, spanZ))
+        // No center values in logs: for a georeferenced model they are coordinates.
+        DevLog.d(TAG) { "$fileName: POSITION spanX=%.6f spanZ=%.6f".format(spanX, spanZ) }
 
         // Heuristic: Metashape GLTF Y-up export → X=longitude, Y=altitude, Z=-latitude
         val candidateLon = centerX
@@ -156,8 +158,8 @@ object GlbGeoreferenceDetector {
             else                                           -> ModelLocationConfidence.LOW
         }
 
-        Log.i(TAG, "$fileName: detected WGS-like location lat=%.7f lon=%.7f alt=%.2f [%s]"
-            .format(candidateLat, candidateLon, candidateAlt, confidence))
+        DiagnosticsLogger.i(DiagTags.MODEL, "GLB georeference detected file=$fileName georeferenced=true " +
+            "method=GLB_POSITION_WGS_LIKE confidence=$confidence")   // no coordinates
 
         return EmbeddedModelLocation(
             latitude = candidateLat,

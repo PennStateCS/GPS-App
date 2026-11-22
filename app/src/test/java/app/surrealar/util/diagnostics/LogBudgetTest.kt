@@ -25,7 +25,9 @@ import java.time.Instant
 
 /**
  * Log budget: one simulated hour of the Emlid NMEA fixtures at 5 Hz through the GNSS loggers, with
- * lifecycle/navigation/settings/receiver events, must grow the event log by less than 2 MB.
+ * lifecycle/navigation/settings/receiver events, must grow the event log by less than 2 MB and stay
+ * readable: under [MAX_LINES] lines in total, of which under [MAX_GNSS_LINES] from the GNSS feed
+ * (RTK transitions, heartbeat, clock offset). The simulated app events alone are ~136 lines.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -61,6 +63,7 @@ class LogBudgetTest {
         val dir = tmp.newFolder("logs")
         DiagnosticsLogger.initForTest(dir)
         DiagnosticsLogger.resetThrottles()
+        ClockOffset.reset()
         DiagnosticsLogger.flush()
         val before = File(dir, "app-log-current.txt").length()
 
@@ -75,9 +78,10 @@ class LogBudgetTest {
         while (now < hourMs) {
             val f = fixes[i % fixes.size].let { it.copy(timeUtc = Instant.ofEpochMilli(1_700_000_000_000L + now)) }
             feed.onFix(f, now); feed.onNmea(now); link.onData(now)
-            ClockOffset.onFix(f, 1_700_000_000_000L + now + 300)
+            // Delivery jitter: 400/600 ms alternating, so an offset rounded to whole seconds would flip every fix.
+            ClockOffset.onFix(f, 1_700_000_000_000L + now + if (i % 2 == 0) 400 else 600)
             DiagnosticsLogger.logOnChange(DiagTags.GNSS, "toolbar.link", if ((now / 600_000L) % 2 == 0L) "c" else "s") { "Toolbar link change" }
-            if (now >= nextHeartbeat) { DiagnosticsLogger.i(DiagTags.GNSS, feed.heartbeat(now)); nextHeartbeat += 60_000L }
+            if (now >= nextHeartbeat) { feed.heartbeatIfDue(now)?.let { DiagnosticsLogger.i(DiagTags.GNSS, it) }; nextHeartbeat += 60_000L }
             if (now % 60_000L == 0L) { NavLogger.line("nav_screen_${(now / 60_000L) % 4}", listOf("coordinateId")).let { DiagnosticsLogger.i(DiagTags.NAV, it) } }
             if (now % 300_000L == 0L) {
                 DiagnosticsLogger.i(DiagTags.LIFECYCLE, "App background"); DiagnosticsLogger.i(DiagTags.LIFECYCLE, "App foreground")
@@ -92,7 +96,20 @@ class LogBudgetTest {
         }
         DiagnosticsLogger.flush()
         val grown = File(dir, "app-log-current.txt").length() - before + dir.listFiles()!!.filter { it.name.startsWith("app-log-") && it.name != "app-log-current.txt" }.sumOf { it.length() }
-        println("Log budget: ${fixes.size} fixture fixes, $i fixes fed, event log grew ${grown / 1024} KB in one simulated hour")
+        val parsed = dir.listFiles()!!.filter { it.name.startsWith("app-log-") }
+            .flatMap { it.readLines() }.mapNotNull { LogLineFormat.parse(it) }
+        val gnss = parsed.filter { it.tag == DiagTags.GNSS && it.message != "Toolbar link change" }
+        println("Log budget: ${fixes.size} fixture fixes, $i fixes fed, event log grew ${grown / 1024} KB and " +
+            "${parsed.size} lines (${gnss.size} GNSS feed) in one simulated hour")
+        gnss.groupingBy { it.message.substringBefore(' ') + " " + it.message.split(' ').getOrElse(1) { "" } }.eachCount()
+            .forEach { (k, n) -> println("  GNSS $k: $n") }
         assertTrue("event log grew $grown bytes in an hour (budget 2 MB)", grown < 2L * 1024 * 1024)
+        assertTrue("${parsed.size} lines in an hour (budget $MAX_LINES)", parsed.size < MAX_LINES)
+        assertTrue("${gnss.size} GNSS feed lines in an hour (budget $MAX_GNSS_LINES)", gnss.size < MAX_GNSS_LINES)
+    }
+
+    private companion object {
+        const val MAX_LINES = 250
+        const val MAX_GNSS_LINES = 100
     }
 }
