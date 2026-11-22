@@ -311,6 +311,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Last AR-view-quality level surfaced to the user — logs quality transitions. GL-thread only. */
     private var lastLoggedQualityLevel: ArViewQuality.Level? = null
 
+    /** Limits the per-frame status/debug UI post to ~5 per second (see [postDebugPanelUpdate]). */
+    private val debugUiPostGate = UiPostGate(DEBUG_UI_POST_INTERVAL_MS)
+    private val debugUiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
 
     companion object {
         private const val TAG = "OpenInARFragment"
@@ -343,6 +347,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private const val REANCHOR_COOLDOWN_MS = 30_000L
         /** AR_VS_GNSS export-log cadence. */
         private const val AR_VS_GNSS_LOG_INTERVAL_MS = 5_000L
+        private const val DEBUG_UI_POST_INTERVAL_MS = 200L
     }
 
     /**
@@ -494,6 +499,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         loggedArSessionHeader = false
         lastPlacedVia = null
         lastLoggedQualityLevel = null
+        debugUiPostGate.reset()
         DiagnosticsLogger.i(DIAG, "OpenInARFragment created — AR screen opened")
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
@@ -1025,6 +1031,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         lastModelProgress = null
         hideModelProgressJob?.cancel()
         hideModelProgressJob = null
+        debugUiHandler.removeCallbacksAndMessages(null)
+        debugUiPostGate.reset()
         // Clean up test anchors via controller
         testAnchorController.cleanup()
         // Clean up geospatial anchors
@@ -2084,7 +2092,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             )
         } else null
 
-        _binding?.textArStatus?.post {
+        // At most one UI update per DEBUG_UI_POST_INTERVAL_MS, and never while the previous one is
+        // still queued. Posted via a Handler so the GL thread never touches the view binding.
+        if (!debugUiPostGate.tryAcquire(android.os.SystemClock.elapsedRealtime())) return
+        val queued = debugUiHandler.post {
+            debugUiPostGate.release()
+            if (_binding == null) return@post
             val gnssFix   = currentGnssFix
             val topStatus = if (gnssFix == null) "AR active • Waiting for GNSS • $earthStatus"
                             else "AR active • $earthStatus"
@@ -2129,6 +2142,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
             updateModelProgressChip()
         }
+        if (!queued) debugUiPostGate.release()
     }
 
     /** ARCore state read on the GL thread for the debug panel (plain data, safe on main thread). */
