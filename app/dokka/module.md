@@ -101,8 +101,8 @@ change corrupts existing installs. Entities are persistence shapes only; convert
 
 Export and full-backup formats. `CoordinateBackup` is the official, schema-versioned full backup
 (`format = "surreal-coordinate-backup"`): it round-trips every survey-quality and model-link field so
-a restore loses no data, and it bundles referenced model metadata. `CsvExporter` / `GeoJsonExporter`
-are lossy, human/GIS-friendly views (id/name/lat/lon/alt/timestamp/icon/color) — not for backups.
+a restore loses no data, and it bundles referenced model metadata. `PointsCsvExporter` is a lossy,
+human/GIS-friendly CSV view in the user's coordinate system — not for backups.
 Bump `SCHEMA_VERSION` and keep readers backward-compatible when the backup shape changes; import
 planning (duplicates, missing-model handling) lives in `data.backup`, not here.
 
@@ -290,11 +290,6 @@ The app-wide GNSS status toolbar. `GnssToolbarStateMapper` maps live fixes to a 
 returning `ToolbarMapResult.Ignore` for stale fixes (older than the max-age threshold) so the toolbar
 never shows outdated status; `GnssToolbarRenderer` is the view-only renderer. This is the single source
 of GNSS status wording shared across screens.
-
-# Package app.surrealar.ui.viewcoordinates
-
-Saved-coordinates list and export screen. `ViewCoordinatesFragment` + `CoordinatesAdapter` present the
-stored points; exports are delegated to `data.export` (CSV/GeoJSON are lossy interchange, not backups).
 
 # Package app.surrealar.ui.development
 

@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
  * it back here:
  *  - validation / duplicate detection → [app.surrealar.domain.coordinates.CoordinateValidator]
  *  - statistics (counts, accuracy, bounding box) → [app.surrealar.domain.coordinates.CoordinateStatsCalculator]
- *  - CSV/GeoJSON export → `app.surrealar.data.export` (`CsvExporter`, `GeoJsonExporter`)
+ *  - CSV export → `app.surrealar.data.export` (`PointsCsvExporter`)
  *  - capture-to-coordinate construction → [app.surrealar.domain.model.CoordinateFactory]
  *
  * New filtered/spatial queries should be backed by a `CoordinateDao` query rather than in-memory
