@@ -40,6 +40,14 @@ object MainThreadWatchdog {
     @Volatile private var lastAckMs = 0L
     @Volatile private var started = false
 
+    /*
+     * Paused while the app is in the background (no 1 s wakeups for nothing). Runs from start() so a
+     * hang during cold start, before the first activity's onStart, is still caught.
+     */
+    private val pauseLock = Object()
+    @Volatile private var foreground = true
+
+    /** Call from Application.onCreate on the main thread. */
     fun start() {
         // Robolectric pauses the main looper between tasks: every test would read as a stall.
         if (started || android.os.Build.FINGERPRINT == "robolectric") return
@@ -47,10 +55,26 @@ object MainThreadWatchdog {
         val main = Handler(Looper.getMainLooper())
         val ack = Runnable { lastAckMs = SystemClock.uptimeMillis() }
         lastAckMs = SystemClock.uptimeMillis()
+        runCatching {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(
+                androidx.lifecycle.LifecycleEventObserver { _, event ->
+                    when (event) {
+                        androidx.lifecycle.Lifecycle.Event.ON_START -> setForeground(true)
+                        androidx.lifecycle.Lifecycle.Event.ON_STOP -> setForeground(false)
+                        else -> Unit
+                    }
+                })
+        }.onFailure { DiagnosticsLogger.w(DiagTags.ERROR, "Watchdog: no process lifecycle, runs in background too: ${it.message}") }
         Thread({
-            val detector = Detector()
+            var detector = Detector()
             while (true) {
                 try {
+                    if (!foreground) {
+                        synchronized(pauseLock) { while (!foreground) pauseLock.wait() }
+                        // Back in the foreground: the pause is not a stall. Start the bookkeeping over.
+                        lastAckMs = SystemClock.uptimeMillis()
+                        detector = Detector()
+                    }
                     main.post(ack)
                     Thread.sleep(TICK_MS)
                     if (Debug.isDebuggerConnected()) { lastAckMs = SystemClock.uptimeMillis(); continue }
@@ -68,6 +92,13 @@ object MainThreadWatchdog {
                 }
             }
         }, "main-watchdog").apply { isDaemon = true; priority = Thread.MAX_PRIORITY }.start()
+    }
+
+    private fun setForeground(value: Boolean) {
+        synchronized(pauseLock) {
+            foreground = value
+            if (value) pauseLock.notifyAll()
+        }
     }
 
     private fun report(e: Detector.Event.Stalled) {
