@@ -297,10 +297,18 @@ class InternalNmeaSource(
         }
 
         val listener = OnNmeaMessageListener { message, _ ->
-            // Diagnostics records the raw receiver stream before fusion.
-            diagnostics?.recordLine(message)
-            fuser.accept(message)
-            debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
+            // Runs on the main looper: an exception from an odd sentence anywhere downstream (fusion,
+            // fix listeners) would kill the app. Log it (throttled) and drop that one sentence.
+            try {
+                // Diagnostics records the raw receiver stream before fusion.
+                diagnostics?.recordLine(message)
+                fuser.accept(message)
+                debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
+            } catch (e: Exception) {
+                DiagnosticsLogger.every("NMEA", "internal.listener.error", 60_000L, 'E') {
+                    "internal NMEA listener error (sentence dropped, repeats suppressed 60 s): ${e.javaClass.simpleName}: ${e.message}"
+                }
+            }
         }
 
         try {
@@ -377,8 +385,14 @@ class InternalNmeaSource(
     private val holdTick = object : Runnable {
         override fun run() {
             if (!started) return
-            fuser.flushIfStale()
-            holdHandler.postDelayed(this, HOLD_TICK_MS)
+            try {
+                fuser.flushIfStale()
+            } catch (e: Exception) {
+                DiagnosticsLogger.every("NMEA", "internal.hold.error", 60_000L, 'E') {
+                    "internal GST hold tick error: ${e.javaClass.simpleName}: ${e.message}"
+                }
+            }
+            holdHandler.postDelayed(this, HOLD_TICK_MS)   // keep ticking even after an error
         }
     }
 
