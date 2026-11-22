@@ -43,6 +43,7 @@ internal class PlaneVisualizer {
         var fade = 1f
     }
     private val entries = ArrayList<Entry>()
+    private var lastStatsLogMs = 0L
     private val pool = ArrayList<Entry>()
 
     // Saved GL state.
@@ -69,20 +70,36 @@ internal class PlaneVisualizer {
     fun drawAllPlanes(session: Session, vp: FloatArray, camX: Float, camY: Float, camZ: Float): Int {
         // ── Collect visible planes with their distance and fade ──
         recycleEntries()
+        var floors = 0; var walls = 0; var ceilings = 0; var small = 0; var faded = 0
+        var nearestWallM = Float.POSITIVE_INFINITY
         for (plane in session.getAllTrackables(Plane::class.java)) {
-            if (!isCandidate(plane)) continue
+            if (plane.trackingState != TrackingState.TRACKING || plane.subsumedBy != null) continue
+            val kind = kindOf(plane)
+            when (kind) { PlaneFill.Kind.FLOOR -> floors++; PlaneFill.Kind.WALL -> walls++; PlaneFill.Kind.CEILING -> ceilings++ }
+            if (!PlaneFill.isLargeEnough(plane.extentX, plane.extentZ)) { small++; continue }
             val poly = plane.polygon ?: continue
             val n = poly.limit() / 2
             if (n < 3) continue
             val e = obtainEntry()
             plane.centerPose.toMatrix(e.pose, 0)
             readPolygon(poly, n)
-            val fade = PlaneFill.distanceFade(PlaneFill.closestDistance(polygon, n, e.pose, camX, camY, camZ))
-            if (fade <= 0f) { pool.add(e); continue }
+            val closest = PlaneFill.closestDistance(polygon, n, e.pose, camX, camY, camZ)
+            if (kind == PlaneFill.Kind.WALL && closest < nearestWallM) nearestWallM = closest
+            val fade = PlaneFill.distanceFade(closest)
+            if (fade <= 0f) { faded++; pool.add(e); continue }
             e.plane = plane
             e.fade = fade
             e.centerDistance = PlaneFill.centerDistance(e.pose, camX, camY, camZ)
             entries.add(e)
+        }
+        val nowMs = android.os.SystemClock.elapsedRealtime()
+        if (nowMs - lastStatsLogMs >= STATS_LOG_INTERVAL_MS) {
+            lastStatsLogMs = nowMs
+            // Counts and distances only — no positions.
+            app.surrealar.util.DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
+                "AR_PLANES floors=$floors walls=$walls ceilings=$ceilings drawn=${entries.size} " +
+                    "hiddenSmall=$small hiddenFar=$faded " +
+                    "nearestWallM=${if (nearestWallM.isFinite()) "%.1f".format(nearestWallM) else "n/a"}")
         }
         if (entries.isEmpty()) return 0
         PlaneFill.sortFarToNear(entries, entries.size) { it.centerDistance }
@@ -208,6 +225,8 @@ internal class PlaneVisualizer {
         private const val A_POS = 0
         private const val A_LOCAL = 1
         private const val A_EDGE = 2
+        /** AR_PLANES summary log interval while the overlay is on. */
+        private const val STATS_LOG_INTERVAL_MS = 5_000L
 
         private fun isCandidate(plane: Plane): Boolean =
             plane.trackingState == TrackingState.TRACKING && plane.subsumedBy == null &&
