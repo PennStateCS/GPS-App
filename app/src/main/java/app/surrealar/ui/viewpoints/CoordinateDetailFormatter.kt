@@ -14,6 +14,7 @@ import java.util.Locale
 object CoordinateDetailFormatter {
 
     fun fmt6(v: Double): String = String.format(Locale.US, "%.6f", v)
+    fun fmt8(v: Double): String = String.format(Locale.US, "%.8f", v)
     fun fmtM2(v: Double): String = String.format(Locale.US, "%.2f m", v)
     fun fmtM3(v: Double): String = String.format(Locale.US, "%.3f m", v)
     fun fmtDop(v: Double): String = String.format(Locale.US, "%.1f", v)
@@ -185,13 +186,24 @@ object CoordinateDetailFormatter {
         return if (rtkStatus?.uppercase(Locale.US) == "FIX") "Fixed RTK" else short
     }
 
-    /** Compact accuracy value for a stat tile, e.g. "±0.42 m". Null when absent. */
-    fun accuracyTileText(m: Double?): String? = when {
-        m == null    -> null
-        m < 1.0      -> String.format(Locale.US, "±%.2f m", m)
-        m < 10.0     -> String.format(Locale.US, "±%.1f m", m)
-        else         -> String.format(Locale.US, "±%.0f m", m)
+    /**
+     * Compact accuracy value for a stat tile, e.g. "±0.42 m", or "±0.42 m (68%)" with a
+     * [confidence] tag. Null when absent.
+     */
+    fun accuracyTileText(m: Double?, confidence: String? = null): String? {
+        val v = when {
+            m == null    -> return null
+            m < 1.0      -> String.format(Locale.US, "±%.2f m", m)
+            m < 10.0     -> String.format(Locale.US, "±%.1f m", m)
+            else         -> String.format(Locale.US, "±%.0f m", m)
+        }
+        return if (confidence.isNullOrBlank()) v else "$v ($confidence)"
     }
+
+    /** hAcc is a 68% horizontal radius. */
+    const val HORIZONTAL_CONFIDENCE = "68%"
+    /** Vertical accuracy is 1σ. */
+    const val VERTICAL_CONFIDENCE = "1σ"
 
     /** Compact satellite count for a stat tile, e.g. "18/24", "18", or "24". Null when neither is known. */
     fun satellitesTileText(satsUsed: Int?, satsVisible: Int?): String? = when {

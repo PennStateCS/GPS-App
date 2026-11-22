@@ -622,7 +622,8 @@ class CoordinateDetailFragment : Fragment() {
         val altRows = mutableListOf<DetailRow>()
         // Skipped when the Height row above already shows receiver MSL (same value twice otherwise).
         if (CoordinateDetailFormatter.showReceiverMslRow(coordSystemSettings.vertical)) {
-            c.altitudeMsl?.let { altRows += DetailRow("Receiver MSL height", len(it, 2)) }
+            c.altitudeMsl?.let { altRows += DetailRow("Receiver MSL height",
+                app.surrealar.coords.CoordinateFormat.length(it, unit)) }
         }
         c.geoidSeparationM?.let { altRows += DetailRow("Receiver geoid separation", len(it, 3)) }
         // Antenna/pole offset applied at capture — shown so the user can see what it was set to.
@@ -789,10 +790,11 @@ class CoordinateDetailFragment : Fragment() {
         // external receiver on NAD83 corrections). The Location card below re-expresses it.
         val stored = if (app.surrealar.coords.StoredDatum.isNad83(c.crsEpsg)) "NAD83" else "WGS84"
         val tiles = listOf(
-            DetailRow("Latitude ($stored)", "${fmt6(c.latitude)}°"),
-            DetailRow("Longitude ($stored)", "${fmt6(c.longitude)}°"),
+            // Same precision as the rows below: 8-decimal degrees, mm-level heights (0.01 in feet).
+            DetailRow("Latitude ($stored)", "${CoordinateDetailFormatter.fmt8(c.latitude)}°"),
+            DetailRow("Longitude ($stored)", "${CoordinateDetailFormatter.fmt8(c.longitude)}°"),
             DetailRow("Ellipsoidal height ($stored)",
-                app.surrealar.coords.CoordinateFormat.length(c.altitude, coordSystemSettings.unit, 2)),
+                app.surrealar.coords.CoordinateFormat.length(c.altitude, coordSystemSettings.unit)),
         )
         tiles.forEach { t ->
             val tile = inflater.inflate(R.layout.item_gnss_stat_tile, container, false)
@@ -810,8 +812,10 @@ class CoordinateDetailFragment : Fragment() {
         val tiles = mutableListOf<DetailRow>()
         CoordinateDetailFormatter.fixTileValue(c.rtkStatus)?.let { tiles += DetailRow("Fix", it) }
         if (showAccuracyIndicators) {
-            CoordinateDetailFormatter.accuracyTileText(c.horizontalAccuracyM)?.let { tiles += DetailRow("Horizontal accuracy", it) }
-            CoordinateDetailFormatter.accuracyTileText(c.verticalAccuracyM)?.let { tiles += DetailRow("Vertical accuracy", it) }
+            CoordinateDetailFormatter.accuracyTileText(c.horizontalAccuracyM, CoordinateDetailFormatter.HORIZONTAL_CONFIDENCE)
+                ?.let { tiles += DetailRow("Horizontal accuracy", it) }
+            CoordinateDetailFormatter.accuracyTileText(c.verticalAccuracyM, CoordinateDetailFormatter.VERTICAL_CONFIDENCE)
+                ?.let { tiles += DetailRow("Vertical accuracy", it) }
         }
         CoordinateDetailFormatter.satellitesTileText(c.satsUsed, c.satsVisible)?.let {
             tiles += DetailRow(CoordinateDetailFormatter.satellitesTileLabel(c.satsUsed, c.satsVisible), it)

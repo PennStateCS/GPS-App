@@ -107,7 +107,7 @@ object CoordinateDetailUiMapper {
             hAcc <= 0.30 -> 0xFFF9A825.toInt()   // amber  – sub-metre
             else         -> 0xFFEF6C00.toInt()   // orange – degraded / single-point
         }
-        val description = String.format(Locale.US, "Horizontal accuracy plus or minus %.2f meters", hAcc)
+        val description = String.format(Locale.US, "Horizontal accuracy plus or minus %.2f meters, 68 percent confidence", hAcc)
         return BadgeUi(CoordinateDetailFormatter.accuracyBadgeText(hAcc), color, description)
     }
 

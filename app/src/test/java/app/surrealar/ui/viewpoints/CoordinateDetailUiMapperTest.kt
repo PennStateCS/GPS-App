@@ -95,7 +95,7 @@ class CoordinateDetailUiMapperTest {
         val b = CoordinateDetailUiMapper.accuracyBadge(coord(horizontalAccuracyM = 0.02), showAccuracyIndicators = true)!!
         assertEquals("H ±0.02 m", b.text)
         assertEquals(0xFF2E7D32.toInt(), b.colorArgb)
-        assertEquals("Horizontal accuracy plus or minus 0.02 meters", b.contentDescription)
+        assertEquals("Horizontal accuracy plus or minus 0.02 meters, 68 percent confidence", b.contentDescription)
     }
 
     @Test

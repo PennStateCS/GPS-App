@@ -204,6 +204,21 @@ class CoordinateDetailFormatterTest {
     }
 
     @Test
+    fun accuracyTileText_showsConfidence() {
+        assertEquals("±0.02 m (68%)",
+            CoordinateDetailFormatter.accuracyTileText(0.02, CoordinateDetailFormatter.HORIZONTAL_CONFIDENCE))
+        assertEquals("±0.03 m (1σ)",
+            CoordinateDetailFormatter.accuracyTileText(0.03, CoordinateDetailFormatter.VERTICAL_CONFIDENCE))
+        assertNull(CoordinateDetailFormatter.accuracyTileText(null, "68%"))
+    }
+
+    @Test
+    fun fmt8_eightDecimals() {
+        assertEquals("41.34769028", CoordinateDetailFormatter.fmt8(41.3476902812))
+        assertEquals("-76.02259178", CoordinateDetailFormatter.fmt8(-76.022591781))
+    }
+
+    @Test
     fun satellitesTileText_compactForms() {
         assertEquals("18/24", CoordinateDetailFormatter.satellitesTileText(18, 24))
         assertEquals("18", CoordinateDetailFormatter.satellitesTileText(18, null))
