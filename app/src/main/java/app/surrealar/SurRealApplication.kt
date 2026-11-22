@@ -127,6 +127,8 @@ class SurRealApplication : Application() {
         Log.d("SurRealApplication","Application started; global crash handler installed")
 
         setupSettings()
+        // Background: deletes model files no saved model points to (older than 10 min, so never mid-import).
+        app.surrealar.data.files.ModelOrphanSweeper.start(this)
         applyThemeFromSettings()
         createNotificationChannel()
         startMockLocationPublisher()
