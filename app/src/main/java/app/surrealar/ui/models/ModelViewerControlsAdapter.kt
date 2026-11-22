@@ -14,15 +14,15 @@ import app.surrealar.R
 // Buttons shown in the controls viewer in order
 // To add a feature, add an entry here and connect it in ModelViewerActivity
 enum class ModelViewerControl(@StringRes val defaultLabel: Int, @DrawableRes val icon: Int) {
-    RESET_ROTATION(R.string.reset, R.drawable.ic_star),
-    AUTO_ROTATE(R.string.auto_rotate, R.drawable.ic_star),
-    LIGHTING(R.string.lighting_on, R.drawable.ic_star),
-    DIAGNOSTICS(R.string.model_diag_string, R.drawable.ic_star),
-    AXIS(R.string.axis_off, R.drawable.ic_star),
-    OFFSET(R.string.offset_off, R.drawable.ic_star),
-    BOUNDING_BOX(R.string.bbox_off, R.drawable.ic_star),
-    GRID(R.string.grid_off, R.drawable.ic_star),
-    OVERLAY_ON_TOP(R.string.overlay_top_on, R.drawable.ic_star),
+    RESET_ROTATION(R.string.reset, R.drawable.ic_viewer_reset),
+    AUTO_ROTATE(R.string.auto_rotate, R.drawable.ic_viewer_rotate_360),
+    LIGHTING(R.string.lighting_on, R.drawable.ic_viewer_lightbulb),
+    DIAGNOSTICS(R.string.model_diag_string, R.drawable.ic_viewer_info),
+    AXIS(R.string.axis_off, R.drawable.ic_viewer_axis_3d),
+    OFFSET(R.string.offset_off, R.drawable.ic_viewer_origin),
+    BOUNDING_BOX(R.string.bbox_off, R.drawable.ic_viewer_bounding_box),
+    GRID(R.string.grid_off, R.drawable.ic_viewer_grid),
+    OVERLAY_ON_TOP(R.string.overlay_top_on, R.drawable.ic_viewer_layers),
 }
 
 // RecyclerView adapter for the Model Viewer's controls tray.

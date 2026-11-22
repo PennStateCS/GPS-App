@@ -7,17 +7,23 @@
     tools:context=".ui.models.ModelViewerActivity">
 
     <!-- App Bar -->
+    <!-- Same top-bar colours as the main screen (app_bar_main.xml) so the title and back
+         arrow are clearly visible in light and dark themes. -->
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:theme="@style/Theme.SurveyingApp.AppBarOverlay">
+        android:background="@color/app_top_app_bar"
+        app:liftOnScroll="false">
 
-        <androidx.appcompat.widget.Toolbar
+        <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="?attr/colorPrimary"
+            android:layout_height="@dimen/toolbar_height"
+            android:background="@color/app_top_app_bar"
+            app:titleTextColor="@color/app_on_top_app_bar"
+            app:titleTextAppearance="?attr/textAppearanceTitleMedium"
+            app:navigationIconTint="@color/app_on_top_app_bar"
             app:popupTheme="@style/Theme.SurveyingApp.PopupOverlay"
             app:title="Model Viewer" />
 
