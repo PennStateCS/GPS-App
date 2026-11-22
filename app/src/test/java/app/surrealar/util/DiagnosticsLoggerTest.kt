@@ -72,6 +72,48 @@ class DiagnosticsLoggerTest {
             lines().map { it.substringAfter("] ") }.filter { it.startsWith("hb ") || it.startsWith("other ") })
     }
 
+    @Test fun `logOnChange with a hold time skips flicker and logs a value once it has held`() {
+        DiagnosticsLogger.resetThrottles()
+        var now = 0L
+        DiagnosticsLogger.nowMs = { now }
+        try {
+            // (time, value): OK settles; a 1 s STALE blip is never logged; STALE held 3 s is logged once.
+            listOf(0L to "OK", 1_000L to "OK", 3_000L to "OK", 4_000L to "STALE", 5_000L to "OK",
+                6_000L to "STALE", 7_000L to "STALE", 9_000L to "STALE", 10_000L to "STALE", 11_000L to "OK")
+                .forEach { (t, v) -> now = t; DiagnosticsLogger.logOnChange("GNSS", "test.hold", v, stableMs = 3_000L) { "link=$v@$t" } }
+        } finally { DiagnosticsLogger.nowMs = { System.nanoTime() / 1_000_000L } }
+        assertEquals(listOf("link=OK@3000", "link=STALE@9000"),
+            lines().map { it.substringAfter("] ") }.filter { it.startsWith("link=") })
+    }
+
+    @Test fun `every and logOnChange attach the throwable to warnings and errors`() {
+        DiagnosticsLogger.resetThrottles()
+        DiagnosticsLogger.every("GNSS", "test.err", 60_000L, 'E', IllegalStateException("boom")) { "fix failed" }
+        DiagnosticsLogger.logOnChange("GNSS", "test.warn", 1, 'W', throwable = IllegalArgumentException("bad")) { "warned" }
+        DiagnosticsLogger.logOnChange("GNSS", "test.info", 1, 'I', throwable = RuntimeException("why")) { "noted" }
+        val text = lines().joinToString("\n")
+        assertTrue(text.contains("IllegalStateException: boom"))
+        assertTrue(text.contains("IllegalArgumentException: bad"))
+        assertTrue("info names the exception", text.contains("noted (RuntimeException: why)"))
+        assertTrue(File(dir, "app-errors-current.txt").readText().contains("fix failed"))
+    }
+
+    @Test fun `d writes nothing and builds nothing when debug is off`() {
+        val was = DiagnosticsLogger.debugEnabled
+        try {
+            DiagnosticsLogger.debugEnabled = false
+            var built = false
+            DiagnosticsLogger.d("GNSS") { built = true; "release detail" }
+            DiagnosticsLogger.d("GNSS", "release detail 2")
+            assertTrue(!built)
+            DiagnosticsLogger.debugEnabled = true
+            DiagnosticsLogger.d("GNSS") { "debug detail" }
+        } finally { DiagnosticsLogger.debugEnabled = was }
+        val text = lines().joinToString("\n")
+        assertTrue(!text.contains("release detail"))
+        assertTrue(text.contains(" D GNSS ") && text.contains("debug detail"))
+    }
+
     @Test fun `flush returns false at once when the write queue is full`() {
         val release = java.util.concurrent.CountDownLatch(1)
         DiagnosticsLogger.blockWriterForTest(release)

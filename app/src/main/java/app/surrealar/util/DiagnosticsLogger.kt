@@ -10,6 +10,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import app.surrealar.util.diagnostics.DiagTags
 import app.surrealar.util.diagnostics.LogLineFormat
 
 /**
@@ -140,14 +141,31 @@ object DiagnosticsLogger {
         FileOutputStream(file, true).use { out -> out.write(bytes); out.flush(); out.fd.sync() }
     }
 
+    /**
+     * True in debug builds: [d] lines are produced (logcat + file). False in release, where [d] is a
+     * no-op and the lambda form doesn't even build the message. A `var` for tests.
+     */
+    @Volatile var debugEnabled: Boolean = BuildConfig.DEBUG
+
+    /** Tags already reported as not in [DiagTags.ALL] (debug builds only), so each is reported once. */
+    private val unknownTags = ConcurrentHashMap.newKeySet<String>()
+
+    private fun checkTag(tag: String) {
+        if (debugEnabled && tag !in DiagTags.ALL && unknownTags.add(tag)) {
+            Log.w("DiagnosticsLogger", "Tag \"$tag\" is not in DiagTags.ALL — use one of ${DiagTags.ALL}")
+        }
+    }
+
     /** Info-level event. Always written to file (once initialized). */
     fun i(tag: String, message: String) {
+        checkTag(tag)
         Log.i(tag, message)
         writeAsync('I', tag, message, null)
     }
 
     /** Warning-level event. Optional throwable appended as stack trace. */
     fun w(tag: String, message: String, throwable: Throwable? = null) {
+        checkTag(tag)
         Log.w(tag, message, throwable)
         writeAsync('W', tag, message, throwable)
     }
@@ -158,6 +176,7 @@ object DiagnosticsLogger {
      * the event log rolls over.
      */
     fun e(tag: String, message: String, throwable: Throwable? = null) {
+        checkTag(tag)
         Log.e(tag, message, throwable)
         writeAsync('E', tag, message, throwable)
         writeErrorAsync('E', tag, message, throwable)
@@ -169,30 +188,56 @@ object DiagnosticsLogger {
     private val lastValues = ConcurrentHashMap<String, Any>()
     private val lastWrites = ConcurrentHashMap<String, Long>()
 
-    /** Monotonic clock for [every]; swapped in tests. */
+    /** A value seen for a [logOnChange] key with a hold time, not logged yet, and since when. */
+    private class Pending(val value: Any, val sinceMs: Long)
+    private val pendingValues = ConcurrentHashMap<String, Pending>()
+
+    /** Monotonic clock for [every] and [logOnChange] hold times; swapped in tests. */
     @Volatile internal var nowMs: () -> Long = { System.nanoTime() / 1_000_000L }
 
     /**
      * Writes [message] only when [value] for [key] differs from the last value logged for that key
      * (the first call always writes). The message lambda runs only when the line is written, so
      * callers on hot paths pay one map lookup. Returns true if it wrote.
+     *
+     * [stableMs] > 0 adds a hold time for values that flicker (link STALE/OK, FIX/FLOAT, tracking): a new
+     * value is logged only once it has been seen continuously for [stableMs], so the caller must keep
+     * calling (hot paths do). A value that flips back before then is never logged. The first value for a
+     * key is held too. [throwable] is attached to the line when it is written.
      */
-    fun logOnChange(tag: String, key: String, value: Any?, level: Char = 'I', message: () -> String): Boolean {
+    fun logOnChange(
+        tag: String, key: String, value: Any?, level: Char = 'I',
+        stableMs: Long = 0L, throwable: Throwable? = null, message: () -> String,
+    ): Boolean {
         val v = value ?: NO_VALUE
-        val previous = lastValues.put(key, v)
-        if (previous == v) return false
-        write(level, tag, message())
+        if (stableMs <= 0L) {
+            val previous = lastValues.put(key, v)
+            if (previous == v) return false
+            write(level, tag, message(), throwable)
+            return true
+        }
+        if (lastValues[key] == v) { pendingValues.remove(key); return false }
+        val now = nowMs()
+        val p = pendingValues[key]
+        if (p == null || p.value != v) { pendingValues[key] = Pending(v, now); return false }
+        if (now - p.sinceMs < stableMs) return false
+        pendingValues.remove(key)
+        lastValues[key] = v
+        write(level, tag, message(), throwable)
         return true
     }
 
-    /** Writes [message] at most once per [intervalMs] for [key]. Returns true if it wrote. */
-    fun every(tag: String, key: String, intervalMs: Long, level: Char = 'I', message: () -> String): Boolean {
+    /** Writes [message] at most once per [intervalMs] for [key], with [throwable] if given. Returns true if it wrote. */
+    fun every(
+        tag: String, key: String, intervalMs: Long, level: Char = 'I',
+        throwable: Throwable? = null, message: () -> String,
+    ): Boolean {
         val now = nowMs()
         var due = false
         lastWrites.compute(key) { _, last ->
             if (last == null || now - last >= intervalMs) { due = true; now } else last
         }
-        if (due) write(level, tag, message())
+        if (due) write(level, tag, message(), throwable)
         return due
     }
 
@@ -200,19 +245,31 @@ object DiagnosticsLogger {
     fun resetThrottles(keyPrefix: String = "") {
         lastValues.keys.removeAll { it.startsWith(keyPrefix) }
         lastWrites.keys.removeAll { it.startsWith(keyPrefix) }
+        pendingValues.keys.removeAll { it.startsWith(keyPrefix) }
     }
 
-    private fun write(level: Char, tag: String, message: String) = when (level) {
-        'E' -> e(tag, message)
-        'W' -> w(tag, message)
+    private fun write(level: Char, tag: String, message: String, throwable: Throwable? = null) = when (level) {
+        'E' -> e(tag, message, throwable)
+        'W' -> w(tag, message, throwable)
         'D' -> d(tag, message)
-        else -> i(tag, message)
+        // Info lines carry no stack trace; name the exception instead.
+        else -> i(tag, if (throwable == null) message else "$message (${throwable.javaClass.simpleName}: ${throwable.message})")
     }
 
-    /** Debug-level: written to file only in debug builds; always written to Logcat. */
+    /**
+     * Debug-level: developer detail. Debug builds only ([debugEnabled]) — logcat and the file. Release
+     * builds write nothing. Prefer the lambda form so release doesn't build the message.
+     */
     fun d(tag: String, message: String) {
+        if (!debugEnabled) return
+        checkTag(tag)
         Log.d(tag, message)
-        if (BuildConfig.DEBUG) writeAsync('D', tag, message, null)
+        writeAsync('D', tag, message, null)
+    }
+
+    /** [d] that builds [message] only in debug builds. */
+    inline fun d(tag: String, message: () -> String) {
+        if (debugEnabled) d(tag, message())
     }
 
     /**
@@ -365,12 +422,23 @@ object DiagnosticsLogger {
                 if (src.exists()) src.renameTo(File(dir, "app-log-${n + 1}.txt"))
             }
             // Current → log-1
-            File(dir, CURRENT_FILE).takeIf { it.exists() }
-                ?.renameTo(File(dir, "app-log-1.txt"))
-            currentSize = 0L
+            moveOrTruncate(File(dir, CURRENT_FILE), File(dir, "app-log-1.txt"))
         } catch (ex: Exception) {
             Log.e("DiagnosticsLogger", "Log rotation failed: ${ex.message}")
         }
+        // The real size, so a failed rotation can't leave the counter at 0 while the file keeps growing.
+        currentSize = File(dir, CURRENT_FILE).length()
+    }
+
+    /**
+     * Renames [current] to [rotated]. If the rename fails, empties [current] instead (losing that
+     * file's lines beats a log that grows without limit) and says so in logcat.
+     */
+    private fun moveOrTruncate(current: File, rotated: File) {
+        if (!current.exists() || current.renameTo(rotated)) return
+        Log.w("DiagnosticsLogger", "Could not rotate ${current.name}; truncating it")
+        runCatching { FileOutputStream(current, false).close() }
+            .onFailure { Log.e("DiagnosticsLogger", "Could not truncate ${current.name}", it) }
     }
 
     private fun rotateErrors(dir: File) {
@@ -380,11 +448,10 @@ object DiagnosticsLogger {
                 val src = File(dir, "app-errors-$n.txt")
                 if (src.exists()) src.renameTo(File(dir, "app-errors-${n + 1}.txt"))
             }
-            File(dir, ERROR_CURRENT).takeIf { it.exists() }
-                ?.renameTo(File(dir, "app-errors-1.txt"))
-            errorSize = 0L
+            moveOrTruncate(File(dir, ERROR_CURRENT), File(dir, "app-errors-1.txt"))
         } catch (ex: Exception) {
             Log.e("DiagnosticsLogger", "Error-log rotation failed: ${ex.message}")
         }
+        errorSize = File(dir, ERROR_CURRENT).length()
     }
 }

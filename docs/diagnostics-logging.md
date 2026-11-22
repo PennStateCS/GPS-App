@@ -4,6 +4,56 @@ This note describes how app diagnostics are captured, what the exported diagnost
 and where to add new diagnostic events. It complements the KDoc on `DiagnosticsLogger`,
 `DiagnosticReportExporter`, and `LogZip`.
 
+## 0. Logging rules (read before adding or changing a log line)
+
+The exported log exists so a tester's report shows **what failed and why** without drowning it in
+routine chatter. Every line should answer "what happened" for a support reader.
+
+### Which API
+
+| API | Goes to | Use for |
+|-----|---------|---------|
+| `DiagnosticsLogger.e(tag, msg, t)` | logcat + event file + error file | An operation **failed** and the user lost a feature or data. Always pass the exception when there is one. |
+| `DiagnosticsLogger.w(tag, msg, t)` | logcat + event file | **Unexpected** but handled: fallback used, retries exhausted, degraded mode, bad input skipped. Not for normal waiting states (no fix yet, connecting, localizing). Pass the exception when there is one. |
+| `DiagnosticsLogger.i(tag, msg)` | logcat + event file | Lifecycle, user actions, **state changes** and **outcomes** (connected, saved, exported, model ready). |
+| `DiagnosticsLogger.d(tag) { msg }` | debug builds only: logcat + event file | Developer detail useful in a debug build's report (config dumps, per-item detail). Nothing is built or printed in release. |
+| `DevLog.d(tag) { msg }` / `DevLog.every(...)` | debug builds only: logcat | Live developer traces. Replaces raw `android.util.Log.d/i`. |
+| `GnssDebugLog` / `GnssLog.every` | debug builds only: logcat (`GnssDebug`) | GNSS traces; the **only** place coordinates and raw NMEA may appear. |
+| `GnssLog.diagnostic*` (libs) | → `DiagnosticsLogger.i/w/e` | Library events for the exported log. |
+
+Don't call `android.util.Log` directly in app code. `DiagnosticsLogger` already writes to logcat, so
+never pair `Log.x(...)` with `DiagnosticsLogger.x(...)` for the same event (it prints twice). Tags in
+the file log must be one of `DiagTags` (debug builds warn once about any other tag).
+
+### Volume rules
+
+- **Nothing per frame, per fix, per NMEA sentence, per satellite or per loop item.** Use a summary
+  line ("test grid preload n=25 ok=25 failed=0"), `logOnChange`, or `every`.
+- **Ongoing status:** at most once a minute, and only when something changed (`logOnChange` on a
+  bucketed value plus a long `every` as a heartbeat).
+- **Flickering states** (link STALE/OK, FIX/FLOAT, tracking, distance-filter edges):
+  `logOnChange(tag, key, value, stableMs = 3_000L) { … }` — logged only after the value holds.
+- **Retry loops:** log the first failure in full (with the exception), then
+  `every(tag, key, 60_000L, 'W') { "still failing: attempts=n last=…" }`, then the recovery once.
+- **Repeated identical errors** (a parse error per message, a draw error per frame):
+  `every(tag, key, 60_000L, 'E', throwable = e) { … }`.
+- Build expensive messages inside the lambda forms so throttled / release calls cost nothing.
+
+### Catch blocks
+
+- An **unexpected** exception is never swallowed silently: log it (`w` if handled, `e` if the
+  operation failed) with the throwable. Rethrow `CancellationException`.
+- **Expected** exceptions (closing a socket on shutdown, number-parse fallbacks, best-effort cleanup)
+  may be ignored, with a short comment saying why.
+
+### Message content
+
+- Say what failed and the key context: `"Backup export failed rows=120 dest=SAF"`, not `"error"`.
+- Use `key=value` for values so lines can be searched and compared.
+- **Never**: coordinates (lat/lon/height, ECEF, northing/easting), raw NMEA, point names or notes,
+  passwords, keys, tokens, full file paths with user names. Use IDs, counts, booleans and accuracy
+  values instead.
+
 ## 1. Loggers (where events are stored)
 
 | Logger | Purpose | Storage | Retention | In export? |
