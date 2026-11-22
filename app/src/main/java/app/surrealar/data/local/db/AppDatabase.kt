@@ -20,8 +20,8 @@ import app.surrealar.data.local.entity.ModelEntity
  * - There is exactly one connection per process; obtain it through Hilt (`DatabaseModule`) which
  *   delegates to [getDatabase]. Do not open a second builder.
  * - The migration chain is contiguous and **additive**; every version bump must preserve all saved
- *   field data (see `Migrations.kt`). The destructive fallback is debug-only and never runs in
- *   release.
+ *   field data (see `Migrations.kt`). The destructive fallback runs only when a developer opts in
+ *   with the `ALLOW_DESTRUCTIVE_MIGRATION` Gradle property (off by default, also in debug).
  */
 @Database(
     entities = [CoordinateEntity::class, ModelEntity::class],
@@ -68,12 +68,12 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12
                     )
-                    // Destructive fallback is DEBUG-ONLY and never runs in release. It only
-                    // matters for the pre-v2 floor (no schema was exported before v3) and for
-                    // developers jumping between in-progress schema revisions. Removing it
-                    // entirely would crash dev installs coming from a pre-v2 database, so it is
-                    // kept but confined to debug builds.
-                    .also { if (BuildConfig.DEBUG) it.fallbackToDestructiveMigration(dropAllTables = true) }
+                    // Destructive fallback is OPT-IN only (Gradle property
+                    // ALLOW_DESTRUCTIVE_MIGRATION, default false). Field testers run debug builds,
+                    // so tying it to BuildConfig.DEBUG wiped their saved data on any schema
+                    // mismatch. It only helps the pre-v2 floor (no schema exported before v3) and
+                    // developers jumping between in-progress schema revisions.
+                    .also { if (BuildConfig.ALLOW_DESTRUCTIVE_MIGRATION) it.fallbackToDestructiveMigration(dropAllTables = true) }
                     // Diagnostics only: logs open / migration / destructive reset (no schema change).
                     .addCallback(app.surrealar.util.diagnostics.DbDiagnostics.callback(context))
                     .build().also { INSTANCE = it }

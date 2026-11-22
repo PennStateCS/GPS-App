@@ -75,6 +75,12 @@ android {
         val diagReportEmail = (providers.gradleProperty("DIAG_REPORT_EMAIL").orNull
             ?: localProperties.getProperty("DIAG_REPORT_EMAIL", "")).trim().replace("\"", "")
         buildConfigField("String",  "DIAG_REPORT_EMAIL", "\"$diagReportEmail\"")
+        // Room's destructive fallback wipes saved coordinates/models on a schema mismatch. Field
+        // testers run debug builds, so it is off unless a developer opts in with
+        // -PALLOW_DESTRUCTIVE_MIGRATION=true (or the same key in gradle.properties).
+        val allowDestructiveMigration = providers.gradleProperty("ALLOW_DESTRUCTIVE_MIGRATION")
+            .orNull?.trim()?.toBoolean() ?: false
+        buildConfigField("boolean", "ALLOW_DESTRUCTIVE_MIGRATION", "$allowDestructiveMigration")
 
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] =
             localProperties.getProperty("GOOGLE_MAPS_API_KEY", "YOUR_API_KEY_HERE")
