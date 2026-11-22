@@ -60,7 +60,6 @@ class ModelReadinessRepositoryTest {
 
         assertEquals("Shed", facts.modelName)
         assertEquals("shed.glb", facts.fileName)
-        assertEquals(40.0, facts.embeddedLatDeg!!, 0.0)
         assertEquals(false, facts.isValid)
         assertEquals(listOf("bad"), facts.validationErrors)
         assertEquals("m", facts.units)

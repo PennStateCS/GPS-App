@@ -3,7 +3,6 @@ package app.surrealar.ui.models.readiness
 import app.surrealar.ui.openinar.ModelBounds
 import app.surrealar.ui.openinar.ModelPlacementOrigin
 import app.surrealar.ui.openinar.Vec3
-import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
@@ -40,7 +39,6 @@ object ModelReadinessEvaluator : ReadinessRules {
     const val TEXTURE_BYTES_FAIL = 512L * 1024 * 1024
     const val FILE_SIZE_WARN_BYTES = 100L * 1024 * 1024
     const val FILE_SIZE_CAP_MB = 150
-    const val GEOREF_MATCH_M = 1.0
 
     /** Required extensions Filament gltfio 1.81 handles (plus any KHR_materials_*). */
     val SUPPORTED_REQUIRED_EXTENSIONS = setOf(
@@ -73,7 +71,6 @@ object ModelReadinessEvaluator : ReadinessRules {
         )
         checks += complexity(facts)
         checks += linked(facts)
-        georeference(facts)?.let { checks += it }
 
         val ordered = checks.sortedBy { rank(it.status) }
         val fails = ordered.count { it.status == CheckStatus.FAIL }
@@ -394,33 +391,6 @@ object ModelReadinessEvaluator : ReadinessRules {
         return ReadinessCheck(
             "linked", "Linked points", CheckStatus.PASS,
             "Linked to ${plural(links.size, "point")}: ${list(links.map { q(it.coordinateName) }, 5)}.",
-        )
-    }
-
-    // ------------------------------------------------------------------ 11. georeference
-
-    private fun georeference(facts: ModelFacts): ReadinessCheck? {
-        val lat = facts.embeddedLatDeg ?: return null
-        val lon = facts.embeddedLonDeg ?: return null
-        if (facts.links.isEmpty() || !lat.isFinite() || !lon.isFinite()) return null
-        val dists = facts.links.mapNotNull { l ->
-            runCatching { l to Geodesic.distanceM(lat, lon, l.latDeg, l.lonDeg) }.getOrNull()?.takeIf { it.second.isFinite() }
-        }
-        if (dists.isEmpty()) return null
-        val off = dists.filter { it.second > GEOREF_MATCH_M }
-        if (off.isEmpty()) {
-            val who = if (dists.size == 1) q(dists[0].first.coordinateName) else "every linked point"
-            return ReadinessCheck(
-                "georeference", "Embedded location", CheckStatus.PASS,
-                "Its embedded location matches $who (within ${len(GEOREF_MATCH_M)}).",
-            )
-        }
-        val worst = off.maxBy { it.second }
-        val others = if (off.size > 1) " (and ${plural(off.size - 1, "other point")} are off too)" else ""
-        return ReadinessCheck(
-            "georeference", "Embedded location", CheckStatus.WARN,
-            "Its embedded location is ${len(worst.second)} from ${q(worst.first.coordinateName)}$others.",
-            fix = "Check that the right point is linked, or that the model was exported at the right location.",
         )
     }
 

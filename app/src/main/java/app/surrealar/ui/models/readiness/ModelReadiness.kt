@@ -78,8 +78,8 @@ data class GltfFacts(
 
 /**
  * One point that links the model, with its placement settings (as AR reads them). A model can be
- * linked to many points, so readiness judges the MODEL and its per-point placement only; how
- * accurately a point was captured belongs to that point, not to the model's readiness.
+ * linked to many points, so readiness judges the MODEL and its per-point placement only: how
+ * accurately a point was captured, and where it is, belong to that point (no coordinates here).
  */
 data class LinkFacts(
     val coordinateId: String,
@@ -94,9 +94,6 @@ data class LinkFacts(
     val originOffsetXM: Double?,
     val originOffsetYM: Double?,
     val originOffsetZM: Double?,
-    /** Used only to compare with the model's embedded location; never shown or logged. */
-    val latDeg: Double,
-    val lonDeg: Double,
 )
 
 data class ModelFacts(
@@ -108,8 +105,6 @@ data class ModelFacts(
     val renderedBounds: Bounds? = null,
     /** True when Filament loaded the asset (viewer); null when not attempted (card/import). */
     val loadedByRenderer: Boolean? = null,
-    val embeddedLatDeg: Double?,
-    val embeddedLonDeg: Double?,
     val isValid: Boolean,
     val validationErrors: List<String>,
     val units: String?,
