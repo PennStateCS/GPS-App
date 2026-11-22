@@ -2332,7 +2332,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // threshold can't flood the log.
         val qualityChange = qualityLogHysteresis.update(quality.level, android.os.SystemClock.elapsedRealtime())
         if (qualityChange != null) {
-            DiagnosticsLogger.i(DIAG, "AR_QUALITY ${qualityChange.from ?: "unknown"} →${qualityChange.to} " +
+            DiagnosticsLogger.i(DIAG, "AR_QUALITY ${qualityChange.from ?: "unknown"} → ${qualityChange.to} " +
                 "hAccM=${qHAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
                 "vAccM=${qVAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
                 "yawDeg=${qYaw?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
