@@ -243,9 +243,23 @@ object ModelReadinessEvaluator : ReadinessRules {
             p.bottom < 0 -> {
                 val below = -p.bottom
                 val pct = if (height > 0) (minOf(below, height) / height * 100).roundToInt() else 100
-                ReadinessCheck(
-                    "placement", title, CheckStatus.WARN,
-                    "${lead}sinks ${len(below)} below the point ($pct% of the model is underground).",
+                val detail = "${lead}sinks ${len(below)} below the point ($pct% of the model is underground)."
+                // Bottom Center only helps when it isn't already set and the model isn't pitched/rolled
+                // (AR picks the anchor before rotating). Otherwise offer the exact offset, so the two
+                // one-tap fixes can never loop.
+                val rotated = abs(link?.pitchDeg ?: 0.0) > 1.0 || abs(link?.rollDeg ?: 0.0) > 1.0
+                val alreadyBottom = ModelPlacementOrigin.from(link?.placementOrigin) == ModelPlacementOrigin.BOTTOM_CENTER
+                if (link != null && (alreadyBottom || rotated)) {
+                    val target = p.verticalOffset - p.bottom
+                    ReadinessCheck(
+                        "placement", title, CheckStatus.WARN, detail,
+                        fix = "Set the vertical offset to ${len(target)} so it sits on the point.",
+                        fixAction = FixAction.SET_VERTICAL_OFFSET,
+                        fixCoordinateId = link.coordinateId,
+                        fixValue = target,
+                    )
+                } else ReadinessCheck(
+                    "placement", title, CheckStatus.WARN, detail,
                     fix = "Use Bottom Center so it sits on the point.",
                     fixAction = FixAction.USE_BOTTOM_CENTER,
                     fixCoordinateId = link?.coordinateId,

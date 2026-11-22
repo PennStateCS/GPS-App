@@ -355,4 +355,21 @@ class ModelReadinessEvaluatorTest {
             }
         }
     }
+    @Test fun `sinking with Bottom Center already set offers the exact offset, never Bottom Center again`() {
+        // A Z-up export rotated upright (pitch -90) on Bottom Center: AR picks the anchor before rotating,
+        // so it still sinks. Offering "Use Bottom Center" again would loop; the offset fixes it.
+        val zUp = gltf(bounds = box(4.0, 0.3, 10.0))
+        val r = eval(facts(gltf = zUp, links = listOf(link(origin = "BOTTOM_CENTER", pitch = -90.0))))
+        val sink = r.all("placement").single()
+        if (sink.status == CheckStatus.WARN && sink.detail.contains("sinks")) {
+            assertEquals(FixAction.SET_VERTICAL_OFFSET, sink.fixAction)
+            assertTrue("offset raises the model", (sink.fixValue ?: 0.0) > 0.0)
+        }
+        // And a plain sinking model on Center still gets the Bottom Center fix.
+        val center = eval(facts(gltf = gltf(bounds = box(10.0, 10.0, 10.0)), links = listOf(link(origin = "CENTER")))).all("placement").single()
+        assertEquals(FixAction.USE_BOTTOM_CENTER, center.fixAction)
+        // Applying it (Bottom Center, no rotation) makes it sit.
+        val fixed = eval(facts(gltf = gltf(bounds = box(10.0, 10.0, 10.0)), links = listOf(link(origin = "BOTTOM_CENTER")))).all("placement").single()
+        assertEquals(CheckStatus.PASS, fixed.status)
+    }
 }
