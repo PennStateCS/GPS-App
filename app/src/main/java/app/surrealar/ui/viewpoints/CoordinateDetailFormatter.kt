@@ -20,7 +20,7 @@ object CoordinateDetailFormatter {
     fun fmtDop(v: Double): String = String.format(Locale.US, "%.1f", v)
 
     fun rtkLabel(s: String?): String = when (s?.uppercase(Locale.US)) {
-        "FIX"    -> "Fixed (RTK)"
+        "FIX"    -> "Fix (RTK)"
         "FLOAT"  -> "Float (RTK)"
         "DGPS"   -> "DGPS"
         "SINGLE" -> "Single"
@@ -112,12 +112,12 @@ object CoordinateDetailFormatter {
 
     /**
      * One-line survey-quality summary from fix status (primary) and accuracy (fallback), e.g.
-     * "RTK fixed · survey grade", "RTK float · sub-meter", or "Approximate". Null when nothing is known.
+     * "RTK fix · survey grade", "RTK float · sub-meter", or "Approximate". Null when nothing is known.
      */
     fun surveyQualitySummaryText(rtkStatus: String?, horizontalAccuracyM: Double?, hdop: Double?): String? {
         if (rtkStatus.isNullOrBlank() && horizontalAccuracyM == null && hdop == null) return null
         return when (rtkStatus?.uppercase(Locale.US)) {
-            "FIX"    -> "RTK fixed · survey grade"
+            "FIX"    -> "RTK fix · survey grade"
             "FLOAT"  -> "RTK float · sub-meter"
             "DGPS"   -> "DGPS · meter-level"
             "SINGLE" -> "Single · approximate"
@@ -168,10 +168,10 @@ object CoordinateDetailFormatter {
 
     // ── Compact values for the Survey/GNSS stat tiles ──────────────────────────────────
 
-    /** Short fix-status label for a stat tile: "Fixed", "Float", "DGPS", "Single", … Null when absent. */
+    /** Short fix-status label for a stat tile: "Fix", "Float", "DGPS", "Single", … Null when absent. */
     fun fixShortLabel(rtkStatus: String?): String? = when (rtkStatus?.uppercase(Locale.US)) {
         null, ""  -> null
-        "FIX"     -> "Fixed"
+        "FIX"     -> "Fix"
         "FLOAT"   -> "Float"
         "DGPS"    -> "DGPS"
         "SINGLE"  -> "Single"
@@ -180,10 +180,10 @@ object CoordinateDetailFormatter {
         else      -> rtkStatus
     }
 
-    /** Fix-tile value: "Fixed RTK" for a fixed RTK solution, otherwise the short label. Null when absent. */
+    /** Fix-tile value: "RTK Fix" for a fixed RTK solution, otherwise the short label. Null when absent. */
     fun fixTileValue(rtkStatus: String?): String? {
         val short = fixShortLabel(rtkStatus) ?: return null
-        return if (rtkStatus?.uppercase(Locale.US) == "FIX") "Fixed RTK" else short
+        return if (rtkStatus?.uppercase(Locale.US) == "FIX") "RTK Fix" else short
     }
 
     /**

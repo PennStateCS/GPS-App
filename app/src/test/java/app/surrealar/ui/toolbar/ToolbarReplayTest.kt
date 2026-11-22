@@ -30,7 +30,7 @@ class ToolbarReplayTest {
         val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL, fix(Provider.REPLAY), SkySnapshot(), "RS2+"))
         assertEquals("REPLAY", s.sourceText); assertTrue(s.isReplay)
         assertFalse(s.batteryVisible); assertNull(s.correctionAgeText)
-        assertEquals("Fixed", s.fixText)
+        assertEquals("Fix", s.fixText)
     }
 
     @Test fun `replay active before its first fix still shows REPLAY`() {

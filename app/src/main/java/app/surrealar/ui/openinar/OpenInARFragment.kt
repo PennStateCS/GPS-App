@@ -2742,10 +2742,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             else -> fix.provider.label
         }
         val (solLabel, solColor) = when (fix.rtkStatus) {
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fixed"  to requireContext().getColor(R.color.app_success)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fix"    to requireContext().getColor(R.color.app_success)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.app_warning)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.app_info)
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "GPS"        to requireContext().getColor(android.R.color.white)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "Single"     to requireContext().getColor(android.R.color.white)
             else                                                  -> "No Fix"     to requireContext().getColor(R.color.app_error)
         }
         val acc = fix.hAccM?.let { " · H ±${"%.2f".format(it)} m" } ?: ""

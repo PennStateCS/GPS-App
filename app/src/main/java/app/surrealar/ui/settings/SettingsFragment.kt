@@ -1468,7 +1468,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     when {
                         fixAge <= FRESH_FIX_MAX_AGE_MS -> {
                             val (label, colorRes) = when (lastExternalFixRtkStatus) {
-                                RtkStatus.FIX            -> "RTK Fixed"       to android.R.color.holo_green_dark
+                                RtkStatus.FIX            -> "RTK Fix"         to android.R.color.holo_green_dark
                                 RtkStatus.FLOAT          -> "RTK Float"       to android.R.color.holo_orange_light
                                 RtkStatus.DGPS           -> "DGPS"            to android.R.color.holo_orange_light
                                 RtkStatus.SINGLE         -> "Single"          to android.R.color.holo_orange_dark
@@ -1496,7 +1496,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     when {
                         fixAge <= FRESH_FIX_MAX_AGE_MS -> {
                             val (label, colorRes) = when (lastExternalFixRtkStatus) {
-                                RtkStatus.FIX            -> "Fixed"  to R.color.app_success
+                                RtkStatus.FIX            -> "Fix"    to R.color.app_success
                                 RtkStatus.FLOAT          -> "Float"  to R.color.app_warning
                                 RtkStatus.DGPS           -> "DGPS"   to R.color.app_info
                                 RtkStatus.SINGLE         -> "Single" to R.color.app_warning
@@ -2336,7 +2336,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             if (fix != null) "Fused" else "Fused (pending)"
         } else {
             when (fix?.rtkStatus) {
-                RtkStatus.FIX -> "Fixed RTK"
+                RtkStatus.FIX -> "RTK Fix"
                 RtkStatus.FLOAT -> "Float"
                 RtkStatus.DGPS -> "DGPS"
                 RtkStatus.SINGLE -> "Single"

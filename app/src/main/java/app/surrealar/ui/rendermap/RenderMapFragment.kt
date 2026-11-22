@@ -1772,7 +1772,7 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun friendlyFix(rtk: String): String = when (rtk.uppercase(Locale.US)) {
-        "FIX" -> "Fixed"
+        "FIX" -> "Fix"
         "FLOAT" -> "Float"
         "DGPS" -> "DGPS"
         "SINGLE" -> "Single"

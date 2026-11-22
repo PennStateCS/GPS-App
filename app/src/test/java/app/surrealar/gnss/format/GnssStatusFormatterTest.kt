@@ -27,7 +27,7 @@ class GnssStatusFormatterTest {
         assertEquals("Single", ext(RtkStatus.SINGLE))
         assertEquals("DGPS", ext(RtkStatus.DGPS))
         assertEquals("Float", ext(RtkStatus.FLOAT))
-        assertEquals("Fixed", ext(RtkStatus.FIX))
+        assertEquals("Fix", ext(RtkStatus.FIX))
         assertEquals("DR", ext(RtkStatus.DEAD_RECKONING))
         assertEquals("No Fix", ext(RtkStatus.INVALID))
     }
@@ -37,20 +37,20 @@ class GnssStatusFormatterTest {
         fun int(s: RtkStatus) = GnssStatusFormatter.formatFixStatus(s, isInternal = true)
         assertEquals("No Fix", int(RtkStatus.NONE))
         assertEquals("No Fix", int(RtkStatus.INVALID))
-        assertEquals("GPS", int(RtkStatus.SINGLE))
-        assertEquals("GPS", int(RtkStatus.FIX))
-        assertEquals("GPS", int(RtkStatus.FLOAT))
+        assertEquals("Single", int(RtkStatus.SINGLE))
+        assertEquals("Single", int(RtkStatus.FIX))
+        assertEquals("Single", int(RtkStatus.FLOAT))
     }
 
     // ── capture fix status (string-based, "Unknown" fallback) ────────────────────
     @Test fun `capture fix status maps known names`() {
         fun cap(s: String?) = GnssStatusFormatter.formatCaptureFixStatus(s)
-        assertEquals("Fixed", cap("FIX"))
+        assertEquals("Fix", cap("FIX"))
         assertEquals("Float", cap("FLOAT"))
         assertEquals("DGPS", cap("DGPS"))
         assertEquals("Single", cap("SINGLE"))
         assertEquals("No Fix", cap("NONE"))
-        assertEquals("Fixed", cap("fix"))            // case-insensitive
+        assertEquals("Fix", cap("fix"))            // case-insensitive
     }
 
     @Test fun `capture fix status falls back to Unknown`() {

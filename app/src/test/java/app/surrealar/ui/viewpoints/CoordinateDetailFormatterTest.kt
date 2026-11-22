@@ -20,7 +20,7 @@ class CoordinateDetailFormatterTest {
 
     @Test
     fun rtkLabel_mapsKnownStatusesCaseInsensitively() {
-        assertEquals("Fixed (RTK)", CoordinateDetailFormatter.rtkLabel("fix"))
+        assertEquals("Fix (RTK)", CoordinateDetailFormatter.rtkLabel("fix"))
         assertEquals("Float (RTK)", CoordinateDetailFormatter.rtkLabel("FLOAT"))
         assertEquals("DGPS", CoordinateDetailFormatter.rtkLabel("dgps"))
         assertEquals("Single", CoordinateDetailFormatter.rtkLabel("Single"))
@@ -99,7 +99,7 @@ class CoordinateDetailFormatterTest {
 
     @Test
     fun surveyQualitySummaryText_coversFixStatusesAndFallbacks() {
-        assertEquals("RTK fixed · survey grade", CoordinateDetailFormatter.surveyQualitySummaryText("FIX", 0.02, 0.8))
+        assertEquals("RTK fix · survey grade", CoordinateDetailFormatter.surveyQualitySummaryText("FIX", 0.02, 0.8))
         assertEquals("RTK float · sub-meter", CoordinateDetailFormatter.surveyQualitySummaryText("float", 0.4, 1.0))
         assertEquals("DGPS · meter-level", CoordinateDetailFormatter.surveyQualitySummaryText("DGPS", null, null))
         assertEquals("Single · approximate", CoordinateDetailFormatter.surveyQualitySummaryText("SINGLE", null, null))
@@ -180,7 +180,7 @@ class CoordinateDetailFormatterTest {
 
     @Test
     fun fixShortLabel_mapsKnownStatuses() {
-        assertEquals("Fixed", CoordinateDetailFormatter.fixShortLabel("FIX"))
+        assertEquals("Fix", CoordinateDetailFormatter.fixShortLabel("FIX"))
         assertEquals("Float", CoordinateDetailFormatter.fixShortLabel("float"))
         assertEquals("DGPS", CoordinateDetailFormatter.fixShortLabel("DGPS"))
         assertEquals("Single", CoordinateDetailFormatter.fixShortLabel("SINGLE"))
@@ -190,7 +190,7 @@ class CoordinateDetailFormatterTest {
 
     @Test
     fun fixTileValue_addsRtkSuffixForFixed() {
-        assertEquals("Fixed RTK", CoordinateDetailFormatter.fixTileValue("FIX"))
+        assertEquals("RTK Fix", CoordinateDetailFormatter.fixTileValue("FIX"))
         assertEquals("Float", CoordinateDetailFormatter.fixTileValue("FLOAT"))
         assertEquals("DGPS", CoordinateDetailFormatter.fixTileValue("dgps"))
         assertNull(CoordinateDetailFormatter.fixTileValue(null))

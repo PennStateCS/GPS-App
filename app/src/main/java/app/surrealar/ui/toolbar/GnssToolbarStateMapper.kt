@@ -202,9 +202,9 @@ object GnssToolbarStateMapper {
     }
 
     internal fun fixDescription(status: RtkStatus, isInternal: Boolean): String = "Solution: " + when {
-        isInternal -> if (status == RtkStatus.NONE || status == RtkStatus.INVALID) "no fix" else "GPS"
+        isInternal -> if (status == RtkStatus.NONE || status == RtkStatus.INVALID) "no fix" else "single, no corrections"
         else -> when (status) {
-            RtkStatus.FIX -> "RTK fixed"
+            RtkStatus.FIX -> "RTK fix"
             RtkStatus.FLOAT -> "RTK float"
             RtkStatus.DGPS -> "DGPS"
             RtkStatus.SINGLE -> "single, no corrections"

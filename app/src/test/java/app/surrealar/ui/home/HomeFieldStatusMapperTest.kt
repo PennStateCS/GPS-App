@@ -72,7 +72,7 @@ class HomeFieldStatusMapperTest {
             inputs(isInternal = true, rtkStatus = RtkStatus.SINGLE, hAccM = 3.4, vAccM = 5.0, satsUsed = 12)
         )
         assertEquals(State.INTERNAL_GPS, s.state)
-        assertEquals("Internal · GPS · H ±3.40 m", s.primaryDetail) // no V for internal
+        assertEquals("Internal · Single · H ±3.40 m", s.primaryDetail) // no V for internal
         assertEquals("Tablet GNSS receiver", s.receiverDetail)
         // Sats matches the toolbar: visible unknown → "used/used".
         assertEquals(listOf("Sats 12/12", "Device GPS"), chipLabels(s))
@@ -90,7 +90,7 @@ class HomeFieldStatusMapperTest {
         )
         assertEquals(State.HIGH_ACCURACY, s.state)
         assertEquals(Severity.GOOD, s.severity)
-        assertEquals("RS2+ · Fixed · H ±0.02 m · V ±0.04 m", s.primaryDetail)
+        assertEquals("RS2+ · Fix · H ±0.02 m · V ±0.04 m", s.primaryDetail)
         assertEquals("Reach6 · 192.168.2.174:9000", s.receiverDetail)
         assertEquals(listOf("Sats 29/29", "HDOP 0.6", "RTK 1.0s", "Base 1116", "NMEA 12/s"), chipLabels(s))
     }
@@ -238,6 +238,6 @@ class HomeFieldStatusMapperTest {
     @Test
     fun `missing vertical accuracy is omitted from primary detail`() {
         val s = HomeFieldStatusMapper.map(inputs(rtkStatus = RtkStatus.FIX, hAccM = 0.02, vAccM = null, satsUsed = 20))
-        assertEquals("RS2+ · Fixed · H ±0.02 m", s.primaryDetail)
+        assertEquals("RS2+ · Fix · H ±0.02 m", s.primaryDetail)
     }
 }

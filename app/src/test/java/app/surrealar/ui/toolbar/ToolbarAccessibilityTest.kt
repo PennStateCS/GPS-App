@@ -28,7 +28,7 @@ class ToolbarAccessibilityTest {
     @Test fun `live external fix`() {
         val s = live(fix(RtkStatus.FIX, hAcc = 0.015))
         assertEquals("Source: RS2+ receiver", s.sourceDescription)
-        assertEquals("Solution: RTK fixed", s.fixDescription)
+        assertEquals("Solution: RTK fix", s.fixDescription)
         assertEquals("Accuracy plus or minus 1.5 centimetres", s.accuracyDescription)
         assertEquals("Correction age 1.2 seconds", s.ageDescription)
         assertEquals("Satellites 18 used of 24", s.satsDescription)
@@ -45,7 +45,7 @@ class ToolbarAccessibilityTest {
     @Test fun `internal source`() {
         val s = live(fix(RtkStatus.SINGLE, hAcc = 4.0, age = null, provider = Provider.INTERNAL), LocationSourceType.INTERNAL)
         assertEquals("Source: device GNSS", s.sourceDescription)
-        assertEquals("Solution: GPS", s.fixDescription)
+        assertEquals("Solution: single, no corrections", s.fixDescription)
         assertNull(s.ageDescription)
     }
 

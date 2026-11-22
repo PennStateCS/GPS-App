@@ -89,7 +89,7 @@ class GnssToolbarStateMapperTest {
             )
         )
         assertEquals("Internal", s.sourceText)
-        assertEquals("GPS", s.fixText)               // internal collapses FIX → GPS
+        assertEquals("Single", s.fixText)            // internal collapses FIX → Single
         assertEquals("40.796300, -77.857000", s.latLonText)
         assertEquals("±0.02 m", s.accuracyText)
         assertEquals("9/12", s.satelliteText)
@@ -128,7 +128,7 @@ class GnssToolbarStateMapperTest {
     }
 
     // 5 — External active, valid Fixed fix
-    @Test fun `external fixed fix shows Fixed status`() {
+    @Test fun `external fixed fix shows Fix status`() {
         val s = render(
             GnssToolbarStateMapper.map(
                 LocationSourceType.EXTERNAL,
@@ -136,7 +136,7 @@ class GnssToolbarStateMapperTest {
                 SkySnapshot()
             )
         )
-        assertEquals("Fixed", s.fixText)
+        assertEquals("Fix", s.fixText)
         assertEquals("±0.02 m", s.accuracyText)      // 0.015 rounds to 0.02
         assertEquals("40.796300, -77.857000", s.latLonText)
     }
@@ -176,7 +176,7 @@ class GnssToolbarStateMapperTest {
             fix(Provider.EXTERNAL_TCP, RtkStatus.FIX, ageMs = 120_000L),
             SkySnapshot()
         ))
-        assertEquals("Fixed", s.fixText)
+        assertEquals("Fix", s.fixText)
         assertFalse(s.isWaiting)
     }
 
