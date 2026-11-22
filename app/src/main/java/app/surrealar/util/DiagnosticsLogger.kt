@@ -62,9 +62,14 @@ object DiagnosticsLogger {
     private const val MAX_ERROR_BYTES   = 1L * 1024 * 1024   // 1 MB per error file
 
     /** One background writer keeps lines in call order; [lock] guards the files for it and [writeCrashSync]. */
-    private val writer: ExecutorService = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "diag-log").apply { isDaemon = true }
-    }
+    /** Lines waiting for the writer; past this the newest are dropped (and counted) rather than growing memory. */
+    internal const val MAX_QUEUED = 10_000
+    private val dropped = java.util.concurrent.atomic.AtomicInteger(0)
+    private val writer: ExecutorService = java.util.concurrent.ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue(MAX_QUEUED),
+        { r -> Thread(r, "diag-log").apply { isDaemon = true } },
+        { _, _ -> dropped.incrementAndGet() },
+    )
     private val lock = Any()
 
     @Volatile private var logDir: File? = null
@@ -274,8 +279,24 @@ object DiagnosticsLogger {
 
     /** Runs [block] on the writer thread under [lock]. */
     private fun submit(block: () -> Unit) {
-        runCatching { writer.execute { synchronized(lock) { block() } } }
+        runCatching {
+            writer.execute {
+                synchronized(lock) {
+                    // Note a backlog that overflowed, once there is room again.
+                    val lost = dropped.getAndSet(0)
+                    val dir = logDir
+                    if (lost > 0 && dir != null) runCatching {
+                        val note = buildLogLine('W', "APP", "$lost log lines dropped: the log writer fell behind", null).toByteArray(Charsets.UTF_8)
+                        File(dir, CURRENT_FILE).appendBytes(note); currentSize += note.size
+                    }
+                    block()
+                }
+            }
+        }
     }
+
+    /** Tests: lines dropped since the last write. */
+    internal fun droppedCount(): Int = dropped.get()
 
     private fun writeAsync(level: Char, tag: String, message: String, t: Throwable?) {
         val dir = logDir ?: return
