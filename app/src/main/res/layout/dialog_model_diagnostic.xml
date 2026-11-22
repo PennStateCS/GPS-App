@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- AR readiness checklist: verdict chip + summary, one row per check, small "Details" footer. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -13,63 +14,121 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/model_diag_string"
-            android:textSize="25sp"
+            android:text="@string/readiness_title"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="22sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/model_diag_ar_readiness"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:textSize="16sp"
-            tools:text="AR Readiness:" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/readiness_verdict"
+                style="@style/Widget.App.ModelBadge"
+                android:backgroundTint="?attr/colorSurfaceVariant"
+                android:paddingStart="10dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="15sp"
+                tools:text="Ready with warnings" />
+
+            <ProgressBar
+                android:id="@+id/readiness_progress"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <TextView
-            android:id="@+id/model_diag_file_size"
+            android:id="@+id/readiness_summary"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="8dp"
+            android:textColor="?attr/colorOnSurface"
             android:textSize="16sp"
-            tools:text="File size:" />
+            tools:text="Ready with 2 warnings" />
 
         <TextView
-            android:id="@+id/model_diag_dimensions"
+            android:id="@+id/readiness_no_model"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textSize="16sp"
-            tools:text="Model dimensions:" />
+            android:layout_marginTop="8dp"
+            android:text="@string/readiness_no_model"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="14sp"
+            android:visibility="gone" />
 
-        <TextView
-            android:id="@+id/model_diag_origin"
+        <LinearLayout
+            android:id="@+id/readiness_checks"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textSize="16sp"
-            tools:text="Local origin:" />
+            android:layout_marginTop="12dp"
+            android:orientation="vertical" />
 
-        <TextView
-            android:id="@+id/model_diag_origin_offset"
+        <!-- Details: the old diagnostics numbers, kept small at the bottom -->
+        <LinearLayout
+            android:id="@+id/readiness_details"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textSize="16sp"
-            tools:text="Origin offset:" />
+            android:layout_marginTop="16dp"
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <TextView
-            android:id="@+id/model_diag_vertical_placement"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textSize="16sp"
-            tools:text="Vertical placement:" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="?attr/colorOutlineVariant" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/readiness_details"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/model_diag_file_size"
+                style="@style/Widget.App.ReadinessDetail"
+                tools:text="File size:" />
+
+            <TextView
+                android:id="@+id/model_diag_dimensions"
+                style="@style/Widget.App.ReadinessDetail"
+                tools:text="Model dimensions:" />
+
+            <TextView
+                android:id="@+id/model_diag_origin"
+                style="@style/Widget.App.ReadinessDetail"
+                tools:text="Local origin:" />
+
+            <TextView
+                android:id="@+id/model_diag_origin_offset"
+                style="@style/Widget.App.ReadinessDetail"
+                tools:text="Origin offset:" />
+
+            <TextView
+                android:id="@+id/model_diag_vertical_placement"
+                style="@style/Widget.App.ReadinessDetail"
+                tools:text="Vertical placement:" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/model_diag_ok"
+            style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_gravity="end"
+            android:layout_marginTop="12dp"
             android:text="@string/model_diag_close" />
 
     </LinearLayout>

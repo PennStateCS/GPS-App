@@ -23,6 +23,15 @@ import androidx.lifecycle.lifecycleScope
 import app.surrealar.databinding.ActivityModelViewerBinding
 import app.surrealar.R
 import app.surrealar.domain.repository.ModelRepository
+import app.surrealar.ui.models.readiness.Bounds
+import app.surrealar.ui.models.readiness.FixAction
+import app.surrealar.ui.models.readiness.ModelFacts
+import app.surrealar.ui.models.readiness.ModelReadinessRepository
+import app.surrealar.ui.models.readiness.ReadinessCheck
+import app.surrealar.ui.models.readiness.ReadinessHost
+import app.surrealar.ui.models.readiness.ReadinessStyle
+import app.surrealar.ui.models.readiness.ReadinessUiState
+import app.surrealar.ui.openinar.Vec3
 import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
 import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.AndroidEntryPoint
@@ -31,6 +40,11 @@ import com.google.android.filament.*
 import com.google.android.filament.FilamentChannelDepth
 import com.google.android.filament.utils.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -45,9 +59,20 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 @AndroidEntryPoint
-class ModelViewerActivity : AppCompatActivity() {
+class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
     @Inject lateinit var modelRepository: ModelRepository
+    @Inject lateinit var readinessRepository: ModelReadinessRepository
+
+    // AR readiness checklist state (rendered by ModelDiagnosticsDialogFragment).
+    private val _readinessState = MutableStateFlow(ReadinessUiState())
+    override val readinessState: StateFlow<ReadinessUiState> = _readinessState.asStateFlow()
+    private var readinessJob: Job? = null
+    private val modelId: String? by lazy { intent.getStringExtra(EXTRA_MODEL_ID) }
+    /** Filament could not load the file; readiness then reports loadedByRenderer = false. */
+    private var rendererLoadFailed = false
+    /** Open the checklist once the model has loaded (EXTRA_OPEN_READINESS, first launch only). */
+    private var autoOpenReadinessPending = false
 
     private lateinit var binding: ActivityModelViewerBinding
     private lateinit var surfaceView: SurfaceView
@@ -127,6 +152,8 @@ class ModelViewerActivity : AppCompatActivity() {
     companion object {
         private const val EXTRA_MODEL_PATH = "model_path"
         private const val EXTRA_MODEL_NAME = "model_name"
+        private const val EXTRA_MODEL_ID = "model_id"
+        private const val EXTRA_OPEN_READINESS = "open_readiness"
 
         private const val FRAMES_TO_SETTLE = 60
         private const val THUMBNAIL_SIZE = 256
@@ -161,11 +188,23 @@ class ModelViewerActivity : AppCompatActivity() {
 
         private val AUTO_ROTATE_PXLS_PER_FRAME = Math.toRadians(AUTO_ROTATE_DEG_PER_FRAME) / ROTATION_SPEED_PER_PXL_RADIANS
 
-        fun newIntent(context: Context, modelPath: String, modelName: String): Intent {
+        /**
+         * [modelId] lets the readiness checklist include the points linking the model (and apply
+         * placement fixes); [openReadiness] opens the checklist as soon as the model has loaded.
+         */
+        fun newIntent(
+            context: Context,
+            modelPath: String,
+            modelName: String,
+            modelId: String? = null,
+            openReadiness: Boolean = false,
+        ): Intent {
             Utils.init()
             return Intent(context, ModelViewerActivity::class.java).apply {
                 putExtra(EXTRA_MODEL_PATH, modelPath)
                 putExtra(EXTRA_MODEL_NAME, modelName)
+                if (modelId != null) putExtra(EXTRA_MODEL_ID, modelId)
+                putExtra(EXTRA_OPEN_READINESS, openReadiness)
             }
         }
     }
@@ -178,6 +217,9 @@ class ModelViewerActivity : AppCompatActivity() {
         binding = ActivityModelViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
         app.surrealar.ui.common.SystemBarInsets.apply(binding.root, binding.toolbar)   // edge-to-edge
+
+        autoOpenReadinessPending = savedInstanceState == null &&
+            intent.getBooleanExtra(EXTRA_OPEN_READINESS, false)
 
         // Check if the device supports Filament for 3D rendering; if not, show an error message and skip setup.
         if (!supportsFilamentViewer()) {
@@ -385,6 +427,9 @@ class ModelViewerActivity : AppCompatActivity() {
             viewerReadyAtMs = SystemClock.uptimeMillis()
             newModelViewer = viewer
             modelReadyForThumbnail = true
+
+            // Evaluate readiness with the rendered bounds (also feeds the AR placement overlay).
+            onViewerSettled()
         }
 
         return true
@@ -1055,6 +1100,112 @@ class ModelViewerActivity : AppCompatActivity() {
         binding.textLoading.visibility = View.GONE
         binding.loadingOverlay.visibility = View.GONE
         binding.textError.visibility = View.VISIBLE
+
+        // The checklist can still explain why (file facts only, loadedByRenderer = false).
+        rendererLoadFailed = true
+        onViewerSettled()
+    }
+
+    // ── AR readiness ──────────────────────────────────────────────────────────
+
+    /** The model loaded (or failed to): evaluate readiness and honour EXTRA_OPEN_READINESS. */
+    private fun onViewerSettled() {
+        refreshReadiness()
+        if (autoOpenReadinessPending) {
+            autoOpenReadinessPending = false
+            showReadinessDialog()
+        }
+    }
+
+    private fun showReadinessDialog() {
+        if (supportFragmentManager.isStateSaved) return
+        if (supportFragmentManager.findFragmentByTag(ModelDiagnosticsDialogFragment.TAG) != null) return
+        try {
+            ModelDiagnosticsDialogFragment.newInstance()
+                .show(supportFragmentManager, ModelDiagnosticsDialogFragment.TAG)
+        } catch (e: Exception) {
+            Log.e("ModelViewerActivity", "Failed to show readiness dialog", e)
+        }
+    }
+
+    /** Filament's asset box (center ± half-extent) as model-local [Bounds]. */
+    private fun Box.toReadinessBounds(): Bounds {
+        val c = center
+        val h = halfExtent
+        return Bounds(
+            Vec3(c[0] - abs(h[0]), c[1] - abs(h[1]), c[2] - abs(h[2])),
+            Vec3(c[0] + abs(h[0]), c[1] + abs(h[1]), c[2] + abs(h[2])),
+        )
+    }
+
+    /** Re-reads facts (links, file, rendered bounds) and re-evaluates; the dialog follows the state. */
+    private fun refreshReadiness() {
+        val path = intent.getStringExtra(EXTRA_MODEL_PATH) ?: return
+        val name = intent.getStringExtra(EXTRA_MODEL_NAME) ?: "3D Model"
+        val box = newModelViewer?.asset?.boundingBox
+        val bounds = box?.toReadinessBounds()
+        val loaded: Boolean? = when {
+            box != null -> true
+            rendererLoadFailed -> false
+            else -> null
+        }
+        val details = box?.let { computeModelDiagnostics(it) }
+        val id = modelId
+
+        _readinessState.update { it.copy(loading = true) }
+        readinessJob?.cancel()
+        readinessJob = lifecycleScope.launch {
+            var facts: ModelFacts? = null
+            val report = runCatching {
+                val f = id?.let { readinessRepository.facts(it, bounds, loaded) }
+                    ?: readinessRepository.factsForFile(path, name, bounds, loaded)
+                facts = f
+                withContext(Dispatchers.Default) { readinessRepository.evaluate(f) }
+            }.onFailure {
+                Log.w("ModelViewerActivity", "Readiness evaluation failed", it)
+            }.getOrNull()
+            val f = facts
+            _readinessState.value = ReadinessUiState(
+                loading = false,
+                report = report,
+                details = details,
+                hasModel = f != null && f.modelId.isNotEmpty(),
+                applying = false,
+            )
+            onReadinessFacts(f)
+        }
+    }
+
+    /** Hook for views that depend on the latest facts (the AR placement overlay). */
+    private fun onReadinessFacts(facts: ModelFacts?) {
+        // Filled in by the AR placement overlay.
+    }
+
+    override fun onReadinessFix(check: ReadinessCheck) {
+        if (check.fixAction == FixAction.LINK_POINT) {
+            Toast.makeText(this, R.string.readiness_link_point_hint, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (_readinessState.value.applying) return
+        _readinessState.update { it.copy(applying = true) }
+        lifecycleScope.launch {
+            val names = runCatching { readinessRepository.applyFix(modelId, check) }
+                .onFailure { Log.w("ModelViewerActivity", "Readiness fix failed", it) }
+                .getOrNull()
+            _readinessState.update { it.copy(applying = false) }
+            when {
+                names == null ->
+                    Toast.makeText(this@ModelViewerActivity, R.string.readiness_fix_failed, Toast.LENGTH_SHORT).show()
+                else -> {
+                    Toast.makeText(this@ModelViewerActivity, ReadinessStyle.fixAppliedMessage(names), Toast.LENGTH_SHORT).show()
+                    if (names.isNotEmpty()) {
+                        DiagnosticsLogger.i("MODEL", "MODEL_READINESS_FIX check=${check.id} " +
+                            "action=${check.fixAction} points=${names.size}")
+                        refreshReadiness()
+                    }
+                }
+            }
+        }
     }
 
     // ── Manual capture (user taps button) ────────────────────────────────────
@@ -1392,19 +1543,13 @@ class ModelViewerActivity : AppCompatActivity() {
     }
 
     private fun clickedModelDiagnosticsButton() {
-        val asset = newModelViewer?.asset
-        if (asset == null) {
+        // Still loading: wait (a failed load still opens the checklist, which explains why).
+        if (newModelViewer?.asset == null && !rendererLoadFailed) {
             Toast.makeText(this, R.string.model_diag_not_ready, Toast.LENGTH_SHORT).show()
             return
         }
-
-        val diagnostics = computeModelDiagnostics(asset.boundingBox)
-
-        try {
-            ModelDiagnosticsDialogFragment.newInstance(diagnostics).show(supportFragmentManager, "ModelDiagnosticsDialog")
-        } catch (e: Exception) {
-            Log.e("ModelViewerActivity", "Failed to show diagnostics dialog", e)
-        }
+        showReadinessDialog()
+        refreshReadiness()
     }
 
     private fun computeModelDiagnostics(box: Box): ModelDiagnostics {

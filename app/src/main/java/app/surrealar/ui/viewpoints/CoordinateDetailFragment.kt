@@ -1141,7 +1141,7 @@ class CoordinateDetailFragment : Fragment() {
 
     private fun openModelViewer(model: Model) {
         try {
-            startActivity(ModelViewerActivity.newIntent(requireContext(), model.filePath, model.name))
+            startActivity(ModelViewerActivity.newIntent(requireContext(), model.filePath, model.name, modelId = model.id))
         } catch (e: Exception) {
             Log.w("CoordinateDetailFragment", "openModelViewer failed", e)
             showSnackbar("Unable to open model")

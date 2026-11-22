@@ -142,7 +142,8 @@ class ModelsFragment : Fragment() {
                 val intent = ModelViewerActivity.newIntent(
                     requireContext(),
                     model.filePath,
-                    model.name
+                    model.name,
+                    modelId = model.id
                 )
                 startActivity(intent)
             }
