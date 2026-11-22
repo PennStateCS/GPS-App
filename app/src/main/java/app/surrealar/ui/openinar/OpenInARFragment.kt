@@ -1322,6 +1322,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             depthEnabled = depthRequested
             DiagnosticsLogger.i(DIAG, "AR session configured successfully (geospatial=$geoEnabled, " +
                 "depth=$depthRequested depthSupported=$depthSupported focus=FIXED)")
+            // What ARCore actually holds (read back), not what we asked for — wall detection check.
+            runCatching {
+                val eff = ses.config
+                DiagnosticsLogger.i(DIAG, "AR_CONFIG_EFFECTIVE planeFinding=${eff.planeFindingMode} " +
+                    "focus=${eff.focusMode} depth=${eff.depthMode} light=${eff.lightEstimationMode} " +
+                    "geospatial=${eff.geospatialMode} instantPlacement=${eff.instantPlacementMode} " +
+                    "update=${eff.updateMode}")
+            }
             logCameraConfigs(ses)
             // The occlusion toggle is only offered on devices with ARCore depth.
             val offerOcclusion = depthSupported

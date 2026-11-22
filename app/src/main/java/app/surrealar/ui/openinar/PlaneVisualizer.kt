@@ -72,7 +72,18 @@ internal class PlaneVisualizer {
         recycleEntries()
         var floors = 0; var walls = 0; var ceilings = 0; var small = 0; var faded = 0
         var nearestWallM = Float.POSITIVE_INFINITY
-        for (plane in session.getAllTrackables(Plane::class.java)) {
+        // Raw tallies over ALL planes (any state) to tell "ARCore never made a wall" from "we filtered it".
+        var rawVertical = 0; var rawVerticalTracking = 0; var rawSubsumed = 0; var rawNotTracking = 0
+        val all = session.getAllTrackables(Plane::class.java)
+        for (plane in all) {
+            if (plane.type == Plane.Type.VERTICAL) {
+                rawVertical++
+                if (plane.trackingState == TrackingState.TRACKING) rawVerticalTracking++
+            }
+            if (plane.subsumedBy != null) rawSubsumed++
+            if (plane.trackingState != TrackingState.TRACKING) rawNotTracking++
+        }
+        for (plane in all) {
             if (plane.trackingState != TrackingState.TRACKING || plane.subsumedBy != null) continue
             val kind = kindOf(plane)
             when (kind) { PlaneFill.Kind.FLOOR -> floors++; PlaneFill.Kind.WALL -> walls++; PlaneFill.Kind.CEILING -> ceilings++ }
@@ -99,6 +110,8 @@ internal class PlaneVisualizer {
             app.surrealar.util.DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
                 "AR_PLANES floors=$floors walls=$walls ceilings=$ceilings drawn=${entries.size} " +
                     "hiddenSmall=$small hiddenFar=$faded " +
+                    "raw=${all.size} rawVertical=$rawVertical rawVerticalTracking=$rawVerticalTracking " +
+                    "rawSubsumed=$rawSubsumed rawNotTracking=$rawNotTracking " +
                     "nearestWallM=${if (nearestWallM.isFinite()) "%.1f".format(nearestWallM) else "n/a"}")
         }
         if (entries.isEmpty()) return 0
