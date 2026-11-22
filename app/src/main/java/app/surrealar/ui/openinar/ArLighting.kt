@@ -27,8 +27,9 @@ object ArLighting {
     /** Floor on the ambient DC term, so no face can go black even in a dark estimate. */
     const val MIN_AMBIENT_DC = 0.35f
     /** Lux per unit of ARCore's main-light intensity (largest channel), clamped below. */
-    // 60k pinned at SUN_LUX_MAX the whole backyard test (2026-11-22): ARCore reported > 1.8 units.
-    const val SUN_LUX_PER_UNIT = 30_000f
+    // Backyard tests 2026-11-22: ARCore's raw main-light intensity ran 2–7 in sun (60k and 30k both sat
+    // at SUN_LUX_MAX). 15k maps that range to ~30k–105k so the sun actually varies.
+    const val SUN_LUX_PER_UNIT = 15_000f
     const val SUN_LUX_MIN = 15_000f
     const val SUN_LUX_MAX = 110_000f
     /** Exponential smoothing per update (0..1; higher = faster). Updates arrive ~5×/s. */

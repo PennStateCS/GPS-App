@@ -173,6 +173,10 @@ internal class DepthOcclusionSampler {
                 frame.acquireDepthImage16Bits()
             } catch (_: NotYetAvailableException) {
                 return last
+            } catch (_: IllegalStateException) {
+                // Depth was just switched on (Occlude toggle → session reconfigure): the first frame or
+                // two can still come from the depth-off config. Not an error — wait for the next frame.
+                return last
             }
             image.use { img ->
                 val ts = img.timestamp
