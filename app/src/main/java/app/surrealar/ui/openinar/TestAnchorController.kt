@@ -350,8 +350,7 @@ class TestAnchorController(private val context: Context) {
         }
         DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
             "Test grid spawned: $created/$total ${activeMode} anchors spacing=${GRID_SPACING_M}m " +
-            "at ${"%.6f".format(lat0)}, ${"%.6f".format(lon0)} " +
-            "altM=${storedAlt?.let { "%.2f".format(it) } ?: "terrain"} altSource=$altSource")
+            "altSource=$altSource")   // no coordinates or heights in the diagnostic log
     }
 
     private fun clearGrid() {

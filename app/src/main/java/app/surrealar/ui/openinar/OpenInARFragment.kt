@@ -1383,8 +1383,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             "replacedPrevious=$replacedPrevious items=${geoItems.size} " +
             "selectedSource=${selectedLocationSource ?: "unknown"} " +
             "fixProvider=${gnssFix.provider} fixAgeMs=$fixAgeMs " +
-            "fixLat=${"%.7f".format(gnssFix.latDeg)} fixLon=${"%.7f".format(gnssFix.lonDeg)} " +
-            "fixAltM=${gnssFix.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
+            // No coordinates or absolute heights in the diagnostic log (project rule); accuracies only.
             "fixHAccM=${gnssFix.hAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
             "fixVAccM=${gnssFix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${gnssFix.rtkStatus} " +
             "gnssGateAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
@@ -1392,9 +1391,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             "mockInjectionActive=${MockInjectionStatus.providerActive} " +
             "lastMockFixProvider=${MockInjectionStatus.lastSourceFixProvider ?: "n/a"} " +
             "lastMockFixAgeMs=${MockInjectionStatus.lastSourceFixAgeMs()?.toString() ?: "n/a"} " +
-            "earthLat=${camAccPose?.latitude?.let { "%.7f".format(it) } ?: "unknown"} " +
-            "earthLon=${camAccPose?.longitude?.let { "%.7f".format(it) } ?: "unknown"} " +
-            "earthAltM=${camAccPose?.altitude?.let { "%.2f".format(it) } ?: "unknown"} " +
             "earthHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "unknown"} " +
             "earthVAccM=${earthVAcc?.let { "%.2f".format(it) } ?: "unknown"} " +
             "earthYawAccDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.2f".format(it) } ?: "unknown"} " +
@@ -1407,8 +1403,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val dM  = Geodesic.distanceM(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
             val brg = Geodesic.initialBearingDeg(gnssFix.latDeg, gnssFix.lonDeg, c.latitude, c.longitude)
             DiagnosticsLogger.i(DIAG, "  anchor input coordId=${c.id} name=\"${c.name}\" " +
-                "lat=${"%.7f".format(c.latitude)} lon=${"%.7f".format(c.longitude)} " +
-                "altM=${if (c.altitude.isFinite()) "%.2f".format(c.altitude) else "unknown"} " +
+                "hasAltitude=${c.altitude.isFinite()} " +
                 "distFromFixM=${"%.1f".format(dM)} bearingDeg=${"%.0f".format(brg)} " +
                 "hasModel=${item.modelFilePath != null}")
         }
@@ -1524,9 +1519,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             "selectedSource=${selectedLocationSource ?: "unknown"} " +
             "activeFixProvider=${fix?.provider?.name ?: "none"} " +
             "fixAgeMs=${fixAgeMs?.toString() ?: "n/a"} " +
-            "fixLat=${fix?.let { "%.7f".format(it.latDeg) } ?: "n/a"} " +
-            "fixLon=${fix?.let { "%.7f".format(it.lonDeg) } ?: "n/a"} " +
-            "fixAltM=${fix?.altEllipsoidalM?.let { "%.2f".format(it) } ?: "unknown"} " +
             "fixHAccM=${fix?.hAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
             "fixVAccM=${fix?.vAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
             "rtk=${fix?.rtkStatus?.name ?: "n/a"} " +

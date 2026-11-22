@@ -235,8 +235,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                             }
                             if (!loggedFirstMapFix) {
                                 loggedFirstMapFix = true
-                                DiagnosticsLogger.i("MAP", "First current-source fix applied to map" +
-                                    " provider=${fix.provider} lat=%.6f lon=%.6f".format(fix.latDeg, fix.lonDeg))
+                                // No coordinates in the diagnostic log (project rule).
+                                DiagnosticsLogger.i("MAP", "First current-source fix applied to map provider=${fix.provider}")
                             }
                             updateMapLocation(fix)
                         }
