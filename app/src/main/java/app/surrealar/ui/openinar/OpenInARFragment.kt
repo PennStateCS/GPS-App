@@ -1652,7 +1652,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     else -> 0
                 }
                 planeCount = when {
-                    arDebugToolsEnabled && arShowPlanes -> planeVisualizer?.drawAllPlanes(s, vp) ?: 0
+                    arDebugToolsEnabled && arShowPlanes -> camera.pose.let { cp ->
+                        planeVisualizer?.drawAllPlanes(s, vp, cp.tx(), cp.ty(), cp.tz()) ?: 0
+                    }
                     debugOverlayVisible -> PlaneVisualizer.count(s)
                     else -> 0
                 }
