@@ -321,15 +321,34 @@ class AndroidMockLocationPublisher(
                     " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus} " +
                     "injections=${MockInjectionStatus.injectionCount}")
             }
+            injectFailureLog.reset()
         } catch (e: SecurityException) {
-            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION injection blocked — app not selected as mock " +
-                "location app: ${e.javaClass.simpleName}: ${e.message}", e)
+            logInjectFailure("not_permitted", e) {
+                "MOCK_LOCATION injection blocked — app not selected as mock location app: " +
+                    "${e.javaClass.simpleName}: ${e.message}"
+            }
             MockInjectionStatus.providerActive = false
             _errorEvents.tryEmit(MockLocationError.NOT_PERMITTED)
         } catch (e: IllegalArgumentException) {
-            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION test provider configuration error: " +
-                "${e.javaClass.simpleName}: ${e.message}", e)
+            logInjectFailure("provider_error", e) {
+                "MOCK_LOCATION test provider configuration error: ${e.javaClass.simpleName}: ${e.message}"
+            }
             _errorEvents.tryEmit(MockLocationError.PROVIDER_ERROR)
+        }
+    }
+
+    /*
+     * These failures repeat on every fix while AR keeps publishing enabled. Log the first one with its
+     * stack trace, then at most once per minute without it.
+     */
+    private val injectFailureLog = FailureLogThrottle(INJECT_FAILURE_LOG_INTERVAL_MS)
+
+    private inline fun logInjectFailure(kind: String, e: Throwable, message: () -> String) {
+        when (injectFailureLog.decide(kind)) {
+            FailureLogThrottle.Mode.FULL -> DiagnosticsLogger.w(DIAG, message(), e)
+            FailureLogThrottle.Mode.BRIEF ->
+                DiagnosticsLogger.w(DIAG, message() + " (still failing; repeats suppressed 60 s)")
+            FailureLogThrottle.Mode.NONE -> Unit
         }
     }
 
@@ -424,6 +443,8 @@ class AndroidMockLocationPublisher(
         private const val DIAG = "GNSS"
         /** Minimum spacing between per-injection export logs (status still updates every fix). */
         private const val INJECT_LOG_INTERVAL_MS = 3_000L
+        /** Repeated injection failures are logged at most this often after the first. */
+        private const val INJECT_FAILURE_LOG_INTERVAL_MS = 60_000L
         /** Fix ages beyond this (or negative = device clock ahead) are treated as clock skew, not latency. */
         internal const val MAX_TRUSTED_FIX_AGE_MS = 1_000L
 
