@@ -65,8 +65,6 @@ class ModelReadinessRepository internal constructor(
             gltf = gltfFacts(file),
             renderedBounds = renderedBounds,
             loadedByRenderer = loadedByRenderer,
-            embeddedLatDeg = null,
-            embeddedLonDeg = null,
             isValid = true,
             validationErrors = emptyList(),
             units = null,
@@ -135,8 +133,6 @@ class ModelReadinessRepository internal constructor(
         gltf = gltfFacts(File(model.filePath)),
         renderedBounds = renderedBounds,
         loadedByRenderer = loadedByRenderer,
-        embeddedLatDeg = model.embeddedLatitude,
-        embeddedLonDeg = model.embeddedLongitude,
         isValid = model.isValid,
         validationErrors = model.validationErrors,
         units = model.units,
@@ -169,8 +165,6 @@ class ModelReadinessRepository internal constructor(
             originOffsetXM = modelOriginOffsetXM,
             originOffsetYM = modelOriginOffsetYM,
             originOffsetZM = modelOriginOffsetZM,
-            latDeg = latitude,
-            lonDeg = longitude,
         )
     }
 }

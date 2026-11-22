@@ -40,12 +40,10 @@ class ModelReadinessEvaluatorTest {
         scale: Double? = null,
         verticalOffset: Double? = null,
         pitch: Double? = null,
-        lat: Double = 40.123456,
-        lon: Double = -75.654321,
     ) = LinkFacts(
         coordinateId = id, coordinateName = name, placementOrigin = origin, scale = scale, yawDeg = null,
         pitchDeg = pitch, rollDeg = null, verticalOffsetM = verticalOffset, originOffsetXM = null, originOffsetYM = null,
-        originOffsetZM = null, latDeg = lat, lonDeg = lon,
+        originOffsetZM = null,
     )
 
     private fun facts(
@@ -54,12 +52,10 @@ class ModelReadinessEvaluatorTest {
         loaded: Boolean? = null,
         isValid: Boolean = true,
         errors: List<String> = emptyList(),
-        embeddedLat: Double? = null,
-        embeddedLon: Double? = null,
         defaultScale: Double? = null,
     ) = ModelFacts(
         modelId = "m1", modelName = "Cube", fileName = "cube.glb", gltf = gltf, loadedByRenderer = loaded,
-        embeddedLatDeg = embeddedLat, embeddedLonDeg = embeddedLon, isValid = isValid, validationErrors = errors,
+        isValid = isValid, validationErrors = errors,
         units = "m", defaultScale = defaultScale, links = links,
     )
 
@@ -86,7 +82,6 @@ class ModelReadinessEvaluatorTest {
         assertTrue(r.all("validation").isEmpty())
         assertTrue(r.all("origin").isEmpty())
         assertTrue(r.all("upAxis").isEmpty())
-        assertTrue(r.all("georeference").isEmpty())
     }
 
     // ------------------------------------------------------------ 1. load / 2. validation
@@ -297,17 +292,11 @@ class ModelReadinessEvaluatorTest {
         assertTrue(r.checks.none { it.detail.contains("captured") || it.title.contains("accuracy", ignoreCase = true) })
     }
 
-    // ------------------------------------------------------------ 11. georeference
-
     @Test
-    fun `embedded location is compared with the linked point`() {
-        // 0.001° of latitude ≈ 111 m.
-        val far = eval(facts(embeddedLat = 40.124456, embeddedLon = -75.654321)).one("georeference")
-        assertEquals(CheckStatus.WARN, far.status)
-        assertTrue(far.detail, Regex("^Its embedded location is 11\\d\\.\\d m from ‘Corner’\\.$").matches(far.detail))
-        val near = eval(facts(embeddedLat = 40.123459, embeddedLon = -75.654321)).one("georeference")
-        assertEquals(CheckStatus.PASS, near.status)
-        assertEquals("Its embedded location matches ‘Corner’ (within 1.00 m).", near.detail)
+    fun `embedded location is not compared with linked points`() {
+        // A model can be linked to several points; where each point is belongs to the point.
+        val r = eval(facts(links = listOf(link(id = "a", name = "North gate"), link(id = "b", name = "South gate"))))
+        assertTrue(r.checks.none { it.id == "georeference" || it.detail.contains("embedded", ignoreCase = true) })
     }
 
     // ------------------------------------------------------------ verdict, summary, ordering, privacy
@@ -331,13 +320,12 @@ class ModelReadinessEvaluatorTest {
     fun `no message contains a latitude or longitude`() {
         val links = listOf(
             link(origin = null),
-            link(id = "c2", name = "Gate 40.123456", origin = "ORIGIN", lat = 40.2, lon = -75.7),
+            link(id = "c2", name = "Gate 40.123456", origin = "ORIGIN"),
         )
         val r = eval(
             facts(
                 gltf(bounds = box(20.0, 0.5, 10.0, cx = 60.0), tris = 5000, missing = listOf("tile_40.123456.bin")),
                 links = links, isValid = false, errors = listOf("Bad location 40.123456, -75.654321"),
-                embeddedLat = 40.5, embeddedLon = -75.9,
             ),
         )
         val text = r.checks.flatMap { listOfNotNull(it.title, it.detail, it.fix) } + r.summary
