@@ -18,7 +18,7 @@ object NavLogger : NavController.OnDestinationChangedListener {
             ?: "id_$id"
 
     fun line(screen: String, argNames: Collection<String>): String =
-        "Screen $screen" + if (argNames.isEmpty()) "" else " args=[${argNames.sorted().joinToString(",")}]"
+        "Screen opened screen=$screen" + if (argNames.isEmpty()) "" else " args=[${argNames.sorted().joinToString(",")}]"
 
     /**
      * Identity of a visit: the screen plus its back-stack entry id. A recreated Activity re-adds the

@@ -20,13 +20,14 @@ object HeadingDiagnostics {
 
     fun onSource(source: String) {
         lastSource = source
-        DiagnosticsLogger.logOnChange(DiagTags.AR, "heading.source", source) { "Heading source: $source" }
+        DiagnosticsLogger.logOnChange(DiagTags.AR, "heading.source", source) { "Heading source changed source=\"$source\"" }
     }
 
     fun onCompassAccuracy(accuracy: Int) {
         val unreliable = accuracy <= 0
         DiagnosticsLogger.logOnChange(DiagTags.AR, "heading.accuracy", accuracy, if (unreliable) 'W' else 'I') {
-            "Compass accuracy ${accuracyName(accuracy)}" + if (unreliable) " (move the device in a figure-8 to calibrate)" else ""
+            if (unreliable) "Compass accuracy unreliable: move the device in a figure-8 to calibrate accuracy=${accuracyName(accuracy)}"
+            else "Compass accuracy changed accuracy=${accuracyName(accuracy)}"
         }
     }
 

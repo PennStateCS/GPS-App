@@ -305,7 +305,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         // Load the model viewer surface view
         if (!setupModelViewer())
         {
-            DiagnosticsLogger.e("MODEL", "viewer setup failed — model file missing or no path")
+            DiagnosticsLogger.e("MODEL", "Model viewer setup failed: model file missing or no path")
             showLoadFailure()
             return
         }
@@ -350,7 +350,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
             if (modelBuffer == null) {
                 // loadFile already logged why (with the exception); this records which file.
-                DiagnosticsLogger.e("MODEL", "viewer could not read model file=${modelFile.name}")
+                DiagnosticsLogger.e("MODEL", "Model viewer file read failed file=${modelFile.name}")
                 showLoadFailure()
                 return@launch
             }
@@ -463,7 +463,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             GltfResources.externalResourceUris(modelFile.readText())
                 .associateWith { uri -> resolveGltfResource(baseDir, uri) }
         } catch (t: Throwable) {
-            DiagnosticsLogger.w("MODEL", "viewer: glTF resources not pre-read file=${modelFile.name} — loading on demand", t)
+            DiagnosticsLogger.w("MODEL", "Model viewer glTF resource pre-read failed: loading on demand file=${modelFile.name}", t)
             emptyMap()
         }
     }
@@ -489,7 +489,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }
             true
         } catch (e: Throwable) {
-            DiagnosticsLogger.e("MODEL", "viewer load failed file=${modelFile.name}: ${e.javaClass.simpleName} ${e.message}", e)
+            DiagnosticsLogger.e("MODEL", "Model viewer load failed file=${modelFile.name}", e)
             false
         }
     }
@@ -508,7 +508,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }
             loadFile(candidate.absolutePath) ?: ByteBuffer.allocateDirect(0)
         } catch (e: Exception) {
-            DiagnosticsLogger.w("MODEL", "viewer: glTF resource unreadable: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w("MODEL", "Model viewer glTF resource read failed", e)
             ByteBuffer.allocateDirect(0)
         }
     }
@@ -566,7 +566,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             orbitManipulator = manipulator
 
         } catch (t: Throwable) {
-            DiagnosticsLogger.e("MODEL", "viewer: orbit manipulator install failed — camera gestures unavailable", t)
+            DiagnosticsLogger.e("MODEL", "Model viewer orbit manipulator install failed: camera gestures unavailable", t)
         }
 
         if (isThumbnailFraming) {
@@ -602,7 +602,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             FilamentChannelDepth.setChannelDepthClearEnabled(viewer.view, OVERLAY_CHANNEL, enabled)
             enabled
         } catch (t: Throwable) {
-            DiagnosticsLogger.w("MODEL", "viewer: overlay depth clear unavailable — overlays not drawn on top", t)
+            DiagnosticsLogger.w("MODEL", "Model viewer overlay depth clear unavailable: overlays not drawn on top", t)
             false
         }
 
@@ -1145,7 +1145,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         } catch (t: Throwable) {
             presenceProbeInFlight = false
             DiagnosticsLogger.every("MODEL", "viewer.revealProbe.threw", 60_000L, 'W', throwable = t) {
-                "viewer reveal probe threw (attempt=$presenceProbeAttempts)"
+                "Model viewer reveal probe failed attempt=$presenceProbeAttempts"
             }
             if (presenceProbeAttempts >= PRESENCE_MAX_PROBES) {
                 revealModel("PixelCopy kept throwing")
@@ -1232,7 +1232,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             ModelDiagnosticsDialogFragment.newInstance()
                 .show(supportFragmentManager, ModelDiagnosticsDialogFragment.TAG)
         } catch (e: Exception) {
-            DiagnosticsLogger.w("MODEL", "viewer: readiness dialog not shown: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w("MODEL", "Model viewer readiness dialog failed to show", e)
         }
     }
 
@@ -1271,7 +1271,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 withContext(Dispatchers.Default) { readinessRepository.evaluate(f) }
             }.onFailure {
                 if (it is kotlinx.coroutines.CancellationException) throw it
-                DiagnosticsLogger.w("MODEL", "viewer: readiness evaluation failed: ${it.javaClass.simpleName}", it)
+                DiagnosticsLogger.w("MODEL", "Model viewer readiness evaluation failed", it)
             }.getOrNull()
             val f = facts
             _readinessState.value = ReadinessUiState(
@@ -1292,7 +1292,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             runCatching { withContext(Dispatchers.IO) { modelRepository.getModelById(id) } }
                 .onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it
-                    DiagnosticsLogger.w("MODEL", "viewer: model lookup failed id=$id — AR placement preview skipped", it)
+                    DiagnosticsLogger.w("MODEL", "Model viewer model lookup failed: AR placement preview skipped id=$id", it)
                 }
                 .getOrNull()
         } else {
@@ -1312,7 +1312,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             val names = runCatching { readinessRepository.applyFix(modelId, check) }
                 .onFailure {
                     if (it is kotlinx.coroutines.CancellationException) throw it
-                    DiagnosticsLogger.w("MODEL", "MODEL_READINESS_FIX failed check=${check.id}: ${it.javaClass.simpleName}", it)
+                    DiagnosticsLogger.w("MODEL", "MODEL_READINESS_FIX check=${check.id} result=failed", it)
                 }
                 .getOrNull()
             _readinessState.update { it.copy(applying = false) }
@@ -1361,11 +1361,11 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 val modelFileName = intent.getStringExtra(EXTRA_MODEL_PATH)
                     ?.substringAfterLast('/')?.substringAfterLast('\\') ?: "model"
 
-                DiagnosticsLogger.w("MODEL", "viewer thumbnail capture failed after $CAPTURE_MAX_ATTEMPTS attempts " +
-                    "file=$modelFileName — falling back to off-screen capture")
+                DiagnosticsLogger.w("MODEL", "Model viewer thumbnail capture failed: falling back to off-screen capture " +
+                    "attempts=$CAPTURE_MAX_ATTEMPTS file=$modelFileName")
                 ThumbnailCaptureActivity.start(this, modelPath, modelName, modelFileName)
             } catch (e: Exception) {
-                DiagnosticsLogger.e("MODEL", "viewer: off-screen thumbnail capture could not start: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.e("MODEL", "Model viewer off-screen thumbnail capture start failed", e)
 
                 binding.btnCaptureThumbnail.isEnabled = true
                 binding.btnCaptureThumbnail.setImageResource(R.drawable.ic_camera_white)
@@ -1404,7 +1404,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                     processCapturedBitmap(bmp, attempt, finishAfter)
                 }, Handler(Looper.getMainLooper()))
             } catch (t: Throwable) {
-                DiagnosticsLogger.w("MODEL", "viewer thumbnail: PixelCopy threw on attempt=$attempt; retrying", t)
+                DiagnosticsLogger.w("MODEL", "Model viewer thumbnail PixelCopy failed (will retry) attempt=$attempt", t)
                 bmp.recycle()
                 tryCaptureThumbnail(attempt + 1, finishAfter)
             }
@@ -1489,7 +1489,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e("MODEL", "viewer: thumbnail DB update failed", e)
+                    DiagnosticsLogger.e("MODEL", "Model viewer thumbnail record update failed", e)
                 }
 
                 withContext(Dispatchers.Main) {
@@ -1508,7 +1508,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.e("MODEL", "viewer: thumbnail save failed: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.e("MODEL", "Model viewer thumbnail save failed", e)
                 thumbnailCaptureScheduled = false
             }
         }
@@ -1527,8 +1527,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         return try {
             ModelFileIo.readToDirectBuffer(file)
         } catch (t: Throwable) {
-            DiagnosticsLogger.e("MODEL", "viewer read failed sizeBytes=${file.length()}: " +
-                "${t.javaClass.simpleName} ${t.message}", t)
+            DiagnosticsLogger.e("MODEL", "Model viewer file read failed sizeBytes=${file.length()}", t)
             null
         }
     }
@@ -1540,7 +1539,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             buffer.put(bytes); buffer.rewind()
             buffer
         } catch (e: Exception) {
-            DiagnosticsLogger.w("MODEL", "viewer asset unreadable asset=$filePath — viewer continues without it", e)
+            DiagnosticsLogger.w("MODEL", "Model viewer asset read failed: viewer continues without it asset=$filePath", e)
             null
         }
     }
@@ -1930,30 +1929,15 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             viewer.destroyModel()
             DevLog.d(VIEWER_TAG) { "onDestroy: destroyModel OK" }
         } catch (t: Throwable) {
-            DiagnosticsLogger.w("MODEL", "viewer teardown: destroyModel threw", t)
+            DiagnosticsLogger.w("MODEL", "Model viewer teardown failed: model destroy error", t)
         }
 
-        // WHY DEFERRED:
-        // When the surface is destroyed (between onPause and onStop), Filament's UiHelper
-        // calls onDetachedFromSurface() which calls displayHelper.detach(). The DisplayHelper
-        // posts a message to the main thread for final renderer cleanup. That message fires
-        // ~5ms after onDestroy() returns — AFTER engine.destroy() if we called it here.
-        // engine.destroy() calls Engine::shutdown(), so the deferred message then calls
-        // flushAndWait() on a dead engine → SIGABRT.
-        //
-        // FIX: post engine.destroy() to the END of the main thread queue. Any messages
-        // queued by Filament's displayHelper.detach() will process first (while the engine
-        // is alive), then our destroy runs safely after them.
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                viewer.engine.flushAndWait()   // drain any remaining GPU commands
-                viewer.engine.destroy()
-                DevLog.d(VIEWER_TAG) { "deferred: flushAndWait + engine.destroy OK" }
-            } catch (t: Throwable) {
-                DiagnosticsLogger.w("MODEL", "viewer teardown: Filament engine destroy threw", t)
-            }
-        }, 250)
-
-        DevLog.d(VIEWER_TAG) { "onDestroy: returning — engine.destroy() deferred 250ms" }
+        // The engine itself is NOT destroyed here. ModelViewer(surfaceView) registers a detach
+        // listener on the SurfaceView, and when the view leaves the window (right after onDestroy)
+        // it runs ModelViewer.destroy(): UiHelper.detach(), its own renderer/view/scene/camera,
+        // then engine.destroy(). Destroying the engine here too (we used to, 250 ms later) was a
+        // second destroy and threw "Calling method on destroyed Engine". Everything WE created on
+        // that engine is released above, while it is still alive.
+        DevLog.d(VIEWER_TAG) { "onDestroy: own resources released; ModelViewer destroys the engine on view detach" }
     }
 }

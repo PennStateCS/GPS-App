@@ -86,7 +86,7 @@ internal class ReachCorrectionsService(
         }
         // Never leave an old socket reconnecting in the background (it would retry forever).
         closeSocket()
-        if (changeLink("connecting")) GnssLog.diagnostic("CORRECTIONS", "connect attempt host=$host")
+        if (changeLink("connecting")) GnssLog.diagnostic("CORRECTIONS", "Corrections connecting host=$host")
         try {
             val options = IO.Options().apply {
                 // Own Manager per socket: socket.io 1.x caches Managers by URL otherwise, and a closed
@@ -107,15 +107,15 @@ internal class ReachCorrectionsService(
                 lastActivityAtMs = nowMs()
                 val failed = synchronized(lock) { dataSinceConnect = false; connectErrors }
                 if (changeLink("connected")) {
-                    GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host" +
-                        if (failed > 0) " after $failed failed attempts" else "")
+                    GnssLog.diagnostic("CORRECTIONS", "Corrections connected host=$host" +
+                        if (failed > 0) " failedAttempts=$failed" else "")
                 } else {
                     GnssLog.d(TAG) { "socket.io connected again to $host (not logged: link state unchanged)" }
                 }
             }
             s.on(Socket.EVENT_CONNECT_ERROR) { args -> onConnectError(args.firstOrNull()?.toString() ?: "unknown") }
             s.on("reconnect_failed") {
-                GnssLog.diagnosticWarn("CORRECTIONS", "corrections unavailable — gave up connecting host=$host after retries")
+                GnssLog.diagnosticWarn("CORRECTIONS", "Corrections unavailable: reconnect gave up host=$host")
                 clearStatus()
             }
             s.on(Socket.EVENT_DISCONNECT) { args ->
@@ -124,7 +124,7 @@ internal class ReachCorrectionsService(
                 // drops without ever delivering data is a flapping connect, covered by the error lines.
                 val wasUp = synchronized(lock) { dataSinceConnect }
                 if (wasUp && changeLink("disconnected")) {
-                    GnssLog.diagnostic("CORRECTIONS", "socket disconnected host=$host reason=$reason")
+                    GnssLog.diagnostic("CORRECTIONS", "Corrections disconnected host=$host reason=\"$reason\"")
                 } else {
                     GnssLog.d(TAG) { "socket.io disconnected: $reason" }
                 }
@@ -136,8 +136,7 @@ internal class ReachCorrectionsService(
             s.connect()
             GnssLog.d(TAG) { "socket.io connecting to http://$host" }
         } catch (e: Exception) {
-            GnssLog.diagnosticError("CORRECTIONS",
-                "failed to create socket host=$host: ${e.javaClass.simpleName} ${e.message}", e)
+            GnssLog.diagnosticError("CORRECTIONS", "Corrections socket setup failed host=$host", e)
         }
     }
 
@@ -150,11 +149,11 @@ internal class ReachCorrectionsService(
             when {
                 connectErrors == 1 -> {
                     firstErrorAtMs = now; lastErrorLogAtMs = now
-                    "socket connect error host=$host (will retry): $msg"
+                    "Corrections connect failed host=$host error=\"$msg\" (will retry)"
                 }
                 now - lastErrorLogAtMs >= ERROR_LOG_INTERVAL_MS -> {
                     lastErrorLogAtMs = now
-                    "socket still failing host=$host: $connectErrors attempts in ${(now - firstErrorAtMs) / 1000}s, last error: $msg"
+                    "Corrections still unreachable host=$host attempts=$connectErrors elapsedS=${(now - firstErrorAtMs) / 1000} lastError=\"$msg\""
                 }
                 else -> null
             }
@@ -176,7 +175,7 @@ internal class ReachCorrectionsService(
 
     /** Intentional disconnect (device stopped): the next connect starts a fresh error count and log state. */
     fun disconnect() {
-        if (closeSocket()) GnssLog.diagnostic("CORRECTIONS", "disconnect requested host=$host")
+        if (closeSocket()) GnssLog.diagnostic("CORRECTIONS", "Corrections disconnect requested host=$host")
         synchronized(lock) {
             connectErrors = 0
             loggedLink = null
@@ -215,7 +214,7 @@ internal class ReachCorrectionsService(
         if (_correctionsInfo.value == null) return
         val last = lastBroadcastAtMs ?: return clearStatusLocked()
         if (nowMs() - last > STALE_AFTER_MS) {
-            GnssLog.diagnostic("CORRECTIONS", "no broadcast for ${STALE_AFTER_MS / 1000}s host=$host — status cleared")
+            GnssLog.diagnostic("CORRECTIONS", "Corrections status cleared: no broadcast host=$host silentS=${STALE_AFTER_MS / 1000}")
             clearStatusLocked()
         }
     }
@@ -228,7 +227,7 @@ internal class ReachCorrectionsService(
                 .also { if (it) lastRestartAtMs = now }
         }
         if (!stalled) return
-        GnssLog.diagnosticWarn("CORRECTIONS", "socket silent for ${(now - lastActivityAtMs) / 1000}s host=$host — reconnecting")
+        GnssLog.diagnosticWarn("CORRECTIONS", "Corrections link stalled: no data, reconnecting host=$host silentS=${(now - lastActivityAtMs) / 1000}")
         // Not an intentional disconnect: keep the error count and logged link state, so a receiver that
         // stays unreachable doesn't log a fresh "first error" / "connect attempt" every restart.
         closeForRestart()
@@ -295,8 +294,8 @@ internal class ReachCorrectionsService(
         // Base-station lat/lon are intentionally omitted to avoid coordinate spam in the export.
         if (nav.solution != lastLoggedSolution) {
             lastLoggedSolution = nav.solution
-            GnssLog.diagnostic("CORRECTIONS", "rtk solution=${nav.solution ?: "none"} " +
-                "ageS=${nav.aod ?: "?"} baselineKm=${formatBaselineKm(nav.baseline)} baseSats=${nav.satsBase ?: "?"}")
+            GnssLog.diagnostic("CORRECTIONS", "Corrections RTK solution changed solution=${nav.solution ?: "none"} " +
+                "ageS=${nav.aod ?: "unknown"} baselineKm=${formatBaselineKm(nav.baseline)} baseSats=${nav.satsBase ?: "unknown"}")
         }
 
         pushUpdate()
@@ -333,7 +332,7 @@ internal class ReachCorrectionsService(
             if (streamKey != lastLoggedStreamKey) {
                 lastLoggedStreamKey = streamKey
                 GnssLog.diagnostic("CORRECTIONS",
-                    "stream_status state=${parsed.state} receiving=${parsed.isReceiving} channel=${parsed.channel ?: "none"}")
+                    "Corrections stream status changed state=${parsed.state} receiving=${parsed.isReceiving} channel=${parsed.channel ?: "none"}")
             }
         }
 
@@ -445,6 +444,6 @@ private fun JSONObject.optIntOrNull(key: String): Int? {
     return if (v != Int.MIN_VALUE) v else null
 }
 
-/** A Reach baseline (metres) for the log, in km with two decimals ("4.59"), or "?" when unknown. */
+/** A Reach baseline (metres) for the log, in km with two decimals ("4.59"), or "unknown" when absent. */
 internal fun formatBaselineKm(baselineM: Double?): String =
-    baselineM?.let { String.format(java.util.Locale.US, "%.2f", it / 1000.0) } ?: "?"
+    baselineM?.let { String.format(java.util.Locale.US, "%.2f", it / 1000.0) } ?: "unknown"

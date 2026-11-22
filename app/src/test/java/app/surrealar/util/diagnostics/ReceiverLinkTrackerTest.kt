@@ -19,10 +19,10 @@ class ReceiverLinkTrackerTest {
         t.onConnectionState("RECONNECTING", 65_000)
         t.onConnectionState("CONNECTED", 70_000)
         assertEquals(listOf(
-            "I RECEIVER Link up",
-            "I RECEIVER First data 850 ms after connect",
-            "W RECEIVER Link down: reconnecting (attempt 1), was up 60s",
-            "I RECEIVER Link up after 2 attempts",
+            "I RECEIVER External receiver link up",
+            "I RECEIVER External receiver first data received delayMs=850",
+            "W RECEIVER External receiver link down: reconnecting attempt=1 upS=60",
+            "I RECEIVER External receiver link up attempts=2",
         ), lines)
         assertEquals(2, t.reconnects)
     }
@@ -34,7 +34,7 @@ class ReceiverLinkTrackerTest {
         t.onCorrections(c.copy(stationId = "PAHZ")); t.onCorrections(c.copy(isReceiving = false, stationId = "PAHZ"))
         assertEquals(listOf(
             "I CORRECTIONS Corrections stream connected channel=NTRIP station=PAWB",
-            "W CORRECTIONS Base station ID PAWB → PAHZ",
+            "W CORRECTIONS Corrections base station PAWB → PAHZ",
             "W CORRECTIONS Corrections stream lost",
         ), lines)
         assertFalse(lines.any { it.contains("41.2") || it.contains("75.8") || it.contains("180.5") })

@@ -14,10 +14,10 @@ object ToolbarLinkLog {
     const val STABLE_MS = 4_000L
 
     enum class Link(val text: String) {
-        CONNECTED("connected (live position)"),
+        CONNECTED("connected: live position"),
         CONNECTING("connecting"),
-        STALE("stale (connected, no data)"),
-        LOST("lost (last position greyed)"),
+        STALE("stale: connected, no data"),
+        LOST("lost: last position greyed"),
         NO_FIX("no fix"),
         LOCATION_OFF("location off"),
     }
@@ -38,7 +38,7 @@ object ToolbarLinkLog {
     fun onState(s: GnssToolbarState): Boolean {
         val link = classify(s)
         return DiagnosticsLogger.logOnChange(DiagTags.GNSS, "toolbar.link", link, level(link), stableMs = STABLE_MS) {
-            "Toolbar link ${link.text} source=${s.sourceText}"
+            "Toolbar link ${link.text} source=\"${s.sourceText}\""
         }
     }
 }

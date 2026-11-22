@@ -8,7 +8,7 @@ class LifecycleLoggerTest {
     private val base = LifecycleLogger.ConfigSummary("portrait", false, 800, 1280, 1.0f, "en-US")
 
     @Test fun `rotation and dark mode are described`() {
-        assertEquals("orientation portrait→landscape, dark mode off→on, size 800x1280dp→1280x800dp",
+        assertEquals("orientation portrait → landscape, dark mode off → on, size 800x1280dp → 1280x800dp",
             LifecycleLogger.diff(base, base.copy(orientation = "landscape", night = true, widthDp = 1280, heightDp = 800)))
     }
 

@@ -272,12 +272,12 @@ class ModelsFragment : Fragment() {
 
             DevLog.d("ModelsFragment") { "Selected URI: $uri  fileName: $fileName  size: $fileSize" }
             DiagnosticsLogger.i("MODEL",
-                "import started name=\"$fileName\" sizeBytes=$fileSize uriScheme=${uri.scheme}")
+                "Model import started name=\"$fileName\" sizeBytes=$fileSize uriScheme=${uri.scheme}")
 
             // Validate file extension — accept .glb and .gltf
             val lowerName = fileName.lowercase()
             if (!lowerName.endsWith(".glb") && !lowerName.endsWith(".gltf")) {
-                DiagnosticsLogger.w("MODEL", "import rejected — unsupported file \"$fileName\" (expected .glb/.gltf)")
+                DiagnosticsLogger.w("MODEL", "Model import rejected: unsupported file type name=\"$fileName\" expected=[glb,gltf]")
                 Toast.makeText(requireContext(), "Please select a .glb or .gltf file", Toast.LENGTH_LONG).show()
                 return
             }
@@ -285,7 +285,7 @@ class ModelsFragment : Fragment() {
             // Open the stream — this works for all URI schemes including content:// from SAF
             val inputStream = contentResolver.openInputStream(uri)
                 ?: run {
-                    DiagnosticsLogger.w("MODEL", "import failed — cannot open input stream for \"$fileName\" (uri unresolved)")
+                    DiagnosticsLogger.w("MODEL", "Model import failed: cannot open input stream name=\"$fileName\"")
                     Toast.makeText(requireContext(), "Cannot open file", Toast.LENGTH_LONG).show()
                     return
                 }
@@ -315,7 +315,7 @@ class ModelsFragment : Fragment() {
                 // cloud provider or a full disk crashed the app. Fail into the "target null" path.
                 val targetFile = withContext(Dispatchers.IO) {
                     runCatching { copyModelToInternalStorage(uri, fileName, inputStream, filesDir) }
-                        .onFailure { DiagnosticsLogger.e("MODEL", "file copy failed for \"$fileName\": ${it.javaClass.simpleName} ${it.message}", it) }
+                        .onFailure { DiagnosticsLogger.e("MODEL", "Model file copy failed name=\"$fileName\"", it) }
                         .getOrNull()
                 }
                 if (targetFile == null) {
@@ -350,13 +350,13 @@ class ModelsFragment : Fragment() {
                 // left untouched.
                 val embedded = withContext(Dispatchers.IO) {
                     runCatching { GlbGeoreferenceReprojector.reprojectIfGeoreferenced(targetFile) }
-                        .onFailure { DiagnosticsLogger.w("MODEL", "georeference reprojection failed file=${targetFile.name}: " +
-                            "${it.javaClass.simpleName} — model kept as imported", it) }
+                        .onFailure { DiagnosticsLogger.w("MODEL", "Model reprojection failed: model kept as imported " +
+                            "file=${targetFile.name}", it) }
                         .getOrNull()
                 }
                 // File may have been rewritten by reprojection; use its current size.
                 val finalSize = targetFile.length()
-                DiagnosticsLogger.i("MODEL", "file copied name=\"${targetFile.name}\" " +
+                DiagnosticsLogger.i("MODEL", "Model file copied name=\"${targetFile.name}\" " +
                     "sizeBytes=$finalSize path=\"models/${targetFile.name}\" georeferenced=${embedded != null}")
 
                 // Prompt user for name/description — once the screen is started again (the copy and
@@ -371,15 +371,15 @@ class ModelsFragment : Fragment() {
             }
 
         } catch (e: Exception) {
-            DiagnosticsLogger.e("MODEL", "import exception: ${e.javaClass.simpleName} ${e.message}", e)
+            DiagnosticsLogger.e("MODEL", "Model import failed", e)
             Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun rejectTooLarge(fileName: String, sizeBytes: Long) {
         val sizeMb = String.format(java.util.Locale.US, "%.0f", sizeBytes / (1024.0 * 1024.0))
-        DiagnosticsLogger.w("MODEL", "import rejected — \"$fileName\" is $sizeBytes bytes " +
-            "(limit ${ModelFileIo.MAX_IMPORT_BYTES})")
+        DiagnosticsLogger.w("MODEL", "Model import rejected: file too large name=\"$fileName\" " +
+            "sizeBytes=$sizeBytes limitBytes=${ModelFileIo.MAX_IMPORT_BYTES}")
         val ctx = context ?: return
         Toast.makeText(
             ctx,
@@ -456,7 +456,7 @@ class ModelsFragment : Fragment() {
                 .map { URLDecoder.decode(it.substringBefore('#').substringBefore('?'), StandardCharsets.UTF_8.name()) }
                 .toSet()
         } catch (e: Exception) {
-            DiagnosticsLogger.w("MODEL", "glTF resource list unreadable file=${gltfFile.name} — sidecar files not copied", e)
+            DiagnosticsLogger.w("MODEL", "Model glTF resource listing failed: sidecar files not copied file=${gltfFile.name}", e)
             emptySet()
         }
     }
@@ -471,7 +471,7 @@ class ModelsFragment : Fragment() {
             }
         } catch (e: Exception) {
             // glTF sidecar resources cannot be copied without the source dir — surface in export.
-            DiagnosticsLogger.w("MODEL", "URI resolution failed for gltf sidecars: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w("MODEL", "Model glTF sidecar URI resolution failed", e)
             null
         }
     }
@@ -509,8 +509,8 @@ class ModelsFragment : Fragment() {
             }
         }
         if (missing + unsafe + failed > 0) {
-            DiagnosticsLogger.w("MODEL", "glTF sidecar copy incomplete total=${resources.size} " +
-                "missing=$missing unsafe=$unsafe failed=$failed — model may render without some textures", firstError)
+            DiagnosticsLogger.w("MODEL", "Model glTF sidecar copy incomplete: model may render without some textures " +
+                "total=${resources.size} missing=$missing unsafe=$unsafe failed=$failed", firstError)
         }
     }
 

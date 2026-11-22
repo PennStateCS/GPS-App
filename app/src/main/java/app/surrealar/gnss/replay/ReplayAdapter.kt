@@ -55,7 +55,7 @@ class ReplayAdapter(
         onGsv = { gsv ->
             runCatching { inventory.consume(gsv) }
                 .onSuccess { _sky.value = it }
-                .onFailure { DiagnosticsLogger.every("GNSS", "replay.gsv", 60_000L, 'E', throwable = it) { "replay GSV update failed; message skipped" } }
+                .onFailure { DiagnosticsLogger.every("GNSS", "replay.gsv", 60_000L, 'E', throwable = it) { "NMEA replay satellite update failed: GSV message skipped" } }
         },
     )
 
@@ -72,7 +72,7 @@ class ReplayAdapter(
         val src = source ?: return
         if (playJob != null) return
         inventory.reset()
-        DiagnosticsLogger.i("GNSS", "replay started: ${src.name}")
+        DiagnosticsLogger.i("GNSS", "NMEA replay started source=${src.name}")
         // Same 300 ms GST-hold cap as the live sources — only while the file plays. Started first so a
         // file that ends at once still finds it to cancel.
         val tick = scope.launch(dispatcher) {
@@ -84,7 +84,7 @@ class ReplayAdapter(
                 src.lines().collect { line ->
                     if (line.isNotEmpty() && line[0] == '$') {
                         runCatching { fuser.accept(line) }
-                            .onFailure { DiagnosticsLogger.every("GNSS", "replay.line", 60_000L, 'E', throwable = it) { "replay line rejected by the fuser" } }
+                            .onFailure { DiagnosticsLogger.every("GNSS", "replay.line", 60_000L, 'E', throwable = it) { "NMEA replay line rejected: fuser error" } }
                     }
                 }
             } finally {
@@ -101,7 +101,7 @@ class ReplayAdapter(
         fuser.reset()
         _fixes.resetReplayCache()
         _sky.value = SkySnapshot()
-        DiagnosticsLogger.i("GNSS", "replay stopped")
+        DiagnosticsLogger.i("GNSS", "NMEA replay stopped")
     }
 
     /** True while the GST-hold ticker runs (tests: it must stop when the file ends). */

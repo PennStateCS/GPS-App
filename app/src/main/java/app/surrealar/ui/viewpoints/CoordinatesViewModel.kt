@@ -42,29 +42,29 @@ class CoordinatesViewModel @Inject constructor(
     // Database operations wrapped in viewModelScope.launch for background execution
     // viewModelScope automatically cancels when ViewModel is destroyed
     fun addCoordinate(coordinate: Coordinate) = viewModelScope.launch {
-        if (rejectIfInvalid(coordinate, "addCoordinate")) return@launch
+        if (rejectIfInvalid(coordinate, "save")) return@launch
         try {
             repository.insert(coordinate)
             // COORD diagnostics: id/model link only — never the point's name or note.
-            DiagnosticsLogger.i(DiagTags.COORD, "saved id=${coordinate.id} " +
+            DiagnosticsLogger.i(DiagTags.COORD, "Coordinate saved id=${coordinate.id} " +
                 "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "save failed id=${coordinate.id}", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate save failed id=${coordinate.id}", e)
         }
     }
 
     fun updateCoordinate(coordinate: Coordinate) = viewModelScope.launch {
-        if (rejectIfInvalid(coordinate, "updateCoordinate")) return@launch
+        if (rejectIfInvalid(coordinate, "update")) return@launch
         try {
             repository.update(coordinate)
-            DiagnosticsLogger.i(DiagTags.COORD, "updated id=${coordinate.id} " +
+            DiagnosticsLogger.i(DiagTags.COORD, "Coordinate updated id=${coordinate.id} " +
                 "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "update failed id=${coordinate.id}", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate update failed id=${coordinate.id}", e)
         }
     }
 
@@ -76,7 +76,7 @@ class CoordinatesViewModel @Inject constructor(
     private fun rejectIfInvalid(coordinate: Coordinate, op: String): Boolean {
         val result = CoordinateValidator.validate(coordinate)
         if (!result.isValid) {
-            DiagnosticsLogger.w(DiagTags.COORD, "$op rejected id=${coordinate.id} — validation failed: ${result.errors.joinToString()}")
+            DiagnosticsLogger.w(DiagTags.COORD, "Coordinate $op rejected by validation: ${result.errors.joinToString("; ")} id=${coordinate.id}")
             return true
         }
         return false
@@ -85,22 +85,22 @@ class CoordinatesViewModel @Inject constructor(
     fun deleteCoordinate(id: String) = viewModelScope.launch {
         try {
             repository.deleteById(id)
-            DiagnosticsLogger.i(DiagTags.COORD, "deleted id=$id")
+            DiagnosticsLogger.i(DiagTags.COORD, "Coordinate deleted id=$id")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "delete failed id=$id", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate delete failed id=$id", e)
         }
     }
 
     fun deleteAllCoordinates() = viewModelScope.launch {
         try {
             repository.deleteAll()
-            DiagnosticsLogger.i(DiagTags.COORD, "deleted all coordinates")
+            DiagnosticsLogger.i(DiagTags.COORD, "Coordinates deleted scope=all")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "deleteAll failed", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "Coordinates delete failed scope=all", e)
         }
     }
 
@@ -109,7 +109,7 @@ class CoordinatesViewModel @Inject constructor(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        DiagnosticsLogger.e(DiagTags.COORD, "getById failed id=$id", e)
+        DiagnosticsLogger.e(DiagTags.COORD, "Coordinate load failed id=$id", e)
         null
     }
 }

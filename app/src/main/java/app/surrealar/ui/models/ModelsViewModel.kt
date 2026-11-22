@@ -97,7 +97,7 @@ class ModelsViewModel @Inject constructor(
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 // Non-fatal: thumbnail spinner state may not clear automatically,
                 // but it won't affect core functionality.
-                DiagnosticsLogger.w("MODEL", "thumbnail-state observer stopped: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.w("MODEL", "Model thumbnail state observer stopped", e)
             }
         }
     }
@@ -139,7 +139,7 @@ class ModelsViewModel @Inject constructor(
                     embeddedAltitudeM = embeddedAltitudeM
                 )
                 repository.insertModel(model)
-                DiagnosticsLogger.i("MODEL", "db record created id=$modelId name=\"$name\" " +
+                DiagnosticsLogger.i("MODEL", "Model record created id=$modelId name=\"$name\" " +
                     "file=\"$fileName\" sizeBytes=$fileSize")
                 // Mark thumbnail as generating BEFORE notifying caller so the UI
                 // shows the spinner as soon as the item appears in the list.
@@ -147,7 +147,7 @@ class ModelsViewModel @Inject constructor(
                 onModelId?.invoke(modelId)
                 _statusMessage.value = "Model '$name' added successfully"
             } catch (e: Exception) {
-                DiagnosticsLogger.e("MODEL", "db insert failed name=\"$name\": ${e.javaClass.simpleName} ${e.message}", e)
+                DiagnosticsLogger.e("MODEL", "Model record insert failed name=\"$name\"", e)
                 _statusMessage.value = "Failed to add model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
@@ -168,7 +168,7 @@ class ModelsViewModel @Inject constructor(
                 if (report.verdict == Verdict.NOT_READY) onNotReady(facts.modelName)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.w("MODEL", "readiness check failed id=$modelId: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.w("MODEL", "Model readiness check failed id=$modelId", e)
             }
         }
     }
@@ -178,18 +178,18 @@ class ModelsViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 repository.deleteModel(model)
-                DiagnosticsLogger.i("MODEL", "db record deleted id=${model.id} name=\"${model.name}\"")
+                DiagnosticsLogger.i("MODEL", "Model record deleted id=${model.id} name=\"${model.name}\"")
                 // Only remove the file once the row is gone, so a failed DB delete never leaves
                 // a record pointing at a missing file.
                 val fileDeleted = withContext(Dispatchers.IO) {
                     ModelFileCleaner.deleteModelFile(model.filePath, modelsRoot)
                 }
                 if (!fileDeleted) {
-                    DiagnosticsLogger.w("MODEL", "model file not deleted id=${model.id} (missing or outside models/)")
+                    DiagnosticsLogger.w("MODEL", "Model file not deleted: missing or outside models/ id=${model.id}")
                 }
                 _statusMessage.value = "Model '${model.name}' deleted"
             } catch (e: Exception) {
-                DiagnosticsLogger.e("MODEL", "db delete failed id=${model.id}: ${e.javaClass.simpleName} ${e.message}", e)
+                DiagnosticsLogger.e("MODEL", "Model record delete failed id=${model.id}", e)
                 _statusMessage.value = "Failed to delete model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
@@ -211,7 +211,7 @@ class ModelsViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.e("MODEL", "model update failed id=$modelId: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.e("MODEL", "Model update failed id=$modelId", e)
                 _statusMessage.value = "Failed to update model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
@@ -233,7 +233,7 @@ class ModelsViewModel @Inject constructor(
             coordinateDao.countByModelId(modelId)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            DiagnosticsLogger.w("MODEL", "linked-coordinate count query failed id=$modelId: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w("MODEL", "Model linked coordinate count query failed id=$modelId", e)
             -1
         }
     }

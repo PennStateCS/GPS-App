@@ -47,7 +47,7 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
         val result = runCatching { client.get(path) }
         result.exceptionOrNull()?.let { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
-            logOutcome(path, "failed:${e.javaClass.simpleName}", e) { "device endpoint $path failed: ${e.javaClass.simpleName} ${e.message}" }
+            logOutcome(path, "failed:${e.javaClass.simpleName}", e) { "External receiver info request failed path=$path" }
         }
         val text = result.getOrNull() ?: return null
         return parseReachDeviceInfo(path, text)
@@ -78,7 +78,7 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
         GnssLog.every("receiver.get.$path", "receiver", 60_000L) { "GET $path → ${text.length} chars: ${text.take(300)}" }
 
         val root = try { JSONObject(text) } catch (e: Exception) {
-            logOutcome(path, "non-json", e) { "device endpoint $path returned non-JSON: ${e.message}" }
+            logOutcome(path, "non-json", e) { "External receiver info parse failed: response is not JSON path=$path" }
             return null
         }
 
@@ -154,11 +154,12 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
         // If nothing at all was parsed, this endpoint doesn't have device info
         if (name == null && model == null && firmware == null && serial == null) {
             logOutcome(path, "no-fields") {
-                "device endpoint $path had no device fields (endpoint may be missing/404) keys=${root.keys().asSequence().take(12).toList()}"
+                "External receiver info missing: no device fields, endpoint may not exist path=$path " +
+                    "keys=${root.keys().asSequence().take(12).joinToString(",", "[", "]")}"
             }
             return null
         }
-        logOutcome(path, OK) { "device endpoint $path ok again" }
+        logOutcome(path, OK) { "External receiver info recovered path=$path" }
 
         return ReachDeviceInfoDto(
             name                 = name,

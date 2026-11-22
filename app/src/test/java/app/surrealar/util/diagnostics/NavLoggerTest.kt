@@ -12,8 +12,8 @@ class NavLoggerTest {
     }
 
     @Test fun `only argument names are logged`() {
-        assertEquals("Screen nav_point args=[coordinateId,name]", NavLogger.line("nav_point", listOf("name", "coordinateId")))
-        assertEquals("Screen nav_home", NavLogger.line("nav_home", emptyList()))
+        assertEquals("Screen opened screen=nav_point args=[coordinateId,name]", NavLogger.line("nav_point", listOf("name", "coordinateId")))
+        assertEquals("Screen opened screen=nav_home", NavLogger.line("nav_home", emptyList()))
     }
 
     @Test fun `a visit is the screen plus its back stack entry`() {

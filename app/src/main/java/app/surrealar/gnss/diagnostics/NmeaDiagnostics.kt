@@ -149,7 +149,7 @@ class NmeaDiagnostics(private val context: Context) {
             }
 
             // Counts only: Success carries a raw NMEA sample, which must not reach the file log or logcat.
-            DiagnosticsLogger.i("GNSS", "NMEA self-test complete: result=${result.javaClass.simpleName} " +
+            DiagnosticsLogger.i("GNSS", "NMEA self-test completed result=${result.javaClass.simpleName} " +
                 "nmeaMessages=$nmeaCount satellites=$satelliteCount durationMs=$durationMs")
             _diagnosticResult.value = result
             return result

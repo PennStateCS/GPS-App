@@ -281,7 +281,7 @@ public class ObservationSession(
                     evaluate(elapsed)
                 }
                 .catch { e ->
-                    GnssLog.diagnosticError("CAPTURE", "Observation capture stopped by an error; session paused", e)
+                    GnssLog.diagnosticError("CAPTURE", "Observation capture failed: session paused", e)
                     _state.value = State.Paused("error: ${e.message}")
                 }
                 .collect()

@@ -142,9 +142,9 @@ public class NmeaRegistry(
             if (unknown > 0L) GnssLog.d("NmeaRegistry") { "unknown sentence types this window: n=$unknown recent=$types" }
             return null
         }
-        return "parse summary ($reason): considered=$considered " +
+        return "NMEA parse summary reason=$reason considered=$considered " +
             "ok=${considered - errors - unknown} malformed=$malformed checksumFail=$checksum " +
-            "unknownType=$unknown parseFail=$parseFail recentUnknownTypes=$types"
+            "unknownType=$unknown parseFail=$parseFail recentUnknownTypes=${types.joinToString(",", "[", "]")}"
     }
 
     private fun xorChecksum(s: String): Int {

@@ -66,7 +66,7 @@ class GnssSourceCoordinator @Inject constructor(
     suspend fun restoreSavedSourceOnStartup() {
         val selected = readOr("selected source", LocationSourceType.INTERNAL) { settingsRepository.locationSource.first() }
         val active = sourceSettings.activeProvider.value
-        DiagnosticsLogger.i("GNSS", "Startup selectedSource=$selected activeProvider=$active")
+        DiagnosticsLogger.i("GNSS", "GNSS source restore started selectedSource=$selected activeProvider=$active")
 
         val host = readOr<String?>("external host", null) { settingsRepository.externalTcpHost.first() }
         val port = readOr<Int?>("external port", null) { settingsRepository.externalTcpPort.first() }
@@ -82,15 +82,15 @@ class GnssSourceCoordinator @Inject constructor(
                     externalConfigured = SourceRoutingDecisions.externalConfigUsable(host, port)
                 )
                 DiagnosticsLogger.w("GNSS",
-                    "Startup External restore staying Internal: selected=EXTERNAL active=INTERNAL " +
-                        "reason=${mismatch.reason}")
+                    "GNSS source restore kept Device GNSS: external receiver not restored selected=EXTERNAL " +
+                        "active=INTERNAL reason=${mismatch.reason}")
             }
             activateInternalProvider(reason = decision.reason)
             return
         }
 
         // The "Startup selectedSource=…" line above already has the sources; just the decision here.
-        DiagnosticsLogger.i("GNSS", "Startup: attempting saved external reconnect")
+        DiagnosticsLogger.i("GNSS", "GNSS source restore reconnecting saved external receiver")
 
         // Re-check the selected source immediately before flipping the live provider. If the user
         // switched to Internal during the (sub-second) startup window, abort so this restore can't
@@ -99,7 +99,7 @@ class GnssSourceCoordinator @Inject constructor(
             settingsRepository.locationSource.first()
         } == LocationSourceType.EXTERNAL
         if (!stillExternal) {
-            DiagnosticsLogger.i("GNSS", "Startup external restore aborted — source changed before activation")
+            DiagnosticsLogger.i("GNSS", "GNSS source restore aborted: source changed before activation")
             return
         }
         // Non-null: decision == EXTERNAL_TCP implies externalConfigUsable(host, port) was true.
@@ -113,7 +113,7 @@ class GnssSourceCoordinator @Inject constructor(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.w("GNSS", "Startup: could not read $what; using $default", e)
+            DiagnosticsLogger.w("GNSS", "GNSS source restore setting read failed: using default setting=\"$what\" default=${default ?: "none"}", e)
             default
         }
 
@@ -123,7 +123,7 @@ class GnssSourceCoordinator @Inject constructor(
      */
     fun activateInternalProvider(reason: String) {
         // The switch itself is logged once at I by GnssFeedTracker ("Source A → B"); this is detail.
-        DiagnosticsLogger.d("GNSS") { "activateInternalProvider ($reason)" }
+        DiagnosticsLogger.d("GNSS") { "GNSS source set to Device GNSS reason=\"$reason\"" }
         sourceSettings.setActiveProvider(ProviderChoice.INTERNAL)
     }
 
@@ -133,7 +133,7 @@ class GnssSourceCoordinator @Inject constructor(
      */
     fun startReplay(reason: String): ProviderChoice {
         val previous = sourceSettings.activeProvider.value
-        DiagnosticsLogger.i("GNSS", "startReplay ($reason), previous=$previous")
+        DiagnosticsLogger.i("GNSS", "NMEA replay source activated previous=$previous reason=\"$reason\"")
         sourceSettings.setActiveProvider(ProviderChoice.REPLAY)
         return previous
     }
@@ -141,7 +141,7 @@ class GnssSourceCoordinator @Inject constructor(
     /** Ends replay by restoring [previous] (never REPLAY itself; falls back to Internal). */
     fun endReplay(previous: ProviderChoice, reason: String) {
         val restore = if (previous == ProviderChoice.REPLAY) ProviderChoice.INTERNAL else previous
-        DiagnosticsLogger.i("GNSS", "endReplay ($reason) → $restore")
+        DiagnosticsLogger.i("GNSS", "NMEA replay source ended REPLAY → $restore reason=\"$reason\"")
         if (sourceSettings.activeProvider.value == ProviderChoice.REPLAY) sourceSettings.setActiveProvider(restore)
     }
 
@@ -153,7 +153,7 @@ class GnssSourceCoordinator @Inject constructor(
      * to the external adapter the switchboard binds.
      */
     fun activateExternalTcpProvider(host: String, port: Int, reason: String) {
-        DiagnosticsLogger.d("RECEIVER") { "Activate external provider for $host:$port ($reason)" }
+        DiagnosticsLogger.d("RECEIVER") { "External receiver source activation requested host=$host port=$port reason=\"$reason\"" }
         val target = host to port
         if (sourceSettings.activeProvider.value == ProviderChoice.EXTERNAL_TCP) {
             // Already External: setting the same provider is a no-op for the switchboard, so the
@@ -168,6 +168,6 @@ class GnssSourceCoordinator @Inject constructor(
         }
         activeExternalTarget = target
         sourceSettings.setActiveProvider(ProviderChoice.EXTERNAL_TCP)
-        DiagnosticsLogger.d("GNSS") { "External provider activated from $reason; EXTERNAL_TCP set (validation delegated to external adapter)" }
+        DiagnosticsLogger.d("GNSS") { "External receiver source activated provider=EXTERNAL_TCP reason=\"$reason\"" }
     }
 }

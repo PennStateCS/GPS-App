@@ -30,11 +30,11 @@ class CaptureDiagnosticsTest {
 
     @Test fun `policy, rejected summary and outcome without coordinates`() {
         val d = CaptureDiagnostics(policy, "EXTERNAL")
-        assertEquals("Capture start mode=EXTERNAL min=30s max=60s minFixes=100 requiredRtk=FIX maxCorrAge=10s", d.startLine())
+        assertEquals("Capture started mode=EXTERNAL minDurationS=30 maxDurationS=60 minFixes=100 requiredRtk=FIX maxCorrAgeS=10", d.startLine())
         repeat(100) { d.onFix(fix(RtkStatus.FIX, 1.0)) }
         repeat(7) { d.onFix(fix(RtkStatus.FLOAT, 1.0)) }
         repeat(3) { d.onFix(fix(RtkStatus.FIX, 15.0)) }
-        assertEquals("Capture fixes received=110 accepted=100 rejected by policy check: corrections too old=3, rtk below FIX=7",
+        assertEquals("Capture fix summary received=110 accepted=100 rejected=10: corrections too old=3, rtk below FIX=7",
             d.rejectedSummary(100))
         val line = d.outcomeLine("saved", 100, 34, RtkStatus.FIX, 0.012, 0.025, name = "CP-1")
         assertEquals("Capture saved name=\"CP-1\" mode=EXTERNAL samples=100 duration=34s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=10/110", line)

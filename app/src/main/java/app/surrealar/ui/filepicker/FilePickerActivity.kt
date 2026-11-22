@@ -229,11 +229,11 @@ class FilePickerActivity : AppCompatActivity() {
         } catch (e: android.content.ActivityNotFoundException) {
             // No document provider installed — fall back to GET_CONTENT which is handled
             // by the browser/gallery on older devices
-            DiagnosticsLogger.w(DiagTags.DATA, "File picker: no ACTION_OPEN_DOCUMENT handler, falling back to GET_CONTENT mode=$filterMode", e)
+            DiagnosticsLogger.w(DiagTags.DATA, "File picker fallback used: no ACTION_OPEN_DOCUMENT handler, using GET_CONTENT mode=$filterMode", e)
             try {
                 safPickerLauncher.launch(getContent)
             } catch (e2: android.content.ActivityNotFoundException) {
-                DiagnosticsLogger.e(DiagTags.DATA, "File picker: no file picker available mode=$filterMode", e2)
+                DiagnosticsLogger.e(DiagTags.DATA, "File picker open failed: no document picker available mode=$filterMode", e2)
                 Toast.makeText(this, "No file manager found on this device", Toast.LENGTH_LONG).show()
                 setResult(Activity.RESULT_CANCELED)
                 finish()
@@ -275,7 +275,7 @@ class FilePickerActivity : AppCompatActivity() {
             binding.textCurrentPath.text = directory.absolutePath
 
             val allFiles: Array<File> = directory.listFiles() ?: run {
-                DiagnosticsLogger.w(DiagTags.DATA, "File picker: directory not readable (listFiles null)")
+                DiagnosticsLogger.w(DiagTags.DATA, "File picker directory read failed: listing unavailable")
                 Toast.makeText(this, "Cannot read this directory", Toast.LENGTH_SHORT).show()
                 goBack()
                 return
@@ -307,7 +307,7 @@ class FilePickerActivity : AppCompatActivity() {
             }
 
         } catch (e: SecurityException) {
-            DiagnosticsLogger.w(DiagTags.DATA, "File picker: directory access denied", e)
+            DiagnosticsLogger.w(DiagTags.DATA, "File picker directory read failed: access denied", e)
             Toast.makeText(this, "Access denied to this directory", Toast.LENGTH_SHORT).show()
             goBack()
         }
@@ -353,7 +353,7 @@ class FilePickerActivity : AppCompatActivity() {
             )
         } catch (e: Exception) {
             // Fall back to file:// if FileProvider is not configured for this path
-            DiagnosticsLogger.w(DiagTags.DATA, "File picker: FileProvider failed, using file URI", e)
+            DiagnosticsLogger.w(DiagTags.DATA, "File picker content URI failed: using file URI", e)
             Uri.fromFile(file)
         }
     }

@@ -68,7 +68,7 @@ class SessionTracker(private val prefs: SharedPreferences) {
                 versionName = BuildConfig.VERSION_NAME, versionCode = BuildConfig.VERSION_CODE,
                 buildType = BuildConfig.BUILD_TYPE,
                 gitHash = BuildInfo.gitHash + if (BuildInfo.gitDirty) "-dirty" else "",
-                device = "${Build.MANUFACTURER} ${Build.MODEL}", android = Build.VERSION.RELEASE ?: "?",
+                device = "${Build.MANUFACTURER} ${Build.MODEL}", android = Build.VERSION.RELEASE ?: "unknown",
                 sdk = Build.VERSION.SDK_INT, locale = Locale.getDefault().toLanguageTag(),
                 timeZone = TimeZone.getDefault().id,
             ))

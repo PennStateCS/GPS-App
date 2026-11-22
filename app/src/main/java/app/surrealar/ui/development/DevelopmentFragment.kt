@@ -108,7 +108,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 else -> null
             }
         } catch (e: Exception) {
-            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.APP, "Developer page: building category failed id=${category.id}", e)
+            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.APP, "Developer page category build failed categoryId=${category.id}", e)
             null
         }
 

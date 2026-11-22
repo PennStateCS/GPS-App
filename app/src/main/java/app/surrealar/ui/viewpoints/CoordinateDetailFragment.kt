@@ -915,7 +915,7 @@ class CoordinateDetailFragment : Fragment() {
                     modelRepository.getModelById(modelId)
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.w(DiagTags.MODEL, "linked model load failed modelId=$modelId", e)
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Linked model load failed modelId=$modelId", e)
                     null
                 }
             }
@@ -1023,7 +1023,7 @@ class CoordinateDetailFragment : Fragment() {
                     modelRepository.getModelById(modelId)
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.w(DiagTags.MODEL, "lookup failed for modelId=$modelId", e)
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model lookup failed modelId=$modelId", e)
                     null
                 }
             }
@@ -1105,7 +1105,7 @@ class CoordinateDetailFragment : Fragment() {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
-            DiagnosticsLogger.i(DiagTags.MODEL, "linked modelId=$modelId to coordinateId=${updated.id} " +
+            DiagnosticsLogger.i(DiagTags.MODEL, "Model linked to coordinate modelId=$modelId coordinateId=${updated.id} " +
                 "useModelLocation=$useModelLocation")
             showSnackbar(if (useModelLocation) "Model linked · coordinate moved to model location" else "Model linked")
         }
@@ -1137,7 +1137,7 @@ class CoordinateDetailFragment : Fragment() {
             viewModel.updateCoordinate(updated)
             lastCoordinate = updated
             bindCoordinate(updated)
-            DiagnosticsLogger.i(DiagTags.MODEL, "unlinked modelId=$priorModelId from coordinateId=${updated.id}")
+            DiagnosticsLogger.i(DiagTags.MODEL, "Model unlinked from coordinate modelId=$priorModelId coordinateId=${updated.id}")
             showSnackbar("Model link removed")
         }
     }
@@ -1159,7 +1159,7 @@ class CoordinateDetailFragment : Fragment() {
             if (nav != null) nav.navigate(R.id.nav_open_in_ar)
             else showSnackbar("Open the AR tab to view models")
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.AR, "Open in AR from coordinate detail failed", e)
+            DiagnosticsLogger.e(DiagTags.AR, "AR open failed screen=coordinateDetail", e)
             showSnackbar("Unable to open AR")
         }
     }
@@ -1219,7 +1219,7 @@ class CoordinateDetailFragment : Fragment() {
                     withContext(Dispatchers.Main) { buildModelMarkerBitmap(thumbBmp, ctx) }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail for map marker failed", e)
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail load failed use=mapMarker", e)
                     null
                 }
             }

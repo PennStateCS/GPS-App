@@ -143,14 +143,14 @@ class TcpNmeaSource(
 
                 if (host.isNullOrBlank() || port == null) {
                     // Repeats every reconnect attempt: once per outage (keys reset on a real connect).
-                    DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "nohost", true, 'W') { "TCP NMEA: no host/port configured" }
+                    DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "nohost", true, 'W') { "External receiver connect skipped: no host or port configured" }
                     return@launch
                 }
 
                 started = true
                 firstDataLogged = false
                 // Once per target per outage; ExternalAdapter's throttled summary covers the retries.
-                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "connecting", "$host:$port") { "Connecting to $host:$port" }
+                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "connecting", "$host:$port") { "External receiver connecting host=$host port=$port" }
                 connectAndRead(host, port)
 
             } catch (ce: CancellationException) {
@@ -161,7 +161,7 @@ class TcpNmeaSource(
                 // Refused / unreachable is expected while the receiver is off or out of range, and is
                 // retried: the first failure of an outage in full, then ExternalAdapter's summary.
                 val logged = DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "tcp.error", "failing", 'W', throwable = e) {
-                    "TCP connect failed (will retry): ${e.javaClass.simpleName}: ${e.message}"
+                    "External receiver TCP connect failed (will retry)"
                 }
                 if (!logged) DevLog.d(TAG) { "TCP connect failed again: ${e.javaClass.simpleName}: ${e.message}" }
                 started = false
@@ -204,7 +204,7 @@ class TcpNmeaSource(
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
             socketConnected = true
-            DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "socket", "$host:$port") { "TCP socket connected to $host:$port" }
+            DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "socket", "$host:$port") { "External receiver TCP socket connected host=$host port=$port" }
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8), 1024)
 
             // Enforce the fuser's GST hold cap in time (readLine() blocks, so the cap can't rely on the
@@ -224,7 +224,7 @@ class TcpNmeaSource(
                     silentTimeouts = 0
                     if (line == null) {
                         DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "remoteclosed", true, 'W') {
-                            "TCP connection closed by remote ($host:$port)"
+                            "External receiver TCP connection closed by remote host=$host port=$port"
                         }
                         break
                     }
@@ -233,7 +233,7 @@ class TcpNmeaSource(
                     if (clean.isNotEmpty() && clean[0] == '$') {
                         if (!firstDataLogged) {
                             firstDataLogged = true
-                            DiagnosticsLogger.i("RECEIVER", "First NMEA sentence received from $host:$port")
+                            DiagnosticsLogger.i("RECEIVER", "External receiver first NMEA sentence received host=$host port=$port")
                         }
                         // An exception from an odd sentence anywhere downstream (fusion, fix
                         // listeners) used to end the connection and force a reconnect. Drop just
@@ -247,7 +247,7 @@ class TcpNmeaSource(
                             throw ce
                         } catch (e: Exception) {
                             DiagnosticsLogger.every("NMEA", "tcp.sentence.error", 60_000L, 'E', throwable = e) {
-                                "TCP NMEA processing error (sentence dropped, repeats suppressed 60 s): ${e.javaClass.simpleName}: ${e.message}"
+                                "External receiver NMEA processing failed: sentence dropped, repeats suppressed for 60 s"
                             }
                         }
                     }
@@ -256,7 +256,7 @@ class TcpNmeaSource(
                     if (++silentTimeouts >= DEAD_LINK_TIMEOUTS) {
                         val silentMs = silentTimeouts.toLong() * readTimeoutMs
                         DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "deadlink", true, 'W') {
-                            "TCP: no data for ${silentMs}ms from $host:$port — link dead, reconnecting"
+                            "External receiver TCP link dead: no data, reconnecting host=$host port=$port silentMs=$silentMs"
                         }
                         break
                     }
@@ -279,7 +279,7 @@ class TcpNmeaSource(
             readerGeneration.remove()
             // Only after a socket that actually connected; once per outage.
             if (socketConnected) {
-                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "disconnected", "$host:$port") { "TCP disconnected from $host:$port" }
+                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "disconnected", "$host:$port") { "External receiver TCP disconnected host=$host port=$port" }
             }
         }
     }

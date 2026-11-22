@@ -48,10 +48,10 @@ object GlbGeoreferenceDetector {
         return try {
             detectInternal(file)
         } catch (e: EOFException) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection: unexpected EOF file=${file.name}", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed: unexpected end of file file=${file.name}", e)
             null
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection failed file=${file.name}: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed file=${file.name}", e)
             null
         }
     }
@@ -66,7 +66,7 @@ object GlbGeoreferenceDetector {
             }
             val version = raf.readIntLE()
             if (version != GLB_VERSION_2) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection skipped file=${file.name}: unsupported GLB version $version")
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: unsupported GLB version file=${file.name} version=$version")
                 return null
             }
             raf.readIntLE() // total length — skip
@@ -75,13 +75,13 @@ object GlbGeoreferenceDetector {
             val chunkLen = raf.readIntLE()
             val chunkType = raf.readIntLE()
             if (chunkType != CHUNK_TYPE_JSON) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection skipped file=${file.name}: " +
-                    "first chunk is not JSON (type 0x${chunkType.toString(16)})")
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: first chunk is not JSON " +
+                    "file=${file.name} chunkType=0x${chunkType.toString(16)}")
                 return null
             }
             if (chunkLen <= 0 || chunkLen > MAX_JSON_BYTES) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection skipped file=${file.name}: " +
-                    "JSON chunk length $chunkLen out of safe range")
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: JSON chunk length out of safe range " +
+                    "file=${file.name} chunkBytes=$chunkLen")
                 return null
             }
 
@@ -93,7 +93,7 @@ object GlbGeoreferenceDetector {
 
     private fun parseGltfJson(fileName: String, json: String): EmbeddedModelLocation? {
         val root = try { JSONObject(json) } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "GLB georeference detection: JSON parse failed file=$fileName", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed: JSON parse error file=$fileName", e)
             return null
         }
 
@@ -158,7 +158,7 @@ object GlbGeoreferenceDetector {
             else                                           -> ModelLocationConfidence.LOW
         }
 
-        DiagnosticsLogger.i(DiagTags.MODEL, "GLB georeference detected file=$fileName georeferenced=true " +
+        DiagnosticsLogger.i(DiagTags.MODEL, "Model georeference detected file=$fileName georeferenced=true " +
             "method=GLB_POSITION_WGS_LIKE confidence=$confidence")   // no coordinates
 
         return EmbeddedModelLocation(

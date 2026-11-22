@@ -46,7 +46,7 @@ class LocationService : Service() {
         fun start(context: Context): Boolean {
             if (!canStart(context)) {
                 app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
-                    "LocationService not started: location permission not granted")
+                    "Location service start skipped: location permission not granted")
                 return false
             }
             val intent = Intent(context, LocationService::class.java).setAction(ACTION_START)
@@ -56,7 +56,7 @@ class LocationService : Service() {
                 true
             }.getOrElse {
                 app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
-                    "LocationService start refused: ${it.javaClass.simpleName}: ${it.message}")
+                    "Location service start failed: refused by system error=${it.javaClass.simpleName} reason=\"${it.message ?: "unknown"}\"")
                 false
             }
         }
@@ -78,14 +78,14 @@ class LocationService : Service() {
             androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
         }.getOrDefault(false)
         app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
-            "LocationService started (foreground notification ${if (notificationsAllowed) "allowed" else "NOT allowed - hidden"})")
+            "Location service started notificationsAllowed=$notificationsAllowed")
         try {
             androidx.core.app.ServiceCompat.startForeground(this, NOTIF_ID, buildNotification(),
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
         } catch (e: Exception) {
             // SecurityException (permission revoked) or ForegroundServiceStartNotAllowedException.
             app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
-                "LocationService could not go foreground: ${e.javaClass.simpleName}: ${e.message}")
+                "Location service foreground start failed: service stopped error=${e.javaClass.simpleName} reason=\"${e.message ?: "unknown"}\"")
             stopSelf()
         }
     }
@@ -96,7 +96,7 @@ class LocationService : Service() {
                 // Already started in onCreate; nothing else needed.
             }
             ACTION_STOP -> {
-                app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "LocationService stop requested")
+                app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "Location service stop requested")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -108,7 +108,7 @@ class LocationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "LocationService stopped")
+        app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "Location service stopped")
         isRunning = false
     }
 

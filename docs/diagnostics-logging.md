@@ -46,6 +46,42 @@ the file log must be one of `DiagTags` (debug builds warn once about any other t
 - **Expected** exceptions (closing a socket on shutdown, number-parse fallbacks, best-effort cleanup)
   may be ignored, with a short comment saying why.
 
+### Message style
+
+One shape for every line, so the log reads like one voice and can be searched:
+
+```
+<Subject> <what happened>[: <short reason>] key=value key=value
+```
+
+- **Subject first, then a past-tense verb or a state**, sentence case, no trailing period:
+  `External receiver connected attempt=1`, `Backup export failed rows=120 dest=saf`,
+  `AR session resumed`, `Corrections stream connected channel=RTCM`.
+  Not: `connected!`, `Error`, `NEW: …`, `We are now…`, `Oops`, `failed to do thing.`
+- **Subjects are consistent nouns** for the same thing everywhere: `External receiver` (the Reach over
+  TCP), `Device GNSS` (the tablet's own GNSS — never "phone"), `Corrections`, `Mock location`,
+  `AR session`, `Home map`, `Map`, `Model`, `Backup`, `Settings`.
+- **Failures:** `<Operation> failed[: <reason>] key=…` with the exception attached. Don't repeat
+  `${e.message}` in the text when the throwable is attached (W/E print it); I lines that can't carry a
+  throwable may end with `error=<ExceptionSimpleName>`.
+- **Retries and waits:** `… (will retry)` / `still unreachable attempts=n` / `… recovered after n attempts`.
+- **Transitions:** `<Subject> <OLD> → <NEW>` (the arrow `→`, spaces around it).
+- **Event codes:** existing `UPPER_SNAKE` codes that readers or people search for stay as the first word
+  (`SESSION_START`, `AR_VS_GNSS`, `AR_QUALITY`, `MOCK_LOCATION_INJECTED`, `MODEL_READINESS` …), followed
+  only by `key=value` pairs. Don't invent new codes for one-off events — write a sentence instead.
+- **key=value:** lowerCamel keys; units as a key suffix with plain numbers (`hAccM=0.02 ageMs=340
+  distM=12.5`); booleans `true`/`false`; missing values `unknown` (not `?`, `n/a`, `null`); text with
+  spaces in double quotes (`reason="no data"`); lists `[a,b]`. No space around `=`.
+- **Separators:** `: ` introduces a reason or detail. Avoid ` — ` and ` - ` as separators in log text,
+  and parentheses for key data (use key=value).
+- **No:** exclamation marks, emojis, ALL-CAPS words for emphasis, first person, internal jokes, class or
+  method names as the subject of an exported line (fine in DevLog), or stack-trace text in the message.
+
+Readers depend on these line starts and fields — **don't change them**: `SESSION_START` (and its
+`session=`, `lastSessionClean=` fields), `Previous process exit` (`reason=`), `Uncaught exception
+(fatal)`, `Database migrated` / `Database created` / `Database reset` (see `report/LogIndex`,
+`SessionsCollector`, `FirstLookCollector`).
+
 ### Message content
 
 - Say what failed and the key context: `"Backup export failed rows=120 dest=SAF"`, not `"error"`.

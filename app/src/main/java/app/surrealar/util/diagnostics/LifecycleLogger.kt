@@ -32,17 +32,17 @@ object LifecycleLogger {
         },
         night = (c.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES,
         widthDp = c.screenWidthDp, heightDp = c.screenHeightDp, fontScale = c.fontScale,
-        locale = if (c.locales.isEmpty) "?" else c.locales[0].toLanguageTag(),
+        locale = if (c.locales.isEmpty) "unknown" else c.locales[0].toLanguageTag(),
     )
 
-    /** "orientation portrait→landscape, dark mode off→on"; null when nothing listed changed. */
+    /** "orientation portrait → landscape, dark mode off → on"; null when nothing listed changed. */
     fun diff(old: ConfigSummary, new: ConfigSummary): String? = buildList {
-        if (old.orientation != new.orientation) add("orientation ${old.orientation}→${new.orientation}")
-        if (old.night != new.night) add("dark mode ${onOff(old.night)}→${onOff(new.night)}")
+        if (old.orientation != new.orientation) add("orientation ${old.orientation} → ${new.orientation}")
+        if (old.night != new.night) add("dark mode ${onOff(old.night)} → ${onOff(new.night)}")
         if (old.widthDp != new.widthDp || old.heightDp != new.heightDp)
-            add("size ${old.widthDp}x${old.heightDp}dp→${new.widthDp}x${new.heightDp}dp")
-        if (old.fontScale != new.fontScale) add("font scale ${old.fontScale}→${new.fontScale}")
-        if (old.locale != new.locale) add("locale ${old.locale}→${new.locale}")
+            add("size ${old.widthDp}x${old.heightDp}dp → ${new.widthDp}x${new.heightDp}dp")
+        if (old.fontScale != new.fontScale) add("font scale ${old.fontScale} → ${new.fontScale}")
+        if (old.locale != new.locale) add("locale ${old.locale} → ${new.locale}")
     }.takeIf { it.isNotEmpty() }?.joinToString(", ")
 
     fun trimLevelName(level: Int): String = when (level) {
@@ -63,12 +63,12 @@ object LifecycleLogger {
         })
         app.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(a: Activity, saved: Bundle?) =
-                DiagnosticsLogger.i(TAG, "Activity created ${a.javaClass.simpleName}${if (saved != null) " (restored)" else ""}")
+                DiagnosticsLogger.i(TAG, "Activity created name=${a.javaClass.simpleName} restored=${saved != null}")
             override fun onActivityDestroyed(a: Activity) =
-                DiagnosticsLogger.i(TAG, "Activity destroyed ${a.javaClass.simpleName}" + when {
-                    a.isChangingConfigurations -> " (configuration change)"
-                    a.isFinishing -> " (finishing)"
-                    else -> " (by the system)"
+                DiagnosticsLogger.i(TAG, "Activity destroyed name=${a.javaClass.simpleName} reason=" + when {
+                    a.isChangingConfigurations -> "configurationChange"
+                    a.isFinishing -> "finishing"
+                    else -> "system"
                 })
             override fun onActivityStarted(a: Activity) = Unit
             override fun onActivityResumed(a: Activity) = Unit
@@ -84,11 +84,11 @@ object LifecycleLogger {
                 if (before != null) diff(before, now)?.let { DiagnosticsLogger.i(TAG, "Configuration changed: $it") }
             }
             @Deprecated("Deprecated in Java")
-            override fun onLowMemory() = DiagnosticsLogger.w(TAG, "Low memory")
+            override fun onLowMemory() = DiagnosticsLogger.w(TAG, "Memory low")
             override fun onTrimMemory(level: Int) {
                 // UI_HIDDEN comes with every trip to the background; the foreground/background line covers it.
                 if (level != ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN)
-                    DiagnosticsLogger.w(TAG, "Trim memory level=${trimLevelName(level)}")
+                    DiagnosticsLogger.w(TAG, "Memory trim requested level=${trimLevelName(level)}")
             }
         })
     }

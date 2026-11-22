@@ -88,7 +88,7 @@ class AndroidMockLocationPublisher(
     /** Called by the AR screen on resume (true) / pause (false). */
     fun setArSessionActive(active: Boolean) {
         if (arSessionActive.value != active) {
-            DiagnosticsLogger.i("GNSS", "AR session ${if (active) "active — auto-enabling" else "inactive — releasing"} mock publishing")
+            DiagnosticsLogger.i("GNSS", "Mock location ${if (active) "auto-enabled: AR session active" else "auto-enable released: AR session inactive"}")
         }
         arSessionActive.value = active
     }
@@ -114,8 +114,8 @@ class AndroidMockLocationPublisher(
             .collect { (mockEnabled, locationSource, fix) ->
                 if (!mockEnabled || locationSource != LocationSourceType.EXTERNAL) {
                     if (providerAdded) {
-                        DiagnosticsLogger.i(DIAG, "Mock publishing off: " +
-                            if (locationSource != LocationSourceType.EXTERNAL) "source is $locationSource" else "turned off")
+                        DiagnosticsLogger.i(DIAG, "Mock location publishing stopped: " +
+                            if (locationSource != LocationSourceType.EXTERNAL) "source not external source=$locationSource" else "turned off")
                     }
                     teardownProvider()
                     return@collect
@@ -174,7 +174,7 @@ class AndroidMockLocationPublisher(
             return false
         }
         if (++consecutiveStale >= STALE_RESET_COUNT) {
-            DiagnosticsLogger.w("GNSS", "Fix timing baseline reset after $consecutiveStale stale fixes (clock change?)")
+            DiagnosticsLogger.w("GNSS", "Mock location timing baseline reset: possible clock change staleFixes=$consecutiveStale")
             resetFreshness()
         }
         return true
@@ -196,7 +196,7 @@ class AndroidMockLocationPublisher(
         // after connect was dated from a wrong tablet date (no RMC/ZDA yet) a day ahead. Without this,
         // every later fix would be dropped as a "duplicate" for the rest of the session.
         if (fix.timeUtc.isBefore(lastPublishedUtc.minusSeconds(TIME_JUMP_RESET_SEC))) {
-            DiagnosticsLogger.w(DIAG, "Mock duplicate check reset: fix time jumped back from $lastPublishedUtc")
+            DiagnosticsLogger.w(DIAG, "Mock location duplicate check reset: fix time jumped back lastPublishedUtc=$lastPublishedUtc")
             lastPublishedUtc = fix.timeUtc
             return false
         }
@@ -305,14 +305,13 @@ class AndroidMockLocationPublisher(
             injectFailureLog.reset()
         } catch (e: SecurityException) {
             logInjectFailure("not_permitted", e) {
-                "MOCK_LOCATION injection blocked — app not selected as mock location app: " +
-                    "${e.javaClass.simpleName}: ${e.message}"
+                "Mock location injection failed: app is not the selected mock location app"
             }
             MockInjectionStatus.providerActive = false
             _errorEvents.tryEmit(MockLocationError.NOT_PERMITTED)
         } catch (e: IllegalArgumentException) {
             logInjectFailure("provider_error", e) {
-                "MOCK_LOCATION test provider configuration error: ${e.javaClass.simpleName}: ${e.message}"
+                "Mock location injection failed: test provider configuration error"
             }
             _errorEvents.tryEmit(MockLocationError.PROVIDER_ERROR)
         }
@@ -341,11 +340,11 @@ class AndroidMockLocationPublisher(
             app.surrealar.gnss.debug.GnssDebugLog.event("mock") {
                 "injected lat=${"%.7f".format(location.latitude)} lon=${"%.7f".format(location.longitude)}"
             }
-            "MOCK_LOCATION_INJECTED detail fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
-                "backdatedMs=${backdatedMs ?: "none(implausible age)"} altitude=$altitude " +
+            "MOCK_LOCATION_INJECTED detail=true fixTimeMs=$fixTimeMs appRecvMs=$appRecvMs ageMs=${appRecvMs - fixTimeMs} " +
+                "backdatedMs=${backdatedMs ?: "none"} altitude=$altitude " +
                 "antennaAboveCameraM=${"%.2f".format(antennaAboveCameraM)} " +
                 "hAccM=${fix.hAccM?.let { "%.2f".format(it) } ?: "unknown"}" +
-                (if (hAccWasFallback) "(placeholder ${location.accuracy}m injected)" else "") +
+                (if (hAccWasFallback) " placeholderAccM=${location.accuracy}" else "") +
                 " vAccM=${fix.vAccM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${fix.rtkStatus}"
         }
     }
@@ -360,7 +359,7 @@ class AndroidMockLocationPublisher(
         when (injectFailureLog.decide(kind)) {
             FailureLogThrottle.Mode.FULL -> DiagnosticsLogger.w(DIAG, message(), e)
             FailureLogThrottle.Mode.BRIEF ->
-                DiagnosticsLogger.w(DIAG, message() + " (still failing; repeats suppressed 60 s)")
+                DiagnosticsLogger.w(DIAG, message() + " (still failing, repeats suppressed for 60 s)")
             FailureLogThrottle.Mode.NONE -> Unit
         }
     }
@@ -384,7 +383,7 @@ class AndroidMockLocationPublisher(
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
             providerAdded = true
             MockInjectionStatus.providerActive = true
-            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_START — GPS test provider added and enabled")
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_START provider=gps state=added")
         } catch (e: SecurityException) {
             // Propagated to caller, which handles it uniformly
             throw e
@@ -393,7 +392,7 @@ class AndroidMockLocationPublisher(
             providerAdded = true
             MockInjectionStatus.providerActive = true
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, true)
-            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_START — GPS test provider already existed; re-enabled")
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_START provider=gps state=reEnabled")
         }
     }
 
@@ -407,13 +406,13 @@ class AndroidMockLocationPublisher(
     private fun removeLeftoverTestProvider() {
         try {
             locationManager.removeTestProvider(LocationManager.GPS_PROVIDER)
-            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_CLEANUP — removed a leftover GPS test provider from a previous run")
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_CLEANUP provider=gps result=leftoverRemoved")
         } catch (_: IllegalArgumentException) {
             // No leftover provider — the normal case.
         } catch (_: SecurityException) {
             // Not selected as the mock location app: this app could not have left one behind.
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_CLEANUP failed", e)
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_CLEANUP provider=gps result=failed", e)
         }
         providerAdded = false
         MockInjectionStatus.providerActive = false
@@ -424,10 +423,10 @@ class AndroidMockLocationPublisher(
         try {
             locationManager.setTestProviderEnabled(LocationManager.GPS_PROVIDER, false)
             locationManager.removeTestProvider(LocationManager.GPS_PROVIDER)
-            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_STOP — GPS test provider removed " +
-                "(injections=${MockInjectionStatus.injectionCount})")
+            DiagnosticsLogger.i(DIAG, "MOCK_LOCATION_STOP provider=gps result=removed " +
+                "injections=${MockInjectionStatus.injectionCount}")
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_STOP teardown failed (provider already gone?)", e)
+            DiagnosticsLogger.w(DIAG, "MOCK_LOCATION_STOP provider=gps result=failed", e)
         } finally {
             providerAdded = false
             MockInjectionStatus.providerActive = false

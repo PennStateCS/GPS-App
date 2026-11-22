@@ -33,11 +33,11 @@ class GnssFeedTrackerTest {
         assertEquals(listOf(
             "I RTK start → FLOAT sats=18 hdop=0.7 corrAge=<5s",
             "I RTK FLOAT → FIX sats=18 hdop=0.7 corrAge=<5s",
-            "W Correction age over 5 s (6.0 s)",
-            "W Correction age over 10 s (12.0 s)",
-            "W Correction age over 30 s (31.0 s)",
+            "W Corrections age over threshold thresholdS=5 ageS=6.0",
+            "W Corrections age over threshold thresholdS=10 ageS=12.0",
+            "W Corrections age over threshold thresholdS=30 ageS=31.0",
             "W RTK FIX → FLOAT sats=18 hdop=0.7 corrAge=>30s",
-            "I Correction age recovered (1.0 s)",
+            "I Corrections age recovered ageS=1.0",
             "I RTK FLOAT → FIX sats=18 hdop=0.7 corrAge=<5s",
         ), lines)
         val s = t.stats(now)
@@ -50,13 +50,13 @@ class GnssFeedTrackerTest {
         t.onSky(18, 27); t.onNmea(59_800)
         repeat(300) { t.onFix(fix(RtkStatus.FIX, 1.2), 1_000L + it * 200) }
         val hb = t.heartbeat(60_000)
-        assertTrue(lines.contains("I Source INTERNAL → EXTERNAL_TCP"))
-        assertEquals("Heartbeat source=EXTERNAL_TCP rtk=FIX sats=18/27 hdop=0.7 hAcc=<2cm corrAge=1.2s fixes/s=5.0 lastNmea=0.2s", hb)
+        assertTrue(lines.contains("I GNSS source INTERNAL → EXTERNAL_TCP"))
+        assertEquals("GNSS heartbeat source=EXTERNAL_TCP rtk=FIX sats=18/27 hdop=0.7 hAcc=<2cm corrAgeS=1.2 fixesPerS=5.0 lastNmeaAgeS=0.2", hb)
         listOf("41.23", "76.12", "312.3", "345.6").forEach { assertFalse(it, (lines + hb).any { l -> l.contains(it) }) }
     }
 
     @Test fun `hAcc buckets`() {
-        assertEquals(listOf("<2cm", "<10cm", "<1m", ">=10m", "?"),
+        assertEquals(listOf("<2cm", "<10cm", "<1m", ">=10m", "unknown"),
             listOf(0.01, 0.07, 0.5, 12.0, null).map(GnssFeedTracker::hAccBucket))
     }
 
@@ -75,7 +75,7 @@ class GnssFeedTrackerTest {
         t.onSource("EXTERNAL_TCP", 0)
         assertEquals("no fix yet", null, t.heartbeatIfDue(60_000))
         t.onFix(fix(RtkStatus.FIX, 1.0), 61_000)
-        assertTrue(t.heartbeatIfDue(62_000)!!.startsWith("Heartbeat source=EXTERNAL_TCP rtk=FIX"))
+        assertTrue(t.heartbeatIfDue(62_000)!!.startsWith("GNSS heartbeat source=EXTERNAL_TCP rtk=FIX"))
         t.onFix(fix(RtkStatus.FIX, 1.0), 121_000)
         assertEquals("unchanged", null, t.heartbeatIfDue(122_000))
         t.onFix(fix(RtkStatus.FIX, 1.0, hAcc = 0.5), 181_000)

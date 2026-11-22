@@ -135,13 +135,13 @@ class FixSwitchboard(
                 if (previousChoice != null && previousChoice != choice) {
                     lastProviderSwitchAtMs = System.currentTimeMillis()
                     // The switch itself is logged once at I by GnssFeedTracker ("Source A → B").
-                    DiagnosticsLogger.d("GNSS") { "Switchboard rebinding $previousChoice -> $choice; cleared current fix and sky" }
+                    DiagnosticsLogger.d("GNSS") { "GNSS source rebound $previousChoice → $choice: current fix and sky cleared" }
                 }
                 previousChoice = choice
 
                 val adapter = adapters[choice]
                 if (adapter == null) {
-                    DiagnosticsLogger.e("GNSS", "No adapter registered for $choice; GNSS stream will be empty")
+                    DiagnosticsLogger.e("GNSS", "GNSS source bind failed: no adapter registered, stream will be empty source=$choice")
                     rebindTo(null)
                 } else {
                     bind(adapter)
@@ -252,13 +252,13 @@ class FixSwitchboard(
                 lastFixReceivedAtMs = now
                 if (_fixStale.value) {
                     _fixStale.value = false
-                    DiagnosticsLogger.i("GNSS", "Fixes resumed from ${next::class.simpleName}")
+                    DiagnosticsLogger.i("GNSS", "GNSS fixes resumed adapter=${next::class.simpleName}")
                 }
                 // Datum normalisation (NAD83(2011) receiver output → WGS84) before anyone sees it.
                 val out = runCatching { fixTransform(fix) }.getOrElse {
                     // Would repeat per fix: first error in full, then at most once a minute.
                     DiagnosticsLogger.every("GNSS", "switchboard.transform", 60_000L, 'E', throwable = it) {
-                        "fix transform failed; publishing untransformed fix"
+                        "GNSS fix transform failed: publishing untransformed fix"
                     }; fix
                 }
                 _currentFix.value = out
@@ -281,8 +281,8 @@ class FixSwitchboard(
                     app.surrealar.gnss.debug.GnssDebugLog.event("switchboard") {
                         "STALE: no fix for ${monotonicNowMs() - last} ms from ${next::class.simpleName} — currentFix cleared"
                     }
-                    DiagnosticsLogger.w("GNSS", "No fix for ${fixStaleAfterMs}ms from " +
-                        "${next::class.simpleName}; cleared current fix")
+                    DiagnosticsLogger.w("GNSS", "GNSS fixes stopped: current fix cleared " +
+                        "adapter=${next::class.simpleName} silentMs=$fixStaleAfterMs")
                 }
             }
         }

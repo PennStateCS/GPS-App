@@ -95,7 +95,7 @@ class ModelPickerActivity : AppCompatActivity() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                DiagnosticsLogger.e(DiagTags.MODEL, "Model picker: failed to load models: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.e(DiagTags.MODEL, "Model picker load failed", e)
             }
         }
     }

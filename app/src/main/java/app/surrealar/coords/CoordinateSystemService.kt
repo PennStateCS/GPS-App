@@ -51,10 +51,10 @@ class CoordinateSystemService @Inject constructor(
     init {
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val t0 = System.nanoTime()
-            DiagnosticsLogger.d(DiagTags.DATA) { "GEOID18 grid load start" }
+            DiagnosticsLogger.d(DiagTags.DATA) { "GEOID18 grid load started" }
             geoid = runCatching {
                 context.assets.open(Geoid18Grid.ASSET_PATH).use { Geoid18Grid(it.readBytes()) }
-            }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded in ${(System.nanoTime() - t0) / 1_000_000}ms") }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid failed to load — NAVD88 heights unavailable", it) }
+            }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded durationMs=${(System.nanoTime() - t0) / 1_000_000}") }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid load failed: NAVD88 heights unavailable", it) }
                 .getOrNull()
         }
     }

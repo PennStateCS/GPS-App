@@ -61,7 +61,7 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         val old = source
         if (old == name) return@synchronized
         source = name
-        if (old != null) { sourceSwitches++; sink('I', "Source $old → $name") }
+        if (old != null) { sourceSwitches++; sink('I', "GNSS source $old → $name") }
         closeStatus(nowMs)
         lastRtk = null; corrBucket = null; lastFix = null; fixTimes.clear()
         loggedRtk = null; pendingRtk = null; lastBeatKey = null
@@ -93,7 +93,7 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         } else if (nowMs - pendingRtkSinceMs >= RTK_HOLD_MS) {
             val from = loggedRtk
             loggedRtk = rtk; pendingRtk = null
-            sink(if (from == RtkStatus.FIX) 'W' else 'I', "RTK ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "?"}" +
+            sink(if (from == RtkStatus.FIX) 'W' else 'I', "RTK ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "unknown"}" +
                 " hdop=${fmt1(fix.hDop)} corrAge=${bucket?.label ?: "none"}")
         }
 
@@ -102,9 +102,9 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
             corrBucket = bucket
             when {
                 bucket == CorrectionBucket.OK && before != null ->
-                    sink('I', "Correction age recovered (${fmt1(diffAge)} s)")
+                    sink('I', "Corrections age recovered ageS=${fmt1(diffAge)}")
                 bucket != CorrectionBucket.OK && (before == null || bucket.minS > before.minS) ->
-                    sink('W', "Correction age over ${bucket.minS.toInt()} s (${fmt1(diffAge)} s)")
+                    sink('W', "Corrections age over threshold thresholdS=${bucket.minS.toInt()} ageS=${fmt1(diffAge)}")
             }
         }
     }
@@ -135,10 +135,10 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         while (fixTimes.isNotEmpty() && nowMs - fixTimes.first > 60_000L) fixTimes.removeFirst()
         val used = skyUsed?.takeIf { it > 0 } ?: f?.satsUsed
         val vis = skyVisible?.takeIf { it > 0 } ?: f?.satsVisible ?: used
-        val nmea = if (lastNmeaAtMs == 0L) "never" else "${fmt1((nowMs - lastNmeaAtMs) / 1000.0)}s"
-        "Heartbeat source=${source ?: "none"} rtk=${f?.rtkStatus?.name ?: "none"} sats=${used ?: "?"}/${vis ?: "?"}" +
-            " hdop=${fmt1(f?.hDop)} hAcc=${hAccBucket(f?.hAccM)} corrAge=${f?.diffAgeS?.let { "${fmt1(it)}s" } ?: "none"}" +
-            " fixes/s=${String.format(Locale.US, "%.1f", fixTimes.size / 60.0)} lastNmea=$nmea"
+        val nmea = if (lastNmeaAtMs == 0L) "never" else fmt1((nowMs - lastNmeaAtMs) / 1000.0)
+        "GNSS heartbeat source=${source ?: "none"} rtk=${f?.rtkStatus?.name ?: "none"} sats=${used ?: "unknown"}/${vis ?: "unknown"}" +
+            " hdop=${fmt1(f?.hDop)} hAcc=${hAccBucket(f?.hAccM)} corrAgeS=${f?.diffAgeS?.let { fmt1(it) } ?: "none"}" +
+            " fixesPerS=${String.format(Locale.US, "%.1f", fixTimes.size / 60.0)} lastNmeaAgeS=$nmea"
     }
 
     fun stats(nowMs: Long): Stats = synchronized(lock) {
@@ -163,10 +163,10 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         const val HEARTBEAT_EVERY_MS = 600_000L
 
         fun hAccBucket(m: Double?): String = when {
-            m == null || !m.isFinite() -> "?"
+            m == null || !m.isFinite() -> "unknown"
             m < 0.02 -> "<2cm"; m < 0.05 -> "<5cm"; m < 0.10 -> "<10cm"; m < 0.30 -> "<30cm"
             m < 1.0 -> "<1m"; m < 3.0 -> "<3m"; m < 10.0 -> "<10m"; else -> ">=10m"
         }
-        private fun fmt1(v: Double?): String = v?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.1f", it) } ?: "?"
+        private fun fmt1(v: Double?): String = v?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.1f", it) } ?: "unknown"
     }
 }

@@ -46,8 +46,8 @@ class ExitReasonRecorder(
             val name = reasonName(e.reason)
             val bad = e.reason == REASON_ANR || e.reason == REASON_CRASH || e.reason == REASON_CRASH_NATIVE
             log(bad, "Previous process exit: reason=$name status=${e.status} importance=${e.importance}" +
-                " pss=${e.pssKb}kB rss=${e.rssKb}kB at=${stamp(e.timestampMs)}" +
-                " description=${e.description?.take(200) ?: "none"}")
+                " pssKb=${e.pssKb} rssKb=${e.rssKb} at=${stamp(e.timestampMs)}" +
+                " description=${e.description?.take(200)?.let { "\"${it.replace('"', '\'')}\"" } ?: "none"}")
             if (e.reason == REASON_ANR || e.reason == REASON_CRASH_NATIVE) saveTrace(e, name)
         }
         prefs.edit().putLong(KEY_LAST_EXIT_TS, fresh.last().timestampMs).apply()
@@ -61,7 +61,7 @@ class ExitReasonRecorder(
             exitsDir.mkdirs()
             val file = File(exitsDir, "${fileStamp(e.timestampMs)}-$name.txt")
             input.use { inp -> file.outputStream().use { inp.copyTo(it) } }
-        }.onFailure { log(true, "Could not save the $name trace: ${it.javaClass.simpleName}: ${it.message}") }
+        }.onFailure { log(true, "Exit trace save failed trace=$name error=${it.javaClass.simpleName}") }
     }
 
     /** Keeps the newest [MAX_TRACES] trace files. */
@@ -101,7 +101,7 @@ class ExitReasonRecorder(
                     val am = app.getSystemService(ActivityManager::class.java) ?: return@runCatching
                     val exits = am.getHistoricalProcessExitReasons(app.packageName, 0, 10).map { it.toExit() }
                     ExitReasonRecorder(exitsDir(app), app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)).record(exits)
-                }.onFailure { DiagnosticsLogger.w(DiagTags.APP, "Could not read exit reasons", it) }
+                }.onFailure { DiagnosticsLogger.w(DiagTags.APP, "Exit reasons read failed", it) }
             }, "diag-exits").start()
         }
 

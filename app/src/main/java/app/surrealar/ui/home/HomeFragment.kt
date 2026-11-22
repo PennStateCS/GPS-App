@@ -145,7 +145,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             mapView?.onCreate(savedInstanceState)
             mapView?.getMapAsync(this)
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.MAP, "Home MapView init failed", e)
+            DiagnosticsLogger.e(DiagTags.MAP, "Home map view init failed", e)
         }
 
         // Set up UI
@@ -167,7 +167,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun logNavFailure(target: String, e: Exception) =
-        DiagnosticsLogger.e(DiagTags.NAV, "Home navigation to $target failed", e)
+        DiagnosticsLogger.e(DiagTags.NAV, "Home navigation failed target=$target", e)
 
     private fun setupQuickActionButtons() {
         // Quick Actions chips
@@ -239,7 +239,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e(DiagTags.MAP, "Home map stopped following GNSS: fix collector failed", e)
+                    DiagnosticsLogger.e(DiagTags.MAP, "Home map fix collector failed: map no longer follows GNSS", e)
                 }
             }
         }
@@ -254,7 +254,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     if (previousProvider != null && previousProvider != provider) {
                         // The source switch itself is logged once by GnssFeedTracker; this is detail.
                         val from = previousProvider
-                        DiagnosticsLogger.d(DiagTags.MAP) { "Home map live location reset after provider switch $from -> $provider" }
+                        DiagnosticsLogger.d(DiagTags.MAP) { "Home map live location reset: provider $from → $provider" }
                         resetMapLiveLocation()
                     }
                     previousProvider = provider
@@ -280,7 +280,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
      * the same gate (MainActivity.logToolbarIgnore), so this is not an event-log line.
      */
     private fun logMapIgnore(reason: String) {
-        DiagnosticsLogger.every(DiagTags.MAP, "home.ignore.$reason", 60_000L, 'D') { "Home map ignored $reason fix" }
+        DiagnosticsLogger.every(DiagTags.MAP, "home.ignore.$reason", 60_000L, 'D') { "Home map ignored fix reason=$reason" }
     }
 
     /** True when [fix]'s provider matches the user-selected [source]. */
@@ -309,7 +309,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e(DiagTags.GNSS, "Home fix badge stopped: fix snapshot collector failed", e)
+                    DiagnosticsLogger.e(DiagTags.GNSS, "Home fix badge collector failed: fix snapshot", e)
                 }
             }
         }
@@ -323,7 +323,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e(DiagTags.GNSS, "Home fix badge stopped: NMEA stats collector failed", e)
+                    DiagnosticsLogger.e(DiagTags.GNSS, "Home fix badge collector failed: NMEA stats", e)
                 }
             }
         }
@@ -366,7 +366,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e(DiagTags.GNSS, "Home Field Status stopped: collector failed", e)
+                    DiagnosticsLogger.e(DiagTags.GNSS, "Home field status collector failed", e)
                 }
             }
         }
@@ -519,7 +519,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             val update = CameraUpdateFactory.newCameraPosition(builder.build())
             if (animate) map.animateCamera(update) else map.moveCamera(update)
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MAP, "Home map apply3D failed enable=$enable", e)
+            DiagnosticsLogger.w(DiagTags.MAP, "Home map 3D apply failed enable=$enable", e)
         }
     }
 
@@ -574,7 +574,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             if (map.isMyLocationEnabled != visible) map.isMyLocationEnabled = visible
         } catch (e: SecurityException) {
             // Called per fix: one line a minute is enough to show a repeating failure.
-            DiagnosticsLogger.every(DiagTags.MAP, "home.myLocation", 60_000L, 'W', e) { "Home My Location layer toggle failed visible=$visible" }
+            DiagnosticsLogger.every(DiagTags.MAP, "home.myLocation", 60_000L, 'W', e) { "Home map My Location layer toggle failed visible=$visible" }
         }
     }
 
@@ -590,8 +590,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 if (!loggedFirstMapFix) {
                     loggedFirstMapFix = true
                     // One line per fragment / provider switch. No coordinates in the diagnostic log (project rule).
-                    DiagnosticsLogger.i(DiagTags.MAP, "First fix applied to Home map provider=${fix.provider} " +
-                        "status=${fix.rtkStatus} hAcc=${fix.hAccM?.let { "%.3fm".format(it) } ?: "?"} sats=${fix.satsUsed}")
+                    DiagnosticsLogger.i(DiagTags.MAP, "Home map first fix applied provider=${fix.provider} " +
+                        "status=${fix.rtkStatus} hAccM=${fix.hAccM?.let { "%.3f".format(java.util.Locale.US, it) } ?: "unknown"} " +
+                        "sats=${fix.satsUsed ?: "unknown"}")
                 }
 
                 val location = LatLng(fix.latDeg, fix.lonDeg)
@@ -635,7 +636,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             ?.takeIf { it.latDeg in -90.0..90.0 && it.lonDeg in -180.0..180.0 }
             ?.let { it.latDeg to it.lonDeg }
         val lastKnown = runCatching { lastKnownPositionStore.get() }
-            .onFailure { DiagnosticsLogger.w(DiagTags.MAP, "Home initial camera: last-known position read failed", it) }
+            .onFailure { DiagnosticsLogger.w(DiagTags.MAP, "Home map last-known position read failed", it) }
             .getOrNull()
         // Saved points are only needed when there is neither a live fix nor a last position.
         if (live != null || lastKnown != null) {
@@ -650,7 +651,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 }
             }.onFailure {
                 if (it is kotlinx.coroutines.CancellationException) throw it
-                DiagnosticsLogger.w(DiagTags.MAP, "Home initial camera: saved points read failed", it)
+                DiagnosticsLogger.w(DiagTags.MAP, "Home map saved points read failed", it)
             }.getOrDefault(emptyList())
             // A live fix may have arrived meanwhile — don't pull the camera away from it.
             if (!hasCenteredCamera && googleMap === map) {
@@ -691,9 +692,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             showGnssStatusChip(choice.waitingText)
             // Reported once in the MAP_LOADED line; the step itself is debug detail.
             initialCameraKind = choice::class.simpleName ?: "unknown"
-            DiagnosticsLogger.d(DiagTags.MAP) { "Home initial camera: $initialCameraKind" }
+            DiagnosticsLogger.d(DiagTags.MAP) { "Home map initial camera set camera=$initialCameraKind" }
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MAP, "Home initial camera move failed choice=${choice::class.simpleName}", e)
+            DiagnosticsLogger.w(DiagTags.MAP, "Home map initial camera move failed choice=${choice::class.simpleName}", e)
         }
     }
 
@@ -731,7 +732,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             loc.time = fix.timeUtc.toEpochMilli()
             loc
         } catch (e: Exception) {
-            DiagnosticsLogger.every(DiagTags.MAP, "home.fixToLocation", 60_000L, 'W', e) { "Home fixToLocation failed, using bare location" }
+            DiagnosticsLogger.every(DiagTags.MAP, "home.fixToLocation", 60_000L, 'W', e) { "Home map fix conversion failed: using bare location" }
             Location("LocationManagerFix").also {
                 it.latitude = fix.latDeg
                 it.longitude = fix.lonDeg
@@ -744,7 +745,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         try {
             // MAP_READY is debug detail; the one event-log line per map open is MAP_LOADED (or the
             // 10 s timeout warning), which carries the renderer, network and initial camera.
-            DiagnosticsLogger.d(DiagTags.MAP) { "Home MAP_READY mapsRenderer=${SurRealApplication.activeMapsRenderer}" }
+            DiagnosticsLogger.d(DiagTags.MAP) { "MAP_READY map=home renderer=${SurRealApplication.activeMapsRenderer}" }
             SurRealApplication.reportMapLoadStatus("MAP_READY")
             googleMap = map
 
@@ -770,7 +771,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val transport = when { active == null -> "none"; isVpn -> "VPN"; isWifi -> "WiFi"; isCellular -> "cellular"; else -> "other" }
                 "network=$transport internet=$hasInternet validated=$hasValidated"
             }
-            DiagnosticsLogger.d(DiagTags.MAP) { "Home map $network" }
+            DiagnosticsLogger.d(DiagTags.MAP) { "Home map connectivity $network" }
 
             // Set map type to Normal (shows streets/terrain instead of blank)
             map.mapType = GoogleMap.MAP_TYPE_NORMAL
@@ -795,7 +796,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 val elapsed = System.currentTimeMillis() - mapReadyAt
                 val cam = map.cameraPosition
                 // The one event-log line per Home map open. No camera target (coordinates).
-                DiagnosticsLogger.i(DiagTags.MAP, "Home MAP_LOADED elapsedMs=$elapsed renderer=${SurRealApplication.activeMapsRenderer} " +
+                DiagnosticsLogger.i(DiagTags.MAP, "MAP_LOADED map=home elapsedMs=$elapsed renderer=${SurRealApplication.activeMapsRenderer} " +
                     "camera=$initialCameraKind zoom=${"%.1f".format(cam.zoom)} $network")
                 SurRealApplication.reportMapLoadStatus("MAP_LOADED (${elapsed}ms)")
             }
@@ -803,7 +804,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             viewLifecycleOwner.lifecycleScope.launch {
                 delay(10_000)
                 if (!mapTilesLoaded) {
-                    DiagnosticsLogger.w(DiagTags.MAP, "Home MAP_LOADED did not fire after 10 seconds — tiles may be blank " +
+                    DiagnosticsLogger.w(DiagTags.MAP, "Home map tile load timed out: MAP_LOADED did not fire, tiles may be blank timeoutMs=10000 " +
                         "renderer=${SurRealApplication.activeMapsRenderer} $network")
                     SurRealApplication.reportMapLoadStatus("MAP_READY but MAP_LOADED did not fire (10s)")
                 }
@@ -876,7 +877,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 }
             }
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.MAP, "Home onMapReady failed", e)
+            DiagnosticsLogger.e(DiagTags.MAP, "Home map ready handling failed", e)
         }
     }
 

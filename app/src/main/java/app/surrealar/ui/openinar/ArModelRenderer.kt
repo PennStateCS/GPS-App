@@ -66,7 +66,7 @@ class ArModelRenderer(private val scope: CoroutineScope) {
                 DevLog.d(TAG) { "GLB validated: ${File(filePath).name}" }
             } catch (e: Exception) {
                 cache[filePath] = CacheEntry(LoadState.FAILED, e.message)
-                DiagnosticsLogger.w(ArFilamentRenderer.DIAG, "GLB validation failed file=${File(filePath).name}: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.w(ArFilamentRenderer.DIAG, "Model GLB validation failed file=${File(filePath).name}", e)
             }
         }
     }

@@ -73,13 +73,13 @@ object ModelFileCleaner {
             if (file.exists() && file.isFile) {
                 val deleted = file.delete()
                 if (!deleted) {
-                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail delete failed file=${file.name}")
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail deletion failed file=${file.name}")
                 } else {
                     DevLog.d(TAG) { "Deleted thumbnail: ${file.name}" }
                 }
             }
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail delete failed", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail deletion failed", e)
         }
     }
 }

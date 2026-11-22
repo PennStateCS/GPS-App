@@ -93,11 +93,11 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
                 iconView.setImageDrawable(drawable)
             } catch (e: Exception) {
                 app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.MAP,
-                    "Point info sheet: icon load failed icon=$iconName", e)
+                    "Map point info icon load failed icon=$iconName", e)
             }
         } catch (e: Exception) {
             app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.MAP,
-                "Point info sheet: view setup failed", e)
+                "Map point info view setup failed", e)
         }
     }
 }

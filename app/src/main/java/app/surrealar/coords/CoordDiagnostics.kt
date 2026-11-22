@@ -29,7 +29,7 @@ object CoordDiagnostics {
     fun onResult(p: ConvertedPosition, live: Boolean, geoidLoaded: Boolean = true) {
         if (!live) return
         DiagnosticsLogger.logOnChange(DiagTags.COORD, "coord.system", SystemKey(p.horizontal, p.datum, p.zoneLabel, p.vertical)) {
-            "Coordinate system ${p.horizontal} datum=${p.datum} zone=${p.zoneLabel ?: "none"} vertical=${p.vertical} unit=${p.unit}"
+            "Coordinate system changed horizontal=${p.horizontal} datum=${p.datum} zone=${p.zoneLabel?.let { "\"$it\"" } ?: "none"} vertical=${p.vertical} unit=${p.unit}"
         }
         val reason = p.heightUnavailableReason?.let { if (!geoidLoaded) GEOID_NOT_LOADED else it }
         if (reason == lastHeightReason) {
@@ -38,7 +38,7 @@ object CoordDiagnostics {
                 val now = DiagnosticsLogger.nowMs()
                 if (now - lastHeightLogMs >= THROTTLE_MS) {
                     lastHeightLogMs = now
-                    DiagnosticsLogger.w(DiagTags.COORD, "Height still unavailable for ${p.vertical}: $reason")
+                    DiagnosticsLogger.w(DiagTags.COORD, "Height still unavailable: $reason vertical=${p.vertical}")
                 }
             }
             return
@@ -47,9 +47,9 @@ object CoordDiagnostics {
         lastHeightReason = reason
         lastHeightLogMs = DiagnosticsLogger.nowMs()
         when {
-            reason == GEOID_NOT_LOADED -> DiagnosticsLogger.d(DiagTags.COORD) { "Height pending for ${p.vertical}: $reason" }
-            reason != null -> DiagnosticsLogger.w(DiagTags.COORD, "Height unavailable for ${p.vertical}: $reason")
-            before == GEOID_NOT_LOADED -> DiagnosticsLogger.d(DiagTags.COORD) { "Height available (geoid loaded)" }
+            reason == GEOID_NOT_LOADED -> DiagnosticsLogger.d(DiagTags.COORD) { "Height pending: $reason vertical=${p.vertical}" }
+            reason != null -> DiagnosticsLogger.w(DiagTags.COORD, "Height unavailable: $reason vertical=${p.vertical}")
+            before == GEOID_NOT_LOADED -> DiagnosticsLogger.d(DiagTags.COORD) { "Height available: geoid loaded" }
             before != null -> DiagnosticsLogger.i(DiagTags.COORD, "Height available again")
         }
     }
@@ -63,7 +63,7 @@ object CoordDiagnostics {
     fun onFailure(s: CoordinateSystemSettings, e: Exception) {
         val type = e.javaClass.simpleName
         DiagnosticsLogger.every(DiagTags.COORD, "coord.fail.$type", THROTTLE_MS, 'W', throwable = e) {
-            "Conversion to ${s.horizontal} failed: $type: ${e.message} (repeats suppressed for 60 s)"
+            "Coordinate conversion failed horizontal=${s.horizontal} error=$type"
         }
     }
 }

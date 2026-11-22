@@ -46,7 +46,7 @@ object MapThemeHelper {
             }.onSuccess {
                 DevLog.d(TAG) { "Dark map style applied (mapType=$mapType)" }
             }.onFailure {
-                DiagnosticsLogger.w(DiagTags.MAP, "Dark map style not applied, using default mapType=$mapType", it)
+                DiagnosticsLogger.w(DiagTags.MAP, "Map dark style apply failed: using default style mapType=$mapType", it)
                 // Clear any partially-applied style so the map falls back to default rendering
                 // (best effort: if this fails too the map keeps whatever it had).
                 runCatching { map.setMapStyle(null) }

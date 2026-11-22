@@ -49,7 +49,7 @@ object GlbGeoreferenceReprojector {
         return try {
             reprojectInternal(file)
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "GLB reprojection skipped file=${file.name}: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${file.name}", e)
             null
         }
     }
@@ -126,8 +126,8 @@ object GlbGeoreferenceReprojector {
         // so their resolution near the origin is one float ulp.
         val latResM = Math.ulp(lat0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLat(lat0)
         val lonResM = Math.ulp(lon0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLon(lat0)
-        DiagnosticsLogger.w(DiagTags.MODEL, "GLB reprojection file=${file.name}: float32 degree vertices limit " +
-            "the source model to about ${"%.1f".format(latResM)} m (lat) / ${"%.1f".format(lonResM)} m (lon)")
+        DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection precision limited: float32 degree vertices " +
+            "file=${file.name} latResM=${"%.1f".format(latResM)} lonResM=${"%.1f".format(lonResM)}")
 
         // Transform each unique POSITION accessor's vertices in the BIN chunk.
         for (idx in posAccessorIdx) {
@@ -225,7 +225,7 @@ object GlbGeoreferenceReprojector {
             spanX in 1e-7..0.005 && spanZ in 1e-7..0.005 -> ModelLocationConfidence.HIGH
             else -> ModelLocationConfidence.MEDIUM
         }
-        DiagnosticsLogger.i(DiagTags.MODEL, "GLB reprojected to local ENU file=${file.name} " +
+        DiagnosticsLogger.i(DiagTags.MODEL, "Model reprojected to local ENU file=${file.name} " +
             "georeferenced=true method=GLB_POSITION_WGS_LIKE confidence=$confidence")   // no origin coordinates
 
         return EmbeddedModelLocation(

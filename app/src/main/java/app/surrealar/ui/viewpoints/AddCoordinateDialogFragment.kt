@@ -182,7 +182,7 @@ class AddCoordinateDialogFragment(
         super.onCreate(savedInstanceState)
         setStyle(STYLE_NORMAL, 0)
         if (recreatedBySystem) {
-            DiagnosticsLogger.i(DiagTags.CAPTURE, "Add Coordinate dialog closed after Android recreated it")
+            DiagnosticsLogger.i(DiagTags.CAPTURE, "Add Coordinate dialog closed: recreated by the system")
             dismissAllowingStateLoss()
         }
     }
@@ -266,7 +266,7 @@ class AddCoordinateDialogFragment(
                 settingsRepo.locationSource.first()
             }.onFailure {
                 if (it is kotlinx.coroutines.CancellationException) throw it
-                DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture source read failed, using default INTERNAL", it)
+                DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture source read failed: using default source=INTERNAL", it)
             }.getOrDefault(LocationSourceType.INTERNAL)
             val activeProvider = sourceSettings.activeProvider.value
 
@@ -281,7 +281,7 @@ class AddCoordinateDialogFragment(
             sectionExternal?.visibility = View.VISIBLE
             if (isExternalMode) {
                 if (activeProvider != SourceSettings.ProviderChoice.EXTERNAL_TCP) {
-                    DiagnosticsLogger.i(DiagTags.CAPTURE, "External capture waiting for external data (activeProvider=$activeProvider)")
+                    DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture waiting for external receiver data activeProvider=$activeProvider")
                     showExternalWaiting()
                 }
                 startExternalAveraging()
@@ -338,7 +338,7 @@ class AddCoordinateDialogFragment(
         val now = System.currentTimeMillis()
         if (now - lastCaptureIgnoreLogMs >= 10_000L) {
             lastCaptureIgnoreLogMs = now
-            DiagnosticsLogger.d(DiagTags.CAPTURE) { "Ignored $reason fix in live preview" }
+            DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture preview ignored fix reason=$reason" }
         }
     }
 
@@ -385,7 +385,7 @@ class AddCoordinateDialogFragment(
         viewLifecycleOwner.lifecycleScope.launch {
             val settings = runCatching { settingsRepo.gnssCaptureSettings.first() }.onFailure {
                 if (it is kotlinx.coroutines.CancellationException) throw it
-                DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture policy read failed, using default", it)
+                DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture policy read failed: using default", it)
             }.getOrDefault(GnssCaptureSettings())
             val policy = settings.resolvePolicy(internal)
             capturePolicy = policy
@@ -675,7 +675,7 @@ class AddCoordinateDialogFragment(
             // before the minimums were met). The Save button is already disabled in that case;
             // this is defense-in-depth so an incomplete capture can never be silently saved.
             if (!completedState.requirementsMet) {
-                DiagnosticsLogger.w(DiagTags.CAPTURE, "Save blocked: requirements not met (timed out)")
+                DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: requirements not met, capture timed out")
                 return
             }
             viewLifecycleOwner.lifecycleScope.launch {
@@ -685,7 +685,7 @@ class AddCoordinateDialogFragment(
                 val receiver = snap?.receiver ?: run {
                     // The antenna/pole settings couldn't be read (the snapshot read logged why).
                     // Saving with 0 m would store the antenna height as the ground mark: refuse.
-                    DiagnosticsLogger.e(DiagTags.CAPTURE, "antenna offset failed; save blocked mode=${if (isExternalMode) "EXTERNAL" else "INTERNAL"}",
+                    DiagnosticsLogger.e(DiagTags.CAPTURE, "Capture save blocked: antenna offset unavailable mode=${if (isExternalMode) "EXTERNAL" else "INTERNAL"}",
                         IllegalStateException("receiver settings unavailable in capture snapshot"))
                     if (isAdded) Toast.makeText(requireContext(), getString(R.string.capture_antenna_offset_unavailable), Toast.LENGTH_LONG).show()
                     return@launch
@@ -732,7 +732,7 @@ class AddCoordinateDialogFragment(
             // Model-embedded location: the model's own coordinates, not an antenna measurement, so
             // no antenna height is subtracted.
             val altitude = altitude ?: run {
-                DiagnosticsLogger.w(DiagTags.CAPTURE, "Save blocked: model location has no altitude")
+                DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: model location has no altitude")
                 return
             }
             val utm = try { Utm.forward(latitude, longitude) } catch (_: Exception) { null }
@@ -796,7 +796,7 @@ class AddCoordinateDialogFragment(
         val validation = validateForSave(coordinate)
         if (!validation.isValid) {
             val msg = validation.errors.firstOrNull() ?: "Invalid coordinate"
-            DiagnosticsLogger.w(DiagTags.CAPTURE, "Save blocked: ${validation.errors.joinToString()}")
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked by validation: ${validation.errors.joinToString("; ")}")
             if (isAdded) Toast.makeText(requireContext(), "Can't save: $msg", Toast.LENGTH_LONG).show()
             btnSave?.isEnabled = false
             return false
@@ -918,7 +918,7 @@ class AddCoordinateDialogFragment(
                     val file = File(thumbnailPath)
                     if (file.exists()) BitmapFactory.decodeFile(thumbnailPath) else null
                 } catch (e: Exception) {
-                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail decode failed in Add Coordinate", e)
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail decode failed screen=addCoordinate", e)
                     null
                 }
             }

@@ -47,7 +47,7 @@ class SettingsMigrationRunner(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.SETTINGS, "settings migration failed", e)
+            app.surrealar.util.DiagnosticsLogger.e(app.surrealar.util.diagnostics.DiagTags.SETTINGS, "Settings migration failed", e)
             SettingsMigrationResult(
                 fromVersion = -1,
                 toVersion = SettingsDefaults.CURRENT_SETTINGS_SCHEMA_VERSION,

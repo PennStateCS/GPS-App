@@ -54,9 +54,9 @@ internal class GroundSnapper {
             val surfaces = planes.size
             app.surrealar.util.DiagnosticsLogger.logOnChange(ArFilamentRenderer.DIAG, FLOOR_LOG_KEY, detected,
                 stableMs = 3_000L) {
-                if (detected && floor != null) "ground_snap floor detected " +
-                    "(${"%.2f".format(camY - floor)} m below camera, surfaces=$surfaces)"
-                else "ground_snap floor lost — content keeps its anchor height until a surface is seen"
+                if (detected && floor != null) "Ground snap floor detected " +
+                    "belowCameraM=${"%.2f".format(camY - floor)} surfaces=$surfaces"
+                else "Ground snap floor lost: content keeps its anchor height until a surface is seen"
             }
         }
     }

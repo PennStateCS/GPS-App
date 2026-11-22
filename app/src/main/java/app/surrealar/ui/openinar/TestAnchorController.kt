@@ -100,7 +100,7 @@ class TestAnchorController(private val context: Context) {
                     dst
                 }.onFailure {
                     DiagnosticsLogger.e(ArFilamentRenderer.DIAG,
-                        "Test pin model prepare failed asset=$ASSET_PATH: ${it.javaClass.simpleName}", it)
+                        "Test grid pin model prepare failed asset=$ASSET_PATH", it)
                 }.getOrNull()
             }
             if (outFile != null) {
@@ -120,7 +120,7 @@ class TestAnchorController(private val context: Context) {
         // One summary line; per-key preload lines for test keys are debug-only in the renderer,
         // which logs one completion line (ok/failed) when the batch settles.
         val n = (2 * GRID_RADIUS + 1) * (2 * GRID_RADIUS + 1)
-        DiagnosticsLogger.i(ArFilamentRenderer.DIAG, "test grid preload n=$n")
+        DiagnosticsLogger.i(ArFilamentRenderer.DIAG, "Test grid preload started n=$n")
         for (latOff in -GRID_RADIUS..GRID_RADIUS) {
             for (lonOff in -GRID_RADIUS..GRID_RADIUS) {
                 filamentRenderer.preload(gridKey(latOff, lonOff), filePath, scope)
@@ -278,8 +278,8 @@ class TestAnchorController(private val context: Context) {
             val noneTracking = rendered == 0
             DiagnosticsLogger.logOnChange(ArFilamentRenderer.DIAG, TRACKING_LOG_KEY, noneTracking,
                 level = if (noneTracking) 'W' else 'I', stableMs = 3_000L) {
-                if (noneTracking) "Test anchors active but none TRACKING total=${anchors.size} — check altitude & GNSS accuracy"
-                else "Test anchors tracking $rendered/${anchors.size}"
+                if (noneTracking) "Test anchors not tracking: check altitude and GNSS accuracy total=${anchors.size}"
+                else "Test anchors tracking rendered=$rendered total=${anchors.size}"
             }
         }
     }
@@ -314,7 +314,7 @@ class TestAnchorController(private val context: Context) {
         }
         if (storedAlt == null) {
             DiagnosticsLogger.w(ArFilamentRenderer.DIAG,
-                "Test grid: no altitude (no fix HAE, no camera pose) — using terrain-model anchors")
+                "Test grid altitude unavailable: no fix height or camera pose, using terrain anchors")
         }
         val useTerrainNow = storedAlt == null
 
@@ -358,7 +358,7 @@ class TestAnchorController(private val context: Context) {
         }
         if (failed > 0) {
             DiagnosticsLogger.w(ArFilamentRenderer.DIAG,
-                "Test anchor creation failed for $failed/$total pins (terrain=$useTerrainNow); first error below",
+                "Test anchor creation failed failed=$failed total=$total terrain=$useTerrainNow",
                 firstFailure)
         }
 
@@ -369,7 +369,7 @@ class TestAnchorController(private val context: Context) {
             else -> "STORED"
         }
         DiagnosticsLogger.i(ArFilamentRenderer.DIAG,
-            "Test grid spawned: $created/$total ${activeMode} anchors spacing=${GRID_SPACING_M}m " +
+            "Test grid spawned created=$created total=$total mode=${activeMode} spacingM=${GRID_SPACING_M} " +
             "altSource=$altSource")   // no coordinates or heights in the diagnostic log
     }
 

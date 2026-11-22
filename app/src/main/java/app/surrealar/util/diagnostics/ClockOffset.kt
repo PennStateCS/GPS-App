@@ -33,7 +33,7 @@ object ClockOffset {
     }
 
     fun describe(offsetMs: Long, source: TimestampSource): String =
-        "Clock offset device−GNSS ${String.format(Locale.US, "%+.1f", offsetMs / 1000.0)} s (${source.name})"
+        "Clock offset measured deviceMinusGnssS=${String.format(Locale.US, "%.1f", offsetMs / 1000.0)} source=${source.name}"
 
     /** True when [offsetMs] is a change worth a line, given the offset in the last line written. */
     internal fun isChange(lastLogged: Long?, offsetMs: Long): Boolean =

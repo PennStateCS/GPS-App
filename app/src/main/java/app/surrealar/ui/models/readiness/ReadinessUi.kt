@@ -84,6 +84,6 @@ object ReadinessStyle {
         val fails = report.checks.filter { it.status == CheckStatus.FAIL }.joinToString(",") { it.id }
         val warns = report.checks.filter { it.status == CheckStatus.WARN }.joinToString(",") { it.id }
         return "MODEL_READINESS model=$fileName verdict=${report.verdict} " +
-            "fails=${fails.ifEmpty { "-" }} warns=${warns.ifEmpty { "-" }}"
+            "fails=[$fails] warns=[$warns]"
     }
 }

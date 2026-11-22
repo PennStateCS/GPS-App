@@ -156,7 +156,7 @@ class ExternalAdapter(
         scope.launch {
             synchronized(lifecycleLock) {
                 if (reconnectJob == null) return@synchronized
-                DiagnosticsLogger.i("RECEIVER", "Reconnecting external receiver now ($reason)")
+                DiagnosticsLogger.i("RECEIVER", "External receiver reconnect requested reason=\"$reason\"")
                 stopLocked()
                 startLocked()
             }
@@ -166,7 +166,7 @@ class ExternalAdapter(
     override fun stop() = synchronized(lifecycleLock) { stopLocked() }
 
     private fun stopLocked() {
-        DiagnosticsLogger.i("RECEIVER", "External adapter stopped")
+        DiagnosticsLogger.i("RECEIVER", "External receiver adapter stopped")
         failuresSinceUp = 0
         DiagnosticsLogger.resetThrottles(RETRY_LOG_PREFIX)   // a new session logs its first failure in full
         reconnectJob?.cancel(); reconnectJob = null
@@ -207,8 +207,8 @@ class ExternalAdapter(
                 waitForFirstDataOrTimeout()
                 _connectionState.value = ConnectionState.CONNECTED
                 // Recovery, once: data is flowing, so the next failure is a new outage logged in full.
-                DiagnosticsLogger.i("RECEIVER", "External receiver connected (attempt #$attempts" +
-                    if (failuresSinceUp > 1) ", after $failuresSinceUp failed attempts)" else ")")
+                DiagnosticsLogger.i("RECEIVER", "External receiver connected attempt=$attempts" +
+                    if (failuresSinceUp > 1) " failedAttempts=$failuresSinceUp" else "")
                 failuresSinceUp = 0
                 DiagnosticsLogger.resetThrottles(RETRY_LOG_PREFIX)
                 app.surrealar.gnss.debug.GnssDebugLog.event("external") {
@@ -233,13 +233,14 @@ class ExternalAdapter(
                 val failures = ++failuresSinceUp
                 if (failures == 1) {
                     // First failure of an outage: in full, with the exception.
-                    DiagnosticsLogger.w("RECEIVER", "Connection attempt #$attempt failed (will retry): ${e.message}", e)
+                    DiagnosticsLogger.w("RECEIVER", "External receiver connect failed attempt=$attempt (will retry)", e)
                     // Start the summary interval now, so the first summary comes a minute later.
                     DiagnosticsLogger.resetThrottles(RETRY_SUMMARY_KEY)
-                    DiagnosticsLogger.every("RECEIVER", RETRY_SUMMARY_KEY, RETRY_SUMMARY_MS, 'D') { "retry summary interval started" }
+                    DiagnosticsLogger.every("RECEIVER", RETRY_SUMMARY_KEY, RETRY_SUMMARY_MS, 'D') { "External receiver retry summary interval started" }
                 } else {
                     DiagnosticsLogger.every("RECEIVER", RETRY_SUMMARY_KEY, RETRY_SUMMARY_MS, 'W') {
-                        "Receiver still unreachable: attempts=$failures last=${e.javaClass.simpleName}: ${e.message}"
+                        "External receiver still unreachable attempts=$failures lastError=${e.javaClass.simpleName} " +
+                            "reason=\"${e.message ?: "unknown"}\""
                     }
                 }
                 _connectionState.value = ConnectionState.ERROR
@@ -289,7 +290,7 @@ class ExternalAdapter(
                     }.getOrElse {
                         // Per fix: first error in full, then at most once a minute.
                         DiagnosticsLogger.every("RECEIVER", "external.stamp", 60_000L, 'E', throwable = it) {
-                            "fix stamping failed; publishing unstamped fix"
+                            "External receiver fix stamping failed: publishing unstamped fix"
                         }; fix
                     }
                     _fixes.emit(stamped)
@@ -306,7 +307,7 @@ class ExternalAdapter(
                     runCatching { inv.consume(gsv) }
                         .onSuccess { _sky.value = it }
                         .onFailure {
-                            DiagnosticsLogger.every("RECEIVER", "external.gsv", 60_000L, 'E', throwable = it) { "GSV update failed; message skipped" }
+                            DiagnosticsLogger.every("RECEIVER", "external.gsv", 60_000L, 'E', throwable = it) { "External receiver satellite update failed: GSV message skipped" }
                         }
                 }
         }
@@ -328,12 +329,12 @@ class ExternalAdapter(
             // schedule now rather than sitting out the full connect timeout.
             if (!nmea.isConnectionActive()) {
                 // The thrown message reaches the attempt-failed / summary line; detail only here.
-                DiagnosticsLogger.d("RECEIVER") { "External connection ended before any NMEA data — will retry" }
+                DiagnosticsLogger.d("RECEIVER") { "External receiver connection ended before any NMEA data (will retry)" }
                 throw IllegalStateException("Connection ended before data")
             }
             delay(250)
         }
-        DiagnosticsLogger.d("RECEIVER") { "No NMEA data within ${CONNECT_TIMEOUT_MS}ms — will retry" }
+        DiagnosticsLogger.d("RECEIVER") { "External receiver connect timed out: no NMEA data timeoutMs=$CONNECT_TIMEOUT_MS (will retry)" }
         throw IllegalStateException("Timeout: no data within ${CONNECT_TIMEOUT_MS} ms")
     }
 
@@ -343,14 +344,14 @@ class ExternalAdapter(
             // Socket closed by the receiver (reboot, Wi-Fi drop, another client took the slot):
             // reconnect immediately instead of waiting for the no-data timeout.
             if (!nmea.isConnectionActive()) {
-                DiagnosticsLogger.w("RECEIVER", "External connection ended — triggering reconnect")
+                DiagnosticsLogger.w("RECEIVER", "External receiver connection ended: reconnecting")
                 throw IllegalStateException("Connection ended")
             }
             val last = lastDataTimeMs
             if (last == 0L) continue
             val staleFor = monotonicNowMs() - last
             if (staleFor > HEALTH_DATA_TIMEOUT_MS) {
-                DiagnosticsLogger.w("RECEIVER", "No NMEA data for ${HEALTH_DATA_TIMEOUT_MS}ms — triggering reconnect")
+                DiagnosticsLogger.w("RECEIVER", "External receiver link stalled: no NMEA data, reconnecting silentMs=$HEALTH_DATA_TIMEOUT_MS")
                 throw IllegalStateException("No data for ${HEALTH_DATA_TIMEOUT_MS} ms")
             }
         }

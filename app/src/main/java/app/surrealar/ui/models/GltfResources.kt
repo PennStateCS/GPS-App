@@ -17,7 +17,7 @@ object GltfResources {
         } catch (e: Exception) {
             // The model then loads without pre-read resources (on demand); note why.
             app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.MODEL,
-                "glTF JSON unparseable — external resources not listed: ${e.javaClass.simpleName}", e)
+                "Model glTF resource listing failed: JSON unparseable", e)
             return emptyList()
         }
         val uris = LinkedHashSet<String>()

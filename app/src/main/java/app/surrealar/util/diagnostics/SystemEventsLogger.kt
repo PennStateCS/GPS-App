@@ -53,9 +53,9 @@ object SystemEventsLogger {
 
     fun install(context: Context) {
         val app = context.applicationContext
-        runCatching { watchNetwork(app) }.onFailure { DiagnosticsLogger.w(TAG, "Network watch unavailable", it) }
-        runCatching { watchBroadcasts(app) }.onFailure { DiagnosticsLogger.w(TAG, "System broadcasts unavailable", it) }
-        runCatching { watchThermal(app) }.onFailure { DiagnosticsLogger.w(TAG, "Thermal status watch unavailable", it) }
+        runCatching { watchNetwork(app) }.onFailure { DiagnosticsLogger.w(TAG, "Network watch start failed", it) }
+        runCatching { watchBroadcasts(app) }.onFailure { DiagnosticsLogger.w(TAG, "System broadcast watch start failed", it) }
+        runCatching { watchThermal(app) }.onFailure { DiagnosticsLogger.w(TAG, "Thermal status watch start failed", it) }
         runCatching {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 // Permissions can only change while the app is away, so re-check on every return.
@@ -73,16 +73,17 @@ object SystemEventsLogger {
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET), caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN))
                 val validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 DiagnosticsLogger.logOnChange(TAG, "sys.net", "$type/$validated") {
-                    "Network $type validated=$validated" + if (!validated) " (no internet: receiver Wi-Fi?)" else ""
+                    if (validated) "Network connected transport=$type validated=true"
+                    else "Network connected without internet: possibly the receiver Wi-Fi transport=$type validated=false"
                 }
                 val ssid = if (wifi && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                     hashSsid((caps.transportInfo as? WifiInfo)?.ssid) else null
                 DiagnosticsLogger.logOnChange(TAG, "sys.wifi", if (wifi) "on:$ssid" else "off") {
-                    if (wifi) "Wi-Fi connected ssid#${ssid ?: "unknown"}" else "Wi-Fi disconnected"
+                    if (wifi) "Wi-Fi connected ssidHash=${ssid ?: "unknown"}" else "Wi-Fi disconnected"
                 }
             }
             override fun onLost(network: Network) {
-                DiagnosticsLogger.logOnChange(TAG, "sys.net", "none") { "Network lost (no default network)" }
+                DiagnosticsLogger.logOnChange(TAG, "sys.net", "none") { "Network lost: no default network" }
                 DiagnosticsLogger.logOnChange(TAG, "sys.wifi", "off") { "Wi-Fi disconnected" }
             }
         })
@@ -103,9 +104,9 @@ object SystemEventsLogger {
                         Intent.ACTION_BATTERY_CHANGED -> onBattery(intent)
                         PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> logPowerSave(app)
                         LocationManager.PROVIDERS_CHANGED_ACTION -> logProviders(app)
-                        Intent.ACTION_TIME_CHANGED -> DiagnosticsLogger.w(TAG, "Device time was changed (wall clock jump)")
+                        Intent.ACTION_TIME_CHANGED -> DiagnosticsLogger.w(TAG, "Device time changed: wall clock jump")
                         Intent.ACTION_TIMEZONE_CHANGED -> DiagnosticsLogger.w(TAG,
-                            "Time zone changed to ${intent.getStringExtra("time-zone") ?: TimeZone.getDefault().id}")
+                            "Time zone changed tz=${intent.getStringExtra("time-zone") ?: TimeZone.getDefault().id}")
                     }
                 }.onFailure {
                     // Battery broadcasts arrive often; one line a minute is enough to see a repeat failure.
@@ -123,24 +124,24 @@ object SystemEventsLogger {
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).takeIf { it > 0 } ?: 100
         if (level >= 0) {
             val pct = level * 100 / scale
-            DiagnosticsLogger.logOnChange(TAG, "sys.battery", batteryBucket(pct)) { "Battery $pct%" }
+            DiagnosticsLogger.logOnChange(TAG, "sys.battery", batteryBucket(pct)) { "Battery level changed levelPct=$pct" }
         }
         val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
         DiagnosticsLogger.logOnChange(TAG, "sys.charging", plugged != 0) {
-            if (plugged != 0) "Charging (${when (plugged) { 1 -> "AC"; 2 -> "USB"; 4 -> "wireless"; else -> "plugged" }})" else "Not charging"
+            if (plugged != 0) "Battery charging source=${when (plugged) { 1 -> "AC"; 2 -> "USB"; 4 -> "wireless"; else -> "unknown" }}" else "Battery not charging"
         }
     }
 
     private fun logPowerSave(app: Context) {
         val on = app.getSystemService(PowerManager::class.java)?.isPowerSaveMode ?: return
-        DiagnosticsLogger.logOnChange(TAG, "sys.powersave", on) { "Power save ${if (on) "on" else "off"}" }
+        DiagnosticsLogger.logOnChange(TAG, "sys.powersave", on) { "Power save mode ${if (on) "on" else "off"}" }
     }
 
     private fun watchThermal(app: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val pm = app.getSystemService(PowerManager::class.java) ?: return
         pm.addThermalStatusListener(ContextCompat.getMainExecutor(app)) { status ->
-            DiagnosticsLogger.logOnChange(TAG, "sys.thermal", status, if (status >= 3) 'W' else 'I') { "Thermal status ${thermalName(status)}" }
+            DiagnosticsLogger.logOnChange(TAG, "sys.thermal", status, if (status >= 3) 'W' else 'I') { "Thermal status changed status=${thermalName(status)}" }
         }
     }
 

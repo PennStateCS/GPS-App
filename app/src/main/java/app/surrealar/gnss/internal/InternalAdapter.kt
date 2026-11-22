@@ -50,7 +50,7 @@ class InternalAdapter(
     override fun start() {
         if (collectJob != null) return
 
-        DiagnosticsLogger.i("GNSS", "internal GNSS adapter started")
+        DiagnosticsLogger.i("GNSS", "Device GNSS adapter started")
 
         /*
          * Clear the inventory before starting collection so satellites from a
@@ -82,7 +82,7 @@ class InternalAdapter(
                         .onSuccess { _sky.value = it }
                         .onFailure {
                             // Per message: first error in full, then at most once a minute.
-                            DiagnosticsLogger.every("GNSS", "internal.gsv", 60_000L, 'E', throwable = it) { "GSV update failed; message skipped" }
+                            DiagnosticsLogger.every("GNSS", "internal.gsv", 60_000L, 'E', throwable = it) { "Device GNSS satellite update failed: GSV message skipped" }
                         }
                 }
         }
@@ -100,7 +100,7 @@ class InternalAdapter(
     override fun stop() {
         // Not started (or already stopped): nothing to stop, and no "stopped" line.
         if (collectJob == null) return
-        DiagnosticsLogger.i("GNSS", "internal GNSS adapter stopped")
+        DiagnosticsLogger.i("GNSS", "Device GNSS adapter stopped")
 
         collectJob?.cancel()
         collectJob = null

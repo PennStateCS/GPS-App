@@ -90,7 +90,7 @@ class LogBudgetTest {
             }
             if (now % 600_000L == 0L && now > 0) {
                 link.onConnectionState("RECONNECTING", now); link.onConnectionState("CONNECTED", now + 1)
-                DiagnosticsLogger.w(DiagTags.RECEIVER, "No NMEA data for 10000ms — triggering reconnect")
+                DiagnosticsLogger.w(DiagTags.RECEIVER, "External receiver link stalled: no NMEA data, reconnecting silentMs=10000")
             }
             now += 200; i++
         }

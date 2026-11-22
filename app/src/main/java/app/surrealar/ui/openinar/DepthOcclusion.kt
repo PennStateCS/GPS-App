@@ -204,7 +204,7 @@ internal class DepthOcclusionSampler {
             // Never let occlusion break the AR frame; log once per session.
             if (!loggedFailure) {
                 loggedFailure = true
-                DiagnosticsLogger.w(ArFilamentRenderer.DIAG, "depth occlusion update failed: ${e.message}", e)
+                DiagnosticsLogger.w(ArFilamentRenderer.DIAG, "AR depth occlusion update failed", e)
             }
         }
         return last

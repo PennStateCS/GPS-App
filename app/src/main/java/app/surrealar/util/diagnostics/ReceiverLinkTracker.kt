@@ -32,13 +32,13 @@ class ReceiverLinkTracker(private val sink: (level: Char, tag: String, message: 
         when (name) {
             "CONNECTED" -> {
                 connectedAtMs = nowMs; awaitingFirstData = true
-                sink('I', DiagTags.RECEIVER, "Link up" + if (attemptsSinceUp > 1) " after $attemptsSinceUp attempts" else "")
+                sink('I', DiagTags.RECEIVER, "External receiver link up" + if (attemptsSinceUp > 1) " attempts=$attemptsSinceUp" else "")
                 attemptsSinceUp = 0
             }
             "CONNECTING", "RECONNECTING" -> {
                 attemptsSinceUp++
                 if (name == "RECONNECTING") reconnects++
-                linkDown(before, nowMs, "reconnecting (attempt $attemptsSinceUp)")
+                linkDown(before, nowMs, "reconnecting attempt=$attemptsSinceUp")
             }
             "ERROR" -> linkDown(before, nowMs, "error")
             "DISCONNECTED", "CANCELLED" -> { linkDown(before, nowMs, name.lowercase()); attemptsSinceUp = 0 }
@@ -50,7 +50,7 @@ class ReceiverLinkTracker(private val sink: (level: Char, tag: String, message: 
         val upS = connectedAtMs?.let { (nowMs - it) / 1000 } ?: 0
         connectedAtMs = null; awaitingFirstData = false
         sink(if (why.startsWith("disconnected") || why.startsWith("cancelled")) 'I' else 'W', DiagTags.RECEIVER,
-            "Link down: $why, was up ${upS}s")
+            "External receiver link down: $why upS=$upS")
     }
 
     /** Called per NMEA line while the external receiver is the active source (cheap after the first). */
@@ -59,7 +59,7 @@ class ReceiverLinkTracker(private val sink: (level: Char, tag: String, message: 
         synchronized(lock) {
             if (!awaitingFirstData) return
             awaitingFirstData = false
-            sink('I', DiagTags.RECEIVER, "First data ${connectedAtMs?.let { nowMs - it } ?: "?"} ms after connect")
+            sink('I', DiagTags.RECEIVER, "External receiver first data received delayMs=${connectedAtMs?.let { nowMs - it } ?: "unknown"}")
         }
     }
 
@@ -77,7 +77,7 @@ class ReceiverLinkTracker(private val sink: (level: Char, tag: String, message: 
         }
         val sid = c?.stationId
         if (sid != null && sid != stationId) {
-            if (stationId != null) sink('W', DiagTags.CORRECTIONS, "Base station ID $stationId → $sid")
+            if (stationId != null) sink('W', DiagTags.CORRECTIONS, "Corrections base station $stationId → $sid")
             stationId = sid
         }
         correctionsSummary = when (receiving) {

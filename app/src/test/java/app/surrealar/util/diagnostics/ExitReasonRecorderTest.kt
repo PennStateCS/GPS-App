@@ -31,7 +31,7 @@ class ExitReasonRecorderTest {
         assertEquals(0, ExitReasonRecorder(dir, prefs) { _, m -> lines += m }.record(exits))
         assertEquals(2, lines.size)
         assertTrue(lines[0].contains("reason=USER_REQUESTED"))
-        assertTrue(lines[1].contains("reason=ANR") && lines[1].contains("pss=1000kB rss=2000kB"))
+        assertTrue(lines[1].contains("reason=ANR") && lines[1].contains("pssKb=1000 rssKb=2000"))
         // A newer exit later on is still picked up.
         assertEquals(1, rec.record(exits + exit(3_000, ExitReasonRecorder.REASON_CRASH)))
     }

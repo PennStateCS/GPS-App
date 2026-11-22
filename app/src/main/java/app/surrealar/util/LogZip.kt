@@ -65,7 +65,7 @@ class LogZip(
 
                 } catch (e: IOException) {
                     // Per NMEA line while the disk fails: first error in full, then once a minute.
-                    DiagnosticsLogger.every("NMEA", "logzip.io", 60_000L, 'E', throwable = e) { "NMEA log write failed (line dropped)" }
+                    DiagnosticsLogger.every("NMEA", "logzip.io", 60_000L, 'E', throwable = e) { "NMEA log write failed: line dropped" }
                 }
             }
         }
@@ -182,7 +182,7 @@ class LogZip(
                     DevLog.d(TAG) { "Created recent logs zip: ${zipFile.name}" }
                     zipFile
                 } catch (e: Exception) {
-                    DiagnosticsLogger.e("EXPORT", "Recent NMEA logs ZIP failed", e)
+                    DiagnosticsLogger.e("EXPORT", "Recent NMEA logs ZIP export failed", e)
                     null
                 }
             }
@@ -219,7 +219,7 @@ class LogZip(
             }
             recentLines.joinToString("\n")
         } catch (e: Exception) {
-            DiagnosticsLogger.w("NMEA", "Reading recent NMEA log lines failed file=${file.name}", e)
+            DiagnosticsLogger.w("NMEA", "NMEA log read failed file=${file.name}", e)
             "Error reading log file: ${e.message}\n"
         }
     }
@@ -484,7 +484,7 @@ class LogZip(
                         if (file.delete()) {
                             DevLog.d(TAG) { "Deleted old log file: ${file.name}" }
                         } else {
-                            DiagnosticsLogger.w("NMEA", "Could not delete old NMEA log file=${file.name}")
+                            DiagnosticsLogger.w("NMEA", "NMEA log delete failed file=${file.name}")
                         }
                     }
                 } catch (e: Exception) {

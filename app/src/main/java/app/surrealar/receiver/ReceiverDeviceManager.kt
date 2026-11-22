@@ -107,7 +107,7 @@ class ReceiverDeviceManager(
     private fun apply(t: Target) {
         _profile.value = t.profile
         app.surrealar.util.DiagnosticsLogger.logOnChange(app.surrealar.util.diagnostics.DiagTags.RECEIVER, "rx.profile", t.profile.label) {
-            "Receiver profile ${t.profile.label} (${t.profile.accuracyClass})"
+            "External receiver profile changed profile=\"${t.profile.label}\" accuracyClass=${t.profile.accuracyClass}"
         }
         if (!t.external) {
             switchTo(null)
@@ -131,7 +131,8 @@ class ReceiverDeviceManager(
         _activeDevice.value = current
         if (vendor != null) GnssLog.d(TAG, "Receiver device: $vendor (${current.capabilities})")
         app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.RECEIVER,
-            if (vendor == null) "Receiver device: none (internal GNSS or generic NMEA)" else "Receiver device: $vendor profile=${_profile.value.label}")
+            if (vendor == null) "External receiver device selected: none, Device GNSS or generic NMEA vendor=none"
+            else "External receiver device selected vendor=$vendor profile=\"${_profile.value.label}\"")
     }
 
     private companion object { const val TAG = "ReceiverDevice" }

@@ -116,7 +116,7 @@ internal class PlaneVisualizer {
                     "hiddenSmall=$small hiddenFar=$faded " +
                     "raw=${all.size} rawVertical=$rawVertical rawVerticalTracking=$rawVerticalTracking " +
                     "rawSubsumed=$rawSubsumed rawNotTracking=$rawNotTracking " +
-                    "nearestWallM=${if (nearestWallM.isFinite()) "%.1f".format(nearestWallM) else "n/a"}"
+                    "nearestWallM=${if (nearestWallM.isFinite()) "%.1f".format(nearestWallM) else "unknown"}"
             }
         }
         if (entries.isEmpty()) return 0

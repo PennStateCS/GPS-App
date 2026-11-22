@@ -221,7 +221,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 il.indirectLight?.intensity = 50_000f
                 viewer.scene.indirectLight = il.indirectLight
             } catch (e: Exception) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: indirect light unavailable — model lit by key light only", e)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail indirect light unavailable: model lit by key light only", e)
             }
 
             // IBL alone leaves dark/rough materials (e.g. the wooden crate) almost black.
@@ -237,7 +237,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 viewer.scene.addEntity(light)
                 keyLight = light
             } catch (e: Exception) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: directional light unavailable", e)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail directional light unavailable", e)
             }
 
             lifecycleScope.launch(Dispatchers.IO) {
@@ -247,7 +247,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 try {
                     val glbFile = File(modelPath)
                     if (!glbFile.exists()) {
-                        DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: model file not found file=${glbFile.name}")
+                        DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail failed: model file not found file=${glbFile.name}")
                         withContext(Dispatchers.Main) { finish() }
                         return@launch
                     }
@@ -267,15 +267,14 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 } catch (c: kotlinx.coroutines.CancellationException) {
                     throw c
                 } catch (t: Throwable) {
-                    DiagnosticsLogger.e("MODEL", "thumbnail load failed sizeBytes=${File(modelPath).length()}: " +
-                        "${t.javaClass.simpleName} ${t.message}", t)
+                    DiagnosticsLogger.e("MODEL", "Model thumbnail load failed sizeBytes=${File(modelPath).length()}", t)
                     withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
                         if (!isFinishing) finish()
                     }
                 }
             }
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: Filament init failed: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail Filament init failed", e)
             finish()
         }
     }
@@ -293,7 +292,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             }
             true
         } catch (e: Throwable) {
-            DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: model load failed file=${modelFile.name}: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail model load failed file=${modelFile.name}", e)
             false
         }
     }
@@ -312,7 +311,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             }
             loadFileToBuffer(candidate) ?: ByteBuffer.allocateDirect(0)
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: glTF resource unreadable: ${e.javaClass.simpleName}", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail glTF resource read failed", e)
             ByteBuffer.allocateDirect(0)
         }
     }
@@ -322,7 +321,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
         return try {
             ModelFileIo.readToDirectBuffer(file)
         } catch (oom: OutOfMemoryError) {
-            DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail: out of memory reading glTF resource sizeBytes=${file.length()}", oom)
+            DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail glTF resource read failed: out of memory sizeBytes=${file.length()}", oom)
             null
         }
     }
@@ -337,7 +336,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             )
 
             val cam = viewer.view.camera ?: run {
-                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: camera is null — skipping framing")
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail framing skipped: no camera")
                 return
             }
 
@@ -401,7 +400,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                     .apply { isAccessible = true }
                     .set(viewer, manipulator)
             } catch (t: Throwable) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: orbit manipulator not installed", t)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail orbit manipulator install failed", t)
             }
 
             cam.lookAt(
@@ -410,7 +409,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 0.0, 1.0, 0.0
             )
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: camera setup failed — default framing", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail camera setup failed: using default framing", e)
         }
     }
 
@@ -447,8 +446,8 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
     private fun tryCapture(attempt: Int) {
         if (attempt > CAPTURE_MAX_ATTEMPTS) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail capture gave up after $CAPTURE_MAX_ATTEMPTS attempts " +
-                "file=$modelFileName — no thumbnail")
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail capture failed: no thumbnail " +
+                "attempts=$CAPTURE_MAX_ATTEMPTS file=$modelFileName")
             finishWithCleanup()
             return
         }
@@ -490,11 +489,11 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 } else {
                     // API < 26: fall back to drawing the SurfaceView into a canvas
                     bmp.recycle()
-                    DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: PixelCopy unavailable (API < 26) — no thumbnail")
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail capture skipped: PixelCopy unavailable sdkInt=${android.os.Build.VERSION.SDK_INT}")
                     finishWithCleanup()
                 }
             } catch (t: Throwable) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail: PixelCopy threw on attempt=$attempt; retrying", t)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail PixelCopy failed (will retry) attempt=$attempt", t)
                 bmp.recycle()
                 tryCapture(attempt + 1)
             }
@@ -587,17 +586,17 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                         )
                         DevLog.d(TAG) { "Thumbnail saved and DB updated: $thumbFileName" }
                     } else {
-                        DiagnosticsLogger.w(DiagTags.MODEL, "thumbnail saved but no model record file=$modelFileName")
+                        DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail saved without a model record file=$modelFileName")
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail DB update failed file=$modelFileName", e)
+                    DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail record update failed file=$modelFileName", e)
                 }
 
                 withContext(Dispatchers.Main) { finishWithCleanup() }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.e(DiagTags.MODEL, "thumbnail save failed file=$modelFileName: ${e.javaClass.simpleName}", e)
+                DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail save failed file=$modelFileName", e)
                 withContext(Dispatchers.Main) { finishWithCleanup() }
             }
         }

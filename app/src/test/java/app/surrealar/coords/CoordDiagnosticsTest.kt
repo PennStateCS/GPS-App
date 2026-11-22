@@ -31,9 +31,9 @@ class CoordDiagnosticsTest {
         DiagnosticsLogger.flush()
         val lines = File(dir, "app-log-current.txt").readLines().filter { " COORD " in it }.map { it.substringAfter("] ") }
         assertEquals(listOf(
-            "Coordinate system STATE_PLANE datum=NAD83_2011 zone=SPCS 3701 vertical=NAVD88_GEOID18 unit=METERS",
-            "Coordinate system STATE_PLANE datum=NAD83_2011 zone=SPCS 3702 vertical=NAVD88_GEOID18 unit=METERS",
-            "Height unavailable for NAVD88_GEOID18: outside GEOID18 coverage",
+            "Coordinate system changed horizontal=STATE_PLANE datum=NAD83_2011 zone=\"SPCS 3701\" vertical=NAVD88_GEOID18 unit=METERS",
+            "Coordinate system changed horizontal=STATE_PLANE datum=NAD83_2011 zone=\"SPCS 3702\" vertical=NAVD88_GEOID18 unit=METERS",
+            "Height unavailable: outside GEOID18 coverage vertical=NAVD88_GEOID18",
         ), lines)
         assertFalse(lines.any { it.contains("744") || it.contains("132") || it.contains("41.34") })
     }
@@ -48,7 +48,7 @@ class CoordDiagnosticsTest {
         DiagnosticsLogger.flush()
         val lines = File(dir, "app-log-current.txt").readLines().filter { " COORD " in it }.map { it.substringAfter("] ") }
         assertEquals(listOf(
-            "Coordinate system STATE_PLANE datum=NAD83_2011 zone=SPCS 3701 vertical=NAVD88_GEOID18 unit=METERS",
+            "Coordinate system changed horizontal=STATE_PLANE datum=NAD83_2011 zone=\"SPCS 3701\" vertical=NAVD88_GEOID18 unit=METERS",
         ), lines)
     }
 

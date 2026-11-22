@@ -106,7 +106,7 @@ class RenderMapFragment : Fragment() {
          * so each step writes at most one line a minute; a one-off failure is still logged in full.
          */
         private fun logFail(step: String, e: Throwable, level: Char = 'W') {
-            DiagnosticsLogger.every(DiagTags.MAP, "rendermap.$step", 60_000L, level, e) { "Map: $step failed" }
+            DiagnosticsLogger.every(DiagTags.MAP, "rendermap.$step", 60_000L, level, e) { "Map step failed step=\"$step\"" }
         }
     }
 
@@ -450,7 +450,7 @@ class RenderMapFragment : Fragment() {
             map.setOnMapLoadedCallback {
                 if (!cameraInitialized && lastLatLngs.isNotEmpty()) updateCamera(lastLatLngs)
                 app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update { it.copy(mapLoaded = true) }
-                logMapEvent("MAP", "map loaded (tiles drawn)")
+                logMapEvent("MAP", "Map tiles loaded")
             }
             // Redraw the meter grid when the camera settles so Auto spacing adapts to zoom/pan.
             // Idle fires only after movement stops (not continuously), so this stays cheap.
@@ -466,7 +466,7 @@ class RenderMapFragment : Fragment() {
             app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
                 it.copy(cameraRestored = savedCam != null)
             }
-            logMapEvent("MAP", "map ready type=${mapTypeLabel(currentMapType)} cameraRestored=${savedCam != null}")
+            logMapEvent("MAP", "Map ready type=${mapTypeLabel(currentMapType)} cameraRestored=${savedCam != null}")
         }
 
         // Map Tools overlay wiring. The toggle slides the panel in/out (AR pattern); each row
@@ -746,7 +746,7 @@ class RenderMapFragment : Fragment() {
         val panel = mapToolsPanel ?: return
         mapToolsVisible = open
         mapUiVm.update { it.copy(isMapToolsOpen = open) }
-        if (animate) logMapEvent("MAP", "map tools=${if (open) "open" else "closed"}")
+        if (animate) logMapEvent("MAP", "Map tools ${if (open) "opened" else "closed"}")
         if (open) {
             mapToolsToggle?.contentDescription = "Hide map tools"
             if (animate) {
@@ -890,7 +890,7 @@ class RenderMapFragment : Fragment() {
         if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
         startStaleWatcher()
         refreshStakeout()
-        logMapEvent("STAKEOUT", "guidance started tolerance=${stakeoutSettings.toleranceMeters}m")
+        logMapEvent("STAKEOUT", "Stakeout guidance started toleranceM=${stakeoutSettings.toleranceMeters}")
     }
 
     private fun stopGuidance() {
@@ -904,7 +904,7 @@ class RenderMapFragment : Fragment() {
         releaseToneGenerator()
         setKeepScreenOn(false)
         feedbackGate.reset()
-        logMapEvent("STAKEOUT", "guidance stopped")
+        logMapEvent("STAKEOUT", "Stakeout guidance stopped")
     }
 
     /**
@@ -985,7 +985,7 @@ class RenderMapFragment : Fragment() {
         when (feedbackGate.onUpdate(status, android.os.SystemClock.elapsedRealtime())) {
             app.surrealar.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
                 // Distance to target only (no positions): the gate fires once per arrival.
-                logMapEvent("STAKEOUT", "within tolerance (${"%.3f".format(java.util.Locale.US, distanceMeters)} m <= ${s.toleranceMeters} m)")
+                logMapEvent("STAKEOUT", "Stakeout target within tolerance distM=${"%.3f".format(java.util.Locale.US, distanceMeters)} toleranceM=${s.toleranceMeters}")
                 if (s.enableHaptics) haptic(arrived = true); if (s.enableAudio) beep(arrived = true)
             }
             app.surrealar.stakeout.StakeoutFeedback.NAVIGATING_PULSE -> {
@@ -1285,7 +1285,7 @@ class RenderMapFragment : Fragment() {
                 val total = points.size
                 val visibleCount = latLngsVisible.size
                 DiagnosticsLogger.logOnChange(DiagTags.MAP, "rendermap.markers", total to visibleCount) {
-                    "markersLoaded total=$total visible=$visibleCount hidden=${total - visibleCount}"
+                    "Map markers loaded total=$total visible=$visibleCount hidden=${total - visibleCount}"
                 }
                 refreshMapDiag()
             } catch (e: Exception) {
@@ -1437,7 +1437,7 @@ class RenderMapFragment : Fragment() {
         updateMyLocationRowState()
         applyCurrentLocationVisibility()
         syncCompass()   // My Location heading shares the one compass listener
-        logMapEvent("MAP", "my location overlay=${if (showCurrentLocationOnMap) "on" else "off"}")
+        logMapEvent("MAP", "Map location overlay ${if (showCurrentLocationOnMap) "on" else "off"}")
         showSnackbar(if (showCurrentLocationOnMap) "Showing my location" else "Hiding my location")
     }
 
@@ -1568,7 +1568,7 @@ class RenderMapFragment : Fragment() {
         googleMap?.let { MapThemeHelper.applyTheme(requireContext(), it, type) }
         isSatellite = type == GoogleMap.MAP_TYPE_HYBRID || type == GoogleMap.MAP_TYPE_SATELLITE
         updateMapTypeButton()
-        logMapEvent("MAP", "map type=${mapTypeLabel(type)}")
+        logMapEvent("MAP", "Map type changed type=${mapTypeLabel(type)}")
     }
 
     /** Shows the current map type on the toolbar row and announces the next one for accessibility. */
@@ -1704,7 +1704,7 @@ class RenderMapFragment : Fragment() {
         mapUiVm.update { it.copy(selectedCoordinateId = id) }
         toggleAdapter.setSelectedId(id)
         showSelectedCoordinateCard(coord)
-        logMapEvent("MAP", "selected point opened")
+        logMapEvent("MAP", "Map selected point opened")
         // Center map on selection, keeping zoom at least 16
         googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(
             LatLng(coord.latitude, coord.longitude),
@@ -1814,7 +1814,7 @@ class RenderMapFragment : Fragment() {
     /** Opens the global AR scene (all saved points, including the selected one). */
     private fun openSelectedInAr() {
         try { findNavController().navigate(R.id.nav_open_in_ar) }
-        catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map: open in AR failed", e) }
+        catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map open in AR failed", e) }
     }
 
     /** Opens the existing rich coordinate-detail screen for the selected point. */
@@ -1823,7 +1823,7 @@ class RenderMapFragment : Fragment() {
         try {
             val args = android.os.Bundle().apply { putString("arg_id", id) }
             findNavController().navigate(R.id.nav_coordinate_detail, args)
-        } catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map: open point details failed", e) }
+        } catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map point details open failed", e) }
     }
 
     private fun dismissSelectedCoordinate() {
@@ -1892,7 +1892,7 @@ class RenderMapFragment : Fragment() {
         lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
 
         refreshStakeout()
-        logMapEvent("STAKEOUT", "stakeout started targetId=${coord.id}")   // id only: no point names in logs
+        logMapEvent("STAKEOUT", "Stakeout started targetId=${coord.id}")   // id only: no point names in logs
         showSnackbar("Stakeout started: ${coord.name}")
         dismissSelectedCoordinate()
     }
@@ -1909,7 +1909,7 @@ class RenderMapFragment : Fragment() {
         showStakeoutWaiting()
         stakeoutMarker?.remove(); stakeoutMarker = null; lastStakeoutMarkerHue = null
         stakeoutLine?.remove(); stakeoutLine = null
-        logMapEvent("STAKEOUT", "stakeout stopped")
+        logMapEvent("STAKEOUT", "Stakeout stopped")
         showSnackbar("Stakeout stopped")
     }
 
@@ -2042,7 +2042,7 @@ class RenderMapFragment : Fragment() {
         gridMode = gridMode.next()
         mapUiVm.update { it.copy(gridMode = gridMode) }
         redrawGrid()
-        logMapEvent("MAP", "grid mode=${gridMode.label}")
+        logMapEvent("MAP", "Map grid mode changed mode=${gridMode.prefKey}")
         showSnackbar("Grid: ${MapGrid.buttonLabel(gridMode, currentGridSpacingM)}")
     }
 
@@ -2146,7 +2146,7 @@ class RenderMapFragment : Fragment() {
         labelDescriptorCache.clear()
         updateLabelsButton()
         applyPointLabels()
-        logMapEvent("MAP", "point labels=${pointLabelMode.label}")
+        logMapEvent("MAP", "Map point labels changed mode=${pointLabelMode.prefKey}")
         showSnackbar("Labels: ${pointLabelMode.label}")
     }
 

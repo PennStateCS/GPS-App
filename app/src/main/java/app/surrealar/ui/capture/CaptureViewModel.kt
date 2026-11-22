@@ -58,7 +58,7 @@ class CaptureViewModel @Inject constructor(
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: Exception) {
-        DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture settings read failed field=$field, using default", e)
+        DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture settings read failed: using default field=$field", e)
         null
     }
 
@@ -97,7 +97,7 @@ class CaptureViewModel @Inject constructor(
                 if (previousProvider != null && previousProvider != provider) {
                     if (session != null) {
                         // cancel() writes the outcome line; the source switch itself is logged by GNSS.
-                        DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture canceled/reset due to provider switch $previousProvider -> $provider" }
+                        DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture cancelled: provider switched $previousProvider → $provider" }
                         cancel()
                     }
                 }
@@ -135,7 +135,7 @@ class CaptureViewModel @Inject constructor(
         // Cancel any existing session FIRST so a previous ObservationSession can't keep collecting
         // fixes or emitting state into the UI after a new capture begins.
         if (session != null) {
-            DiagnosticsLogger.i(DiagTags.CAPTURE, "Previous capture session canceled before new start")
+            DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture cancelled: new capture started")
             captureCancelled()
         }
         stopSession()
@@ -145,7 +145,7 @@ class CaptureViewModel @Inject constructor(
 
         val provider = sourceSettings.activeProvider.value
         // The policy is in diag.startLine() below; this adds the live provider (debug builds).
-        DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture started mode=${if (internal) "INTERNAL" else "EXTERNAL"} activeProvider=$provider" }
+        DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture provider mode=${if (internal) "INTERNAL" else "EXTERNAL"} activeProvider=$provider" }
         // Feed the session ONLY the selected mode's provider, so internal GPS fixes can never be
         // averaged into an external capture (even with quality lowered to Single/DGPS, or while
         // External is selected but the live provider is still Internal) and vice versa.
@@ -218,7 +218,7 @@ class CaptureViewModel @Inject constructor(
 
     fun cancel() {
         // A running session with diagnostics gets its "Capture cancelled" outcome line from captureCancelled().
-        if (session != null && (captureDiag == null || captureOutcomeLogged)) DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture canceled")
+        if (session != null && (captureDiag == null || captureOutcomeLogged)) DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture cancelled")
         captureCancelled()
         stopSession()
         _state.value = ObservationSession.State.Idle
@@ -246,7 +246,7 @@ class CaptureViewModel @Inject constructor(
         // Defense-in-depth: never persist a timed-out, under-sampled capture. The UI disables
         // Save in that case; this guards the data path too.
         if (!completed.requirementsMet) {
-            DiagnosticsLogger.w(DiagTags.CAPTURE, "Save blocked: requirements not met (timed out)")
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: requirements not met, capture timed out")
             return
         }
         _saveError.value = null
@@ -293,7 +293,7 @@ class CaptureViewModel @Inject constructor(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.CAPTURE, "antenna offset failed; save blocked source=${src.name}", e)
+            DiagnosticsLogger.e(DiagTags.CAPTURE, "Capture save blocked: antenna offset unavailable source=${src.name}", e)
             _saveError.value = ANTENNA_OFFSET_ERROR
             return
         }
@@ -315,7 +315,7 @@ class CaptureViewModel @Inject constructor(
 
         // Id only: point names stay out of the event log.
         DiagnosticsLogger.i(DiagTags.CAPTURE, "Coordinate saved id=${saved.id} source=${provider.name} " +
-            "samples=${finished.samples} hAcc=${finished.hAccM?.let { "%.3fm".format(it) } ?: "?"} status=${finished.rtkStatus}")
+            "samples=${finished.samples} hAccM=${finished.hAccM?.let { "%.3f".format(java.util.Locale.US, it) } ?: "unknown"} status=${finished.rtkStatus}")
         captureDiag?.let { d ->
             app.surrealar.util.diagnostics.CaptureLog.append(d.outcomeLine("saved", finished.samples,
                 java.time.Duration.between(finished.startedAt, finished.endedAt).seconds, finished.rtkStatus,

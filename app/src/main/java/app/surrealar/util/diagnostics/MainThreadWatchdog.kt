@@ -64,7 +64,7 @@ object MainThreadWatchdog {
                         else -> Unit
                     }
                 })
-        }.onFailure { DiagnosticsLogger.w(DiagTags.ERROR, "Watchdog: no process lifecycle, runs in background too", it) }
+        }.onFailure { DiagnosticsLogger.w(DiagTags.ERROR, "Main thread watchdog lifecycle hook failed: also runs in background", it) }
         Thread({
             var detector = Detector()
             while (true) {
@@ -81,15 +81,15 @@ object MainThreadWatchdog {
                     when (val e = detector.check(SystemClock.uptimeMillis(), lastAckMs)) {
                         is Detector.Event.Stalled -> report(e)
                         is Detector.Event.Recovered ->
-                            DiagnosticsLogger.w(DiagTags.ERROR, "Main thread recovered after ${e.afterMs / 1000.0}s " +
-                                "(screen=${DiagnosticsLogger.currentScreen ?: "unknown"})")
+                            DiagnosticsLogger.w(DiagTags.ERROR, "Main thread recovered afterMs=${e.afterMs} " +
+                                "screen=${DiagnosticsLogger.currentScreen ?: "unknown"}")
                         null -> Unit
                     }
                 } catch (_: InterruptedException) {
                     return@Thread
                 } catch (t: Throwable) {
                     // Loops every tick: a repeating error is logged at most once a minute.
-                    runCatching { DiagnosticsLogger.every(DiagTags.ERROR, "watchdog.error", 60_000L, 'W', t) { "Watchdog loop error" } }
+                    runCatching { DiagnosticsLogger.every(DiagTags.ERROR, "watchdog.error", 60_000L, 'W', t) { "Main thread watchdog loop failed" } }
                 }
             }
         }, "main-watchdog").apply { isDaemon = true; priority = Thread.MAX_PRIORITY }.start()
@@ -106,7 +106,7 @@ object MainThreadWatchdog {
         // As a Throwable so the log writes the frames as continuation lines (messages are one line).
         val where = Throwable("Main thread stack").apply { stackTrace = Looper.getMainLooper().thread.stackTrace }
         DiagnosticsLogger.e(DiagTags.ERROR,
-            "Main thread ${if (e.long) "STILL " else ""}blocked for ${e.forMs / 1000.0}s " +
-                "(screen=${DiagnosticsLogger.currentScreen ?: "unknown"})", where)
+            "Main thread ${if (e.long) "still " else ""}blocked forMs=${e.forMs} " +
+                "screen=${DiagnosticsLogger.currentScreen ?: "unknown"}", where)
     }
 }

@@ -61,7 +61,7 @@ object DiagnosticReportExporter {
             // Gather app data once; never let a single failing section abort the whole export.
             val data = runCatching { gatherDiagData(context) }.getOrElse {
                 if (it is kotlinx.coroutines.CancellationException) throw it
-                DiagnosticsLogger.w(DiagTags.EXPORT, "gatherDiagData failed: ${it.message}", it)
+                DiagnosticsLogger.w(DiagTags.EXPORT, "Diagnostic report data collection failed: continuing with empty app data", it)
                 DiagData(null, null, false, emptyList(), emptyList())
             }
             val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())

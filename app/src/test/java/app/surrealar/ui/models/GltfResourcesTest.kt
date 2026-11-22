@@ -52,7 +52,7 @@ class GltfResourcesTest {
             assertTrue(GltfResources.externalResourceUris("not json").isEmpty())
             app.surrealar.util.DiagnosticsLogger.flush()
             val log = java.io.File(dir, "app-log-current.txt").readText()
-            assertTrue(log.contains("glTF JSON unparseable"))
+            assertTrue(log.contains("Model glTF resource listing failed: JSON unparseable"))
         } finally {
             dir.deleteRecursively()
         }

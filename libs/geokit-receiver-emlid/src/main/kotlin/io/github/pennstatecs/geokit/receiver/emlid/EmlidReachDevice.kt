@@ -110,7 +110,7 @@ public class EmlidReachDevice(
             if (!currentCoroutineContext().isActive) return
 
             if (battery != null) {
-                if (failures >= 3) GnssLog.diagnostic("RECEIVER", "Battery readable again after $failures failed reads")
+                if (failures >= 3) GnssLog.diagnostic("RECEIVER", "External receiver battery read recovered after $failures attempts")
                 failures = 0
                 lastError = null
                 _battery.value = EmlidMapping.battery(battery)
@@ -118,7 +118,7 @@ public class EmlidReachDevice(
             } else {
                 failures++
                 // Once per outage, with the last exception (if the read threw rather than returned nothing).
-                if (failures == 3) GnssLog.diagnosticWarn("RECEIVER", "Battery read failed 3 times — hiding battery", lastError)
+                if (failures == 3) GnssLog.diagnosticWarn("RECEIVER", "External receiver battery read failed: battery hidden attempts=3", lastError)
                 if (failures >= 3) _battery.value = null
                 delay(
                     when (failures) {

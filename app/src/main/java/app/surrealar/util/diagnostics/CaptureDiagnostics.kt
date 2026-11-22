@@ -21,9 +21,9 @@ class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: 
     private var pausedReason: String? = null
 
     fun startLine(): String =
-        "Capture start mode=$mode min=${policy.minDurationSec}s max=${policy.maxDurationSec}s minFixes=${policy.minSamples}" +
-            " requiredRtk=${policy.requiredMinStatus} maxCorrAge=${policy.maxDiffAgeSec}s" +
-            (policy.horizontalPrecisionTargetM?.let { " precisionTarget=${it}m" } ?: "")
+        "Capture started mode=$mode minDurationS=${policy.minDurationSec} maxDurationS=${policy.maxDurationSec} minFixes=${policy.minSamples}" +
+            " requiredRtk=${policy.requiredMinStatus} maxCorrAgeS=${policy.maxDiffAgeSec}" +
+            (policy.horizontalPrecisionTargetM?.let { " precisionTargetM=$it" } ?: "")
 
     /** Why the policy would refuse [fix], or null if it passes these gates. */
     fun reasonFor(fix: Fix): String? = when {
@@ -49,8 +49,8 @@ class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: 
     }
 
     fun rejectedSummary(accepted: Int?): String =
-        "Capture fixes received=$received accepted=${accepted ?: "?"} rejected by policy check: " +
-            if (rejected.isEmpty()) "none" else rejected.entries.joinToString(", ") { "${it.key}=${it.value}" }
+        "Capture fix summary received=$received accepted=${accepted ?: "unknown"} rejected=${rejected.values.sum()}" +
+            if (rejected.isEmpty()) "" else ": " + rejected.entries.joinToString(", ") { "${it.key}=${it.value}" }
 
     /** One line for the log and captures.log. [name] only when the point was saved. */
     fun outcomeLine(outcome: String, samples: Int?, durationS: Long?, rtk: RtkStatus?, hAccM: Double?, vAccM: Double?, name: String? = null): String =

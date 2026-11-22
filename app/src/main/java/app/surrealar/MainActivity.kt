@@ -296,7 +296,7 @@ class MainActivity : AppCompatActivity() {
                 navController.navigate(destId, null, topLevelNavOptions(navController.graph.startDestinationId))
                 true
             } catch (e: IllegalArgumentException) {
-                DiagnosticsLogger.w(DiagTags.NAV, "Drawer destination not found id=$destId", e)
+                DiagnosticsLogger.w(DiagTags.NAV, "Drawer navigation failed: destination not found destId=$destId", e)
                 false
             }
 
@@ -338,7 +338,7 @@ class MainActivity : AppCompatActivity() {
                 sourceSettings.activeProvider.first()
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.w(DiagTags.GNSS, "Toolbar placeholder: active provider read failed, assuming INTERNAL", e)
+                DiagnosticsLogger.w(DiagTags.GNSS, "Toolbar active provider read failed: using INTERNAL", e)
                 app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL
             }
             val isInternal = initialProvider == app.surrealar.gnss.source.SourceSettings.ProviderChoice.INTERNAL
@@ -473,7 +473,7 @@ class MainActivity : AppCompatActivity() {
      * We cannot show the system dialog again; only Settings can fix this.
      */
     private fun showPermanentlyDeniedDialog(missingPermissions: List<String>) {
-        DiagnosticsLogger.i(DiagTags.SYSTEM, "Permissions permanently denied ${permissionNames(missingPermissions)}")
+        DiagnosticsLogger.i(DiagTags.SYSTEM, "Permission permanently denied permissions=${permissionNames(missingPermissions)}")
 
         val names = missingPermissions.joinToString(", ") { PermissionManager.getPermissionDisplayName(it) }
         AlertDialog.Builder(this)
@@ -490,7 +490,7 @@ class MainActivity : AppCompatActivity() {
                     )
                     startActivity(intent)
                 } catch (e: Exception) {
-                    DiagnosticsLogger.e(DiagTags.NAV, "Cannot open app settings for permissions", e)
+                    DiagnosticsLogger.e(DiagTags.NAV, "Permission settings screen open failed", e)
                 }
             }
             .setNegativeButton("Continue without") { _, _ ->
@@ -623,7 +623,7 @@ class MainActivity : AppCompatActivity() {
                     .retryForever { e, attempt ->
                         // Retried forever with back-off: the first failure in full, then at most once a minute.
                         DiagnosticsLogger.every(DiagTags.GNSS, "toolbar.pipeline.error", 60_000L, 'E', e) {
-                            "GNSS toolbar pipeline failed, retrying attempt=${attempt + 1}"
+                            "Toolbar GNSS pipeline failed (will retry) attempt=${attempt + 1}"
                         }
                         val source = runCatching { settingsRepository.locationSource.first() }.getOrDefault(LocationSourceType.INTERNAL)
                         toolbarRenderer.render(GnssToolbarStateMapper.error(source, externalReceiverLabel))
@@ -644,7 +644,7 @@ class MainActivity : AppCompatActivity() {
                             provider == app.surrealar.gnss.source.SourceSettings.ProviderChoice.EXTERNAL_TCP
                         // The switch itself is logged once by GnssFeedTracker ("Source A → B"); this is detail.
                         val from = previousProvider
-                        DiagnosticsLogger.d(DiagTags.GNSS) { "Toolbar reset after provider switch $from -> $provider" }
+                        DiagnosticsLogger.d(DiagTags.GNSS) { "Toolbar reset: provider $from → $provider" }
                         val liveSource = if (isExternalLive) LocationSourceType.EXTERNAL else LocationSourceType.INTERNAL
                         withContext(Dispatchers.Main) { resetStatusTokensForSource(liveSource) }
                     }
@@ -708,7 +708,7 @@ class MainActivity : AppCompatActivity() {
                 if (state.isWaiting) {
                     if (source == LocationSourceType.EXTERNAL && !loggedExternalWaiting) {
                         loggedExternalWaiting = true
-                        DiagnosticsLogger.i(DiagTags.GNSS, "External selected, waiting for current fix")
+                        DiagnosticsLogger.i(DiagTags.GNSS, "Toolbar waiting for first external fix")
                     }
                     latestSkySnapshot = null
                 } else {
@@ -716,7 +716,7 @@ class MainActivity : AppCompatActivity() {
                     if (source == LocationSourceType.EXTERNAL && !loggedFirstExternalToolbarFix) {
                         loggedFirstExternalToolbarFix = true
                         loggedExternalWaiting = false
-                        DiagnosticsLogger.i(DiagTags.GNSS, "First current external fix displayed in toolbar")
+                        DiagnosticsLogger.i(DiagTags.GNSS, "Toolbar showing first external fix")
                     }
                 }
                 lastToolbarState = state
@@ -795,7 +795,7 @@ class MainActivity : AppCompatActivity() {
                 popUpTo(navController.graph.startDestinationId)
                 launchSingleTop = true
             })
-        }.onFailure { DiagnosticsLogger.w(DiagTags.NAV, "Toolbar navigation failed dest=$destId", it) }
+        }.onFailure { DiagnosticsLogger.w(DiagTags.NAV, "Toolbar navigation failed destId=$destId", it) }
     }
 
     /** Long-press on the coordinates: copy what's shown (position + height) to the clipboard. */
@@ -845,7 +845,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun logToolbarIgnore(reason: String) {
         val level = if (reason == "wrong-provider") 'D' else 'I'
-        DiagnosticsLogger.every(DiagTags.GNSS, "toolbar.ignore.$reason", 60_000L, level) { "Toolbar ignored $reason fix" }
+        DiagnosticsLogger.every(DiagTags.GNSS, "toolbar.ignore.$reason", 60_000L, level) { "Toolbar ignored fix reason=$reason" }
     }
 
     private fun updateBatteryVisibility(requested: Boolean) {
@@ -990,7 +990,7 @@ class MainActivity : AppCompatActivity() {
                         .show()
                 }
             } catch (e: Exception) {
-                DiagnosticsLogger.e(DiagTags.GNSS, "NMEA replay: listing asset files failed", e)
+                DiagnosticsLogger.e(DiagTags.GNSS, "NMEA replay asset listing failed", e)
                 runOnUiThread {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle("Error")

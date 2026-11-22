@@ -214,7 +214,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
             box?.visibility = View.VISIBLE
             statusTv?.visibility = View.VISIBLE
         } catch (e: Exception) {
-            settingsError("updateDeviceBox failed", e)
+            settingsError("Settings receiver status update failed", e)
         }
     }
 
@@ -297,7 +297,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
-            settingsError("buildCategoryContent failed for category ${category.id}", e)
+            settingsError("Settings category build failed id=${category.id}", e)
             null
         }
 
@@ -331,7 +331,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     switchKeepAwake?.isChecked = current.keepScreenAwake
                     switchMaxBright?.isChecked = current.maxBrightnessWhileOpen
                 } catch (e: Exception) {
-                    settingsError("Failed to load appearance settings", e)
+                    settingsError("Settings load failed section=appearance", e)
                 }
             }
 
@@ -349,7 +349,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             }
                         )
                     } catch (e: Exception) {
-                        settingsError("Failed to save appearance settings", e)
+                        settingsError("Settings save failed section=appearance", e)
                         showSettingsMessage("Failed to save theme.")
                     }
                 }
@@ -361,7 +361,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(showLiveGnssStatusBar = isChecked))
                     } catch (e: Exception) {
-                        settingsError("Failed to save GNSS status bar setting", e)
+                        settingsError("Settings save failed section=gnssStatusBar", e)
                     }
                 }
             }
@@ -372,7 +372,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(keepScreenAwake = isChecked))
                     } catch (e: Exception) {
-                        settingsError("Failed to save keep screen awake setting", e)
+                        settingsError("Settings save failed section=keepScreenAwake", e)
                     }
                 }
             }
@@ -383,19 +383,19 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(maxBrightnessWhileOpen = isChecked))
                     } catch (e: Exception) {
-                        settingsError("Failed to save max brightness setting", e)
+                        settingsError("Settings save failed section=maxBrightness", e)
                     }
                 }
             }
         } catch (e: Exception) {
-            settingsError("setupAppearanceContent failed", e)
+            settingsError("Settings section setup failed section=appearance", e)
         }
         return view
     }
 
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
-        try { setupLocationSourceUi(view) } catch (e: Exception) { settingsError("setupLocationSourceUi failed", e) }
+        try { setupLocationSourceUi(view) } catch (e: Exception) { settingsError("Settings section setup failed section=locationSource", e) }
         return view
     }
 
@@ -405,23 +405,23 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener {
                 try {
                     exportBackupLauncher.launch("coordinates_backup_${System.currentTimeMillis()}.json")
-                } catch (e: Exception) { settingsError("export launch failed", e) }
+                } catch (e: Exception) { settingsError("Backup export launch failed", e) }
             }
             view.findViewById<Button>(R.id.btn_export_points_csv)?.setOnClickListener {
                 try {
                     exportPointsCsvLauncher.launch("survey_points_${System.currentTimeMillis()}.csv")
-                } catch (e: Exception) { settingsError("points CSV export launch failed", e) }
+                } catch (e: Exception) { settingsError("CSV export launch failed", e) }
             }
             view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener {
                 try {
                     // Most providers label .json as application/json; the broader types are a
                     // fallback for providers that mislabel it (the parser still validates content).
                     importBackupLauncher.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream"))
-                } catch (e: Exception) { settingsError("import launch failed", e) }
+                } catch (e: Exception) { settingsError("Import launch failed", e) }
             }
-            view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { settingsError("cancelActiveImport failed", e) } }
+            view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { settingsError("Import cancel failed", e) } }
         } catch (e: Exception) {
-            settingsError("setupDataContent wiring failed", e)
+            settingsError("Settings section setup failed section=data", e)
         }
         return view
     }
@@ -435,7 +435,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     try {
                         switchDevTools.isChecked = settingsRepo.developerSettings.first().developerToolsEnabled
                     } catch (e: Exception) {
-                        settingsError("dev tools initial load error", e)
+                        settingsError("Settings load failed section=developerTools", e)
                     }
                 }
                 switchDevTools.setOnCheckedChangeListener { _, v ->
@@ -444,16 +444,16 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             try {
                                 settingsRepo.setDeveloperSettings(DeveloperSettings(developerToolsEnabled = v))
                             } catch (e: Exception) {
-                                settingsError("dev tools save error", e)
+                                settingsError("Settings save failed section=developerTools", e)
                             }
                         }
                     } catch (e: Exception) {
-                        settingsError("dev tools switch error", e)
+                        settingsError("Settings developer tools switch failed", e)
                     }
                 }
             }
         } catch (e: Exception) {
-            settingsError("setupDeveloperContent wiring failed", e)
+            settingsError("Settings section setup failed section=developer", e)
         }
         return view
     }
@@ -503,7 +503,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     try {
                         settingsRepo.setArDisplaySettings(settings)
                     } catch (e: Exception) {
-                        settingsError("Failed to save AR display settings", e)
+                        settingsError("Settings save failed section=arDisplay", e)
                     }
                 }
             }
@@ -524,7 +524,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
-                    settingsError("Failed to load AR display settings", e)
+                    settingsError("Settings load failed section=arDisplay", e)
                 }
             }
 
@@ -545,7 +545,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 if (editScale.text?.toString()?.toFloatOrNull()?.let { it in 0.1f..10.0f } == true) saveAll()
             }
         } catch (e: Exception) {
-            settingsError("setupARDisplayContent failed", e)
+            settingsError("Settings section setup failed section=arDisplay", e)
         }
         return view
     }
@@ -576,7 +576,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             var currentMap = app.surrealar.settings.SettingsDefaults.map
             fun persistMap(updated: app.surrealar.ui.rendermap.MapSettings) {
                 currentMap = updated
-                saveScope.launch { runCatching { settingsRepo.setMapSettings(updated) }.onFailure { settingsError("save map settings failed", it) } }
+                saveScope.launch { runCatching { settingsRepo.setMapSettings(updated) }.onFailure { settingsError("Settings save failed section=map", it) } }
             }
 
             // ── Stakeout defaults (StakeoutSettings) ────────────────────────────────
@@ -602,7 +602,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 if (updated == currentStakeout) return
                 currentStakeout = updated
                 // Save scope (not the view's): a save started as the user leaves the screen still completes.
-                saveScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) }.onFailure { settingsError("save stakeout settings failed", it) } }
+                saveScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) }.onFailure { settingsError("Settings save failed section=stakeout", it) } }
             }
 
             categoryScope.launch {
@@ -646,11 +646,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         edit.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) persistStakeout() }
                     }
                 } catch (e: Exception) {
-                    settingsError("Failed to load map settings", e)
+                    settingsError("Settings load failed section=map", e)
                 }
             }
         } catch (e: Exception) {
-            settingsError("setupMapContent failed", e)
+            settingsError("Settings section setup failed section=map", e)
         }
         return view
     }
@@ -731,7 +731,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             bind(s)
             saveScope.launch {
                 runCatching { settingsRepo.setCoordinateSystemSettings(s) }
-                    .onFailure { settingsError("Failed to save coordinate system", it) }
+                    .onFailure { settingsError("Coordinate system save failed", it) }
             }
         }
 
@@ -767,7 +767,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         categoryScope.launch {
             runCatching { bind(settingsRepo.coordinateSystemSettings.first()) }
-                .onFailure { settingsError("Failed to load coordinate system", it) }
+                .onFailure { settingsError("Coordinate system load failed", it) }
         }
         // Keep the preview live while the page is open.
         categoryScope.launch {
@@ -779,7 +779,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
     private fun setupCoordinateDisplayContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_coordinate_display, contentContainer, false)
-        try { setupCoordinateSystemCard(view) } catch (e: Exception) { settingsError("coordinate system card failed", e) }
+        try { setupCoordinateSystemCard(view) } catch (e: Exception) { settingsError("Settings section setup failed section=coordinateSystem", e) }
         try {
             val switchAccuracy  = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_show_accuracy_indicators)
             val editPrefix      = view.findViewById<EditText>(R.id.edit_coordinate_name_prefix)
@@ -802,7 +802,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             defaultNamePrefix = prefix.ifEmpty { "Point" }
                         ))
                     } catch (e: Exception) {
-                        settingsError("Failed to save coordinate name prefix", e)
+                        settingsError("Settings save failed section=coordinateNamePrefix", e)
                     }
                 }
             }
@@ -816,7 +816,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             autoIncrementNames     = autoInc
                         ))
                     } catch (e: Exception) {
-                        settingsError("Failed to save coordinate display settings", e)
+                        settingsError("Settings save failed section=coordinateDisplay", e)
                     }
                 }
             }
@@ -832,7 +832,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
-                    settingsError("Failed to load coordinate display settings", e)
+                    settingsError("Settings load failed section=coordinateDisplay", e)
                 }
             }
 
@@ -849,7 +849,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 if (editPrefix.text?.toString()?.trim().isNullOrEmpty().not()) savePrefix()
             }
         } catch (e: Exception) {
-            settingsError("setupCoordinateDisplayContent failed", e)
+            settingsError("Settings section setup failed section=coordinateDisplay", e)
         }
         return view
     }
@@ -915,7 +915,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
         } catch (e: Exception) {
-            settingsError("setupAboutContent failed", e)
+            settingsError("Settings section setup failed section=about", e)
         }
         return view
     }
@@ -1022,7 +1022,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     try {
                         settingsRepo.setGnssCaptureSettings(settings)
                     } catch (e: Exception) {
-                        settingsError("Failed to save GNSS capture settings", e)
+                        settingsError("Settings save failed section=gnssCapture", e)
                     }
                 }
             }
@@ -1040,7 +1040,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     spinnerPreset?.setText(saved.preset.label, false)
                     applyPresetUi(saved.preset)
                 } catch (e: Exception) {
-                    settingsError("Failed to load GNSS capture settings", e)
+                    settingsError("Settings load failed section=gnssCapture", e)
                 }
             }
 
@@ -1053,7 +1053,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     runCatching {
                         val stored = settingsRepo.gnssCaptureSettings.first()
                         settingsRepo.setGnssCaptureSettings(stored.copy(preset = chosen))
-                    }.onFailure { settingsError("Failed to save capture preset", it) }
+                    }.onFailure { settingsError("Settings save failed section=capturePreset", it) }
                 }
             }
             spinner?.setOnItemClickListener { _, _, _, _ -> trySave() }
@@ -1064,7 +1064,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 edit?.saveWhileTyping(saveScope) { if (currentPreset == io.github.pennstatecs.geokit.gnss.capture.CapturePreset.CUSTOM) trySave() }
             }
         } catch (e: Exception) {
-            settingsError("setupGnssCaptureContent failed", e)
+            settingsError("Settings section setup failed section=gnssCapture", e)
         }
         return view
     }
@@ -1115,7 +1115,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         .getOrDefault(app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
                     if (persisted != profile) {
                         runCatching { settingsRepo.setExternalReceiverProfile(profile) }
-                            .onFailure { settingsError("save receiver profile failed", it) }
+                            .onFailure { settingsError("Settings save failed section=receiverProfile", it) }
                         if (this@SettingsFragment.view == null) return@launch
                         // Conservative: only apply the new profile's default port if the current
                         // port is missing/invalid or wasn't user-customized (a custom port is kept).
@@ -1185,14 +1185,14 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                                 val name = selectedDeviceName ?: "Unknown Device"
                                 saveScope.launch {
                                     runCatching { settingsRepo.setExternalTcp(host, port, name) }
-                                        .onFailure { settingsError("Failed to save receiver name", it) }
+                                        .onFailure { settingsError("Settings save failed section=receiverName", it) }
                                 }
                             }
                             updateDeviceBox()
                         }
                     }
                 } catch (e: Exception) {
-                    settingsWarn("receiver device info display failed", e, DiagTags.RECEIVER)
+                    settingsWarn("External receiver info display failed", e, DiagTags.RECEIVER)
                 }
             }
         }
@@ -1215,17 +1215,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                                     selectedDeviceName = resolved
                                     saveScope.launch {
                                         runCatching { settingsRepo.setExternalTcp(host, port, resolved) }
-                                            .onFailure { settingsError("Failed to save receiver name", it) }
+                                            .onFailure { settingsError("Settings save failed section=receiverName", it) }
                                     }
                                     updateDeviceBox()
                                 }
                             } catch (e: Exception) {
-                                settingsWarn("receiver name lookup failed", e, DiagTags.RECEIVER)
+                                settingsWarn("External receiver name lookup failed", e, DiagTags.RECEIVER)
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    settingsError("receiver diagnostic probe failed port=$port", e, DiagTags.RECEIVER)
+                    settingsError("External receiver diagnostic probe failed port=$port", e, DiagTags.RECEIVER)
                 }
             }
         }
@@ -1252,7 +1252,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     showSettingsMessage(getString(R.string.host_required))
                 }
             } catch (e: Exception) {
-                settingsError("attemptConnectFromInline failed", e)
+                settingsError("External receiver connect failed", e)
             }
         }
 
@@ -1286,7 +1286,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
                     settingsRepo.clearExternalTcp()
                 } catch (e: Exception) {
-                    settingsError("disconnect failed", e)
+                    settingsError("External receiver disconnect failed", e)
                 }
             }
         }
@@ -1613,11 +1613,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             provisionalConnectedUntil = 0L
                             // Per fix: at most one line a minute.
                             try { refresh(lastExternalFixTimeMs) } catch (e: Exception) {
-                                DiagnosticsLogger.every(DiagTags.SETTINGS, "settings.status.refresh", 60_000L, 'W', e) { "Receiver status refresh failed (on fix)" }
+                                DiagnosticsLogger.every(DiagTags.SETTINGS, "settings.status.refresh", 60_000L, 'W', e) { "External receiver status refresh failed trigger=fix" }
                             }
                         }
                     } catch (e: Exception) {
-                        settingsWarn("fix collect error in status job", e)
+                        settingsWarn("Settings receiver status fix collection failed", e)
                     }
                 }
             }
@@ -1633,7 +1633,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             // Periodic refresh to age out status
             while (isActive) {
                 try { refresh(System.currentTimeMillis()) } catch (e: Exception) {
-                    DiagnosticsLogger.every(DiagTags.SETTINGS, "settings.status.periodic", 60_000L, 'W', e) { "Receiver status refresh failed (periodic)" }
+                    DiagnosticsLogger.every(DiagTags.SETTINGS, "settings.status.periodic", 60_000L, 'W', e) { "External receiver status refresh failed trigger=periodic" }
                 }
                 delay(1_000L)
             }
@@ -1655,7 +1655,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     settingsRepo.setGnssReceiverSettings(transform(settingsRepo.gnssReceiverSettings.first()))
                 } catch (e: Exception) {
-                    settingsError("antenna setup save error", e)
+                    settingsError("Settings save failed section=antennaSetup", e)
                 }
             }
         }
@@ -1692,7 +1692,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().poleHeightM))
                 } catch (e: Exception) {
-                    settingsError("pole height load error", e)
+                    settingsError("Settings load failed section=poleHeight", e)
                 }
             }
             val saveAntenna = {
@@ -1715,7 +1715,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        settingsError("pole height save error", e)
+                        settingsError("Settings save failed section=poleHeight", e)
                     }
                 }
             }
@@ -1731,7 +1731,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().cameraBelowReceiverM))
                 } catch (e: Exception) {
-                    settingsError("camera distance load error", e)
+                    settingsError("Settings load failed section=cameraDistance", e)
                 }
             }
             val saveCamera = {
@@ -1749,7 +1749,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        settingsError("camera distance save error", e)
+                        settingsError("Settings save failed section=cameraDistance", e)
                     }
                 }
             }
@@ -1779,7 +1779,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        settingsError("phase-centre offset save error", e)
+                        settingsError("Settings save failed section=phaseCentreOffset", e)
                     }
                 }
             }
@@ -1794,7 +1794,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM))
                 } catch (e: Exception) {
-                    settingsError("internal antenna height load error", e)
+                    settingsError("Settings load failed section=internalAntennaHeight", e)
                 }
             }
             val saveInternalAntenna = {
@@ -1812,7 +1812,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        settingsError("internal antenna height save error", e)
+                        settingsError("Settings save failed section=internalAntennaHeight", e)
                     }
                 }
             }
@@ -1830,7 +1830,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             try {
                 switchMock?.isChecked = settingsRepo.mockLocationEnabled.first()
             } catch (e: Exception) {
-                settingsError("Failed to load mock location setting", e)
+                settingsError("Settings load failed section=mockLocation", e)
             }
         }
 
@@ -1840,7 +1840,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     settingsRepo.setMockLocationEnabled(checked)
                     if (!checked && this@SettingsFragment.view != null) errorBanner?.visibility = View.GONE
                 } catch (e: Exception) {
-                    settingsError("Failed to save mock location setting", e)
+                    settingsError("Settings save failed section=mockLocation", e)
                 }
             }
         }
@@ -1852,7 +1852,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 try {
                     startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
                 } catch (ex: Exception) {
-                    settingsWarn("Could not open developer settings", ex)
+                    settingsWarn("Developer options screen open failed", ex)
                 }
             }
         }
@@ -1876,7 +1876,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         }
                     }
                 } catch (e: Exception) {
-                    settingsError("mock location error observer failed", e)
+                    settingsError("Mock location error observer failed", e)
                 }
             }
         }
@@ -1942,7 +1942,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             when (checkedId) {
                 R.id.radio_internal -> {
                     DiagnosticsLogger.i(
-                        DiagTags.GNSS, "Switched back to Internal — cancelling external connect attempt #$tcpConnectAttemptId"
+                        DiagTags.GNSS, "External receiver connect cancelled: switched to device GNSS attempt=$tcpConnectAttemptId"
                     )
                     // Invalidate and cancel any in-progress TCP connection attempt
                     ++tcpConnectAttemptId
@@ -1964,7 +1964,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         runCatching {
                             settingsRepo.setMockLocationEnabled(false)
                             settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
-                        }.onFailure { settingsError("Failed to save location source", it) }
+                        }.onFailure { settingsError("Settings save failed section=locationSource", it) }
                     }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
@@ -1983,7 +1983,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         runCatching {
                             settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                             settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
-                        }.onFailure { settingsError("Failed to save location source", it) }
+                        }.onFailure { settingsError("Settings save failed section=locationSource", it) }
                     }
                     // Reconnect using the device already loaded from stored settings.
                     // Calling connectViaTcpFlow directly (not inside a separate launch) ensures
@@ -2090,7 +2090,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
                     // No host: the Setting lines already record the saved values.
                     DiagnosticsLogger.i(
-                        DiagTags.GNSS, "External TCP settings saved port=$port (attempt #$attemptId) tcp=$tcpResult http=$httpReachable"
+                        DiagTags.GNSS, "External receiver settings saved port=$port attempt=$attemptId tcp=$tcpResult http=$httpReachable"
                     )
 
                     // Final stale-attempt guard before flipping the live provider. If the user
@@ -2099,7 +2099,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     // user already returned to Internal.
                     if (attemptId != tcpConnectAttemptId) {
                         DiagnosticsLogger.i(
-                            DiagTags.GNSS, "Stale external connect attempt #$attemptId ignored before activation"
+                            DiagTags.GNSS, "External receiver connect attempt ignored: superseded before activation attempt=$attemptId"
                         )
                         return@launch
                     }
@@ -2144,14 +2144,14 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                settingsWarn("receiver name lookup failed", e, DiagTags.RECEIVER)
+                                settingsWarn("External receiver name lookup failed", e, DiagTags.RECEIVER)
                             }
                         }
                     }
                 } else {
                     // Both TCP and HTTP failed — receiver unreachable.
                     DiagnosticsLogger.w(DiagTags.RECEIVER,
-                        "connect probe tcp=$tcpResult http=$httpReachable port=$port attempt=#$attemptId: receiver unavailable")
+                        "External receiver unavailable: connect probe failed tcp=$tcpResult http=$httpReachable port=$port attempt=$attemptId")
                     view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
                         tv.text = "Receiver unavailable"
@@ -2166,7 +2166,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 throw e
             } catch (e: Exception) {
                 if (attemptId == tcpConnectAttemptId) {
-                    settingsWarn("connect probe failed port=$port attempt=#$attemptId", e, DiagTags.RECEIVER)
+                    settingsWarn("External receiver connect probe failed port=$port attempt=$attemptId", e, DiagTags.RECEIVER)
                 }
             }
         }
@@ -2206,7 +2206,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         } ?: error("Unable to open output stream")
                     }
                 } catch (e: Exception) {
-                    settingsError("JSON backup write failed rows=${result.coordinateCount} dest=SAF", e, DiagTags.EXPORT)
+                    settingsError("Backup export write failed rows=${result.coordinateCount} dest=SAF", e, DiagTags.EXPORT)
                     throw e
                 }
                 result.coordinateCount
@@ -2225,7 +2225,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         saveScope.launch {
             runCatching {
                 // DataOpLog: start / done rows=n / failed (E, with the exception) lines.
-                app.surrealar.util.diagnostics.DataOpLog.run("Points CSV export", "csv", { n: Int -> n }) {
+                app.surrealar.util.diagnostics.DataOpLog.run("CSV export", "csv", { n: Int -> n }) {
                     val coordSettings = settingsRepo.coordinateSystemSettings.first()
                     val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
                     // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
@@ -2256,7 +2256,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             try {
                 prepareImportCoordinatesWithConfirmation(uri)
             } catch (e: Exception) {
-                settingsError("Backup import failed (preparing)", e, DiagTags.DATA)
+                settingsError("Backup import failed stage=prepare", e, DiagTags.DATA)
                 showSettingsMessage("Import failed: ${e.message}", Snackbar.LENGTH_LONG)
             }
         }
@@ -2301,7 +2301,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             } catch (e: Exception) {
                 // The use case logs parse/write failures itself (DataOpLog); the file read is logged here.
-                settingsError("Backup import failed (reading file)", e, DiagTags.DATA)
+                settingsError("Backup import failed stage=readFile", e, DiagTags.DATA)
                 throw e
             }
             showImportProgress(true, 70, "Writing…")
@@ -2310,7 +2310,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             showImportProgress(false, 100, if (plan.isNoOp) "Nothing to import" else "Completed")
             // Counts only: the lists hold point names.
             if (plan.skippedInvalid.isNotEmpty() || plan.missingModelRefs.isNotEmpty()) {
-                DiagnosticsLogger.w(DiagTags.DATA, "Import skipped=${plan.skippedInvalid.size} missingModels=${plan.missingModelRefs.size}")
+                DiagnosticsLogger.w(DiagTags.DATA, "Import skipped invalid rows skipped=${plan.skippedInvalid.size} missingModels=${plan.missingModelRefs.size}")
             }
             showSettingsMessage(plan.summaryMessage(), Snackbar.LENGTH_LONG)
         }.onFailure { e ->
@@ -2336,7 +2336,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
         } catch (e: Exception) {
-            settingsWarn("showImportProgress failed", e)
+            settingsWarn("Import progress display failed", e)
         }
     }
 
@@ -2351,7 +2351,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 showSettingsMessage(getString(R.string.import_cancel))
             }
         } catch (e: Exception) {
-            settingsWarn("cancelActiveImport failed", e)
+            settingsWarn("Import cancel failed", e)
         }
     }
 
@@ -2532,12 +2532,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 textSelfTestsSummary?.text = SelfTestDisplay.summaryText(deviceInfo.selfTests)
                 try { textSelfTestsSummary?.setTextColor(ContextCompat.getColor(requireContext(), summaryColor)) } catch (_: Exception) {}
                 layoutSelfTestsGrid?.removeAllViews()
-                try { populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests) } catch (e: Exception) { settingsWarn("populateSelfTestsGrid failed", e) }
+                try { populateSelfTestsGrid(layoutSelfTestsGrid, deviceInfo.selfTests) } catch (e: Exception) { settingsWarn("External receiver self-test display failed", e) }
             } else {
                 layoutSelfTests?.visibility = View.GONE
             }
         } catch (e: Exception) {
-            settingsError("updateDeviceInfoDisplay failed", e)
+            settingsError("External receiver info display failed", e)
         }
 
     }
@@ -2563,7 +2563,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             }
                             rowLayout.addView(testItemLayout)
                         } catch (e: Exception) {
-                            settingsWarn("createSelfTestItem failed for ${test.name}", e)
+                            settingsWarn("External receiver self-test row failed test=\"${test.name}\"", e)
                         }
                     }
                     if (rowTests.size < testsPerRow) {
@@ -2573,11 +2573,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                     container.addView(rowLayout)
                 } catch (e: Exception) {
-                    settingsWarn("populateSelfTestsGrid row failed", e)
+                    settingsWarn("External receiver self-test row failed", e)
                 }
             }
         } catch (e: Exception) {
-            settingsError("populateSelfTestsGrid failed", e)
+            settingsError("External receiver self-test display failed", e)
         }
     }
 
@@ -2615,7 +2615,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             .setPositiveButton("OK", null)
                             .show()
                     } catch (e: Exception) {
-                        settingsWarn("self test detail dialog failed", e)
+                        settingsWarn("External receiver self-test detail dialog failed", e)
                     }
                 }
                 try { foreground = ContextCompat.getDrawable(context, android.R.drawable.list_selector_background) } catch (_: Exception) {}

@@ -250,7 +250,7 @@ class CoordinatesFragment : Fragment() {
                     }
                 }
             } catch (e: Exception) {
-                DiagnosticsLogger.e(DiagTags.COORD, "Coordinate list update failed n=${coordinates.size}", e)
+                DiagnosticsLogger.e(DiagTags.COORD, "Coordinate list update failed count=${coordinates.size}", e)
             }
         }
 
@@ -304,7 +304,7 @@ class CoordinatesFragment : Fragment() {
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.w(DiagTags.MODEL, "Coordinate list model names/thumbnails unavailable", e)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Coordinate list model details load failed: names and thumbnails unavailable", e)
             }
         }
 
@@ -381,18 +381,18 @@ class CoordinatesFragment : Fragment() {
                                     saveLastOpenedId(coordinate.id)
                                     adapter.setSelectedId(coordinate.id)
                                 } catch (e: Exception) {
-                                    DiagnosticsLogger.e(DiagTags.COORD, "delete UNDO failed id=${coordinate.id}", e)
+                                    DiagnosticsLogger.e(DiagTags.COORD, "Coordinate delete undo failed id=${coordinate.id}", e)
                                 }
                             }
                             .show()
                     } catch (e: Exception) {
-                        DiagnosticsLogger.e(DiagTags.COORD, "delete failed id=${coordinate.id}", e)
+                        DiagnosticsLogger.e(DiagTags.COORD, "Coordinate delete failed id=${coordinate.id}", e)
                     }
                 }
                 .setNegativeButton(android.R.string.cancel, null)
                 .show()
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "delete dialog failed id=${coordinate.id}", e)
+            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate delete dialog failed id=${coordinate.id}", e)
         }
     }
 

@@ -60,7 +60,7 @@ class AddModelDialogFragment : DialogFragment() {
         val modelsRoot = File(appContext.filesDir, ModelFileCleaner.MODELS_DIR_NAME)
         Thread({
             val deleted = ModelFileCleaner.deleteModelFile(path, modelsRoot)
-            if (deleted) DiagnosticsLogger.i("MODEL", "import cancelled — copied file removed")
+            if (deleted) DiagnosticsLogger.i("MODEL", "Model import cancelled: copied file removed")
         }, "model-import-discard").start()
     }
 

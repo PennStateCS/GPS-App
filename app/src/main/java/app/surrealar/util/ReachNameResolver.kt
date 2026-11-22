@@ -29,7 +29,7 @@ object ReachNameResolver {
         val lock = try {
             wifi.createMulticastLock("reach-mdns").apply { setReferenceCounted(false); acquire() }
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.RECEIVER, "Reach name lookup: multicast lock failed", e)
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "External receiver name lookup multicast lock failed", e)
             null
         }
 
@@ -67,7 +67,7 @@ object ReachNameResolver {
             nsd.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
             withTimeoutOrNull(timeoutMs) { result.await() }
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.RECEIVER, "Reach name lookup: NSD discovery failed", e)
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "External receiver name lookup failed: NSD discovery error", e)
             null
         } finally {
             try { nsd.stopServiceDiscovery(listener) } catch (_: Exception) {}

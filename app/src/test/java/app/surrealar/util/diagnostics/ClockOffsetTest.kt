@@ -27,8 +27,8 @@ class ClockOffsetTest {
     }
 
     @Test fun `described with sign and source`() {
-        assertEquals("Clock offset device−GNSS +2.5 s (NMEA_ZDA)", ClockOffset.describe(2_500L, TimestampSource.NMEA_ZDA))
-        assertEquals("Clock offset device−GNSS -0.3 s (GNSS_PROVIDER)", ClockOffset.describe(-300L, TimestampSource.GNSS_PROVIDER))
+        assertEquals("Clock offset measured deviceMinusGnssS=2.5 source=NMEA_ZDA", ClockOffset.describe(2_500L, TimestampSource.NMEA_ZDA))
+        assertEquals("Clock offset measured deviceMinusGnssS=-0.3 source=GNSS_PROVIDER", ClockOffset.describe(-300L, TimestampSource.GNSS_PROVIDER))
     }
 
     @Test fun `change needs a move of a full second from the last logged offset`() {

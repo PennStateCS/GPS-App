@@ -47,7 +47,7 @@ class SourceSettings(
     fun setActiveProvider(choice: ProviderChoice) {
         val prev = _activeProvider.value
         // The switch is logged once at I by GnssFeedTracker ("Source A → B"); this is detail.
-        if (prev != choice) DiagnosticsLogger.d("GNSS") { "setActiveProvider $prev → $choice" }
+        if (prev != choice) DiagnosticsLogger.d("GNSS") { "GNSS active source changed $prev → $choice" }
         _activeProvider.value = choice
     }
 

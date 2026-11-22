@@ -38,12 +38,12 @@ object ModelOrphanSweeper {
                 val root = File(app.filesDir, ModelFileCleaner.MODELS_DIR_NAME)
                 val removed = sweep(root, paths, System.currentTimeMillis())
                 if (removed.isNotEmpty()) {
-                    DiagnosticsLogger.i(DiagTags.MODEL, "orphan sweep removed ${removed.size} unreferenced model file(s)")
+                    DiagnosticsLogger.i(DiagTags.MODEL, "Model orphan sweep completed removedFiles=${removed.size}")
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                DiagnosticsLogger.w(DiagTags.MODEL, "Orphan model sweep skipped", t)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model orphan sweep failed", t)
             }
         }
     }

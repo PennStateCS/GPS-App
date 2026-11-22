@@ -69,13 +69,13 @@ class ReachCorrectionsLoggingTest {
     @Test fun `the CORRECTIONS line prints the metre baseline in km`() {
         val r = Recording(enabled = false)
         broadcastMany(r)
-        val line = r.lines.single { it.startsWith("DIAG/CORRECTIONS: rtk solution=fix") }
+        val line = r.lines.single { it.startsWith("DIAG/CORRECTIONS: Corrections RTK solution changed solution=fix") }
         assertTrue(line, "baselineKm=4.59 " in line)
     }
 
     @Test fun `formatBaselineKm converts metres and marks unknown`() {
         assertEquals("4.59", formatBaselineKm(4594.8))
         assertEquals("0.00", formatBaselineKm(0.0))
-        assertEquals("?", formatBaselineKm(null))
+        assertEquals("unknown", formatBaselineKm(null))
     }
 }

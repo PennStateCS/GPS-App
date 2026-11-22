@@ -48,19 +48,19 @@ class ReachCorrectionsErrorLogTest {
         for (i in 0..12) { now = i * 15_000L; socket.fire(Socket.EVENT_CONNECT_ERROR, "server error") }
         now = 200_000L; socket.fire(Socket.EVENT_CONNECT)
         assertEquals(listOf(
-            "connect attempt host=192.168.2.174",
-            "socket connect error host=192.168.2.174 (will retry): server error",
-            "socket still failing host=192.168.2.174: 5 attempts in 60s, last error: server error",
-            "socket still failing host=192.168.2.174: 9 attempts in 120s, last error: server error",
-            "socket still failing host=192.168.2.174: 13 attempts in 180s, last error: server error",
-            "socket connected host=192.168.2.174 after 13 failed attempts",
+            "Corrections connecting host=192.168.2.174",
+            "Corrections connect failed host=192.168.2.174 error=\"server error\" (will retry)",
+            "Corrections still unreachable host=192.168.2.174 attempts=5 elapsedS=60 lastError=\"server error\"",
+            "Corrections still unreachable host=192.168.2.174 attempts=9 elapsedS=120 lastError=\"server error\"",
+            "Corrections still unreachable host=192.168.2.174 attempts=13 elapsedS=180 lastError=\"server error\"",
+            "Corrections connected host=192.168.2.174 failedAttempts=13",
         ), log.diag)
 
         // Data arrives (the link really works), so a later outage starts a fresh count.
         socket.fire("broadcast", JSONObject("{\"name\":\"time_marks\"}"))
         log.diag.clear()
         now = 300_000L; socket.fire(Socket.EVENT_CONNECT_ERROR, "timeout")
-        assertEquals(listOf("socket connect error host=192.168.2.174 (will retry): timeout"), log.diag)
+        assertEquals(listOf("Corrections connect failed host=192.168.2.174 error=\"timeout\" (will retry)"), log.diag)
     }
 
     @Test fun `a socket that connects and fails without data does not repeat the first error`() {
@@ -77,9 +77,9 @@ class ReachCorrectionsErrorLogTest {
             socket.fire(Socket.EVENT_DISCONNECT, "transport error")
         }
         assertEquals(listOf(
-            "connect attempt host=192.168.2.174",
-            "socket connect error host=192.168.2.174 (will retry): xhr poll error",
-            "socket connected host=192.168.2.174 after 1 failed attempts",
+            "Corrections connecting host=192.168.2.174",
+            "Corrections connect failed host=192.168.2.174 error=\"xhr poll error\" (will retry)",
+            "Corrections connected host=192.168.2.174 failedAttempts=1",
         ), log.diag)
     }
 }

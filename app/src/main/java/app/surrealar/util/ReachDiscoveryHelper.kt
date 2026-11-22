@@ -51,7 +51,7 @@ object ReachDiscoveryHelper {
         val multicastLock = try {
             wifiManager.createMulticastLock("reach-mdns-lock").apply { setReferenceCounted(false); acquire() }
         } catch (e: Exception) {
-            DiagnosticsLogger.w("RECEIVER", "Reach discovery: could not acquire the multicast lock; mDNS may miss devices", e); null
+            DiagnosticsLogger.w("RECEIVER", "External receiver discovery multicast lock failed: mDNS may miss devices", e); null
         }
 
         try {
@@ -91,14 +91,14 @@ object ReachDiscoveryHelper {
                         })
                     }
                     override fun onServiceLost(serviceInfo: NsdServiceInfo) { DevLog.d(TAG) { "Service lost: ${serviceInfo.serviceName}" } }
-                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { DiagnosticsLogger.w("RECEIVER", "Reach discovery: mDNS start failed errorCode=$errorCode; falling back to HTTP sweep"); mdnsCompleted.complete(false) }
+                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { DiagnosticsLogger.w("RECEIVER", "External receiver discovery mDNS start failed: falling back to HTTP sweep errorCode=$errorCode"); mdnsCompleted.complete(false) }
                     override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { DevLog.d(TAG) { "Stop discovery failed: $serviceType ($errorCode)" }; mdnsCompleted.complete(mdnsFoundAny) }
                 }
                 try {
                     nsdManager.discoverServices(MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
                     withTimeoutOrNull(MDNS_TIMEOUT_MS) { mdnsCompleted.await() }
                     try { nsdManager.stopServiceDiscovery(discoveryListener) } catch (e: Exception) { DevLog.d(TAG) { "Error stopping mDNS discovery: ${e.message}" } }
-                } catch (e: Exception) { DiagnosticsLogger.w("RECEIVER", "Reach discovery: mDNS failed; falling back to HTTP sweep", e); mdnsCompleted.complete(false) }
+                } catch (e: Exception) { DiagnosticsLogger.w("RECEIVER", "External receiver discovery mDNS failed: falling back to HTTP sweep", e); mdnsCompleted.complete(false) }
             }
             mdnsJob.join()
             try { multicastLock?.release() } catch (_: Exception) {}
@@ -113,13 +113,13 @@ object ReachDiscoveryHelper {
                     val effectiveMask = deriveEffectiveMask(localIp, rawMask)
 
                     if (localIp == null || localIp == "0.0.0.0") {
-                        DiagnosticsLogger.w("RECEIVER", "Reach discovery: no valid local IP; HTTP sweep skipped")
+                        DiagnosticsLogger.w("RECEIVER", "External receiver discovery HTTP sweep skipped: no valid local IP")
                         return@launch
                     }
 
                     val subnet = computeSubnet(localIp, effectiveMask)
                     if (subnet == null) {
-                        DiagnosticsLogger.w("RECEIVER", "Reach discovery: could not compute the subnet (mask=$effectiveMask); HTTP sweep skipped")
+                        DiagnosticsLogger.w("RECEIVER", "External receiver discovery HTTP sweep skipped: subnet not computable mask=$effectiveMask")
                         return@launch
                     }
 
@@ -154,7 +154,7 @@ object ReachDiscoveryHelper {
                         }
                     }
                     jobs.joinAll()
-                    DiagnosticsLogger.i("RECEIVER", "Reach discovery: HTTP sweep done swept=${swept.get()} hosts found=${found.get()}")
+                    DiagnosticsLogger.i("RECEIVER", "External receiver discovery HTTP sweep completed swept=${swept.get()} found=${found.get()}")
                 }.join()
             }
 
@@ -258,7 +258,7 @@ object ReachDiscoveryHelper {
         if (first || merged != existing) {
             DevLog.d(TAG) { "Reach discovered/updated: $merged" }
             // File log: no hostname or serial.
-            DiagnosticsLogger.i("RECEIVER", "Reach discovered ip=${merged.ip} method=${merged.discoveryMethod} " +
+            DiagnosticsLogger.i("RECEIVER", "External receiver discovered ip=${merged.ip} method=${merged.discoveryMethod} " +
                 "port5000=${merged.port5000Open} port9001=${merged.port9001Open}")
             emit(merged)
         }

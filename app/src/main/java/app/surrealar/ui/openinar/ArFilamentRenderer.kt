@@ -269,7 +269,7 @@ class ArFilamentRenderer {
 
         // Depth occluder (optional): failure only disables occlusion, never the renderer.
         occluder = runCatching { FilamentDepthOccluder(engine, textureView.context.assets) }
-            .onFailure { DiagnosticsLogger.w(DIAG, "depth occluder init failed — occlusion unavailable: ${it.message}", it) }
+            .onFailure { DiagnosticsLogger.w(DIAG, "AR depth occluder init failed: occlusion unavailable", it) }
             .getOrNull()
 
         // GLB loading infrastructure.
@@ -329,7 +329,7 @@ class ArFilamentRenderer {
             if (ok) testPreloadOk++ else testPreloadFailed++
             testPreloadPending = (testPreloadPending - 1).coerceAtLeast(0)
             if (testPreloadPending == 0) {
-                summary = "test grid preload done ok=$testPreloadOk failed=$testPreloadFailed"
+                summary = "Test grid preload finished ok=$testPreloadOk failed=$testPreloadFailed"
                 testPreloadOk = 0
                 testPreloadFailed = 0
             }
@@ -348,7 +348,7 @@ class ArFilamentRenderer {
         if (!initialized) {
             if (!loggedNotInitialized) {
                 loggedNotInitialized = true
-                DiagnosticsLogger.w(DIAG, "preload skipped — renderer not initialized (first key=$key; further keys not logged)")
+                DiagnosticsLogger.w(DIAG, "Model preload skipped: renderer not initialized firstKey=$key furtherKeysLogged=false")
             }
             return
         }
@@ -370,7 +370,7 @@ class ArFilamentRenderer {
             // No file stat here (main thread); OpenInARFragment's "preload dispatch" line has the file facts.
             loadStartMs[key] = SystemClock.elapsedRealtime()
             stuckLogged.remove(key)
-            DiagnosticsLogger.i(DIAG, "preload start key=$key file=$fileName")
+            DiagnosticsLogger.i(DIAG, "Model preload started key=$key file=$fileName")
         }
         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.LOADING)
         scope.launch {
@@ -395,7 +395,7 @@ class ArFilamentRenderer {
                         if (!initialized) {
                             // Lifecycle cancellation: the user left AR before the GLB finished loading.
                             if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload aborted key=$key reason=\"renderer destroyed while loading\"" }
-                            else DiagnosticsLogger.w(DIAG, "preload aborted key=$key reason=\"renderer destroyed while loading\"")
+                            else DiagnosticsLogger.w(DIAG, "Model preload aborted: renderer destroyed while loading key=$key")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
                             settlePreload(key, ok = false)
                             return@withContext
@@ -404,7 +404,7 @@ class ArFilamentRenderer {
                         // createAsset parses the GLB/GLTF; null means parse / asset creation failed.
                         val asset = assetLoader.createAsset(buffer)
                         if (asset == null) {
-                            DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"createAsset returned null (GLB parse/asset creation failed)\" " +
+                            DiagnosticsLogger.e(DIAG, "Model preload failed: GLB parse or asset creation failed key=$key " +
                                 "file=$fileName ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
@@ -422,7 +422,7 @@ class ArFilamentRenderer {
                         // the same path simply re-reads it from disk.
                         fileReadMutex.withLock { fileBytesCache.remove(filePath) }
                         if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload success key=$key entities=${asset.entities.size}" }
-                        else DiagnosticsLogger.i(DIAG, "preload success key=$key entities=${asset.entities.size}")
+                        else DiagnosticsLogger.i(DIAG, "Model preload succeeded key=$key entities=${asset.entities.size}")
                         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
                         settlePreload(key, ok = true)
                     }
@@ -435,7 +435,7 @@ class ArFilamentRenderer {
                 throw e
             } catch (e: Exception) {
                 loadingKeys.remove(key)
-                DiagnosticsLogger.e(DIAG, "preload failed key=$key reason=\"exception\" file=$fileName", e)
+                DiagnosticsLogger.e(DIAG, "Model preload failed key=$key file=$fileName", e)
                 ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
                 settlePreload(key, ok = false)
             }
@@ -518,7 +518,7 @@ class ArFilamentRenderer {
                     scene.removeEntities(cached.asset.entities)
                 }
                 runCatching { assetLoader.destroyAsset(cached.asset) }
-                    .onFailure { DiagnosticsLogger.w(DIAG, "stale test asset destroy failed key=$key", it) }
+                    .onFailure { DiagnosticsLogger.w(DIAG, "Test grid stale asset destroy failed key=$key", it) }
                 loadingKeys.remove(key)
             }
             app.surrealar.util.DevLog.d(TAG) { "stale test assets removed n=${staleTestKeys.size}" }
@@ -536,7 +536,7 @@ class ArFilamentRenderer {
                     }
                 }
                 if (restartFailed > 0) {
-                    DiagnosticsLogger.w(DIAG, "test asset load restart failed n=$restartFailed", firstRestartError)
+                    DiagnosticsLogger.w(DIAG, "Test grid asset load restart failed n=$restartFailed", firstRestartError)
                 }
             }
         }
@@ -606,19 +606,19 @@ class ArFilamentRenderer {
                     val firstPlacementLog = placementLogged.add("${pose.key}#${placement.hashCode()}#${pose.coordScale}")
 
                     if (firstPlacementLog) DiagnosticsLogger.d(DIAG) { "MODEL_BOUNDS model=$fileName coordId=${pose.key} " +
-                        "boundsMin=(${f(bounds.min.x)},${f(bounds.min.y)},${f(bounds.min.z)}) " +
-                        "boundsMax=(${f(bounds.max.x)},${f(bounds.max.y)},${f(bounds.max.z)}) " +
-                        "size=(${f(bounds.size.x)},${f(bounds.size.y)},${f(bounds.size.z)}) " +
-                        "center=(${f(bounds.center.x)},${f(bounds.center.y)},${f(bounds.center.z)}) " +
-                        "bottomCenter=(${f(bounds.bottomCenter.x)},${f(bounds.bottomCenter.y)},${f(bounds.bottomCenter.z)}) " +
-                        "originToBottomCenter=${f(bounds.originToBottomCenterM)}m" }
+                        "boundsMin=[${f(bounds.min.x)},${f(bounds.min.y)},${f(bounds.min.z)}] " +
+                        "boundsMax=[${f(bounds.max.x)},${f(bounds.max.y)},${f(bounds.max.z)}] " +
+                        "size=[${f(bounds.size.x)},${f(bounds.size.y)},${f(bounds.size.z)}] " +
+                        "center=[${f(bounds.center.x)},${f(bounds.center.y)},${f(bounds.center.z)}] " +
+                        "bottomCenter=[${f(bounds.bottomCenter.x)},${f(bounds.bottomCenter.y)},${f(bounds.bottomCenter.z)}] " +
+                        "originToBottomCenterM=${f(bounds.originToBottomCenterM)}" }
                     // Warn only when the geometry is far from the origin AND the (default) ORIGIN/CENTER
                     // presets would leave it misplaced — steer the user to Bottom Center / Custom Offset.
                     if (bounds.originToBottomCenterM > ModelBounds.FAR_FROM_ORIGIN_M &&
                         (origin == ModelPlacementOrigin.ORIGIN || origin == ModelPlacementOrigin.CUSTOM)) {
                         if (firstPlacementLog) DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=$fileName " +
-                            "originToBottomCenter=${f(bounds.originToBottomCenterM)}m; visible geometry is far " +
-                            "from origin. Use Bottom Center or Custom Offset.")
+                            "originToBottomCenterM=${f(bounds.originToBottomCenterM)} " +
+                            "hint=\"geometry far from origin; use Bottom Center or Custom Offset\"")
                         onModelPlacementWarning?.invoke(pose.key, fileName, bounds.originToBottomCenterM)
                     }
 
@@ -680,10 +680,10 @@ class ArFilamentRenderer {
                         if (scaleCause == "trueScale") DiagnosticsLogger.i(DIAG, scaleMsg) else DiagnosticsLogger.w(DIAG, scaleMsg)
 
                         DiagnosticsLogger.d(DIAG) { "MODEL_PLACEMENT model=$fileName coordId=${pose.key} origin=$origin " +
-                            "anchorPoint=(${f(ap.x)},${f(ap.y)},${f(ap.z)}) " +
-                            "computedOffset=(${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}) " +
-                            "customOffset=(${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}) " +
-                            "nudge=(${f(nudgeX)},${f(nudgeY)},${f(nudgeZ)}) scale=${f(effScale)} " +
+                            "anchorPoint=[${f(ap.x)},${f(ap.y)},${f(ap.z)}] " +
+                            "computedOffset=[${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}] " +
+                            "customOffset=[${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}] " +
+                            "nudge=[${f(nudgeX)},${f(nudgeY)},${f(nudgeZ)}] scale=${f(effScale)} " +
                             "yawCCW=${f(placement.yawDeg)} pitch=${f(placement.pitchDeg)} roll=${f(placement.rollDeg)} " +
                             "anchorType=geospatial transformSource=anchor-driven" }
                     }
@@ -701,7 +701,7 @@ class ArFilamentRenderer {
             if (ti == 0) {
                 // Per frame: logged once per key.
                 DiagnosticsLogger.logOnChange(DIAG, "ar.notransform.${pose.key}", true, level = 'E') {
-                    "model root entity has no transform component key=${pose.key} — model cannot be positioned"
+                    "Model positioning failed: root entity has no transform component key=${pose.key}"
                 }
                 continue
             }
@@ -735,7 +735,7 @@ class ArFilamentRenderer {
                 cached.ticksSinceLoad == 0 -> "awaiting_pose"
                 else -> "uploading"
             }
-            DiagnosticsLogger.w(DIAG, "model stuck loading key=$key after ${ageMs / 1000}s phase=$phase " +
+            DiagnosticsLogger.w(DIAG, "Model stuck loading key=$key ageMs=$ageMs phase=$phase " +
                 "progress=${"%.2f".format(progress)} ticks=${cached?.ticksSinceLoad ?: 0}")
         }
     }
@@ -787,13 +787,13 @@ class ArFilamentRenderer {
             lastIblRebuildMs = now
         }
         val source = if (state.fromEstimate) "arcore" else "fallback"
-        DiagnosticsLogger.logOnChange(DIAG, "ar.light.source", source) { "Light source=$source" }
+        DiagnosticsLogger.logOnChange(DIAG, "ar.light.source", source) { "AR light source changed source=$source" }
         if (force || now - lastLightLogMs >= 30_000L) {
             lastLightLogMs = now
             DiagnosticsLogger.d(DIAG) { "LIGHT_ESTIMATE source=$source " +
-                "sunLux=${"%.0f".format(state.sunLux)} rawSun=${"%.2f".format(state.rawSunIntensity)} sunRgb=${"%.2f,%.2f,%.2f".format(state.sunColor[0], state.sunColor[1], state.sunColor[2])} " +
-                "sunDir=${"%.2f,%.2f,%.2f".format(state.sunDirection[0], state.sunDirection[1], state.sunDirection[2])} " +
-                "ambientDc=${"%.2f,%.2f,%.2f".format(state.ambientSh[0], state.ambientSh[1], state.ambientSh[2])}" }
+                "sunLux=${"%.0f".format(state.sunLux)} rawSun=${"%.2f".format(state.rawSunIntensity)} sunRgb=${"[%.2f,%.2f,%.2f]".format(state.sunColor[0], state.sunColor[1], state.sunColor[2])} " +
+                "sunDir=${"[%.2f,%.2f,%.2f]".format(state.sunDirection[0], state.sunDirection[1], state.sunDirection[2])} " +
+                "ambientDc=${"[%.2f,%.2f,%.2f]".format(state.ambientSh[0], state.ambientSh[1], state.ambientSh[2])}" }
         }
     }
 
@@ -827,7 +827,7 @@ class ArFilamentRenderer {
         if (!ready) return
         val sc = swapChain ?: run {
             DiagnosticsLogger.every(DIAG, "ar.render.noswapchain", 10_000L, 'W') {
-                "renderFrame: swapChain is null despite isReadyToRender=true — models not drawn"
+                "AR frame skipped: no swap chain while ready to render, models not drawn"
             }
             return
         }
@@ -838,7 +838,7 @@ class ArFilamentRenderer {
         val cameraWorld = FloatArray(16)
         if (!Matrix.invertM(cameraWorld, 0, viewMatrix, 0)) {
             DiagnosticsLogger.every(DIAG, "ar.render.singular", 10_000L, 'W') {
-                "renderFrame: view matrix is singular — skipping frame"
+                "AR frame skipped: view matrix is singular"
             }
             return
         }
@@ -916,9 +916,9 @@ class ArFilamentRenderer {
         // Explicitly destroy gltfio utility objects BEFORE the engine.
         // Their JVM finalizers call back into native; if the engine is already
         // gone when finalizers run, Filament throws PreconditionPanic.
-        runCatching { resourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "resourceLoader.destroy() threw", it) }
-        runCatching { testResourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "testResourceLoader.destroy() threw", it) }
-        runCatching { assetLoader.destroy()    }.onFailure { DiagnosticsLogger.w(DIAG, "assetLoader.destroy() threw", it) }
+        runCatching { resourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: resource loader destroy error", it) }
+        runCatching { testResourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: test resource loader destroy error", it) }
+        runCatching { assetLoader.destroy()    }.onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: asset loader destroy error", it) }
 
         // Detach UiHelper — triggers onDetachedFromSurface() → destroySwapChain().
         runCatching { uiHelper.detach() }
@@ -939,7 +939,7 @@ class ArFilamentRenderer {
                 eng.destroy()
                 DevLog.d(TAG) { "Engine destroyed" }
             } catch (t: Throwable) {
-                DiagnosticsLogger.w(DIAG, "Filament engine destroy threw", t)
+                DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: Filament engine destroy error", t)
             }
         }, 50)
 
