@@ -155,7 +155,18 @@ class ArFilamentRenderer {
     private lateinit var uiHelper: UiHelper
 
     private lateinit var assetLoader: AssetLoader
+    /** Loads real (user) models. Never cancelled while the renderer is alive. */
     private lateinit var resourceLoader: ResourceLoader
+    /**
+     * Loads debug test-grid pins only. Clearing the grid mid-load needs asyncCancelLoad(), which cancels
+     * EVERY pending texture decode on its loader; with one shared loader that killed a real model's
+     * textures and the model rendered black (gltfio won't restart an asset it already began). Keeping
+     * the pins on their own loader confines the cancel to them.
+     */
+    private lateinit var testResourceLoader: ResourceLoader
+
+    private fun loaderFor(key: String): ResourceLoader =
+        if (key.startsWith(TEST_GRID_KEY_PREFIX)) testResourceLoader else resourceLoader
 
     /** One [CachedAsset] per anchor key (coordinate ID). */
     private val anchorAssets = mutableMapOf<String, CachedAsset>()
@@ -248,6 +259,7 @@ class ArFilamentRenderer {
         // GLB loading infrastructure.
         assetLoader    = AssetLoader(engine, UbershaderProvider(engine), EntityManager.get())
         resourceLoader = ResourceLoader(engine, true)
+        testResourceLoader = ResourceLoader(engine, true)
 
         // UiHelper: replaces manual SurfaceTextureListener.
         // isOpaque = false → requests a translucent EGL surface config, which combined
@@ -343,7 +355,7 @@ class ArFilamentRenderer {
                             loadingKeys.remove(key)
                             return@withContext
                         }
-                        resourceLoader.asyncBeginLoad(asset)
+                        loaderFor(key).asyncBeginLoad(asset)
                         asset.releaseSourceData()
                         anchorAssets[key] = CachedAsset(asset, placement = placement)
                         loadingKeys.remove(key)
@@ -395,8 +407,12 @@ class ArFilamentRenderer {
         val logThisFrame = (tickCount % 60L) == 0L  // log once per ~second at 60 fps
 
         resourceLoader.asyncUpdateLoad()
+        testResourceLoader.asyncUpdateLoad()
+        // Progress per loader: user models are judged only by their own loader.
         val progress  = resourceLoader.asyncGetLoadProgress()
+        val testProgress = testResourceLoader.asyncGetLoadProgress()
         val allLoaded = progress >= 1.0f
+        val allTestLoaded = testProgress >= 1.0f
 
         if (logThisFrame) {
             val states = anchorAssets.entries.joinToString { (k, v) ->
@@ -404,6 +420,7 @@ class ArFilamentRenderer {
             }
             Log.d(DIAG, "tick#$tickCount  poses=${poses.size}  cached=${anchorAssets.size}" +
                     "  loading=${loadingKeys.size}  progress=${"%.2f".format(progress)}" +
+                    "  testProgress=${"%.2f".format(testProgress)}" +
                     "  allLoaded=$allLoaded  swapChain=${swapChain != null}" +
                     "  ready=${uiHelper.isReadyToRender}" +
                     if (anchorAssets.isNotEmpty()) "  assets=[$states]" else "  assets=[]")
@@ -424,7 +441,8 @@ class ArFilamentRenderer {
             // pending loads first, then re-start loads for non-stale unfinished assets.
             val anyStillLoading = staleTestKeys.any { anchorAssets[it]?.everAddedToScene == false }
             if (anyStillLoading) {
-                resourceLoader.asyncCancelLoad()
+                // Test-grid loader only — real models' texture decodes are untouched.
+                testResourceLoader.asyncCancelLoad()
             }
             staleTestKeys.forEach { key ->
                 val cached = anchorAssets.remove(key) ?: return@forEach
@@ -440,9 +458,9 @@ class ArFilamentRenderer {
                 // Only assets that never reached the scene: a model the user merely HID
                 // (addedToScene=false) already finished uploading, and re-submitting it to
                 // asyncBeginLoad would re-upload its resources.
-                for ((_, cached) in anchorAssets) {
-                    if (!cached.everAddedToScene) {
-                        runCatching { resourceLoader.asyncBeginLoad(cached.asset) }
+                for ((key, cached) in anchorAssets) {
+                    if (key.startsWith(TEST_GRID_KEY_PREFIX) && !cached.everAddedToScene) {
+                        runCatching { testResourceLoader.asyncBeginLoad(cached.asset) }
                     }
                 }
             }
@@ -476,7 +494,7 @@ class ArFilamentRenderer {
             }
             if (!cached.addedToScene) {
                 cached.ticksSinceLoad++
-                val readyByProgress = allLoaded
+                val readyByProgress = if (pose.key.startsWith(TEST_GRID_KEY_PREFIX)) allTestLoaded else allLoaded
                 val readyByTicks    = cached.ticksSinceLoad >= MIN_TICKS_BEFORE_SCENE_ADD
                 if (!readyByProgress && !readyByTicks) {
                     if (logThisFrame) Log.d(DIAG, "  pose ${pose.key} → LOADING  progress=${"%.2f".format(progress)}" +
@@ -665,7 +683,7 @@ class ArFilamentRenderer {
         if (force || now - lastLightLogMs >= 30_000L) {
             lastLightLogMs = now
             DiagnosticsLogger.i(DIAG, "LIGHT_ESTIMATE source=${if (state.fromEstimate) "arcore" else "fallback"} " +
-                "sunLux=${"%.0f".format(state.sunLux)} sunRgb=${"%.2f,%.2f,%.2f".format(state.sunColor[0], state.sunColor[1], state.sunColor[2])} " +
+                "sunLux=${"%.0f".format(state.sunLux)} rawSun=${"%.2f".format(state.rawSunIntensity)} sunRgb=${"%.2f,%.2f,%.2f".format(state.sunColor[0], state.sunColor[1], state.sunColor[2])} " +
                 "sunDir=${"%.2f,%.2f,%.2f".format(state.sunDirection[0], state.sunDirection[1], state.sunDirection[2])} " +
                 "ambientDc=${"%.2f,%.2f,%.2f".format(state.ambientSh[0], state.ambientSh[1], state.ambientSh[2])}")
         }
@@ -751,6 +769,7 @@ class ArFilamentRenderer {
         initialized = false
 
         resourceLoader.asyncCancelLoad()
+        testResourceLoader.asyncCancelLoad()
         loadingKeys.clear()
         fileBytesCache.clear()
         anchorAssets.values.forEach { cached ->
@@ -780,6 +799,7 @@ class ArFilamentRenderer {
         // Their JVM finalizers call back into native; if the engine is already
         // gone when finalizers run, Filament throws PreconditionPanic.
         runCatching { resourceLoader.destroy() }.onFailure { Log.w(TAG, "resourceLoader.destroy() threw", it) }
+        runCatching { testResourceLoader.destroy() }.onFailure { Log.w(TAG, "testResourceLoader.destroy() threw", it) }
         runCatching { assetLoader.destroy()    }.onFailure { Log.w(TAG, "assetLoader.destroy() threw", it) }
 
         // Detach UiHelper — triggers onDetachedFromSurface() → destroySwapChain().
