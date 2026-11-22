@@ -65,6 +65,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Inject
     lateinit var fixSwitchboard: FixSwitchboard
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
+    /** Process-lifetime scope (Hilt singleton); used to close the ARCore session off the main thread. */
+    @Inject lateinit var appScope: kotlinx.coroutines.CoroutineScope
 
     /** Read-only access to the selected GNSS source and mock-location setting for AR diagnostics. */
     @Inject
@@ -308,8 +310,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /** How the current anchors were placed ("localized"/"timeout"); null until placed. GL-thread only. */
     @Volatile private var lastPlacedVia: String? = null
-    /** Last AR-view-quality level surfaced to the user — logs quality transitions. GL-thread only. */
-    private var lastLoggedQualityLevel: ArViewQuality.Level? = null
+    /** AR-view-quality level for the AR_QUALITY log, debounced (see [LevelHysteresis]). GL-thread only. */
+    private val qualityLogHysteresis = LevelHysteresis<ArViewQuality.Level>(QUALITY_LOG_HOLD_MS)
 
     /** Limits the per-frame status/debug UI post to ~5 per second (see [postDebugPanelUpdate]). */
     private val debugUiPostGate = UiPostGate(DEBUG_UI_POST_INTERVAL_MS)
@@ -348,6 +350,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         /** AR_VS_GNSS export-log cadence. */
         private const val AR_VS_GNSS_LOG_INTERVAL_MS = 5_000L
         private const val DEBUG_UI_POST_INTERVAL_MS = 200L
+        private const val QUALITY_LOG_HOLD_MS = 1_500L
     }
 
     /**
@@ -498,7 +501,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         lastCameraTrackingLogged = null
         loggedArSessionHeader = false
         lastPlacedVia = null
-        lastLoggedQualityLevel = null
+        qualityLogHysteresis.reset()
         debugUiPostGate.reset()
         DiagnosticsLogger.i(DIAG, "OpenInARFragment created — AR screen opened")
         setupGlSurface()
@@ -1046,9 +1049,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         awaitingLocalization = false
         loggedLocalizationWait = false
         lastPlacedVia = null
-        // Clean up AR session
-        try { session?.close() } catch (_: Exception) {}
+        // Clean up AR session. onPause already stopped the GL thread (GLSurfaceView.onPause blocks until
+        // it pauses) and paused the session. Close can take a long time, so per the ARCore docs it runs
+        // on a background thread, after the field is cleared so nothing here can touch it again.
+        val closing = session
         session = null
+        sessionReady = false
+        if (closing != null) {
+            appScope.launch(Dispatchers.Default) {
+                try { closing.close() } catch (e: Exception) {
+                    DiagnosticsLogger.w(DIAG, "session.close() failed: ${e.javaClass.simpleName}")
+                }
+            }
+        }
         _binding = null
     }
 
@@ -2020,21 +2033,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             hAccM = qHAcc, vAccM = qVAcc, yawDeg = qYaw,
             placement = placement,
         )
-        if (quality.level != lastLoggedQualityLevel) {
-            DiagnosticsLogger.i(DIAG, "AR_QUALITY ${lastLoggedQualityLevel ?: "n/a"} → ${quality.level} " +
+        // Logged only once a new level has held for QUALITY_LOG_HOLD_MS, so a value hovering at a
+        // threshold can't flood the log.
+        val qualityChange = qualityLogHysteresis.update(quality.level, android.os.SystemClock.elapsedRealtime())
+        if (qualityChange != null) {
+            DiagnosticsLogger.i(DIAG, "AR_QUALITY ${qualityChange.from ?: "n/a"} → ${qualityChange.to} " +
                 "hAccM=${qHAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
                 "vAccM=${qVAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
                 "yawDeg=${qYaw?.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
                 "earthTracking=${earth?.trackingState ?: "null"} cameraTracking=${lastCameraTrackingLogged ?: "n/a"} " +
                 "placement=$placement modelsRendered=${quality.modelsRenderable} " +
                 "placedByTimeout=${placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT}")
-            lastLoggedQualityLevel = quality.level
         }
 
         // Extract per-anchor states on the GL thread (anchor.trackingState is an ARCore call).
         val camLat = snapshot?.camLat
         val camLon = snapshot?.camLon
-        val anchorDebug: List<AnchorDebugEntry> = geoAnchors.map { entry ->
+        // The full per-anchor list (distance + bearing + tracking per anchor) is only shown in the debug
+        // panel, so it is built only while the panel is open.
+        val panelOpen = debugOverlayVisible
+        val anchorDebug: List<AnchorDebugEntry> = if (!panelOpen) emptyList() else geoAnchors.map { entry ->
             val coord = entry.coordWithModel.coordinate
             val distM = if (camLat != null && camLon != null)
                 Geodesic.distanceM(camLat, camLon, coord.latitude, coord.longitude) else -1.0
@@ -2047,22 +2065,39 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 distM    = distM,
                 bear     = bear,
                 hasModel = entry.modelFilePath != null,
-                terrainState = if (debugOverlayVisible) terrainStateName(entry.anchor) else null
+                terrainState = terrainStateName(entry.anchor)
             )
         }
 
-        // ARCore ↔ GNSS agreement (live AR accuracy). Computed every frame it's possible (cheap), logged
-        // to the export every 5 s so field sessions record how well AR matched the receiver.
+        // ARCore ↔ GNSS agreement (live AR accuracy). Shown in the debug panel every frame it's open and
+        // logged to the export every 5 s so field sessions record how well AR matched the receiver; with
+        // the panel closed it is only computed when the log is due.
         val feedFix = currentGnssFix
-        val farthestModelM = anchorDebug.filter { it.distM >= 0 }.maxOfOrNull { it.distM }   // pins and models
-        val arVsGnss = if (camGeo != null && feedFix != null) ArVsGnss.compute(
+        val nowLogMs = System.currentTimeMillis()
+        val arVsGnssLogDue = nowLogMs - lastArVsGnssLogMs >= AR_VS_GNSS_LOG_INTERVAL_MS
+        val needArVsGnss = camGeo != null && feedFix != null && (panelOpen || arVsGnssLogDue)
+        // Farthest anchor (pins and models) from the AR camera; same value either way.
+        val farthestModelM: Double? = when {
+            !needArVsGnss -> null
+            panelOpen -> anchorDebug.filter { it.distM >= 0 }.maxOfOrNull { it.distM }
+            camLat == null || camLon == null -> null
+            else -> {
+                var maxM: Double? = null
+                for (entry in geoAnchors) {
+                    val c = entry.coordWithModel.coordinate
+                    val d = Geodesic.distanceM(camLat, camLon, c.latitude, c.longitude)
+                    if (d >= 0 && (maxM == null || d > maxM)) maxM = d
+                }
+                maxM
+            }
+        }
+        val arVsGnss = if (needArVsGnss && camGeo != null && feedFix != null) ArVsGnss.compute(
             arLat = camGeo.latitude, arLon = camGeo.longitude, arAlt = camGeo.altitude,
             gnssLat = feedFix.latDeg, gnssLon = feedFix.lonDeg, gnssEllipsoidalM = fixEllipsoidalAltM(feedFix),
             antennaAboveCameraM = arAntennaAboveCameraM,
             arHAccM = qHAcc, arYawAccDeg = qYaw, farthestModelM = farthestModelM, speedMps = feedFix.speedMps,
         ) else null
-        val nowLogMs = System.currentTimeMillis()
-        if (arVsGnss != null && nowLogMs - lastArVsGnssLogMs >= AR_VS_GNSS_LOG_INTERVAL_MS) {
+        if (arVsGnss != null && arVsGnssLogDue) {
             lastArVsGnssLogMs = nowLogMs
             DiagnosticsLogger.i(DIAG, "AR_VS_GNSS grade=${arVsGnss.grade} horizM=${"%.2f".format(arVsGnss.horizontalM)} " +
                 "bearingDeg=${"%.0f".format(arVsGnss.bearingDeg)} vertM=${arVsGnss.verticalM?.let { "%+.2f".format(it) } ?: "n/a"} " +
@@ -2076,7 +2111,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
 
         // Debug-panel-only ARCore reads (GL thread), skipped while the panel is closed.
-        val panelArState: PanelArState? = if (debugOverlayVisible) {
+        val panelArState: PanelArState? = if (panelOpen) {
             PanelArState(
                 earthTracking = earth?.trackingState?.name,
                 earthState    = runCatching { earth?.earthState?.name }.getOrNull(),
