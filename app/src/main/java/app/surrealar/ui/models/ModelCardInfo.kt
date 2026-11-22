@@ -1,6 +1,8 @@
 package app.surrealar.ui.models
 
 import app.surrealar.domain.model.Model
+import app.surrealar.ui.models.readiness.ReadinessReport
+import app.surrealar.ui.models.readiness.Verdict
 import java.util.Locale
 
 /** Pure helpers behind the badges and subtitle on a model card. */
@@ -46,6 +48,10 @@ object ModelCardInfo {
             else -> "$sizeBytes B"
         }
     }
+
+    /** Model id → verdict, for the readiness chip. */
+    fun verdicts(reports: Map<String, ReadinessReport>): Map<String, Verdict> =
+        reports.mapValues { it.value.verdict }
 
     fun isGeoreferenced(model: Model): Boolean =
         model.embeddedLatitude != null && model.embeddedLongitude != null

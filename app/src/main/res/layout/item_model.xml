@@ -137,6 +137,20 @@
                     android:orientation="horizontal"
                     android:visibility="gone">
 
+                    <!-- AR readiness: Ready / Warnings / Not ready; tap opens the checklist.
+                         Tint is set in code from the verdict. -->
+                    <TextView
+                        android:id="@+id/text_badge_readiness"
+                        style="@style/Widget.App.ModelBadge"
+                        android:layout_marginEnd="4dp"
+                        android:minHeight="24dp"
+                        android:gravity="center_vertical"
+                        android:background="@drawable/bg_model_badge"
+                        android:foreground="?attr/selectableItemBackground"
+                        android:textColor="@android:color/white"
+                        android:visibility="gone"
+                        android:text="Ready" />
+
                     <TextView
                         android:id="@+id/text_badge_linked"
                         style="@style/Widget.App.ModelBadge"

@@ -146,6 +146,13 @@ class ModelsFragment : Fragment() {
                     modelId = model.id
                 )
                 startActivity(intent)
+            },
+            onReadinessClick = { model ->
+                // Readiness chip: open the viewer with the checklist already up
+                startActivity(ModelViewerActivity.newIntent(
+                    requireContext(), model.filePath, model.name,
+                    modelId = model.id, openReadiness = true
+                ))
             }
         )
 
@@ -194,6 +201,11 @@ class ModelsFragment : Fragment() {
         // "N linked" badges follow the coordinates table
         viewModel.linkedCounts.observe(viewLifecycleOwner) { counts ->
             adapter.setLinkedCounts(counts)
+        }
+
+        // Readiness chips follow both the models and the coordinates tables
+        viewModel.readiness.observe(viewLifecycleOwner) { verdicts ->
+            adapter.setReadiness(verdicts)
         }
 
         // Observe loading state and status messages scoped to the view's lifecycle

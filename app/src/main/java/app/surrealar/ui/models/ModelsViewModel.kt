@@ -6,8 +6,11 @@ import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import app.surrealar.data.files.ModelFileCleaner
 import app.surrealar.data.local.dao.CoordinateDao
+import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.domain.model.Model
+import app.surrealar.ui.models.readiness.ModelReadinessRepository
+import kotlinx.coroutines.flow.combine
 import app.surrealar.domain.model.FileType
 import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,7 +36,9 @@ import javax.inject.Inject
 class ModelsViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val repository: ModelRepository,
-    private val coordinateDao: CoordinateDao
+    private val coordinateDao: CoordinateDao,
+    private val coordinateRepository: CoordinateRepository,
+    private val readinessRepository: ModelReadinessRepository
 ) : ViewModel() {
 
     private val modelsRoot = File(context.filesDir, ModelFileCleaner.MODELS_DIR_NAME)
@@ -45,6 +50,18 @@ class ModelsViewModel @Inject constructor(
         .map { coords -> ModelCardInfo.linkedCounts(coords.map { it.modelId to it.icon }) }
         .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
+        .catch { emit(emptyMap()) }
+        .asLiveData()
+
+    /**
+     * Model id → AR readiness verdict for the card chip. Recomputed (on IO, file facts cached by the
+     * repository) whenever the models or the coordinates change.
+     */
+    val readiness = combine(repository.getAllModels(), coordinateRepository.allCoordinatesFlow) { models, coords ->
+        models to coords
+    }
+        .map { (models, coords) -> ModelCardInfo.verdicts(readinessRepository.reports(models, coords)) }
+        .distinctUntilChanged()
         .catch { emit(emptyMap()) }
         .asLiveData()
 

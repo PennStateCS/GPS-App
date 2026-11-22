@@ -16,7 +16,10 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import app.surrealar.R
+import androidx.core.content.ContextCompat
 import app.surrealar.domain.model.Model
+import app.surrealar.ui.models.readiness.ReadinessStyle
+import app.surrealar.ui.models.readiness.Verdict
 import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancelChildren
@@ -35,7 +38,8 @@ import java.util.*
 class ModelsAdapter(
     private val onDeleteClick: (Model) -> Unit,
     private val onEditClick: (Model) -> Unit,
-    private val onModelClick: (Model) -> Unit
+    private val onModelClick: (Model) -> Unit,
+    private val onReadinessClick: (Model) -> Unit = onModelClick
 ) : ListAdapter<Model, ModelsAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
     // Children cancelled when the list detaches (they used to outlive the screen).
@@ -57,6 +61,18 @@ class ModelsAdapter(
         linkedCounts = counts
         currentList.forEachIndexed { i, m ->
             if (old[m.id] != counts[m.id]) notifyItemChanged(i, PAYLOAD_BADGES)
+        }
+    }
+
+    /** Model id → AR readiness verdict (for the readiness chip). */
+    private var readiness: Map<String, Verdict> = emptyMap()
+
+    fun setReadiness(verdicts: Map<String, Verdict>) {
+        if (verdicts == readiness) return
+        val old = readiness
+        readiness = verdicts
+        currentList.forEachIndexed { i, m ->
+            if (old[m.id] != verdicts[m.id]) notifyItemChanged(i, PAYLOAD_BADGES)
         }
     }
 
@@ -98,6 +114,7 @@ class ModelsAdapter(
         private val btnDeleteModel: ImageButton = itemView.findViewById(R.id.btn_delete_model)
         private val layoutBadges: View = itemView.findViewById(R.id.layout_badges)
         private val badgeLinked: TextView = itemView.findViewById(R.id.text_badge_linked)
+        private val badgeReadiness: TextView = itemView.findViewById(R.id.text_badge_readiness)
         private val badgeGeo: TextView = itemView.findViewById(R.id.text_badge_geo)
         private val badgeProblem: TextView = itemView.findViewById(R.id.text_badge_problem)
 
@@ -152,9 +169,27 @@ class ModelsAdapter(
             } else {
                 badgeLinked.visibility = View.GONE
             }
+            bindReadinessBadge(model)
             layoutBadges.visibility =
-                if (badgeLinked.visibility == View.VISIBLE || badgeGeo.visibility == View.VISIBLE) View.VISIBLE
+                if (badgeLinked.visibility == View.VISIBLE || badgeGeo.visibility == View.VISIBLE ||
+                    badgeReadiness.visibility == View.VISIBLE) View.VISIBLE
                 else View.GONE
+        }
+
+        private fun bindReadinessBadge(model: Model) {
+            val verdict = readiness[model.id]
+            if (verdict == null) {
+                badgeReadiness.visibility = View.GONE
+                badgeReadiness.setOnClickListener(null)
+                return
+            }
+            val ctx = itemView.context
+            badgeReadiness.text = ReadinessStyle.verdictChip(verdict)
+            badgeReadiness.backgroundTintList =
+                ColorStateList.valueOf(ContextCompat.getColor(ctx, ReadinessStyle.verdictColor(verdict)))
+            badgeReadiness.contentDescription = "AR readiness: ${ReadinessStyle.verdictTitle(verdict)}. Tap for the checklist."
+            badgeReadiness.setOnClickListener { onReadinessClick(model) }
+            badgeReadiness.visibility = View.VISIBLE
         }
 
         private fun showProblemBadge(text: String?) {
