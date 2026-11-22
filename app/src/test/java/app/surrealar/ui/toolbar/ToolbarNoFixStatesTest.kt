@@ -59,7 +59,7 @@ class ToolbarNoFixStatesTest {
         val last = LastFix(fix(), atMs = 88_000L, coords = null)
         val s = state(EXT, connecting, last)
         assertTrue(s.isStale)
-        assertEquals("Fixed (lost 12s)", s.fixText)
+        assertEquals("Fix (lost 12s)", s.fixText)
         assertEquals(GnssStatusLevel.NONE, s.fixLevel)
         assertEquals("41.200000, -76.000000", s.latLonText)
         assertEquals("333.00 m", s.altitudeText)

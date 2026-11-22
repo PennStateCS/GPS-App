@@ -48,9 +48,9 @@ class CoordinateDetailUiMapperTest {
     @Test
     fun fixBadge_externalRtkFixed() {
         val b = CoordinateDetailUiMapper.fixBadge(coord(provider = "rs2-tcp", rtkStatus = "FIX"))!!
-        assertEquals("FIXED", b.text)
+        assertEquals("FIX", b.text)
         assertEquals(0xFF2E7D32.toInt(), b.colorArgb)
-        assertEquals("RTK fixed solution", b.contentDescription)
+        assertEquals("RTK fix solution", b.contentDescription)
     }
 
     @Test
@@ -126,7 +126,7 @@ class CoordinateDetailUiMapperTest {
             horizontalAccuracyM = 0.03, averagedSamples = 10)
         val b = CoordinateDetailUiMapper.badges(c, showAccuracyIndicators = true)
         assertEquals("EXTERNAL GNSS", b.source?.text)
-        assertEquals("FIXED", b.fix?.text)
+        assertEquals("FIX", b.fix?.text)
         assertEquals("AVERAGED", b.extra?.text)
         assertEquals("H ±0.03 m", b.accuracy?.text)
         assertEquals(true, b.anyVisible)

@@ -266,7 +266,12 @@ class CaptureViewModel @Inject constructor(
         val antennaHeightM = runCatching {
             val receiver = snap?.receiver ?: return@runCatching 0.0
             when (src) {
-                LocationSourceType.EXTERNAL  -> receiver.antennaHeightM
+                // Pole height to the bottom of the receiver + the receiver model's phase-centre offset.
+                LocationSourceType.EXTERNAL  -> app.surrealar.settings.model.AntennaSetup.resolve(
+                    receiver,
+                    app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(snap?.externalProfileLabel)
+                        ?: app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT,
+                ).captureOffsetM
                 LocationSourceType.INTERNAL  -> receiver.internalAntennaHeightM
                 LocationSourceType.SIMULATOR -> 0.0
             }

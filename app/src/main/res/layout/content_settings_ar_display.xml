@@ -418,52 +418,6 @@
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
-                <!-- Antenna height above tablet camera (external receiver on a pole) -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:minHeight="64dp"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="20dp"
-                    android:paddingVertical="@dimen/settings_content_row_padding_v">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:paddingEnd="16dp">
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:text="Antenna Height Above Tablet (m)"
-                            android:textAppearance="?attr/textAppearanceBodyLarge" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:alpha="0.7"
-                            android:text="External receiver only. How far the antenna sits above the tablet camera, e.g. 0.5 for a receiver on a pole with the tablet in a bracket below it. AR uses this so models are not drawn too low. 0 = no correction."
-                            android:textAppearance="?attr/textAppearanceBodyMedium" />
-                    </LinearLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="140dp"
-                        android:layout_height="wrap_content"
-                        android:hint="−3 – 3 m">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/edit_ar_antenna_above_camera"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="numberDecimal|numberSigned"
-                            android:singleLine="true" />
-                    </com.google.android.material.textfield.TextInputLayout>
-                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

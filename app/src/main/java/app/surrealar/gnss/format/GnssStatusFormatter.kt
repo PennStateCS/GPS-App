@@ -24,15 +24,15 @@ object GnssStatusFormatter {
         if (isInternal) "Internal" else externalLabel
 
     /**
-     * Fix/SOL label. Internal GPS collapses to "GPS"/"No Fix"; external receivers expose the full
-     * RTK ladder ("Fixed"/"Float"/"DGPS"/"Single"/"DR"/"No Fix"). Matches the existing toolbar
-     * wording exactly.
+     * Fix/SOL label, in Emlid Flow's terms (what students also use): external receivers show the full
+     * RTK ladder ("Fix"/"Float"/"DGPS"/"Single"/"DR"/"No Fix"); internal GNSS has no corrections, so
+     * it collapses to "Single"/"No Fix".
      */
     fun formatFixStatus(status: RtkStatus, isInternal: Boolean): String =
         if (isInternal) {
             when (status) {
                 RtkStatus.NONE, RtkStatus.INVALID -> "No Fix"
-                else -> "GPS"
+                else -> "Single"
             }
         } else {
             when (status) {
@@ -40,7 +40,7 @@ object GnssStatusFormatter {
                 RtkStatus.SINGLE         -> "Single"
                 RtkStatus.DGPS           -> "DGPS"
                 RtkStatus.FLOAT          -> "Float"
-                RtkStatus.FIX            -> "Fixed"
+                RtkStatus.FIX            -> "Fix"
                 RtkStatus.DEAD_RECKONING -> "DR"
                 RtkStatus.INVALID        -> "No Fix"
             }
@@ -54,7 +54,7 @@ object GnssStatusFormatter {
      */
     fun formatCaptureFixStatus(rawStatusName: String?): String =
         when (rawStatusName?.uppercase(Locale.US)) {
-            "FIX"    -> "Fixed"
+            "FIX"    -> "Fix"
             "FLOAT"  -> "Float"
             "DGPS"   -> "DGPS"
             "SINGLE" -> "Single"
@@ -65,6 +65,10 @@ object GnssStatusFormatter {
     /** Horizontal accuracy in meters, e.g. "±0.02 m". Caller decides the null/placeholder case. */
     fun formatAccuracyMeters(hAccM: Double): String =
         "±${String.format(Locale.US, "%.2f", hAccM)} m"
+
+    /** Horizontal and vertical accuracy with one unit, e.g. "±0.02 V ±0.04 m" (follows an "H" label). */
+    fun formatHorizontalVerticalAccuracy(hAccM: Double, vAccM: Double): String =
+        "±${String.format(Locale.US, "%.2f", hAccM)} V ±${String.format(Locale.US, "%.2f", vAccM)} m"
 
     /** Satellites used/visible, e.g. "12/20". */
     fun formatSatellites(used: Int, visible: Int): String = "$used/$visible"

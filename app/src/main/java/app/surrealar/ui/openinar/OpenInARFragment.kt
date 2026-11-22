@@ -14,6 +14,8 @@ import android.os.Build
 import android.os.Bundle
 import app.surrealar.util.ArSessionDiagnostics
 import app.surrealar.util.DiagnosticsLogger
+import app.surrealar.util.diagnostics.ArTrackLog
+import app.surrealar.util.diagnostics.ArTrackRow
 import app.surrealar.util.argbIntToRgba
 import io.github.pennstatecs.geokit.heading.Compass
 import io.github.pennstatecs.geokit.ellipsoid.Geodesic
@@ -80,6 +82,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     // Current GNSS fix from switchboard (surveying-grade GPS)
     @Volatile private var currentGnssFix: Fix? = null
+    /** elapsedRealtime when [currentGnssFix] last changed (ar-track.csv fix age). */
+    @Volatile private var currentGnssFixMonoMs: Long = 0L
+
+    // ar-track.csv recorder (debug builds; GL thread). The ENU origin is the session's first fix and is
+    // cleared on pause, so each resume starts a new section (ARCore may relocalize across a pause).
+    @Volatile private var arTrackOrigin: io.github.pennstatecs.geokit.local.LocalEnu? = null
+    private var arTrackLastFix: Fix? = null
+    private var arTrackLastRowMs = 0L
     /** Last logged GNSS provider — used to suppress repeated identical fix logs. */
     private var lastLoggedProvider: io.github.pennstatecs.geokit.gnss.model.Provider? = null
 
@@ -330,8 +340,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Gate profile last used (STANDARD / RTK) — shown in the debug panel and logs. */
     @Volatile private var currentGateProfile: GeoAnchorGate.Profile = GeoAnchorGate.Profile.STANDARD
 
-    /** Settings → AR Display → Antenna Height Above Tablet (m), for the AR↔GNSS vertical comparison. */
+    /** External antenna phase centre above the tablet camera (m), from Settings → Receiver → Antenna setup. */
     @Volatile private var arAntennaAboveCameraM: Double = 0.0
+    private var loggedAntennaSetup = false
 
     /** Throttle for the AR_VS_GNSS export log (GL thread). */
     private var lastArVsGnssLogMs: Long = 0L
@@ -752,6 +763,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 // fixes stop, so AR never anchors/gates against a frozen position.
                 fixSwitchboard.currentFix.collect { fix ->
                     currentGnssFix = fix
+                    currentGnssFixMonoMs = android.os.SystemClock.elapsedRealtime()
                     if (fix == null) {
                         _binding?.chipArGnssStatus?.let {
                             it.text = "Waiting for GNSS"
@@ -883,6 +895,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // Receiver page antenna setup: how far the external antenna's phase centre is above the camera.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepo.gnssReceiverSettings, settingsRepo.externalReceiverProfile,
+                ) { receiver, profile -> app.surrealar.settings.model.AntennaSetup.resolve(receiver, profile) }
+                    .collect { setup ->
+                        if (setup.antennaAboveCameraM != arAntennaAboveCameraM || !loggedAntennaSetup) {
+                            loggedAntennaSetup = true
+                            DiagnosticsLogger.i(DIAG, "AR_ANTENNA antennaAboveCameraM=${"%.3f".format(setup.antennaAboveCameraM)} " +
+                                "cameraBelowReceiverM=${"%.3f".format(setup.cameraBelowReceiverM)} " +
+                                "phaseCenterOffsetM=${"%.3f".format(setup.phaseCenterOffsetM)} fromProfile=${setup.offsetFromProfile}")
+                        }
+                        arAntennaAboveCameraM = setup.antennaAboveCameraM
+                    }
+            }
+        }
+
         // Apply AR Display settings (altitude mode, model scale, label/arrow visibility).
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -903,14 +933,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         testAnchorController.requestRespawn()
                         _binding?.txtAltitudeMode?.text = AltitudePolicy.label(mode)
                     }
-                    if (!loggedArSettings || ar.modelScale != arModelScale || ar.antennaAboveCameraM.toDouble() != arAntennaAboveCameraM) {
+                    if (!loggedArSettings || ar.modelScale != arModelScale) {
                         loggedArSettings = true
                         // Anything but 1.0 draws every model the wrong size at its coordinates.
                         val msg = "AR_SETTINGS modelScale=${ar.modelScale}${if (ar.modelScale != 1f) " (NOT true scale)" else ""} " +
-                            "antennaAboveCameraM=${ar.antennaAboveCameraM} altitudeMode=${ar.altitudeMode}"
+                            "altitudeMode=${ar.altitudeMode}"
                         if (ar.modelScale != 1f) DiagnosticsLogger.w(DIAG, msg) else DiagnosticsLogger.i(DIAG, msg)
                     }
-                    arAntennaAboveCameraM = ar.antennaAboveCameraM.toDouble()
                     arModelScale = ar.modelScale
                     arShowLabels = ar.showLabels
                     arShowOffscreenArrows = ar.showOffscreenArrows
@@ -1090,6 +1119,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     override fun onPause() {
         super.onPause()
+        arTrackOrigin = null   // next resume starts a new ar-track.csv session
         // Release the AR auto-enable; publishing continues only if the user's Settings toggle is on.
         runCatching { app.surrealar.SurRealApplication.mockLocationPublisher.setArSessionActive(false) }
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
@@ -1766,6 +1796,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val earth       = s.earth
             val earthStatus = processEarthAndAnchors(earth)
 
+            // Debug builds: ARCore local camera pose next to the GNSS fix, for RTK alignment work.
+            if (app.surrealar.BuildConfig.DEBUG) {
+                runCatching { recordArTrack(frame, camera, earth) }
+                    .onFailure { DiagnosticsLogger.every(DIAG, "ar_track.error", 60_000L, 'W') { "ar-track row failed: ${it.message}" } }
+            }
+
             // 3) 3-D rendering (only when camera is tracking)
             var planeCount = 0
             var pointCount = 0
@@ -2246,7 +2282,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val arVsGnss = if (needArVsGnss && camGeo != null && feedFix != null) ArVsGnss.compute(
             arLat = camGeo.latitude, arLon = camGeo.longitude, arAlt = camGeo.altitude,
             gnssLat = feedFix.latDeg, gnssLon = feedFix.lonDeg, gnssEllipsoidalM = fixEllipsoidalAltM(feedFix),
-            antennaAboveCameraM = arAntennaAboveCameraM,
+            // The antenna offset is the external receiver's; an internal-GNSS fix is the tablet itself.
+            antennaAboveCameraM = if (feedFix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) arAntennaAboveCameraM else 0.0,
             arHAccM = qHAcc, arYawAccDeg = qYaw, farthestModelM = farthestModelM, speedMps = feedFix.speedMps,
         ) else null
         if (arVsGnss != null && arVsGnssLogDue) {
@@ -2379,6 +2416,71 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (scrV > scrH && camH > camV) { val t = camH; camH = camV; camV = t }
         ArDebugReport.Optics(w, h, camH, camV, scrH, scrV)
     }.getOrNull()
+
+    /**
+     * Writes one ar-track.csv row (GL thread, debug builds): on each new fix at most every
+     * [ArTrackLog.MIN_INTERVAL_MS], or every [ArTrackLog.MAX_STALE_MS] without one. Positions are metres
+     * from the session's first fix; nothing is written until there is a fix to use as the origin.
+     * Write-only: changes nothing about AR placement.
+     */
+    private fun recordArTrack(frame: Frame, camera: Camera, earth: Earth?) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val fix = currentGnssFix
+        val newFix = fix != null && fix !== arTrackLastFix
+        val since = now - arTrackLastRowMs
+        if (since < ArTrackLog.MIN_INTERVAL_MS) return
+        if (!newFix && since < ArTrackLog.MAX_STALE_MS) return
+
+        val origin = arTrackOrigin ?: run {
+            val f = fix ?: return
+            io.github.pennstatecs.geokit.local.LocalEnu(f.latDeg, f.lonDeg, fixEllipsoidalAltM(f) ?: 0.0).also {
+                arTrackOrigin = it
+                ArTrackLog.startSession(
+                    antennaAboveCameraM = arAntennaAboveCameraM,
+                    receiver = f.receiverLabel ?: f.provider.name,
+                    device = Build.MODEL ?: "?",
+                )
+            }
+        }
+        arTrackLastRowMs = now
+        arTrackLastFix = fix
+
+        val tracking = camera.trackingState == TrackingState.TRACKING
+        val pose = if (tracking) camera.pose else null
+        val geo = if (earth != null && earth.trackingState == TrackingState.TRACKING)
+            runCatching { earth.cameraGeospatialPose }.getOrNull() else null
+        val fixHae = fix?.let { fixEllipsoidalAltM(it) }
+        val fixEnu = fix?.let { f ->
+            origin.toEnu(f.latDeg, f.lonDeg, fixHae ?: origin.originHeightM).also { if (fixHae == null) it[2] = Double.NaN }
+        }
+
+        ArTrackLog.append(ArTrackRow(
+            monoMs = now,
+            frameNs = frame.timestamp,
+            camState = camera.trackingState.name,
+            camPos = pose?.let { floatArrayOf(it.tx(), it.ty(), it.tz()) },
+            camQuat = pose?.let { floatArrayOf(it.qx(), it.qy(), it.qz(), it.qw()) },
+            earthState = earth?.earthState?.name,
+            geoEnu = geo?.let { origin.toEnu(it.latitude, it.longitude, it.altitude) },
+            geoHeadingDeg = geo?.heading,
+            geoHAccM = geo?.horizontalAccuracy,
+            geoVAccM = geo?.verticalAccuracy,
+            geoYawAccDeg = geo?.orientationYawAccuracy,
+            fixNew = newFix,
+            fixAgeMs = fix?.let { now - currentGnssFixMonoMs },
+            fixUtcMs = fix?.timeUtc?.toEpochMilli(),
+            provider = fix?.provider?.name,
+            rtk = fix?.rtkStatus?.name,
+            fixEnu = fixEnu,
+            fixHAccM = fix?.hAccM,
+            fixVAccM = fix?.vAccM,
+            sats = fix?.satsUsed,
+            diffAgeS = fix?.diffAgeS,
+            speedMps = fix?.speedMps,
+            courseDeg = fix?.courseDeg,
+            antennaAboveCameraM = arAntennaAboveCameraM,
+        ))
+    }
 
     /**
      * WGS84 ellipsoidal altitude (HAE) of a fix, as ARCore's createAnchor() expects: altEllipsoidalM,
@@ -2640,10 +2742,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             else -> fix.provider.label
         }
         val (solLabel, solColor) = when (fix.rtkStatus) {
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fixed"  to requireContext().getColor(R.color.app_success)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.FIX    -> "RTK Fix"    to requireContext().getColor(R.color.app_success)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT  -> "RTK Float"  to requireContext().getColor(R.color.app_warning)
             io.github.pennstatecs.geokit.gnss.model.RtkStatus.DGPS   -> "DGPS"       to requireContext().getColor(R.color.app_info)
-            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "GPS"        to requireContext().getColor(android.R.color.white)
+            io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE -> "Single"     to requireContext().getColor(android.R.color.white)
             else                                                  -> "No Fix"     to requireContext().getColor(R.color.app_error)
         }
         val acc = fix.hAccM?.let { " · H ±${"%.2f".format(it)} m" } ?: ""

@@ -69,7 +69,7 @@ object CoordinateDetailUiMapper {
         val rtk = c.rtkStatus?.trim()?.uppercase(Locale.US)
         if (rtk.isNullOrBlank()) return null
         val (label, color) = when (rtk) {
-            "FIX", "FIXED"                -> "FIXED"  to 0xFF2E7D32.toInt()
+            "FIX", "FIXED"                -> "FIX"    to 0xFF2E7D32.toInt()
             "FLOAT"                       -> "FLOAT"  to 0xFFE65100.toInt()
             "DGPS"                        -> "DGPS"   to 0xFF1565C0.toInt()
             "SINGLE", "GPS", "AUTONOMOUS" -> "SINGLE" to 0xFF1565C0.toInt()
@@ -77,7 +77,7 @@ object CoordinateDetailUiMapper {
             else                          -> "UNKNOWN" to 0xFF607D8B.toInt()
         }
         val description = when (label) {
-            "FIXED"  -> "RTK fixed solution"
+            "FIX"    -> "RTK fix solution"
             "FLOAT"  -> "RTK float solution"
             "SINGLE" -> "Standard GPS"
             "DGPS"   -> "Differential GPS"

@@ -61,6 +61,8 @@ object ReportAssembler {
             // ── Rolling logs (event history + crashes) ──
             logs.forEach { z.file(it.name, it, if (truncated) last24hFilter(src.nowMs) else { _ -> true }) }
             errors.forEach { z.file(it.name, it, if (truncated) last24hFilter(src.nowMs) else { _ -> true }) }
+            // ── AR alignment recordings (debug builds only; no coordinates) ──
+            runCatching { src.arTrackFiles() }.getOrDefault(emptyList()).forEach { z.file(it.name, it) }
             // Last: lists everything above.
             val listed = z.entries.toList()
             z.textSafe("manifest.txt") { ManifestCollector.render(listed, src.reportId, src.nowMs, logsTruncatedTo24h = truncated) }

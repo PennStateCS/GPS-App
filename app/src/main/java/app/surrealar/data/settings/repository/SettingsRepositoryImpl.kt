@@ -140,14 +140,13 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.arDistanceFilterIndex,
         local.arShowDebugOverlay,
         local.arShowLabels,
-        combine(local.arShowOffscreenArrows, local.arModelScale, local.arDebugToolsEnabled, local.arAntennaAboveCameraM) {
-            arrows, scale, debug, antenna -> listOf<Any>(arrows, scale, debug, antenna)
+        combine(local.arShowOffscreenArrows, local.arModelScale, local.arDebugToolsEnabled) {
+            arrows, scale, debug -> listOf<Any>(arrows, scale, debug)
         }
     ) { altitude, filterIdx, debug, labels, rest ->
         val arrows = rest[0] as Boolean
         val scale = rest[1] as String
         val debugTools = rest[2] as Boolean
-        val antenna = rest[3] as String
         ArDisplaySettings(
             altitudeMode         = altitude,
             distanceFilterIndex  = filterIdx.coerceIn(0, 3),
@@ -156,7 +155,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             showOffscreenArrows  = arrows,
             modelScale           = scale.toFloatOrNull()?.coerceIn(0.1f, 10.0f) ?: ArDisplaySettings().modelScale,
             showArDebugTools     = debugTools,
-            antennaAboveCameraM  = antenna.toDoubleOrNull()?.coerceIn(-3.0, 3.0) ?: 0.0,
         )
     }
 
@@ -169,7 +167,6 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             it[K.AR_SHOW_OFFSCREEN_ARROWS] = settings.showOffscreenArrows
             it[K.AR_MODEL_SCALE] = settings.modelScale.coerceIn(0.1f, 10.0f).toString()
             it[K.AR_DEBUG_TOOLS_ENABLED] = settings.showArDebugTools
-            it[K.AR_ANTENNA_ABOVE_CAMERA_M] = settings.antennaAboveCameraM.coerceIn(-3.0, 3.0).toString()
         }
     }
 
@@ -230,22 +227,40 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     override suspend fun setArVisibleIds(ids: Set<String>) { local.setArVisibleIds(ids) }
 
     // GNSS receiver settings
+    // External antenna values stored before 2026-11 are converted on read, so nothing is migrated in
+    // place: the old pole height (which included the phase-centre offset) is kept as the pole height
+    // and flagged for the user to check; the old AR "antenna above tablet" value becomes the camera
+    // distance minus the profile's phase-centre offset, so AR keeps the same total. The first save
+    // writes the new keys.
     override val gnssReceiverSettings: Flow<GnssReceiverSettings> =
         combine(
-            local.highAccuracy, local.antennaHeightM, local.internalAntennaHeightM
-        ) { highAccuracy, antennaHeightM, internalAntennaHeightM ->
+            local.highAccuracy, local.internalAntennaHeightM, local.externalAntennaRaw, externalReceiverProfile,
+        ) { highAccuracy, internalAntennaHeightM, raw, profile ->
+            val defaults = app.surrealar.settings.SettingsDefaults.gnssReceiver
+            val phaseCenterOffsetM = raw.phaseCenterOffsetOverrideM ?: profile.phaseCenterOffsetM ?: 0.0
+            val legacyCamera = raw.legacyAntennaAboveCameraM?.toDoubleOrNull()
+                ?.takeIf { it.isFinite() && it != 0.0 }
+                ?.let { (it - phaseCenterOffsetM).coerceIn(-3.0, 3.0) }
             GnssReceiverSettings(
                 highAccuracy = highAccuracy,
-                antennaHeightM = antennaHeightM,
+                poleHeightM = raw.poleHeightM ?: raw.legacyAntennaHeightM ?: defaults.poleHeightM,
                 internalAntennaHeightM = internalAntennaHeightM,
+                cameraBelowReceiverM = raw.cameraBelowReceiverM ?: legacyCamera ?: defaults.cameraBelowReceiverM,
+                phaseCenterOffsetOverrideM = raw.phaseCenterOffsetOverrideM,
+                poleHeightNeedsCheck = raw.legacyAntennaHeightM != null && !raw.poleHeightChecked,
             )
         }
 
     override suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings) {
         local.editAll {
             it[K.HIGH_ACCURACY] = settings.highAccuracy
-            it[K.ANTENNA_HEIGHT_M] = settings.antennaHeightM
+            it[K.POLE_HEIGHT_ARP_M] = settings.poleHeightM
             it[K.INTERNAL_ANTENNA_HEIGHT_M] = settings.internalAntennaHeightM
+            it[K.CAMERA_BELOW_RECEIVER_M] = settings.cameraBelowReceiverM.coerceIn(-3.0, 3.0)
+            val override = settings.phaseCenterOffsetOverrideM
+            if (override != null) it[K.PHASE_CENTER_OFFSET_OVERRIDE_M] = override
+            else it.remove(K.PHASE_CENTER_OFFSET_OVERRIDE_M)
+            it[K.POLE_HEIGHT_CHECKED] = !settings.poleHeightNeedsCheck
         }
     }
 

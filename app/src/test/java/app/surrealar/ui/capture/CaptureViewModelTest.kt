@@ -67,7 +67,7 @@ class CaptureViewModelTest {
         source: LocationSourceType = LocationSourceType.EXTERNAL,
         tcpName: String? = "Reach RS2+",
         tcpHost: String? = "192.168.42.1",
-        receiver: GnssReceiverSettings = GnssReceiverSettings(antennaHeightM = 1.8, internalAntennaHeightM = 0.5),
+        receiver: GnssReceiverSettings = GnssReceiverSettings(poleHeightM = 1.8, internalAntennaHeightM = 0.5),
         profile: app.surrealar.settings.model.ExternalReceiverProfile? =
             app.surrealar.settings.model.ExternalReceiverProfile.REACH_RS2_PLUS,
     ): SettingsRepository = Mockito.mock(SettingsRepository::class.java).also {
@@ -237,7 +237,7 @@ class CaptureViewModelTest {
         assertEquals("external_gnss", c.captureMethod)
         // sourceDevice is the active profile's label (not the user's device name / host).
         assertEquals("Emlid Reach RS2+", c.sourceDevice)
-        assertEquals(98.2, c.altitude, 1e-9)   // 100.0 − 1.8 m external pole height
+        assertEquals(98.066, c.altitude, 1e-9)   // 100.0 − (1.8 m pole + 0.134 m RS2+ phase-centre offset)
         assertEquals(2, c.averagedSamples)
     }
 
@@ -269,15 +269,15 @@ class CaptureViewModelTest {
 
     @Test
     fun antennaHeightChangedMidCapture_savedPointUsesTheValueFromCaptureStart() = runBlocking {
-        val receiverFlow = MutableStateFlow(GnssReceiverSettings(antennaHeightM = 1.8, internalAntennaHeightM = 0.5))
+        val receiverFlow = MutableStateFlow(GnssReceiverSettings(poleHeightM = 1.8, internalAntennaHeightM = 0.5))
         val repoSettings = settings().also { Mockito.`when`(it.gnssReceiverSettings).thenReturn(receiverFlow) }
         val vm = vm(repoSettings)
         vm.start(policy())
-        receiverFlow.value = GnssReceiverSettings(antennaHeightM = 2.5, internalAntennaHeightM = 0.5)   // edited mid-capture
+        receiverFlow.value = GnssReceiverSettings(poleHeightM = 2.5, internalAntennaHeightM = 0.5)   // edited mid-capture
         push(fix(alt = 100.0)); push(fix(alt = 100.0))
         vm.save("Pt", null, 0, "ic_pin")
-        assertEquals("altitude uses the 1.8 m pole height from capture start", 98.2, repo.store.single().altitude, 1e-9)
-        assertEquals(1.8, vm.settingsAtStart()!!.receiver!!.antennaHeightM, 0.0)
+        assertEquals("altitude uses the 1.8 m pole height from capture start", 98.066, repo.store.single().altitude, 1e-9)
+        assertEquals(1.8, vm.settingsAtStart()!!.receiver!!.poleHeightM, 0.0)
     }
 
     @Test

@@ -129,6 +129,10 @@ object DiagnosticReportExporter {
             app.surrealar.util.diagnostics.ExitReasonRecorder.exitsDir(context).listFiles()?.filter { it.isFile }?.sortedBy { it.name }.orEmpty()
         override fun deviceHealth() = app.surrealar.util.diagnostics.report.AppReportReaders.deviceHealth(context)
         override fun capturesLog() = app.surrealar.util.diagnostics.CaptureLog.file()
+        override fun arTrackFiles(): List<File> {
+            app.surrealar.util.diagnostics.ArTrackLog.flush()
+            return app.surrealar.util.diagnostics.ArTrackLog.files()
+        }
         override suspend fun gnssStats(): app.surrealar.util.diagnostics.report.GnssStatsInput {
             val g = app.surrealar.util.diagnostics.GnssFeedLogger.instance
             val nmea = runCatching {

@@ -29,7 +29,7 @@ class CoordinateListFormatterTest {
 
     @Test fun externalRtk_showsSourceFixAccuracy() {
         val c = coord(provider = "rs2-external", rtkStatus = "FIX", hAcc = 0.03, sourceDevice = "Reach6")
-        assertEquals("Reach6 · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
+        assertEquals("Reach6 · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
     }
 
     @Test fun externalRtk_defaultsToGeneric_whenNoDeviceName() {
@@ -39,13 +39,13 @@ class CoordinateListFormatterTest {
 
     @Test fun modelLinked_usesModelNameOrFallback() {
         val c = coord(modelId = "m1", rtkStatus = "FIX", hAcc = 0.03)
-        assertEquals("Barn · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))
-        assertEquals("Model linked · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
+        assertEquals("Barn · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))
+        assertEquals("Model linked · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
     }
 
     @Test fun modelLinked_keepsSourceDevice() {
         val c = coord(provider = "external-tcp", rtkStatus = "FIX", hAcc = 0.03, sourceDevice = "Emlid Reach RS2+", modelId = "m1")
-        assertEquals("Emlid Reach RS2+ · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))
+        assertEquals("Emlid Reach RS2+ · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))
     }
 
     private fun pos(vertical: VerticalReference, height: Double?) = ConvertedPosition(
@@ -78,7 +78,7 @@ class CoordinateListFormatterTest {
 
     @Test fun omitsAccuracyWhenAbsent() {
         val c = coord(provider = "rs2-external", rtkStatus = "FIX")
-        assertEquals("External GNSS · Fixed", CoordinateListFormatter.summaryLine(c, null))
+        assertEquals("External GNSS · Fix", CoordinateListFormatter.summaryLine(c, null))
     }
 
     @Test fun latLonLine_sixDecimals() {

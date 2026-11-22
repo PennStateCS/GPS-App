@@ -42,13 +42,6 @@ data class ArDisplaySettings(
     /** Whether the AR Debug Tools section is available on the floating toolbar.
      *  When false, point cloud and plane rendering are suppressed entirely. */
     val showArDebugTools: Boolean = false,
-
-    /**
-     * Height of the external receiver's antenna phase centre above the tablet camera, metres
-     * (e.g. RS2+ on a pole with the tablet in a bracket ~0.5 m below it). The mock location ARCore
-     * localizes from is lowered by this much, so ARCore's camera height is the tablet's, not the
-     * antenna's. 0 = no correction. Clamped to −3…+3 m. Double so 1.8 stays 1.8 (a Float read back
-     * as 1.7999999523).
-     */
-    val antennaAboveCameraM: Double = 0.0,
+    // The antenna-above-camera height moved to the Receiver page (2026-11): see
+    // GnssReceiverSettings.cameraBelowReceiverM and AntennaSetup.antennaAboveCameraM.
 )

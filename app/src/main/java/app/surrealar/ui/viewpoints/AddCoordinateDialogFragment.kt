@@ -679,7 +679,14 @@ class AddCoordinateDialogFragment(
                 val receiver = snap?.receiver
                 // Settings → antenna (pole) height for the antenna that produced the fixes, subtracted
                 // so the stored altitude is the ground mark, not the antenna.
-                val antennaHeightM = if (isExternalMode) receiver?.antennaHeightM ?: 0.0
+                // External: pole height to the bottom of the receiver + the model's phase-centre offset.
+                val antennaHeightM = if (isExternalMode) receiver?.let {
+                    app.surrealar.settings.model.AntennaSetup.resolve(
+                        it,
+                        app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(snap?.externalProfileLabel)
+                            ?: app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT,
+                    ).captureOffsetM
+                } ?: 0.0
                     else receiver?.internalAntennaHeightM ?: 0.0
                 // Receiver identity: the selected profile's label (e.g. "Emlid Reach RS4"), the same
                 // stable value the Capture screen stores.

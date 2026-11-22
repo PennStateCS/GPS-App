@@ -451,9 +451,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             val switchDebug      = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_overlay)
             val switchDebugTools = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_ar_debug_tools)
             val editScale        = view.findViewById<EditText>(R.id.edit_ar_model_scale)
-            val editAntenna      = view.findViewById<EditText>(R.id.edit_ar_antenna_above_camera)
-            val tilAntenna       = editAntenna?.parent?.parent as? com.google.android.material.textfield.TextInputLayout
-            var lastValidAntenna = 0.0
             view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
 
             val altitudeModes   = listOf("Automatic (recommended)" to "AUTO", "Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
@@ -476,15 +473,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     tilScale?.error = "Must be 0.1 – 10.0"
                     lastValidScale
                 }
-                val typedAntenna = editAntenna?.text?.toString()?.trim()?.let { if (it.isEmpty()) 0.0 else it.toDoubleOrNull() }
-                val antenna = if (typedAntenna != null && typedAntenna in -3.0..3.0) {
-                    tilAntenna?.error = null
-                    lastValidAntenna = typedAntenna
-                    typedAntenna
-                } else {
-                    tilAntenna?.error = "Must be −3 – 3 m"
-                    lastValidAntenna
-                }
                 val settings = ArDisplaySettings(
                     altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "AUTO"),
                     distanceFilterIndex = distanceIdx ?: distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
@@ -493,7 +481,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     showOffscreenArrows = switchArrows?.isChecked ?: true,
                     modelScale          = scale,
                     showArDebugTools    = switchDebugTools?.isChecked ?: false,
-                    antennaAboveCameraM = antenna,
                 )
                 saveScope.launch {
                     try {
@@ -517,8 +504,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     switchDebugTools?.isChecked = s.showArDebugTools
                     editScale?.setText(s.modelScale.toString())
                     lastValidScale = s.modelScale
-                    editAntenna?.setText(s.antennaAboveCameraM.toString())
-                    lastValidAntenna = s.antennaAboveCameraM
                     isBinding = false
                 } catch (e: Exception) {
                     isBinding = false
@@ -538,14 +523,9 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             switchDebugTools?.setOnCheckedChangeListener { _, _ -> if (!isBinding) saveAll() }
             editScale?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
             editScale?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
-            editAntenna?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveAll() }
-            editAntenna?.setOnEditorActionListener { _, _, _ -> saveAll(); false }
             // Also save while typing (debounced), but only once the box holds a valid value.
             editScale?.saveWhileTyping(saveScope) {
                 if (editScale.text?.toString()?.toFloatOrNull()?.let { it in 0.1f..10.0f } == true) saveAll()
-            }
-            editAntenna?.saveWhileTyping(saveScope) {
-                if (editAntenna.text?.toString()?.trim()?.toDoubleOrNull()?.let { it in -3.0..3.0 } == true) saveAll()
             }
         } catch (e: Exception) {
             Log.e("SettingsFragment", "setupARDisplayContent failed", e)
@@ -1488,7 +1468,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     when {
                         fixAge <= FRESH_FIX_MAX_AGE_MS -> {
                             val (label, colorRes) = when (lastExternalFixRtkStatus) {
-                                RtkStatus.FIX            -> "RTK Fixed"       to android.R.color.holo_green_dark
+                                RtkStatus.FIX            -> "RTK Fix"         to android.R.color.holo_green_dark
                                 RtkStatus.FLOAT          -> "RTK Float"       to android.R.color.holo_orange_light
                                 RtkStatus.DGPS           -> "DGPS"            to android.R.color.holo_orange_light
                                 RtkStatus.SINGLE         -> "Single"          to android.R.color.holo_orange_dark
@@ -1516,7 +1496,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     when {
                         fixAge <= FRESH_FIX_MAX_AGE_MS -> {
                             val (label, colorRes) = when (lastExternalFixRtkStatus) {
-                                RtkStatus.FIX            -> "Fixed"  to R.color.app_success
+                                RtkStatus.FIX            -> "Fix"    to R.color.app_success
                                 RtkStatus.FLOAT          -> "Float"  to R.color.app_warning
                                 RtkStatus.DGPS           -> "DGPS"   to R.color.app_info
                                 RtkStatus.SINGLE         -> "Single" to R.color.app_warning
@@ -1642,14 +1622,58 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         textDeviceStatus?.text = ""
 
 
-        // Antenna / pole vertical offset (metres). Subtracted from the captured altitude for
-        // external-receiver captures so the stored altitude is the ground mark, not the antenna.
+        // ── Antenna setup (external receiver) ──
+        // Pole height and camera distance are measured to the bottom of the receiver; the receiver
+        // model's phase-centre offset is added (AntennaSetup). Pole height → captures, camera → AR.
+        val editCameraBelow = view.findViewById<EditText>(R.id.edit_camera_below_receiver)
+        val editPhaseCenter = view.findViewById<EditText>(R.id.edit_phase_center_offset)
+        val textPhaseCenterSource = view.findViewById<TextView>(R.id.text_phase_center_offset_source)
+        val textAntennaSummary = view.findViewById<TextView>(R.id.text_antenna_setup_summary)
+        val groupPoleCheck = view.findViewById<View>(R.id.group_pole_height_check)
+
+        fun updateReceiverSettings(transform: (app.surrealar.gnss.settings.GnssReceiverSettings) -> app.surrealar.gnss.settings.GnssReceiverSettings) {
+            saveScope.launch {
+                try {
+                    settingsRepo.setGnssReceiverSettings(transform(settingsRepo.gnssReceiverSettings.first()))
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "antenna setup save error", e)
+                }
+            }
+        }
+
+        // Live: summary line, the one-time pole-height notice, and the profile's phase-centre offset.
+        categoryScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepo.gnssReceiverSettings, settingsRepo.externalReceiverProfile,
+                ) { receiver, profile -> Triple(receiver, profile, app.surrealar.settings.model.AntennaSetup.resolve(receiver, profile)) }
+                    .collect { (receiver, profile, setup) ->
+                        groupPoleCheck?.visibility = if (receiver.poleHeightNeedsCheck) View.VISIBLE else View.GONE
+                        textPhaseCenterSource?.text = when {
+                            setup.offsetFromProfile -> "From the receiver model (${profile.label}). Change only for a different antenna."
+                            profile.phaseCenterOffsetM != null -> "Entered by you. ${profile.label}: ${AntennaHeightInput.format(profile.phaseCenterOffsetM)} m."
+                            else -> "Not known for ${profile.label}: enter it from the receiver's documentation."
+                        }
+                        if (editPhaseCenter?.hasFocus() != true) {
+                            editPhaseCenter?.setText(AntennaHeightInput.format(setup.phaseCenterOffsetM))
+                        }
+                        textAntennaSummary?.text = "Captures subtract ${AntennaHeightInput.format(setup.captureOffsetM)} m " +
+                            "(pole + offset). AR puts the antenna ${AntennaHeightInput.format(setup.antennaAboveCameraM)} m above the camera."
+                    }
+            }
+        }
+
+        view.findViewById<View>(R.id.btn_pole_height_ok)?.setOnClickListener {
+            updateReceiverSettings { it.copy(poleHeightNeedsCheck = false) }
+        }
+
+        // Pole height: ground mark → bottom of the receiver.
         editAntennaHeight?.apply {
             categoryScope.launch {
                 try {
-                    setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().antennaHeightM))
+                    setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().poleHeightM))
                 } catch (e: Exception) {
-                    Log.e("SettingsFragment", "antenna height load error", e)
+                    Log.e("SettingsFragment", "pole height load error", e)
                 }
             }
             val saveAntenna = {
@@ -1662,13 +1686,17 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                             if (this@SettingsFragment.view == null) return@launch
                             // Bad input: keep the stored value, say so, and restore the field.
                             showAntennaHeightError(this@apply)
-                            setText(AntennaHeightInput.format(current.antennaHeightM))
+                            setText(AntennaHeightInput.format(current.poleHeightM))
                         } else {
-                            settingsRepo.setGnssReceiverSettings(current.copy(antennaHeightM = meters))
+                            // Changing the value answers the one-time "check your pole height" notice.
+                            settingsRepo.setGnssReceiverSettings(current.copy(
+                                poleHeightM = meters,
+                                poleHeightNeedsCheck = current.poleHeightNeedsCheck && meters == current.poleHeightM,
+                            ))
                             if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
-                        Log.e("SettingsFragment", "antenna height save error", e)
+                        Log.e("SettingsFragment", "pole height save error", e)
                     }
                 }
             }
@@ -1676,6 +1704,69 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             setOnEditorActionListener { _, _, _ -> saveAntenna(); false }
             // Save while typing (debounced), only for a valid height: partial input ("", "1.") is left alone.
             saveWhileTyping(saveScope) { if (AntennaHeightInput.parseMeters(text) != null) saveAntenna() }
+        }
+
+        // Tablet camera below the receiver (AR). Signed: negative when the camera is higher.
+        editCameraBelow?.apply {
+            categoryScope.launch {
+                try {
+                    setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().cameraBelowReceiverM))
+                } catch (e: Exception) {
+                    Log.e("SettingsFragment", "camera distance load error", e)
+                }
+            }
+            val saveCamera = {
+                val typed = text?.toString()
+                saveScope.launch {
+                    try {
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        val meters = AntennaHeightInput.parseCameraBelowMeters(typed)
+                        if (meters == null) {
+                            if (this@SettingsFragment.view == null) return@launch
+                            inputLayoutOf(this@apply)?.error = "Enter −3 to 3 m. Previous value kept."
+                            setText(AntennaHeightInput.format(current.cameraBelowReceiverM))
+                        } else {
+                            settingsRepo.setGnssReceiverSettings(current.copy(cameraBelowReceiverM = meters))
+                            if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "camera distance save error", e)
+                    }
+                }
+            }
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveCamera() }
+            setOnEditorActionListener { _, _, _ -> saveCamera(); false }
+            saveWhileTyping(saveScope) { if (AntennaHeightInput.parseCameraBelowMeters(text) != null) saveCamera() }
+        }
+
+        // Phase-centre offset: the profile's value unless the user enters a different one.
+        editPhaseCenter?.apply {
+            val savePhaseCenter = {
+                val typed = text?.toString()
+                saveScope.launch {
+                    try {
+                        val current = settingsRepo.gnssReceiverSettings.first()
+                        val profile = settingsRepo.externalReceiverProfile.first()
+                        val meters = AntennaHeightInput.parsePhaseCenterOffsetMeters(typed)
+                        if (meters == null) {
+                            if (this@SettingsFragment.view == null) return@launch
+                            inputLayoutOf(this@apply)?.error = "Enter 0 to ${AntennaHeightInput.format(app.surrealar.settings.model.AntennaSetup.MAX_PHASE_CENTER_OFFSET_M)} m. Previous value kept."
+                            setText(AntennaHeightInput.format(app.surrealar.settings.model.AntennaSetup.resolve(current, profile).phaseCenterOffsetM))
+                        } else {
+                            // Matching the profile's value clears the override, so a later profile change applies.
+                            val override = if (profile.phaseCenterOffsetM != null &&
+                                kotlin.math.abs(meters - profile.phaseCenterOffsetM) < 0.0005) null else meters
+                            settingsRepo.setGnssReceiverSettings(current.copy(phaseCenterOffsetOverrideM = override))
+                            if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SettingsFragment", "phase-centre offset save error", e)
+                    }
+                }
+            }
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) savePhaseCenter() }
+            setOnEditorActionListener { _, _, _ -> savePhaseCenter(); false }
+            saveWhileTyping(saveScope) { if (AntennaHeightInput.parsePhaseCenterOffsetMeters(text) != null) savePhaseCenter() }
         }
 
         // Tablet / internal-GNSS antenna height — applied to internal-GPS captures (pole-mounted tablet).
@@ -2245,7 +2336,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             if (fix != null) "Fused" else "Fused (pending)"
         } else {
             when (fix?.rtkStatus) {
-                RtkStatus.FIX -> "Fixed RTK"
+                RtkStatus.FIX -> "RTK Fix"
                 RtkStatus.FLOAT -> "Float"
                 RtkStatus.DGPS -> "DGPS"
                 RtkStatus.SINGLE -> "Single"

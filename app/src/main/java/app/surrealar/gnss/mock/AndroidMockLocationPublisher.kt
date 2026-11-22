@@ -104,10 +104,13 @@ class AndroidMockLocationPublisher(
                 settingsRepo.mockLocationEnabled,
                 arSessionActive,
                 settingsRepo.locationSource,
-                settingsRepo.arDisplaySettings,
+                // Receiver page antenna setup: phase centre above the tablet camera.
+                settingsRepo.gnssReceiverSettings.combine(settingsRepo.externalReceiverProfile) { receiver, profile ->
+                    app.surrealar.settings.model.AntennaSetup.resolve(receiver, profile).antennaAboveCameraM
+                },
                 fixSwitchboard.fixes
-            ) { userEnabled, arActive, locationSource, ar, fix ->
-                antennaAboveCameraM = ar.antennaAboveCameraM.toDouble()
+            ) { userEnabled, arActive, locationSource, aboveCameraM, fix ->
+                antennaAboveCameraM = aboveCameraM
                 Triple(userEnabled || arActive, locationSource, fix)
             }
             .collect { (mockEnabled, locationSource, fix) ->
