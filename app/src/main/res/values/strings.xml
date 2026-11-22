@@ -24,7 +24,6 @@
     <string name="dev_page_title_gnss">GNSS</string>
     <string name="dev_page_subtitle_gnss">Receiver state, NMEA flow, fix quality, and satellite diagnostics.</string>
     <string name="dev_section_actions">Actions</string>
-    <string name="dev_section_api_key">API Key</string>
     <string name="dev_section_ar_diagnostics">AR Diagnostics</string>
     <string name="dev_section_maps_diagnostics">Maps Diagnostics</string>
     <string name="dev_checking">Checking…</string>
@@ -37,8 +36,6 @@
     <string name="dev_coord_clear_all">Clear All Coordinates</string>
     <string name="dev_status_ready">Ready</string>
     <string name="dev_coord_hint">Enter number of coordinates to generate</string>
-    <string name="dev_reveal_key">Reveal API Key</string>
-    <string name="dev_copy_key">Copy API Key</string>
     <string name="dev_request_core_permissions">Request Core Permissions</string>
     <string name="dev_section_app_info">App Info</string>
     <string name="dev_section_device_info">Device Info</string>

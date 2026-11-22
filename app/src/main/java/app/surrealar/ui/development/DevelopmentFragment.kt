@@ -1,7 +1,5 @@
 package app.surrealar.ui.development
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
@@ -498,126 +496,138 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         // Get references to the layout components
         val refreshBarContainer = view.findViewById<LinearLayout>(R.id.refreshBarContainer)
         val tableContainer = view.findViewById<LinearLayout>(R.id.mapsInfoTableContainer)
-        val apiKeyControls = view.findViewById<LinearLayout>(R.id.apiKeyControls)
-        val revealBtn = view.findViewById<Button>(R.id.btnRevealKey)
-        val copyBtn = view.findViewById<Button>(R.id.btnCopyKey)
-        val apiKeyFullView = view.findViewById<TextView>(R.id.apiKeyFullView)
         val mapViewTestContainer = view.findViewById<FrameLayout>(R.id.mapViewTestContainer)
 
         val ctx = requireContext()
 
         // Card for maps diagnostics rows (color-coded by status)
         val (mapsCard, mapsRows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_maps_diagnostics))
-        val mapsRowsList = mutableListOf<Triple<String, String, MapsStatus?>>()
-        fun addRow(label: String, value: String, status: MapsStatus? = null) {
-            mapsRowsList.add(Triple(label, value, status))
-        }
 
-        // Gather statuses
-        val availabilityCode = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(ctx)
-        val availabilityText = when (availabilityCode) {
-            ConnectionResult.SUCCESS -> "SUCCESS" to MapsStatus.OK
-            ConnectionResult.SERVICE_MISSING -> "MISSING" to MapsStatus.ERROR
-            ConnectionResult.SERVICE_UPDATING -> "UPDATING" to MapsStatus.WARN
-            ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED -> "UPDATE_REQUIRED" to MapsStatus.WARN
-            ConnectionResult.SERVICE_DISABLED -> "DISABLED" to MapsStatus.ERROR
-            ConnectionResult.SERVICE_INVALID -> "INVALID" to MapsStatus.ERROR
-            else -> ("CODE_$availabilityCode") to MapsStatus.WARN
-        }
-        val playPkgInfo = runCatching { ctx.packageManager.getPackageInfo("com.google.android.gms", 0) }.getOrNull()
-        val playServicesVersion = playPkgInfo?.versionName ?: "?"
-        val playServicesUpdated = playPkgInfo?.lastUpdateTime ?: 0L
-        val apiKeyFull = runCatching {
-            val ai = ctx.packageManager.getApplicationInfo(ctx.packageName, android.content.pm.PackageManager.GET_META_DATA)
-            ai.metaData?.getString("com.google.android.geo.API_KEY") ?: "(not set)"
-        }.getOrElse { "(error: ${it.message})" }
-        val apiKeyStatus = when {
-            apiKeyFull == "(not set)" -> MapsStatus.ERROR
-            apiKeyFull.equals("YOUR_API_KEY_HERE", true) -> MapsStatus.WARN
-            apiKeyFull.startsWith("AIza") && apiKeyFull.length > 30 -> MapsStatus.OK
-            else -> MapsStatus.WARN
-        }
-        val mapsInitResult = runCatching { MapsInitializer.initialize(ctx); "OK" }.getOrElse { it.message ?: it.javaClass.simpleName }
-        val mapsInitStatus = if (mapsInitResult == "OK") MapsStatus.OK else MapsStatus.ERROR
-        val locationPerm = ctx.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val internetPerm = ctx.checkSelfPermission(android.Manifest.permission.INTERNET) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val cameraPerm = ctx.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        // Network capability info — computed eagerly so rows can be added inline
-        data class NetInfo(
-            val internetVal: String, val internetStatus: MapsStatus,
-            val validatedVal: String, val validatedStatus: MapsStatus,
-            val transportVal: String, val transportStatus: MapsStatus,
-            val warningVal: String?
-        )
-        val netInfo = runCatching {
-            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
-            val active = cm.activeNetwork
-            val caps = active?.let { cm.getNetworkCapabilities(it) }
-            val hasInternet = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            val hasValidated = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-            val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
-            val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
-            val isVpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
-            NetInfo(
-                internetVal = if (active == null) "no active network" else hasInternet.toString(),
-                internetStatus = if (active == null) MapsStatus.ERROR else if (hasInternet) MapsStatus.OK else MapsStatus.ERROR,
-                validatedVal = if (active == null) "no active network" else hasValidated.toString(),
-                validatedStatus = when { active == null -> MapsStatus.ERROR; hasValidated -> MapsStatus.OK; hasInternet -> MapsStatus.WARN; else -> MapsStatus.ERROR },
-                transportVal = when { active == null -> "None"; caps == null -> "Unknown"; isVpn -> "VPN"; isWifi -> "Wi-Fi"; isCellular -> "Cellular"; else -> "Other" },
-                transportStatus = if (active == null) MapsStatus.ERROR else if (isVpn) MapsStatus.WARN else MapsStatus.OK,
-                warningVal = if (active != null && hasInternet && !hasValidated)
-                    "Connected but not validated — map tiles may not load" else null
-            )
-        }.getOrElse {
-            NetInfo("error", MapsStatus.ERROR, "error", MapsStatus.ERROR, "error", MapsStatus.ERROR, it.message)
-        }
-        val mapsLibPresent = runCatching { Class.forName("com.google.android.gms.maps.GoogleMap"); true }.getOrDefault(false)
-        val fusedLocPresent = runCatching { Class.forName("com.google.android.gms.location.FusedLocationProviderClient"); true }.getOrDefault(false)
-
-        // Populate rows (color-coded)
-        addRow("Play Services Availability", availabilityText.first, availabilityText.second)
-        addRow("Play Services Version", playServicesVersion, if (availabilityText.second == MapsStatus.OK) MapsStatus.OK else availabilityText.second)
-        addRow("Play Services Last Update", if (playServicesUpdated>0) formatTime(playServicesUpdated) else "--", if (playServicesUpdated>0) MapsStatus.OK else MapsStatus.WARN)
-        addRow("Maps Library Present", mapsLibPresent.toString(), if (mapsLibPresent) MapsStatus.OK else MapsStatus.ERROR)
-        addRow("Fused Location Present", fusedLocPresent.toString(), if (fusedLocPresent) MapsStatus.OK else MapsStatus.WARN)
-        addRow("Maps Initialize", mapsInitResult, mapsInitStatus)
-        val rendererName = app.surrealar.SurRealApplication.activeMapsRenderer
-        addRow("Maps Renderer", rendererName, when (rendererName) {
-            "LATEST" -> MapsStatus.OK
-            "LEGACY" -> MapsStatus.WARN
-            else -> MapsStatus.ERROR
-        })
-        val buildType = if (app.surrealar.BuildConfig.DEBUG) "DEBUG" else "RELEASE"
-        addRow("Build Type", buildType, if (app.surrealar.BuildConfig.DEBUG) MapsStatus.WARN else MapsStatus.OK)
-        addRow("Package Name", ctx.packageName, null)
-        // Signing SHA-1 — the value that must be allowed in the Maps key Android restriction.
-        val sha1 = app.surrealar.util.diagnostics.AppSigningInfo.fingerprints(ctx)?.sha1
-        addRow("Signing SHA-1", sha1 ?: "unavailable", if (sha1 != null) MapsStatus.OK else MapsStatus.ERROR)
-        // API key presence only — never display the raw key (testers screenshot this screen).
-        addRow("API Key Meta", app.surrealar.util.diagnostics.MapDiagnosticCollector.redactApiKey(apiKeyFull), apiKeyStatus)
-        addRow("Location Permission", locationPerm.toString(), if (locationPerm) MapsStatus.OK else MapsStatus.WARN)
-        addRow("Internet Permission", internetPerm.toString(), if (internetPerm) MapsStatus.OK else MapsStatus.ERROR)
-        addRow("Camera Permission", cameraPerm.toString(), if (cameraPerm) MapsStatus.OK else MapsStatus.WARN)
-        addRow("Network: Internet", netInfo.internetVal, netInfo.internetStatus)
-        addRow("Network: Validated", netInfo.validatedVal, netInfo.validatedStatus)
-        addRow("Network: Transport", netInfo.transportVal, netInfo.transportStatus)
-        if (netInfo.warningVal != null) addRow("Network: Warning", netInfo.warningVal, MapsStatus.WARN)
-
-        // Placeholder for runtime MapView test (async result inserted below)
-        addRow("Runtime MapView Test", "PENDING", MapsStatus.WARN)
-
-        // Flush collected rows into the card, capturing the runtime status TextView
-        var runtimeValueHolder: TextView? = null
-        mapsRowsList.forEachIndexed { idx, (label, value, status) ->
-            val vv = mapsRows.addInfoRow(ctx, label, value, isLast = idx == mapsRowsList.lastIndex)
-            val statusColor = when (status) {
-                MapsStatus.OK   -> 0xFF2E7D32.toInt()
-                MapsStatus.WARN -> 0xFFF9A825.toInt()
-                MapsStatus.ERROR -> 0xFFC62828.toInt()
-                null -> resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        // Slow checks (package manager, Play services, MapsInitializer, signing certs). Runs on a
+        // background thread; only the runtime MapView test below stays on the main thread.
+        fun gather(): List<Triple<String, String, MapsStatus?>> {
+            val mapsRowsList = mutableListOf<Triple<String, String, MapsStatus?>>()
+            fun addRow(label: String, value: String, status: MapsStatus? = null) {
+                mapsRowsList.add(Triple(label, value, status))
             }
-            vv.setTextColor(statusColor)
-            if (label == "Runtime MapView Test") runtimeValueHolder = vv
+
+            // Gather statuses
+            val availabilityCode = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(ctx)
+            val availabilityText = when (availabilityCode) {
+                ConnectionResult.SUCCESS -> "SUCCESS" to MapsStatus.OK
+                ConnectionResult.SERVICE_MISSING -> "MISSING" to MapsStatus.ERROR
+                ConnectionResult.SERVICE_UPDATING -> "UPDATING" to MapsStatus.WARN
+                ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED -> "UPDATE_REQUIRED" to MapsStatus.WARN
+                ConnectionResult.SERVICE_DISABLED -> "DISABLED" to MapsStatus.ERROR
+                ConnectionResult.SERVICE_INVALID -> "INVALID" to MapsStatus.ERROR
+                else -> ("CODE_$availabilityCode") to MapsStatus.WARN
+            }
+            val playPkgInfo = runCatching { ctx.packageManager.getPackageInfo("com.google.android.gms", 0) }.getOrNull()
+            val playServicesVersion = playPkgInfo?.versionName ?: "?"
+            val playServicesUpdated = playPkgInfo?.lastUpdateTime ?: 0L
+            val apiKeyFull = runCatching {
+                val ai = ctx.packageManager.getApplicationInfo(ctx.packageName, android.content.pm.PackageManager.GET_META_DATA)
+                ai.metaData?.getString("com.google.android.geo.API_KEY") ?: "(not set)"
+            }.getOrElse { "(error: ${it.message})" }
+            val apiKeyStatus = when {
+                apiKeyFull == "(not set)" -> MapsStatus.ERROR
+                apiKeyFull.equals("YOUR_API_KEY_HERE", true) -> MapsStatus.WARN
+                apiKeyFull.startsWith("AIza") && apiKeyFull.length > 30 -> MapsStatus.OK
+                else -> MapsStatus.WARN
+            }
+            val mapsInitResult = runCatching { MapsInitializer.initialize(ctx); "OK" }.getOrElse { it.message ?: it.javaClass.simpleName }
+            val mapsInitStatus = if (mapsInitResult == "OK") MapsStatus.OK else MapsStatus.ERROR
+            val locationPerm = ctx.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val internetPerm = ctx.checkSelfPermission(android.Manifest.permission.INTERNET) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val cameraPerm = ctx.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            // Network capability info — computed eagerly so rows can be added inline
+            data class NetInfo(
+                val internetVal: String, val internetStatus: MapsStatus,
+                val validatedVal: String, val validatedStatus: MapsStatus,
+                val transportVal: String, val transportStatus: MapsStatus,
+                val warningVal: String?
+            )
+            val netInfo = runCatching {
+                val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                val active = cm.activeNetwork
+                val caps = active?.let { cm.getNetworkCapabilities(it) }
+                val hasInternet = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                val hasValidated = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+                val isWifi = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+                val isCellular = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+                val isVpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
+                NetInfo(
+                    internetVal = if (active == null) "no active network" else hasInternet.toString(),
+                    internetStatus = if (active == null) MapsStatus.ERROR else if (hasInternet) MapsStatus.OK else MapsStatus.ERROR,
+                    validatedVal = if (active == null) "no active network" else hasValidated.toString(),
+                    validatedStatus = when { active == null -> MapsStatus.ERROR; hasValidated -> MapsStatus.OK; hasInternet -> MapsStatus.WARN; else -> MapsStatus.ERROR },
+                    transportVal = when { active == null -> "None"; caps == null -> "Unknown"; isVpn -> "VPN"; isWifi -> "Wi-Fi"; isCellular -> "Cellular"; else -> "Other" },
+                    transportStatus = if (active == null) MapsStatus.ERROR else if (isVpn) MapsStatus.WARN else MapsStatus.OK,
+                    warningVal = if (active != null && hasInternet && !hasValidated)
+                        "Connected but not validated — map tiles may not load" else null
+                )
+            }.getOrElse {
+                NetInfo("error", MapsStatus.ERROR, "error", MapsStatus.ERROR, "error", MapsStatus.ERROR, it.message)
+            }
+            val mapsLibPresent = runCatching { Class.forName("com.google.android.gms.maps.GoogleMap"); true }.getOrDefault(false)
+            val fusedLocPresent = runCatching { Class.forName("com.google.android.gms.location.FusedLocationProviderClient"); true }.getOrDefault(false)
+
+            // Populate rows (color-coded)
+            addRow("Play Services Availability", availabilityText.first, availabilityText.second)
+            addRow("Play Services Version", playServicesVersion, if (availabilityText.second == MapsStatus.OK) MapsStatus.OK else availabilityText.second)
+            addRow("Play Services Last Update", if (playServicesUpdated>0) formatTime(playServicesUpdated) else "--", if (playServicesUpdated>0) MapsStatus.OK else MapsStatus.WARN)
+            addRow("Maps Library Present", mapsLibPresent.toString(), if (mapsLibPresent) MapsStatus.OK else MapsStatus.ERROR)
+            addRow("Fused Location Present", fusedLocPresent.toString(), if (fusedLocPresent) MapsStatus.OK else MapsStatus.WARN)
+            addRow("Maps Initialize", mapsInitResult, mapsInitStatus)
+            val rendererName = app.surrealar.SurRealApplication.activeMapsRenderer
+            addRow("Maps Renderer", rendererName, when (rendererName) {
+                "LATEST" -> MapsStatus.OK
+                "LEGACY" -> MapsStatus.WARN
+                else -> MapsStatus.ERROR
+            })
+            val buildType = if (app.surrealar.BuildConfig.DEBUG) "DEBUG" else "RELEASE"
+            addRow("Build Type", buildType, if (app.surrealar.BuildConfig.DEBUG) MapsStatus.WARN else MapsStatus.OK)
+            addRow("Package Name", ctx.packageName, null)
+            // Signing SHA-1 — the value that must be allowed in the Maps key Android restriction.
+            val sha1 = app.surrealar.util.diagnostics.AppSigningInfo.fingerprints(ctx)?.sha1
+            addRow("Signing SHA-1", sha1 ?: "unavailable", if (sha1 != null) MapsStatus.OK else MapsStatus.ERROR)
+            // API key presence only — never display the raw key (testers screenshot this screen).
+            addRow("API Key Meta", app.surrealar.util.diagnostics.MapDiagnosticCollector.redactApiKey(apiKeyFull), apiKeyStatus)
+            addRow("Location Permission", locationPerm.toString(), if (locationPerm) MapsStatus.OK else MapsStatus.WARN)
+            addRow("Internet Permission", internetPerm.toString(), if (internetPerm) MapsStatus.OK else MapsStatus.ERROR)
+            addRow("Camera Permission", cameraPerm.toString(), if (cameraPerm) MapsStatus.OK else MapsStatus.WARN)
+            addRow("Network: Internet", netInfo.internetVal, netInfo.internetStatus)
+            addRow("Network: Validated", netInfo.validatedVal, netInfo.validatedStatus)
+            addRow("Network: Transport", netInfo.transportVal, netInfo.transportStatus)
+            if (netInfo.warningVal != null) addRow("Network: Warning", netInfo.warningVal, MapsStatus.WARN)
+            return mapsRowsList
+        }
+
+        // Runtime MapView test row: kept as state so it survives the card being refilled when the
+        // background checks finish.
+        var runtimeText = "PENDING"
+        var runtimeStatus = MapsStatus.WARN
+        var runtimeValueHolder: TextView? = null
+        fun statusColor(status: MapsStatus?) = when (status) {
+            MapsStatus.OK   -> 0xFF2E7D32.toInt()
+            MapsStatus.WARN -> 0xFFF9A825.toInt()
+            MapsStatus.ERROR -> 0xFFC62828.toInt()
+            null -> resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        }
+        // Flush rows into the card (gathered rows + the runtime test row), capturing the runtime TextView.
+        fun showRows(rows: List<Triple<String, String, MapsStatus?>>) {
+            mapsRows.removeAllViews()
+            val all = rows + Triple("Runtime MapView Test", runtimeText, runtimeStatus)
+            all.forEachIndexed { idx, (label, value, status) ->
+                val vv = mapsRows.addInfoRow(ctx, label, value, isLast = idx == all.lastIndex)
+                vv.setTextColor(statusColor(status))
+                if (label == "Runtime MapView Test") runtimeValueHolder = vv
+            }
+        }
+        showRows(listOf(Triple("Diagnostics", getString(R.string.dev_checking), null)))
+        categoryScope.launch {
+            val rows = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { gather() }
+            if (view.parent != null) showRows(rows)
         }
 
         // Add refresh bar and card to containers
@@ -632,25 +642,6 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         refreshBarContainer.addView(createRefreshBar { refresh() })
         tableContainer.addView(mapsCard)
 
-        // Set up API key reveal/copy functionality
-        apiKeyFullView.text = apiKeyFull
-        revealBtn.setOnClickListener {
-            if (apiKeyFullView.visibility == View.GONE) {
-                apiKeyFullView.visibility = View.VISIBLE
-                copyBtn.isEnabled = apiKeyFull != "(not set)" && !apiKeyFull.startsWith("(error")
-                revealBtn.text = getString(R.string.dev_reveal_key).replace("Reveal", "Hide")
-            } else {
-                apiKeyFullView.visibility = View.GONE
-                revealBtn.text = getString(R.string.dev_reveal_key)
-            }
-        }
-        copyBtn.setOnClickListener {
-            val clip = ClipData.newPlainText("Maps API Key", apiKeyFull)
-            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(clip)
-            showDeveloperMessage("API key copied")
-        }
-
         // Runtime MapView test. Only one live test map at a time: a refresh or another visit used to add a
         // new MapView each time (tens of MB of native/GL memory) that lived until the page was left.
         releaseDebugMap()
@@ -663,25 +654,24 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         var completed = false
 
         fun updateRuntimeStatus(text: String, status: MapsStatus) {
+            runtimeText = text
+            runtimeStatus = status
             runtimeValueHolder?.text = text
-            runtimeValueHolder?.setTextColor(when (status) {
-                MapsStatus.OK    -> 0xFF2E7D32.toInt()
-                MapsStatus.WARN  -> 0xFFF9A825.toInt()
-                MapsStatus.ERROR -> 0xFFC62828.toInt()
-            })
+            runtimeValueHolder?.setTextColor(statusColor(status))
         }
         try {
             miniMapView.getMapAsync { gMap ->
                 completed = true
                 updateRuntimeStatus("MAP_READY — waiting for tiles", MapsStatus.WARN)
-                MapThemeHelper.applyTheme(requireContext(), gMap, gMap.mapType)
+                val mapCtx = context ?: return@getMapAsync
+                MapThemeHelper.applyTheme(mapCtx, gMap, gMap.mapType)
                 gMap.moveCamera(com.google.android.gms.maps.CameraUpdateFactory.newLatLngZoom(LatLng(0.0,0.0), 1f))
                 gMap.setOnMapLoadedCallback {
                     updateRuntimeStatus("MAP_LOADED", MapsStatus.OK)
                 }
                 // If MAP_LOADED hasn't fired after 10 s, tiles likely failed to load
                 handler.postDelayed({
-                    if (runtimeValueHolder?.text?.startsWith("MAP_READY") == true)
+                    if (runtimeText.startsWith("MAP_READY"))
                         updateRuntimeStatus("MAP_READY — MAP_LOADED did not fire", MapsStatus.WARN)
                 }, 10_000)
             }
