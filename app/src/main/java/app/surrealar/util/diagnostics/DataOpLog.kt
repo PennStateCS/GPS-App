@@ -57,7 +57,7 @@ object DbDiagnostics {
                 }
             }
             override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
-                DiagnosticsLogger.w(DiagTags.DATA, "Database reset by destructive migration (debug build) — saved data cleared")
+                DiagnosticsLogger.w(DiagTags.DATA, "Database reset by destructive migration (ALLOW_DESTRUCTIVE_MIGRATION) — saved data cleared")
             }
         }
     }
