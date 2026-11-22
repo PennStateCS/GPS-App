@@ -37,6 +37,7 @@ import app.surrealar.ui.toolbar.ToolbarInputs
 import app.surrealar.ui.toolbar.ToolbarPipeline
 import app.surrealar.ui.toolbar.ToolbarPipeline.retryForever
 import app.surrealar.ui.toolbar.ToolbarMapResult
+import app.surrealar.ui.navigation.topLevelNavOptions
 import app.surrealar.service.LocationService
 import app.surrealar.util.PermissionManager
 import com.google.android.material.navigation.NavigationView
@@ -284,7 +285,8 @@ class MainActivity : AppCompatActivity() {
             menuItem.isChecked = true
 
             val handled = try {
-                navController.navigate(destId)
+                // Top-level switch: pop back to Home instead of stacking another copy.
+                navController.navigate(destId, null, topLevelNavOptions(navController.graph.startDestinationId))
                 true
             } catch (e: IllegalArgumentException) {
                 android.util.Log.w("MainActivity", "Drawer destination not found: $destId", e)

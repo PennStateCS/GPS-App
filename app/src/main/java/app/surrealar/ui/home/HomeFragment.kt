@@ -39,6 +39,7 @@ import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.ui.components.FixBadgeView
 import app.surrealar.ui.map.MapThemeHelper
+import app.surrealar.ui.navigation.topLevelNavOptions
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.MapView
@@ -160,38 +161,44 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         return root
     }
 
+    /** Opens a top-level screen the same way the drawer does (no stacked copies). */
+    private fun navigateTopLevel(destId: Int) {
+        val nav = findNavController()
+        nav.navigate(destId, null, topLevelNavOptions(nav.graph.startDestinationId))
+    }
+
     private fun setupQuickActionButtons() {
         // Quick Actions chips
         binding.chipQuickMap.setOnClickListener {
-            try { findNavController().navigate(R.id.nav_render_map) }
+            try { navigateTopLevel(R.id.nav_render_map) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to map failed", e) }
         }
 
         // Current Location card header action — same destination as the Quick Actions chip,
         // giving the prominent map preview a clear "this opens the full map" affordance.
         binding.btnOpenFullMap.setOnClickListener {
-            try { findNavController().navigate(R.id.nav_render_map) }
+            try { navigateTopLevel(R.id.nav_render_map) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to map failed", e) }
         }
 
         binding.chipQuickAr.setOnClickListener {
-            try { findNavController().navigate(R.id.nav_open_in_ar) }
+            try { navigateTopLevel(R.id.nav_open_in_ar) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to AR failed", e) }
         }
 
         binding.chipQuickSettings.setOnClickListener {
-            try { findNavController().navigate(R.id.nav_settings) }
+            try { navigateTopLevel(R.id.nav_settings) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to settings failed", e) }
         }
 
         // View chips for Survey Data card
         binding.chipViewCoordinates.setOnClickListener {
-            try { findNavController().navigate(R.id.nav_view_coordinates) }
+            try { navigateTopLevel(R.id.nav_view_coordinates) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to coordinates failed", e) }
         }
 
         binding.chipViewModels.setOnClickListener {
-            try { findNavController().navigate(R.id.nav_models) }
+            try { navigateTopLevel(R.id.nav_models) }
             catch (e: Exception) { android.util.Log.e("HomeFragment", "Navigation to models failed", e) }
         }
     }
@@ -338,7 +345,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 HomeFieldStatusMapper.Action.RECEIVER_SETTINGS -> R.id.nav_settings
                 HomeFieldStatusMapper.Action.OPEN_MAP -> R.id.nav_render_map
             }
-            try { findNavController().navigate(dest) }
+            try { navigateTopLevel(dest) }
             catch (e: Exception) { android.util.Log.e(TAG, "Field status navigation failed", e) }
         }
 
