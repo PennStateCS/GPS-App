@@ -72,6 +72,31 @@ class DiagnosticsLoggerTest {
             lines().map { it.substringAfter("] ") }.filter { it.startsWith("hb ") || it.startsWith("other ") })
     }
 
+    @Test fun `flush returns false at once when the write queue is full`() {
+        val release = java.util.concurrent.CountDownLatch(1)
+        DiagnosticsLogger.blockWriterForTest(release)
+        try {
+            repeat(DiagnosticsLogger.MAX_QUEUED + 5) { DiagnosticsLogger.i("TEST", "fill $it") }
+            val start = System.nanoTime()
+            val ok = DiagnosticsLogger.flush(timeoutMs = 5_000L)
+            val tookMs = (System.nanoTime() - start) / 1_000_000L
+            assertTrue("flush must report failure", !ok)
+            assertTrue("flush returned in ${tookMs} ms", tookMs < 1_000L)
+        } finally {
+            release.countDown()
+        }
+        // Right after the release the queue is still full, so flush is (correctly) refused until the
+        // writer has made room. Retry for up to two minutes.
+        val deadline = System.nanoTime() + 120_000_000_000L
+        var drained = false
+        while (!drained && System.nanoTime() < deadline) {
+            drained = DiagnosticsLogger.flush(timeoutMs = 120_000L)
+            if (!drained) Thread.sleep(50)
+        }
+        assertTrue("drains once the writer runs again", drained)
+        assertTrue(File(dir, "app-log-current.txt").readText().contains("log lines dropped"))
+    }
+
     @Test fun `coroutine crash is marked not fatal`() {
         DiagnosticsLogger.writeCrashSync(Thread.currentThread(), RuntimeException("x"), fatal = false)
         assertTrue(File(dir, "app-errors-current.txt").readText().contains("not fatal"))

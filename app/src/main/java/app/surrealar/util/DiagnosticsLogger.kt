@@ -68,8 +68,16 @@ object DiagnosticsLogger {
     private val writer: ExecutorService = java.util.concurrent.ThreadPoolExecutor(
         1, 1, 0L, TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue(MAX_QUEUED),
         { r -> Thread(r, "diag-log").apply { isDaemon = true } },
-        { _, _ -> dropped.incrementAndGet() },
+        // Runs on the caller's thread inside execute(). A rejected flush marker is flagged (so flush()
+        // returns at once instead of waiting out its timeout) and isn't counted as a lost log line.
+        { r, _ -> if (r is FlushMarker) r.rejected = true else dropped.incrementAndGet() },
     )
+
+    /** The task [flush] queues behind every pending line. */
+    private class FlushMarker(val done: CountDownLatch) : Runnable {
+        @Volatile var rejected = false
+        override fun run() = done.countDown()
+    }
     private val lock = Any()
 
     @Volatile private var logDir: File? = null
@@ -268,13 +276,20 @@ object DiagnosticsLogger {
     /**
      * Waits until every line queued so far is on disk (or [timeoutMs] passes). The exporter calls this
      * before zipping so the last events before "Export" are in the report. Don't call it from the
-     * writer thread. Returns false on timeout.
+     * writer thread. Returns false on timeout, or at once when the write queue is full (the marker
+     * was rejected, so waiting could only time out).
      */
     fun flush(timeoutMs: Long = 5_000L): Boolean {
         if (logDir == null) return true
-        val done = CountDownLatch(1)
-        val queued = runCatching { writer.execute { done.countDown() } }.isSuccess
-        return queued && done.await(timeoutMs, TimeUnit.MILLISECONDS)
+        val marker = FlushMarker(CountDownLatch(1))
+        val queued = runCatching { writer.execute(marker) }.isSuccess
+        if (!queued || marker.rejected) return false
+        return marker.done.await(timeoutMs, TimeUnit.MILLISECONDS)
+    }
+
+    /** Tests: parks the writer thread until [release] opens, so the queue can be filled. */
+    internal fun blockWriterForTest(release: CountDownLatch) {
+        writer.execute { release.await() }
     }
 
     /** Runs [block] on the writer thread under [lock]. */
