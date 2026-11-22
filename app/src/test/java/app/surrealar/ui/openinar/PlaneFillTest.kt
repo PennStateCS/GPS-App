@@ -67,6 +67,13 @@ class PlaneFillTest {
         PlaneFill.Colors.WALL.let { assertTrue(it[0] > it[1] && it[1] > it[2]) }
     }
 
+    @Test fun `walls are filled more strongly than floors and ceilings, and fade less to the edge`() {
+        assertTrue(PlaneFill.centerAlphaFor(PlaneFill.Kind.WALL) > PlaneFill.centerAlphaFor(PlaneFill.Kind.FLOOR))
+        assertTrue(PlaneFill.edgeAlphaFor(PlaneFill.Kind.WALL) > PlaneFill.edgeAlphaFor(PlaneFill.Kind.FLOOR))
+        assertEquals(PlaneFill.centerAlphaFor(PlaneFill.Kind.FLOOR), PlaneFill.centerAlphaFor(PlaneFill.Kind.CEILING), 0f)
+        for (k in PlaneFill.Kind.values()) assertTrue(PlaneFill.edgeAlphaFor(k) < PlaneFill.centerAlphaFor(k))
+    }
+
     @Test fun `distance fade at 0, 8, 11_5 and 15+ m`() {
         assertEquals(1f, PlaneFill.distanceFade(0f), 0f)
         assertEquals(1f, PlaneFill.distanceFade(8f), 0f)

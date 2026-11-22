@@ -28,6 +28,8 @@ internal class PlaneVisualizer {
     private val uOutlineLoc: Int
     private val uGridLoc: Int
     private val uAlphaLoc: Int
+    private val uCenterLoc: Int
+    private val uEdgeLoc: Int
 
     // Reused per frame; grown only when a bigger plane comes along.
     private var polygon = FloatArray(64)
@@ -59,6 +61,8 @@ internal class PlaneVisualizer {
         uOutlineLoc = GLES30.glGetUniformLocation(program, "uOutline")
         uGridLoc = GLES30.glGetUniformLocation(program, "uGrid")
         uAlphaLoc = GLES30.glGetUniformLocation(program, "uAlpha")
+        uCenterLoc = GLES30.glGetUniformLocation(program, "uCenterAlpha")
+        uEdgeLoc = GLES30.glGetUniformLocation(program, "uEdgeAlpha")
         GLES30.glUseProgram(0)
     }
 
@@ -156,8 +160,11 @@ internal class PlaneVisualizer {
                 GLES30.glVertexAttribPointer(A_EDGE, 1, GLES30.GL_FLOAT, false, stride, vertexBuffer)
                 vertexBuffer.position(0)
 
-                val c = PlaneFill.colorFor(kindOf(plane))
+                val kind = kindOf(plane)
+                val c = PlaneFill.colorFor(kind)
                 GLES30.glUniform3f(uColorLoc, c[0], c[1], c[2])
+                GLES30.glUniform1f(uCenterLoc, PlaneFill.centerAlphaFor(kind))
+                GLES30.glUniform1f(uEdgeLoc, PlaneFill.edgeAlphaFor(kind))
                 GLES30.glUniform1f(uFadeLoc, e.fade)
 
                 // Fill (centre → edge alpha fade + grid).
@@ -282,16 +289,20 @@ internal class PlaneVisualizer {
             uniform float uOutline;
             uniform float uGrid;
             uniform float uAlpha;
+            uniform float uCenterAlpha;
+            uniform float uEdgeAlpha;
             in vec2 vLocal;
             in float vEdge;
             out vec4 fragColor;
             void main(){
                 if (uOutline > 0.5) { fragColor = vec4(uColor, uAlpha * uFade); return; }
-                float base = mix(${PlaneFill.CENTER_ALPHA}, ${PlaneFill.EDGE_ALPHA}, clamp(vEdge, 0.0, 1.0));
+                float base = mix(uCenterAlpha, uEdgeAlpha, clamp(vEdge, 0.0, 1.0));
                 vec2 g = vLocal / uGrid;
                 vec2 d = abs(fract(g - 0.5) - 0.5) / max(fwidth(g), vec2(1e-4));
                 float line = 1.0 - min(min(d.x, d.y), 1.0);
-                fragColor = vec4(uColor * (1.0 + 0.25 * line), (base + ${PlaneFill.GRID_LINE_ALPHA} * line) * uFade);
+                // Grid lines pushed toward white so they read on brick, wood or paint alike.
+                vec3 rgb = mix(uColor, vec3(1.0), ${PlaneFill.GRID_WHITENESS} * line);
+                fragColor = vec4(rgb, min(base + ${PlaneFill.GRID_LINE_ALPHA} * line, 1.0) * uFade);
             }"""
 
         private fun createShader(type: Int, src: String): Int {

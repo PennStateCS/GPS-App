@@ -15,14 +15,24 @@ import kotlin.math.sqrt
 object PlaneFill {
 
     // ── Look ─────────────────────────────────────────────────────────────────────
-    const val CENTER_ALPHA = 0.35f
-    const val EDGE_ALPHA = 0.10f
-    const val OUTLINE_ALPHA = 0.85f
-    const val OUTLINE_WIDTH_PX = 1.5f
+    // Tablet test 2026-11-22: an orange wall at 0.35→0.10 alpha all but vanished on red brick, while
+    // Hello AR's white grid read clearly — so a stronger fill (walls strongest) and near-white grid lines.
+    const val CENTER_ALPHA = 0.38f
+    const val EDGE_ALPHA = 0.18f
+    /** Walls are what users look for and sit on busy textures (brick, siding): fill them more. */
+    const val WALL_CENTER_ALPHA = 0.50f
+    const val WALL_EDGE_ALPHA = 0.32f
+    const val OUTLINE_ALPHA = 0.90f
+    const val OUTLINE_WIDTH_PX = 2f
     /** Grid line spacing in plane-local metres. */
     const val GRID_SPACING_M = 0.5f
     /** Extra alpha on a grid line (added to the fill alpha). */
-    const val GRID_LINE_ALPHA = 0.22f
+    const val GRID_LINE_ALPHA = 0.50f
+    /** How far grid lines are pushed toward white (0 = plane colour, 1 = white), so they show on any surface. */
+    const val GRID_WHITENESS = 0.75f
+
+    fun centerAlphaFor(kind: Kind): Float = if (kind == Kind.WALL) WALL_CENTER_ALPHA else CENTER_ALPHA
+    fun edgeAlphaFor(kind: Kind): Float = if (kind == Kind.WALL) WALL_EDGE_ALPHA else EDGE_ALPHA
 
     // ── Filters ──────────────────────────────────────────────────────────────────
     /** Planes whose closest point is farther than this start fading out… */
@@ -42,7 +52,7 @@ object PlaneFill {
     object Colors {
         val FLOOR = floatArrayOf(0.00f, 0.78f, 0.72f)    // teal
         val CEILING = floatArrayOf(0.62f, 0.38f, 0.90f)  // purple
-        val WALL = floatArrayOf(1.00f, 0.56f, 0.12f)     // orange
+        val WALL = floatArrayOf(1.00f, 0.72f, 0.10f)     // amber (plain orange vanished on brick)
     }
 
     fun colorFor(kind: Kind): FloatArray = when (kind) {
