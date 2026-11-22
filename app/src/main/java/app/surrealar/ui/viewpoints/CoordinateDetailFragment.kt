@@ -813,7 +813,9 @@ class CoordinateDetailFragment : Fragment() {
             CoordinateDetailFormatter.accuracyTileText(c.horizontalAccuracyM)?.let { tiles += DetailRow("Horizontal accuracy", it) }
             CoordinateDetailFormatter.accuracyTileText(c.verticalAccuracyM)?.let { tiles += DetailRow("Vertical accuracy", it) }
         }
-        CoordinateDetailFormatter.satellitesTileText(c.satsUsed, c.satsVisible)?.let { tiles += DetailRow("Satellites", it) }
+        CoordinateDetailFormatter.satellitesTileText(c.satsUsed, c.satsVisible)?.let {
+            tiles += DetailRow(CoordinateDetailFormatter.satellitesTileLabel(c.satsUsed, c.satsVisible), it)
+        }
         if (tiles.isEmpty()) { container.visibility = View.GONE; return }
         val inflater = LayoutInflater.from(requireContext())
         tiles.forEach { t ->
@@ -834,7 +836,7 @@ class CoordinateDetailFragment : Fragment() {
         providerLabel(c.provider)?.let { rows += DetailRow("Provider", it) }
         // Single "Captured" row replaces the old duplicate Date + Time rows.
         if (c.timestamp > 0L) rows += DetailRow("Captured", capturedDateTime(c.timestamp))
-        c.timestampSource?.takeIf { it.isNotBlank() }?.let { rows += DetailRow("Time source", it) }
+        c.timestampSource?.takeIf { it.isNotBlank() }?.let { rows += DetailRow("Time source", CoordinateDetailFormatter.timeSourceLabel(it)) }
         c.appVersion?.takeIf { it.isNotBlank() }?.let { rows += DetailRow("App version", it) }
         renderDetailRows(cardCaptureRows, rows)
 

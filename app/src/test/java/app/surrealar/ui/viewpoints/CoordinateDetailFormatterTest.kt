@@ -212,6 +212,22 @@ class CoordinateDetailFormatterTest {
     }
 
     @Test
+    fun satellitesTileLabel_saysUsedWhenVisibleUnknown() {
+        assertEquals("Satellites", CoordinateDetailFormatter.satellitesTileLabel(18, 24))
+        assertEquals("Satellites used", CoordinateDetailFormatter.satellitesTileLabel(24, null))
+        assertEquals("Satellites", CoordinateDetailFormatter.satellitesTileLabel(null, 24))
+    }
+
+    @Test
+    fun timeSourceLabel_isHumanReadable() {
+        assertEquals("Receiver UTC (ZDA)", CoordinateDetailFormatter.timeSourceLabel("NMEA_ZDA"))
+        assertEquals("Device GNSS clock", CoordinateDetailFormatter.timeSourceLabel("GNSS_PROVIDER"))
+        assertEquals("Device clock", CoordinateDetailFormatter.timeSourceLabel("DEVICE"))
+        assertEquals("Unknown", CoordinateDetailFormatter.timeSourceLabel("UNKNOWN"))
+        assertEquals("Unknown", CoordinateDetailFormatter.timeSourceLabel("SOMETHING_ELSE"))
+    }
+
+    @Test
     fun modelPlacementSummaryText_includesOnlyPresentFields() {
         assertNull(CoordinateDetailFormatter.modelPlacementSummaryText(null, null, null, null, null, null, null, null))
         assertEquals(

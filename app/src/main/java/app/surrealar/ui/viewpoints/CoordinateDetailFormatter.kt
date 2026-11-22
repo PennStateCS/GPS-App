@@ -201,6 +201,18 @@ object CoordinateDetailFormatter {
         else -> null
     }
 
+    /** Satellites tile label: "Satellites" over "used/visible", or "Satellites used" when only that is known. */
+    fun satellitesTileLabel(satsUsed: Int?, satsVisible: Int?): String =
+        if (satsUsed != null && satsVisible == null) "Satellites used" else "Satellites"
+
+    /** Human label for the stored timestamp source (TimestampSource enum name). */
+    fun timeSourceLabel(raw: String?): String = when (raw?.trim()?.uppercase(Locale.US)) {
+        "NMEA_ZDA"      -> "Receiver UTC (ZDA)"
+        "GNSS_PROVIDER" -> "Device GNSS clock"
+        "DEVICE"        -> "Device clock"
+        else            -> "Unknown"
+    }
+
     /**
      * Read-only multi-line location summary for the Edit dialog: latitude, longitude, altitude, and
      * UTM (only when available). Falls back to a friendly message rather than showing "null"/"NaN"
