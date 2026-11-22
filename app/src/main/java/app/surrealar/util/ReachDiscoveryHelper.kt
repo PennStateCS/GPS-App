@@ -16,7 +16,7 @@ import java.net.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Semaphore
+import kotlinx.coroutines.sync.Semaphore   // suspends instead of blocking an IO thread
 
 /**
  * Discover Emlid Reach RS2/RS2+ receivers on local Wi-Fi via:
@@ -55,104 +55,111 @@ object ReachDiscoveryHelper {
             Log.w(TAG, "Failed to acquire MulticastLock: ${e.message}"); null
         }
 
-        val mdnsJob = ioScope.launch {
-            val mdnsCompleted = CompletableDeferred<Boolean>()
-            val discoveryListener = object : NsdManager.DiscoveryListener {
-                override fun onDiscoveryStarted(serviceType: String) { Log.d(TAG, "mDNS discovery started: $serviceType") }
-                override fun onDiscoveryStopped(serviceType: String) { Log.d(TAG, "mDNS discovery stopped"); mdnsCompleted.complete(mdnsFoundAny) }
-                override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                    val type = serviceInfo.serviceType.trimEnd('.')
-                    if (type != MDNS_SERVICE_TYPE.trimEnd('.')) return
-                    val name = serviceInfo.serviceName ?: return
-                    Log.d(TAG, "Found mDNS service: $name")
-                    nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                        override fun onServiceResolved(resolved: NsdServiceInfo) {
-                            val host = resolved.host?.hostAddress ?: return
-                            val hostname = resolved.serviceName
-                            val port = resolved.port.takeIf { it > 0 } ?: 80
-                            Log.d(TAG, "Resolved: $hostname @ $host:$port")
-                            ioScope.launch {
-                                val isReachDevice = validateHttpService(host, port)
+        try {
+            val mdnsJob = ioScope.launch {
+                val mdnsCompleted = CompletableDeferred<Boolean>()
+                val discoveryListener = object : NsdManager.DiscoveryListener {
+                    override fun onDiscoveryStarted(serviceType: String) { Log.d(TAG, "mDNS discovery started: $serviceType") }
+                    override fun onDiscoveryStopped(serviceType: String) { Log.d(TAG, "mDNS discovery stopped"); mdnsCompleted.complete(mdnsFoundAny) }
+                    override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                        val type = serviceInfo.serviceType.trimEnd('.')
+                        if (type != MDNS_SERVICE_TYPE.trimEnd('.')) return
+                        val name = serviceInfo.serviceName ?: return
+                        Log.d(TAG, "Found mDNS service: $name")
+                        nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                            override fun onServiceResolved(resolved: NsdServiceInfo) {
+                                val host = resolved.host?.hostAddress ?: return
+                                val hostname = resolved.serviceName
+                                val port = resolved.port.takeIf { it > 0 } ?: 80
+                                Log.d(TAG, "Resolved: $hostname @ $host:$port")
+                                ioScope.launch {
+                                    val isReachDevice = validateHttpService(host, port)
+                                    if (isReachDevice) {
+                                        mdnsFoundAny = true
+                                        val (open5000, open9001) = probeBothPorts(host)
+                                        val reachDevice = ReachDevice(
+                                            ip = host,
+                                            hostname = hostname,
+                                            port5000Open = open5000,
+                                            port9001Open = open9001,
+                                            discoveryMethod = "mdns"
+                                        )
+                                        addOnceAndEmit(reachDevice, discovered) { trySend(it) }
+                                    }
+                                }
+                            }
+                            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) { Log.w(TAG, "Resolve failed for ${serviceInfo.serviceName}: $errorCode") }
+                        })
+                    }
+                    override fun onServiceLost(serviceInfo: NsdServiceInfo) { Log.d(TAG, "Service lost: ${serviceInfo.serviceName}") }
+                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Start discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(false) }
+                    override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Stop discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(mdnsFoundAny) }
+                }
+                try {
+                    nsdManager.discoverServices(MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                    withTimeoutOrNull(MDNS_TIMEOUT_MS) { mdnsCompleted.await() }
+                    try { nsdManager.stopServiceDiscovery(discoveryListener) } catch (e: Exception) { Log.w(TAG, "Error stopping mDNS discovery: ${e.message}") }
+                } catch (e: Exception) { Log.w(TAG, "mDNS discovery failed: ${e.message}"); mdnsCompleted.complete(false) }
+            }
+            mdnsJob.join()
+            try { multicastLock?.release() } catch (_: Exception) {}
+
+            // --- Phase 2: HTTP sweep fallback (if no devices found via mDNS) ---
+            if (!mdnsFoundAny) {
+                Log.d(TAG, "Starting Phase 2: HTTP sweep...")
+                ioScope.launch {
+                    val dhcp = wifiManager.dhcpInfo
+                    val localIp = dhcp?.ipAddress?.let { intToInet4StringLE(it) }
+                    val rawMask = dhcp?.netmask?.let { intToInet4StringLE(it) }
+                    val effectiveMask = deriveEffectiveMask(localIp, rawMask)
+
+                    if (localIp == null || localIp == "0.0.0.0") {
+                        Log.w(TAG, "No valid local IP; skipping subnet scan.")
+                        return@launch
+                    }
+
+                    val subnet = computeSubnet(localIp, effectiveMask)
+                    if (subnet == null) {
+                        Log.w(TAG, "Failed to compute subnet from $localIp / $effectiveMask")
+                        return@launch
+                    }
+
+                    val (network, startHost, endHost) = capScanRangeIfTooLarge(subnet)
+                    Log.d(TAG, "HTTP sweep: $network (hosts $startHost..$endHost) mask=$effectiveMask")
+
+                    val sem = Semaphore(SUBNET_CONCURRENCY)
+                    val jobs = mutableListOf<Job>()
+                    for (i in startHost..endHost) {
+                        val ip = intToInet4StringBE(i)
+                        jobs += launch {
+                            sem.acquire()
+                            try {
+                                val isReachDevice = validateHttpService(ip, 80)
                                 if (isReachDevice) {
-                                    mdnsFoundAny = true
-                                    val (open5000, open9001) = probeBothPorts(host)
+                                    val (open5000, open9001) = probeBothPorts(ip)
                                     val reachDevice = ReachDevice(
-                                        ip = host,
-                                        hostname = hostname,
+                                        ip = ip,
+                                        hostname = null,
                                         port5000Open = open5000,
                                         port9001Open = open9001,
-                                        discoveryMethod = "mdns"
+                                        discoveryMethod = "http_sweep"
                                     )
                                     addOnceAndEmit(reachDevice, discovered) { trySend(it) }
                                 }
-                            }
+                            } finally { sem.release() }
                         }
-                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) { Log.w(TAG, "Resolve failed for ${serviceInfo.serviceName}: $errorCode") }
-                    })
-                }
-                override fun onServiceLost(serviceInfo: NsdServiceInfo) { Log.d(TAG, "Service lost: ${serviceInfo.serviceName}") }
-                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Start discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(false) }
-                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) { Log.e(TAG, "Stop discovery failed: $serviceType ($errorCode)"); mdnsCompleted.complete(mdnsFoundAny) }
-            }
-            try {
-                nsdManager.discoverServices(MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-                withTimeoutOrNull(MDNS_TIMEOUT_MS) { mdnsCompleted.await() }
-                try { nsdManager.stopServiceDiscovery(discoveryListener) } catch (e: Exception) { Log.w(TAG, "Error stopping mDNS discovery: ${e.message}") }
-            } catch (e: Exception) { Log.w(TAG, "mDNS discovery failed: ${e.message}"); mdnsCompleted.complete(false) }
-        }
-        mdnsJob.join()
-        try { multicastLock?.release() } catch (_: Exception) {}
-
-        // --- Phase 2: HTTP sweep fallback (if no devices found via mDNS) ---
-        if (!mdnsFoundAny) {
-            Log.d(TAG, "Starting Phase 2: HTTP sweep...")
-            ioScope.launch {
-                val dhcp = wifiManager.dhcpInfo
-                val localIp = dhcp?.ipAddress?.let { intToInet4StringLE(it) }
-                val rawMask = dhcp?.netmask?.let { intToInet4StringLE(it) }
-                val effectiveMask = deriveEffectiveMask(localIp, rawMask)
-
-                if (localIp == null || localIp == "0.0.0.0") {
-                    Log.w(TAG, "No valid local IP; skipping subnet scan.")
-                    return@launch
-                }
-
-                val subnet = computeSubnet(localIp, effectiveMask)
-                if (subnet == null) {
-                    Log.w(TAG, "Failed to compute subnet from $localIp / $effectiveMask")
-                    return@launch
-                }
-
-                val (network, startHost, endHost) = capScanRangeIfTooLarge(subnet)
-                Log.d(TAG, "HTTP sweep: $network (hosts $startHost..$endHost) mask=$effectiveMask")
-
-                val sem = Semaphore(SUBNET_CONCURRENCY)
-                val jobs = mutableListOf<Job>()
-                for (i in startHost..endHost) {
-                    val ip = intToInet4StringBE(i)
-                    jobs += launch {
-                        sem.acquire()
-                        try {
-                            val isReachDevice = validateHttpService(ip, 80)
-                            if (isReachDevice) {
-                                val (open5000, open9001) = probeBothPorts(ip)
-                                val reachDevice = ReachDevice(
-                                    ip = ip,
-                                    hostname = null,
-                                    port5000Open = open5000,
-                                    port9001Open = open9001,
-                                    discoveryMethod = "http_sweep"
-                                )
-                                addOnceAndEmit(reachDevice, discovered) { trySend(it) }
-                            }
-                        } finally { sem.release() }
                     }
-                }
-                jobs.joinAll()
-            }.join()
-        }
+                    jobs.joinAll()
+                }.join()
+            }
 
-        awaitClose { ioScope.cancel() }
+            awaitClose { }
+        } finally {
+            // Also runs when the collector goes away mid-scan (user leaves Settings during mDNS): the
+            // multicast lock and the scan coroutines used to leak until the process died.
+            try { multicastLock?.release() } catch (_: Exception) {}
+            ioScope.cancel()
+        }
     }.flowOn(Dispatchers.IO)
 
     // ---- HTTP validation ----
