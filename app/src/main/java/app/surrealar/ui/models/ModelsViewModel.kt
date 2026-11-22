@@ -10,6 +10,8 @@ import app.surrealar.domain.repository.CoordinateRepository
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.domain.model.Model
 import app.surrealar.ui.models.readiness.ModelReadinessRepository
+import app.surrealar.ui.models.readiness.ReadinessStyle
+import app.surrealar.ui.models.readiness.Verdict
 import kotlinx.coroutines.flow.combine
 import app.surrealar.domain.model.FileType
 import app.surrealar.util.DiagnosticsLogger
@@ -147,6 +149,23 @@ class ModelsViewModel @Inject constructor(
                 _statusMessage.value = "Failed to add model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Evaluates a just-imported model, logs one MODEL_READINESS line for the diagnostic report, and
+     * calls [onNotReady] with the model name when the verdict is NOT_READY.
+     */
+    fun checkReadinessAfterImport(modelId: String, onNotReady: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val facts = readinessRepository.facts(modelId) ?: return@launch
+                val report = withContext(Dispatchers.Default) { readinessRepository.evaluate(facts) }
+                DiagnosticsLogger.i("MODEL", ReadinessStyle.logLine(facts.fileName, report))
+                if (report.verdict == Verdict.NOT_READY) onNotReady(facts.modelName)
+            } catch (e: Exception) {
+                DiagnosticsLogger.w("MODEL", "readiness check failed id=$modelId: ${e.javaClass.simpleName} ${e.message}")
             }
         }
     }

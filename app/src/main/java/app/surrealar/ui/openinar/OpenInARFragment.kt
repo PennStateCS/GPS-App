@@ -72,6 +72,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Inject
     lateinit var settingsRepo: SettingsRepository
 
+    /** Model readiness, logged once per model per AR session so the report says why a model is off. */
+    @Inject lateinit var readinessRepository: app.surrealar.ui.models.readiness.ModelReadinessRepository
+    private val readinessLoggedModelIds = mutableSetOf<String>()
+
     private val viewModel: OpenInARViewModel by viewModels()
 
     // Current GNSS fix from switchboard (surveying-grade GPS)
@@ -2408,6 +2412,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // main thread (Filament requirement), but the per-file existence/size stat is filesystem I/O —
         // batch those off the main thread first, then dispatch the preloads back on main.
         val scope = viewLifecycleOwner.lifecycleScope
+        logModelReadinessOnce(items.mapNotNull { it.modelId }.distinct(), scope)
         scope.launch {
             val stats: Map<String, Pair<Boolean, Long>> = withContext(Dispatchers.IO) {
                 items.mapNotNull { it.modelFilePath }.distinct().associateWith { p ->
@@ -2442,6 +2447,32 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             exists, sizeBytes, ArSessionDiagnostics.ModelStatus.QUEUED)
                         filamentRenderer?.preload(coord.id, path, scope, item.placement)
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Logs one MODEL_READINESS line per linked model, once per AR session. Runs on the repository's IO
+     * dispatcher (never the GL thread); read-only, so AR rendering is unaffected.
+     */
+    private fun logModelReadinessOnce(modelIds: List<String>, scope: kotlinx.coroutines.CoroutineScope) {
+        val pending = modelIds.filter { readinessLoggedModelIds.add(it) }
+        if (pending.isEmpty()) return
+        scope.launch {
+            for (id in pending) {
+                try {
+                    val facts = readinessRepository.facts(id) ?: continue
+                    val report = withContext(Dispatchers.Default) { readinessRepository.evaluate(facts) }
+                    val line = app.surrealar.ui.models.readiness.ReadinessStyle.logLine(facts.fileName, report)
+                    if (report.verdict == app.surrealar.ui.models.readiness.Verdict.READY) {
+                        DiagnosticsLogger.i(DIAG, line)
+                    } else {
+                        DiagnosticsLogger.w(DIAG, line)
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.w(DIAG, "MODEL_READINESS modelId=$id failed: ${e.javaClass.simpleName}")
                 }
             }
         }

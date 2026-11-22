@@ -511,7 +511,16 @@ class ModelsFragment : Fragment() {
                 embeddedLatitude = embedded?.latitude,
                 embeddedLongitude = embedded?.longitude,
                 embeddedAltitudeM = embedded?.altitudeMeters
-            ) { _ ->
+            ) { modelId ->
+                // Log readiness for the report; warn now if the model will likely fail in AR.
+                val appCtx = context?.applicationContext
+                viewModel.checkReadinessAfterImport(modelId) { modelName ->
+                    appCtx?.let {
+                        Toast.makeText(it, "‘$modelName’ may not work in AR — open it to see why",
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+
                 // Open the viewer so the user can rotate the model and tap "Capture Thumbnail"
                 //val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
                 //startActivity(intent)
