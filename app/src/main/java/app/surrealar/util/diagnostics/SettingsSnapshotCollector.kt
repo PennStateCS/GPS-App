@@ -26,6 +26,7 @@ object SettingsRedaction {
         "ar_altitude_mode_v2", "ar_distance_filter_index", "ar_show_debug_overlay", "ar_show_labels",
         "ar_show_offscreen_arrows", "ar_model_scale_v2", "ar_antenna_above_camera_m", "ar_debug_tools_enabled",
         "high_accuracy", "antenna_height_m", "internal_antenna_height_m", "dev_tools_enabled",
+        "pole_height_arp_m", "camera_below_receiver_m", "phase_center_offset_override_m", "pole_height_checked",
         "mock_location_enabled", "ar_visibility_mode", "ar_visibility_customized", "ar_visible_ids",
         "app_theme_mode", "show_live_gnss_status_bar", "keep_screen_awake", "max_brightness_while_open",
         "map_default_type", "map_default_grid_mode", "map_default_label_mode", "map_show_my_location_default",

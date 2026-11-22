@@ -340,8 +340,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Gate profile last used (STANDARD / RTK) — shown in the debug panel and logs. */
     @Volatile private var currentGateProfile: GeoAnchorGate.Profile = GeoAnchorGate.Profile.STANDARD
 
-    /** Settings → AR Display → Antenna Height Above Tablet (m), for the AR↔GNSS vertical comparison. */
+    /** External antenna phase centre above the tablet camera (m), from Settings → Receiver → Antenna setup. */
     @Volatile private var arAntennaAboveCameraM: Double = 0.0
+    private var loggedAntennaSetup = false
 
     /** Throttle for the AR_VS_GNSS export log (GL thread). */
     private var lastArVsGnssLogMs: Long = 0L
@@ -894,6 +895,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        // Receiver page antenna setup: how far the external antenna's phase centre is above the camera.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                kotlinx.coroutines.flow.combine(
+                    settingsRepo.gnssReceiverSettings, settingsRepo.externalReceiverProfile,
+                ) { receiver, profile -> app.surrealar.settings.model.AntennaSetup.resolve(receiver, profile) }
+                    .collect { setup ->
+                        if (setup.antennaAboveCameraM != arAntennaAboveCameraM || !loggedAntennaSetup) {
+                            loggedAntennaSetup = true
+                            DiagnosticsLogger.i(DIAG, "AR_ANTENNA antennaAboveCameraM=${"%.3f".format(setup.antennaAboveCameraM)} " +
+                                "cameraBelowReceiverM=${"%.3f".format(setup.cameraBelowReceiverM)} " +
+                                "phaseCenterOffsetM=${"%.3f".format(setup.phaseCenterOffsetM)} fromProfile=${setup.offsetFromProfile}")
+                        }
+                        arAntennaAboveCameraM = setup.antennaAboveCameraM
+                    }
+            }
+        }
+
         // Apply AR Display settings (altitude mode, model scale, label/arrow visibility).
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -914,14 +933,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         testAnchorController.requestRespawn()
                         _binding?.txtAltitudeMode?.text = AltitudePolicy.label(mode)
                     }
-                    if (!loggedArSettings || ar.modelScale != arModelScale || ar.antennaAboveCameraM.toDouble() != arAntennaAboveCameraM) {
+                    if (!loggedArSettings || ar.modelScale != arModelScale) {
                         loggedArSettings = true
                         // Anything but 1.0 draws every model the wrong size at its coordinates.
                         val msg = "AR_SETTINGS modelScale=${ar.modelScale}${if (ar.modelScale != 1f) " (NOT true scale)" else ""} " +
-                            "antennaAboveCameraM=${ar.antennaAboveCameraM} altitudeMode=${ar.altitudeMode}"
+                            "altitudeMode=${ar.altitudeMode}"
                         if (ar.modelScale != 1f) DiagnosticsLogger.w(DIAG, msg) else DiagnosticsLogger.i(DIAG, msg)
                     }
-                    arAntennaAboveCameraM = ar.antennaAboveCameraM.toDouble()
                     arModelScale = ar.modelScale
                     arShowLabels = ar.showLabels
                     arShowOffscreenArrows = ar.showOffscreenArrows
@@ -2264,7 +2282,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val arVsGnss = if (needArVsGnss && camGeo != null && feedFix != null) ArVsGnss.compute(
             arLat = camGeo.latitude, arLon = camGeo.longitude, arAlt = camGeo.altitude,
             gnssLat = feedFix.latDeg, gnssLon = feedFix.lonDeg, gnssEllipsoidalM = fixEllipsoidalAltM(feedFix),
-            antennaAboveCameraM = arAntennaAboveCameraM,
+            // The antenna offset is the external receiver's; an internal-GNSS fix is the tablet itself.
+            antennaAboveCameraM = if (feedFix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) arAntennaAboveCameraM else 0.0,
             arHAccM = qHAcc, arYawAccDeg = qYaw, farthestModelM = farthestModelM, speedMps = feedFix.speedMps,
         ) else null
         if (arVsGnss != null && arVsGnssLogDue) {

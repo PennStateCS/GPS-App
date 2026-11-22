@@ -77,13 +77,22 @@ val AR_ALTITUDE_MODE               = stringPreferencesKey("ar_altitude_mode_v2")
     // v2: the default changed 2.0 → 1.0 (true scale). A new key so devices that stored the old
 // default ("2.0" — every AR settings save wrote it) start at true scale instead of keeping 2×.
 val AR_MODEL_SCALE                 = stringPreferencesKey("ar_model_scale_v2")
+// RETIRED 2026-11: the AR "antenna above tablet" value moved to the Receiver page as
+// CAMERA_BELOW_RECEIVER_M. Still read once to convert an existing value (see SettingsRepositoryImpl).
 val AR_ANTENNA_ABOVE_CAMERA_M      = stringPreferencesKey("ar_antenna_above_camera_m")
     val AR_DEBUG_TOOLS_ENABLED         = booleanPreferencesKey("ar_debug_tools_enabled")
 
     // GNSS receiver
     val HIGH_ACCURACY = booleanPreferencesKey("high_accuracy")
+    // RETIRED 2026-11: pole height to the antenna phase centre. Read as a fallback for POLE_HEIGHT_ARP_M
+    // (and to flag that the user should re-check it); never written any more.
     val ANTENNA_HEIGHT_M = doublePreferencesKey("antenna_height_m")
     val INTERNAL_ANTENNA_HEIGHT_M = doublePreferencesKey("internal_antenna_height_m")
+    // External antenna setup (2026-11): heights measured to the bottom of the receiver.
+    val POLE_HEIGHT_ARP_M = doublePreferencesKey("pole_height_arp_m")
+    val CAMERA_BELOW_RECEIVER_M = doublePreferencesKey("camera_below_receiver_m")
+    val PHASE_CENTER_OFFSET_OVERRIDE_M = doublePreferencesKey("phase_center_offset_override_m")
+    val POLE_HEIGHT_CHECKED = booleanPreferencesKey("pole_height_checked")
 
     // Developer settings
     val DEV_TOOLS_ENABLED = booleanPreferencesKey("dev_tools_enabled")
@@ -122,6 +131,16 @@ val AR_ANTENNA_ABOVE_CAMERA_M      = stringPreferencesKey("ar_antenna_above_came
 /**
  * Thin DataStore accessor exposing raw primitive flows. Mapping to domain types lives in repository impl.
  */
+/** Stored values behind [app.surrealar.gnss.settings.GnssReceiverSettings]' external-antenna fields; null = not stored. */
+data class ExternalAntennaRaw(
+    val poleHeightM: Double?,
+    val legacyAntennaHeightM: Double?,
+    val cameraBelowReceiverM: Double?,
+    val legacyAntennaAboveCameraM: String?,
+    val phaseCenterOffsetOverrideM: Double?,
+    val poleHeightChecked: Boolean,
+)
+
 class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
 
     /** Production constructor — uses the app-wide DataStore singleton (single instance per file). */
@@ -170,11 +189,20 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val arShowOffscreenArrows:    Flow<Boolean> = dataStore.data.map { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  ?: SettingsDefaults.arDisplay.showOffscreenArrows }
     val arModelScale:             Flow<String>  = dataStore.data.map { it[SettingsKeys.AR_MODEL_SCALE]            ?: SettingsDefaults.arDisplay.modelScale.toString() }
     val arDebugToolsEnabled:      Flow<Boolean> = dataStore.data.map { it[SettingsKeys.AR_DEBUG_TOOLS_ENABLED]   ?: SettingsDefaults.arDisplay.showArDebugTools }
-val arAntennaAboveCameraM:    Flow<String>  = dataStore.data.map { it[SettingsKeys.AR_ANTENNA_ABOVE_CAMERA_M] ?: SettingsDefaults.arDisplay.antennaAboveCameraM.toString() }
 
     // GNSS receiver
     val highAccuracy: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.HIGH_ACCURACY] ?: SettingsDefaults.gnssReceiver.highAccuracy }
-    val antennaHeightM: Flow<Double> = dataStore.data.map { it[SettingsKeys.ANTENNA_HEIGHT_M] ?: SettingsDefaults.gnssReceiver.antennaHeightM }
+    /** Raw stored external-antenna values, from one snapshot (converted in SettingsRepositoryImpl). */
+    val externalAntennaRaw: Flow<ExternalAntennaRaw> = dataStore.data.map {
+        ExternalAntennaRaw(
+            poleHeightM = it[SettingsKeys.POLE_HEIGHT_ARP_M],
+            legacyAntennaHeightM = it[SettingsKeys.ANTENNA_HEIGHT_M],
+            cameraBelowReceiverM = it[SettingsKeys.CAMERA_BELOW_RECEIVER_M],
+            legacyAntennaAboveCameraM = it[SettingsKeys.AR_ANTENNA_ABOVE_CAMERA_M],
+            phaseCenterOffsetOverrideM = it[SettingsKeys.PHASE_CENTER_OFFSET_OVERRIDE_M],
+            poleHeightChecked = it[SettingsKeys.POLE_HEIGHT_CHECKED] ?: false,
+        )
+    }
     val internalAntennaHeightM: Flow<Double> = dataStore.data.map { it[SettingsKeys.INTERNAL_ANTENNA_HEIGHT_M] ?: SettingsDefaults.gnssReceiver.internalAntennaHeightM }
 
     // Developer settings
@@ -246,11 +274,9 @@ val arAntennaAboveCameraM:    Flow<String>  = dataStore.data.map { it[SettingsKe
     suspend fun setArShowOffscreenArrows(v: Boolean)    { dataStore.edit { it[SettingsKeys.AR_SHOW_OFFSCREEN_ARROWS]  = v } }
     suspend fun setArModelScale(v: String)              { dataStore.edit { it[SettingsKeys.AR_MODEL_SCALE]            = v } }
     suspend fun setArDebugToolsEnabled(v: Boolean)      { dataStore.edit { it[SettingsKeys.AR_DEBUG_TOOLS_ENABLED]   = v } }
-suspend fun setArAntennaAboveCameraM(v: String)     { dataStore.edit { it[SettingsKeys.AR_ANTENNA_ABOVE_CAMERA_M] = v } }
 
     // GNSS receiver setter
     suspend fun setHighAccuracy(enabled: Boolean) { dataStore.edit { it[SettingsKeys.HIGH_ACCURACY] = enabled } }
-    suspend fun setAntennaHeightM(meters: Double) { dataStore.edit { it[SettingsKeys.ANTENNA_HEIGHT_M] = meters } }
     suspend fun setInternalAntennaHeightM(meters: Double) { dataStore.edit { it[SettingsKeys.INTERNAL_ANTENNA_HEIGHT_M] = meters } }
 
     // Developer settings setter

@@ -20,6 +20,23 @@ object AntennaHeightInput {
         return v
     }
 
+    /** Range of the tablet-camera-below-receiver distance (negative = camera above the receiver). */
+    const val CAMERA_BELOW_RANGE_M = 3.0
+
+    /** Tablet camera below the bottom of the receiver, metres, −3…3; null when unusable. */
+    fun parseCameraBelowMeters(text: CharSequence?): Double? =
+        parseAny(text)?.takeIf { it in -CAMERA_BELOW_RANGE_M..CAMERA_BELOW_RANGE_M }
+
+    /** Antenna phase-centre offset above the bottom of the receiver, metres, 0…0.5; null when unusable. */
+    fun parsePhaseCenterOffsetMeters(text: CharSequence?): Double? =
+        parseAny(text)?.takeIf { it in 0.0..app.surrealar.settings.model.AntennaSetup.MAX_PHASE_CENTER_OFFSET_M }
+
+    private fun parseAny(text: CharSequence?): Double? {
+        val s = text?.toString()?.trim()?.replace(',', '.')?.replace('\u2212', '-') ?: return null
+        if (s.isEmpty()) return null
+        return s.toDoubleOrNull()?.takeIf { it.isFinite() }
+    }
+
     /** Text shown for a stored value (always shown, including 0, so the field is never blank). */
     fun format(meters: Double): String = String.format(java.util.Locale.US, "%.3f", meters)
 }

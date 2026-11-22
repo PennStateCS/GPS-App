@@ -70,9 +70,47 @@ class SettingsRepositorySingleEditTest {
 
     @Test
     fun receiverSettings_oneEdit_roundTrip() {
-        val s = GnssReceiverSettings(highAccuracy = false, antennaHeightM = 1.8, internalAntennaHeightM = 1.2)
+        val s = GnssReceiverSettings(
+            highAccuracy = false, poleHeightM = 1.8, internalAntennaHeightM = 1.2,
+            cameraBelowReceiverM = -0.25, phaseCenterOffsetOverrideM = 0.1,
+        )
         oneEdit { repo.setGnssReceiverSettings(s) }
         assertEquals(s, runBlocking { repo.gnssReceiverSettings.first() })
+        // Clearing the override removes it (the profile's offset applies again).
+        oneEdit { repo.setGnssReceiverSettings(s.copy(phaseCenterOffsetOverrideM = null)) }
+        assertEquals(null, runBlocking { repo.gnssReceiverSettings.first() }.phaseCenterOffsetOverrideM)
+    }
+
+    @Test
+    fun receiverSettings_legacyValuesAreConvertedOnRead() = runBlocking {
+        // Stored before 2026-11: pole height to the phase centre, AR antenna above the camera.
+        store.updateData {
+            it.toMutablePreferences().apply {
+                this[app.surrealar.data.settings.datastore.SettingsKeys.ANTENNA_HEIGHT_M] = 2.134
+                this[app.surrealar.data.settings.datastore.SettingsKeys.AR_ANTENNA_ABOVE_CAMERA_M] = "0.6"
+            }
+        }
+        val s = repo.gnssReceiverSettings.first()   // default profile: Reach RS2+ (0.134 m offset)
+        assertEquals("old pole height kept as is", 2.134, s.poleHeightM, 1e-9)
+        assertEquals("and flagged for the user to check", true, s.poleHeightNeedsCheck)
+        assertEquals("camera distance keeps the old AR total", 0.6 - 0.134, s.cameraBelowReceiverM, 1e-9)
+        val setup = app.surrealar.settings.model.AntennaSetup.resolve(s, ExternalReceiverProfile.REACH_RS2_PLUS)
+        assertEquals(0.6, setup.antennaAboveCameraM, 1e-9)
+
+        // Confirming (or changing) the pole height ends the notice and writes the new keys.
+        repo.setGnssReceiverSettings(s.copy(poleHeightNeedsCheck = false))
+        val after = repo.gnssReceiverSettings.first()
+        assertEquals(false, after.poleHeightNeedsCheck)
+        assertEquals(2.134, after.poleHeightM, 1e-9)
+        assertEquals(0.6 - 0.134, after.cameraBelowReceiverM, 1e-9)
+    }
+
+    @Test
+    fun receiverSettings_freshInstall_noNoticeAndDefaults() = runBlocking {
+        val s = repo.gnssReceiverSettings.first()
+        assertEquals(SettingsDefaults.gnssReceiver.poleHeightM, s.poleHeightM, 0.0)
+        assertEquals(0.0, s.cameraBelowReceiverM, 0.0)
+        assertEquals(false, s.poleHeightNeedsCheck)
     }
 
     @Test
@@ -91,7 +129,7 @@ class SettingsRepositorySingleEditTest {
     fun arDisplay_oneEdit_roundTrip() {
         val s = ArDisplaySettings(
             altitudeMode = "TERRAIN", distanceFilterIndex = 2, showDebugOverlay = true, showLabels = false,
-            showOffscreenArrows = false, modelScale = 2.5f, showArDebugTools = true, antennaAboveCameraM = 1.25,
+            showOffscreenArrows = false, modelScale = 2.5f, showArDebugTools = true,
         )
         oneEdit { repo.setArDisplaySettings(s) }
         assertEquals(s, runBlocking { repo.arDisplaySettings.first() })

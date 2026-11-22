@@ -33,6 +33,12 @@ enum class ExternalReceiverProfile(
     val vendor: ReceiverVendor,
     /** Accuracy class used for the DOP × UERE fallback when the receiver reports no accuracy. */
     val accuracyClass: AccuracyClass,
+    /**
+     * Height (metres) of the antenna phase centre (L1) above the antenna reference point on the
+     * bottom of the receiver: what the receiver's reported height refers to, relative to the point
+     * users measure to. Null when unknown (the user enters it on the Receiver page).
+     */
+    val phaseCenterOffsetM: Double?,
     /** What the receiver reports beyond NMEA (drives which status UI is shown). */
     val capabilities: ReceiverCapabilities,
     /**
@@ -51,6 +57,7 @@ enum class ExternalReceiverProfile(
         vendor = ReceiverVendor.GENERIC,
         // Could be anything: assume single-frequency rather than survey grade.
         accuracyClass = AccuracyClass.SINGLE_FREQUENCY,
+        phaseCenterOffsetM = null,
         capabilities = ReceiverCapabilities.NONE,
         extraParsers = { emptyMap() },
     ),
@@ -62,6 +69,7 @@ enum class ExternalReceiverProfile(
         hint = null,
         vendor = ReceiverVendor.EMLID,
         accuracyClass = AccuracyClass.SURVEY_MULTIBAND,
+        phaseCenterOffsetM = 0.134,   // Emlid RS2/RS2+ manual: ARP → APC 134 mm
         capabilities = ReceiverCapabilities.ALL,
         extraParsers = ::emlidParsers,
     ),
@@ -73,6 +81,7 @@ enum class ExternalReceiverProfile(
         hint = "Configure Emlid Flow → Position Streaming 1 as a TCP server with NMEA format.",
         vendor = ReceiverVendor.EMLID,
         accuracyClass = AccuracyClass.SURVEY_MULTIBAND,
+        phaseCenterOffsetM = 0.095,   // Emlid RS4 specs: L1 phase-centre offset 95 mm
         capabilities = ReceiverCapabilities.ALL,
         extraParsers = ::emlidParsers,
     ),
@@ -84,6 +93,7 @@ enum class ExternalReceiverProfile(
         hint = "Configure Emlid Flow → Position Streaming 1 as a TCP server with NMEA format.",
         vendor = ReceiverVendor.EMLID,
         accuracyClass = AccuracyClass.SURVEY_MULTIBAND,
+        phaseCenterOffsetM = null,    // not confirmed separately from the RS4; user enters it
         capabilities = ReceiverCapabilities.ALL,
         extraParsers = ::emlidParsers,
     );
