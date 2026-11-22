@@ -52,6 +52,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
@@ -88,7 +89,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // View binding - safer than findViewById, automatically set to null when view is destroyed
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding ?: throw IllegalStateException("Fragment binding is null - view may have been destroyed")
-    private lateinit var mapView: MapView
+    // Nullable and cleared in onDestroyView: Home stays on the back stack while other screens are open,
+    // and a lateinit would keep the destroyed MapView (and its view tree) alive and callable.
+    private var mapView: MapView? = null
     private var googleMap: GoogleMap? = null
 
     // Custom LocationSource to feed app Fixes into the map's My Location dot
@@ -102,7 +105,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     private var lastMapIgnoreLogMs = 0L   // throttle for ignored-fix diagnostics
 
     // Fix Badge component
-    private lateinit var fixBadge: FixBadgeView
+    private var fixBadge: FixBadgeView? = null
 
     // Repositories — injected via Hilt (domain interfaces), no longer constructed from AppDatabase.
     @Inject lateinit var coordinateRepository: CoordinateRepository
@@ -139,8 +142,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         // Initialize map
         mapView = binding.mapViewMini
         try {
-            mapView.onCreate(savedInstanceState)
-            mapView.getMapAsync(this)
+            mapView?.onCreate(savedInstanceState)
+            mapView?.getMapAsync(this)
         } catch (e: Exception) {
             android.util.Log.e("HomeFragment", "MapView init failed", e)
         }
@@ -296,7 +299,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     viewModel.fixSnapshot.collect { fixSnapshot ->
-                        fixBadge.updateFixData(fixSnapshot)
+                        fixBadge?.updateFixData(fixSnapshot)
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -310,7 +313,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     viewModel.nmeaStats.collect { nmeaStats ->
-                        fixBadge.updateStreamHealth(nmeaStats)
+                        fixBadge?.updateStreamHealth(nmeaStats)
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -350,7 +353,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         viewModel.sky
                     ) { snapshot, source, receiver, diag, sky ->
                         buildFieldStatus(snapshot, source, receiver, diag, sky)
-                    }.collectLatest { status ->
+                    }.distinctUntilChanged()   // diagnostics tick every second; rebuild the chips only on a real change
+                        .collectLatest { status ->
                         val b = _binding ?: return@collectLatest
                         renderFieldStatus(b, status)
                     }
@@ -660,8 +664,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                             choice.points.forEach { (lat, lon) -> include(LatLng(lat, lon)) }
                         }.build()
                         // newLatLngBounds(bounds, w, h, padding) works before the map is laid out.
-                        val w = mapView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-                        val h = mapView.height.takeIf { it > 0 } ?: (220 * resources.displayMetrics.density).toInt()
+                        val w = mapView?.width?.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+                        val h = mapView?.height?.takeIf { it > 0 } ?: (220 * resources.displayMetrics.density).toInt()
                         map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, w, h, (32 * resources.displayMetrics.density).toInt()))
                     }
                 }
@@ -858,32 +862,32 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     // Map lifecycle methods
     override fun onStart() {
         super.onStart()
-        if (::mapView.isInitialized) mapView.onStart()
+        mapView?.onStart()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::mapView.isInitialized) mapView.onResume()
+        mapView?.onResume()
     }
 
     override fun onPause() {
         super.onPause()
-        if (::mapView.isInitialized) mapView.onPause()
+        mapView?.onPause()
     }
 
     override fun onStop() {
         super.onStop()
-        if (::mapView.isInitialized) mapView.onStop()
+        mapView?.onStop()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        if (::mapView.isInitialized) mapView.onSaveInstanceState(outState)
+        mapView?.onSaveInstanceState(outState)
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        if (::mapView.isInitialized) mapView.onLowMemory()
+        mapView?.onLowMemory()
     }
 
     override fun onDestroyView() {
@@ -891,7 +895,9 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         googleMap = null
         onLocationChangedListener = null
         mapLocationSource = null
-        if (::mapView.isInitialized) mapView.onDestroy()
+        mapView?.onDestroy()
+        mapView = null
+        fixBadge = null
         super.onDestroyView()
         _binding = null
     }
