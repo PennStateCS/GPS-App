@@ -25,6 +25,8 @@ interface ReportSources {
     fun exitTraceFiles(): List<File>
     fun deviceHealth(): DeviceHealth
     fun capturesLog(): File?
+    /** ar-track.csv files (debug builds; ARCore pose vs GNSS fix, metres from a session origin). */
+    fun arTrackFiles(): List<File> = emptyList()
     suspend fun gnssStats(): GnssStatsInput
     fun dataHealth(): DataHealth
 
