@@ -629,11 +629,15 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             showDeveloperMessage("API key copied")
         }
 
-        // Runtime MapView test
+        // Runtime MapView test. Only one live test map at a time: a refresh or another visit used to add a
+        // new MapView each time (tens of MB of native/GL memory) that lived until the page was left.
+        releaseDebugMap()
         val miniMapView = MapView(ctx)
         mapViewTestContainer.addView(miniMapView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         miniMapView.onCreate(null)
         val handler = Handler(Looper.getMainLooper())
+        debugMap = miniMapView
+        debugMapHandler = handler
         var completed = false
 
         fun updateRuntimeStatus(text: String, status: MapsStatus) {
@@ -664,19 +668,40 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             updateRuntimeStatus("ERROR: ${e.message}", MapsStatus.ERROR)
         }
 
-        viewLifecycleOwner.lifecycle.addObserver(object: androidx.lifecycle.DefaultLifecycleObserver {
+        val lifecycle = viewLifecycleOwner.lifecycle
+        val observer = object: androidx.lifecycle.DefaultLifecycleObserver {
             override fun onStart(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onStart() }
             override fun onResume(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onResume() }
             override fun onPause(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onPause() }
             override fun onStop(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onStop() }
-            override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) { miniMapView.onDestroy() }
-        })
+            override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) { releaseDebugMap() }
+        }
+        lifecycle.addObserver(observer)
+        debugMapObserver = lifecycle to observer
+        // Switching to another category cancels this category's scope: tear the map down with it.
+        categoryScope.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion {
+            if (debugMap === miniMapView) Handler(Looper.getMainLooper()).post { if (debugMap === miniMapView) releaseDebugMap() }
+        }
 
         return view
     }
 
 
     // ─────────────────────────── GNSS Live pane ──────────────────────────────
+
+    private var debugMap: MapView? = null
+    private var debugMapHandler: Handler? = null
+    private var debugMapObserver: Pair<androidx.lifecycle.Lifecycle, androidx.lifecycle.DefaultLifecycleObserver>? = null
+
+    /** Stops and destroys the Maps-debug test MapView (if any) and drops its observer and timers. */
+    private fun releaseDebugMap() {
+        val map = debugMap ?: return
+        debugMap = null
+        debugMapHandler?.removeCallbacksAndMessages(null); debugMapHandler = null
+        debugMapObserver?.let { (lc, obs) -> lc.removeObserver(obs) }; debugMapObserver = null
+        runCatching { map.onPause(); map.onStop(); map.onDestroy() }
+        (map.parent as? ViewGroup)?.removeView(map)
+    }
 
     /** Live GNSS viewer with source-specific sections for Internal vs RS2+ providers. */
     private fun setupGnssLiveContent(): View {
