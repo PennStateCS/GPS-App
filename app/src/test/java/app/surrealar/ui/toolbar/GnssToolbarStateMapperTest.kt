@@ -27,6 +27,7 @@ class GnssToolbarStateMapperTest {
         lat: Double = 40.7963,
         lon: Double = -77.8570,
         hAccM: Double? = 0.02,
+        vAccM: Double? = null,
         satsUsed: Int? = 10,
         satsVisible: Int? = 14,
         ageMs: Long = 0L,
@@ -41,7 +42,7 @@ class GnssToolbarStateMapperTest {
         altMslM = altMslM,
         geoidSeparationM = null,
         hDop = null, vDop = null, pDop = null,
-        hAccM = hAccM, vAccM = null,
+        hAccM = hAccM, vAccM = vAccM,
         stdDevEastM = null, stdDevNorthM = null, stdDevUpM = null,
         rtkStatus = rtk,
         satsUsed = satsUsed,
@@ -125,6 +126,21 @@ class GnssToolbarStateMapperTest {
         assertEquals("±0.18 m", s.accuracyText)
         assertEquals("20/28", s.satelliteText)
         assertTrue(s.isExternal)
+    }
+
+    @Test fun `external receiver with vertical accuracy shows H and V`() {
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL,
+            fix(Provider.EXTERNAL_TCP, RtkStatus.FIX, hAccM = 0.015, vAccM = 0.031), SkySnapshot()))
+        assertEquals("±0.02 V ±0.03 m", s.accuracyText)
+        assertEquals("H only when the strip is narrow", "±0.02 m", s.accuracyCompactText)
+        assertEquals("Accuracy plus or minus 1.5 centimetres, vertical plus or minus 3.1 centimetres", s.accuracyDescription)
+    }
+
+    @Test fun `internal GNSS never shows vertical accuracy`() {
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.INTERNAL,
+            fix(Provider.INTERNAL, RtkStatus.SINGLE, hAccM = 3.2, vAccM = 5.0), SkySnapshot()))
+        assertEquals("±3.20 m", s.accuracyText)
+        assertNull(s.accuracyCompactText)
     }
 
     // 5 — External active, valid Fixed fix

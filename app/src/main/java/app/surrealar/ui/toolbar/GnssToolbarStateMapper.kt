@@ -213,10 +213,14 @@ object GnssToolbarStateMapper {
         }
     }
 
-    /** "Accuracy plus or minus 1.5 centimetres, estimated" (centimetres under 1 m, else metres). */
-    internal fun accuracyDescription(hAccM: Double, estimated: Boolean): String {
-        val amount = if (hAccM < 1.0) "${trim1(hAccM * 100.0)} centimetres" else String.format(Locale.US, "%.2f metres", hAccM)
-        return "Accuracy plus or minus $amount" + if (estimated) ", estimated" else ""
+    /**
+     * "Accuracy plus or minus 1.5 centimetres, estimated" (centimetres under 1 m, else metres), with
+     * ", vertical plus or minus 3 centimetres" when [vAccM] is given.
+     */
+    internal fun accuracyDescription(hAccM: Double, estimated: Boolean, vAccM: Double? = null): String {
+        fun amount(m: Double) = if (m < 1.0) "${trim1(m * 100.0)} centimetres" else String.format(Locale.US, "%.2f metres", m)
+        return "Accuracy plus or minus ${amount(hAccM)}" + (if (estimated) ", estimated" else "") +
+            (vAccM?.let { ", vertical plus or minus ${amount(it)}" } ?: "")
     }
 
     internal fun ageDescription(ageS: Double): String = "Correction age ${trim1(ageS)} seconds"
@@ -293,13 +297,19 @@ object GnssToolbarStateMapper {
         val reportedH = fix.hAccM
         val hAcc = reportedH ?: AccuracyEstimator.estimate1SigmaMeters(fix, uereTable).horizontalMeters
         val estimated = reportedH == null
+        // Vertical (1σ) alongside it for an external receiver that reports it, like the Home card;
+        // never estimated, and never for internal GNSS (Android's vertical accuracy is unreliable).
+        val vAcc = fix.vAccM?.takeIf { !isInternal && !estimated && it in 0.0..9999.0 }
         val accuracyText: String?
+        val accuracyCompactText: String?
         val accuracyLevel: GnssStatusLevel
         if (hAcc != null && hAcc in 0.0..9999.0) {
-            accuracyText = (if (estimated) "~" else "") + GnssStatusFormatter.formatAccuracyMeters(hAcc)
+            accuracyCompactText = (if (estimated) "~" else "") + GnssStatusFormatter.formatAccuracyMeters(hAcc)
+            accuracyText = if (vAcc != null) GnssStatusFormatter.formatHorizontalVerticalAccuracy(hAcc, vAcc) else accuracyCompactText
             accuracyLevel = accuracyLevel(hAcc, isInternal = selectedSource == LocationSourceType.INTERNAL)
         } else {
             accuracyText = null
+            accuracyCompactText = null
             accuracyLevel = GnssStatusLevel.NONE
         }
 
@@ -352,6 +362,7 @@ object GnssToolbarStateMapper {
                 satelliteText = satelliteText,
                 accuracyText = accuracyText,
                 accuracyLevel = accuracyLevel,
+                accuracyCompactText = accuracyCompactText.takeIf { it != accuracyText },
                 latLonText = latLonText,
                 altitudeText = altitudeText,
                 correctionAgeText = correctionAgeText,
@@ -366,7 +377,7 @@ object GnssToolbarStateMapper {
                 sourceDescription = sourceDescription(isInternal, externalLabel, isReplay),
                 fixDescription = fixDescription(fix.rtkStatus, isInternal),
                 satsDescription = if (satelliteText != null) satsDescription(used, vis) else null,
-                accuracyDescription = if (accuracyText != null && hAcc != null) accuracyDescription(hAcc, estimated) else null,
+                accuracyDescription = if (accuracyText != null && hAcc != null) accuracyDescription(hAcc, estimated, vAcc) else null,
                 ageDescription = correctionAgeText?.let { ageDescription(fix.diffAgeS!!) },
                 coordDescription = (if (coordLabel == "NE") "Grid position " else "Position ") + latLonText.replace(" · ", ", "),
                 altitudeDescription = if (altitudeText == "--") "Height not available" else "Height $altitudeLabel $altitudeText",

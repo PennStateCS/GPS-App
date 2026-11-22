@@ -158,6 +158,7 @@ class GnssToolbarRenderer(
         val accVisible = state.accuracyText != null
         if (accVisible) {
             acc.value.text = state.accuracyText
+            setAccuracyWidth(withVertical = state.accuracyText?.contains(" V ") == true)
             acc.value.setTextColor(colorFor(state.accuracyLevel))
             acc.root.isVisible = true
         } else {
@@ -285,6 +286,12 @@ class GnssToolbarRenderer(
 
     // ── Stable widths ──────────────────────────────────────────────────────────
 
+    /** ACC's fixed width for its current form (H only, or H and V), so values never make it jump. */
+    private fun setAccuracyWidth(withVertical: Boolean) {
+        val template = if (withVertical) "±99.99 V ±99.99 m" else "~±99.99 m"
+        acc.value.minWidth = kotlin.math.ceil(acc.value.paint.measureText(template)).toInt()
+    }
+
     private fun minWidthFor(view: TextView, template: String) {
         view.minWidth = maxOf(view.minWidth, kotlin.math.ceil(view.paint.measureText(template)).toInt())
     }
@@ -307,8 +314,9 @@ class GnssToolbarRenderer(
     // ── One line, priority drop ───────────────────────────────────────────────
 
     /**
-     * Never wrap onto a second line: when the visible tokens don't fit the strip, hide the lowest
-     * priority first — height, coordinates, battery, SATS, AGE, then ACC. SOL and the source are kept.
+     * Never wrap onto a second line: when the visible tokens don't fit the strip, first shorten the
+     * accuracy to H only (drop V), then hide the lowest priority — height, coordinates, battery, SATS,
+     * AGE, then ACC. SOL and the source are kept.
      */
     private fun fitToWidth() {
         val s = strip ?: return
@@ -320,6 +328,13 @@ class GnssToolbarRenderer(
         fun width(t: ToolbarTokens): Int =
             if (!t.root.isVisible) 0 else { t.root.measure(unspecified, unspecified); t.root.measuredWidth }
         var total = (keep + droppable).sumOf { width(it) }
+        val compact = lastState?.accuracyCompactText
+        if (total > available && compact != null && acc.root.isVisible) {
+            total -= width(acc)
+            acc.value.text = compact
+            setAccuracyWidth(withVertical = false)
+            total += width(acc)
+        }
         for (t in droppable.asReversed()) {
             if (total <= available) break
             if (!t.root.isVisible) continue

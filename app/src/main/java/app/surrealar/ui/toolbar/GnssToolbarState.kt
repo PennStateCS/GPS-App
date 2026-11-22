@@ -16,7 +16,7 @@ data class GnssToolbarState(
     val fixText: String,               // "GPS" / "Fixed" / "No Fix" / "Waiting" / "--"
     val fixLevel: GnssStatusLevel,     // color of the fix/SOL token
     val satelliteText: String?,        // "used/visible", or null to hide the sats token
-    val accuracyText: String?,         // "±x.xx m", or null to hide the accuracy token
+    val accuracyText: String?,         // "±x.xx m", "±x.xx V ±y.yy m" (external, V reported), or null to hide
     val accuracyLevel: GnssStatusLevel,
     val latLonText: String,            // "lat, lon" or "--"
     val altitudeText: String,          // "x.xx m" or "--" (always shown)
@@ -29,6 +29,7 @@ data class GnssToolbarState(
     val altitudeLabel: String = "ALT", // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
     val coordToggleAvailable: Boolean = false, // a grid system is configured: tapping LL/NE switches the display
     val isReplay: Boolean = false,      // an NMEA log is replaying: source shows "REPLAY" with the replay icon
+    val accuracyCompactText: String? = null, // H only; used instead of [accuracyText] when the strip is too narrow
     // Spoken descriptions (TalkBack), one per token, built by the mapper. Null = token hidden.
     val sourceDescription: String = "",
     val fixDescription: String = "",

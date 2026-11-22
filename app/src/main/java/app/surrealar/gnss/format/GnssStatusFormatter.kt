@@ -66,6 +66,10 @@ object GnssStatusFormatter {
     fun formatAccuracyMeters(hAccM: Double): String =
         "±${String.format(Locale.US, "%.2f", hAccM)} m"
 
+    /** Horizontal and vertical accuracy with one unit, e.g. "±0.02 V ±0.04 m" (follows an "H" label). */
+    fun formatHorizontalVerticalAccuracy(hAccM: Double, vAccM: Double): String =
+        "±${String.format(Locale.US, "%.2f", hAccM)} V ±${String.format(Locale.US, "%.2f", vAccM)} m"
+
     /** Satellites used/visible, e.g. "12/20". */
     fun formatSatellites(used: Int, visible: Int): String = "$used/$visible"
 
