@@ -62,19 +62,29 @@ internal class ReachCorrectionsService(
     // Connect-error throttling: socket.io retries every 2-15 s for as long as the receiver is unreachable,
     // so only the first error is logged, then one "still failing" line per [ERROR_LOG_INTERVAL_MS].
     private var connectErrors = 0
+    // Stall recovery: any socket traffic (broadcasts every few seconds, connect, connect_error) counts as
+    // activity. A long-poll can hang with no error at all; after [STALL_RESTART_MS] of silence the socket
+    // is replaced (seen on an RS2+: broadcasts stopped and never resumed until the app restarted).
+    @Volatile private var lastActivityAtMs = 0L
+    private var lastRestartAtMs = Long.MIN_VALUE / 2
     private var firstErrorAtMs = 0L
     private var lastErrorLogAtMs = 0L
 
     // ── Public API ────────────────────────────────────────────────────────────
 
     fun connect() {
-        if (socket?.connected() == true) {
+        if (synchronized(lock) { socket }?.connected() == true) {
             GnssLog.d(TAG, "Already connected to $host — ignoring duplicate connect()")
             return
         }
+        // Never leave an old socket reconnecting in the background (it would retry forever).
+        closeSocket()
         GnssLog.diagnostic("CORRECTIONS", "connect attempt host=$host")
         try {
             val options = IO.Options().apply {
+                // Own Manager per socket: socket.io 1.x caches Managers by URL otherwise, and a closed
+                // socket's Manager would stay in that cache for the life of the process.
+                forceNew = true
                 transports = arrayOf("polling")   // RS2+ supports polling; skip websocket upgrade
                 reconnection = true
                 // Never give up: a reboot or a minute out of range must not end corrections status
@@ -87,6 +97,7 @@ internal class ReachCorrectionsService(
             val s = socketFactory(uri, options)
 
             s.on(Socket.EVENT_CONNECT) {
+                lastActivityAtMs = nowMs()
                 val failed = synchronized(lock) { connectErrors.also { connectErrors = 0 } }
                 GnssLog.d(TAG, "socket.io connected to $host")
                 GnssLog.diagnostic("CORRECTIONS", "socket connected host=$host" +
@@ -106,8 +117,8 @@ internal class ReachCorrectionsService(
             }
             s.on("broadcast") { args -> onBroadcast(args) }
 
+            synchronized(lock) { socket = s; lastActivityAtMs = nowMs() }
             s.connect()
-            socket = s
             GnssLog.d(TAG, "socket.io connecting to http://$host")
         } catch (e: Exception) {
             GnssLog.e(TAG, "Failed to create socket.io connection to $host: ${e.message}", e)
@@ -119,6 +130,7 @@ internal class ReachCorrectionsService(
     /** First error logged at once; while it keeps failing, one summary line per minute. */
     private fun onConnectError(msg: String) {
         val now = nowMs()
+        lastActivityAtMs = now
         val line: String? = synchronized(lock) {
             connectErrors++
             when {
@@ -139,15 +151,19 @@ internal class ReachCorrectionsService(
         }
     }
 
+    /** Detaches every listener and closes the current socket (its Manager closes with it). */
+    private fun closeSocket(): Boolean {
+        val old = synchronized(lock) { socket.also { socket = null } } ?: return false
+        runCatching { old.offAll(); old.disconnect() }
+        return true
+    }
+
     fun disconnect() {
         synchronized(lock) { connectErrors = 0 }
-        socket?.let { s ->
-            s.off("broadcast")
-            s.disconnect()
+        if (closeSocket()) {
             GnssLog.d(TAG, "socket.io disconnected from $host")
             GnssLog.diagnostic("CORRECTIONS", "disconnect requested host=$host")
         }
-        socket = null
         synchronized(lock) {
             cachedNav = null
             cachedChannel = null
@@ -163,14 +179,30 @@ internal class ReachCorrectionsService(
      * receiver that stopped broadcasting). The next broadcast restores it. Call about once a second.
      */
     fun expireIfStale() {
-        synchronized(lock) {
-            if (_correctionsInfo.value == null) return
-            val last = lastBroadcastAtMs ?: return clearStatusLocked()
-            if (nowMs() - last > STALE_AFTER_MS) {
-                GnssLog.diagnostic("CORRECTIONS", "no broadcast for ${STALE_AFTER_MS / 1000}s host=$host — status cleared")
-                clearStatusLocked()
-            }
+        synchronized(lock) { expireStatusLocked() }
+        restartIfStalled()
+    }
+
+    private fun expireStatusLocked() {
+        if (_correctionsInfo.value == null) return
+        val last = lastBroadcastAtMs ?: return clearStatusLocked()
+        if (nowMs() - last > STALE_AFTER_MS) {
+            GnssLog.diagnostic("CORRECTIONS", "no broadcast for ${STALE_AFTER_MS / 1000}s host=$host — status cleared")
+            clearStatusLocked()
         }
+    }
+
+    /** Replaces a socket that has been completely silent for [STALL_RESTART_MS] (at most once per interval). */
+    private fun restartIfStalled() {
+        val now = nowMs()
+        val stalled = synchronized(lock) {
+            (socket != null && now - lastActivityAtMs > STALL_RESTART_MS && now - lastRestartAtMs > STALL_RESTART_MS)
+                .also { if (it) lastRestartAtMs = now }
+        }
+        if (!stalled) return
+        GnssLog.diagnosticWarn("CORRECTIONS", "socket silent for ${(now - lastActivityAtMs) / 1000}s host=$host — reconnecting")
+        disconnect()
+        connect()
     }
 
     private fun clearStatus() = synchronized(lock) { clearStatusLocked() }
@@ -192,6 +224,7 @@ internal class ReachCorrectionsService(
             GnssLog.d(TAG) { "broadcast: non-JSON args — ${args.firstOrNull()?.javaClass?.simpleName}" }
             return
         }
+        lastActivityAtMs = nowMs()
         val name = payload.optString("name", "")
         val data = payload.optJSONObject("payload") ?: run {
             // Broadcasts we don't consume (e.g. time_marks) may omit a payload object — expected.
@@ -331,6 +364,8 @@ internal class ReachCorrectionsService(
         const val STALE_AFTER_MS: Long = 10_000L
         /** While connecting keeps failing, at most one log line per this interval. */
         const val ERROR_LOG_INTERVAL_MS: Long = 60_000L
+        /** No socket traffic at all for this long → replace the socket. */
+        const val STALL_RESTART_MS: Long = 30_000L
     }
 }
 
@@ -338,6 +373,8 @@ internal class ReachCorrectionsService(
 internal interface CorrectionsSocket {
     fun on(event: String, listener: (Array<out Any?>) -> Unit)
     fun off(event: String)
+    /** Removes every listener (default: the one event this service listens to besides lifecycle ones). */
+    fun offAll() { off("broadcast") }
     fun connect()
     fun disconnect()
     fun connected(): Boolean
@@ -349,6 +386,7 @@ internal class SocketIoCorrectionsSocket private constructor(private val socket:
         socket.on(event, Emitter.Listener { args -> listener(args) })
     }
     override fun off(event: String) { socket.off(event) }
+    override fun offAll() { socket.off() }
     override fun connect() { socket.connect() }
     override fun disconnect() { socket.disconnect() }
     override fun connected(): Boolean = socket.connected()
