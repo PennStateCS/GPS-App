@@ -66,7 +66,11 @@ object DiagnosticReportExporter {
             val permWarnings = runCatching { computePermissionWarnings(context) }.getOrDefault(emptyList())
 
             val sources = ContextSources(context, reportId, System.currentTimeMillis(), data, warnings + permWarnings)
-            app.surrealar.util.diagnostics.report.ReportAssembler.write(zipFile, sources)
+            // Flush both logs first, so a capture saved just before the export is in captures.txt too.
+            app.surrealar.util.diagnostics.report.ReportAssembler.write(zipFile, sources, flush = {
+                DiagnosticsLogger.flush()
+                app.surrealar.util.diagnostics.CaptureLog.flush()
+            })
 
             Report(zipFile, reportId)
         } catch (e: Exception) {
