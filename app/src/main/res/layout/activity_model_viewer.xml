@@ -135,6 +135,18 @@
                 android:textAppearance="@style/TextAppearance.App.BodyPrimary"
                 android:textStyle="bold"
                 tools:text="Model Filename" />
+
+            <!-- Shown while "Show AR Placement" is on: which point / preset the overlay uses -->
+            <TextView
+                android:id="@+id/text_ar_placement"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:textAppearance="@style/TextAppearance.App.BodyPrimary"
+                android:textColor="?attr/colorPrimary"
+                android:visibility="gone"
+                tools:text="AR placement: Point 5 · Center" />
         </LinearLayout>
 
 

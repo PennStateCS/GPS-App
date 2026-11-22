@@ -22,6 +22,7 @@ enum class ModelViewerControl(@StringRes val defaultLabel: Int, @DrawableRes val
     OFFSET(R.string.offset_off, R.drawable.ic_viewer_origin),
     BOUNDING_BOX(R.string.bbox_off, R.drawable.ic_viewer_bounding_box),
     GRID(R.string.grid_off, R.drawable.ic_viewer_grid),
+    AR_PLACEMENT(R.string.ar_placement_off, R.drawable.ic_viewer_ar_placement),
     OVERLAY_ON_TOP(R.string.overlay_top_on, R.drawable.ic_viewer_layers),
 }
 

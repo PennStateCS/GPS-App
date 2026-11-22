@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pin over a ground line: where AR places the model at its surveyed point. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,1C8.69,1 6,3.69 6,7c0,4.5 6,11 6,11s6,-6.5 6,-11c0,-3.31 -2.69,-6 -6,-6zM12,9.25c-1.24,0 -2.25,-1.01 -2.25,-2.25S10.76,4.75 12,4.75s2.25,1.01 2.25,2.25S13.24,9.25 12,9.25zM3,20h18v2H3z" />
+</vector>

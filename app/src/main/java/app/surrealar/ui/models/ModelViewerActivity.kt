@@ -23,7 +23,11 @@ import androidx.lifecycle.lifecycleScope
 import app.surrealar.databinding.ActivityModelViewerBinding
 import app.surrealar.R
 import app.surrealar.domain.repository.ModelRepository
+import app.surrealar.domain.model.Model
+import app.surrealar.ui.models.readiness.ArPlacementPreview
 import app.surrealar.ui.models.readiness.Bounds
+import app.surrealar.ui.models.readiness.LinkFacts
+import app.surrealar.ui.openinar.ModelBounds
 import app.surrealar.ui.models.readiness.FixAction
 import app.surrealar.ui.models.readiness.ModelFacts
 import app.surrealar.ui.models.readiness.ModelReadinessRepository
@@ -131,6 +135,12 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
     private var gridVertexBuffer: VertexBuffer? = null
     private var gridIndexBuffer: IndexBuffer? = null
     private var gridVisible = false
+
+    // "Show AR placement": surveyed-point marker + ground plane where AR will anchor the model
+    private var arPlacementEntity: Int = 0
+    private var arPlacementVertexBuffer: VertexBuffer? = null
+    private var arPlacementIndexBuffer: IndexBuffer? = null
+    private var arPlacementVisible = false
 
     private var overlayAlwaysOnTop = true
 
@@ -281,6 +291,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 ModelViewerControl.OFFSET -> clickedToggleOffsetMarker()
                 ModelViewerControl.BOUNDING_BOX -> clickedToggleBoundingBox()
                 ModelViewerControl.GRID -> clickedToggleGridPlane()
+                ModelViewerControl.AR_PLACEMENT -> clickedToggleArPlacement()
                 ModelViewerControl.OVERLAY_ON_TOP -> clickedToggleOverlayOnTop()
             }
         }
@@ -920,6 +931,97 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         gridEntity = entity
     }
 
+    // Appends a flat quad (a, b, c, d in order) with a solid color; 4 verts, 6 indices.
+    private fun appendQuad(
+        vertexList: MutableList<Float>,
+        indexList: MutableList<Short>,
+        baseIndex: Short,
+        a: Vec3, b: Vec3, c: Vec3, d: Vec3,
+        r: Float, g: Float, bl: Float
+    ): Short {
+        for (v in arrayOf(a, b, c, d)) {
+            vertexList.add(v.x); vertexList.add(v.y); vertexList.add(v.z)
+            vertexList.add(r); vertexList.add(g); vertexList.add(bl)
+        }
+        for (i in shortArrayOf(0, 1, 2, 0, 2, 3)) indexList.add((baseIndex + i).toShort())
+        return (baseIndex + 4).toShort()
+    }
+
+    /**
+     * Rebuilds the "AR placement" overlay: where AR will put this model relative to the surveyed point
+     * of [link] (or the default CENTER preset when no point links it). Uses the same placement math as
+     * the AR renderer (ModelBounds.resolveOffsets + correction matrix, see ArPlacementPreview), mapped
+     * back into the model's own frame:
+     *  - a magenta marker at the surveyed point (the AR anchor), and
+     *  - a blue checkerboard ground plane through it (half the cells open so the model shows through,
+     *    since the overlay material is unlit/opaque).
+     */
+    private fun rebuildArPlacement(link: LinkFacts?, model: Model?) {
+        val viewer = newModelViewer ?: return
+        val material = gizmoMaterialInstance ?: return
+        val box = viewer.asset?.boundingBox ?: return
+        val engine = viewer.engine
+
+        destroyArPlacement(viewer)
+
+        val c = box.center
+        val h = box.halfExtent
+        val bounds = ModelBounds.fromCenterHalfExtent(c[0], c[1], c[2], abs(h[0]), abs(h[1]), abs(h[2]))
+        val placement = ArPlacementPreview.placementFor(link, model)
+        val preview = ArPlacementPreview(bounds, placement)
+
+        val vertexList = mutableListOf<Float>()
+        val indexList = mutableListOf<Short>()
+        var baseIndex: Short = 0
+
+        // Ground plane: world y = 0 around the surveyed point, drawn as a checkerboard.
+        val half = preview.groundHalfSizeWorldM()
+        val divisions = 12
+        val step = 2f * half / divisions
+        for (i in 0 until divisions) {
+            for (j in 0 until divisions) {
+                if ((i + j) % 2 != 0) continue
+                val x0 = -half + i * step; val x1 = x0 + step
+                val z0 = -half + j * step; val z1 = z0 + step
+                baseIndex = appendQuad(vertexList, indexList, baseIndex,
+                    preview.toLocal(Vec3(x0, 0f, z0)), preview.toLocal(Vec3(x1, 0f, z0)),
+                    preview.toLocal(Vec3(x1, 0f, z1)), preview.toLocal(Vec3(x0, 0f, z1)),
+                    0.35f, 0.65f, 1f)
+            }
+        }
+
+        // Marker at the surveyed point (the AR anchor)
+        val p = preview.surveyedPointLocal
+        val m = 0.05f * boundingBoxScale(viewer)
+        appendBox(vertexList, indexList, baseIndex,
+            p.x - m, p.x + m, p.y - m, p.y + m, p.z - m, p.z + m, 1f, 0f, 0.8f)
+
+        val (entity, vertexBuffer, indexBuffer) = buildColoredRenderable(
+            engine, vertexList.toFloatArray(), indexList.toShortArray(), material
+        )
+        arPlacementEntity = entity
+        arPlacementVertexBuffer = vertexBuffer
+        arPlacementIndexBuffer = indexBuffer
+        if (arPlacementVisible) viewer.scene.addEntity(entity)
+
+        val pointName = link?.coordinateName ?: getString(R.string.ar_placement_no_point)
+        val preset = ArPlacementPreview.presetLabel(placement.placementOrigin) + if (link == null) " (default)" else ""
+        binding.textArPlacement.text = getString(R.string.ar_placement_label, pointName, preset)
+    }
+
+    private fun destroyArPlacement(viewer: ModelViewer) {
+        if (arPlacementEntity != 0) {
+            viewer.scene.remove(arPlacementEntity)
+            viewer.engine.destroyEntity(arPlacementEntity)
+            EntityManager.get().destroy(arPlacementEntity)
+            arPlacementEntity = 0
+        }
+        arPlacementVertexBuffer?.let { viewer.engine.destroyVertexBuffer(it) }
+        arPlacementVertexBuffer = null
+        arPlacementIndexBuffer?.let { viewer.engine.destroyIndexBuffer(it) }
+        arPlacementIndexBuffer = null
+    }
+
     private fun updateOrbitTargetFromAsset(viewer: ModelViewer) {
         val asset = viewer.asset ?: return
         val box = asset.boundingBox
@@ -1176,9 +1278,15 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         }
     }
 
-    /** Hook for views that depend on the latest facts (the AR placement overlay). */
-    private fun onReadinessFacts(facts: ModelFacts?) {
-        // Filled in by the AR placement overlay.
+    /** Views that depend on the latest facts: rebuild the AR placement overlay for the first linked point. */
+    private suspend fun onReadinessFacts(facts: ModelFacts?) {
+        val id = modelId
+        val model = if (id != null && facts != null && facts.modelId.isNotEmpty()) {
+            runCatching { withContext(Dispatchers.IO) { modelRepository.getModelById(id) } }.getOrNull()
+        } else {
+            null
+        }
+        rebuildArPlacement(facts?.links?.firstOrNull(), model)
     }
 
     override fun onReadinessFix(check: ReadinessCheck) {
@@ -1535,6 +1643,20 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
         Log.d("ModelViewerActivity", "gridVisible set to $gridVisible")
     }
 
+    private fun clickedToggleArPlacement() {
+        val viewer = newModelViewer ?: return
+
+        arPlacementVisible = !arPlacementVisible
+        if (arPlacementEntity != 0) {
+            if (arPlacementVisible) viewer.scene.addEntity(arPlacementEntity)
+            else viewer.scene.remove(arPlacementEntity)
+        }
+        binding.textArPlacement.visibility = if (arPlacementVisible) View.VISIBLE else View.GONE
+        controlsAdapter.setLabel(ModelViewerControl.AR_PLACEMENT,
+            getString(if (arPlacementVisible) R.string.ar_placement_on else R.string.ar_placement_off))
+        Log.d("ModelViewerActivity", "arPlacementVisible set to $arPlacementVisible")
+    }
+
     private fun clickedToggleOverlayOnTop() {
         val viewer = newModelViewer ?: return
 
@@ -1761,6 +1883,8 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                 EntityManager.get().destroy(gridEntity)
                 gridEntity = 0
             }
+
+            destroyArPlacement(viewer)
 
             // NEW
             // Note: the offset marker shares gizmoMaterialInstance, so it is destroyed once here.

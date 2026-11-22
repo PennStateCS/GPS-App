@@ -238,6 +238,10 @@
     <string name="bbox_off">Show Bounding Box</string>
     <string name="grid_on">Hide Grid Plane</string>
     <string name="grid_off">Show Grid Plane</string>
+    <string name="ar_placement_on">Hide AR Placement</string>
+    <string name="ar_placement_off">Show AR Placement</string>
+    <string name="ar_placement_label">AR placement: %1$s · %2$s</string>
+    <string name="ar_placement_no_point">no linked point</string>
     <string name="overlay_top_on">Let Model Cover Overlays</string>
     <string name="overlay_top_off">Draw Overlays On Top</string>
 
