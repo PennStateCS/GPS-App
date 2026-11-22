@@ -403,6 +403,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // Filament TextureView surface has been fully created.
             filamentRenderer?.tickAndApplyLoads(currentPoses, currentVisibleKeys, snapshot?.liveTestKeys ?: emptySet())
             filamentRenderer?.updateOcclusion(snapshot?.occlusion)
+            filamentRenderer?.updateLighting(snapshot?.light)
             // Keep rendering while any model is visible — a visible model whose anchor briefly stopped
             // tracking has no pose this frame but stays in the scene holding its last transform.
             val hasModels = currentPoses.isNotEmpty() || currentVisibleKeys.isNotEmpty()
@@ -441,9 +442,32 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         /** False once ARCore camera tracking is lost — the matrices above are stale; hide models. */
         val cameraTracking: Boolean = true,
         /** Real-world depth occluder for this frame; null when occlusion is off or no depth yet. */
-        val occlusion: OcclusionFrame? = null
+        val occlusion: OcclusionFrame? = null,
+        /** Latest ARCore Environmental HDR light estimate (null = none yet / keep current lighting). */
+        val light: ArLighting.Estimate? = null
     )
     @Volatile private var arRenderSnapshot: ArRenderSnapshot? = null
+    /** GL thread: last light estimate copied off the Frame, refreshed only when ARCore's timestamp changes. */
+    private var lastLightEstimate: ArLighting.Estimate? = null
+    private var lastLightEstimateTs = Long.MIN_VALUE
+
+    /** GL thread. Copies ARCore's light estimate when it is new; otherwise returns the previous copy. */
+    private fun captureLightEstimate(frame: com.google.ar.core.Frame): ArLighting.Estimate? {
+        val le = runCatching { frame.lightEstimate }.getOrNull() ?: return lastLightEstimate
+        if (le.state != com.google.ar.core.LightEstimate.State.VALID) return lastLightEstimate
+        val ts = le.timestamp
+        if (ts == lastLightEstimateTs) return lastLightEstimate
+        lastLightEstimateTs = ts
+        lastLightEstimate = runCatching {
+            ArLighting.Estimate(
+                valid = true,
+                mainLightDirection = le.environmentalHdrMainLightDirection,
+                mainLightIntensity = le.environmentalHdrMainLightIntensity,
+                ambientSh = le.environmentalHdrAmbientSphericalHarmonics,
+            )
+        }.getOrNull() ?: lastLightEstimate
+        return lastLightEstimate
+    }
 
     /** Terrain mode: snaps pins/models to the ground ARCore has detected. GL thread only. */
     private val groundSnapper = GroundSnapper()
@@ -1682,7 +1706,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     modelPoses  = newModelPoses,
                     visibleKeys = modelVisibleKeys,
                     liveTestKeys = testAnchorController.liveModelKeys(),
-                    occlusion   = occlusion
+                    occlusion   = occlusion,
+                    light       = captureLightEstimate(frame)
                 )
                 postOverlayUpdates(labelEntries, arrowEntries)
             } else {
@@ -2152,7 +2177,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     _binding?.localizingBanner?.visibility = View.GONE
                     _binding?.chipArQuality?.let { chip ->
                         val timeoutTag = if (placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT) " · timeout" else ""
-                        chip.text = "${quality.statusLabel} · ${quality.accuracyText}$timeoutTag"
+                        // When quality is low, a second line tells the user how to improve it.
+                        val hint = quality.helperText?.takeIf { quality.level == ArViewQuality.Level.LOW }
+                        chip.text = "${quality.statusLabel} · ${quality.accuracyText}$timeoutTag" +
+                            (hint?.let { "\n$it" } ?: "")
                         chip.visibility = View.VISIBLE
                     }
                 }

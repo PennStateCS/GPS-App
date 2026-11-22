@@ -134,6 +134,12 @@ class ArFilamentRenderer {
     private lateinit var camera: Camera
     private var cameraEntity: Int = 0
     private var sunEntity: Int = 0
+    /** Ambient light so faces away from the sun never render black; rebuilt when the estimate shifts. */
+    private var indirectLight: IndirectLight? = null
+    private var lighting: ArLighting.State? = null
+    private var lastIblSh: FloatArray? = null
+    private var lastIblRebuildMs = 0L
+    private var lastLightLogMs = 0L
 
     private var swapChain: SwapChain? = null
 
@@ -231,6 +237,8 @@ class ArFilamentRenderer {
             .castShadows(false)
             .build(engine, sunEntity)
         scene.addEntity(sunEntity)
+        // Ambient light from the start (fallback); ARCore's estimate takes over in updateLighting().
+        applyLighting(ArLighting.fallback(), force = true)
 
         // Depth occluder (optional): failure only disables occlusion, never the renderer.
         occluder = runCatching { FilamentDepthOccluder(engine, textureView.context.assets) }
@@ -618,6 +626,52 @@ class ArFilamentRenderer {
     }
 
     /**
+     * Follows ARCore's light estimate (null/invalid keeps the current lighting). Main thread; call each
+     * Choreographer frame before [renderFrame]. Cheap when nothing changed.
+     */
+    internal fun updateLighting(estimate: ArLighting.Estimate?) {
+        if (!initialized) return
+        if (estimate == null && lighting != null) return
+        applyLighting(ArLighting.next(estimate, lighting), force = false)
+    }
+
+    private fun applyLighting(state: ArLighting.State, force: Boolean) {
+        lighting = state
+        if (sunEntity != 0) {
+            val lm = engine.lightManager
+            val inst = lm.getInstance(sunEntity)
+            if (inst != 0) {
+                lm.setDirection(inst, state.sunDirection[0], state.sunDirection[1], state.sunDirection[2])
+                lm.setColor(inst, state.sunColor[0], state.sunColor[1], state.sunColor[2])
+                lm.setIntensity(inst, state.sunLux)
+            }
+        }
+        // Rebuilding the IBL allocates on the native side — at most twice a second and only on real change.
+        val now = android.os.SystemClock.elapsedRealtime()
+        val prevSh = lastIblSh
+        val rebuild = force || prevSh == null ||
+            (now - lastIblRebuildMs >= 500L && ArLighting.shChangedEnough(prevSh, state.ambientSh))
+        if (rebuild) {
+            val ibl = IndirectLight.Builder()
+                .irradiance(3, state.ambientSh)
+                .intensity(state.ambientIntensity)
+                .build(engine)
+            scene.indirectLight = ibl
+            indirectLight?.let { old -> runCatching { engine.destroyIndirectLight(old) } }
+            indirectLight = ibl
+            lastIblSh = state.ambientSh.copyOf()
+            lastIblRebuildMs = now
+        }
+        if (force || now - lastLightLogMs >= 30_000L) {
+            lastLightLogMs = now
+            DiagnosticsLogger.i(DIAG, "LIGHT_ESTIMATE source=${if (state.fromEstimate) "arcore" else "fallback"} " +
+                "sunLux=${"%.0f".format(state.sunLux)} sunRgb=${"%.2f,%.2f,%.2f".format(state.sunColor[0], state.sunColor[1], state.sunColor[2])} " +
+                "sunDir=${"%.2f,%.2f,%.2f".format(state.sunDirection[0], state.sunDirection[1], state.sunDirection[2])} " +
+                "ambientDc=${"%.2f,%.2f,%.2f".format(state.ambientSh[0], state.ambientSh[1], state.ambientSh[2])}")
+        }
+    }
+
+    /**
      * Render one frame. Call from [android.view.Choreographer.FrameCallback.doFrame].
      *
      * Asset loading/management is handled separately in [tickAndApplyLoads], which must be
@@ -714,6 +768,13 @@ class ArFilamentRenderer {
             runCatching { EntityManager.get().destroy(sunEntity) }
             sunEntity = 0
         }
+        indirectLight?.let { ibl ->
+            runCatching { scene.indirectLight = null }
+            runCatching { engine.destroyIndirectLight(ibl) }
+        }
+        indirectLight = null
+        lighting = null
+        lastIblSh = null
 
         // Explicitly destroy gltfio utility objects BEFORE the engine.
         // Their JVM finalizers call back into native; if the engine is already
