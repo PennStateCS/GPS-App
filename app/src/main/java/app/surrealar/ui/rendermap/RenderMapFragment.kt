@@ -584,6 +584,7 @@ class RenderMapFragment : Fragment() {
     // ── Lifecycle pass-throughs ────────────────────────────────────────────────
 
     override fun onStart()  { super.onStart();  try { mapView?.onStart() } catch (e: Exception) { Log.e(TAG, "onStart", e) } }
+    override fun onLowMemory() { super.onLowMemory(); try { mapView?.onLowMemory() } catch (e: Exception) { Log.e(TAG, "onLowMemory", e) } }
     override fun onResume() {
         super.onResume()
         try { mapView?.onResume(); fragmentResumed = true; resumeGuidanceFeedback(); syncCompass() }
@@ -1149,7 +1150,9 @@ class RenderMapFragment : Fragment() {
                 catch (e: Exception) { Log.w(TAG, "liveTrail update failed, recreating", e); existing.remove(); liveTrail = null }
             }
             liveTrail = map.addPolyline(
-                PolylineOptions().addAll(trailPoints).color(0xFFFF6B35.toInt()).width(4f).geodesic(true)
+                // Not geodesic: at survey scale the great-circle and straight segments are identical, and the
+                // geodesic version is recomputed for up to MAX_TRAIL_POINTS points on every new point.
+                PolylineOptions().addAll(trailPoints).color(0xFFFF6B35.toInt()).width(4f).geodesic(false)
             )
         } catch (e: Exception) { Log.w(TAG, "updateLiveTrail error", e) }
     }
