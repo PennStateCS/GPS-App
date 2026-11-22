@@ -306,7 +306,14 @@ class ArFilamentRenderer {
                 preloadSemaphore.withPermit {
                     val bytes = withContext(Dispatchers.IO) {
                         fileReadMutex.withLock {
-                            fileBytesCache[filePath] ?: File(filePath).readBytes().also {
+                            fileBytesCache[filePath] ?: try {
+                                File(filePath).readBytes()
+                            } catch (oom: OutOfMemoryError) {
+                                // Too big for the heap: fail this model through the normal
+                                // exception path below instead of crashing the AR session.
+                                throw java.io.IOException("Out of memory reading model file " +
+                                    "(${File(filePath).length()} bytes)", oom)
+                            }.also {
                                 fileBytesCache[filePath] = it
                             }
                         }

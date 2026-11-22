@@ -24,6 +24,7 @@ import app.surrealar.databinding.ActivityModelViewerBinding
 import app.surrealar.R
 import app.surrealar.domain.repository.ModelRepository
 import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
+import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.google.android.filament.*
@@ -379,8 +380,9 @@ class ModelViewerActivity : AppCompatActivity() {
                 viewer.loadModelGlb(modelBuffer)
             }
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e("ModelViewerActivity", "Failed to load model: ${modelFile.absolutePath}", e)
+            DiagnosticsLogger.e("MODEL", "viewer load failed: ${e.javaClass.simpleName} ${e.message}")
             false
         }
     }
@@ -1180,14 +1182,21 @@ class ModelViewerActivity : AppCompatActivity() {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
 
+    /**
+     * Reads [filePath] into a direct buffer without an extra heap copy. Returns null (the caller
+     * shows the load-failure message) if the file is missing, unreadable, or too big for memory.
+     */
     private fun loadFile(filePath: String): ByteBuffer? {
         val file = File(filePath)
         if (!file.exists()) return null
-        val bytes = file.readBytes()
-        val buffer = ByteBuffer.allocateDirect(bytes.size)
-        buffer.put(bytes)
-        buffer.rewind()
-        return buffer
+        return try {
+            ModelFileIo.readToDirectBuffer(file)
+        } catch (t: Throwable) {
+            Log.e("ModelViewerActivity", "Could not read model file (${file.length()} bytes)", t)
+            DiagnosticsLogger.e("MODEL", "viewer read failed sizeBytes=${file.length()}: " +
+                "${t.javaClass.simpleName} ${t.message}")
+            null
+        }
     }
 
     private fun loadAsset(filePath: String): ByteBuffer? {

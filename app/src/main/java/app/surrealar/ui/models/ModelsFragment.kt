@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import app.surrealar.data.files.ModelFileCleaner
 import androidx.lifecycle.Lifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
@@ -281,6 +282,13 @@ class ModelsFragment : Fragment() {
                 }
             }
 
+            // Very large models run tablets out of memory when loaded — refuse them up front.
+            if (ModelFileIo.isTooLarge(fileSize)) {
+                runCatching { inputStream.close() }
+                rejectTooLarge(fileName, fileSize)
+                return
+            }
+
             val filesDir = requireContext().filesDir   // read now: the copy runs off the main thread
             viewLifecycleOwner.lifecycleScope.launch {
                 // The try/catch around launch never saw failures inside it: a stream dropped by a
@@ -293,6 +301,25 @@ class ModelsFragment : Fragment() {
                 if (targetFile == null) {
                     DiagnosticsLogger.e("MODEL", "file copy failed for \"$fileName\" — target null")
                     Toast.makeText(requireContext(), "Failed to import model file", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+
+                // The provider may not have reported a size; check what was actually copied
+                // (the whole bundle for a .gltf import).
+                val modelsRoot = File(filesDir, ModelFileCleaner.MODELS_DIR_NAME)
+                val copiedSize = withContext(Dispatchers.IO) {
+                    val bundle = targetFile.parentFile
+                    if (bundle != null && bundle.canonicalFile != modelsRoot.canonicalFile) {
+                        bundle.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    } else {
+                        targetFile.length()
+                    }
+                }
+                if (ModelFileIo.isTooLarge(copiedSize)) {
+                    withContext(Dispatchers.IO) {
+                        ModelFileCleaner.deleteModelFile(targetFile.absolutePath, modelsRoot)
+                    }
+                    rejectTooLarge(fileName, copiedSize)
                     return@launch
                 }
 
@@ -325,6 +352,18 @@ class ModelsFragment : Fragment() {
             DiagnosticsLogger.e("MODEL", "import exception: ${e.javaClass.simpleName} ${e.message}", e)
             Toast.makeText(requireContext(), "Failed to import model: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun rejectTooLarge(fileName: String, sizeBytes: Long) {
+        val sizeMb = String.format(java.util.Locale.US, "%.0f", sizeBytes / (1024.0 * 1024.0))
+        DiagnosticsLogger.w("MODEL", "import rejected — \"$fileName\" is $sizeBytes bytes " +
+            "(limit ${ModelFileIo.MAX_IMPORT_BYTES})")
+        val ctx = context ?: return
+        Toast.makeText(
+            ctx,
+            "This model is too large ($sizeMb MB). The limit is ${ModelFileIo.maxImportLabel()}.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     private fun copyModelToInternalStorage(sourceUri: Uri, fileName: String, inputStream: java.io.InputStream, filesDir: File): File? {

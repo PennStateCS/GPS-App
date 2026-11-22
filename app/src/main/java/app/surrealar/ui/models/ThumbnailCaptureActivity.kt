@@ -19,6 +19,7 @@ import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import app.surrealar.domain.repository.ModelRepository
+import app.surrealar.util.DiagnosticsLogger
 import com.google.android.filament.Camera
 import com.google.android.filament.EntityManager
 import com.google.android.filament.LightManager
@@ -239,25 +240,38 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             }
 
             lifecycleScope.launch(Dispatchers.IO) {
-                val glbFile = File(modelPath)
-                if (!glbFile.exists()) {
-                    Log.e(TAG, "GLB file not found: $modelPath")
-                    withContext(Dispatchers.Main) { finish() }
-                    return@launch
-                }
-                val buf = ByteBuffer.allocateDirect(glbFile.length().toInt())
-                glbFile.inputStream().use { buf.put(it.readBytes()) }
-                buf.rewind()
-
-                withContext(Dispatchers.Main) {
-                    val loaded = loadModelIntoViewer(viewer, glbFile, buf)
-                    if (!loaded) {
-                        finish()
-                        return@withContext
+                // Nothing in here may escape: an uncaught throwable in this coroutine would crash
+                // the app. A huge model can run out of memory — log it and leave without a
+                // thumbnail instead.
+                try {
+                    val glbFile = File(modelPath)
+                    if (!glbFile.exists()) {
+                        Log.e(TAG, "GLB file not found: $modelPath")
+                        withContext(Dispatchers.Main) { finish() }
+                        return@launch
                     }
-                    applyCamera(viewer)
-                    modelReady = true
-                    framesRendered = 0
+                    // Read straight into the direct buffer (no extra heap copy).
+                    val buf = ModelFileIo.readToDirectBuffer(glbFile)
+
+                    withContext(Dispatchers.Main) {
+                        val loaded = loadModelIntoViewer(viewer, glbFile, buf)
+                        if (!loaded) {
+                            finish()
+                            return@withContext
+                        }
+                        applyCamera(viewer)
+                        modelReady = true
+                        framesRendered = 0
+                    }
+                } catch (c: kotlinx.coroutines.CancellationException) {
+                    throw c
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Thumbnail model load failed", t)
+                    DiagnosticsLogger.e("MODEL", "thumbnail load failed sizeBytes=${File(modelPath).length()}: " +
+                        "${t.javaClass.simpleName} ${t.message}")
+                    withContext(Dispatchers.Main + kotlinx.coroutines.NonCancellable) {
+                        if (!isFinishing) finish()
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -278,7 +292,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 viewer.loadModelGlb(modelBuffer)
             }
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to load model: ${modelFile.absolutePath}", e)
             false
         }
@@ -304,10 +318,11 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
 
     private fun loadFileToBuffer(file: File): ByteBuffer? {
         if (!file.exists()) return null
-        val bytes = file.readBytes()
-        return ByteBuffer.allocateDirect(bytes.size).also {
-            it.put(bytes)
-            it.rewind()
+        return try {
+            ModelFileIo.readToDirectBuffer(file)
+        } catch (oom: OutOfMemoryError) {
+            Log.e(TAG, "Out of memory reading glTF resource (${file.length()} bytes)", oom)
+            null
         }
     }
 
