@@ -413,35 +413,46 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
 
         val ctx = requireContext()
         val (arCard, arRows) = buildInfoCard(ctx, ctx.getString(R.string.dev_section_ar_diagnostics))
+        // Runs off the main thread: creating/configuring an ARCore Session can take hundreds of ms.
         fun gather(): List<Pair<String,String>> {
             val list = mutableListOf<Pair<String,String>>()
             val availability = runCatching { ArCoreApk.getInstance().checkAvailability(ctx).toString() }.getOrElse { it.javaClass.simpleName }
             list += "ARCore Availability" to availability
             var session: Session? = null
-            val sessionResult = runCatching {
-                session = Session(ctx) // Will fail if ARCore services missing/outdated.
+            try {
+                val sessionResult = runCatching {
+                    val s = Session(ctx) // Will fail if ARCore services missing/outdated.
+                    session = s
+                    val cfg = Config(s).apply {
+                        if (s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) geospatialMode = Config.GeospatialMode.ENABLED
+                    }
+                    s.configure(cfg)
+                    "OK"
+                }.getOrElse { e -> e.message ?: e.javaClass.simpleName }
+                list += "Session Create" to sessionResult
                 val s = session
-                val cfg = Config(s).apply {
-                    if (s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED)) geospatialMode = Config.GeospatialMode.ENABLED
+                if (s != null) {
+                    val geospatialSupported = runCatching { s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED) }.getOrDefault(false)
+                    val depthSupported = runCatching { s.isDepthModeSupported(Config.DepthMode.AUTOMATIC) }.getOrDefault(false)
+                    // ARCore has no support query for instant placement, and configure() accepting the
+                    // mode does not prove it works, so only a rejection is a definite answer.
+                    val instantPlacement = try {
+                        s.configure(Config(s).apply { instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP })
+                        "unknown (config accepted)"
+                    } catch (_: com.google.ar.core.exceptions.UnsupportedConfigurationException) {
+                        "false"
+                    } catch (e: Exception) {
+                        "unknown (${e.javaClass.simpleName})"
+                    } finally {
+                        runCatching { s.configure(Config(s)) } // never leave instant placement on
+                    }
+                    list += "Geospatial Supported" to geospatialSupported.toString()
+                    list += "Depth Supported" to depthSupported.toString()
+                    list += "Instant Placement Supported" to instantPlacement
+                    list += "Earth Tracking" to "(Session not resumed)" // Not resumed: no camera usage for quick diagnostics
                 }
-                s.configure(cfg)
-                "OK"
-            }.getOrElse { e -> e.message ?: e.javaClass.simpleName }
-            list += "Session Create" to sessionResult
-            if (session != null) {
-                val s = session
-                val geospatialSupported = runCatching { s.isGeospatialModeSupported(Config.GeospatialMode.ENABLED) }.getOrDefault(false)
-                val depthSupported = runCatching { s.isDepthModeSupported(Config.DepthMode.AUTOMATIC) }.getOrDefault(false)
-                val instantPlacement = runCatching {
-                    val testCfg = Config(s)
-                    testCfg.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
-                    s.configure(testCfg) // Reconfig just to probe support
-                    true
-                }.getOrDefault(false)
-                list += "Geospatial Supported" to geospatialSupported.toString()
-                list += "Depth Supported" to depthSupported.toString()
-                list += "Instant Placement Supported" to instantPlacement.toString()
-                list += "Earth Tracking" to "(Session not resumed)" // Not resumed: no camera usage for quick diagnostics
+            } finally {
+                runCatching { session?.close() }
             }
             // Permissions snapshot (not requesting here – purely informative)
             val camGranted = ctx.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -450,15 +461,26 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             list += "Location Permission" to locGranted.toString()
             list += "Device Model" to android.os.Build.MODEL
             list += "Android SDK" to android.os.Build.VERSION.SDK_INT.toString()
-            runCatching { session?.close() } // Cleanup
             return list
         }
-        // Populate card using gather()
-        fun populate() {
+        fun showRows(data: List<Pair<String, String>>) {
             arRows.removeAllViews()
-            val data = gather()
             data.forEachIndexed { idx, pair ->
                 arRows.addInfoRow(ctx, pair.first, pair.second, isLast = idx == data.lastIndex)
+            }
+        }
+        // Show "Checking…" rows, gather on a background thread, then fill the card if still shown.
+        // categoryScope is cancelled when the user switches category, so a stale result is dropped.
+        var gatherJob: kotlinx.coroutines.Job? = null
+        fun populate() {
+            gatherJob?.cancel()
+            showRows(listOf(
+                "ARCore Availability" to getString(R.string.dev_checking),
+                "Session Create" to getString(R.string.dev_checking),
+            ))
+            gatherJob = categoryScope.launch {
+                val data = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { gather() }
+                if (view.parent != null) showRows(data)
             }
         }
         populate()

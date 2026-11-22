@@ -27,6 +27,7 @@
     <string name="dev_section_api_key">API Key</string>
     <string name="dev_section_ar_diagnostics">AR Diagnostics</string>
     <string name="dev_section_maps_diagnostics">Maps Diagnostics</string>
+    <string name="dev_checking">Checking…</string>
     <string name="dev_section_permission_status">Permission Status</string>
     <string name="dev_perm_open_settings">Open App Settings</string>
 
