@@ -127,6 +127,11 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     /** Production constructor — uses the app-wide DataStore singleton (single instance per file). */
     constructor(context: Context) : this(context.appDataStore)
 
+    /** Writes several keys in one DataStore transaction, so a settings group is saved all-or-nothing. */
+    suspend fun editAll(transform: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+        dataStore.edit { transform(it) }
+    }
+
     val locationSourceRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.LOCATION_SOURCE] }
     val externalConnTypeRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_CONN_TYPE] }
     val externalTcpHost: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_HOST] }

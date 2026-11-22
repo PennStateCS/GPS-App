@@ -2,6 +2,7 @@ package app.surrealar.data.settings.repository
 
 import app.surrealar.domain.repository.SettingsRepository
 import app.surrealar.data.settings.datastore.SettingsLocalDataSource
+import app.surrealar.data.settings.datastore.SettingsKeys as K
 import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.domain.model.ExternalConnectionType
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
@@ -61,10 +62,13 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setExternalReceiverSettings(settings: app.surrealar.settings.model.ExternalReceiverSettings) {
-        local.setExternalReceiverProfile(settings.profile.prefKey)
-        local.setExternalConnTypeString(settings.connectionType.prefKey)
-        local.setExternalTcp(settings.tcpHost, settings.tcpPort)
-        if (settings.displayName.isNotBlank()) local.setExternalTcpName(settings.displayName)
+        local.editAll {
+            it[K.EXTERNAL_RECEIVER_PROFILE] = settings.profile.prefKey
+            it[K.EXTERNAL_CONN_TYPE] = settings.connectionType.prefKey
+            it[K.EXTERNAL_TCP_HOST] = settings.tcpHost
+            it[K.EXTERNAL_TCP_PORT] = settings.tcpPort
+            if (settings.displayName.isNotBlank()) it[K.EXTERNAL_TCP_NAME] = settings.displayName
+        }
     }
 
     override suspend fun setExternalConnType(v: ExternalConnectionType) {
@@ -72,14 +76,17 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setExternalTcp(host: String, port: Int, name: String) {
-        val previousHost = runCatching { local.externalTcpHost.first() }.getOrNull()
-        local.setExternalTcp(host, port)
-        if (name.isNotBlank()) {
-            local.setExternalTcpName(name)
-        } else if (previousHost != null && !previousHost.equals(host, ignoreCase = true)) {
-            // Different receiver and no name yet: drop the old receiver's name so it can't be shown
-            // on Home or stamped into saved points' source device until the new one is resolved.
-            local.setExternalTcpName("")
+        local.editAll { prefs ->
+            val previousHost = prefs[K.EXTERNAL_TCP_HOST]
+            prefs[K.EXTERNAL_TCP_HOST] = host
+            prefs[K.EXTERNAL_TCP_PORT] = port
+            if (name.isNotBlank()) {
+                prefs[K.EXTERNAL_TCP_NAME] = name
+            } else if (previousHost != null && !previousHost.equals(host, ignoreCase = true)) {
+                // Different receiver and no name yet: drop the old receiver's name so it can't be shown
+                // on Home or stamped into saved points' source device until the new one is resolved.
+                prefs[K.EXTERNAL_TCP_NAME] = ""
+            }
         }
     }
 
@@ -113,14 +120,18 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     private data class CaptureExtras(val maxFix: Int, val maxDiff: Int, val preset: String, val target: Double?)
 
     override suspend fun setGnssCaptureSettings(settings: GnssCaptureSettings) {
-        local.setGnssCaptureRtkStatus(settings.requiredMinStatus.prefKey)
-        local.setGnssCaptureMinDurationSec(settings.minDurationSec)
-        local.setGnssCaptureMaxDurationSec(settings.maxDurationSec)
-        local.setGnssCaptureMinSamples(settings.minSamples)
-        local.setGnssCaptureMaxFixAgeSec(settings.maxFixAgeSec)
-        local.setGnssCaptureMaxDiffAgeSec(settings.maxDiffAgeSec)
-        local.setGnssCapturePreset(settings.preset.prefKey)
-        local.setGnssCapturePrecisionTargetM(settings.precisionTargetM)
+        local.editAll {
+            it[K.GNSS_CAPTURE_RTK_STATUS] = settings.requiredMinStatus.prefKey
+            it[K.GNSS_CAPTURE_MIN_DURATION_SEC] = settings.minDurationSec
+            it[K.GNSS_CAPTURE_MAX_DURATION_SEC] = settings.maxDurationSec
+            it[K.GNSS_CAPTURE_MIN_SAMPLES] = settings.minSamples
+            it[K.GNSS_CAPTURE_MAX_FIX_AGE_SEC] = settings.maxFixAgeSec
+            it[K.GNSS_CAPTURE_MAX_DIFF_AGE_SEC] = settings.maxDiffAgeSec
+            it[K.GNSS_CAPTURE_PRESET] = settings.preset.prefKey
+            val target = settings.precisionTargetM
+            if (target != null && target > 0.0) it[K.GNSS_CAPTURE_PRECISION_TARGET_M] = target
+            else it.remove(K.GNSS_CAPTURE_PRECISION_TARGET_M)
+        }
     }
 
     // AR Display
@@ -150,14 +161,16 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setArDisplaySettings(settings: ArDisplaySettings) {
-        local.setArAltitudeMode(settings.altitudeMode)
-        local.setArDistanceFilterIndex(settings.distanceFilterIndex.coerceIn(0, 3))
-        local.setArShowDebugOverlay(settings.showDebugOverlay)
-        local.setArShowLabels(settings.showLabels)
-        local.setArShowOffscreenArrows(settings.showOffscreenArrows)
-        local.setArModelScale(settings.modelScale.coerceIn(0.1f, 10.0f).toString())
-        local.setArDebugToolsEnabled(settings.showArDebugTools)
-        local.setArAntennaAboveCameraM(settings.antennaAboveCameraM.coerceIn(-3.0, 3.0).toString())
+        local.editAll {
+            it[K.AR_ALTITUDE_MODE] = settings.altitudeMode
+            it[K.AR_DISTANCE_FILTER_INDEX] = settings.distanceFilterIndex.coerceIn(0, 3)
+            it[K.AR_SHOW_DEBUG_OVERLAY] = settings.showDebugOverlay
+            it[K.AR_SHOW_LABELS] = settings.showLabels
+            it[K.AR_SHOW_OFFSCREEN_ARROWS] = settings.showOffscreenArrows
+            it[K.AR_MODEL_SCALE] = settings.modelScale.coerceIn(0.1f, 10.0f).toString()
+            it[K.AR_DEBUG_TOOLS_ENABLED] = settings.showArDebugTools
+            it[K.AR_ANTENNA_ABOVE_CAMERA_M] = settings.antennaAboveCameraM.coerceIn(-3.0, 3.0).toString()
+        }
     }
 
     // Coordinate display
@@ -174,9 +187,11 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setCoordinateDisplaySettings(settings: CoordinateDisplaySettings) {
-        local.setShowAccuracyIndicators(settings.showAccuracyIndicators)
-        local.setDefaultCoordinateNamePrefix(settings.defaultNamePrefix)
-        local.setAutoIncrementCoordinateNames(settings.autoIncrementNames)
+        local.editAll {
+            it[K.SHOW_ACCURACY_INDICATORS] = settings.showAccuracyIndicators
+            it[K.DEFAULT_COORDINATE_NAME_PREFIX] = settings.defaultNamePrefix
+            it[K.AUTO_INCREMENT_COORDINATE_NAMES] = settings.autoIncrementNames
+        }
     }
 
     // Coordinate system (expression of coordinates; unset keys → model defaults)
@@ -227,9 +242,11 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         }
 
     override suspend fun setGnssReceiverSettings(settings: GnssReceiverSettings) {
-        local.setHighAccuracy(settings.highAccuracy)
-        local.setAntennaHeightM(settings.antennaHeightM)
-        local.setInternalAntennaHeightM(settings.internalAntennaHeightM)
+        local.editAll {
+            it[K.HIGH_ACCURACY] = settings.highAccuracy
+            it[K.ANTENNA_HEIGHT_M] = settings.antennaHeightM
+            it[K.INTERNAL_ANTENNA_HEIGHT_M] = settings.internalAntennaHeightM
+        }
     }
 
     // Developer settings
@@ -257,10 +274,12 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         }
 
     override suspend fun setAppearanceSettings(settings: AppearanceSettings) {
-        local.setAppThemeModeString(settings.themeMode.prefKey)
-        local.setShowLiveGnssStatusBar(settings.showLiveGnssStatusBar)
-        local.setKeepScreenAwake(settings.keepScreenAwake)
-        local.setMaxBrightnessWhileOpen(settings.maxBrightnessWhileOpen)
+        local.editAll {
+            it[K.APP_THEME_MODE] = settings.themeMode.prefKey
+            it[K.SHOW_LIVE_GNSS_STATUS_BAR] = settings.showLiveGnssStatusBar
+            it[K.KEEP_SCREEN_AWAKE] = settings.keepScreenAwake
+            it[K.MAX_BRIGHTNESS_WHILE_OPEN] = settings.maxBrightnessWhileOpen
+        }
     }
 
     // Stakeout guidance — numeric values are sanitized on read (display/feedback only; never touches
@@ -283,16 +302,16 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setStakeoutSettings(settings: app.surrealar.settings.model.StakeoutSettings) {
-        local.setStakeoutToleranceM(
-            app.surrealar.settings.SettingsDefaults.sanitizeStakeoutTolerance(settings.toleranceMeters)
-        )
-        local.setStakeoutWarningAccuracyM(
-            app.surrealar.settings.SettingsDefaults.sanitizeStakeoutWarningAccuracy(settings.warningAccuracyMeters)
-        )
-        local.setStakeoutEnableHaptics(settings.enableHaptics)
-        local.setStakeoutEnableAudio(settings.enableAudio)
-        local.setStakeoutKeepScreenOn(settings.keepScreenOnDuringStakeout)
-        local.setStakeoutCompassHeading(settings.guidanceUsesCompassHeading)
+        local.editAll {
+            it[K.STAKEOUT_TOLERANCE_M] =
+                app.surrealar.settings.SettingsDefaults.sanitizeStakeoutTolerance(settings.toleranceMeters)
+            it[K.STAKEOUT_WARNING_ACCURACY_M] =
+                app.surrealar.settings.SettingsDefaults.sanitizeStakeoutWarningAccuracy(settings.warningAccuracyMeters)
+            it[K.STAKEOUT_ENABLE_HAPTICS] = settings.enableHaptics
+            it[K.STAKEOUT_ENABLE_AUDIO] = settings.enableAudio
+            it[K.STAKEOUT_KEEP_SCREEN_ON] = settings.keepScreenOnDuringStakeout
+            it[K.STAKEOUT_COMPASS_HEADING] = settings.guidanceUsesCompassHeading
+        }
     }
 
     // Map display defaults — enum-backed values resolve via stable tokens (legacy name fallback).
@@ -314,12 +333,14 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
     }
 
     override suspend fun setMapSettings(settings: app.surrealar.ui.rendermap.MapSettings) {
-        local.setMapDefaultType(app.surrealar.ui.rendermap.MapTypeTokens.toToken(settings.defaultMapType))
-        local.setMapDefaultGridMode(settings.defaultGridMode.prefKey)
-        local.setMapDefaultLabelMode(settings.defaultPointLabelMode.prefKey)
-        local.setMapShowMyLocationDefault(settings.showMyLocationByDefault)
-        local.setMapToolsOpenDefault(settings.keepMapToolsOpenByDefault)
-        local.setMapDrawerExpandedDefault(settings.mapPointsDrawerExpandedByDefault)
+        local.editAll {
+            it[K.MAP_DEFAULT_TYPE] = app.surrealar.ui.rendermap.MapTypeTokens.toToken(settings.defaultMapType)
+            it[K.MAP_DEFAULT_GRID_MODE] = settings.defaultGridMode.prefKey
+            it[K.MAP_DEFAULT_LABEL_MODE] = settings.defaultPointLabelMode.prefKey
+            it[K.MAP_SHOW_MY_LOCATION_DEFAULT] = settings.showMyLocationByDefault
+            it[K.MAP_TOOLS_OPEN_DEFAULT] = settings.keepMapToolsOpenByDefault
+            it[K.MAP_DRAWER_EXPANDED_DEFAULT] = settings.mapPointsDrawerExpandedByDefault
+        }
     }
 
     // Enum persistence now lives on the enums themselves (stable prefKey + fromPrefKey with legacy
