@@ -172,7 +172,10 @@ class CoordinatesFragment : Fragment() {
                         runCatching {
                             val p = coordinateSystemService.convertCoordinate(c, s)
                             "${app.surrealar.coords.CoordinateFormat.horizontal(p, latLonDecimals = 6)} · " +
-                                app.surrealar.coords.CoordinateFormat.height(p)
+                                CoordinateListFormatter.rowHeightText(p) {
+                                    coordinateSystemService.convertCoordinate(c,
+                                        s.copy(vertical = app.surrealar.settings.model.VerticalReference.ELLIPSOIDAL))
+                                }
                         }.getOrElse { CoordinateListFormatter.latLonLine(c) }
                     }
                     adapter.notifyDataSetChanged()

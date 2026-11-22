@@ -12,8 +12,8 @@ object CoordinateListFormatter {
 
     /**
      * Second-line summary: source · fix · horizontal accuracy, including only the parts that are
-     * known, e.g. "RS2+ · Fixed · H ±0.03 m", "Model linked · Fixed · H ±0.03 m", or "Internal GPS".
-     * [modelName] is the linked model's display name (null falls back to "Model linked").
+     * known, e.g. "RS2+ · Fixed · H ±0.03 m" or "Internal GPS". For a model-linked point the source
+     * device still comes first; [modelName] (or "Model linked") is used only when no source is known.
      */
     fun summaryLine(c: Coordinate, modelName: String?): String {
         val parts = mutableListOf<String>()
@@ -27,11 +27,29 @@ object CoordinateListFormatter {
     fun latLonLine(c: Coordinate): String =
         String.format(Locale.US, "%.6f, %.6f", c.latitude, c.longitude)
 
-    /** Source label: model name when linked, the external receiver's label, or the capture method. */
-    private fun sourceLabel(c: Coordinate, modelName: String?): String? {
-        if (c.linkedModelId != null) {
-            return modelName?.takeIf { it.isNotBlank() } ?: "Model linked"
-        }
+    /**
+     * Height part of the position line: the chosen reference, or — when that is unavailable (e.g. no
+     * receiver MSL) — the ellipsoidal height from [ellipsoidal], e.g. "397.000 m Ellip". "—" only when
+     * neither exists.
+     */
+    fun rowHeightText(
+        chosen: app.surrealar.coords.ConvertedPosition,
+        ellipsoidal: () -> app.surrealar.coords.ConvertedPosition?,
+    ): String {
+        if (chosen.height != null) return app.surrealar.coords.CoordinateFormat.height(chosen)
+        val e = runCatching { ellipsoidal() }.getOrNull()?.takeIf { it.height != null }
+        return e?.let { app.surrealar.coords.CoordinateFormat.height(it) } ?: "—"
+    }
+
+    /**
+     * Source label: the external receiver's label or the capture method. A linked model is already
+     * shown by the row icon, so its name is used only when nothing else is known about the source.
+     */
+    private fun sourceLabel(c: Coordinate, modelName: String?): String? =
+        captureSourceLabel(c)
+            ?: if (c.linkedModelId != null) modelName?.takeIf { it.isNotBlank() } ?: "Model linked" else null
+
+    private fun captureSourceLabel(c: Coordinate): String? {
         val method = c.captureMethod?.lowercase(Locale.US)
         if (app.surrealar.data.local.db.ProviderTokens.isExternal(c.provider) || method == "external_gnss" || method == "rtk_receiver") {
             return c.sourceDevice?.takeIf { it.isNotBlank() } ?: "External GNSS"

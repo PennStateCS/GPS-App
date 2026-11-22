@@ -855,11 +855,7 @@ class CoordinateDetailFragment : Fragment() {
         }
 
         // Quality/accuracy context note
-        val note = when (c.captureMethod?.lowercase(Locale.US)) {
-            "internal_gps", "averaged" ->
-                "Captured with Internal GPS. Accuracy may be lower than with an external GNSS receiver."
-            else -> null
-        }
+        val note = CoordinateDetailFormatter.internalGpsNote(c.provider, c.captureMethod)
         if (note != null) {
             textCaptureQualityNote?.text = note
             textCaptureQualityNote?.visibility = View.VISIBLE

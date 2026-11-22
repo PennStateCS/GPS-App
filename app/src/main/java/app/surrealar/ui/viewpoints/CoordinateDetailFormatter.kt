@@ -213,6 +213,19 @@ object CoordinateDetailFormatter {
         else -> null
     }
 
+    /**
+     * Note shown under the Capture card for points from the device's own GNSS. Decided by the
+     * provider (an averaged capture can come from an external receiver); a legacy "internal_gps"
+     * capture method counts too unless the provider says external.
+     */
+    fun internalGpsNote(provider: String?, captureMethod: String?): String? {
+        val prov = app.surrealar.data.local.db.ProviderTokens.fromDomain(provider)
+        val internal = prov == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL ||
+            (captureMethod?.trim()?.lowercase(Locale.US) == "internal_gps" &&
+                !app.surrealar.data.local.db.ProviderTokens.isExternal(provider))
+        return if (internal) "Captured with Internal GPS. Accuracy may be lower than with an external GNSS receiver." else null
+    }
+
     /** Satellites tile label: "Satellites" over "used/visible", or "Satellites used" when only that is known. */
     fun satellitesTileLabel(satsUsed: Int?, satsVisible: Int?): String =
         if (satsUsed != null && satsVisible == null) "Satellites used" else "Satellites"

@@ -3,6 +3,7 @@ package app.surrealar.ui.viewpoints
 import app.surrealar.settings.model.VerticalReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -224,6 +225,16 @@ class CoordinateDetailFormatterTest {
         assertEquals("18", CoordinateDetailFormatter.satellitesTileText(18, null))
         assertEquals("24", CoordinateDetailFormatter.satellitesTileText(null, 24))
         assertNull(CoordinateDetailFormatter.satellitesTileText(null, null))
+    }
+
+    @Test
+    fun internalGpsNote_followsProvider_notAveraging() {
+        assertNotNull(CoordinateDetailFormatter.internalGpsNote("fused", "averaged"))
+        assertNotNull(CoordinateDetailFormatter.internalGpsNote("fused", "internal_gps"))
+        assertNotNull(CoordinateDetailFormatter.internalGpsNote("other", "internal_gps"))
+        assertNull(CoordinateDetailFormatter.internalGpsNote("external-tcp", "averaged"))
+        assertNull(CoordinateDetailFormatter.internalGpsNote("rs2-external", "averaged"))
+        assertNull(CoordinateDetailFormatter.internalGpsNote("other", "manual"))
     }
 
     @Test

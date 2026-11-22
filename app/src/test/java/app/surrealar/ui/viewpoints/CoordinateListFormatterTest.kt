@@ -1,6 +1,11 @@
 package app.surrealar.ui.viewpoints
 
+import app.surrealar.coords.ConvertedPosition
 import app.surrealar.domain.model.Coordinate
+import app.surrealar.settings.model.HorizontalSystem
+import app.surrealar.settings.model.LinearUnit
+import app.surrealar.settings.model.OutputDatum
+import app.surrealar.settings.model.VerticalReference
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -36,6 +41,34 @@ class CoordinateListFormatterTest {
         val c = coord(modelId = "m1", rtkStatus = "FIX", hAcc = 0.03)
         assertEquals("Barn · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))
         assertEquals("Model linked · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
+    }
+
+    @Test fun modelLinked_keepsSourceDevice() {
+        val c = coord(provider = "external-tcp", rtkStatus = "FIX", hAcc = 0.03, sourceDevice = "Emlid Reach RS2+", modelId = "m1")
+        assertEquals("Emlid Reach RS2+ · Fixed · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))
+    }
+
+    private fun pos(vertical: VerticalReference, height: Double?) = ConvertedPosition(
+        horizontal = HorizontalSystem.GEOGRAPHIC, datum = OutputDatum.WGS84, unit = LinearUnit.METERS,
+        latDeg = 40.0, lonDeg = -76.0, easting = null, northing = null, zoneLabel = null,
+        vertical = vertical, height = height,
+    )
+
+    @Test fun rowHeight_usesChosenReferenceWhenAvailable() {
+        assertEquals("365.120 m MSL",
+            CoordinateListFormatter.rowHeightText(pos(VerticalReference.RECEIVER_MSL, 365.12)) { error("not needed") })
+    }
+
+    @Test fun rowHeight_fallsBackToEllipsoidal() {
+        assertEquals("397.000 m Ellip",
+            CoordinateListFormatter.rowHeightText(pos(VerticalReference.RECEIVER_MSL, null)) {
+                pos(VerticalReference.ELLIPSOIDAL, 397.0)
+            })
+    }
+
+    @Test fun rowHeight_dashWhenNoHeightAtAll() {
+        assertEquals("—", CoordinateListFormatter.rowHeightText(pos(VerticalReference.RECEIVER_MSL, null)) { null })
+        assertEquals("—", CoordinateListFormatter.rowHeightText(pos(VerticalReference.RECEIVER_MSL, null)) { error("boom") })
     }
 
     @Test fun internalGps_sourceOnly_whenNoFixOrAccuracy() {
