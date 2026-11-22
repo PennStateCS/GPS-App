@@ -48,6 +48,26 @@ class ModelsAdapter(
 
     fun cleanup() { coroutineScope.cancel() }
 
+    /** Model id → coordinates linking it (for the "N linked" badge). */
+    private var linkedCounts: Map<String, Int> = emptyMap()
+
+    fun setLinkedCounts(counts: Map<String, Int>) {
+        if (counts == linkedCounts) return
+        val old = linkedCounts
+        linkedCounts = counts
+        currentList.forEachIndexed { i, m ->
+            if (old[m.id] != counts[m.id]) notifyItemChanged(i, PAYLOAD_BADGES)
+        }
+    }
+
+    override fun onBindViewHolder(holder: ModelViewHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads.all { it == PAYLOAD_BADGES }) {
+            holder.bindLinkedBadge(getItem(position))
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
+    }
+
     /** Evict cached thumbnails for all current items, then notify so they reload from disk. */
     fun evictAndRefreshThumbnails() {
         currentList.forEach { model ->
@@ -76,15 +96,29 @@ class ModelsAdapter(
         private val btnEditModel: ImageButton = itemView.findViewById(R.id.btn_edit_model)
         //private val btnRecaptureThumbnail: ImageButton = itemView.findViewById(R.id.btn_recapture_thumbnail)
         private val btnDeleteModel: ImageButton = itemView.findViewById(R.id.btn_delete_model)
+        private val layoutBadges: View = itemView.findViewById(R.id.layout_badges)
+        private val badgeLinked: TextView = itemView.findViewById(R.id.text_badge_linked)
+        private val badgeGeo: TextView = itemView.findViewById(R.id.text_badge_geo)
+        private val badgeProblem: TextView = itemView.findViewById(R.id.text_badge_problem)
 
         /** Tracks the currently running preview load so it can be cancelled on rebind. */
         private var previewJob: Job? = null
 
         fun bind(model: Model) {
             textModelName.text = model.name
-            textModelFilename.text = model.fileName
+            // A default name is just the file name again — show "GLB · 119.4 KB" instead.
+            textModelFilename.text = if (ModelCardInfo.nameRepeatsFileName(model)) {
+                ModelCardInfo.typeAndSizeLabel(model.fileName, model.fileSize)
+            } else {
+                model.fileName
+            }
             textModelSize.text = model.getFormattedSize()
             textModelDate.text = formatDate(model.dateAdded)
+
+            badgeGeo.visibility = if (ModelCardInfo.isGeoreferenced(model)) View.VISIBLE else View.GONE
+            bindLinkedBadge(model)
+            // "Invalid" is known now; "File missing" needs a disk check, done with the preview load.
+            showProblemBadge(if (!model.isValid) "Invalid" else null)
 
             // Apply solid icon colours via SRC_IN so the tint fully replaces
             // the drawable's own colour rather than blending on top of it.
@@ -110,6 +144,24 @@ class ModelsAdapter(
             loadGlbPreview(model)
         }
 
+        fun bindLinkedBadge(model: Model) {
+            val n = linkedCounts[model.id] ?: 0
+            if (n > 0) {
+                badgeLinked.text = "$n linked"
+                badgeLinked.visibility = View.VISIBLE
+            } else {
+                badgeLinked.visibility = View.GONE
+            }
+            layoutBadges.visibility =
+                if (badgeLinked.visibility == View.VISIBLE || badgeGeo.visibility == View.VISIBLE) View.VISIBLE
+                else View.GONE
+        }
+
+        private fun showProblemBadge(text: String?) {
+            badgeProblem.text = text
+            badgeProblem.visibility = if (text != null) View.VISIBLE else View.GONE
+        }
+
         private fun loadGlbPreview(model: Model) {
             // Cancel any in-flight load from a previous bind
             previewJob?.cancel()
@@ -124,6 +176,12 @@ class ModelsAdapter(
 
             previewJob = coroutineScope.launch {
                 try {
+                    val fileExists = withContext(Dispatchers.IO) {
+                        runCatching { File(model.filePath).exists() }.getOrDefault(true)
+                    }
+                    if (imageModelPreview.tag != model.id) return@launch
+                    if (!fileExists) showProblemBadge("File missing")
+
                     val preview = withContext(Dispatchers.IO) { resolvePreview(model) }
                     // Skip if the ViewHolder was rebound to a different model while loading
                     if (imageModelPreview.tag != model.id) return@launch
@@ -182,6 +240,10 @@ class ModelsAdapter(
                 }
             }
         }
+    }
+
+    private companion object {
+        const val PAYLOAD_BADGES = "badges"
     }
 
     class ModelDiffCallback : DiffUtil.ItemCallback<Model>() {

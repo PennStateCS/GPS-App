@@ -15,6 +15,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +39,14 @@ class ModelsViewModel @Inject constructor(
     private val modelsRoot = File(context.filesDir, ModelFileCleaner.MODELS_DIR_NAME)
 
     val allModels = repository.getAllModels().asLiveData()
+
+    /** Model id → number of coordinates linking it, for the "N linked" card badge. */
+    val linkedCounts = coordinateDao.observeAll()
+        .map { coords -> ModelCardInfo.linkedCounts(coords.map { it.modelId to it.icon }) }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .catch { emit(emptyMap()) }
+        .asLiveData()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()

@@ -190,6 +190,11 @@ class ModelsFragment : Fragment() {
         }
 
 
+        // "N linked" badges follow the coordinates table
+        viewModel.linkedCounts.observe(viewLifecycleOwner) { counts ->
+            adapter.setLinkedCounts(counts)
+        }
+
         // Observe loading state and status messages scoped to the view's lifecycle
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {

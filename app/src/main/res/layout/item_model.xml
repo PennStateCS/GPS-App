@@ -52,6 +52,17 @@
                     android:layout_gravity="center"
                     android:visibility="gone" />
 
+                <!-- "File missing" / "Invalid" — shown over the thumbnail so it can't be missed -->
+                <TextView
+                    android:id="@+id/text_badge_problem"
+                    style="@style/Widget.App.ModelBadge"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="6dp"
+                    android:backgroundTint="?attr/colorErrorContainer"
+                    android:textColor="?attr/colorOnErrorContainer"
+                    android:visibility="gone"
+                    android:text="File missing" />
+
             </FrameLayout>
 
             <!-- ── Model info below the thumbnail ────────────────────────── -->
@@ -114,6 +125,34 @@
                         android:text="Added today"
                         android:textAppearance="@style/TextAppearance.App.StatusLabel"
                         android:textColor="?attr/colorOnSurfaceVariant" />
+
+                </LinearLayout>
+
+                <!-- Status badges: coordinates linking this model, embedded geolocation -->
+                <LinearLayout
+                    android:id="@+id/layout_badges"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/text_badge_linked"
+                        style="@style/Widget.App.ModelBadge"
+                        android:layout_marginEnd="4dp"
+                        android:backgroundTint="?attr/colorSecondaryContainer"
+                        android:textColor="?attr/colorOnSecondaryContainer"
+                        android:visibility="gone"
+                        android:text="2 linked" />
+
+                    <TextView
+                        android:id="@+id/text_badge_geo"
+                        style="@style/Widget.App.ModelBadge"
+                        android:backgroundTint="?attr/colorTertiaryContainer"
+                        android:textColor="?attr/colorOnTertiaryContainer"
+                        android:visibility="gone"
+                        android:text="Georeferenced" />
 
                 </LinearLayout>
 
