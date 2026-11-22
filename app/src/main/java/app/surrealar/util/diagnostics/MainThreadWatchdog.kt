@@ -71,10 +71,10 @@ object MainThreadWatchdog {
     }
 
     private fun report(e: Detector.Event.Stalled) {
-        val stack = Looper.getMainLooper().thread.stackTrace
-        val trace = stack.take(60).joinToString("\n") { "\tat $it" }
+        // As a Throwable so the log writes the frames as continuation lines (messages are one line).
+        val where = Throwable("Main thread stack").apply { stackTrace = Looper.getMainLooper().thread.stackTrace }
         DiagnosticsLogger.e(DiagTags.ERROR,
             "Main thread ${if (e.long) "STILL " else ""}blocked for ${e.forMs / 1000.0}s " +
-                "(screen=${DiagnosticsLogger.currentScreen ?: "unknown"}) — main thread stack:\n$trace")
+                "(screen=${DiagnosticsLogger.currentScreen ?: "unknown"})", where)
     }
 }
