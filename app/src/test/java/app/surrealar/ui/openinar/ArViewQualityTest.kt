@@ -81,14 +81,23 @@ class ArViewQualityTest {
         assertNull(s.helperText)
     }
 
-    @Test fun `placed by timeout carries the low-confidence helper`() {
-        val s = eval(h = 4.0, yaw = 50.0, placement = Placement.PLACED_BY_TIMEOUT)
+    @Test fun `placed by timeout at fair quality carries the low-confidence helper`() {
+        val s = eval(h = 4.0, yaw = 20.0, placement = Placement.PLACED_BY_TIMEOUT)
         assertTrue(s.modelsRenderable)
+        assertEquals(Level.FAIR, s.level)
         assertEquals(ArViewQuality.HELPER_TIMEOUT, s.helperText)
     }
 
-    @Test fun `low quality while waiting suggests the scan helper`() {
-        assertEquals(ArViewQuality.HELPER_LOW, eval(h = 9.0, placement = Placement.WAITING).helperText)
+    @Test fun `low quality says what is poor, while waiting and after placement`() {
+        // Field case: ARCore at ±10 m (no visual localisation) → point at buildings.
+        assertEquals(ArViewQuality.HELPER_POSITION, eval(h = 9.0, placement = Placement.WAITING).helperText)
+        assertEquals(ArViewQuality.HELPER_POSITION, eval(h = 10.2, yaw = 7.0, placement = Placement.PLACED_BY_TIMEOUT).helperText)
+        // Poor vertical alone also means position.
+        assertEquals(ArViewQuality.HELPER_POSITION, eval(h = 1.0, v = 11.0, placement = Placement.PLACED).helperText)
+        // Position fine, heading poor → pan.
+        assertEquals(ArViewQuality.HELPER_HEADING, eval(h = 1.5, yaw = 50.0, placement = Placement.PLACED).helperText)
+        // Starting up → generic hint.
+        assertEquals(ArViewQuality.HELPER_LOW, eval(earth = false, placement = Placement.WAITING).helperText)
     }
 
     @Test fun `waiting is not renderable`() {

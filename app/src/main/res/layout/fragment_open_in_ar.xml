@@ -108,6 +108,7 @@
         android:layout_gravity="top|start"
         android:layout_marginTop="98dp"
         android:layout_marginStart="12dp"
+        android:maxWidth="300dp"
         android:text="AR quality: —"
         android:textColor="@color/ar_overlay_text"
         android:textSize="11sp"

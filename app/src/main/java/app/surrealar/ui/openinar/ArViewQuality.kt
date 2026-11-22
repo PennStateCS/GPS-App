@@ -27,7 +27,15 @@ object ArViewQuality {
     /** Vertical accuracy (m) above which quality is capped at LOW regardless of horizontal/yaw. */
     const val POOR_VACC_M = 10.0
 
+    /** Generic low-quality hint (used when we can't tell which part is poor, e.g. still starting). */
     const val HELPER_LOW = "Move slowly and scan nearby buildings/ground."
+    /**
+     * AR position poor (ARCore hasn't localized visually — it's running on device GPS alone). Visual
+     * positioning needs permanent features in view and Street View coverage; ground/sky don't help.
+     */
+    const val HELPER_POSITION = "Point the camera at building fronts 10–50 m away. AR needs Street View imagery here to get more accurate."
+    /** Position fine but heading poor. */
+    const val HELPER_HEADING = "Pan slowly across your surroundings to fix the AR heading."
     const val HELPER_TIMEOUT = "Placed by timeout · accuracy may be low."
 
     /**
@@ -85,9 +93,19 @@ object ArViewQuality {
             Placement.PLACED, Placement.PLACED_BY_TIMEOUT -> "AR quality: ${levelWord(level)}"
         }
 
+        // Say what is actually poor, so the user knows what to do (also after placement by timeout).
+        val positionPoor = (h != null && h > FAIR_HACC_M) || (v != null && v > POOR_VACC_M)
+        val headingPoor = y != null && y > FAIR_YAW_DEG
+        val guidance = when {
+            level != Level.LOW -> null
+            positionPoor -> HELPER_POSITION
+            headingPoor -> HELPER_HEADING
+            else -> HELPER_LOW
+        }
         val helperText = when {
+            guidance != null -> guidance
             placement == Placement.PLACED_BY_TIMEOUT -> HELPER_TIMEOUT
-            level == Level.LOW || level == Level.NOT_READY -> HELPER_LOW
+            level == Level.NOT_READY -> HELPER_LOW
             else -> null
         }
 
