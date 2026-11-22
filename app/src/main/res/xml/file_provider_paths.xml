@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- External Documents directory for sharing exported files -->
-    <external-path name="external_documents" path="Documents/SurveyingApp/" />
-    <!-- External storage root -->
-    <external-path name="external_storage" path="." />
-    <!-- Internal cache directory for diagnostic report ZIPs -->
+    <!-- Internal cache directory for diagnostic report ZIPs (the only FileProvider share). -->
     <cache-path name="diagnostic_exports" path="diagnostic_exports/" />
 </paths>
-

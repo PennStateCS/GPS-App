@@ -128,7 +128,7 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <!-- FileProvider for sharing exported files -->
+        <!-- FileProvider for sharing diagnostic report ZIPs from the cache dir -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
