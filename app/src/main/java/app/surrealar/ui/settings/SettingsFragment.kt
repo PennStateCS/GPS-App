@@ -2062,8 +2062,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             runCatching {
                 val coordSettings = settingsRepo.coordinateSystemSettings.first()
                 val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                val csv = app.surrealar.data.export.PointsCsvExporter.build(points) {
-                    coordinateSystemService.convertCoordinate(it, coordSettings)
+                // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
+                val csv = withContext(Dispatchers.Default) {
+                    app.surrealar.data.export.PointsCsvExporter.build(points) {
+                        coordinateSystemService.convertCoordinate(it, coordSettings)
+                    }
                 }
                 withContext(Dispatchers.IO) {
                     requireContext().contentResolver.openOutputStream(uri)?.use {

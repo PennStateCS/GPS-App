@@ -36,6 +36,23 @@ class PointsCsvExporterTest {
         assertTrue("description with a comma is quoted", lines[1].contains("\"iron pin, found\""))
     }
 
+    @Test fun `formula-like text fields are prefixed with a quote`() {
+        assertEquals("'=HYPERLINK(\"x\")".let { "\"" + it.replace("\"", "\"\"") + "\"" }, PointsCsvExporter.csv("=HYPERLINK(\"x\")"))
+        assertEquals("'+1", PointsCsvExporter.csv("+1"))
+        assertEquals("'-2", PointsCsvExporter.csv("-2"))
+        assertEquals("'@SUM(A1)", PointsCsvExporter.csv("@SUM(A1)"))
+        assertEquals("'\tx", PointsCsvExporter.csv("\tx"))
+        assertEquals("\"'\rx\"", PointsCsvExporter.csv("\rx"))
+        assertEquals("'=1,2".let { "\"$it\"" }, PointsCsvExporter.csv("=1,2"))
+        assertEquals("CP1", PointsCsvExporter.csv("CP1"))
+        assertEquals("a=b", PointsCsvExporter.csv("a=b"))
+        assertEquals("", PointsCsvExporter.csv(""))
+        val csv = PointsCsvExporter.build(listOf(point("=cmd", "-note")), convert(CoordinateSystemSettings()))
+        val row = csv.trim().lines()[1]
+        assertTrue(row.startsWith("'=cmd,"))
+        assertTrue(row.contains(",'-note,"))
+    }
+
     @Test fun `geographic output uses latitude and longitude columns`() {
         val csv = PointsCsvExporter.build(listOf(point("P1")), convert(CoordinateSystemSettings()))
         assertTrue(csv.startsWith("Point,Latitude,Longitude,"))

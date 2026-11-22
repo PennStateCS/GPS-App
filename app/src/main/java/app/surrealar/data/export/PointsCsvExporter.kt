@@ -43,6 +43,14 @@ object PointsCsvExporter {
         return sb.toString()
     }
 
-    private fun csv(v: String): String =
-        if (v.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + v.replace("\"", "\"\"") + "\"" else v
+    /**
+     * One CSV text field. A value a spreadsheet would run as a formula (starts with = + - @, tab or CR)
+     * gets a leading single quote so it opens as plain text; then the usual quoting applies.
+     */
+    internal fun csv(raw: String): String {
+        val v = if (raw.isNotEmpty() && raw[0] in FORMULA_STARTS) "'$raw" else raw
+        return if (v.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) "\"" + v.replace("\"", "\"\"") + "\"" else v
+    }
+
+    private val FORMULA_STARTS = charArrayOf('=', '+', '-', '@', '\t', '\r')
 }
