@@ -94,6 +94,15 @@ class SettingsFragment : BaseTwoPaneFragment() {
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var importBackup: app.surrealar.domain.usecase.ImportCoordinateBackupUseCase
 
+    /**
+     * Scope for user-triggered settings WRITES (Main dispatcher). It outlives this screen, so a save
+     * fired by focus loss as the user leaves Settings still completes; `categoryScope` and the view
+     * scopes are cancelled at that moment. Loads and view binding stay on `categoryScope`; UI touched
+     * from a save must check that the view still exists.
+     */
+    private val saveScope: CoroutineScope
+        get() = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycleScope
+
     // Selected device for TCP connection (class scope)
     private var selectedDevice: Pair<String, Int>? = null
     private var selectedDeviceLabel: String? = null
@@ -311,7 +320,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
             spinner?.setOnItemClickListener { _, _, position, _ ->
                 val selected = options.getOrNull(position) ?: return@setOnItemClickListener
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(themeMode = selected.second))
@@ -330,7 +339,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             switchGnssBar?.setOnCheckedChangeListener { _, isChecked ->
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(showLiveGnssStatusBar = isChecked))
@@ -341,7 +350,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             switchKeepAwake?.setOnCheckedChangeListener { _, isChecked ->
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(keepScreenAwake = isChecked))
@@ -352,7 +361,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             switchMaxBright?.setOnCheckedChangeListener { _, isChecked ->
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(maxBrightnessWhileOpen = isChecked))
@@ -414,7 +423,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
                 switchDevTools.setOnCheckedChangeListener { _, v ->
                     try {
-                        lifecycleScope.launch {
+                        saveScope.launch {
                             try {
                                 settingsRepo.setDeveloperSettings(DeveloperSettings(developerToolsEnabled = v))
                             } catch (e: Exception) {
@@ -486,7 +495,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     showArDebugTools    = switchDebugTools?.isChecked ?: false,
                     antennaAboveCameraM = antenna,
                 )
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         settingsRepo.setArDisplaySettings(settings)
                     } catch (e: Exception) {
@@ -563,7 +572,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             var currentMap = app.surrealar.settings.SettingsDefaults.map
             fun persistMap(updated: app.surrealar.ui.rendermap.MapSettings) {
                 currentMap = updated
-                categoryScope.launch { runCatching { settingsRepo.setMapSettings(updated) } }
+                saveScope.launch { runCatching { settingsRepo.setMapSettings(updated) } }
             }
 
             // ── Stakeout defaults (StakeoutSettings) ────────────────────────────────
@@ -588,8 +597,8 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 )
                 if (updated == currentStakeout) return
                 currentStakeout = updated
-                // Fragment scope (not the view's): a save started as the user leaves the screen still completes.
-                lifecycleScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) } }
+                // Save scope (not the view's): a save started as the user leaves the screen still completes.
+                saveScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) } }
             }
 
             categoryScope.launch {
@@ -716,7 +725,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         fun save(s: app.surrealar.settings.model.CoordinateSystemSettings) {
             bind(s)
-            categoryScope.launch {
+            saveScope.launch {
                 runCatching { settingsRepo.setCoordinateSystemSettings(s) }
                     .onFailure { Log.e("SettingsFragment", "Failed to save coordinate system", it) }
             }
@@ -782,7 +791,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     return
                 }
                 tilPrefix?.error = null
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         val s = settingsRepo.coordinateDisplaySettings.first()
                         settingsRepo.setCoordinateDisplaySettings(s.copy(
@@ -795,7 +804,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             fun saveSwitch(accuracy: Boolean, autoInc: Boolean) {
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         val s = settingsRepo.coordinateDisplaySettings.first()
                         settingsRepo.setCoordinateDisplaySettings(s.copy(
@@ -1005,7 +1014,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     preset            = currentPreset,
                     precisionTargetM  = if (precisionText.isEmpty()) null else precision
                 )
-                categoryScope.launch {
+                saveScope.launch {
                     try {
                         settingsRepo.setGnssCaptureSettings(settings)
                     } catch (e: Exception) {
@@ -1036,7 +1045,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 applyPresetUi(chosen)
                 // Save just the preset (stored Custom values are kept as-is), independent of whether
                 // the Custom fields currently validate.
-                categoryScope.launch {
+                saveScope.launch {
                     runCatching {
                         val stored = settingsRepo.gnssCaptureSettings.first()
                         settingsRepo.setGnssCaptureSettings(stored.copy(preset = chosen))
@@ -1095,11 +1104,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val profile = profiles.getOrNull(position) ?: return@setOnItemClickListener
                 applyHint(profile)
                 // Persist + apply default port only on a genuine change.
-                categoryScope.launch {
+                saveScope.launch {
                     val persisted = runCatching { settingsRepo.externalReceiverProfile.first() }
                         .getOrDefault(app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
                     if (persisted != profile) {
                         runCatching { settingsRepo.setExternalReceiverProfile(profile) }
+                        if (this@SettingsFragment.view == null) return@launch
                         // Conservative: only apply the new profile's default port if the current
                         // port is missing/invalid or wasn't user-customized (a custom port is kept).
                         val currentPort = editPort?.text?.toString()?.trim()?.toIntOrNull()
@@ -1165,7 +1175,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                         if (selectedDeviceName == selectedDevice?.first || selectedDeviceName.isNullOrBlank()) {
                             selectedDeviceName = reachInfo.name ?: selectedDevice?.first
                             selectedDevice?.let { (host, port) ->
-                                settingsRepo.setExternalTcp(host, port, selectedDeviceName ?: "Unknown Device")
+                                val name = selectedDeviceName ?: "Unknown Device"
+                                saveScope.launch {
+                                    runCatching { settingsRepo.setExternalTcp(host, port, name) }
+                                        .onFailure { Log.e("SettingsFragment", "Failed to save receiver name", it) }
+                                }
                             }
                             updateDeviceBox()
                         }
@@ -1192,7 +1206,10 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                                 val resolved = ReachNameResolver.resolveReachName(requireContext(), host)
                                 if (!resolved.isNullOrBlank() && isAdded && currentDeviceInfo == null) {
                                     selectedDeviceName = resolved
-                                    settingsRepo.setExternalTcp(host, port, resolved)
+                                    saveScope.launch {
+                                        runCatching { settingsRepo.setExternalTcp(host, port, resolved) }
+                                            .onFailure { Log.e("SettingsFragment", "Failed to save receiver name", it) }
+                                    }
                                     updateDeviceBox()
                                 }
                             } catch (e: Exception) {
@@ -1256,7 +1273,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             updateDeviceBox()
             view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
                 ?.let { it.isChecked = false; it.isEnabled = false }
-            lifecycleScope.launch {
+            saveScope.launch {
                 try {
                     settingsRepo.setMockLocationEnabled(false)
                     settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
@@ -1615,7 +1632,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         // Antenna / pole vertical offset (metres). Subtracted from the captured altitude for
         // external-receiver captures so the stored altitude is the ground mark, not the antenna.
         editAntennaHeight?.apply {
-            lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().antennaHeightM))
                 } catch (e: Exception) {
@@ -1623,17 +1640,19 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
             val saveAntenna = {
-                lifecycleScope.launch {
+                val typed = text?.toString()
+                saveScope.launch {
                     try {
                         val current = settingsRepo.gnssReceiverSettings.first()
-                        val meters = AntennaHeightInput.parseMeters(text)
+                        val meters = AntennaHeightInput.parseMeters(typed)
                         if (meters == null) {
+                            if (this@SettingsFragment.view == null) return@launch
                             // Bad input: keep the stored value, say so, and restore the field.
                             showAntennaHeightError(this@apply)
                             setText(AntennaHeightInput.format(current.antennaHeightM))
                         } else {
-                            clearAntennaHeightError(this@apply)
                             settingsRepo.setGnssReceiverSettings(current.copy(antennaHeightM = meters))
+                            if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "antenna height save error", e)
@@ -1646,7 +1665,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         // Tablet / internal-GNSS antenna height — applied to internal-GPS captures (pole-mounted tablet).
         editInternalAntennaHeight?.apply {
-            lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     setText(AntennaHeightInput.format(settingsRepo.gnssReceiverSettings.first().internalAntennaHeightM))
                 } catch (e: Exception) {
@@ -1654,16 +1673,18 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
             val saveInternalAntenna = {
-                lifecycleScope.launch {
+                val typed = text?.toString()
+                saveScope.launch {
                     try {
                         val current = settingsRepo.gnssReceiverSettings.first()
-                        val meters = AntennaHeightInput.parseMeters(text)
+                        val meters = AntennaHeightInput.parseMeters(typed)
                         if (meters == null) {
+                            if (this@SettingsFragment.view == null) return@launch
                             showAntennaHeightError(this@apply)
                             setText(AntennaHeightInput.format(current.internalAntennaHeightM))
                         } else {
-                            clearAntennaHeightError(this@apply)
                             settingsRepo.setGnssReceiverSettings(current.copy(internalAntennaHeightM = meters))
+                            if (this@SettingsFragment.view != null) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
                         Log.e("SettingsFragment", "internal antenna height save error", e)
@@ -1688,10 +1709,10 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         switchMock?.setOnCheckedChangeListener { _, checked ->
-            categoryScope.launch {
+            saveScope.launch {
                 try {
                     settingsRepo.setMockLocationEnabled(checked)
-                    if (!checked) errorBanner?.visibility = View.GONE
+                    if (!checked && this@SettingsFragment.view != null) errorBanner?.visibility = View.GONE
                 } catch (e: Exception) {
                     Log.e("SettingsFragment", "Failed to save mock location setting", e)
                 }
@@ -1815,9 +1836,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     // Immediately disable mock publishing and update its switch UI
                     switchMock?.isChecked = false
                     switchMock?.isEnabled = false
-                    lifecycleScope.launch {
-                        settingsRepo.setMockLocationEnabled(false)
-                        settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
+                    saveScope.launch {
+                        runCatching {
+                            settingsRepo.setMockLocationEnabled(false)
+                            settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
+                        }.onFailure { Log.e("SettingsFragment", "Failed to save location source", it) }
                     }
                     if (!LocationService.isRunning) LocationService.start(requireContext())
                 }
@@ -1832,9 +1855,11 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     updateDeviceBox()
                     // Persist source selection asynchronously — does not need to complete
                     // before the connect attempt starts.
-                    lifecycleScope.launch {
-                        settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
-                        settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
+                    saveScope.launch {
+                        runCatching {
+                            settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
+                            settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
+                        }.onFailure { Log.e("SettingsFragment", "Failed to save location source", it) }
                     }
                     // Reconnect using the device already loaded from stored settings.
                     // Calling connectViaTcpFlow directly (not inside a separate launch) ensures
