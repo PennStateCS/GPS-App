@@ -34,9 +34,30 @@ object ArViewQuality {
      * positioning needs permanent features in view and Street View coverage; ground/sky don't help.
      */
     const val HELPER_POSITION = "Point the camera at building fronts 10–50 m away. AR needs Street View imagery here to get more accurate."
+    /** VPS confirmed available: the guess about coverage is dropped. */
+    const val HELPER_POSITION_VPS = "Point the camera at building fronts 10–50 m away to lock AR position."
+    /** VPS confirmed UNAVAILABLE: nothing the user can do will improve AR position here. */
+    const val HELPER_NO_VPS = "No visual positioning here. AR position comes from GPS and heading from motion, so placement is approximate."
     /** Position fine but heading poor. */
     const val HELPER_HEADING = "Pan slowly across your surroundings to fix the AR heading."
     const val HELPER_TIMEOUT = "Placed by timeout · accuracy may be low."
+
+    // ARCore camera TrackingFailureReason → a specific fix (names, so this stays ARCore-free).
+    const val HELPER_DARK = "Too dark to track. Move to better light."
+    const val HELPER_MOTION = "Moving too fast. Slow down."
+    const val HELPER_FEATURES = "Not enough detail. Point at textured surfaces, not plain walls, sky or glare."
+    const val HELPER_BAD_STATE = "AR hit an internal problem. Close and reopen AR."
+    const val HELPER_CAMERA = "Camera unavailable. Close other camera apps and reopen AR."
+
+    /** Hint for an ARCore `TrackingFailureReason` name; null for NONE / unknown. */
+    fun trackingFailureHint(reason: String?): String? = when (reason) {
+        "INSUFFICIENT_LIGHT" -> HELPER_DARK
+        "EXCESSIVE_MOTION" -> HELPER_MOTION
+        "INSUFFICIENT_FEATURES" -> HELPER_FEATURES
+        "BAD_STATE" -> HELPER_BAD_STATE
+        "CAMERA_UNAVAILABLE" -> HELPER_CAMERA
+        else -> null
+    }
 
     /**
      * @param statusLabel      user-facing status ("Localizing AR…", "Improving AR accuracy…", "AR quality: Good").
@@ -63,6 +84,10 @@ object ArViewQuality {
         vAccM: Double?,
         yawDeg: Double?,
         placement: Placement,
+        /** ARCore camera `TrackingFailureReason` name (null/"NONE" when tracking is fine). */
+        trackingFailure: String? = null,
+        /** VPS coverage from Session.checkVpsAvailabilityAsync: true/false, null = unknown. */
+        vpsAvailable: Boolean? = null,
     ): Status {
         val h = hAccM.finiteOrNull()
         val v = vAccM.finiteOrNull()
@@ -98,11 +123,18 @@ object ArViewQuality {
         val headingPoor = y != null && y > FAIR_YAW_DEG
         val guidance = when {
             level != Level.LOW -> null
-            positionPoor -> HELPER_POSITION
+            positionPoor -> when (vpsAvailable) {
+                false -> HELPER_NO_VPS
+                true -> HELPER_POSITION_VPS
+                null -> HELPER_POSITION
+            }
             headingPoor -> HELPER_HEADING
             else -> HELPER_LOW
         }
+        // A camera tracking failure is the most specific, actionable cause — it wins over everything.
+        val failureHint = trackingFailureHint(trackingFailure)
         val helperText = when {
+            failureHint != null -> failureHint
             guidance != null -> guidance
             placement == Placement.PLACED_BY_TIMEOUT -> HELPER_TIMEOUT
             level == Level.NOT_READY -> HELPER_LOW

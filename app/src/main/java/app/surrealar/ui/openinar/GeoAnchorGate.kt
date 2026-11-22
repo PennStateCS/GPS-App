@@ -60,7 +60,15 @@ object GeoAnchorGate {
     /** Heading re-anchor: yaw accuracy halved AND improved by at least this many degrees. */
     const val REANCHOR_MIN_YAW_IMPROVEMENT_DEG = 2.0
 
-    enum class Decision { WAIT, PLACE_LOCALIZED, PLACE_TIMEOUT }
+    /**
+     * No VPS coverage here (Session.checkVpsAvailabilityAsync said UNAVAILABLE): horizontal accuracy can
+     * never reach the gate, so waiting for it is pointless. Place once the heading meets the profile's
+     * yaw gate, or after this short cap — re-anchoring on heading improvement corrects the rest.
+     * Not "place immediately": right after Earth tracks, heading is often 55–90° off (field log 2026-11-22).
+     */
+    const val NO_VPS_TIMEOUT_MS = 10_000L
+
+    enum class Decision { WAIT, PLACE_LOCALIZED, PLACE_TIMEOUT, PLACE_NO_VPS }
 
     /** RTK profile only when the external receiver is in an RTK solution (FIX or FLOAT). */
     fun profileFor(isExternal: Boolean, rtkFixOrFloat: Boolean): Profile =
@@ -70,18 +78,21 @@ object GeoAnchorGate {
      * @param horizontalAccuracyM ARCore `cameraGeospatialPose.horizontalAccuracy`
      * @param yawAccuracyDeg       ARCore `cameraGeospatialPose.orientationYawAccuracy`
      * @param trackingElapsedMs    how long Earth has been continuously TRACKING
+     * @param vpsAvailable         VPS coverage at this site (true/false), or null while unknown/errored —
+     *                             null and true keep the normal gate.
      */
     fun decide(
         horizontalAccuracyM: Double,
         yawAccuracyDeg: Double,
         trackingElapsedMs: Long,
         profile: Profile = Profile.STANDARD,
+        vpsAvailable: Boolean? = null,
     ): Decision {
-        val localized = horizontalAccuracyM.isFinite() && yawAccuracyDeg.isFinite() &&
-            horizontalAccuracyM <= profile.maxHorizontalM &&
-            yawAccuracyDeg <= profile.maxYawDeg
+        val yawOk = yawAccuracyDeg.isFinite() && yawAccuracyDeg <= profile.maxYawDeg
+        val localized = yawOk && horizontalAccuracyM.isFinite() && horizontalAccuracyM <= profile.maxHorizontalM
         return when {
             localized -> Decision.PLACE_LOCALIZED
+            vpsAvailable == false && (yawOk || trackingElapsedMs >= NO_VPS_TIMEOUT_MS) -> Decision.PLACE_NO_VPS
             trackingElapsedMs >= profile.timeoutMs -> Decision.PLACE_TIMEOUT
             else -> Decision.WAIT
         }

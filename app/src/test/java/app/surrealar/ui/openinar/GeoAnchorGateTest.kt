@@ -105,6 +105,25 @@ class GeoAnchorGateTest {
         assertNull(GeoAnchorGate.reanchorReason(1.0, 1.0, false, yawAtCreationDeg = 12.0, currentYawDeg = 4.0)) // cooldown
     }
 
+    @Test fun `no VPS stops waiting for horizontal accuracy but still waits for heading`() {
+        val p = GeoAnchorGate.Profile.STANDARD
+        // ±10 m (never reaches 5 m without VPS) but heading good → place now, not after 25 s.
+        assertEquals(GeoAnchorGate.Decision.PLACE_NO_VPS, GeoAnchorGate.decide(10.0, 7.0, 2_000, p, vpsAvailable = false))
+        // Heading still 60° off early on → wait …
+        assertEquals(GeoAnchorGate.Decision.WAIT, GeoAnchorGate.decide(10.0, 60.0, 2_000, p, vpsAvailable = false))
+        // … but only up to the short no-VPS cap.
+        assertEquals(GeoAnchorGate.Decision.PLACE_NO_VPS,
+            GeoAnchorGate.decide(10.0, 60.0, GeoAnchorGate.NO_VPS_TIMEOUT_MS, p, vpsAvailable = false))
+        // Good accuracy everywhere still counts as localized.
+        assertEquals(GeoAnchorGate.Decision.PLACE_LOCALIZED, GeoAnchorGate.decide(1.0, 3.0, 0, p, vpsAvailable = false))
+        // VPS available or unknown → the normal gate (wait for horizontal).
+        assertEquals(GeoAnchorGate.Decision.WAIT, GeoAnchorGate.decide(10.0, 7.0, 2_000, p, vpsAvailable = true))
+        assertEquals(GeoAnchorGate.Decision.WAIT, GeoAnchorGate.decide(10.0, 7.0, 2_000, p, vpsAvailable = null))
+        // RTK profile's tighter heading applies without VPS too.
+        assertEquals(GeoAnchorGate.Decision.WAIT,
+            GeoAnchorGate.decide(10.0, 7.0, 2_000, GeoAnchorGate.Profile.RTK, vpsAvailable = false))
+    }
+
     @Test fun `expected error is horizontal accuracy plus the heading lever`() {
         assertEquals(1.0 + 20.0 * kotlin.math.tan(Math.toRadians(5.0)), GeoAnchorGate.expectedErrorM(1.0, 5.0, 20.0)!!, 1e-9)
         assertNull(GeoAnchorGate.expectedErrorM(Double.NaN, 5.0, 20.0))

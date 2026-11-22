@@ -170,6 +170,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val coordWithModel: CoordWithModel,
         /** Anchored on terrain (snapped to the detected ground) rather than at its stored height. */
         val onTerrain: Boolean = false,
+        /** TerrainAnchorState name from the resolve future (terrain anchors only), for the debug panel. */
+        val terrainState: String? = null,
     ) {
         /** Pre-computed normalised RGBA for GLES pin rendering. */
         val rgba: FloatArray = argbIntToRgba(coordWithModel.coordinate.color)
@@ -181,6 +183,50 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // rebuildGeoAnchorsIfNeeded). CopyOnWriteArrayList makes iteration on the GL thread
     // safe without locking — writes create a new backing array so readers never block.
     private val geoAnchors: MutableList<AnchorEntry> = CopyOnWriteArrayList()
+
+    /** A terrain anchor still resolving (resolveAnchorOnTerrainAsync); joins [geoAnchors] on success. */
+    private class PendingTerrainAnchor(
+        val future: com.google.ar.core.ResolveAnchorOnTerrainFuture,
+        val coordWithModel: CoordWithModel,
+    )
+    private val pendingTerrainAnchors: MutableList<PendingTerrainAnchor> = CopyOnWriteArrayList()
+
+    /** Detaches all geo anchors and cancels terrain resolves still in flight. GL thread (or after it stops). */
+    private fun clearGeoAnchors() {
+        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
+        geoAnchors.clear()
+        for (p in pendingTerrainAnchors) runCatching { p.future.cancel() }
+        pendingTerrainAnchors.clear()
+    }
+
+    /**
+     * Polls terrain resolves (GL thread, once per frame). Polling instead of the callback keeps every
+     * [geoAnchors] change on the GL thread. A resolved anchor starts drawing like any other; a failed
+     * one is logged and marked failed.
+     */
+    private fun pollTerrainAnchors() {
+        if (pendingTerrainAnchors.isEmpty()) return
+        for (p in pendingTerrainAnchors) {
+            val f = p.future
+            if (f.state != com.google.ar.core.FutureState.DONE) {
+                if (f.state == com.google.ar.core.FutureState.CANCELLED) pendingTerrainAnchors.remove(p)
+                continue
+            }
+            pendingTerrainAnchors.remove(p)
+            val c = p.coordWithModel.coordinate
+            val state = runCatching { f.resultTerrainAnchorState }.getOrNull()
+            val anchor = runCatching { f.resultAnchor }.getOrNull()
+            if (state == com.google.ar.core.Anchor.TerrainAnchorState.SUCCESS && anchor != null) {
+                geoAnchors.add(AnchorEntry(anchor, p.coordWithModel, onTerrain = true, terrainState = state.name))
+                DiagnosticsLogger.i(DIAG, "terrain anchor resolved coordinateId=${c.id} name=\"${c.name}\"")
+            } else {
+                runCatching { anchor?.detach() }
+                if (p.coordWithModel.modelFilePath != null)
+                    ArSessionDiagnostics.setStatus(c.id, ArSessionDiagnostics.ModelStatus.FAILED, "terrain_anchor_failed")
+                DiagnosticsLogger.w(DIAG, "terrain anchor failed coordinateId=${c.id} name=\"${c.name}\" state=$state")
+            }
+        }
+    }
     // @Volatile: written on main thread (setCoordinates), read on GL thread (rebuildGeoAnchorsIfNeeded).
     @Volatile private var geoAnchorsCreated = false
 
@@ -312,8 +358,37 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var lastEarthTrackingLogged: String? = null
     private var lastCameraTrackingLogged: String? = null
 
-    /** How the current anchors were placed ("localized"/"timeout"); null until placed. GL-thread only. */
+    /** How the current anchors were placed ("localized"/"timeout"/"no_vps"); null until placed. GL-thread only. */
     @Volatile private var lastPlacedVia: String? = null
+    /** VPS (visual positioning) coverage at this site: true/false, null = not checked / unknown / error. */
+    @Volatile private var vpsAvailable: Boolean? = null
+    private var vpsCheckStarted = false
+
+    /**
+     * Asks ARCore once per AR screen whether this site has VPS coverage (Street View–based visual
+     * localization). Without it ARCore's position stays at GPS accuracy, so the anchor gate stops waiting
+     * for horizontal accuracy and the quality hint says so instead of guessing. Coordinates go only to
+     * ARCore (which already uses them for Geospatial) and are never logged.
+     */
+    private fun startVpsCheck(latDeg: Double, lonDeg: Double) {
+        if (vpsCheckStarted) return
+        val ses = session ?: return
+        if (!latDeg.isFinite() || !lonDeg.isFinite()) return
+        vpsCheckStarted = true
+        runCatching {
+            ses.checkVpsAvailabilityAsync(latDeg, lonDeg) { result ->
+                vpsAvailable = when (result) {
+                    com.google.ar.core.VpsAvailability.AVAILABLE -> true
+                    com.google.ar.core.VpsAvailability.UNAVAILABLE -> false
+                    else -> null   // network / auth / internal error: keep the normal gate
+                }
+                DiagnosticsLogger.i(DIAG, "VPS_AVAILABILITY result=$result")
+            }
+        }.onFailure {
+            vpsCheckStarted = false   // try again on a later frame
+            DiagnosticsLogger.w(DIAG, "VPS availability check failed to start: ${it.message}")
+        }
+    }
     /** AR-view-quality level for the AR_QUALITY log, debounced (see [LevelHysteresis]). GL-thread only. */
     private val qualityLogHysteresis = LevelHysteresis<ArViewQuality.Level>(QUALITY_LOG_HOLD_MS)
 
@@ -371,8 +446,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var arShowPointCloud: Boolean = false
     /** User toggle (toolbar): hide model parts that are behind real surfaces. Off by default. */
     @Volatile private var arOcclusionEnabled: Boolean = false
-    /** True once the session was configured with ARCore depth (device supports it). */
+    /** True while the session runs ARCore depth (supported AND Occlude on — see [applyDepthMode]). */
     @Volatile private var depthEnabled: Boolean = false
+    /** Device supports ARCore depth (decides whether the Occlude toggle is offered). */
+    @Volatile private var depthSupported: Boolean = false
     /** Builds the occlusion mesh from ARCore depth images. GL-thread only. */
     private val depthOcclusionSampler = DepthOcclusionSampler()
 
@@ -797,6 +874,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.occlusionEnabled.collect { on ->
                     arOcclusionEnabled = on
+                    applyDepthMode()
                     val tint = if (on) requireContext().getColor(R.color.app_info)
                                else    requireContext().getColor(android.R.color.white)
                     binding.iconToggleOcclusion.setColorFilter(tint, android.graphics.PorterDuff.Mode.SRC_IN)
@@ -1066,9 +1144,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         debugUiPostGate.reset()
         // Clean up test anchors via controller
         testAnchorController.cleanup()
-        // Clean up geospatial anchors
-        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
-        geoAnchors.clear()
+        // Clean up geospatial anchors (and terrain resolves in flight)
+        clearGeoAnchors()
         geoAnchorsCreated = false
         lastAnchorRtkStatus = null
         lastReanchorTimeMs = 0L
@@ -1176,6 +1253,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     /**
+     * Turns ARCore depth on while Occlude is on and off otherwise, on the live session (Google's samples
+     * reconfigure a resumed session the same way). Depth-from-motion costs processing every frame and
+     * nothing else uses it. No-op until the session is configured or when the device lacks depth.
+     */
+    private fun applyDepthMode() {
+        val ses = session ?: return
+        if (!depthSupported) return
+        val want = arOcclusionEnabled
+        if (want == depthEnabled) return
+        try {
+            val cfg = ses.config
+            cfg.depthMode = if (want) Config.DepthMode.AUTOMATIC else Config.DepthMode.DISABLED
+            ses.configure(cfg)
+            backgroundRenderer?.let { ses.setCameraTextureName(it.textureId) }
+            depthEnabled = want
+            DiagnosticsLogger.i(DIAG, "AR depth ${if (want) "ON" else "OFF"} (follows Occlude)")
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DIAG, "AR depth switch failed: ${e.message}", e)
+        }
+    }
+
+    /**
      * Configure ARCore session with geospatial and other features
      */
     private fun configureSession() {
@@ -1201,11 +1300,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             // Configure other AR features
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-            focusMode = Config.FocusMode.AUTO
+            // Fixed focus: Google's guidance is that it tracks better (ARCore's default); auto focus is for
+            // close-up subjects/recording. Field use looks mostly at things metres away.
+            focusMode = Config.FocusMode.FIXED
             lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-            // Depth (hardware ToF/IR sensor when present, otherwise depth-from-motion) — enabled only
-            // where supported; it powers the optional "Occlude" toggle.
-            if (ses.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+            // Depth (hardware ToF/IR sensor when present, otherwise depth-from-motion) only powers the
+            // "Occlude" toggle, so it runs only while that is on (applyDepthMode switches it live).
+            depthSupported = ses.isDepthModeSupported(Config.DepthMode.AUTOMATIC)
+            if (depthSupported && arOcclusionEnabled) {
                 depthMode = Config.DepthMode.AUTOMATIC
                 depthRequested = true
             } else {
@@ -1218,11 +1320,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             if (backgroundRenderer != null) ses.setCameraTextureName(backgroundRenderer!!.textureId)
             geospatialAvailable = geoEnabled
             depthEnabled = depthRequested
-            DiagnosticsLogger.i(DIAG, "AR session configured successfully (geospatial=$geoEnabled, depth=$depthRequested)")
+            DiagnosticsLogger.i(DIAG, "AR session configured successfully (geospatial=$geoEnabled, " +
+                "depth=$depthRequested depthSupported=$depthSupported focus=FIXED)")
             logCameraConfigs(ses)
             // The occlusion toggle is only offered on devices with ARCore depth.
+            val offerOcclusion = depthSupported
             _binding?.root?.post {
-                _binding?.occlusionGroup?.visibility = if (depthRequested) View.VISIBLE else View.GONE
+                _binding?.occlusionGroup?.visibility = if (offerOcclusion) View.VISIBLE else View.GONE
             }
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "Error configuring AR session: ${e.message}", e)
@@ -1353,7 +1457,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 "fix=${gnssFix.provider}/${gnssFix.rtkStatus})")
             currentGateProfile = profile
         }
-        val gate = GeoAnchorGate.decide(arHAcc, arYawAcc, trackingElapsed, profile)
+        startVpsCheck(gnssFix.latDeg, gnssFix.lonDeg)
+        val gate = GeoAnchorGate.decide(arHAcc, arYawAcc, trackingElapsed, profile, vpsAvailable)
         if (gate == GeoAnchorGate.Decision.WAIT) {
             awaitingLocalization = true
             if (!loggedLocalizationWait) {
@@ -1379,14 +1484,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             "arHAccM=${"%.2f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} elapsedMs=$trackingElapsed " +
             "farthestPointM=${farthestM?.let { "%.1f".format(it) } ?: "n/a"} " +
             "expectedErrAtFarthestM=${expErr?.let { "%.2f".format(it) } ?: "n/a"}")
-        val placedVia = if (gate == GeoAnchorGate.Decision.PLACE_TIMEOUT) "timeout" else "localized"
+        val placedVia = when (gate) {
+            GeoAnchorGate.Decision.PLACE_TIMEOUT -> "timeout"
+            GeoAnchorGate.Decision.PLACE_NO_VPS -> "no_vps"
+            else -> "localized"
+        }
 
         // ── Diagnostics: the exact placement INPUTS (fix + Earth pose + mock/source state) ──────────
         // Lets a future export distinguish a good geospatial estimate from a low-confidence timeout,
         // and see which location source (incl. mock injection) was feeding ARCore. Missing accuracy is
         // logged as "unknown" — never 0.0. Runs once per (re)anchor, not per frame.
         val anchorMode = altitudeMode
-        val replacedPrevious = geoAnchors.isNotEmpty()
+        val replacedPrevious = geoAnchors.isNotEmpty() || pendingTerrainAnchors.isNotEmpty()
         val fixAgeMs = System.currentTimeMillis() - gnssFix.timeUtc.toEpochMilli()
         val earthVAcc = camAccPose?.verticalAccuracy?.takeIf { it.isFinite() }
         ArSessionDiagnostics.apply {
@@ -1400,7 +1509,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             arHAccAtAnchorM = arHAcc.takeIf { it.isFinite() }
             arVAccAtAnchorM = earthVAcc
             arYawAccAtAnchorDeg = arYawAcc.takeIf { it.isFinite() }
-            if (placedVia == "timeout") anchorsViaTimeout += 1
+            if (placedVia != "localized") anchorsViaTimeout += 1   // timeout or no-VPS: low confidence
             modelTransformSource = "anchor-driven"
         }
         DiagnosticsLogger.i(DIAG, "ANCHOR_PLACEMENT_INPUT anchorMode=$anchorMode placementReason=$placedVia " +
@@ -1432,12 +1541,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 "hasModel=${item.modelFilePath != null}")
         }
 
-        // Clean up existing anchors
-        for (entry in geoAnchors) try {
-            entry.anchor.detach()
-        } catch (_: Exception) {
-        }
-        geoAnchors.clear()
+        // Clean up existing anchors (and terrain resolves in flight)
+        clearGeoAnchors()
 
         // Use GNSS ellipsoidal altitude as fallback for coordinates with no recorded altitude.
         // altEllipsoidalM (WGS84 HAE) is required because ARCore's createAnchor() expects it.
@@ -1464,12 +1569,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val c = item.coordWithModel.coordinate
             val choice = AltitudePolicy.choose(mode, item.alt, c.verticalAccuracyM, c.rtkStatus)
             try {
-                val anchor = if (choice.onTerrain) {
-                    earth.resolveAnchorOnTerrain(item.lat, item.lng, 0.0, 0f, 0f, 0f, 1f)
+                if (choice.onTerrain) {
+                    // Async resolve (the sync call is deprecated); polled in pollTerrainAnchors().
+                    val future = earth.resolveAnchorOnTerrainAsync(item.lat, item.lng, 0.0, 0f, 0f, 0f, 1f, null)
+                    pendingTerrainAnchors.add(PendingTerrainAnchor(future, item.coordWithModel))
                 } else {
-                    earth.createAnchor(item.lat, item.lng, item.alt ?: fallbackAlt, 0f, 0f, 0f, 1f)
+                    val anchor = earth.createAnchor(item.lat, item.lng, item.alt ?: fallbackAlt, 0f, 0f, 0f, 1f)
+                    geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
                 }
-                geoAnchors.add(AnchorEntry(anchor, item.coordWithModel, onTerrain = choice.onTerrain))
                 if (choice.onTerrain) terrain++ else stored++
                 // One line per point: which height it got and why (the "it's floating" question).
                 DiagnosticsLogger.i(DIAG, "anchor height coordinateId=${c.id} name=\"${c.name}\" mode=$mode " +
@@ -1485,14 +1592,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     "choice=$choice reason=\"${e.message}\"", e)
             }
         }
-        DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size} failed=$failed mode=$mode " +
+        DiagnosticsLogger.i(DIAG, "anchors created count=${geoAnchors.size + pendingTerrainAnchors.size} " +
+            "resolving=${pendingTerrainAnchors.size} failed=$failed mode=$mode " +
             "stored=$stored terrain=$terrain transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
             "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
             "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
             "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
             "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"}" +
             (if (terrain > 0) " — terrain anchors appear as terrain resolves" else ""))
-        recordAnchorOutcome(items.size, geoAnchors.size, failed)
+        recordAnchorOutcome(items.size, geoAnchors.size + pendingTerrainAnchors.size, failed)
 
         lastPlacedVia = placedVia
         geoAnchorsCreated = true
@@ -1682,7 +1790,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val newModelPoses = mutableListOf<ArFilamentRenderer.ModelPose>()
 
                 // Detected ground/floor for Terrain mode (snaps content to the surface ARCore sees).
-                if (geoAnchors.any { it.onTerrain } || altitudeMode == AltitudePolicy.TERRAIN) groundSnapper.update(s, camera.pose)
+                if (geoAnchors.any { it.onTerrain } || pendingTerrainAnchors.isNotEmpty() ||
+                    altitudeMode == AltitudePolicy.TERRAIN) groundSnapper.update(s, camera.pose)
                 else groundSnapper.reset()
 
                 collectGeoAnchors(earth, vp, margin, pinPositions, labelEntries, arrowEntries, newModelPoses)
@@ -1727,8 +1836,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // 4) Status bar, debug panel, model progress chip (posted to main thread)
             val featuresCounted = camera.trackingState == TrackingState.TRACKING &&
                 (debugOverlayVisible || (arDebugToolsEnabled && (arShowPointCloud || arShowPlanes)))
-            val camFailure = if (debugOverlayVisible)
-                runCatching { camera.trackingFailureReason?.name }.getOrNull() else null
+            // Always read (a cheap enum getter): the AR quality hint uses it, not just the debug panel.
+            val camFailure = runCatching { camera.trackingFailureReason?.name }.getOrNull()
             val optics = if (debugOverlayVisible) computeOptics(camera) else null
             postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount, featuresCounted, camFailure, optics)
 
@@ -1745,11 +1854,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Returns a short human-readable earth status string for the debug panel.
      */
     private fun processEarthAndAnchors(earth: Earth?): String {
+        pollTerrainAnchors()
         // Process manual re-anchor request from main thread BEFORE rebuilding.
         if (shouldRebuildAnchors) {
             shouldRebuildAnchors = false
-            for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
-            geoAnchors.clear()
+            clearGeoAnchors()
             geoAnchorsCreated = false
             lastAnchorRtkStatus = null
             lastReanchorTimeMs = System.currentTimeMillis()
@@ -1801,8 +1910,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         ArSessionDiagnostics.anchorsRebuiltAfterInitial++
                         DiagnosticsLogger.i(DIAG, "Re-anchor (auto) reason=rtk_upgrade " +
                             "$lastAnchorRtkStatus → ${currentFix.rtkStatus} — clearing ${geoAnchors.size} anchors")
-                        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
-                        geoAnchors.clear()
+                        clearGeoAnchors()
                         geoAnchorsCreated = false
                         lastAnchorRtkStatus = null
                         lastReanchorTimeMs = System.currentTimeMillis()
@@ -1834,8 +1942,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                             "H ${"%.2f".format(committedAcc)} → ${curAcc?.let { "%.2f".format(it) }} m, " +
                             "yaw ${earthYawAccAtCreationDeg?.let { "%.1f".format(it) } ?: "?"} → ${curYaw?.let { "%.1f".format(it) } ?: "?"}° " +
                             "— clearing ${geoAnchors.size} anchors")
-                        for (entry in geoAnchors) try { entry.anchor.detach() } catch (_: Exception) {}
-                        geoAnchors.clear()
+                        clearGeoAnchors()
                         geoAnchorsCreated = false
                         earthAccuracyAtCreationM = null; earthYawAccAtCreationDeg = null
                         lastReanchorTimeMs = nowMs
@@ -2046,8 +2153,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val qYaw  = camGeo?.orientationYawAccuracy
         val placement = when {
             !geoAnchorsCreated          -> ArViewQuality.Placement.WAITING
-            geoAnchors.isEmpty()        -> ArViewQuality.Placement.FAILED
-            lastPlacedVia == "timeout"  -> ArViewQuality.Placement.PLACED_BY_TIMEOUT
+            geoAnchors.isEmpty() && pendingTerrainAnchors.isEmpty() -> ArViewQuality.Placement.FAILED
+            lastPlacedVia == "timeout" || lastPlacedVia == "no_vps" -> ArViewQuality.Placement.PLACED_BY_TIMEOUT
             else                        -> ArViewQuality.Placement.PLACED
         }
         val quality = ArViewQuality.evaluate(
@@ -2055,6 +2162,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             cameraTracking = lastCameraTrackingLogged == "TRACKING",
             hAccM = qHAcc, vAccM = qVAcc, yawDeg = qYaw,
             placement = placement,
+            trackingFailure = cameraFailureReason,
+            vpsAvailable = vpsAvailable,
         )
         // Logged only once a new level has held for QUALITY_LOG_HOLD_MS, so a value hovering at a
         // threshold can't flood the log.
@@ -2088,9 +2197,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 distM    = distM,
                 bear     = bear,
                 hasModel = entry.modelFilePath != null,
-                terrainState = terrainStateName(entry.anchor)
+                terrainState = entry.terrainState
             )
-        }
+        } + (if (!panelOpen) emptyList() else pendingTerrainAnchors.map { p ->
+            // Still resolving: shown so the panel's terrain tally keeps reading TASK_IN_PROGRESS.
+            val coord = p.coordWithModel.coordinate
+            AnchorDebugEntry(
+                name = coord.name, coordId = coord.id, tracking = false,
+                distM = if (camLat != null && camLon != null)
+                    Geodesic.distanceM(camLat, camLon, coord.latitude, coord.longitude) else -1.0,
+                bear = if (camLat != null && camLon != null)
+                    Geodesic.initialBearingDeg(camLat, camLon, coord.latitude, coord.longitude) else 0.0,
+                hasModel = p.coordWithModel.modelFilePath != null,
+                terrainState = "TASK_IN_PROGRESS",
+            )
+        })
 
         // ARCore ↔ GNSS agreement (live AR accuracy). Shown in the debug panel every frame it's open and
         // logged to the export every 5 s so field sessions record how well AR matched the receiver; with
@@ -2176,9 +2297,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 quality.modelsRenderable -> {
                     _binding?.localizingBanner?.visibility = View.GONE
                     _binding?.chipArQuality?.let { chip ->
-                        val timeoutTag = if (placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT) " · timeout" else ""
+                        val timeoutTag = when {
+                            lastPlacedVia == "no_vps" -> " · no VPS"
+                            placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT -> " · timeout"
+                            else -> ""
+                        }
                         // When quality is low, a second line tells the user how to improve it.
-                        val hint = quality.helperText?.takeIf { quality.level == ArViewQuality.Level.LOW }
+                        val hint = quality.helperText?.takeIf {
+                            quality.level == ArViewQuality.Level.LOW || quality.level == ArViewQuality.Level.NOT_READY
+                        }
                         chip.text = "${quality.statusLabel} · ${quality.accuracyText}$timeoutTag" +
                             (hint?.let { "\n$it" } ?: "")
                         chip.visibility = View.VISIBLE
@@ -2254,11 +2381,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val geoid = fix.geoidSeparationM
         if (msl != null && geoid != null) msl + geoid else null
     }
-
-    /** TerrainAnchorState name, or null for non-terrain (WGS84) anchors. GL thread only. */
-    @Suppress("DEPRECATION")
-    private fun terrainStateName(anchor: com.google.ar.core.Anchor): String? =
-        runCatching { anchor.terrainAnchorState.name }.getOrNull()?.takeIf { it != "NONE" }
 
     /** Horizontal accuracy the anchor gate uses — the app-wide estimate (see [ArGnssGate.accuracyM]). */
     private fun gnssGateAccuracyM(fix: Fix): Double? = ArGnssGate.accuracyM(fix)

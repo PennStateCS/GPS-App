@@ -18,7 +18,9 @@ class ArViewQualityTest {
         earth: Boolean = true, camera: Boolean = true,
         h: Double? = 1.0, v: Double? = 1.0, yaw: Double? = 5.0,
         placement: Placement = Placement.PLACED,
-    ) = ArViewQuality.evaluate(earth, camera, h, v, yaw, placement)
+        trackingFailure: String? = null,
+        vpsAvailable: Boolean? = null,
+    ) = ArViewQuality.evaluate(earth, camera, h, v, yaw, placement, trackingFailure, vpsAvailable)
 
     @Test fun `not ready when earth tracking is off`() {
         assertEquals(Level.NOT_READY, eval(earth = false).level)
@@ -98,6 +100,26 @@ class ArViewQualityTest {
         assertEquals(ArViewQuality.HELPER_HEADING, eval(h = 1.5, yaw = 50.0, placement = Placement.PLACED).helperText)
         // Starting up → generic hint.
         assertEquals(ArViewQuality.HELPER_LOW, eval(earth = false, placement = Placement.WAITING).helperText)
+    }
+
+    @Test fun `camera tracking failure gives the specific fix and wins over accuracy hints`() {
+        assertEquals(ArViewQuality.HELPER_DARK, eval(camera = false, trackingFailure = "INSUFFICIENT_LIGHT").helperText)
+        assertEquals(ArViewQuality.HELPER_MOTION, eval(camera = false, trackingFailure = "EXCESSIVE_MOTION").helperText)
+        assertEquals(ArViewQuality.HELPER_FEATURES, eval(camera = false, trackingFailure = "INSUFFICIENT_FEATURES").helperText)
+        assertEquals(ArViewQuality.HELPER_BAD_STATE, eval(camera = false, trackingFailure = "BAD_STATE").helperText)
+        assertEquals(ArViewQuality.HELPER_CAMERA, eval(camera = false, trackingFailure = "CAMERA_UNAVAILABLE").helperText)
+        assertEquals(ArViewQuality.HELPER_MOTION, eval(h = 9.0, trackingFailure = "EXCESSIVE_MOTION").helperText)
+        // NONE / unknown fall through to the normal hints.
+        assertEquals(ArViewQuality.HELPER_LOW, eval(camera = false, trackingFailure = "NONE").helperText)
+        assertEquals(ArViewQuality.HELPER_LOW, eval(camera = false, trackingFailure = "SOMETHING_NEW").helperText)
+    }
+
+    @Test fun `VPS result replaces the coverage guess`() {
+        assertEquals(ArViewQuality.HELPER_NO_VPS, eval(h = 10.0, vpsAvailable = false).helperText)
+        assertEquals(ArViewQuality.HELPER_POSITION_VPS, eval(h = 10.0, vpsAvailable = true).helperText)
+        assertEquals(ArViewQuality.HELPER_POSITION, eval(h = 10.0, vpsAvailable = null).helperText)
+        // Heading-only problem is unaffected by VPS.
+        assertEquals(ArViewQuality.HELPER_HEADING, eval(h = 1.5, yaw = 50.0, vpsAvailable = false).helperText)
     }
 
     @Test fun `waiting is not renderable`() {
