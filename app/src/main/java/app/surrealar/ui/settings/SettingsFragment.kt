@@ -296,7 +296,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, options.map { it.first })
             )
 
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     val current = settingsRepo.appearanceSettings.first()
                     val label = options.firstOrNull { it.second == current.themeMode }?.first ?: options.first().first
@@ -311,7 +311,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
             spinner?.setOnItemClickListener { _, _, position, _ ->
                 val selected = options.getOrNull(position) ?: return@setOnItemClickListener
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(themeMode = selected.second))
@@ -330,7 +330,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             switchGnssBar?.setOnCheckedChangeListener { _, isChecked ->
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(showLiveGnssStatusBar = isChecked))
@@ -341,7 +341,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             switchKeepAwake?.setOnCheckedChangeListener { _, isChecked ->
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(keepScreenAwake = isChecked))
@@ -352,7 +352,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             switchMaxBright?.setOnCheckedChangeListener { _, isChecked ->
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         val current = settingsRepo.appearanceSettings.first()
                         settingsRepo.setAppearanceSettings(current.copy(maxBrightnessWhileOpen = isChecked))
@@ -486,7 +486,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     showArDebugTools    = switchDebugTools?.isChecked ?: false,
                     antennaAboveCameraM = antenna,
                 )
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         settingsRepo.setArDisplaySettings(settings)
                     } catch (e: Exception) {
@@ -496,7 +496,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             var isBinding = false
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     val s = settingsRepo.arDisplaySettings.first()
                     isBinding = true
@@ -563,7 +563,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             var currentMap = app.surrealar.settings.SettingsDefaults.map
             fun persistMap(updated: app.surrealar.ui.rendermap.MapSettings) {
                 currentMap = updated
-                viewLifecycleOwner.lifecycleScope.launch { runCatching { settingsRepo.setMapSettings(updated) } }
+                categoryScope.launch { runCatching { settingsRepo.setMapSettings(updated) } }
             }
 
             // ── Stakeout defaults (StakeoutSettings) ────────────────────────────────
@@ -592,7 +592,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 lifecycleScope.launch { runCatching { settingsRepo.setStakeoutSettings(updated) } }
             }
 
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     currentMap = settingsRepo.mapSettings.first()
                     spinnerType?.setText(typeOptions.firstOrNull { it.second == currentMap.defaultMapType }?.first ?: "Normal", false)
@@ -716,7 +716,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         fun save(s: app.surrealar.settings.model.CoordinateSystemSettings) {
             bind(s)
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 runCatching { settingsRepo.setCoordinateSystemSettings(s) }
                     .onFailure { Log.e("SettingsFragment", "Failed to save coordinate system", it) }
             }
@@ -752,12 +752,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         spinnerV?.setOnItemClickListener { _, _, pos, _ -> vs.getOrNull(pos)?.let { save(current.copy(vertical = it)) } }
         spinnerR?.setOnItemClickListener { _, _, pos, _ -> rs.getOrNull(pos)?.let { save(current.copy(externalReceiverDatum = it)) } }
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             runCatching { bind(settingsRepo.coordinateSystemSettings.first()) }
                 .onFailure { Log.e("SettingsFragment", "Failed to load coordinate system", it) }
         }
         // Keep the preview live while the page is open.
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 fixSwitchboard.currentFix.collect { showPreview() }
             }
@@ -782,7 +782,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     return
                 }
                 tilPrefix?.error = null
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         val s = settingsRepo.coordinateDisplaySettings.first()
                         settingsRepo.setCoordinateDisplaySettings(s.copy(
@@ -795,7 +795,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             fun saveSwitch(accuracy: Boolean, autoInc: Boolean) {
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         val s = settingsRepo.coordinateDisplaySettings.first()
                         settingsRepo.setCoordinateDisplaySettings(s.copy(
@@ -809,7 +809,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             var isBinding = false
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     val s = settingsRepo.coordinateDisplaySettings.first()
                     isBinding = true
@@ -862,7 +862,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             btnExport?.setOnClickListener {
                 btnExport.isEnabled = false
                 btnExport.text = "Exporting…"
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     val report = try {
                         app.surrealar.util.DiagnosticReportExporter.buildReport(requireContext())
                     } catch (ex: Exception) {
@@ -1005,7 +1005,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     preset            = currentPreset,
                     precisionTargetM  = if (precisionText.isEmpty()) null else precision
                 )
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     try {
                         settingsRepo.setGnssCaptureSettings(settings)
                     } catch (e: Exception) {
@@ -1014,7 +1014,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
             }
 
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     val saved = settingsRepo.gnssCaptureSettings.first()
                     spinner?.setText(rtkOptions.getOrElse(rtkOptions.indexOfFirst { it.second == saved.requiredMinStatus }.coerceAtLeast(0)) { rtkOptions.first() }.first, false)
@@ -1036,7 +1036,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 applyPresetUi(chosen)
                 // Save just the preset (stored Custom values are kept as-is), independent of whether
                 // the Custom fields currently validate.
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     runCatching {
                         val stored = settingsRepo.gnssCaptureSettings.first()
                         settingsRepo.setGnssCaptureSettings(stored.copy(preset = chosen))
@@ -1084,7 +1084,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 profileHint?.text = profile.hint?.let { "$baseHelp\n\n$it" } ?: baseHelp
             }
 
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 val current = runCatching { settingsRepo.externalReceiverProfile.first() }
                     .getOrDefault(app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
                 profileDropdown?.setText(current.label, false)
@@ -1095,7 +1095,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 val profile = profiles.getOrNull(position) ?: return@setOnItemClickListener
                 applyHint(profile)
                 // Persist + apply default port only on a genuine change.
-                viewLifecycleOwner.lifecycleScope.launch {
+                categoryScope.launch {
                     val persisted = runCatching { settingsRepo.externalReceiverProfile.first() }
                         .getOrDefault(app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
                     if (persisted != profile) {
@@ -1129,7 +1129,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
         // Show the receiver's battery / corrections / device-info controls only when the selected profile
         // reports them (Emlid: all; Generic NMEA: none).
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             receiverDevices.profileCapabilities.collect { caps ->
                 (tvBattery?.parent as? View)?.isVisible = caps.hasBattery
                 chipBattery?.isVisible = caps.hasBattery
@@ -1156,7 +1156,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         // Observe device info from repository
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             receiverDevices.deviceInfo.collect { reachInfo ->
                 try {
                     if (reachInfo != null) {
@@ -1281,7 +1281,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         // Observe stored TCP host/port and auto-diagnose on new device
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             settingsRepo.externalTcpHost.combine(settingsRepo.externalTcpPort) { h, p -> h to p }.collect { (host, port) ->
                 // Only react to TCP host/port changes when External source is selected in the UI
                 val isExternalSelected = radioGroup?.checkedRadioButtonId == R.id.radio_es2_tcp
@@ -1326,7 +1326,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
         }
         // Observe persisted friendly name
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             settingsRepo.externalTcpName.collect { storedName ->
                 if (!storedName.isNullOrBlank() && selectedDevice != null) {
                     if (selectedDeviceName == null || selectedDeviceName == selectedDevice!!.first) {
@@ -1338,7 +1338,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         deviceStatusJob?.cancel()
-        deviceStatusJob = viewLifecycleOwner.lifecycleScope.launch {
+        deviceStatusJob = categoryScope.launch {
             // lastExternalFixTimeMs, lastExternalFixRtkStatus, lastExternalRawNmeaTimeMs are
             // fragment-scope fields so resetExternalReceiverStatus() can clear them from any path.
             var lastUiStatus: ConnectionUiStatus = ConnectionUiStatus.DISCONNECTED
@@ -1576,7 +1576,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             // Collect external fixes only — internal GPS fixes must never affect external status.
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     try {
                         // currentFix, not the fixes replay buffer: re-entering Settings replayed the last
@@ -1596,7 +1596,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
 
             // Track raw NMEA activity (external adapter only) to distinguish "no data" from "no fix".
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     fixSwitchboard.rawNmea.collect {
                         if (currentExternalActive()) lastExternalRawNmeaTimeMs = System.currentTimeMillis()
@@ -1679,7 +1679,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         val errorBanner  = view.findViewById<LinearLayout>(R.id.layout_mock_location_error)
         val btnDevOpts   = view.findViewById<Button>(R.id.btn_open_developer_options)
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             try {
                 switchMock?.isChecked = settingsRepo.mockLocationEnabled.first()
             } catch (e: Exception) {
@@ -1688,7 +1688,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
 
         switchMock?.setOnCheckedChangeListener { _, checked ->
-            viewLifecycleOwner.lifecycleScope.launch {
+            categoryScope.launch {
                 try {
                     settingsRepo.setMockLocationEnabled(checked)
                     if (!checked) errorBanner?.visibility = View.GONE
@@ -1710,7 +1710,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             }
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 try {
                     var lastShownError: AndroidMockLocationPublisher.MockLocationError? = null

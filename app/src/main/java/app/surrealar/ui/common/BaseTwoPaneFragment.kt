@@ -9,6 +9,9 @@ import android.widget.AutoCompleteTextView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.isActive
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import app.surrealar.R
@@ -127,7 +130,18 @@ abstract class BaseTwoPaneFragment : Fragment() {
     /** Optionally choose which category index to select first. */
     protected open fun initialCategoryIndex(): Int = 0
 
+    private val categoryScopes = ReplaceableScope()
+
+    /**
+     * Scope for the shown category's collectors and loads. Cancelled when another category is shown
+     * (removing the views alone left their collectors running and piling up on every visit) and when
+     * the view is destroyed. Use it instead of viewLifecycleOwner.lifecycleScope in category builders.
+     */
+    protected val categoryScope: CoroutineScope
+        get() = categoryScopes.current?.takeIf { it.isActive } ?: categoryScopes.next(viewLifecycleOwner.lifecycleScope.coroutineContext)
+
     private fun showCategory(category: SettingsCategory) {
+        categoryScopes.next(viewLifecycleOwner.lifecycleScope.coroutineContext)
         val dynamicStartIndex = 2
         while (internalContentContainer.childCount > dynamicStartIndex) {
             internalContentContainer.removeViewAt(dynamicStartIndex)
@@ -181,5 +195,17 @@ abstract class BaseTwoPaneFragment : Fragment() {
                 showCategory(first)
             }
         }
+    }
+}
+
+/** One child scope at a time under a parent: [next] cancels the previous one first. */
+class ReplaceableScope {
+    var current: CoroutineScope? = null
+        private set
+
+    fun next(parent: kotlin.coroutines.CoroutineContext): CoroutineScope {
+        current?.coroutineContext?.get(kotlinx.coroutines.Job)?.cancel()
+        val job = kotlinx.coroutines.SupervisorJob(parent[kotlinx.coroutines.Job])
+        return CoroutineScope(parent + job).also { current = it }
     }
 }

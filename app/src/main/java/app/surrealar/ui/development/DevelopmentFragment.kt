@@ -382,7 +382,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 text = "Run Data Health Check"
                 setOnClickListener { btn ->
                     btn.isEnabled = false
-                    viewLifecycleOwner.lifecycleScope.launch {
+                    categoryScope.launch {
                         val report = runCatching { dataHealthChecker.check() }.getOrNull()
                         btn.isEnabled = true
                         if (report == null) {
@@ -1056,7 +1056,7 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
                 ?.takeLast(5)?.reversed()?.joinToString("\n") ?: "(no NMEA data yet)"
         }
 
-        viewLifecycleOwner.lifecycleScope.launch {
+        categoryScope.launch {
             launch { viewModel.latestFix.collect { fix -> applyFix(fix) } }
             launch { viewModel.skySnapshot.collect { sky -> applySky(sky) } }
             launch { viewModel.diagnosticData.collect { data -> applyDiagnostics(data) } }
