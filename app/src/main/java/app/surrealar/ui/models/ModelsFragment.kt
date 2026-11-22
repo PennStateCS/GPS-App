@@ -18,6 +18,7 @@ import app.surrealar.data.files.ModelFileCleaner
 import androidx.lifecycle.Lifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withStarted
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import app.surrealar.databinding.FragmentModelsBinding
@@ -173,8 +174,9 @@ class ModelsFragment : Fragment() {
             adapter.submitList(models) {
                 // Scroll to top only when a new model was added (not on edits/thumbnail updates).
                 // New models are inserted at index 0 because the DB orders by dateAdded DESC.
+                // Runs after async diffing: the view may already be gone.
                 if (models.size > previousCount) {
-                    binding.recyclerModels.scrollToPosition(0)
+                    _binding?.recyclerModels?.scrollToPosition(0)
                 }
             }
 
@@ -281,9 +283,14 @@ class ModelsFragment : Fragment() {
                 }
             }
 
+            val filesDir = requireContext().filesDir   // read now: the copy runs off the main thread
             viewLifecycleOwner.lifecycleScope.launch {
+                // The try/catch around launch never saw failures inside it: a stream dropped by a
+                // cloud provider or a full disk crashed the app. Fail into the "target null" path.
                 val targetFile = withContext(Dispatchers.IO) {
-                    copyModelToInternalStorage(uri, fileName, inputStream)
+                    runCatching { copyModelToInternalStorage(uri, fileName, inputStream, filesDir) }
+                        .onFailure { DiagnosticsLogger.e("MODEL", "file copy failed for \"$fileName\": ${it.javaClass.simpleName} ${it.message}", it) }
+                        .getOrNull()
                 }
                 if (targetFile == null) {
                     DiagnosticsLogger.e("MODEL", "file copy failed for \"$fileName\" — target null")
@@ -304,14 +311,15 @@ class ModelsFragment : Fragment() {
                 DiagnosticsLogger.i("MODEL", "file copied name=\"${targetFile.name}\" " +
                     "sizeBytes=$finalSize path=\"models/${targetFile.name}\" georeferenced=${embedded != null}")
 
-                // Prompt user for name/description
-                showAddModelDialog(
+                // Prompt user for name/description — once the screen is started again (the copy and
+                // reprojection can take seconds; showing a dialog after the state is saved throws).
+                viewLifecycleOwner.withStarted { showAddModelDialog(
                     fileName.substringBeforeLast("."),
                     targetFile.name,
                     targetFile.absolutePath,
                     finalSize,
                     embedded
-                )
+                ) }
             }
 
         } catch (e: Exception) {
@@ -321,16 +329,21 @@ class ModelsFragment : Fragment() {
         }
     }
 
-    private fun copyModelToInternalStorage(sourceUri: Uri, fileName: String, inputStream: java.io.InputStream): File? {
-        val modelsDir = File(requireContext().filesDir, "models").also { it.mkdirs() }
+    private fun copyModelToInternalStorage(sourceUri: Uri, fileName: String, inputStream: java.io.InputStream, filesDir: File): File? {
+        val modelsDir = File(filesDir, "models").also { it.mkdirs() }
         val lowerName = fileName.lowercase()
 
         return if (lowerName.endsWith(".gltf")) {
             val bundleDir = uniqueModelBundleDir(modelsDir, fileName.substringBeforeLast("."))
             val targetGltf = File(bundleDir, fileName)
 
-            inputStream.use { input ->
-                FileOutputStream(targetGltf).use { output -> input.copyTo(output) }
+            try {
+                inputStream.use { input ->
+                    FileOutputStream(targetGltf).use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                bundleDir.deleteRecursively()   // no half-copied model left behind
+                throw e
             }
 
             val resourceUris = parseGltfResourceUris(targetGltf)
@@ -350,8 +363,13 @@ class ModelsFragment : Fragment() {
                 counter++
             }
 
-            inputStream.use { input ->
-                FileOutputStream(targetFile).use { output -> input.copyTo(output) }
+            try {
+                inputStream.use { input ->
+                    FileOutputStream(targetFile).use { output -> input.copyTo(output) }
+                }
+            } catch (e: Exception) {
+                targetFile.delete()             // no half-copied model left behind
+                throw e
             }
             targetFile
         }
@@ -443,7 +461,9 @@ class ModelsFragment : Fragment() {
                 //val intent = ModelViewerActivity.newCaptureModeIntent(requireContext(), filePath, name)
                 //startActivity(intent)
 
-                ThumbnailCaptureActivity.start(requireContext(), filePath, name, fileName)
+                // The add can finish after the user left this screen.
+                val ctx = context ?: return@addModel
+                ThumbnailCaptureActivity.start(ctx, filePath, name, fileName)
             }
         }
         dialog.show(parentFragmentManager, "AddModelDialog")

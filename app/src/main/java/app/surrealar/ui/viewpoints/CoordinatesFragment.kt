@@ -356,7 +356,8 @@ class CoordinatesFragment : Fragment() {
             val dialog = EditCoordinateDialogFragment(coordinate, models) { updated ->
                 viewModel.updateCoordinate(updated)
             }
-            dialog.show(parentFragmentManager, "EditCoordinateDialog")
+            // The models query can finish after the app went to the background.
+            if (!parentFragmentManager.isStateSaved) dialog.show(parentFragmentManager, "EditCoordinateDialog")
         }
     }
 
