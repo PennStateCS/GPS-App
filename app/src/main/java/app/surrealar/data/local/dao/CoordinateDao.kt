@@ -34,6 +34,13 @@ interface CoordinateDao {
     @Query("DELETE FROM coordinates")
     suspend fun deleteAll()
 
+    /** Replaces the whole table in one transaction: if any insert fails, the old rows stay. */
+    @Transaction
+    suspend fun replaceAll(coordinates: List<CoordinateEntity>) {
+        deleteAll()
+        insertAll(coordinates)
+    }
+
     @Query("DELETE FROM coordinates WHERE id = :id")
     suspend fun deleteById(id: String)
 

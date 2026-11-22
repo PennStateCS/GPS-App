@@ -51,6 +51,10 @@ class CoordinateRepositoryImpl @javax.inject.Inject constructor(
         coordinateDao.deleteAll()
     }
 
+    override suspend fun replaceAll(coordinates: List<Coordinate>) {
+        coordinateDao.replaceAll(coordinates.map { it.toEntity() })
+    }
+
     // Single-shot reads
     override suspend fun getAllCoordinatesList(): List<Coordinate> =
         coordinateDao.getAllCoordinatesList().map { it.toDomain() }

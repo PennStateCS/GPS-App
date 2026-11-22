@@ -29,6 +29,16 @@ class FakeCoordinateRepository(initial: List<Coordinate> = emptyList()) : Coordi
     override suspend fun update(coordinate: Coordinate) = insert(coordinate)
     override suspend fun deleteById(id: String) { store.removeAll { it.id == id } }
     override suspend fun deleteAll() { deleteAllCount++; store.clear() }
+    var replaceAllCount = 0
+    /** When set, [replaceAll] throws before touching [store] (simulates a rolled-back transaction). */
+    var failReplace: Exception? = null
+    override suspend fun replaceAll(coordinates: List<Coordinate>) {
+        failReplace?.let { throw it }
+        replaceAllCount++
+        deleteAllCount++
+        store.clear()
+        insertAll(coordinates)
+    }
     override suspend fun getAllCoordinatesList(): List<Coordinate> = store.toList()
     override suspend fun getById(id: String): Coordinate? = store.firstOrNull { it.id == id }
     override suspend fun count(): Int = store.size

@@ -29,6 +29,8 @@ interface CoordinateRepository {
     suspend fun update(coordinate: Coordinate)
     suspend fun deleteById(id: String)
     suspend fun deleteAll()
+    /** Deletes every coordinate and inserts [coordinates] atomically (all or nothing). */
+    suspend fun replaceAll(coordinates: List<Coordinate>)
 
     // Single-shot reads
     suspend fun getAllCoordinatesList(): List<Coordinate>

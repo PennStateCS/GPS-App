@@ -60,8 +60,9 @@ class ImportCoordinateBackupUseCase @Inject constructor(
         val plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, mode)
 
         if (!plan.isNoOp) {
-            if (replace) coordinateRepository.deleteAll()
-            coordinateRepository.insertAll(plan.toInsert)
+            // Replace is one transaction: a failed write leaves the existing points untouched.
+            if (replace) coordinateRepository.replaceAll(plan.toInsert)
+            else coordinateRepository.insertAll(plan.toInsert)
         }
         plan
     }

@@ -2154,17 +2154,20 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
     private fun launchImportCoordinates(uri: Uri, replace: Boolean) {
         if (coordinatesImportJob?.isActive == true) return
-        coordinatesImportJob = lifecycleScope.launch { importCoordinates(uri, replace) }
+        // Save scope: leaving Settings must not cancel the import mid-write. Cancel still works
+        // through the job reference.
+        val appContext = requireContext().applicationContext
+        coordinatesImportJob = saveScope.launch { importCoordinates(appContext, uri, replace) }
     }
 
-    private suspend fun importCoordinates(uri: Uri, replace: Boolean) {
+    private suspend fun importCoordinates(appContext: Context, uri: Uri, replace: Boolean) {
         showImportProgress(true, 0, "Scanning…")
         importProcessed = 0; importTotal = 0
         runCatching {
             // Fragment owns the URI read; the use case parses, plans (duplicates/missing models),
             // and writes via the repositories.
             val raw = withContext(Dispatchers.IO) {
-                requireContext().contentResolver.openInputStream(uri)?.use { inp ->
+                appContext.contentResolver.openInputStream(uri)?.use { inp ->
                     BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
                 } ?: error("Unable to open input stream")
             }

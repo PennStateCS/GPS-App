@@ -49,6 +49,15 @@ class ImportCoordinateBackupUseCaseTest {
         assertEquals(1, repo.deleteAllCount)
         assertEquals(listOf("Only"), repo.store.map { it.name })
         assertTrue(plan.duplicateIds.isEmpty())              // replace doesn't report duplicates
+        assertEquals(1, repo.replaceAllCount)                // one atomic replace, not delete + insert
+    }
+
+    @Test fun replace_failedWrite_keepsExistingPoints() = runTest {
+        val repo = FakeCoordinateRepository(listOf(coord("a", "Keep"), coord("b", "Keep too")))
+        repo.failReplace = IllegalStateException("disk full")
+        val result = runCatching { useCase(repo)(backupOf(coord("c", "New")), replace = true) }
+        assertTrue(result.isFailure)
+        assertEquals(listOf("Keep", "Keep too"), repo.store.map { it.name })
     }
 
     @Test fun missingModelReference_isReported_notFatal() = runTest {
