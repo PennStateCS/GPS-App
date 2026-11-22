@@ -94,10 +94,6 @@ class SurRealApplication : Application() {
         app.surrealar.util.diagnostics.LifecycleLogger.install(this)
         app.surrealar.util.diagnostics.SettingsChangeLogger.install(this)
         app.surrealar.util.diagnostics.SystemEventsLogger.install(this)
-        runCatching {
-            dagger.hilt.android.EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
-                .gnssFeedLogger().start()
-        }.onFailure { DiagnosticsLogger.w("GNSS", "GNSS feed log not started: ${it.message}") }
         // Surfaced for tester support: in debug builds Room is allowed to wipe & recreate the
         // database on a schema mismatch (fallbackToDestructiveMigration), which would clear saved
         // coordinates/models. Release builds keep data via real migrations.
@@ -133,6 +129,11 @@ class SurRealApplication : Application() {
         applyThemeFromSettings()
         createNotificationChannel()
         startMockLocationPublisher()
+        // After setupSettings(): the feed logger's Hilt graph (FixSwitchboard → SourceSettings) reads settingsRepo.
+        // Before the restore, so the restored source switch is logged.
+        runCatching {
+            EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java).gnssFeedLogger().start()
+        }.onFailure { DiagnosticsLogger.w("GNSS", "GNSS feed log not started: ${it.message}") }
         restoreSavedGnssSource()
         runUtmBackfill()
     }
