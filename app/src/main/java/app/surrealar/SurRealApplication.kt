@@ -198,7 +198,9 @@ class SurRealApplication : Application() {
      * `ArchitectureGuardTest` enforces this.
      */
     private fun setupSettings() {
-        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        // LogUncaught: an exception in a startup job (mock publisher, settings migration, last-known
+        // position) is logged instead of crashing the app.
+        appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + app.surrealar.di.CoroutineModule.LogUncaught)
         val localDs = SettingsLocalDataSource(this)
         settingsRepo = SettingsRepositoryImpl(localDs)
         // Run settings-storage migrations on the same DataStore (currently a version stamp; this is

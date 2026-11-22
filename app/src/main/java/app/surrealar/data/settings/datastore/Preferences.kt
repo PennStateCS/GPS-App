@@ -16,7 +16,16 @@ import kotlinx.coroutines.flow.map
 
 // Local raw persistence ONLY (no domain enums/models here)
 private const val DATASTORE_NAME = "app_settings"
-val Context.appDataStore by preferencesDataStore(name = DATASTORE_NAME)
+/**
+ * A corrupt settings file (battery died mid-write) would otherwise throw on every read and crash every
+ * launch until the user cleared app data. Fall back to defaults and log it instead.
+ */
+val settingsCorruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { e ->
+    app.surrealar.util.DiagnosticsLogger.e("SETTINGS", "Settings file was corrupt and has been reset to defaults", e)
+    androidx.datastore.preferences.core.emptyPreferences()
+}
+
+val Context.appDataStore by preferencesDataStore(name = DATASTORE_NAME, corruptionHandler = settingsCorruptionHandler)
 
 /**
  * Typed DataStore preference keys for the single `app_settings` store. Each key name is a persisted
