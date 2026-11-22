@@ -129,11 +129,18 @@ class ExternalAdapter(
      * change, so the switchboard would not rebind and the old socket would stay up. No-op when the
      * adapter is not running (it reads the saved settings on its next start anyway).
      */
-    override fun reconnectNow(reason: String) = synchronized(lifecycleLock) {
-        if (reconnectJob == null) return@synchronized
-        DiagnosticsLogger.i("RECEIVER", "Reconnecting external receiver now ($reason)")
-        stopLocked()
-        startLocked()
+    override fun reconnectNow(reason: String) {
+        // Off the caller's thread: Settings calls this from the main thread, and stopping closes the TCP
+        // socket and waits for the fuser lock while holding lifecycleLock. If the adapter is stopped
+        // before this runs, reconnectJob is null and it does nothing.
+        scope.launch {
+            synchronized(lifecycleLock) {
+                if (reconnectJob == null) return@synchronized
+                DiagnosticsLogger.i("RECEIVER", "Reconnecting external receiver now ($reason)")
+                stopLocked()
+                startLocked()
+            }
+        }
     }
 
     override fun stop() = synchronized(lifecycleLock) { stopLocked() }
