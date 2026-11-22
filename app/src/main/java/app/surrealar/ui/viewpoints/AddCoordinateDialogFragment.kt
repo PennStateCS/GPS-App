@@ -80,6 +80,15 @@ class AddCoordinateDialogFragment(
     private val onPointAdded: (Coordinate) -> Unit
 ) : DialogFragment() {
 
+    /**
+     * Used only by Android when it rebuilds the dialog (process death, theme/dark-mode change). The
+     * caller's models and callback are gone then, so the dialog closes itself instead of crashing
+     * with Fragment.InstantiationException; the user reopens Add Coordinate.
+     */
+    constructor() : this(emptyList(), {}) { recreatedBySystem = true }
+
+    private var recreatedBySystem = false
+
     @Inject lateinit var fixSwitchboard: FixSwitchboard
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var settingsRepo: SettingsRepository
@@ -172,6 +181,10 @@ class AddCoordinateDialogFragment(
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setStyle(STYLE_NORMAL, 0)
+        if (recreatedBySystem) {
+            app.surrealar.util.DiagnosticsLogger.i("CAPTURE", "Add Coordinate dialog closed after Android recreated it")
+            dismissAllowingStateLoss()
+        }
     }
 
     override fun onStart() {

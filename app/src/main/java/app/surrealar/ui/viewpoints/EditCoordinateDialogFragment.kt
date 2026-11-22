@@ -40,17 +40,26 @@ import java.util.Locale
  * repository. Does not alter the measured position.
  */
 class EditCoordinateDialogFragment(
-    private val coordinate: Coordinate,
+    private val coordinateOrNull: Coordinate?,
     private val dbModels: List<Model> = emptyList(),
     private val onCoordinateEdited: (Coordinate) -> Unit
 ) : DialogFragment() {
+
+    /**
+     * Used only by Android when it rebuilds the dialog (process death, theme/dark-mode change). The
+     * coordinate and callback are gone then, so the dialog closes itself instead of crashing with
+     * Fragment.InstantiationException.
+     */
+    constructor() : this(null, emptyList(), {})
+
+    private val coordinate: Coordinate get() = coordinateOrNull!!
 
     private var iconButtonRef: MaterialButton? = null
     private var editTextRef: EditText? = null
     private var placementSectionRef: View? = null
 
     // Preserves existing icon unless user picks a new model
-    private var selectedIconKey: String = coordinate.icon
+    private var selectedIconKey: String = coordinateOrNull?.icon ?: ""
 
     // Pending location override — null means keep existing coordinate location
     private var pendingLatitude: Double? = null
@@ -71,6 +80,11 @@ class EditCoordinateDialogFragment(
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
+        if (coordinateOrNull == null) {
+            app.surrealar.util.DiagnosticsLogger.i("COORD", "Edit Coordinate dialog closed after Android recreated it")
+            dismissAllowingStateLoss()
+            return Dialog(requireContext())
+        }
         val inflater = requireActivity().layoutInflater
         val view = inflater.inflate(R.layout.dialog_add_point, null)
 
