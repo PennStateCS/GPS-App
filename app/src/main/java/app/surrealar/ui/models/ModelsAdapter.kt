@@ -19,6 +19,7 @@ import app.surrealar.R
 import app.surrealar.domain.model.Model
 import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -37,7 +38,13 @@ class ModelsAdapter(
     private val onModelClick: (Model) -> Unit
 ) : ListAdapter<Model, ModelsAdapter.ModelViewHolder>(ModelDiffCallback()) {
 
-    private val coroutineScope = CoroutineScope(Dispatchers.Main)
+    // Children cancelled when the list detaches (they used to outlive the screen).
+    private val coroutineScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
+
+    override fun onDetachedFromRecyclerView(recyclerView: androidx.recyclerview.widget.RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        coroutineScope.coroutineContext[kotlinx.coroutines.Job]?.cancelChildren()
+    }
 
     fun cleanup() { coroutineScope.cancel() }
 
@@ -150,7 +157,7 @@ class ModelsAdapter(
             if (!file.exists()) return null
 
             return try {
-                val bmp = BitmapFactory.decodeFile(thumbPath)
+                val bmp = app.surrealar.util.ThumbnailBitmaps.decodeSampled(thumbPath)
                 if (bmp != null) SimpleCoordinatesAdapter.putCache(cacheKey, bmp)
                 bmp
             } catch (e: Exception) {

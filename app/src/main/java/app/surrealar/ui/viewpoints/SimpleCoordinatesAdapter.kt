@@ -281,7 +281,7 @@ class SimpleCoordinatesAdapter(
         if (!file.exists()) return null
 
         return try {
-            val raw = BitmapFactory.decodeFile(thumbPath) ?: return null
+            val raw = app.surrealar.util.ThumbnailBitmaps.decodeSampled(thumbPath) ?: return null
             val scaled = raw.toIconSize()
             if (scaled !== raw) raw.recycle()
             bitmapCache.put(cacheKey, scaled)

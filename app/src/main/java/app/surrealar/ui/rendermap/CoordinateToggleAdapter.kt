@@ -14,6 +14,7 @@ import app.surrealar.R
 import app.surrealar.domain.repository.ModelRepository
 import com.google.android.material.color.MaterialColors
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -51,7 +52,13 @@ class CoordinateToggleAdapter(
 
     private var items: List<CoordinateToggleItem> = emptyList()
     private var selectedId: String? = null
-    private val scope = CoroutineScope(Dispatchers.Main)
+    // Children cancelled when the list detaches (they used to outlive the screen).
+    private val scope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
+
+    override fun onDetachedFromRecyclerView(recyclerView: androidx.recyclerview.widget.RecyclerView) {
+        super.onDetachedFromRecyclerView(recyclerView)
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancelChildren()
+    }
 
     fun submit(newItems: List<CoordinateToggleItem>) {
         val old = items
@@ -154,7 +161,7 @@ class CoordinateToggleAdapter(
                                 val model = modelRepository.getModelById(modelId) ?: return@withContext null
                                 val path = model.thumbnailFilePath ?: return@withContext null
                                 if (!File(path).exists()) return@withContext null
-                                BitmapFactory.decodeFile(path)
+                                app.surrealar.util.ThumbnailBitmaps.decodeSampled(path)
                             } catch (_: Exception) { null }
                         }
                         if (bmp != null) {
