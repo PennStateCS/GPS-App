@@ -39,12 +39,80 @@ class GlbContainerTest {
         assertNull(GlbContainer.parse(glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), version = 1)))
     }
 
-    @Test fun `stops at a chunk that runs past the end`() {
-        val bytes = glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), GlbContainer.CHUNK_BIN to ByteArray(8))
-        val cut = bytes.copyOf(bytes.size - 1)
-        val c = GlbContainer.parse(cut)!!
-        assertEquals(1, c.chunks.size)
-        assertNull(c.bin)
+    private fun setInt(b: ByteArray, at: Int, v: Int) = b.also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(at, v) }
+
+    private fun assertProblem(p: GlbContainer.Problem, bytes: ByteArray) {
+        assertEquals(p, GlbContainer.check(bytes))
+        assertNull(GlbContainer.parse(bytes))
+    }
+
+    private fun valid() = glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), GlbContainer.CHUNK_BIN to ByteArray(8))
+
+    @Test fun `a valid container has no problem`() {
+        assertNull(GlbContainer.check(valid()))
+    }
+
+    @Test fun `truncated file is a length mismatch, not a quietly shorter container`() {
+        val bytes = valid()
+        assertProblem(GlbContainer.Problem.LENGTH_MISMATCH, bytes.copyOf(bytes.size - 1))
+    }
+
+    @Test fun `declared length must equal the byte count`() {
+        assertProblem(GlbContainer.Problem.LENGTH_MISMATCH, setInt(valid(), 8, valid().size + 4))
+        assertProblem(GlbContainer.Problem.LENGTH_MISMATCH, setInt(valid(), 8, valid().size - 4))
+        assertProblem(GlbContainer.Problem.LENGTH_MISMATCH, setInt(valid(), 8, -1))   // 4 GB unsigned
+        // Trailing bytes past the declared length are not a container either.
+        val padded = valid() + ByteArray(4)
+        assertProblem(GlbContainer.Problem.LENGTH_MISMATCH, padded)
+    }
+
+    @Test fun `header without any chunk is too short`() {
+        val b = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putInt(GlbContainer.MAGIC).putInt(2).putInt(12).array()
+        assertProblem(GlbContainer.Problem.TOO_SHORT, b)
+    }
+
+    @Test fun `chunk running past the end is rejected`() {
+        // BIN chunk length claims 12 bytes but only 8 follow (total length kept consistent).
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_LENGTH, setInt(valid(), 24, 12))
+    }
+
+    @Test fun `negative (huge unsigned) and Int-overflowing chunk lengths are rejected`() {
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_LENGTH, setInt(valid(), 24, -8))
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_LENGTH, setInt(valid(), 24, Int.MAX_VALUE))
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_LENGTH, setInt(valid(), 12, Int.MIN_VALUE))
+    }
+
+    @Test fun `incomplete chunk header is rejected`() {
+        val bytes = glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray()) + ByteArray(4)
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_LENGTH, setInt(bytes, 8, bytes.size))
+    }
+
+    @Test fun `misaligned JSON chunk is rejected`() {
+        val bytes = glb(GlbContainer.CHUNK_JSON to "{} ".toByteArray(), GlbContainer.CHUNK_BIN to ByteArray(8))
+        assertProblem(GlbContainer.Problem.MISALIGNED_CHUNK, bytes)
+    }
+
+    @Test fun `chunk order is enforced`() {
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_ORDER, glb(GlbContainer.CHUNK_BIN to ByteArray(8)))
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_ORDER, glb(GlbContainer.CHUNK_JSON to ByteArray(0)))
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_ORDER,
+            glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), GlbContainer.CHUNK_JSON to "{}  ".toByteArray()))
+        assertProblem(GlbContainer.Problem.BAD_CHUNK_ORDER,
+            glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), 0x7777 to ByteArray(4), GlbContainer.CHUNK_BIN to ByteArray(4)))
+    }
+
+    @Test fun `bad magic, version and short input map to their problems`() {
+        assertEquals(GlbContainer.Problem.TOO_SHORT, GlbContainer.check(ByteArray(11)))
+        assertEquals(GlbContainer.Problem.BAD_MAGIC, GlbContainer.check(ByteArray(12)))
+        assertEquals(GlbContainer.Problem.BAD_VERSION,
+            GlbContainer.check(glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), version = 1)))
+    }
+
+    @Test fun `unaligned BIN followed by an unknown chunk is still accepted (golden compatibility)`() {
+        val bytes = glb(GlbContainer.CHUNK_JSON to "{}  ".toByteArray(), GlbContainer.CHUNK_BIN to ByteArray(5), 0x7777 to ByteArray(3))
+        val c = GlbContainer.parse(bytes)!!
+        assertEquals(3, c.chunks.size)
+        assertEquals(5, c.bin!!.length)
     }
 
     @Test fun `rewriteJson pads JSON with spaces and BIN with zeros, keeps other chunks, patches the length`() {

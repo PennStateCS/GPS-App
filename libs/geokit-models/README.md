@@ -12,12 +12,12 @@ Plain Kotlin/JVM: no Android, Filament, Hilt or app types. Depends on [`:geokit-
 
 | Package | Type | What it does |
 |---|---|---|
-| `.glb` | `GlbContainer` | The one GLB parser: header + chunks in memory (`parse`), rebuild with a new JSON chunk (`rewriteJson`), and a streaming header read (`readHead`) for callers that only need the first chunk. Constants for the magic, version and chunk types. |
+| `.glb` | `GlbContainer` | The one GLB parser: header + chunks in memory, fully validated (`parse`, or `check` for the `Problem`), rebuild with a new JSON chunk (`rewriteJson`), and a streaming header read (`readHead`) for callers that only need the first chunk. Constants for the magic, version and chunk types. |
 | `.gltf` | `GltfFactsReader`, `GltfFacts`, `GltfBounds` | Facts from a `.glb`/`.gltf` file, reading only the JSON, chunk headers and image headers. Never throws: failures are `GltfFacts.parseError`. |
 | `.gltf` | `GltfUris` | External resource URIs (`externalResourceUris`), decoding (`decode`, `relativePath`), safe resolution next to the model (`resolve` → `Resolution`), and the `isInside` folder check. |
 | `.gltf` | `Base64Decoder` | Base64 for `data:` URIs with Android `Base64.DEFAULT` leniency. |
 | `.georef` | `GlbGeoreferenceDetector` | Is this GLB's first POSITION accessor a plausible WGS84 location? Reads the header and JSON only. Returns `Result.NotGlb / Rejected / NotGeoreferenced / Found`, each with a reason. |
-| `.georef` | `GlbGeoreferenceReprojector` | Rewrites such a GLB into local ENU metres about its origin. Bytes in, `Result.NotGlb / NotGeoreferenced / Rejected / Failed / Reprojected` out. |
+| `.georef` | `GlbGeoreferenceReprojector` | Rewrites such a GLB into local ENU metres about its origin. Bytes in (never modified), `Result.NotGlb / Malformed / NotGeoreferenced / Rejected / Failed / Reprojected` out. |
 | `.georef` | `GeoreferenceRules`, `GeoreferencedOrigin`, `GeoreferenceConfidence`, `PositionSpan` | The shared plausibility thresholds and result types. |
 
 ## API sketch
@@ -31,7 +31,7 @@ when (val r = GlbGeoreferenceDetector.detect(file)) {
 }
 
 if (GlbGeoreferenceReprojector.isCandidate(file.name, file.length())) {
-    val r = GlbGeoreferenceReprojector.reproject(file.readBytes())   // the array is used as scratch
+    val r = GlbGeoreferenceReprojector.reproject(file.readBytes())   // input array is not modified
     if (r is GlbGeoreferenceReprojector.Result.Reprojected) file.writeBytes(r.bytes)
 }
 
@@ -58,6 +58,20 @@ The app keeps thin wrappers that add its logging and map to its own types:
   rewritten and `asset.extras.surrealarReprojection = "wgs84-enu-north+z-v2"` is added. The output bytes
   are pinned by `GlbGeoreferenceGoldenTest` (same hashes as the app's golden test recorded before the
   move); a change there changes how existing imports look, so treat it as a format change.
+- **GLB validation** (`GlbContainer.check`, used by the reprojector): declared total length = byte
+  count; complete chunk headers; unsigned chunk lengths that fit the remaining bytes (no Int
+  wrap-around); the first chunk is a non-empty JSON chunk whose length is a multiple of 4; one JSON
+  chunk; BIN, if present, second. A BIN chunk of unaligned length and unknown chunks after it are
+  accepted (the golden `interleaved` input has both; the rewrite pads the BIN). The detector and
+  `GltfFactsReader` read only the start of the file, so they check that the declared length is in the
+  file and that the JSON (and, for facts, BIN) chunk ends inside it, and ignore bytes after it.
+- **Reprojection is two-phase**: every POSITION accessor is validated first (FLOAT `VEC3`, not
+  `normalized`, not sparse, bufferView in range of buffer 0 and the BIN chunk, buffer `byteLength` ≤ BIN,
+  stride 0/absent = 12 or a multiple of 4 ≥ 12, `byteOffset + (count − 1)·stride + 12 ≤ bufferView.byteLength`
+  in overflow-checked `Long`), and accessors that overlap are rejected unless they describe exactly the
+  same vertices (transformed once) or interleave without sharing bytes. Only then are vertices
+  transformed, into separate arrays, and written into the new output GLB. The caller's array is never
+  modified, whatever the result.
 - **URIs**: `data:` is embedded; other URIs are percent-decoded with `+` kept literal; a scheme or an
   absolute path is not a file next to the model; resolution must land strictly inside the folder
   (prefix plus separator, so `models2/` is not inside `models/`).
@@ -67,12 +81,17 @@ The app keeps thin wrappers that add its logging and map to its own types:
 
 The module compiles against Android's own `org.json` API through `com.vaadin.external.google:android-json`
 (`compileOnly`, plus `testImplementation` for the JVM tests), the same arrangement as
-`geokit-receiver-emlid`. In the APK the platform's `org.json` is used.
+`geokit-receiver-emlid`. At runtime a plain JVM consumer gets `org.json:json` 20240303 (`runtimeOnly`;
+public domain since 20231013). It is excluded from this module's `testRuntimeClasspath` so the tests
+run against android-json only, and the app excludes it everywhere so the APK uses the platform's
+`org.json`. `libs/geokit-jvm-smoke` checks that a plain JVM consumer works with just the declared runtime
+dependencies.
 
-**Key order differs on the JVM.** android-json is an old snapshot of Android's implementation whose
-`JSONObject` keeps keys in a `HashMap`; current Android uses a `LinkedHashMap` (insertion order). So the
-reprojector's re-serialised JSON has the same content but a different key order in this module's JVM
-tests than on a device. The exact output bytes are therefore pinned by the app's
+**Key order differs between implementations.** android-json is an old snapshot of Android's
+implementation whose `JSONObject` keeps keys in a `HashMap`; current Android uses a `LinkedHashMap`
+(insertion order), and `org.json:json` uses a `HashMap` again (its own hashing, so not necessarily the
+android-json order either). So the reprojector's re-serialised JSON has the same content but a
+different key order in this module's JVM tests, on a device, and in a desktop JVM consumer. The exact output bytes are therefore pinned by the app's
 `GlbGeoreferenceGoldenTest` (Robolectric = Android's org.json); this module's golden test checks a
 key-order-independent digest (`GlbDigest`: every chunk header, every non-JSON byte, the JSON content and
 its padded length) whose expected values the app test records from the byte-pinned outputs. Anything
@@ -86,14 +105,17 @@ use `java.util.Base64`.
 
 Documented, not changed (changing them would change how existing or new imports behave):
 
-- **Reprojector bounds checks** each vertex write against the end of the whole file, not the BIN chunk
-  or the bufferView's `byteLength`. A malformed accessor can therefore rewrite bytes of a later chunk
-  instead of being rejected.
-- **Sparse accessors and node transforms are ignored** by the reprojector and the detector: only the
-  dense POSITION data and the accessor `min`/`max` are used. A model whose georeference lives in a node
-  translation/matrix is not detected; sparse POSITION substitutions are not reprojected.
-- **Whole file in memory**: the reprojector reads the entire GLB onto the heap and builds a full copy for
-  the output (plus a copy of each non-JSON chunk), so peak memory is about 2–3× the file size.
+- **Node transforms are ignored** by the reprojector and the detector: only the dense POSITION data and
+  the accessor `min`/`max` are used. A model whose georeference lives in a node translation/matrix is
+  not detected. Sparse POSITION accessors are rejected by the reprojector (the file is left as it is).
+- **Whole file in memory**: the reprojector reads the entire GLB onto the heap and builds one output
+  array of about the same size, plus the transformed positions (12 bytes per vertex), so peak memory is
+  about 2× the file size plus the position data.
+- **Stricter than the old in-app code**: files it used to rewrite despite a spec violation (declared
+  length ≠ file size, misaligned JSON chunk, BIN not the second chunk, bufferView/accessor ranges past
+  their bufferView, embedded data in a buffer other than 0, stride < 12) are now left unreprojected
+  (`Malformed` / `Rejected`). The old code either wrote outside the accessor's data or relied on bytes
+  the spec does not guarantee.
 - **Size caps differ**: reprojection is skipped above 128 MB (`GlbGeoreferenceReprojector.MAX_FILE_BYTES`)
   while the app imports up to 150 MB (`ModelFileIo.MAX_IMPORT_BYTES`). A georeferenced GLB of 128–150 MB
   imports unreprojected (and renders as a far-away sliver).

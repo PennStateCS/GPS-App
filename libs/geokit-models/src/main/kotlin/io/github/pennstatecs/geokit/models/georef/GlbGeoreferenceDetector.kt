@@ -85,14 +85,26 @@ public object GlbGeoreferenceDetector {
             if (version != GlbContainer.VERSION_2) {
                 return Result.Rejected(Result.Rejected.Reason.UNSUPPORTED_VERSION, version)
             }
-            // total length: skipped. First chunk (must be JSON).
+            // First chunk (must be JSON).
             head.require(GlbContainer.HEAD_BYTES)
+            // The declared total length must be in the file (a shorter file was cut off). Bytes after
+            // it are ignored: only the JSON chunk is read here.
+            val declared = GlbContainer.unsigned(head.declaredLength)
+            val fileLength = raf.length()
+            if (declared > fileLength) {
+                return Result.Rejected(Result.Rejected.Reason.TRUNCATED,
+                    cause = EOFException("GLB declares $declared bytes but the file has $fileLength"))
+            }
             val chunkLen = head.firstChunkLength
             val chunkType = head.firstChunkType
             if (chunkType != GlbContainer.CHUNK_JSON) {
                 return Result.Rejected(Result.Rejected.Reason.FIRST_CHUNK_NOT_JSON, chunkType)
             }
             if (chunkLen <= 0 || chunkLen > MAX_JSON_BYTES) {
+                return Result.Rejected(Result.Rejected.Reason.JSON_CHUNK_LENGTH, chunkLen)
+            }
+            // The JSON chunk must end inside the declared length (Long: no overflow).
+            if (GlbContainer.HEAD_BYTES.toLong() + chunkLen > declared) {
                 return Result.Rejected(Result.Rejected.Reason.JSON_CHUNK_LENGTH, chunkLen)
             }
             val jsonBytes = ByteArray(chunkLen)

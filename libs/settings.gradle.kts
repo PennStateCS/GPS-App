@@ -29,3 +29,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "geokit"
 include(":geokit-core", ":geokit-gnss", ":geokit-receiver-emlid", ":geokit-ar", ":geokit-models")
+// Not published: tests the libraries as a plain JVM consumer with only their declared runtime dependencies.
+include(":geokit-jvm-smoke")

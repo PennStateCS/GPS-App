@@ -158,6 +158,29 @@ class GlbGeoreferenceDetectorTest {
         assertEquals(0, assertRejected(Result.Rejected.Reason.JSON_CHUNK_LENGTH, detectBytes(zero)).value)
     }
 
+    private fun setInt(b: ByteArray, at: Int, v: Int) =
+        b.also { java.nio.ByteBuffer.wrap(it).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(at, v) }
+
+    @Test fun `declared length beyond the file is truncated`() {
+        val good = GlbTestFixtures.glbWithJson(meshJson("[-76.001,299.0,-41.001]", "[-75.999,301.0,-40.999]"))
+        val r = assertRejected(Result.Rejected.Reason.TRUNCATED, detectBytes(setInt(good.copyOf(), 8, good.size + 4)))
+        assertTrue(r.cause is java.io.EOFException)
+        // Negative as a signed Int = about 4 GB unsigned: also beyond the file.
+        assertRejected(Result.Rejected.Reason.TRUNCATED, detectBytes(setInt(good.copyOf(), 8, -1)))
+    }
+
+    @Test fun `JSON chunk past the declared length or with a negative length is rejected`() {
+        val good = GlbTestFixtures.glbWithJson(meshJson("[-76.001,299.0,-41.001]", "[-75.999,301.0,-40.999]"))
+        assertRejected(Result.Rejected.Reason.JSON_CHUNK_LENGTH, detectBytes(setInt(good.copyOf(), 8, good.size - 4)))
+        assertRejected(Result.Rejected.Reason.JSON_CHUNK_LENGTH, detectBytes(setInt(good.copyOf(), 12, -4)))
+        assertRejected(Result.Rejected.Reason.JSON_CHUNK_LENGTH, detectBytes(setInt(good.copyOf(), 12, Int.MAX_VALUE)))
+    }
+
+    @Test fun `bytes after the declared length are ignored by the detector`() {
+        val good = GlbTestFixtures.glbWithJson(meshJson("[-76.001,299.0,-41.001]", "[-75.999,301.0,-40.999]"))
+        assertTrue(detectBytes(good + ByteArray(16)) is Result.Found)
+    }
+
     @Test fun `bad magic is not a GLB`() {
         val r = detectBytes(ByteArray(32) { 0x11 })
         assertEquals(Result.NotGlb(Result.NotGlb.Reason.MAGIC, 0x11111111), r)
