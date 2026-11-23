@@ -23,7 +23,7 @@ import kotlin.math.sin
 object ModelReadinessEvaluator : ReadinessRules {
 
     /** Same as ArFilamentRenderer's BB_NORMALIZE_THRESHOLD_M. */
-    const val NORMALIZE_HALF_EXTENT_M = 2000.0
+    const val NORMALIZE_HALF_EXTENT_M = io.github.pennstatecs.geokit.ar.model.ModelTransform.NORMALIZE_HALF_EXTENT_M.toDouble()   // 2000.0, single-sourced
     const val TINY_MODEL_M = 0.01
     const val PLACEMENT_TOLERANCE_MIN_M = 0.02
     const val PLACEMENT_TOLERANCE_FRACTION = 0.02

@@ -40,20 +40,13 @@ class ArPlacementPreview(
     val surveyedPointLocal: Vec3 get() = toLocal(Vec3(0f, 0f, 0f))
 
     /** Maps a world point (metres, ARCore east-up-south around the surveyed point) into the model frame. */
-    fun toLocal(world: Vec3): Vec3 {
-        val n = offsets.nudge
-        var x = world.x - n.x
-        var y = world.y - n.y
-        var z = world.z - n.z
-        // R⁻¹ = Rz(-roll) · Rx(-pitch) · Ry(-yaw): undo yaw first, then pitch, then roll.
-        rotY(-placement.yawDeg, x, y, z).let { x = it[0]; y = it[1]; z = it[2] }
-        rotX(-placement.pitchDeg, x, y, z).let { x = it[0]; y = it[1]; z = it[2] }
-        rotZ(-placement.rollDeg, x, y, z).let { x = it[0]; y = it[1]; z = it[2] }
-        val s = if (effScale != 0f) effScale else 1f
-        val ap = offsets.anchorPoint
-        // Inverse of R(180°Y)·S·T(-ap): (x,y,z) -> (ap.x - x/s, ap.y + y/s, ap.z - z/s)
-        return Vec3(ap.x - x / s, ap.y + y / s, ap.z - z / s)
-    }
+    fun toLocal(world: Vec3): Vec3 =
+        // The renderer's inverse transform, from geokit-ar (previously a copy here, pinned bit-for-bit
+        // by ModelTransformGoldenTest). Previews the saved placement: move shifts are not applied.
+        io.github.pennstatecs.geokit.ar.model.ModelTransform.toLocal(
+            world, offsets.anchorPoint, offsets.nudge,
+            placement.yawDeg, placement.pitchDeg, placement.rollDeg, effScale,
+        )
 
     /** Half-size (world metres) of the ground square drawn around the surveyed point. */
     fun groundHalfSizeWorldM(): Float = (maxHalfExtent * effScale * 1.25f).coerceAtLeast(0.5f)
@@ -87,27 +80,6 @@ class ArPlacementPreview(
             ModelPlacementOrigin.CENTER -> "Center"
             ModelPlacementOrigin.BOTTOM_CENTER -> "Bottom Center"
             ModelPlacementOrigin.CUSTOM -> "Custom offset"
-        }
-
-        private fun rad(deg: Float) = Math.toRadians(deg.toDouble())
-
-        // Right-handed rotations, same convention as android.opengl.Matrix.rotateM.
-        private fun rotY(deg: Float, x: Float, y: Float, z: Float): FloatArray {
-            if (deg == 0f) return floatArrayOf(x, y, z)
-            val c = cos(rad(deg)).toFloat(); val s = sin(rad(deg)).toFloat()
-            return floatArrayOf(c * x + s * z, y, -s * x + c * z)
-        }
-
-        private fun rotX(deg: Float, x: Float, y: Float, z: Float): FloatArray {
-            if (deg == 0f) return floatArrayOf(x, y, z)
-            val c = cos(rad(deg)).toFloat(); val s = sin(rad(deg)).toFloat()
-            return floatArrayOf(x, c * y - s * z, s * y + c * z)
-        }
-
-        private fun rotZ(deg: Float, x: Float, y: Float, z: Float): FloatArray {
-            if (deg == 0f) return floatArrayOf(x, y, z)
-            val c = cos(rad(deg)).toFloat(); val s = sin(rad(deg)).toFloat()
-            return floatArrayOf(c * x - s * y, s * x + c * y, z)
         }
     }
 }
