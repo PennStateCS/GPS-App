@@ -81,6 +81,57 @@ class ImportCoordinateBackupUseCaseTest {
         assertTrue(plan.skippedInvalid.any { it.contains("bad") })
     }
 
+    /** One valid row and two invalid ones (null island, malformed). */
+    private val mostlyBad = """
+        [
+          {"id":"good","name":"Good","latitude":41.0,"longitude":-76.0,"altitude":10.0,"timestamp":1},
+          {"id":"bad","name":"NullIsland","latitude":0.0,"longitude":0.0},
+          5
+        ]
+    """.trimIndent()
+
+    @Test fun partialReplace_withoutConfirmation_keepsEverything() = runTest {
+        val repo = FakeCoordinateRepository(listOf(coord("a", "Keep"), coord("b", "Keep too")))
+        val plan = useCase(repo)(mostlyBad, replace = true)          // default answer: cancel
+        assertTrue(plan.cancelled)
+        assertEquals(0, repo.replaceAllCount)
+        assertEquals(listOf("Keep", "Keep too"), repo.store.map { it.name })
+        assertEquals("Import canceled: existing coordinates kept", plan.summaryMessage())
+    }
+
+    @Test fun partialReplace_isAskedWithTheCounts() = runTest {
+        val repo = FakeCoordinateRepository(listOf(coord("a"), coord("b"), coord("c")))
+        var asked: Triple<Int, Int, Int>? = null
+        useCase(repo)(mostlyBad, replace = true) { p, existing ->
+            asked = Triple(p.insertCount, p.skippedCount, existing)
+            ImportCoordinateBackupUseCase.PartialReplaceDecision.CANCEL
+        }
+        assertEquals(Triple(1, 2, 3), asked)
+    }
+
+    @Test fun partialReplace_confirmed_replaces() = runTest {
+        val repo = FakeCoordinateRepository(listOf(coord("a"), coord("b")))
+        useCase(repo)(mostlyBad, replace = true) { _, _ -> ImportCoordinateBackupUseCase.PartialReplaceDecision.REPLACE }
+        assertEquals(1, repo.replaceAllCount)
+        assertEquals(listOf("Good"), repo.store.map { it.name })
+    }
+
+    @Test fun partialReplace_mergeInstead_keepsExistingPoints() = runTest {
+        val repo = FakeCoordinateRepository(listOf(coord("a", "Keep")))
+        val plan = useCase(repo)(mostlyBad, replace = true) { _, _ -> ImportCoordinateBackupUseCase.PartialReplaceDecision.MERGE_INSTEAD }
+        assertEquals(0, repo.replaceAllCount)
+        assertEquals(listOf("Keep", "Good"), repo.store.map { it.name })
+        assertEquals(app.surrealar.data.backup.ImportMode.MERGE, plan.mode)
+    }
+
+    @Test fun cleanReplace_isNotAskedAgain() = runTest {
+        val repo = FakeCoordinateRepository(listOf(coord("a")))
+        var asked = false
+        useCase(repo)(backupOf(coord("c", "Only")), replace = true) { _, _ -> asked = true; ImportCoordinateBackupUseCase.PartialReplaceDecision.CANCEL }
+        assertTrue(!asked)
+        assertEquals(listOf("Only"), repo.store.map { it.name })
+    }
+
     @Test fun legacyJsonArray_malformedRowCountsAsSkipped() = runTest {
         val repo = FakeCoordinateRepository()
         // The second entry is not an object: getJSONObject throws, so the row is skipped and counted.

@@ -1,5 +1,6 @@
 package app.surrealar.ui.settings
 
+import app.surrealar.domain.usecase.ImportCoordinateBackupUseCase.PartialReplaceDecision
 import app.surrealar.util.BuildInfo
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -2281,6 +2282,36 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             .show()
     }
 
+    /**
+     * Second confirmation for a Replace whose backup has invalid rows, now that the counts are known.
+     * Cancel (or a dismissed dialog / gone screen) keeps the existing points.
+     */
+    private suspend fun confirmPartialReplace(
+        plan: app.surrealar.data.backup.BackupImportPlan, existingCount: Int,
+    ): PartialReplaceDecision {
+        DiagnosticsLogger.w(DiagTags.DATA, "Backup replace needs confirmation valid=${plan.insertCount} " +
+            "skipped=${plan.skippedCount} existing=$existingCount")
+        return withContext(Dispatchers.Main) {
+            if (!isAdded) return@withContext PartialReplaceDecision.CANCEL
+            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                fun answer(d: PartialReplaceDecision) {
+                    if (cont.isActive) cont.resumeWith(Result.success(d))
+                }
+                val dialog = AlertDialog.Builder(requireContext())
+                    .setTitle("Backup has invalid entries")
+                    .setMessage("Only ${plan.insertCount} of ${plan.insertCount + plan.skippedCount} entries in this backup " +
+                        "are valid (${plan.skippedCount} would be skipped).\n\nReplace deletes all $existingCount " +
+                        "coordinates on this device and keeps only the ${plan.insertCount} valid ones. This cannot be undone.")
+                    .setPositiveButton("Merge instead") { _, _ -> answer(PartialReplaceDecision.MERGE_INSTEAD) }
+                    .setNeutralButton("Replace anyway") { _, _ -> answer(PartialReplaceDecision.REPLACE) }
+                    .setNegativeButton(R.string.import_cancel) { _, _ -> answer(PartialReplaceDecision.CANCEL) }
+                    .setOnCancelListener { answer(PartialReplaceDecision.CANCEL) }
+                    .show()
+                cont.invokeOnCancellation { dialog.dismiss() }
+            }
+        }.also { DiagnosticsLogger.i(DiagTags.DATA, "Backup replace confirmation answered decision=$it") }
+    }
+
     private fun launchImportCoordinates(uri: Uri, replace: Boolean) {
         if (coordinatesImportJob?.isActive == true) return
         // Save scope: leaving Settings must not cancel the import mid-write. Cancel still works
@@ -2307,9 +2338,13 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 throw e
             }
             showImportProgress(true, 70, "Writing…")
-            importBackup(raw, replace)
+            importBackup(raw, replace) { plan, existingCount -> confirmPartialReplace(plan, existingCount) }
         }.onSuccess { plan ->
-            showImportProgress(false, 100, if (plan.isNoOp) "Nothing to import" else "Completed")
+            showImportProgress(false, 100, when {
+                plan.cancelled -> "Canceled"
+                plan.isNoOp -> "Nothing to import"
+                else -> "Completed"
+            })
             // Counts only: the lists hold point names.
             if (plan.skippedInvalid.isNotEmpty() || plan.missingModelRefs.isNotEmpty()) {
                 DiagnosticsLogger.w(DiagTags.DATA, "Import skipped invalid rows skipped=${plan.skippedInvalid.size} missingModels=${plan.missingModelRefs.size}")

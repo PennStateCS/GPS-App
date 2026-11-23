@@ -24,7 +24,9 @@ data class BackupImportPlan(
     /** "name (id) → modelId" for imported coordinates whose model isn't installed locally. */
     val missingModelRefs: List<String>,
     /** Ids that already exist locally and will be overwritten (MERGE only; empty for REPLACE). */
-    val duplicateIds: List<String>
+    val duplicateIds: List<String>,
+    /** The user declined a partial replace after seeing the counts: nothing was written. */
+    val cancelled: Boolean = false,
 ) {
     val insertCount: Int get() = toInsert.size
     val skippedCount: Int get() = skippedInvalid.size
@@ -32,10 +34,19 @@ data class BackupImportPlan(
     val duplicateCount: Int get() = duplicateIds.size
 
     /** True when there is nothing to import — the caller should not touch the database. */
-    val isNoOp: Boolean get() = toInsert.isEmpty()
+    val isNoOp: Boolean get() = toInsert.isEmpty() || cancelled
+
+    /**
+     * A replace that would delete every local point while dropping some backup rows as invalid. The
+     * user chose Replace before the file was read, so they must confirm again with the counts: a backup
+     * with 499 bad rows of 500 used to wipe the job and keep one point.
+     */
+    val needsPartialReplaceConfirmation: Boolean
+        get() = mode == ImportMode.REPLACE && !isNoOp && skippedCount > 0
 
     /** Final, user-facing summary line. */
     fun summaryMessage(): String {
+        if (cancelled) return "Import canceled: existing coordinates kept"
         if (isNoOp) return "No coordinates to import"
         val parts = mutableListOf("Imported $insertCount")
         if (skippedCount > 0) parts += "$skippedCount skipped"

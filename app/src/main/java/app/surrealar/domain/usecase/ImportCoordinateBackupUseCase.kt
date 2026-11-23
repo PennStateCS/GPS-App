@@ -30,11 +30,27 @@ class ImportCoordinateBackupUseCase @Inject constructor(
     private val validate: ValidateCoordinateForSaveUseCase,
 ) {
 
-    suspend operator fun invoke(raw: String, replace: Boolean): BackupImportPlan =
-        app.surrealar.util.diagnostics.DataOpLog.run("Backup import", if (replace) "json/replace" else "json/merge",
-            { it.toInsert.size }) { plan(raw, replace) }
+    /** What to do with a replace that would skip invalid rows (see [BackupImportPlan.needsPartialReplaceConfirmation]). */
+    enum class PartialReplaceDecision { REPLACE, MERGE_INSTEAD, CANCEL }
 
-    private suspend fun plan(raw: String, replace: Boolean): BackupImportPlan = withContext(Dispatchers.IO) {
+    /**
+     * @param confirmPartialReplace asked, with the plan and the number of local points that would be
+     *   deleted, before a replace that skips invalid rows. Defaults to CANCEL, so a caller that can't
+     *   ask never wipes data on a damaged backup.
+     */
+    suspend operator fun invoke(
+        raw: String,
+        replace: Boolean,
+        confirmPartialReplace: suspend (plan: BackupImportPlan, existingCount: Int) -> PartialReplaceDecision =
+            { _, _ -> PartialReplaceDecision.CANCEL },
+    ): BackupImportPlan =
+        app.surrealar.util.diagnostics.DataOpLog.run("Backup import", if (replace) "json/replace" else "json/merge",
+            { it.toInsert.size }) { plan(raw, replace, confirmPartialReplace) }
+
+    private suspend fun plan(
+        raw: String, replace: Boolean,
+        confirmPartialReplace: suspend (BackupImportPlan, Int) -> PartialReplaceDecision,
+    ): BackupImportPlan = withContext(Dispatchers.IO) {
         val existingIds = coordinateRepository.getAllCoordinatesList().mapTo(HashSet()) { it.id }
         // The backup carries model metadata but not the model files; missing-model detection checks
         // the LOCAL model database.
@@ -57,11 +73,20 @@ class ImportCoordinateBackupUseCase @Inject constructor(
         }
 
         val mode = if (replace) ImportMode.REPLACE else ImportMode.MERGE
-        val plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, mode)
+        var plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, mode)
+
+        if (plan.needsPartialReplaceConfirmation && existingIds.isNotEmpty()) {
+            when (confirmPartialReplace(plan, existingIds.size)) {
+                PartialReplaceDecision.REPLACE -> Unit
+                PartialReplaceDecision.MERGE_INSTEAD ->
+                    plan = BackupImportPlanner.plan(parsed, skipped, existingIds, existingModelIds, ImportMode.MERGE)
+                PartialReplaceDecision.CANCEL -> return@withContext plan.copy(cancelled = true)
+            }
+        }
 
         if (!plan.isNoOp) {
             // Replace is one transaction: a failed write leaves the existing points untouched.
-            if (replace) coordinateRepository.replaceAll(plan.toInsert)
+            if (plan.mode == ImportMode.REPLACE) coordinateRepository.replaceAll(plan.toInsert)
             else coordinateRepository.insertAll(plan.toInsert)
         }
         plan
