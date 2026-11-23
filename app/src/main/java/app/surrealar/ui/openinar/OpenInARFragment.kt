@@ -3107,6 +3107,67 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         )
     }
 
+    /** The point sheet (details, and Move model when it has a model) for [cwm]. Main thread. */
+    private fun openPinSheet(cwm: CoordWithModel) {
+        val coord = cwm.coordinate
+        // Position/height in the user's coordinate system (AR coordinates are WGS84).
+        val p = runCatching {
+            coordinateSystemService.convertWgs84(coord.latitude, coord.longitude, coord.altitude, coord.timestamp)
+        }.getOrNull()
+        PinInspectBottomSheet.show(
+            childFragmentManager,
+            name      = coord.name,
+            lat       = coord.latitude,
+            lon       = coord.longitude,
+            alt       = coord.altitude,
+            hAccM     = coord.horizontalAccuracyM,
+            rtkStatus = coord.rtkStatus?.name,
+            provider  = coord.provider.name,
+            modelId   = cwm.modelId,
+            timestamp = coord.timestamp,
+            positionText = p?.let { app.surrealar.coords.CoordinateFormat.horizontal(it, latLonDecimals = 7) },
+            heightText   = p?.let { app.surrealar.coords.CoordinateFormat.height(it) },
+            coordinateId = coord.id,
+        )
+    }
+
+    /**
+     * The visible model whose on-screen box contains ([x], [y]), nearest the camera when several do, or
+     * null. Uses the renderer's world box per model and the last frame's camera matrices. Main thread.
+     */
+    private fun modelAtScreen(x: Float, y: Float): CoordWithModel? {
+        val snap = arRenderSnapshot ?: return null
+        if (!snap.cameraTracking) return null
+        val renderer = filamentRenderer ?: return null
+        val vp = FloatArray(16).also { Matrix.multiplyMM(it, 0, snap.projMatrix, 0, snap.viewMatrix, 0) }
+        val v = snap.viewMatrix
+        // Camera position from the view matrix: c = -Rᵀ·t.
+        val camX = -(v[0] * v[12] + v[1] * v[13] + v[2] * v[14])
+        val camY = -(v[4] * v[12] + v[5] * v[13] + v[6] * v[14])
+        val camZ = -(v[8] * v[12] + v[9] * v[13] + v[10] * v[14])
+        val slack = 16f * resources.displayMetrics.density
+        var best: Pair<String, Float>? = null
+        for (key in snap.visibleKeys) {
+            val b = renderer.worldBounds(key) ?: continue
+            var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE
+            var behind = false
+            for (i in 0 until 8) {
+                val corner = floatArrayOf(if (i and 1 == 0) b[0] else b[3], if (i and 2 == 0) b[1] else b[4], if (i and 4 == 0) b[2] else b[5], 1f)
+                val sp = projectToScreen(corner, vp, surfaceWidth, surfaceHeight)
+                if (sp == null) { behind = true; continue }
+                minX = minOf(minX, sp.sx); maxX = maxOf(maxX, sp.sx); minY = minOf(minY, sp.sy); maxY = maxOf(maxY, sp.sy)
+            }
+            // A corner behind the camera means the user is at or inside the model: count it as hit.
+            val inside = behind || (x in (minX - slack)..(maxX + slack) && y in (minY - slack)..(maxY + slack))
+            if (!inside) continue
+            val cx = (b[0] + b[3]) / 2f - camX; val cy = (b[1] + b[4]) / 2f - camY; val cz = (b[2] + b[5]) / 2f - camZ
+            val d = cx * cx + cy * cy + cz * cz
+            if (best == null || d < best.second) best = key to d
+        }
+        val key = best?.first ?: return null
+        return geoItems.firstOrNull { it.coordWithModel.coordinate.id == key }?.coordWithModel
+    }
+
     // ── Test cube ──────────────────────────────────────────────────────────────────────────────────
     // A temporary point with a generated 1 m cube (TestCubeGlb), placed in front of the user so model
     // manipulation can be tried without a real point. It goes through the normal anchor/model pipeline
@@ -3363,33 +3424,17 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     val dx = hit.x - tapX; val dy = hit.y - tapY
                     if (dx * dx + dy * dy <= threshSq) {
                         // CoordWithModel is embedded in PinScreenEntry — no geoAnchors access needed
-                        val coord = hit.coordWithModel.coordinate
-                        // Position/height in the user's coordinate system (AR coordinates are WGS84).
-                        val p = runCatching {
-                            coordinateSystemService.convertWgs84(coord.latitude, coord.longitude, coord.altitude, coord.timestamp)
-                        }.getOrNull()
-                        // Touch listeners always run on the main thread — no runOnUiThread needed.
-                        PinInspectBottomSheet.show(
-                            childFragmentManager,
-                            name      = coord.name,
-                            lat       = coord.latitude,
-                            lon       = coord.longitude,
-                            alt       = coord.altitude,
-                            hAccM     = coord.horizontalAccuracyM,
-                            rtkStatus = coord.rtkStatus?.name,
-                            provider  = coord.provider.name,
-                            modelId   = hit.coordWithModel.modelId,
-                            timestamp = coord.timestamp,
-                            positionText = p?.let { app.surrealar.coords.CoordinateFormat.horizontal(it, latLonDecimals = 7) },
-                            heightText   = p?.let { app.surrealar.coords.CoordinateFormat.height(it) },
-                            coordinateId = coord.id,
-                        )
+                        openPinSheet(hit.coordWithModel)
                         v.performClick()
                         return@setOnTouchListener true
                     }
                 }
 
-                // No pin tapped — consume the tap (performClick for accessibility) and do nothing.
+                // Not on a pin: a tap anywhere on a model's on-screen area selects it. The pin is a single
+                // point near the anchor, which a large model covers or sits far from.
+                modelAtScreen(tapX, tapY)?.let { openPinSheet(it) }
+
+                // Consume the tap (performClick for accessibility).
                 v.performClick()
                 true
             } else {

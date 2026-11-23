@@ -174,6 +174,30 @@ class ArFilamentRenderer {
     private fun loaderFor(key: String): ResourceLoader =
         if (key.startsWith(TEST_GRID_KEY_PREFIX)) testResourceLoader else resourceLoader
 
+    /** World-space box (minX, minY, minZ, maxX, maxY, maxZ) of each real model in the scene, this frame (main thread). */
+    private val worldBounds = HashMap<String, FloatArray>()
+
+    /**
+     * Where model [key] is in the world this frame, as an axis-aligned box (minX, minY, minZ, maxX,
+     * maxY, maxZ), or null when it isn't in the scene. Lets a tap anywhere on a model select it.
+     */
+    fun worldBounds(key: String): FloatArray? = worldBounds[key]
+
+    /** The asset's bounding box corners through [world], as an axis-aligned world box. */
+    private fun worldAabb(asset: FilamentAsset, world: FloatArray): FloatArray {
+        val c = asset.boundingBox.center; val h = asset.boundingBox.halfExtent
+        val out = floatArrayOf(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+        for (sx in -1..1 step 2) for (sy in -1..1 step 2) for (sz in -1..1 step 2) {
+            val x = c[0] + sx * h[0]; val y = c[1] + sy * h[1]; val z = c[2] + sz * h[2]
+            val wx = world[0] * x + world[4] * y + world[8] * z + world[12]
+            val wy = world[1] * x + world[5] * y + world[9] * z + world[13]
+            val wz = world[2] * x + world[6] * y + world[10] * z + world[14]
+            out[0] = minOf(out[0], wx); out[1] = minOf(out[1], wy); out[2] = minOf(out[2], wz)
+            out[3] = maxOf(out[3], wx); out[4] = maxOf(out[4], wy); out[5] = maxOf(out[5], wz)
+        }
+        return out
+    }
+
     /** File each in-flight real-model load was started with (main thread). */
     private val loadingPaths = HashMap<String, String>()
     /** Latest preload request that arrived while that key was loading: file, placement, scope (main thread). */
@@ -206,6 +230,7 @@ class ArFilamentRenderer {
         if (isTestKey(key)) return
         pendingPreloads.remove(key)
         val cached = anchorAssets.remove(key) ?: return
+        worldBounds.remove(key)
         val stillLoading = !cached.everAddedToScene
         if (stillLoading) resourceLoader.asyncCancelLoad()
         if (cached.addedToScene) runCatching { scene.removeEntities(cached.asset.entities) }
@@ -630,6 +655,7 @@ class ArFilamentRenderer {
             if (cached.addedToScene && key !in visibleKeys) {
                 runCatching { scene.removeEntities(cached.asset.entities) }
                 cached.addedToScene = false
+                worldBounds.remove(key)
                 DevLog.d(TAG) { "model $key → HIDDEN (removed from scene, kept cached)" }
             }
         }
@@ -790,13 +816,13 @@ class ArFilamentRenderer {
                 continue
             }
             val cm = cached.correctionMatrix
-            if (cm != null) {
-                val corrected = FloatArray(16)
-                Matrix.multiplyMM(corrected, 0, pose.worldMatrix, 0, cm, 0)
-                tm.setTransform(ti, corrected)
+            val world = if (cm != null) {
+                FloatArray(16).also { Matrix.multiplyMM(it, 0, pose.worldMatrix, 0, cm, 0) }
             } else {
-                tm.setTransform(ti, pose.worldMatrix)
+                pose.worldMatrix
             }
+            tm.setTransform(ti, world)
+            if (!isTestKey(pose.key)) worldBounds[pose.key] = worldAabb(cached.asset, world)
         }
         trace?.let { t -> DevLog.d(TAG) { t.toString() } }
     }
@@ -969,6 +995,7 @@ class ArFilamentRenderer {
         loadingKeys.clear()
         loadingPaths.clear()
         pendingPreloads.clear()
+        worldBounds.clear()
         fileBytesCache.clear()
         loadStartMs.clear()
         stuckLogged.clear()
