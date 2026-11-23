@@ -328,7 +328,7 @@
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Export Diagnostic Report"
+                            android:text="@string/diag_export_title"
                             android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                         <TextView
@@ -336,7 +336,8 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Includes recent app logs, build details, device info, and map/GNSS status. Excludes API keys, saved coordinates, and model files."
+                            android:id="@+id/text_export_diagnostic_explanation"
+                            android:text="@string/diag_export_explanation"
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -346,7 +347,56 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="16dp"
-                        android:text="Export Diagnostic Report" />
+                        android:minHeight="48dp"
+                        android:text="@string/diag_export_button" />
+                </LinearLayout>
+
+                <com.google.android.material.divider.MaterialDivider
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="20dp" />
+
+                <!-- Mark Problem: saves the time + app status so a later report shows when it went wrong -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/diag_mark_title"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="@string/diag_mark_explanation"
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_mark_problem"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:contentDescription="@string/diag_mark_button_description"
+                        android:minHeight="48dp"
+                        android:text="@string/diag_mark_button" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

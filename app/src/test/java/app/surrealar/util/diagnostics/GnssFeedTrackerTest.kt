@@ -23,6 +23,15 @@ class GnssFeedTrackerTest {
         satsUsed = 18, satsVisible = 27, diffAgeS = diffAge, speedMps = null, courseDeg = null,
     )
 
+    @Test fun `latest gives fix quality and age without position, null before a fix`() {
+        assertEquals(null, t.latest(0))
+        t.onSource("EXTERNAL_TCP", 0)
+        t.onFix(fix(RtkStatus.FIX, 1.5, hAcc = 0.012), 1_000)
+        assertEquals(GnssFeedTracker.Latest(RtkStatus.FIX, 2_500, 0.012, 0.03, 1.5), t.latest(3_500))
+        t.onSource("INTERNAL", 4_000)
+        assertEquals("a source switch forgets the old fix", null, t.latest(4_000))
+    }
+
     @Test fun `transitions, correction thresholds and recovery, once each`() {
         t.onSource("EXTERNAL_TCP", 0)
         var now = 0L
