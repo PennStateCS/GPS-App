@@ -827,16 +827,21 @@ class MainActivity : AppCompatActivity() {
         source: LocationSourceType
     ) {
         latestSkySnapshot = null
-        // Reset the one-shot transition logs so each new source session (after an INTERNAL ↔ EXTERNAL
-        // switch) re-logs its waiting → first-fix flow accurately instead of staying silent.
-        loggedExternalWaiting = false
-        loggedFirstExternalToolbarFix = false
+        // Reset the one-shot transition logs only on a real INTERNAL ↔ EXTERNAL switch, so a new source
+        // session re-logs its waiting → first-fix flow. This also runs when the activity comes back to
+        // the foreground (e.g. returning from the model viewer) with the same source: no re-log then.
+        if (source != lastLoggedToolbarSource) {
+            lastLoggedToolbarSource = source
+            loggedExternalWaiting = false
+            loggedFirstExternalToolbarFix = false
+        }
         toolbarRenderer.render(GnssToolbarStateMapper.waiting(source, externalReceiverLabel))
     }
 
     // One-shot transition logs for the External waiting → first-fix flow at startup.
     private var loggedExternalWaiting = false
     private var loggedFirstExternalToolbarFix = false
+    private var lastLoggedToolbarSource: LocationSourceType? = null
 
     /**
      * Dropped-fix diagnostics, throttled per reason to once a minute. Wrong-provider fixes are normal

@@ -93,8 +93,8 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         } else if (nowMs - pendingRtkSinceMs >= RTK_HOLD_MS) {
             val from = loggedRtk
             loggedRtk = rtk; pendingRtk = null
-            sink(if (from == RtkStatus.FIX) 'W' else 'I', "RTK ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "unknown"}" +
-                " hdop=${fmt1(fix.hDop)} corrAge=${bucket?.label ?: "none"}")
+            sink(if (from == RtkStatus.FIX) 'W' else 'I', "RTK status ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "unknown"}" +
+                " hdop=${fmt1(fix.hDop)} corrAgeBucket=${bucket?.label ?: "none"}")
         }
 
         if (bucket != null && bucket != corrBucket) {

@@ -31,14 +31,14 @@ class GnssFeedTrackerTest {
         feed(RtkStatus.FLOAT, 1.0); feed(RtkStatus.FIX, 1.0); feed(RtkStatus.FIX, 6.0); feed(RtkStatus.FIX, 12.0)
         feed(RtkStatus.FLOAT, 31.0); feed(RtkStatus.FLOAT, 12.0); feed(RtkStatus.FIX, 1.0)
         assertEquals(listOf(
-            "I RTK start → FLOAT sats=18 hdop=0.7 corrAge=<5s",
-            "I RTK FLOAT → FIX sats=18 hdop=0.7 corrAge=<5s",
+            "I RTK status start → FLOAT sats=18 hdop=0.7 corrAgeBucket=<5s",
+            "I RTK status FLOAT → FIX sats=18 hdop=0.7 corrAgeBucket=<5s",
             "W Corrections age over threshold thresholdS=5 ageS=6.0",
             "W Corrections age over threshold thresholdS=10 ageS=12.0",
             "W Corrections age over threshold thresholdS=30 ageS=31.0",
-            "W RTK FIX → FLOAT sats=18 hdop=0.7 corrAge=>30s",
+            "W RTK status FIX → FLOAT sats=18 hdop=0.7 corrAgeBucket=>30s",
             "I Corrections age recovered ageS=1.0",
-            "I RTK FLOAT → FIX sats=18 hdop=0.7 corrAge=<5s",
+            "I RTK status FLOAT → FIX sats=18 hdop=0.7 corrAgeBucket=<5s",
         ), lines)
         val s = t.stats(now)
         assertEquals(1, s.rtkDrops); assertEquals(31.0, s.longestCorrectionAgeS!!, 1e-9); assertEquals(210L, s.fixes)
@@ -66,7 +66,7 @@ class GnssFeedTrackerTest {
         repeat(30) { now += 200; t.onFix(fix(RtkStatus.FIX, 1.0), now) }
         // FIX/FLOAT alternating every 1 s for a minute: never holds 5 s.
         repeat(60) { i -> repeat(5) { now += 200; t.onFix(fix(if (i % 2 == 0) RtkStatus.FLOAT else RtkStatus.FIX, 1.0), now) } }
-        assertEquals(listOf("I RTK start → FIX sats=18 hdop=0.7 corrAge=<5s"), lines)
+        assertEquals(listOf("I RTK status start → FIX sats=18 hdop=0.7 corrAgeBucket=<5s"), lines)
         assertTrue("drops are still counted for stats", t.stats(now).rtkDrops >= 30)
     }
 
