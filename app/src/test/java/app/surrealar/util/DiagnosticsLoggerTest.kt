@@ -9,9 +9,16 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import android.app.Application
 import java.io.File
 
+// A plain Application, not SurRealApplication: its onCreate starts background work (GNSS source
+// restore, UTM backfill, MainThreadWatchdog) that logs through this same singleton, so its lines could
+// land in the test's log folder between a test's write and its read (this made the format test flaky
+// on CI). Nothing here needs the app; DiagnosticsLogger.initForTest only needs a folder.
 @RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 class DiagnosticsLoggerTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -38,10 +45,18 @@ class DiagnosticsLoggerTest {
     }
 
     @Test fun `every written line is in the new format`() {
-        DiagnosticsLogger.w("RECEIVER", "TCP: no data for 10000ms")
+        val message = "TCP: no data for 10000ms"
+        DiagnosticsLogger.w("RECEIVER", message)
         assertTrue(DiagnosticsLogger.flush())
-        val p = app.surrealar.util.diagnostics.LogLineFormat.parse(File(dir, "app-log-current.txt").readLines().last())!!
-        assertTrue(p.level == 'W' && p.tag == "RECEIVER" && p.message == "TCP: no data for 10000ms")
+        // Find this test's line rather than taking the last one: any other writer on the process-wide
+        // logger (e.g. a background thread left over from another test) may append after it.
+        val ours = File(dir, "app-log-current.txt").readLines().filter { it.endsWith(message) }
+        assertEquals("written exactly once: $ours", 1, ours.size)
+        val p = app.surrealar.util.diagnostics.LogLineFormat.parse(ours.single())
+        assertTrue("line is in the new format: ${ours.single()}", p != null)
+        assertEquals('W', p!!.level)
+        assertEquals("RECEIVER", p.tag)
+        assertEquals(message, p.message)
         assertTrue(p.thread, p.thread.isNotBlank())
     }
 
