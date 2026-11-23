@@ -1,10 +1,9 @@
-package io.github.pennstatecs.geokit.gnss.nmea.parse
+package io.github.pennstatecs.geokit.receiver.emlid.nmea
 
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
-import io.github.pennstatecs.geokit.gnss.nmea.sentence.EBP
-import io.github.pennstatecs.geokit.gnss.nmea.sentence.ETC
+import io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry
 import io.github.pennstatecs.geokit.gnss.nmea.sentence.GGA
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,8 +14,8 @@ import org.junit.Test
 
 class EbpEtcParserTest {
 
-    // Checksum-validating registry (production behavior). EBP/ETC are registered in DefaultNmeaRegistry.
-    private val registry = DefaultNmeaRegistry.create(verifyChecksum = true)
+    // Checksum-validating registry (production behavior) with the Emlid parsers registered.
+    private val registry = DefaultNmeaRegistry.create(verifyChecksum = true, extraParsers = EmlidNmea.parsers)
 
     /** Appends the correct NMEA XOR checksum to a payload (chars between '$' and '*'). */
     private fun cs(payload: String): String {
@@ -89,7 +88,7 @@ class EbpEtcParserTest {
         val fixes = mutableListOf<Fix>()
         val fuser = NmeaFuser(
             provider = Provider.EXTERNAL_TCP,
-            registry = DefaultNmeaRegistry.create(verifyChecksum = false),
+            registry = DefaultNmeaRegistry.create(verifyChecksum = false, extraParsers = EmlidNmea.parsers),
             onFix = { fixes.add(it) },
             onGsv = { }
         )
@@ -103,11 +102,38 @@ class EbpEtcParserTest {
 
         assertEquals("EBP/ETC must NOT emit additional fixes", 1, fixes.size)
         assertEquals("rover fix latitude must be unaffected by EBP", 48.1173, fixes[0].latDeg, 0.001)
-        val stats = fuser.nmeaCustomStats
+        val stats = EmlidNmeaDiagnostics.from(fuser.extraSentenceStats)
         assertTrue("EBP should be marked seen", stats.ebpSeen)
         assertTrue("ETC should be marked seen", stats.etcSeen)
         assertTrue("IMU/orientation should be flagged", stats.imuOrientationSeen)
         assertEquals(1, stats.ebpCount)
         assertEquals(1, stats.etcCount)
+    }
+
+    @Test
+    fun `IMU flag stays set after a later timestamp-only ETC and reset clears it`() {
+        val fuser = NmeaFuser(Provider.EXTERNAL_TCP,
+            DefaultNmeaRegistry.create(verifyChecksum = false, extraParsers = EmlidNmea.parsers), { }, { })
+        fuser.accept("\$GNETC,173025.40,30,00,268.660,116.146,17.651,6.280,6.280,6.991")
+        fuser.accept("\$GNETC,173025.60,,,,,,,,")
+        val d = EmlidNmeaDiagnostics.from(fuser.extraSentenceStats)
+        assertTrue("orientation seen earlier is remembered", d.imuOrientationSeen)
+        assertEquals("173025.60", d.latestEtc?.timeRaw)
+        assertFalse("latest ETC is timestamp-only", d.latestEtc!!.hasOrientationData)
+        assertEquals(2, d.etcCount)
+        assertFalse(d.ebpSeen)
+
+        fuser.reset()
+        assertEquals(EmlidNmeaDiagnostics(0, 0, false, null), EmlidNmeaDiagnostics.from(fuser.extraSentenceStats))
+    }
+
+    @Test
+    fun `without the Emlid parsers EBP and ETC are unknown and nothing is recorded`() {
+        val plain = DefaultNmeaRegistry.create(verifyChecksum = true)
+        assertNull(plain.parse(cs("GNEBP,4807.038,N,01131.000,E,545.4,M")))
+        assertNull(plain.parse(cs("GNETC,172424.80,,,,,,,,")))
+        val fuser = NmeaFuser(Provider.EXTERNAL_TCP, plain, { }, { })
+        fuser.accept(cs("GNETC,172424.80,,,,,,,,"))
+        assertEquals(EmlidNmeaDiagnostics(0, 0, false, null), EmlidNmeaDiagnostics.from(fuser.extraSentenceStats))
     }
 }

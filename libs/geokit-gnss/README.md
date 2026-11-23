@@ -18,8 +18,9 @@ depends on [`:geokit-core`](../geokit-core/README.md) for the Earth math.
 - **Accuracy**: GST error statistics, converted to a 68 % horizontal radius, and MediaTek
   `$..ACCURACY` (e.g. Samsung tablets) as a fallback. If the receiver sends neither, `AccuracyEstimator`
   falls back to DOP × UERE.
-- **Emlid** proprietary EBP (base position) and ETC (timestamp / orientation) sentences, counted for
-  diagnostics only. They never change a fix.
+- **Vendor sentences** through extra parsers (see [Proprietary sentences](#proprietary-sentences)):
+  counted per tag with the latest of each, for diagnostics only. They never change a fix. This module
+  knows no vendor; Emlid's EBP/ETC live in [geokit-receiver-emlid](../geokit-receiver-emlid/README.md).
 - **Epoch alignment**: GST and GSA arrive after the GGA of the same epoch on Emlid receivers. The
   fuser holds the fix for at most 300 ms so the same epoch's accuracy and DOP are attached. GGA
   quality 0 is never published, and a ZDA whose time doesn't match the epoch is ignored.
@@ -29,9 +30,9 @@ Conventions: units in names (`latDeg`, `altMslM`, `diffAgeS`), `null` means unkn
 
 | Package | Contents |
 |---|---|
-| `io.github.pennstatecs.geokit.gnss.nmea.parse` | `NmeaRegistry`, `DefaultNmeaRegistry`, `SentenceParser` and one parser per sentence |
-| `io.github.pennstatecs.geokit.gnss.nmea.sentence` | `GGA`, `RMC`, `GSA`, `GSV`, `ZDA`, `GST`, `ACCURACY`, `EBP`, `ETC` |
-| `io.github.pennstatecs.geokit.gnss.bus.adapters` | `NmeaFuser` (+ `FuserTimingStats`, `NmeaCustomStats`), `GsvMessage`, source contracts (`NmeaSource`, `Startable`, `RawNmeaProvider`, `SourceAdapter`, `SkyProvider`) |
+| `io.github.pennstatecs.geokit.gnss.nmea.parse` | `NmeaRegistry`, `DefaultNmeaRegistry` (standard parsers + `extraParsers`), `SentenceParser`, `NmeaFields` (field helpers for vendor parsers) and one parser per sentence |
+| `io.github.pennstatecs.geokit.gnss.nmea.sentence` | `NmeaSentence`, `FlaggedNmeaSentence`, `GGA`, `RMC`, `GSA`, `GSV`, `ZDA`, `GST`, `ACCURACY` |
+| `io.github.pennstatecs.geokit.gnss.bus.adapters` | `NmeaFuser` (+ `FuserTimingStats`, `ExtraSentenceStats`), `GsvMessage`, source contracts (`NmeaSource`, `Startable`, `RawNmeaProvider`, `SourceAdapter`, `SkyProvider`) |
 | `io.github.pennstatecs.geokit.gnss.link` | `TcpNmeaSource` (one TCP connection per start, dead-link detection, GST hold ticker), `ReconnectingNmeaAdapter` (exponential-backoff reconnect, health checks, sky, per-fix stamping hook), `LinkLog` / `GnssLinkLog` / `LinkLogLevel` (connection lines with keyed throttles) |
 | `io.github.pennstatecs.geokit.gnss.replay` | `NmeaLineSource`, `ReplayAdapter` (lines → `NmeaFuser` → fixes tagged `Provider.REPLAY`, and sky) |
 | `io.github.pennstatecs.geokit.gnss.receiver` | `ReceiverDevice`, `ReceiverDiscovery`, `DiscoveredReceiver`, neutral status models, `AccuracyClass`, `ReceiverCapabilities`, `AntennaGeometry` (pole / camera heights + phase-centre offset) |
@@ -66,6 +67,27 @@ so `flushIfStale`, `flush`, `reset` and the stats getters may run on other threa
 `onGsv` are called synchronously while that lock is held, so keep them short and non-blocking.
 `NmeaRegistry.parse` is thread-safe. `SatelliteInventory`, `FixFreshnessGate` and
 `ObservationSession` are not: use each from one collector.
+
+## Proprietary sentences
+
+The fuser uses GGA, RMC, GSA, GSV, ZDA, GST and `$..ACCURACY`. A receiver's own sentences plug in as
+extra parsers, from the receiver's module:
+
+1. A sentence type implementing `NmeaSentence` (its `tag` is the part after the two-letter talker,
+   e.g. `"EBP"` for `$GNEBP`). Implement `FlaggedNmeaSentence` instead if some property should be
+   remembered for the whole stream (`diagnosticFlags`, e.g. "had an orientation payload").
+2. A `SentenceParser` for it. `NmeaFields.latitude` / `longitude` / `finiteDouble` read fields exactly
+   like the standard parsers.
+3. Hand the parsers, keyed by tag, to `DefaultNmeaRegistry.create(extraParsers = …)` (an extra parser
+   with a standard tag replaces the standard one) and to `ReplayAdapter(extraParsers = …)` so recorded
+   logs replay the same way.
+
+Unregistered sentences are dropped by the registry. Every registered sentence that doesn't feed a fix
+is recorded by the fuser, under its lock: `NmeaFuser.extraSentenceStats` (also
+`NmeaSource.nmeaExtraStats()`) is an `ExtraSentenceStats` snapshot with `countByTag`, `latestByTag`
+and `flagsByTag` (the union of flags seen), plus `count(tag)`, `seen(tag)`, `latest<T>(tag)` and
+`flagSeen(tag, flag)`. `reset()` clears it. A receiver module usually adds a typed view on top
+(geokit-receiver-emlid: `EmlidNmea.parsers` and `EmlidNmeaDiagnostics.from(stats)`).
 
 ## Connecting to a receiver over TCP
 
@@ -157,13 +179,16 @@ its diagnostics logger.
 
 - **Emlid Reach RS4**: real captures in `src/test/resources/nmea/`. `reach_nmea_capture.txt` is the
   standard stream (RTK Fixed, GST, EBP, timestamp-only ETC). `reach_nmea_withimu.txt` adds ETC
-  orientation payloads.
+  orientation payloads. Here they replay without the Emlid parsers (EBP/ETC are just unknown);
+  geokit-receiver-emlid's tests replay the same files with them.
 - **Emlid Reach RS2+**: `reach_nmea_rs2_capture.txt` (RTK Float, GST, EBP, no ETC). All three
   captures send separate GP/GL/GA/GB GSA.
 - **Samsung SM-X940** tablet internal GNSS sentences: decimal SNR in GSV, no GST,
   `$GNACCURACY`. These are covered in the GSV, fuser and accuracy tests.
 
-`ReplayAdapterTest` replays them here. The app's logging tests use them too (the app adds this
+`ReplayAdapterTest` replays them here. `NmeaFixtureGoldenTest` pins the complete fused output of each
+capture (every `Fix`, GSV epoch and sky snapshot, hashed, plus the final timing stats) to
+`src/test/resources/golden/`; regenerate with `GEOKIT_WRITE_GOLDEN=1` only after an intended change. The app's logging tests use them too (the app adds this
 folder as a test-resource directory).
 
 ## Using it from another Gradle project

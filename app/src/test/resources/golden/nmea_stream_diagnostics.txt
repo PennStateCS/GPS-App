@@ -1,0 +1,230 @@
+##### no data
+=== NMEA Stream Diagnostics ===
+Sanitized — message counts only, no raw NMEA or live coordinates.
+
+Receiver profile      : Emlid Reach RS4
+Connection type       : TCP
+Host / IP             : 192.168.42.1
+Port                  : 9001
+TCP connected         : unknown (no NMEA seen this session)
+First NMEA received   : no
+First fix emitted     : no
+
+--- Sentence counts (cumulative this session) ---
+GGA                   : 0
+RMC                   : 0
+ZDA                   : 0
+GST                   : 0
+GSA by constellation  : none
+GSV by constellation  : none
+Emitted fixes         : 0
+Last fix date source  : none yet
+(Checksum-failure and unsupported-sentence-by-type counts are in the app log, tag "NMEA".)
+
+--- Last emitted fix ("unknown" = not provided by receiver, never 0.0) ---
+RTK status            : unknown
+Satellites used       : unknown
+Satellites visible    : unknown
+MSL altitude (m)      : unknown
+Geoid separation (m)  : unknown
+Horizontal accuracy   : unknown
+Accuracy source       : unknown
+
+--- Reach RS4 / RS4 Pro NMEA ---
+EBP seen              : no (normal for RS2+ / Generic NMEA TCP) (base/reference position — never used as the rover fix)
+ETC seen              : no (normal for RS2+ / Generic NMEA TCP)
+IMU/orientation seen  : no
+Note: GNETC field format is undocumented and is NOT mapped to AR heading/tilt/orientation.
+
+##### generic stream, no Emlid sentences
+=== NMEA Stream Diagnostics ===
+Sanitized — message counts only, no raw NMEA or live coordinates.
+
+Receiver profile      : Emlid Reach RS4
+Connection type       : TCP
+Host / IP             : 192.168.42.1
+Port                  : 9001
+TCP connected         : yes (NMEA flowing)
+First NMEA received   : yes
+First fix emitted     : yes
+
+--- Sentence counts (cumulative this session) ---
+GGA                   : 250
+RMC                   : 50
+ZDA                   : 50
+GST                   : 250
+GSA by constellation  : GP=250 GL=250
+GSV by constellation  : GA=500 GP=750
+Emitted fixes         : 248
+Last fix date source  : GGA time + ZDA date
+(Checksum-failure and unsupported-sentence-by-type counts are in the app log, tag "NMEA".)
+
+--- Last emitted fix ("unknown" = not provided by receiver, never 0.0) ---
+RTK status            : FIX
+Satellites used       : 22
+Satellites visible    : 30
+MSL altitude (m)      : 395.539
+Geoid separation (m)  : -33.145
+Horizontal accuracy   : ±0.015 m
+Accuracy source       : receiver_gst (GST std-dev)
+
+--- Reach RS4 / RS4 Pro NMEA ---
+EBP seen              : no (normal for RS2+ / Generic NMEA TCP) (base/reference position — never used as the rover fix)
+ETC seen              : no (normal for RS2+ / Generic NMEA TCP)
+IMU/orientation seen  : no
+Note: GNETC field format is undocumented and is NOT mapped to AR heading/tilt/orientation.
+
+##### EBP only (RS2+)
+=== NMEA Stream Diagnostics ===
+Sanitized — message counts only, no raw NMEA or live coordinates.
+
+Receiver profile      : Emlid Reach RS4
+Connection type       : TCP
+Host / IP             : 192.168.42.1
+Port                  : 9001
+TCP connected         : yes (NMEA flowing)
+First NMEA received   : yes
+First fix emitted     : yes
+
+--- Sentence counts (cumulative this session) ---
+GGA                   : 250
+RMC                   : 50
+ZDA                   : 50
+GST                   : 250
+GSA by constellation  : GP=250 GL=250
+GSV by constellation  : GA=500 GP=750
+Emitted fixes         : 248
+Last fix date source  : GGA time + ZDA date
+(Checksum-failure and unsupported-sentence-by-type counts are in the app log, tag "NMEA".)
+
+--- Last emitted fix ("unknown" = not provided by receiver, never 0.0) ---
+RTK status            : FIX
+Satellites used       : 22
+Satellites visible    : 30
+MSL altitude (m)      : 395.539
+Geoid separation (m)  : -33.145
+Horizontal accuracy   : ±0.015 m
+Accuracy source       : receiver_gst (GST std-dev)
+
+--- Reach RS4 / RS4 Pro NMEA ---
+EBP seen              : yes (181) (base/reference position — never used as the rover fix)
+ETC seen              : no (normal for RS2+ / Generic NMEA TCP)
+IMU/orientation seen  : no
+Note: GNETC field format is undocumented and is NOT mapped to AR heading/tilt/orientation.
+
+##### ETC timestamp only
+=== NMEA Stream Diagnostics ===
+Sanitized — message counts only, no raw NMEA or live coordinates.
+
+Receiver profile      : Emlid Reach RS4
+Connection type       : TCP
+Host / IP             : 192.168.42.1
+Port                  : 9001
+TCP connected         : yes (NMEA flowing)
+First NMEA received   : yes
+First fix emitted     : yes
+
+--- Sentence counts (cumulative this session) ---
+GGA                   : 250
+RMC                   : 50
+ZDA                   : 50
+GST                   : 250
+GSA by constellation  : GP=250 GL=250
+GSV by constellation  : GA=500 GP=750
+Emitted fixes         : 248
+Last fix date source  : GGA time + ZDA date
+(Checksum-failure and unsupported-sentence-by-type counts are in the app log, tag "NMEA".)
+
+--- Last emitted fix ("unknown" = not provided by receiver, never 0.0) ---
+RTK status            : FIX
+Satellites used       : 22
+Satellites visible    : 30
+MSL altitude (m)      : 395.539
+Geoid separation (m)  : -33.145
+Horizontal accuracy   : ±0.015 m
+Accuracy source       : receiver_gst (GST std-dev)
+
+--- Reach RS4 / RS4 Pro NMEA ---
+EBP seen              : yes (177) (base/reference position — never used as the rover fix)
+ETC seen              : yes (177)
+IMU/orientation seen  : no
+Latest ETC            : timestamp only (no orientation data)
+Note: GNETC field format is undocumented and is NOT mapped to AR heading/tilt/orientation.
+
+##### ETC with orientation payload
+=== NMEA Stream Diagnostics ===
+Sanitized — message counts only, no raw NMEA or live coordinates.
+
+Receiver profile      : Emlid Reach RS4
+Connection type       : TCP
+Host / IP             : 192.168.42.1
+Port                  : 9001
+TCP connected         : yes (NMEA flowing)
+First NMEA received   : yes
+First fix emitted     : yes
+
+--- Sentence counts (cumulative this session) ---
+GGA                   : 250
+RMC                   : 50
+ZDA                   : 50
+GST                   : 250
+GSA by constellation  : GP=250 GL=250
+GSV by constellation  : GA=500 GP=750
+Emitted fixes         : 248
+Last fix date source  : GGA time + ZDA date
+(Checksum-failure and unsupported-sentence-by-type counts are in the app log, tag "NMEA".)
+
+--- Last emitted fix ("unknown" = not provided by receiver, never 0.0) ---
+RTK status            : FIX
+Satellites used       : 22
+Satellites visible    : 30
+MSL altitude (m)      : 395.539
+Geoid separation (m)  : -33.145
+Horizontal accuracy   : ±0.015 m
+Accuracy source       : receiver_gst (GST std-dev)
+
+--- Reach RS4 / RS4 Pro NMEA ---
+EBP seen              : yes (180) (base/reference position — never used as the rover fix)
+ETC seen              : yes (180)
+IMU/orientation seen  : yes
+Latest ETC            : orientation/IMU present time=173025.40 rawFieldCount=8 rawFields=[30, 00, 268.660, 116.146, 17.651, 6.280, 6.280, 6.991]
+Note: GNETC field format is undocumented and is NOT mapped to AR heading/tilt/orientation.
+
+##### IMU seen earlier, latest ETC timestamp only
+=== NMEA Stream Diagnostics ===
+Sanitized — message counts only, no raw NMEA or live coordinates.
+
+Receiver profile      : Emlid Reach RS4
+Connection type       : TCP
+Host / IP             : 192.168.42.1
+Port                  : 9001
+TCP connected         : yes (NMEA flowing)
+First NMEA received   : yes
+First fix emitted     : yes
+
+--- Sentence counts (cumulative this session) ---
+GGA                   : 250
+RMC                   : 50
+ZDA                   : 50
+GST                   : 250
+GSA by constellation  : GP=250 GL=250
+GSV by constellation  : GA=500 GP=750
+Emitted fixes         : 248
+Last fix date source  : GGA time + ZDA date
+(Checksum-failure and unsupported-sentence-by-type counts are in the app log, tag "NMEA".)
+
+--- Last emitted fix ("unknown" = not provided by receiver, never 0.0) ---
+RTK status            : FIX
+Satellites used       : 22
+Satellites visible    : 30
+MSL altitude (m)      : 395.539
+Geoid separation (m)  : -33.145
+Horizontal accuracy   : ±0.015 m
+Accuracy source       : receiver_gst (GST std-dev)
+
+--- Reach RS4 / RS4 Pro NMEA ---
+EBP seen              : yes (12) (base/reference position — never used as the rover fix)
+ETC seen              : yes (40)
+IMU/orientation seen  : yes
+Latest ETC            : timestamp only (no orientation data)
+Note: GNETC field format is undocumented and is NOT mapped to AR heading/tilt/orientation.

@@ -1,0 +1,8 @@
+fixture=reach_nmea_capture
+ebpSeen=true
+etcSeen=true
+ebpCount=177
+etcCount=885
+imuOrientationSeen=false
+latestEtc=ETC(talker=GN, timeRaw=172721.60, dataFields=[, , , , , , , ])
+latestEtcHasOrientation=false

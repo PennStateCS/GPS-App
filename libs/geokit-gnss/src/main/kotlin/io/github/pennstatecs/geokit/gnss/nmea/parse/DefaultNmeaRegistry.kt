@@ -3,34 +3,39 @@ package io.github.pennstatecs.geokit.gnss.nmea.parse
 import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 
 /**
- * Builds the default [NmeaRegistry] with every sentence parser in this library.
+ * Builds an [NmeaRegistry] with every standard sentence parser in this library, plus any extra parsers
+ * the host supplies (receiver-specific / proprietary sentences from a receiver module).
  *
- * Used by tests and NMEA replay. A host can also build its own registry from the same parsers, e.g.
- * with checksums required for live streams (`NmeaRegistry(parsers, requireChecksum = true)`).
- *
- * To add support for a new sentence type, create a [SentenceParser] subclass
- * and add it to the map here (and to any registry the host builds itself).
+ * Extension: a receiver module writes a [SentenceParser] per proprietary sentence (its sentence type
+ * implements [NmeaSentence], optionally [io.github.pennstatecs.geokit.gnss.nmea.sentence.FlaggedNmeaSentence])
+ * and hands the map to [create] (or `ReplayAdapter(extraParsers = …)`). Those sentences never feed a
+ * fix: [io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser] counts them per tag and keeps the
+ * latest of each for diagnostics (`NmeaFuser.extraSentenceStats`).
  */
 public object DefaultNmeaRegistry {
+
+    /** The standard parsers by tag: GGA, RMC, GSA, GSV, ZDA, GST and MediaTek `$..ACCURACY`. */
+    public fun standardParsers(): Map<String, SentenceParser<out NmeaSentence>> = mapOf(
+        "GGA" to GgaParser(),
+        "RMC" to RmcParser(),
+        "GSA" to GsaParser(),
+        "GSV" to GsvParser(),
+        "ZDA" to ZdaParser(),
+        "GST" to GstParser(),
+        // MediaTek proprietary accuracy (e.g. Samsung SM-X940 internal GNSS) — fallback when no GST.
+        "ACCURACY" to AccuracyParser(),
+    )
+
     /**
-     * A registry with GGA, RMC, GSA, GSV, ZDA, GST, $..ACCURACY, EBP and ETC parsers.
+     * A registry with the [standardParsers] plus [extraParsers].
      * @param verifyChecksum reject lines whose `*hh` checksum doesn't match.
      * @param requireChecksum also reject lines with no checksum (live streams); false for log files.
+     * @param extraParsers additional parsers keyed by sentence tag (the part after the two-letter
+     *   talker, uppercase). An extra parser with a standard tag replaces the standard one.
      */
-    public fun create(verifyChecksum: Boolean = true, requireChecksum: Boolean = false): NmeaRegistry {
-        val map: Map<String, SentenceParser<out NmeaSentence>> = mapOf(
-            "GGA" to GgaParser(),
-            "RMC" to RmcParser(),
-            "GSA" to GsaParser(),
-            "GSV" to GsvParser(),
-            "ZDA" to ZdaParser(),
-            "GST" to GstParser(),
-            // MediaTek proprietary accuracy (e.g. Samsung SM-X940 internal GNSS) — fallback when no GST.
-            "ACCURACY" to AccuracyParser(),
-            // Emlid Reach RS4 / RS4 Pro custom messages (diagnostics only; do not affect fixes).
-            "EBP" to EbpParser(),
-            "ETC" to EtcParser(),
-        )
-        return NmeaRegistry(map, verifyChecksum, requireChecksum)
-    }
+    public fun create(
+        verifyChecksum: Boolean = true,
+        requireChecksum: Boolean = false,
+        extraParsers: Map<String, SentenceParser<out NmeaSentence>> = emptyMap(),
+    ): NmeaRegistry = NmeaRegistry(standardParsers() + extraParsers, verifyChecksum, requireChecksum)
 }

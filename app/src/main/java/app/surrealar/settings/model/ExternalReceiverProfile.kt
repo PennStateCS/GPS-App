@@ -1,13 +1,12 @@
 package app.surrealar.settings.model
 
-import io.github.pennstatecs.geokit.gnss.nmea.parse.EbpParser
-import io.github.pennstatecs.geokit.gnss.nmea.parse.EtcParser
 import io.github.pennstatecs.geokit.gnss.nmea.parse.SentenceParser
 import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 import io.github.pennstatecs.geokit.gnss.receiver.AccuracyClass
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
 import io.github.pennstatecs.geokit.receiver.emlid.EmlidReachModel
+import io.github.pennstatecs.geokit.receiver.emlid.nmea.EmlidNmea
 
 /**
  * Selectable external-receiver *profile*. This is metadata only — every profile uses the same live
@@ -129,6 +128,5 @@ enum class ExternalReceiverProfile(
     }
 }
 
-/** Emlid Reach RS4 / RS4 Pro custom messages (diagnostics only; they never affect fixes). */
-private fun emlidParsers(): Map<String, SentenceParser<out NmeaSentence>> =
-    mapOf("EBP" to EbpParser(), "ETC" to EtcParser())
+/** Emlid Reach EBP / ETC messages from geokit-receiver-emlid (diagnostics only; they never affect fixes). */
+private fun emlidParsers(): Map<String, SentenceParser<out NmeaSentence>> = EmlidNmea.parsers

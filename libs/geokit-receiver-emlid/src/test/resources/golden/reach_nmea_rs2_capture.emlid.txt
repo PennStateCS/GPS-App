@@ -1,0 +1,8 @@
+fixture=reach_nmea_rs2_capture
+ebpSeen=true
+etcSeen=false
+ebpCount=181
+etcCount=0
+imuOrientationSeen=false
+latestEtc=null
+latestEtcHasOrientation=null

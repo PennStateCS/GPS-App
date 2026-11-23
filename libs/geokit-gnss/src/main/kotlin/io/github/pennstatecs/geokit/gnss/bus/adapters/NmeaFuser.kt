@@ -182,33 +182,70 @@ public class NmeaFuser(
             }
             // MediaTek proprietary accuracy: no timestamp, so freshness is judged by arrival time.
             is ACCURACY -> { lastAccuracy = sentence; lastAccuracyAtMs = clock() }
-            is EBP -> ebpCount++          // Emlid base position — diagnostics only, never affects fixes
-            is ETC -> { etcCount++; lastEtc = sentence   // Emlid orientation/IMU — diagnostics only
-                        if (sentence.hasOrientationData) etcOrientationSeen = true }
-            else   -> Unit // unknown sentence type — fuser is tolerant by design
+            // Any other parsed sentence (a host-registered extra parser, e.g. a receiver's proprietary
+            // messages): diagnostics only, never affects fixes.
+            else   -> recordExtra(sentence)
         }
     }
 
-    // ── RS4 custom-sentence diagnostics (do not affect fix generation) ──────────
-    private var ebpCount = 0
-    private var etcCount = 0
-    private var etcOrientationSeen = false
-    private var lastEtc: ETC? = null
+    // ── Extra-sentence diagnostics (sentences that do not feed fixes; never affect fix generation) ──
+    private val extraCountByTag = sortedMapOf<String, Int>()
+    private val extraLatestByTag = HashMap<String, NmeaSentence>()
+    private val extraFlagsByTag = HashMap<String, MutableSet<String>>()
 
-    /** Snapshot of Emlid custom-sentence activity, for diagnostics. */
-    public data class NmeaCustomStats(
-        val ebpSeen: Boolean,
-        val etcSeen: Boolean,
-        val ebpCount: Int,
-        val etcCount: Int,
-        val latestEtc: ETC?,
-        /** True if any ETC carried orientation/IMU-style data (undocumented — never used for AR). */
-        val imuOrientationSeen: Boolean,
-    )
+    private fun recordExtra(sentence: NmeaSentence) {
+        val tag = sentence.tag
+        extraCountByTag[tag] = (extraCountByTag[tag] ?: 0) + 1
+        extraLatestByTag[tag] = sentence
+        if (sentence is FlaggedNmeaSentence && sentence.diagnosticFlags.isNotEmpty()) {
+            extraFlagsByTag.getOrPut(tag) { LinkedHashSet() } += sentence.diagnosticFlags
+        }
+    }
 
-    /** Read-only view of EBP/ETC activity seen by this fuser (diagnostics). */
-    public val nmeaCustomStats: NmeaCustomStats
-        get() = synchronized(lock) { NmeaCustomStats(ebpCount > 0, etcCount > 0, ebpCount, etcCount, lastEtc, etcOrientationSeen) }
+    /**
+     * Snapshot of the parsed sentences this fuser does not use for fixes (anything other than GGA,
+     * RMC, GSA, GSV, ZDA, GST and `$..ACCURACY`), keyed by sentence tag. They come from extra parsers
+     * the host registered (see `DefaultNmeaRegistry.create(extraParsers = …)`); a receiver module
+     * usually offers a typed view over this (e.g. geokit-receiver-emlid's `EmlidNmeaDiagnostics`).
+     * Unregistered sentences never reach the fuser, so they are not counted here.
+     *
+     * @property countByTag sentences received per tag (cumulative since construction / [reset]).
+     * @property latestByTag the most recent sentence per tag.
+     * @property flagsByTag union of [FlaggedNmeaSentence.diagnosticFlags] seen per tag (tags without
+     *   any flag are absent).
+     */
+    public data class ExtraSentenceStats(
+        val countByTag: Map<String, Int>,
+        val latestByTag: Map<String, NmeaSentence>,
+        val flagsByTag: Map<String, Set<String>>,
+    ) {
+        /** Sentences received with [tag] (0 when none). */
+        public fun count(tag: String): Int = countByTag[tag] ?: 0
+
+        /** True once at least one sentence with [tag] arrived. */
+        public fun seen(tag: String): Boolean = count(tag) > 0
+
+        /** The latest sentence with [tag] if it is a [T], else null. */
+        public inline fun <reified T : NmeaSentence> latest(tag: String): T? = latestByTag[tag] as? T
+
+        /** True if any sentence with [tag] carried [flag]. */
+        public fun flagSeen(tag: String, flag: String): Boolean = flagsByTag[tag]?.contains(flag) == true
+
+        public companion object {
+            /** No extra sentences seen. */
+            public val EMPTY: ExtraSentenceStats = ExtraSentenceStats(emptyMap(), emptyMap(), emptyMap())
+        }
+    }
+
+    /** Read-only, thread-safe snapshot of the extra (non-fix) sentences seen by this fuser. */
+    public val extraSentenceStats: ExtraSentenceStats
+        get() = synchronized(lock) {
+            ExtraSentenceStats(
+                extraCountByTag.toMap(),
+                extraLatestByTag.toMap(),
+                extraFlagsByTag.mapValues { it.value.toSet() },
+            )
+        }
 
     /** Where the last fix's horizontal accuracy came from. */
     public enum class AccuracySource { RECEIVER_GST, RECEIVER_PROPRIETARY, DOP_ESTIMATE, UNKNOWN }
@@ -672,7 +709,7 @@ public class NmeaFuser(
         gsaCountByTalker.clear(); gsvCountByTalker.clear()
         lastRtkStatus = null; lastSatsUsed = null; lastSatsVisible = null
         lastAltMslM = null; lastGeoidSepM = null; lastHAccM = null; lastAccuracySource = AccuracySource.UNKNOWN
-        ebpCount = 0; etcCount = 0; etcOrientationSeen = false; lastEtc = null
+        extraCountByTag.clear(); extraLatestByTag.clear(); extraFlagsByTag.clear()
         gsaUsedSatIds.clear(); lastGsaUpdateMs = 0L
         pendingGsvByTalker.clear(); gsvVisibleByTalker.clear()
     }

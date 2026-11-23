@@ -27,7 +27,11 @@ class NmeaTruncatedLineTest {
 
     @Test fun `live registry parses the Emlid fixtures exactly as a lenient one does`() {
         val live = GnssModule.provideNmeaRegistry()
-        val lenient = DefaultNmeaRegistry.create(verifyChecksum = false)
+        // Same parser set as the live registry (standard + every profile's extra parsers), lenient checksums.
+        val lenient = DefaultNmeaRegistry.create(
+            verifyChecksum = false,
+            extraParsers = app.surrealar.settings.model.ExternalReceiverProfile.allExtraParsers(),
+        )
         for (res in listOf("/nmea/reach_nmea_capture.txt", "/nmea/reach_nmea_rs2_capture.txt")) {
             val lines = javaClass.getResourceAsStream(res)!!.bufferedReader().readLines()
             val strictCount = lines.count { live.parse(it) != null }

@@ -45,12 +45,17 @@ object GnssModule {
 
     /**
      * NMEA replay as a regular source (ProviderChoice.REPLAY): same NmeaFuser and switchboard path
-     * as live data. Replaces the old FixAccumulator, whose output nothing observed.
+     * as live data. Replaces the old FixAccumulator, whose output nothing observed. It registers the
+     * same receiver-specific parsers as the live registry, so a recorded Emlid log replays as before.
      */
     @Provides
     @Singleton
     fun provideReplayAdapter(appScope: CoroutineScope): ReplayAdapter =
-        ReplayAdapter(appScope, log = DiagnosticsLinkLog)   // GNSS lines to DiagnosticsLogger, as before
+        ReplayAdapter(
+            appScope,
+            log = DiagnosticsLinkLog,   // GNSS lines to DiagnosticsLogger, as before
+            extraParsers = app.surrealar.settings.model.ExternalReceiverProfile.allExtraParsers(),
+        )
 
     /**
      * Provides a singleton [DiagnosticsService] for tracking NMEA processing metrics.
@@ -63,34 +68,24 @@ object GnssModule {
      * Provides the shared [NmeaRegistry] used by both the live GNSS pipeline
      * (`NmeaFuser` inside each [NmeaSource]). Replay builds its own lenient registry.
      *
-     * All sentence types supported by the app are registered here. To add a new sentence type:
-     *  1. Create a data class implementing `NmeaSentence` in `gnss/nmea/sentence/`
-     *  2. Create a [SentenceParser] in `gnss/nmea/parse/`
-     *  3. Add it to this map
-     *  4. Handle it in `NmeaFuser.handle` (live and replay paths)
+     * geokit-gnss's standard parsers (GGA, RMC, GSA, GSV, ZDA, GST, MediaTek `$..ACCURACY`) plus the
+     * receiver-specific sentences declared by the profiles (Emlid: EBP, ETC from
+     * geokit-receiver-emlid — diagnostics only). TcpNmeaSource keeps this one registry for the app's
+     * lifetime, so it registers every profile's parsers; a sentence a receiver never sends simply
+     * never arrives. A new proprietary sentence goes in its receiver module and that profile's
+     * `extraParsers`; the fuser counts it per tag (`NmeaSource.nmeaExtraStats()`).
      */
     @Provides
     @Singleton
-    fun provideNmeaRegistry(): NmeaRegistry {
-        val parsers = mapOf(
-            "GGA" to GgaParser(),
-            "RMC" to RmcParser(),
-            "GSA" to GsaParser(),
-            "GSV" to GsvParser(),
-            "ZDA" to ZdaParser(),
-            "GST" to GstParser(),  // accuracy error statistics
-            // MediaTek proprietary accuracy (e.g. Samsung SM-X940 internal GNSS) — fallback when no GST.
-            "ACCURACY" to AccuracyParser(),
-        ) +
-            // Receiver-specific sentences declared by the profiles (Emlid: EBP, ETC — diagnostics only).
-            // TcpNmeaSource keeps this one registry for the app's lifetime, so it registers every
-            // profile's parsers; a sentence a receiver never sends simply never arrives.
-            app.surrealar.settings.model.ExternalReceiverProfile.allExtraParsers()
+    fun provideNmeaRegistry(): NmeaRegistry =
         // Live sources (Emlid TCP, Android internal NMEA) always send "*CS". Requiring it rejects a
         // partial line that readLine() returns when the socket drops mid-sentence. Replay builds its
-        // own lenient registry (MainActivity) so checksum-less log files still play.
-        return NmeaRegistry(parsers, verifyChecksum = true, requireChecksum = true)
-    }
+        // own lenient registry so checksum-less log files still play.
+        DefaultNmeaRegistry.create(
+            verifyChecksum = true,
+            requireChecksum = true,
+            extraParsers = app.surrealar.settings.model.ExternalReceiverProfile.allExtraParsers(),
+        )
 
     // NMEA source for external RS2+ adapter (TCP NMEA stream)
     @Provides

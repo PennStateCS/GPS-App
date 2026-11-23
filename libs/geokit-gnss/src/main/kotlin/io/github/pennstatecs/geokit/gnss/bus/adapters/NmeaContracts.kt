@@ -57,8 +57,11 @@ public interface NmeaSource : Startable {
 
     /** Cumulative NMEA sentence/fix-rate stats from this source's fuser (diagnostics; no coordinates). */
     public fun nmeaTimingStats(): NmeaFuser.FuserTimingStats
-    /** Emlid EBP/ETC activity seen by this source's fuser (diagnostics). */
-    public fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats
+    /**
+     * Extra (non-fix) sentences seen by this source's fuser, per tag: what the host's extra parsers
+     * (e.g. a receiver's proprietary messages) produced. Diagnostics only.
+     */
+    public fun nmeaExtraStats(): NmeaFuser.ExtraSentenceStats
 
     /**
      * False once the underlying connection has ended (remote closed, connect failed, stopped).

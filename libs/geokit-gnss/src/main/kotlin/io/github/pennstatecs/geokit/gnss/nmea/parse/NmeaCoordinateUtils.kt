@@ -35,7 +35,7 @@ internal object NmeaCoordinateUtils {
     }
 
     /**
-     * Lenient (d)ddmm.mmmm → decimal degrees used by the sentence parsers (GGA/RMC/EBP).
+     * Lenient (d)ddmm.mmmm → decimal degrees used by the sentence parsers (GGA/RMC, and vendor parsers through [NmeaFields]).
      *
      * The degrees/minutes split is found from the DECIMAL POINT (minutes are always the two digits
      * before it), not from a fixed degree width. Some receivers — e.g. the internal GNSS on Samsung

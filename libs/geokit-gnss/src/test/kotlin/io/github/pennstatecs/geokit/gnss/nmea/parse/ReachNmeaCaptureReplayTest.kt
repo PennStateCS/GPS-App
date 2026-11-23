@@ -5,7 +5,6 @@ import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,14 +13,15 @@ import java.time.ZoneOffset
 
 /**
  * Regression tests that replay real Emlid Reach RS4 NMEA captures end-to-end through the production
- * parser ([DefaultNmeaRegistry] + [NmeaFuser]). Fixtures live in `src/test/resources/nmea/`:
+ * parser ([DefaultNmeaRegistry] + [NmeaFuser]), with no vendor parsers: the Emlid EBP/ETC sentences
+ * are unknown here and simply dropped (geokit-receiver-emlid's EmlidNmeaCaptureReplayTest replays the
+ * same files with them registered). Fixtures live in `src/test/resources/nmea/`:
  *  - reach_nmea_capture.txt : standard capture (ETC is timestamp-only)
  *  - reach_nmea_withimu.txt : includes ETC orientation/IMU payloads
  *
  * These guard against regressions in: fix emission, RTK-Fixed detection, altitude/geoid, correction
  * age + base station id, GST accuracy parsing (never fabricated as 0.0), multi-constellation GSA/GSV,
- * ZDA date, and tolerance of unsupported/vendor sentences (VTG, EBP, ETC) — including that EBP never
- * overrides the rover fix.
+ * ZDA date, and tolerance of unsupported/vendor sentences (VTG, EBP, ETC).
  */
 class ReachNmeaCaptureReplayTest {
 
@@ -77,30 +77,16 @@ class ReachNmeaCaptureReplayTest {
         // satsVisible (GSV) never below satsUsed (no cross-constellation double-count blowup).
         fixes.forEach { fx -> fx.satsVisible?.let { assertTrue("visible >= used", it >= (fx.satsUsed ?: 0)) } }
 
-        // Vendor/custom sentences seen but non-fatal.
-        assertTrue("EBP seen", fuser.nmeaCustomStats.ebpSeen)
-        assertTrue("ETC seen", fuser.nmeaCustomStats.etcSeen)
+        // Vendor sentences (EBP, ETC) have no parser here: dropped, non-fatal, nothing extra recorded.
+        assertEquals(NmeaFuser.ExtraSentenceStats.EMPTY, fuser.extraSentenceStats)
         assertTrue("GST counted", fuser.timingStats.gstCount > 0)
     }
 
     @Test
-    fun `capture file ETC carries no orientation data`() {
-        val (_, fuser) = replay("/nmea/reach_nmea_capture.txt")
-        // This capture's ETC is timestamp-only.
-        assertTrue("ETC seen", fuser.nmeaCustomStats.etcSeen)
-        assertTrue("no IMU/orientation in the plain capture", !fuser.nmeaCustomStats.imuOrientationSeen)
-    }
-
-    @Test
-    fun `withimu file replays, emits fixes, and flags IMU orientation data`() {
+    fun `withimu file replays and emits fixes`() {
         val (fixes, fuser) = replay("/nmea/reach_nmea_withimu.txt")
         assertTrue("should emit fixes", fixes.size > 100)
         assertEquals(RtkStatus.FIX, fixes.first().rtkStatus)
-        // ETC in this file carries orientation/IMU-style payloads.
-        assertTrue("IMU/orientation should be detected", fuser.nmeaCustomStats.imuOrientationSeen)
-        val etc = fuser.nmeaCustomStats.latestEtc
-        assertNotNull(etc)
-        assertTrue("latest ETC has raw data fields", etc!!.hasOrientationData)
         // Accuracy still parsed correctly alongside IMU data.
         assertNotNull("GST accuracy parsed", fuser.timingStats.lastHAccM)
         assertTrue(fuser.timingStats.lastHAccM!! > 0.0)
@@ -153,11 +139,7 @@ class ReachNmeaCaptureReplayTest {
         assertEquals(0.0152, hacc!!, 1e-4)
         assertEquals(NmeaFuser.AccuracySource.RECEIVER_GST, fuser.timingStats.lastAccuracySource)
 
-        // RS2 has no IMU / GNETC.
-        assertFalse("RS2 has no ETC", fuser.nmeaCustomStats.etcSeen)
-        assertFalse("RS2 has no IMU orientation", fuser.nmeaCustomStats.imuOrientationSeen)
-        // EBP is present (base station) but never becomes the rover fix.
-        assertTrue("EBP seen", fuser.nmeaCustomStats.ebpSeen)
+        assertEquals(NmeaFuser.ExtraSentenceStats.EMPTY, fuser.extraSentenceStats)
         // Per-constellation GSA/GSV counts are populated.
         assertTrue("GSA by constellation counted", fuser.timingStats.gsaCountByTalker.isNotEmpty())
         assertTrue("GSV by constellation counted", fuser.timingStats.gsvCountByTalker.isNotEmpty())

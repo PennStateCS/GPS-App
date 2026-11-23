@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** [NmeaCoordinateUtils.toDecimalDegrees] — the shared converter behind GGA/RMC/EBP parsing. */
+/** [NmeaCoordinateUtils.toDecimalDegrees] — the shared converter behind GGA/RMC/vendor parsing. */
 class NmeaToDecimalDegreesTest {
 
     private fun lon(raw: String?, hem: String? = "W") = NmeaCoordinateUtils.toDecimalDegrees(raw, hem, isLatitude = false)
