@@ -74,6 +74,28 @@ class GlbGeoreferenceGoldenTest {
         }
     }
 
+    /**
+     * [GlbDigest.canonical] of each reprojected output. The geokit-models copy asserts these (its
+     * android-json orders JSON keys differently from Android); here they are checked against outputs
+     * whose exact bytes are pinned above, so the two sides stay tied together.
+     */
+    private val canonical = mapOf(
+        "compass" to "7d9c681aa411a07ee0dc5e01814ea067e2877c10e1c7d41edf2f05f2a9b94624",
+        "triangle" to "fbb8adf6002ab28c6137b985691c5440ad1c83bc61ce4bf9622b5b0cedfd269a",
+        "interleaved" to "f98ce215eeb7d4fcd4dc6fb2dbae055780ee152c542fbd22496bbcbec0a5484f",
+        "stride0-asset" to "7d0cb0cba2957a8b8757041242a9c31adc29e26b010e9887529491ffe910041e",
+    )
+
+    @Test fun `canonical digests match the values the library test asserts`() {
+        val all = GoldenGlbs.all()
+        for (name in canonical.keys) {
+            val file = temp(all.getValue(name))
+            GlbGeoreferenceReprojector.reprojectIfGeoreferenced(file)!!
+            assertEquals("$name output", expected.getValue(name).output, sha256(file.readBytes()))
+            assertEquals("$name canonical", canonical.getValue(name), GlbDigest.canonical(file.readBytes()))
+        }
+    }
+
     @Test fun `reprojected origins match the recorded values exactly`() {
         val all = GoldenGlbs.all()
         for ((name, o) in origins) {
@@ -275,4 +297,43 @@ internal object GoldenGlbs {
 
     /** An ordinary model in local metres. */
     fun local(): ByteArray = simple(floatArrayOf(-1f, -1f, -1f, 1f, 1f, 1f), "[-1,-1,-1]", "[1,1,1]")
+}
+
+/**
+ * A key-order-independent digest of a GLB: every chunk's type and length plus the bytes of every
+ * non-JSON chunk, then the JSON chunk with object keys sorted. Used where the org.json on the test
+ * classpath orders keys differently from Android's (android-json keeps a HashMap): everything else in
+ * the output, including the JSON chunk's padded length, must still match exactly.
+ */
+internal object GlbDigest {
+    fun canonical(glb: ByteArray): String {
+        val b = java.nio.ByteBuffer.wrap(glb).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        md.update(glb, 0, 12)
+        var p = 12
+        while (p + 8 <= glb.size) {
+            val len = b.getInt(p); val type = b.getInt(p + 4)
+            md.update(glb, p, 8)
+            if (type == 0x4E4F534A) {
+                val text = String(glb, p + 8, len, Charsets.UTF_8)
+                md.update(canon(org.json.JSONObject(text)).toByteArray(Charsets.UTF_8))
+            } else {
+                md.update(glb, p + 8, len)
+            }
+            p += 8 + len
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun canon(v: Any?): String = when (v) {
+        is org.json.JSONObject -> v.keys().asSequence().map { it as String }.toList().sorted()
+            .joinToString(",", "{", "}") { "${str(it)}:${canon(v.get(it))}" }
+        is org.json.JSONArray -> (0 until v.length()).joinToString(",", "[", "]") { canon(v.get(it)) }
+        is String -> str(v)
+        is Int, is Long, is Short, is Byte -> (v as Number).toLong().toString()
+        is Number -> v.toDouble().toString()
+        else -> v.toString()
+    }
+
+    private fun str(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
