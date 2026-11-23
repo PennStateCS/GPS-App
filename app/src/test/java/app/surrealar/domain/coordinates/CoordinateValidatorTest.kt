@@ -102,16 +102,6 @@ class CoordinateValidatorTest {
     }
 
     @Test
-    fun isValidLatLon_gate() {
-        assertTrue(CoordinateValidator.isValidLatLon(41.0, -75.0))
-        assertFalse(CoordinateValidator.isValidLatLon(0.0, 0.0))
-        assertFalse(CoordinateValidator.isValidLatLon(Double.NaN, 1.0))
-        assertFalse(CoordinateValidator.isValidLatLon(1.0, Double.POSITIVE_INFINITY))
-        assertFalse(CoordinateValidator.isValidLatLon(91.0, 0.0))
-        assertFalse(CoordinateValidator.isValidLatLon(0.0, 181.0))
-    }
-
-    @Test
     fun distanceMeters_samepoint_isZero() {
         assertEquals(0.0, CoordinateValidator.distanceMeters(41.0, -75.0, 41.0, -75.0), 1e-6)
     }

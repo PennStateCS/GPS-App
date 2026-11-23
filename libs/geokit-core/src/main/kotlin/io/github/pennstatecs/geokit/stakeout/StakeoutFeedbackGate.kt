@@ -1,7 +1,7 @@
-package app.surrealar.stakeout
+package io.github.pennstatecs.geokit.stakeout
 
-/** The feedback to emit this frame. The fragment maps these to haptics/audio. */
-enum class StakeoutFeedback { NONE, NAVIGATING_PULSE, ENTERED_TOLERANCE }
+/** The feedback to emit this frame. The host maps these to haptics/audio. */
+public enum class StakeoutFeedback { NONE, NAVIGATING_PULSE, ENTERED_TOLERANCE }
 
 /**
  * Pure, clock-injected gate deciding *when* stakeout feedback should fire, independent of how it is
@@ -15,13 +15,14 @@ enum class StakeoutFeedback { NONE, NAVIGATING_PULSE, ENTERED_TOLERANCE }
  *
  * Not thread-safe; call from a single (UI) thread. Call [reset] when guidance starts/stops.
  */
-class StakeoutFeedbackGate(
+public class StakeoutFeedbackGate(
     private val navIntervalMs: Long = 4000L,
 ) {
     private var wasWithinTolerance = false
     private var lastNavPulseMs = Long.MIN_VALUE
 
-    fun reset() {
+    /** Forgets the tolerance latch and the pulse timer. */
+    public fun reset() {
         wasWithinTolerance = false
         lastNavPulseMs = Long.MIN_VALUE
     }
@@ -30,7 +31,7 @@ class StakeoutFeedbackGate(
      * @param status current navigation status
      * @param nowMs  monotonic clock (e.g. SystemClock.elapsedRealtime())
      */
-    fun onUpdate(status: StakeoutStatus, nowMs: Long): StakeoutFeedback {
+    public fun onUpdate(status: StakeoutStatus, nowMs: Long): StakeoutFeedback {
         val withinTolerance = status == StakeoutStatus.WITHIN_TOLERANCE || status == StakeoutStatus.AT_TARGET
 
         if (withinTolerance) {

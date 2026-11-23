@@ -1,4 +1,4 @@
-package app.surrealar.stakeout
+package io.github.pennstatecs.geokit.stakeout
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

@@ -1,6 +1,7 @@
 package app.surrealar.domain.coordinates
 
 import app.surrealar.domain.model.Coordinate
+import io.github.pennstatecs.geokit.validation.LatLonValidation
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -23,17 +24,11 @@ data class ValidationResult(
  */
 object CoordinateValidator {
 
-    /** Coordinates closer than this to 0,0 are treated as the invalid "null island" default. */
-    private const val NULL_ISLAND_EPSILON_DEG = 1e-7
-
     /**
-     * True when lat/lon are finite, within geographic bounds, and not the 0,0 null-island
-     * default. Use this as the gate before accepting a captured/imported position.
+     * Coordinates closer than this to 0,0 are treated as the invalid "null island" default. The plain
+     * lat/lon gate is geokit-core's [LatLonValidation.isValidLatLon].
      */
-    fun isValidLatLon(latitude: Double, longitude: Double): Boolean =
-        latitude.isFinite() && longitude.isFinite() &&
-            latitude in -90.0..90.0 && longitude in -180.0..180.0 &&
-            !(abs(latitude) < NULL_ISLAND_EPSILON_DEG && abs(longitude) < NULL_ISLAND_EPSILON_DEG)
+    private const val NULL_ISLAND_EPSILON_DEG = LatLonValidation.NULL_ISLAND_EPSILON_DEG
 
     /** Validates lat/lon bounds and name; emits quality warnings for accuracy/HDOP/satellite count. */
     fun validate(coordinate: Coordinate): ValidationResult {

@@ -1,6 +1,5 @@
 package app.surrealar.ui.openinar
 
-import app.surrealar.domain.coordinates.CoordinateValidator
 
 /**
  * Builds the AR debug panel text: one line per stage of the pin/model pipeline, in dependency
@@ -24,7 +23,7 @@ internal object ArDebugReport {
         val lat: Double,
         val lon: Double,
     ) {
-        val coordsValid: Boolean get() = CoordinateValidator.isValidLatLon(lat, lon)
+        val coordsValid: Boolean get() = io.github.pennstatecs.geokit.validation.LatLonValidation.isValidLatLon(lat, lon)
     }
 
     data class AnchorRow(

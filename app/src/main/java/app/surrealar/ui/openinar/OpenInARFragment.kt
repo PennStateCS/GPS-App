@@ -2112,7 +2112,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 // Never spawn the test grid from an impossible fix (e.g. lon −760°): the anchors could
                 // never resolve. The request stays pending and the debug panel names the blocker.
                 val fix = currentGnssFix
-                if (fix != null && app.surrealar.domain.coordinates.CoordinateValidator.isValidLatLon(fix.latDeg, fix.lonDeg)) {
+                if (fix != null && io.github.pennstatecs.geokit.validation.LatLonValidation.isValidLatLon(fix.latDeg, fix.lonDeg)) {
                     testAnchorController.processActionIfNeeded(earth, fix.latDeg, fix.lonDeg, fixEllipsoidalAltM(fix))
                 }
                 if (awaitingLocalization) "Geo: Localizing…" else "Geo: TRACKING"

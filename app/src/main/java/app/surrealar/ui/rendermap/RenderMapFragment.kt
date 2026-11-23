@@ -270,7 +270,7 @@ class RenderMapFragment : Fragment() {
     /** elapsedRealtime() of the last fix applied to the stakeout readout; null until the first. */
     private var lastStakeoutFixElapsedMs: Long? = null
     private var guidanceStaleJob: kotlinx.coroutines.Job? = null
-    private val feedbackGate = app.surrealar.stakeout.StakeoutFeedbackGate()
+    private val feedbackGate = io.github.pennstatecs.geokit.stakeout.StakeoutFeedbackGate()
     private var compassHeadingDeg: Double? = null
     private var sensorManager: android.hardware.SensorManager? = null
     private var rotationSensor: android.hardware.Sensor? = null
@@ -307,7 +307,7 @@ class RenderMapFragment : Fragment() {
     private var loggedDeclSource: Any? = null
     private var loggedMagneticOnly: Boolean? = null
     private var loggedStakeoutSource: Any? = null
-    private fun logHeadingSourceIfChanged(stakeoutSource: app.surrealar.stakeout.HeadingSource?) {
+    private fun logHeadingSourceIfChanged(stakeoutSource: io.github.pennstatecs.geokit.stakeout.HeadingSource?) {
         val decl = headingProvider.declinationSource
         val mag = headingProvider.isMagneticOnly
         val st = stakeoutSource ?: loggedStakeoutSource
@@ -916,7 +916,7 @@ class RenderMapFragment : Fragment() {
         guidanceStaleJob?.cancel()
         guidanceStaleJob = viewLifecycleOwner.lifecycleScope.launch {
             while (isGuidanceActive) {
-                val stale = app.surrealar.stakeout.StakeoutGuidance.isPositionStale(
+                val stale = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.isPositionStale(
                     lastStakeoutFixElapsedMs, android.os.SystemClock.elapsedRealtime(), STAKEOUT_STALE_FIX_MS
                 )
                 if (stale) {
@@ -959,39 +959,39 @@ class RenderMapFragment : Fragment() {
     private fun updateGuidance(distanceMeters: Double, bearingToTargetDeg: Double) {
         if (!isGuidanceActive) return
         val s = stakeoutSettings
-        val (source, heading) = app.surrealar.stakeout.StakeoutGuidance.resolveHeading(
+        val (source, heading) = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.resolveHeading(
             preferCompass = s.guidanceUsesCompassHeading,
             compassHeadingDeg = compassHeadingDeg,
             courseOverGroundDeg = currentFix?.courseDeg,
             speedMps = currentFix?.speedMps,
         )
-        val relative = app.surrealar.stakeout.StakeoutGuidance.relativeBearing(bearingToTargetDeg, heading)
+        val relative = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.relativeBearing(bearingToTargetDeg, heading)
         // Arrow shows the relative direction when heading is known, else points at the map-north bearing.
         imgStakeoutArrow?.rotation = (relative ?: bearingToTargetDeg).toFloat()
         logHeadingSourceIfChanged(source)
-        if (source == app.surrealar.stakeout.HeadingSource.NORTH_UP) {
+        if (source == io.github.pennstatecs.geokit.stakeout.HeadingSource.NORTH_UP) {
             txtStakeoutHeadingNote?.visibility = View.VISIBLE
             txtStakeoutHeadingNote?.text = "Arrow is north-up until heading is available."
-        } else if (source == app.surrealar.stakeout.HeadingSource.COMPASS && headingProvider.isMagneticOnly) {
+        } else if (source == io.github.pennstatecs.geokit.stakeout.HeadingSource.COMPASS && headingProvider.isMagneticOnly) {
             // No position at all yet → no declination: the compass heading is magnetic (~11.6° off here).
             txtStakeoutHeadingNote?.visibility = View.VISIBLE
             txtStakeoutHeadingNote?.text = "Magnetic heading (no position yet)"
         } else {
             txtStakeoutHeadingNote?.visibility = View.GONE
         }
-        val status = app.surrealar.stakeout.StakeoutGuidance.status(
+        val status = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.status(
             hasTarget = true, hasPosition = true, distanceMeters = distanceMeters, toleranceMeters = s.toleranceMeters
         )
         when (feedbackGate.onUpdate(status, android.os.SystemClock.elapsedRealtime())) {
-            app.surrealar.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
+            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
                 // Distance to target only (no positions): the gate fires once per arrival.
                 logMapEvent("STAKEOUT", "Stakeout target within tolerance distM=${"%.3f".format(java.util.Locale.US, distanceMeters)} toleranceM=${s.toleranceMeters}")
                 if (s.enableHaptics) haptic(arrived = true); if (s.enableAudio) beep(arrived = true)
             }
-            app.surrealar.stakeout.StakeoutFeedback.NAVIGATING_PULSE -> {
+            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.NAVIGATING_PULSE -> {
                 if (s.enableHaptics) haptic(arrived = false); if (s.enableAudio) beep(arrived = false)
             }
-            app.surrealar.stakeout.StakeoutFeedback.NONE -> {}
+            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.NONE -> {}
         }
     }
 
@@ -1482,13 +1482,13 @@ class RenderMapFragment : Fragment() {
         val pos = lastFixLatLng
         if (!showCurrentLocationOnMap || map == null || pos == null) { removeHeadingIndicator(); return }
 
-        val (source, heading) = app.surrealar.stakeout.StakeoutGuidance.resolveHeading(
+        val (source, heading) = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.resolveHeading(
             preferCompass = true,
             compassHeadingDeg = compassHeadingDeg,
             courseOverGroundDeg = currentFix?.courseDeg,
             speedMps = currentFix?.speedMps,
         )
-        if (heading == null || source == app.surrealar.stakeout.HeadingSource.NORTH_UP) {
+        if (heading == null || source == io.github.pennstatecs.geokit.stakeout.HeadingSource.NORTH_UP) {
             removeHeadingIndicator(); return
         }
 
@@ -1505,7 +1505,7 @@ class RenderMapFragment : Fragment() {
         } else {
             try {
                 headingMarker?.position = pos
-                if (last == null || app.surrealar.stakeout.StakeoutGuidance.normalize180(heading - last).let { kotlin.math.abs(it) } >= 2.0) {
+                if (last == null || io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.normalize180(heading - last).let { kotlin.math.abs(it) } >= 2.0) {
                     headingMarker?.rotation = heading.toFloat()
                     lastAppliedHeadingDeg = heading
                 }
