@@ -32,4 +32,7 @@ interface ReportSources {
 
     fun logFiles(): List<File>
     fun errorFiles(): List<File>
+
+    /** Statuses of work done before the report was assembled (the exporter's app-data gathering). */
+    fun preparationStatuses(): List<SectionStatus> = emptyList()
 }
