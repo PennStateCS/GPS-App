@@ -28,8 +28,3 @@ dependencies {
     implementation(libs.geographiclib)
     testImplementation(libs.junit)
 }
-
-tasks.test {
-    // GEOID18 test grid lives with the app (app/src/main/assets); not copied into the module.
-    systemProperty("geoid18.path", rootProject.file("app/src/main/assets/geoid/geoid18.srgt").absolutePath)
-}

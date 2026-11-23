@@ -24,7 +24,8 @@ import kotlinx.coroutines.flow.stateIn
  */
 @Singleton
 class CoordinateSystemService @Inject constructor(
-    @ApplicationContext context: Context,
+    // Unused since GEOID18 moved from assets to geokit-core's classpath; kept so the injection graph is unchanged.
+    @Suppress("UNUSED_PARAMETER") @ApplicationContext context: Context,
     settingsRepository: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository,
     appScope: kotlinx.coroutines.CoroutineScope,
 ) {
@@ -53,7 +54,7 @@ class CoordinateSystemService @Inject constructor(
             val t0 = System.nanoTime()
             DiagnosticsLogger.d(DiagTags.DATA) { "GEOID18 grid load started" }
             geoid = runCatching {
-                context.assets.open(Geoid18Grid.ASSET_PATH).use { Geoid18Grid(it.readBytes()) }
+                Geoid18Grid.fromClasspath()   // bundled in geokit-core's jar, packaged into the APK
             }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded durationMs=${(System.nanoTime() - t0) / 1_000_000}") }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid load failed: NAVD88 heights unavailable", it) }
                 .getOrNull()
         }

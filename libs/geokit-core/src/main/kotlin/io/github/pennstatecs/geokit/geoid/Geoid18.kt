@@ -21,7 +21,8 @@ import kotlin.math.floor
  * Valid range: CONUS 24–58 °N, 130–60 °W and PR/VI 15–21 °N, 69–64 °W; null elsewhere.
  * Accuracy vs the NGS geoid service: < 2 mm (mm rounding ≤ 0.5 mm + bilinear interpolation).
  *
- * @param bytes the packed SRGT file (the app ships it as the asset [ASSET_PATH]).
+ * @param bytes the packed SRGT file. This library bundles it as the classpath resource
+ *   [RESOURCE_PATH]; [fromClasspath] loads it.
  */
 public class Geoid18Grid(private val bytes: ByteArray) {
 
@@ -107,11 +108,34 @@ public class Geoid18Grid(private val bytes: ByteArray) {
     }
 
     public companion object {
-        /** Path of the packed grid inside the app's assets. */
+        /**
+         * Relative path of the packed grid. It ships inside this library as the classpath resource
+         * [RESOURCE_PATH] (the same path); the name is kept from when the app bundled it as an asset.
+         */
         public const val ASSET_PATH: String = "geoid/geoid18.srgt"
+
+        /** Classpath location of the packed grid bundled in geokit-core's jar (see [fromClasspath]). */
+        public const val RESOURCE_PATH: String = ASSET_PATH
 
         /** Reads a packed SRGT grid from [input] (the stream is read fully, not closed). */
         public fun fromInputStream(input: java.io.InputStream): Geoid18Grid = Geoid18Grid(input.readBytes())
+
+        /**
+         * Loads the GEOID18 grid bundled with this library (classpath resource [RESOURCE_PATH],
+         * about 5.2 MB). Blocking I/O: call it off the main/UI thread. Works on the JVM and on Android,
+         * which packages Java resources from library jars into the APK.
+         *
+         * @throws IllegalStateException if the resource is not on the classpath (e.g. stripped by a
+         *   packaging rule).
+         */
+        public fun fromClasspath(): Geoid18Grid {
+            val input = Geoid18Grid::class.java.getResourceAsStream("/$RESOURCE_PATH")
+                ?: throw IllegalStateException(
+                    "GEOID18: classpath resource $RESOURCE_PATH not found; it ships in the geokit-core jar " +
+                        "(libs/geokit-core/src/main/resources/$RESOURCE_PATH) - check packaging excludes"
+                )
+            return input.use { fromInputStream(it) }
+        }
 
         /** Orthometric datum GEOID18 yields at a point (degrees), for labels: NAVD88, PRVD02 or VIVD09. */
         public fun verticalDatumName(latDeg: Double, lonDeg: Double): String = when {
