@@ -173,6 +173,22 @@ For AR and geospatial testing, use a physical device with:
 - Google Play Services for AR installed or available
 - A clear outdoor view when testing geospatial positioning
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main` (a newer push to the same branch or PR cancels the older run). It has two jobs:
+
+- **geokit libraries (JVM):** `./gradlew -p libs test`, on JDK 21 with no Android SDK — the `libs/` build must never need the Android Gradle Plugin or the SDK.
+- **Android app:** installs the Android SDK (`platforms;android-37.0`, `build-tools;37.0.0`), then runs `./gradlew :app:testDebugUnitTest` and `./gradlew :app:assembleDebug`.
+
+CI uses no secrets. There is no `local.properties`: `sdk.dir` comes from `ANDROID_HOME`, the Maps key falls back to the `YOUR_API_KEY_HERE` placeholder (so maps will not load in a CI-built APK), and debug builds are signed with the committed shared debug keystore. Test reports are uploaded as an artifact when a job fails; the debug APK is kept for 7 days.
+
+To reproduce CI locally:
+
+```bash
+./gradlew -p libs test
+./gradlew :app:testDebugUnitTest :app:assembleDebug
+```
+
 ## Troubleshooting
 
 ### Build fails after Android Studio / AGP upgrade
