@@ -327,16 +327,19 @@ class CoordinatesFragment : Fragment() {
                 val dialog = AddCoordinateDialogFragment(
                     dbModels = models
                 ) { coordinate ->
-                    viewModel.addCoordinate(coordinate)
-                    // haptic confirm
-                    _binding?.root?.post {
-                        val view = _binding?.root
-                        if (view != null) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-                            } else {
-                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            }
+                    viewModel.addCoordinate(coordinate) { result ->
+                        val view = _binding?.root ?: return@addCoordinate
+                        val error = result.userMessage
+                        if (error != null) {
+                            // The dialog is already closed: say so plainly, the point is not in the list.
+                            showSaveError(error)
+                            return@addCoordinate
+                        }
+                        // haptic confirm, only once the point is really saved
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        } else {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                         }
                     }
                 }
@@ -345,6 +348,12 @@ class CoordinatesFragment : Fragment() {
                 DiagnosticsLogger.e(DiagTags.CAPTURE, "Add Coordinate dialog show failed", e)
             }
         }
+    }
+
+    /** A save that did not happen: long snackbar so it isn't missed in the field. */
+    private fun showSaveError(message: String) {
+        val root = _binding?.root ?: return
+        Snackbar.make(root, message, Snackbar.LENGTH_LONG).setAnchorView(binding.fabAddCoordinate).show()
     }
 
     /** Show dialog to edit an existing coordinate */
@@ -356,7 +365,7 @@ class CoordinatesFragment : Fragment() {
                 emptyList()
             }
             val dialog = EditCoordinateDialogFragment(coordinate, models) { updated ->
-                viewModel.updateCoordinate(updated)
+                viewModel.updateCoordinate(updated) { result -> result.userMessage?.let(::showSaveError) }
             }
             // The models query can finish after the app went to the background.
             if (!parentFragmentManager.isStateSaved) dialog.show(parentFragmentManager, "EditCoordinateDialog")
@@ -376,7 +385,7 @@ class CoordinatesFragment : Fragment() {
                             .setAnchorView(binding.fabAddCoordinate)
                             .setAction("UNDO") {
                                 try {
-                                    viewModel.addCoordinate(coordinate)
+                                    viewModel.addCoordinate(coordinate) { result -> result.userMessage?.let(::showSaveError) }
                                     currentSelectionId = coordinate.id
                                     saveLastOpenedId(coordinate.id)
                                     adapter.setSelectedId(coordinate.id)

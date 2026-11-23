@@ -24,7 +24,10 @@ import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.DiagTags
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -39,47 +42,69 @@ class CoordinatesViewModel @Inject constructor(
     // LiveData automatically notifies observers (like UI) when data changes
     val allCoordinates: LiveData<List<Coordinate>> = repository.allCoordinates
 
-    // Database operations wrapped in viewModelScope.launch for background execution
-    // viewModelScope automatically cancels when ViewModel is destroyed
-    fun addCoordinate(coordinate: Coordinate) = viewModelScope.launch {
-        if (rejectIfInvalid(coordinate, "save")) return@launch
-        try {
-            repository.insert(coordinate)
-            // COORD diagnostics: id/model link only — never the point's name or note.
-            DiagnosticsLogger.i(DiagTags.COORD, "Coordinate saved id=${coordinate.id} " +
-                "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate save failed id=${coordinate.id}", e)
-        }
+    /** Outcome of a save: [Saved], or why it wasn't ([Rejected] by validation, [Failed] in the database). */
+    sealed interface SaveResult {
+        data object Saved : SaveResult
+        data class Rejected(val reasons: List<String>) : SaveResult
+        data class Failed(val error: Throwable) : SaveResult
+
+        /** Short text for the user, or null when saved. */
+        val userMessage: String?
+            get() = when (this) {
+                Saved -> null
+                is Rejected -> "Not saved: ${reasons.joinToString("; ")}"
+                is Failed -> "Not saved: database error (${error.javaClass.simpleName})"
+            }
     }
 
-    fun updateCoordinate(coordinate: Coordinate) = viewModelScope.launch {
-        if (rejectIfInvalid(coordinate, "update")) return@launch
-        try {
-            repository.update(coordinate)
-            DiagnosticsLogger.i(DiagTags.COORD, "Coordinate updated id=${coordinate.id} " +
-                "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.COORD, "Coordinate update failed id=${coordinate.id}", e)
-        }
+    /**
+     * Saves a new coordinate and reports the outcome to [onResult] (main thread). Callers must show
+     * success only for [SaveResult.Saved]: a failed save used to look like it worked.
+     *
+     * The database write is NonCancellable: viewModelScope runs on Main.immediate, so it starts as soon
+     * as this is called and finishes even if the screen (and this ViewModel) goes away right after —
+     * e.g. an edit followed immediately by Back on a fragment-scoped ViewModel. [onResult] is skipped
+     * once the ViewModel is cleared.
+     */
+    fun addCoordinate(coordinate: Coordinate, onResult: (SaveResult) -> Unit = {}) =
+        save(coordinate, "save", onResult) { repository.insert(it) }
+
+    /** Updates a coordinate; same contract as [addCoordinate]. */
+    fun updateCoordinate(coordinate: Coordinate, onResult: (SaveResult) -> Unit = {}) =
+        save(coordinate, "update", onResult) { repository.update(it) }
+
+    private fun save(
+        coordinate: Coordinate, op: String, onResult: (SaveResult) -> Unit,
+        write: suspend (Coordinate) -> Unit,
+    ) = viewModelScope.launch {
+        val result = rejectIfInvalid(coordinate, op)
+            ?: withContext(NonCancellable) {
+                try {
+                    write(coordinate)
+                    // COORD diagnostics: id/model link only — never the point's name or note.
+                    DiagnosticsLogger.i(DiagTags.COORD, "Coordinate ${if (op == "save") "saved" else "updated"} id=${coordinate.id} " +
+                        "modelId=${coordinate.modelId} renderEnabled=${coordinate.renderEnabled}")
+                    SaveResult.Saved
+                } catch (e: Exception) {
+                    DiagnosticsLogger.e(DiagTags.COORD, "Coordinate $op failed id=${coordinate.id}", e)
+                    SaveResult.Failed(e)
+                }
+            }
+        if (isActive) onResult(result)
     }
 
     /**
      * Defense-in-depth gate: refuses to persist a coordinate that fails validation
      * (out-of-range, NaN, or 0,0). The capture dialog already blocks these at the UI, so this
-     * only catches programmatic callers. Returns true when the coordinate was rejected.
+     * only catches programmatic callers. Returns the rejection, or null when the coordinate is valid.
      */
-    private fun rejectIfInvalid(coordinate: Coordinate, op: String): Boolean {
+    private fun rejectIfInvalid(coordinate: Coordinate, op: String): SaveResult.Rejected? {
         val result = CoordinateValidator.validate(coordinate)
         if (!result.isValid) {
             DiagnosticsLogger.w(DiagTags.COORD, "Coordinate $op rejected by validation: ${result.errors.joinToString("; ")} id=${coordinate.id}")
-            return true
+            return SaveResult.Rejected(result.errors)
         }
-        return false
+        return null
     }
 
     fun deleteCoordinate(id: String) = viewModelScope.launch {

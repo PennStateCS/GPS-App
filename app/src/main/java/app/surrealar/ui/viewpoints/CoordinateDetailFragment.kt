@@ -1101,8 +1101,9 @@ class CoordinateDetailFragment : Fragment() {
                 updatedAt = System.currentTimeMillis()
             )
         }
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.updateCoordinate(updated)
+        viewModel.updateCoordinate(updated) { result ->
+            result.userMessage?.let { showSnackbar(it); return@updateCoordinate }
+            if (view == null) return@updateCoordinate
             lastCoordinate = updated
             bindCoordinate(updated)
             DiagnosticsLogger.i(DiagTags.MODEL, "Model linked to coordinate modelId=$modelId coordinateId=${updated.id} " +
@@ -1133,8 +1134,9 @@ class CoordinateDetailFragment : Fragment() {
             modelOriginOffsetXM = null, modelOriginOffsetYM = null, modelOriginOffsetZM = null
         )
         val priorModelId = coord.modelId
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.updateCoordinate(updated)
+        viewModel.updateCoordinate(updated) { result ->
+            result.userMessage?.let { showSnackbar(it); return@updateCoordinate }
+            if (view == null) return@updateCoordinate
             lastCoordinate = updated
             bindCoordinate(updated)
             DiagnosticsLogger.i(DiagTags.MODEL, "Model unlinked from coordinate modelId=$priorModelId coordinateId=${updated.id}")
@@ -1267,8 +1269,9 @@ class CoordinateDetailFragment : Fragment() {
                 modelRepository.getAllModels().first()
             } catch (_: Exception) { emptyList() }
             EditCoordinateDialogFragment(current, models) { updated ->
-                viewLifecycleOwner.lifecycleScope.launch {
-                    viewModel.updateCoordinate(updated)
+                viewModel.updateCoordinate(updated) { result ->
+                    result.userMessage?.let { showSnackbar(it); return@updateCoordinate }
+                    if (view == null) return@updateCoordinate
                     lastCoordinate = updated
                     bindCoordinate(updated)
                 }
