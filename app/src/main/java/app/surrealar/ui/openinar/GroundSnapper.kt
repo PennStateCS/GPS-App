@@ -20,6 +20,9 @@ import kotlin.math.hypot
  *     user is assumed locally level), else
  *  3. null — the caller keeps the anchor's own height (e.g. the terrain-model height for far models).
  *
+ * Heights are steadied with [FloorHysteresis] (the main floor, and per content key in [groundY]) so
+ * content doesn't jump when the chosen plane flickers between frames.
+ *
  * GL thread only. Call [update] once per frame before querying [groundY].
  */
 internal class GroundSnapper {
@@ -27,6 +30,9 @@ internal class GroundSnapper {
 
     private var planes: List<Plane> = emptyList()
     private var mainFloorY: Float? = null
+    private val mainFloorHysteresis = FloorHysteresis()
+    /** Per content key (coordinate id): the snapped height last used for it. */
+    private val keyHysteresis = HashMap<String, FloorHysteresis>()
     private var camX = 0f
     private var camZ = 0f
     /** Logging only: true once a floor has been seen, so "lost" is reported only after a detection. */
@@ -44,7 +50,8 @@ internal class GroundSnapper {
                 it.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
                 it.centerPose.ty() < camY - MIN_BELOW_CAMERA_M
         }
-        val floor = MainFloor.choose(planes.map { GroundSurface(it.centerPose.ty(), it.extentX * it.extentZ) })
+        val floor = mainFloorHysteresis.update(
+            MainFloor.choose(planes.map { GroundSurface(it.centerPose.ty(), it.extentX * it.extentZ) }))
         mainFloorY = floor
         // Per frame: log detected/lost only once the state holds 3 s (planes flicker). Nothing is logged
         // before the first detection, so start-up doesn't report a spurious "lost".
@@ -64,12 +71,26 @@ internal class GroundSnapper {
     fun reset() {
         planes = emptyList()
         mainFloorY = null
+        mainFloorHysteresis.reset()
+        keyHysteresis.clear()
         floorEverDetected = false
         app.surrealar.util.DiagnosticsLogger.resetThrottles(FLOOR_LOG_KEY)
     }
 
-    /** Ground height (ARCore world Y, metres) for the point at world (x, z), or null when unknown. */
-    fun groundY(x: Float, z: Float): Float? {
+    /**
+     * Ground height (ARCore world Y, metres) for the point at world (x, z), or null when unknown. With a
+     * [key] (call once per frame per key), the result is held per key against frame-to-frame flicker.
+     */
+    fun groundY(x: Float, z: Float, key: String?): Float? {
+        val raw = rawGroundY(x, z)
+        if (key == null) return raw
+        return keyHysteresis.getOrPut(key) { FloorHysteresis() }.update(raw)
+    }
+
+    /** Unkeyed [groundY] (no per-point hold; the main floor is still steadied). */
+    fun groundY(x: Float, z: Float): Float? = groundY(x, z, null)
+
+    private fun rawGroundY(x: Float, z: Float): Float? {
         // 1) A detected surface that actually extends under this point (largest wins over e.g. a step).
         val under = planes
             .filter { it.isPoseInPolygon(Pose.makeTranslation(x, it.centerPose.ty(), z)) }

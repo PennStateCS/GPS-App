@@ -604,7 +604,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             val vm = snapshot?.viewMatrix ?: return
             val pm = snapshot.projMatrix
-            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, hideModels = !snapshot.cameraTracking)
+            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, hideModels =
+                !ArTrackingVisibility.drawGeospatialModels(snapshot.cameraTracking, snapshot.earthTracking))
             // Update only after a successful render so we retry the clear frame if
             // camera matrices were unavailable this tick.
             choreoPrevHadModels = hasModels
@@ -627,6 +628,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val liveTestKeys: Set<String> = emptySet(),
         /** False once ARCore camera tracking is lost — the matrices above are stale; hide models. */
         val cameraTracking: Boolean = true,
+        /**
+         * False while Earth (geospatial) tracking is lost although the camera tracks: anchor poses are
+         * stale and labels are gone, so models are hidden too (see [ArTrackingVisibility]).
+         */
+        val earthTracking: Boolean = true,
         /** Real-world depth occluder for this frame; null when occlusion is off or no depth yet. */
         val occlusion: OcclusionFrame? = null,
         /** Latest ARCore Environmental HDR light estimate (null = none yet / keep current lighting). */
@@ -676,6 +682,19 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var hasWarnedNoNetwork = false
 
     // Permission request launchers using modern Activity Result API
+    // A permission request (even one the system answers at once after "Don't ask again") pauses and
+    // resumes the fragment, and onResume asks again: a denial looped requests every onResume. Each
+    // permission is requested at most once per fragment instance; once denied, the status says so and
+    // AR waits until the permission is granted (e.g. in system Settings — checked on every onResume).
+    private var cameraPermissionRequested = false
+    private var locationPermissionRequested = false
+
+    /** Back-off for CameraNotAvailableException (see [recoverCamera]). Main thread only. */
+    private val cameraRecovery = CameraRecoveryPolicy()
+    private val cameraRecoveryHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** Set (GL or main) when a recovery is in progress, so the GL thread hands it to main only once. */
+    private val cameraRecoveryActive = java.util.concurrent.atomic.AtomicBoolean(false)
+
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             // The result can be delivered after the view is gone — guard binding access.
@@ -734,8 +753,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // device) must not take down the whole AR screen. On failure the renderer stays null and
         // every `filamentRenderer?.` call no-ops, so GLES pins/labels still work — only GLB models
         // are unavailable. Throwable (not Exception) to also catch UnsatisfiedLinkError.
+        var createdRenderer: ArFilamentRenderer? = null
         filamentRenderer = try {
             ArFilamentRenderer().also { renderer ->
+                createdRenderer = renderer
                 renderer.init(binding.filamentSurface)
                 // Surface the "geometry far from origin" warning as an in-app snackbar.
                 // Fires once per affected model when it is first added to the Filament scene.
@@ -759,6 +780,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (t: Throwable) {
             DiagnosticsLogger.e(DIAG, "AR renderer init failed: 3D models disabled, " +
                 "pins and labels still render", t)
+            // init() already released what it created; destroy() is idempotent and also covers a
+            // failure after init() returned (e.g. in the callback setup above).
+            createdRenderer?.destroy()
             null
         }
 
@@ -1152,6 +1176,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         displayRotation = readDisplayRotation()
         DevLog.d(TAG) { "Display rotation: $displayRotation" }
+        cameraRecovery.reset()   // returning to AR gets a fresh camera-recovery budget
 
         if (!checkAndRequestCameraPermission()) {
             DiagnosticsLogger.w(DIAG, "AR session start blocked: camera permission not granted")
@@ -1214,10 +1239,80 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (e: CameraNotAvailableException) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
             binding.textArStatus.text = getString(R.string.camera_unavailable)
-            try { session?.pause() } catch (_: Exception) {}   // best effort after a failed resume
+            // Pause + bounded retry once the fragment is RESUMED (it is not yet, inside onResume).
+            if (cameraRecoveryActive.compareAndSet(false, true)) {
+                cameraRecoveryHandler.post { recoverCamera("resume") }
+            }
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed", e)
             binding.textArStatus.text = "AR error: ${e.message}"
+        }
+    }
+
+    /**
+     * GL thread: Session.update() threw CameraNotAvailableException. Stops further update() calls (the
+     * camera is gone, so each would throw again) and hands recovery to the main thread once.
+     */
+    private fun onCameraUnavailableInFrame() {
+        sessionReady = false
+        if (cameraRecoveryActive.compareAndSet(false, true)) {
+            cameraRecoveryHandler.post { recoverCamera("frame") }
+        }
+    }
+
+    /**
+     * Main thread: pauses the session and schedules a resume after [cameraRecovery]'s back-off
+     * (1 s … 16 s, 5 attempts). Out of attempts, it stays paused with a status message until the next
+     * onResume. Never spins: frames stop (sessionReady=false) while the camera is unavailable.
+     */
+    private fun recoverCamera(source: String) {
+        val ses = session
+        if (ses == null || _binding == null ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            cameraRecoveryActive.set(false)   // onResume/onPause own the session from here
+            return
+        }
+        cameraRecoveryActive.set(true)
+        sessionReady = false
+        runCatching { ses.pause() }
+            .onFailure { DiagnosticsLogger.w(DIAG, "AR session pause for camera recovery failed", it) }
+        when (val d = cameraRecovery.onCameraUnavailable(android.os.SystemClock.elapsedRealtime())) {
+            is CameraRecoveryPolicy.Decision.Retry -> {
+                DiagnosticsLogger.w(DIAG, "Camera unavailable: AR paused, resume retry scheduled " +
+                    "delayMs=${d.delayMs} attempt=${d.attempt}/${d.maxAttempts} source=$source")
+                setArStatus("${getString(R.string.camera_unavailable)}: retrying in " +
+                    "${(d.delayMs + 999) / 1000} s (${d.attempt}/${d.maxAttempts})")
+                cameraRecoveryHandler.postDelayed({ attemptCameraResume() }, d.delayMs)
+            }
+            CameraRecoveryPolicy.Decision.GiveUp -> {
+                // Stays active: no frames run and nothing re-posts until onResume resets the budget.
+                DiagnosticsLogger.e(DIAG, "Camera unavailable: AR recovery gave up " +
+                    "attempts=${cameraRecovery.maxAttempts} source=$source")
+                setArStatus("${getString(R.string.camera_unavailable)}: close other camera apps, then reopen AR")
+            }
+        }
+    }
+
+    /** Main thread: one scheduled resume of [recoverCamera]. */
+    private fun attemptCameraResume() {
+        val ses = session
+        if (ses == null || _binding == null ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            cameraRecoveryActive.set(false)
+            return
+        }
+        try {
+            ses.resume()
+            cameraRecoveryActive.set(false)
+            sessionReady = true
+            DiagnosticsLogger.i(DIAG, "AR session resumed after camera unavailable")
+            setArStatus("AR camera active")
+        } catch (e: CameraNotAvailableException) {
+            recoverCamera("retry")
+        } catch (e: Exception) {
+            cameraRecoveryActive.set(false)
+            DiagnosticsLogger.e(DIAG, "AR session resume failed during camera recovery", e)
+            setArStatus("AR error: ${e.message}")
         }
     }
 
@@ -1244,6 +1339,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         sessionReady = false
+        cameraRecoveryHandler.removeCallbacksAndMessages(null)   // onResume restarts the session itself
+        cameraRecoveryActive.set(false)
         binding.glSurfaceViewAr.onPause()
         try { session?.pause() } catch (e: Exception) {
             DiagnosticsLogger.w(DIAG, "AR session pause failed", e)
@@ -1288,6 +1385,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         choreoPrevHadModels = false
+        cameraRecoveryHandler.removeCallbacksAndMessages(null)
+        cameraRecoveryActive.set(false)
         filamentRenderer?.destroy()
         filamentRenderer = null
         arRenderSnapshot  = null
@@ -1349,7 +1448,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         return if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) true else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            if (!cameraPermissionRequested) {
+                cameraPermissionRequested = true
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            } else {
+                setArStatus(getString(R.string.camera_permission_denied))
+            }
             false
         }
     }
@@ -1364,7 +1468,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             )
             == PackageManager.PERMISSION_GRANTED
         ) true else {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (!locationPermissionRequested) {
+                locationPermissionRequested = true
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            } else {
+                setArStatus(getString(R.string.location_permission_needed))
+            }
             false
         }
     }
@@ -1433,7 +1542,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (e: CameraNotAvailableException) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
             setArStatus(getString(R.string.camera_unavailable))
-            try { ses.pause() } catch (_: Exception) {}   // best effort after a failed resume
+            // RESUMED here (checked above): pause + bounded retry, as for a camera lost mid-session.
+            if (cameraRecoveryActive.compareAndSet(false, true)) recoverCamera("late_resume")
+            else try { ses.pause() } catch (_: Exception) {}   // best effort after a failed resume
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed", e)
             setArStatus("AR error: ${e.message}")
@@ -1968,15 +2079,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         glRendererInitFailures = 0
         glRendererInitGaveUp = false
         glRendererInitLastAttemptMs = android.os.SystemClock.elapsedRealtime()
-        if (!createGlRenderers()) {
-            // backgroundRenderer remains null; onDrawFrame retries (bounded, see retryGlRenderersIfDue).
-            return
-        }
+        // A new surface means a new GL context: objects from the old one are gone with it. Clear them so
+        // createGlRenderers builds the whole set and a failure never leaves a dead-context renderer.
+        backgroundRenderer = null
+        cubeRenderer = null
+        planeVisualizer = null
+        pointCloudRenderer = null
+        // Whatever failed stays null; onDrawFrame retries just the missing ones (bounded, see
+        // retryGlRenderersIfDue).
+        createGlRenderers()
 
         // Pre-register the camera texture name with the session so that ARCore can start
         // delivering camera frames immediately without waiting for the first onDrawFrame call.
         // If the session is not created yet (first launch), onDrawFrame will set it anyway.
-        session?.setCameraTextureName(backgroundRenderer!!.textureId)
+        backgroundRenderer?.let { session?.setCameraTextureName(it.textureId) }
     }
 
     // GL renderer init retry (GL thread only). onSurfaceCreated is attempt 1; onDrawFrame retries at most
@@ -1985,30 +2101,49 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var glRendererInitGaveUp = false
     private var glRendererInitLastAttemptMs = 0L
 
-    /** Creates the GLES renderers (GL thread). Returns false, logging the failure, if one throws. */
-    private fun createGlRenderers(): Boolean = try {
-        backgroundRenderer   = BackgroundRenderer()
-        cubeRenderer         = SimpleObjectRenderer()
-        planeVisualizer      = PlaneVisualizer()
-        pointCloudRenderer   = PointCloudRenderer()
-        true
-    } catch (e: Exception) {
+    /** True once every GLES renderer exists (GL thread). */
+    private fun glRenderersComplete(): Boolean =
+        backgroundRenderer != null && cubeRenderer != null && planeVisualizer != null && pointCloudRenderer != null
+
+    /**
+     * Creates the GLES renderers that don't exist yet (GL thread), each independently, so a later one
+     * failing neither discards nor re-creates (leaks) one that succeeded. Returns false, logging the
+     * failure, while any is still missing.
+     */
+    private fun createGlRenderers(): Boolean {
+        var failure: Exception? = null
+        fun <T : Any> make(existing: T?, create: () -> T): T? = existing ?: try {
+            create()
+        } catch (e: Exception) {
+            if (failure == null) failure = e
+            null
+        }
+        backgroundRenderer   = make(backgroundRenderer) { BackgroundRenderer() }
+        cubeRenderer         = make(cubeRenderer) { SimpleObjectRenderer() }
+        planeVisualizer      = make(planeVisualizer) { PlaneVisualizer() }
+        pointCloudRenderer   = make(pointCloudRenderer) { PointCloudRenderer() }
+        val e = failure ?: return true
+        val missing = listOfNotNull(
+            "background".takeIf { backgroundRenderer == null }, "pins".takeIf { cubeRenderer == null },
+            "planes".takeIf { planeVisualizer == null }, "pointCloud".takeIf { pointCloudRenderer == null },
+        )
+        val impact = if (backgroundRenderer == null) "camera view stays black until a retry succeeds"
+            else "camera view works, missing overlays are not drawn"
         glRendererInitFailures++
         if (glRendererInitFailures == 1) {
-            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed (will retry): " +
-                "camera view stays black until a retry succeeds", e)
+            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed (will retry): $impact missing=$missing", e)
         } else if (glRendererInitFailures > GL_RENDERER_MAX_RETRIES) {
             glRendererInitGaveUp = true
-            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed: giving up, AR camera view unavailable " +
-                "attempts=$glRendererInitFailures", e)
+            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed: giving up, $impact " +
+                "missing=$missing attempts=$glRendererInitFailures", e)
         }
-        false
+        return false
     }
 
     /**
-     * onDrawFrame side of the retry: while [backgroundRenderer] is null (its constructor threw, so nothing
-     * else was created and nothing leaks), re-runs [createGlRenderers] when due. The GL context is current
-     * here. Returns true once the renderers exist.
+     * onDrawFrame side of the retry: while any GLES renderer is missing (its constructor threw), re-runs
+     * [createGlRenderers] for just the missing ones when due. The GL context is current here. Returns
+     * true once all renderers exist.
      */
     private fun retryGlRenderersIfDue(): Boolean {
         if (glRendererInitGaveUp) return false
@@ -2037,7 +2172,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
         // Renderer init failed in onSurfaceCreated: retry here (bounded) instead of staying black forever.
-        if (backgroundRenderer == null && !retryGlRenderersIfDue()) return
+        // Only the camera background is required to draw; the overlay renderers are null-safe below.
+        if (!glRenderersComplete()) retryGlRenderersIfDue()
+        if (backgroundRenderer == null) return
 
         val s = session ?: return
         if (!sessionReady) return
@@ -2114,9 +2251,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 else groundSnapper.reset()
 
                 frameMoveAnchor = null
+                // Without Earth tracking collectGeoAnchors draws nothing (stale geospatial poses); the
+                // test grid (also Earth anchors) follows suit, and models are hidden via the snapshot.
+                val earthTracking = earth?.trackingState == TrackingState.TRACKING
                 collectGeoAnchors(earth, vp, margin, pinPositions, labelEntries, arrowEntries, newModelPoses)
                 moveFrame = if (moveTargetId != null) moveFrameFor(camera) else null
-                testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
+                if (earthTracking) testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
                     surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses,
                     groundSnapper)
 
@@ -2136,6 +2276,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     modelPoses  = newModelPoses,
                     visibleKeys = modelVisibleKeys,
                     liveTestKeys = testAnchorController.liveModelKeys(),
+                    earthTracking = earthTracking,
                     occlusion   = occlusion,
                     light       = captureLightEstimate(frame)
                 )
@@ -2163,10 +2304,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount, featuresCounted, camFailure, optics)
 
         } catch (_: CameraNotAvailableException) {
-            // Per frame while the camera is taken (e.g. by another app): at most one line per 30 s.
+            // The camera was taken (e.g. by another app): stop calling update() and let the main thread
+            // pause and retry with back-off (recoverCamera) instead of throwing every frame.
             DiagnosticsLogger.every(DIAG, "ar.frag.draw.cameraUnavailable", 30_000L, 'W') {
-                "Camera unavailable: AR frames not updating"
+                "Camera unavailable: AR frames not updating, recovery scheduled"
             }
+            onCameraUnavailableInFrame()
         } catch (e: Exception) {
             DiagnosticsLogger.every(DIAG, "ar.frag.draw.error", 10_000L, 'E', throwable = e) {
                 "AR frame update failed"
@@ -2360,7 +2503,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             entry.anchor.pose.toMatrix(model, 0)
             // Terrain mode: put the model on the ground/floor ARCore detected under (or near) it.
             // Far models with no detected surface keep their terrain-anchor height.
-            if (entry.onTerrain) groundSnapper.groundY(model[12], model[14])?.let { model[13] = it }
+            if (entry.onTerrain) groundSnapper.groundY(model[12], model[14], coord.id)?.let { model[13] = it }
             System.arraycopy(model, 0, modelScaled, 0, 16)
 
             if (entryModelFilePath != null) {
