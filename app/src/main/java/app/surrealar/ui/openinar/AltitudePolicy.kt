@@ -11,7 +11,8 @@ import io.github.pennstatecs.geokit.gnss.model.RtkStatus
  *    at its stored ellipsoidal height (cm-level with RTK). Anything else (internal-GPS captures with
  *    metres of vertical error, points with no height) is anchored on terrain and snapped to the
  *    ground ARCore detects, so it doesn't float or sink.
- *  - [STORED]: every point at its stored height (fallback: the user's current height).
+ *  - [STORED]: every point at its stored height (fallback: the user's current height; with neither,
+ *    the point goes on terrain — never 0 m HAE, see [storedAnchorHeightM]).
  *  - [TERRAIN]: every point on terrain, ignoring stored heights.
  *
  * Pure (no ARCore types) → unit-tested.
@@ -41,6 +42,15 @@ object AltitudePolicy {
         TERRAIN_NO_HEIGHT(true),     // AUTO: no stored height
         TERRAIN_FORCED(true),        // TERRAIN mode
     }
+
+    /**
+     * Height (WGS84 ellipsoidal, m) for a point whose [Choice] is not on terrain: its stored height, else
+     * the user's current fix height [fixHaeM]. Null when neither exists: the caller anchors the point on
+     * terrain instead. Never substitutes 0 m HAE, which would bury or float the model by the local
+     * ellipsoid height (tens of metres).
+     */
+    fun storedAnchorHeightM(storedAltM: Double?, fixHaeM: Double?): Double? =
+        storedAltM?.takeIf { it.isFinite() } ?: fixHaeM?.takeIf { it.isFinite() }
 
     fun choose(mode: String, storedAltM: Double?, verticalAccuracyM: Double?, rtkStatus: RtkStatus?): Choice =
         when (normalize(mode)) {
