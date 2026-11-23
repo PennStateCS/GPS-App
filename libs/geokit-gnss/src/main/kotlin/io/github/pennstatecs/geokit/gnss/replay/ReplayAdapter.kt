@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
  * @param log where the started/stopped and error lines go (tag `GNSS`).
  * @param extraParsers receiver-specific sentence parsers added to the standard ones (see
  *   [DefaultNmeaRegistry.create]), so a recorded log replays with the same sentences as the live stream.
+ * @param allowStandardOverride standard tags [extraParsers] may deliberately replace; pass the same set
+ *   as the live registry (see [DefaultNmeaRegistry.create]).
  */
 public class ReplayAdapter(
     private val scope: CoroutineScope,
@@ -47,6 +49,7 @@ public class ReplayAdapter(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: LinkLog = GnssLinkLog(),
     extraParsers: Map<String, SentenceParser<out NmeaSentence>> = emptyMap(),
+    allowStandardOverride: Set<String> = emptySet(),
 ) : SourceAdapter, SkyProvider, Startable {
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -59,7 +62,10 @@ public class ReplayAdapter(
 
     private val fuser = NmeaFuser(
         provider = Provider.REPLAY,
-        registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = false, extraParsers = extraParsers),
+        registry = DefaultNmeaRegistry.create(
+            verifyChecksum = true, requireChecksum = false,
+            extraParsers = extraParsers, allowStandardOverride = allowStandardOverride,
+        ),
         onFix = { _fixes.tryEmit(it) },
         onGsv = { gsv ->
             runCatching { inventory.consume(gsv) }

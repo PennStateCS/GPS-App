@@ -46,4 +46,14 @@ class ExternalReceiverProfileCapabilitiesTest {
         val line = "\$GNEBP,4118.3990546,N,07601.0359618,W,374.038,M*17"
         assertTrue(GnssModule.provideNmeaRegistry().parse(line) is EBP)
     }
+
+    @Test fun `no receiver profile replaces a standard NMEA parser`() {
+        // GnssModule builds the live registry without allowStandardOverride, so a profile whose parsers
+        // collided with GGA/RMC/GST/... would throw at startup. Catch that here instead of in the field.
+        val standard = io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry.standardParsers().keys
+        ExternalReceiverProfile.entries.forEach { p ->
+            val clash = p.extraParsers().keys.map { it.uppercase() }.toSet() intersect standard
+            assertTrue("${p.name} overrides standard tag(s) $clash", clash.isEmpty())
+        }
+    }
 }

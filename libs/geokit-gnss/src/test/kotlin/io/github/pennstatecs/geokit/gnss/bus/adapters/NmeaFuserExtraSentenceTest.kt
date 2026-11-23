@@ -10,6 +10,7 @@ import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,14 +76,79 @@ class NmeaFuserExtraSentenceTest {
         assertEquals(NmeaFuser.ExtraSentenceStats.EMPTY, f.extraSentenceStats)
     }
 
+    private fun customParser(tag: String) = object : SentenceParser<NmeaSentence> {
+        override val tag = tag
+        override fun parse(talker: String, fields: List<String>): NmeaSentence = Xyz(talker, null, tag.lowercase())
+    }
+
     @Test
-    fun `an extra parser can replace a standard tag`() {
-        val custom = object : SentenceParser<NmeaSentence> {
-            override val tag = "ZDA"
-            override fun parse(talker: String, fields: List<String>): NmeaSentence =
-                Xyz(talker, null, "zda")
-        }
-        val r = DefaultNmeaRegistry.create(verifyChecksum = false, extraParsers = mapOf("ZDA" to custom))
+    fun `an extra parser can replace a standard tag when the override is requested`() {
+        val r = DefaultNmeaRegistry.create(
+            verifyChecksum = false, extraParsers = mapOf("ZDA" to customParser("ZDA")), allowStandardOverride = setOf("ZDA"),
+        )
         assertTrue(r.parse("\$GPZDA,123519.00,30,06,2026,00,00") is Xyz)
+    }
+
+    @Test
+    fun `an extra parser with a standard tag is rejected unless the override is requested`() {
+        for (tag in DefaultNmeaRegistry.standardParsers().keys) {
+            val e = assertThrows(IllegalArgumentException::class.java) {
+                DefaultNmeaRegistry.create(extraParsers = mapOf(tag to customParser(tag)))
+            }
+            assertTrue(e.message!!, e.message!!.contains(tag) && e.message!!.contains("allowStandardOverride"))
+        }
+    }
+
+    @Test
+    fun `tag collisions are detected ignoring case`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            DefaultNmeaRegistry.create(extraParsers = mapOf("gga" to customParser("gga")))
+        }
+    }
+
+    @Test
+    fun `an override request must name a standard tag that has an extra parser`() {
+        // Not a standard tag (typo or proprietary tag): rejected rather than silently ignored.
+        assertThrows(IllegalArgumentException::class.java) {
+            DefaultNmeaRegistry.create(extraParsers = mapOf("XYZ" to XyzParser()), allowStandardOverride = setOf("XYZ"))
+        }
+        // Standard tag, but nothing replaces it.
+        assertThrows(IllegalArgumentException::class.java) {
+            DefaultNmeaRegistry.create(allowStandardOverride = setOf("GST"))
+        }
+    }
+
+    @Test
+    fun `an override replaces only the named tag and leaves the other standard parsers`() {
+        val r = DefaultNmeaRegistry.create(
+            verifyChecksum = false, extraParsers = mapOf("GST" to customParser("GST")), allowStandardOverride = setOf("gst"),
+        )
+        assertTrue(r.parse("\$GPGST,123519.00,1.0,0.5,0.4,30.0,0.02,0.03,0.05") is Xyz)
+        assertFalse(r.parse("\$GPZDA,123519.00,30,06,2026,00,00") is Xyz)
+    }
+
+    @Test
+    fun `a lowercase override key really replaces the standard parser`() {
+        val r = DefaultNmeaRegistry.create(
+            verifyChecksum = false, extraParsers = mapOf("gst" to customParser("GST")), allowStandardOverride = setOf("GST"),
+        )
+        assertTrue(r.parse("\$GPGST,123519.00,1.0,0.5,0.4,30.0,0.02,0.03,0.05") is Xyz)
+    }
+
+    @Test
+    fun `non-colliding proprietary parsers need no override`() {
+        val r = DefaultNmeaRegistry.create(verifyChecksum = false, extraParsers = mapOf("XYZ" to XyzParser()))
+        assertTrue(r.parse("\$PXXYZ,4118.40,N,abc") is Xyz)
+    }
+
+    @Test
+    fun `replay applies the same collision rule`() {
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)
+        assertThrows(IllegalArgumentException::class.java) {
+            io.github.pennstatecs.geokit.gnss.replay.ReplayAdapter(scope, extraParsers = mapOf("RMC" to customParser("RMC")))
+        }
+        io.github.pennstatecs.geokit.gnss.replay.ReplayAdapter(
+            scope, extraParsers = mapOf("RMC" to customParser("RMC")), allowStandardOverride = setOf("RMC"),
+        )
     }
 }
