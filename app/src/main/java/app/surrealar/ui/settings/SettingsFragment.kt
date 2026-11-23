@@ -1524,10 +1524,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                     }
                 }
 
-                // Satellites row + chip
+                // Satellites row + chip. Counts only while NMEA is arriving: during a reconnect the
+                // last sky snapshot is still held, and showing it would look live (Home card agrees).
+                val skyLive = nmeaAge <= 8_000L && sky.totalVisible > 0
                 tvSatellites?.let { tv ->
                     when {
-                        sky.totalVisible > 0 -> {
+                        skyLive -> {
                             tv.text = "${sky.totalUsed} used / ${sky.totalVisible} visible"
                             tv.setTextColor(clr(android.R.color.darker_gray))
                         }
@@ -1543,7 +1545,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 }
                 chipSats?.let { chip ->
                     when {
-                        sky.totalVisible > 0 -> { chip.text = "${sky.totalUsed}/${sky.totalVisible} Sats"; chip.chipBackgroundColor = chipClr(R.color.app_success); chip.setTextColor(android.graphics.Color.WHITE) }
+                        skyLive -> { chip.text = "${sky.totalUsed}/${sky.totalVisible} Sats"; chip.chipBackgroundColor = chipClr(R.color.app_success); chip.setTextColor(android.graphics.Color.WHITE) }
                         nmeaAge <= 8_000L    -> { chip.text = "0 Sats"; chip.chipBackgroundColor = chipClr(R.color.app_warning); chip.setTextColor(android.graphics.Color.WHITE) }
                         else                 -> { chip.text = "—"; defaultChipBg?.let { chip.chipBackgroundColor = it }; defaultChipTextColor?.let { chip.setTextColor(it) } }
                     }
