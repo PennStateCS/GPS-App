@@ -60,7 +60,7 @@ class ArPlacementPreview(
 
     companion object {
         /** Matches ArFilamentRenderer.BB_NORMALIZE_THRESHOLD_M. */
-        const val NORMALIZE_THRESHOLD_M = 2000f
+        const val NORMALIZE_THRESHOLD_M = io.github.pennstatecs.geokit.ar.model.ModelTransform.NORMALIZE_HALF_EXTENT_M
 
         /**
          * The placement AR uses for [link] (per-point override → model default → hard default),
