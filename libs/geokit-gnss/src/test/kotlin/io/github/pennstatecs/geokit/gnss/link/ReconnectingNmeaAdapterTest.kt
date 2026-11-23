@@ -42,7 +42,7 @@ class ReconnectingNmeaAdapterTest {
         override fun gsvStream(): SharedFlow<GsvMessage> = gsv
         override fun rawNmeaEvents(): SharedFlow<Unit> = raw
         override fun nmeaTimingStats() = fuser.timingStats
-        override fun nmeaCustomStats() = fuser.nmeaCustomStats
+        override fun nmeaExtraStats() = fuser.extraSentenceStats
         override fun isConnectionActive(): Boolean = active
     }
 

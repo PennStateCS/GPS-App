@@ -91,7 +91,7 @@ public class TcpNmeaSource(
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv.asSharedFlow()
     override fun rawNmeaEvents(): SharedFlow<Unit> = _rawNmea.asSharedFlow()
     override fun nmeaTimingStats(): NmeaFuser.FuserTimingStats = fuser.timingStats
-    override fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats = fuser.nmeaCustomStats
+    override fun nmeaExtraStats(): NmeaFuser.ExtraSentenceStats = fuser.extraSentenceStats
 
     private val fuser = NmeaFuser(
         provider = provider,

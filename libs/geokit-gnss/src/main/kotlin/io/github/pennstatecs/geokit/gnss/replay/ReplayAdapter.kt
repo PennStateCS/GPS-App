@@ -11,6 +11,8 @@ import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry
+import io.github.pennstatecs.geokit.gnss.nmea.parse.SentenceParser
+import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 import io.github.pennstatecs.geokit.gnss.satellites.SatelliteInventory
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -36,12 +38,15 @@ import kotlinx.coroutines.launch
  * Fixes carry [Provider.REPLAY] so a host can refuse to average them into a capture.
  *
  * @param log where the started/stopped and error lines go (tag `GNSS`).
+ * @param extraParsers receiver-specific sentence parsers added to the standard ones (see
+ *   [DefaultNmeaRegistry.create]), so a recorded log replays with the same sentences as the live stream.
  */
 public class ReplayAdapter(
     private val scope: CoroutineScope,
     private val inventory: SatelliteInventory = SatelliteInventory(debugName = "replay"),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val log: LinkLog = GnssLinkLog(),
+    extraParsers: Map<String, SentenceParser<out NmeaSentence>> = emptyMap(),
 ) : SourceAdapter, SkyProvider, Startable {
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -54,7 +59,7 @@ public class ReplayAdapter(
 
     private val fuser = NmeaFuser(
         provider = Provider.REPLAY,
-        registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = false),
+        registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = false, extraParsers = extraParsers),
         onFix = { _fixes.tryEmit(it) },
         onGsv = { gsv ->
             runCatching { inventory.consume(gsv) }

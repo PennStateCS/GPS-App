@@ -2,12 +2,13 @@ package app.surrealar.util.diagnostics
 
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
 import io.github.pennstatecs.geokit.gnss.model.TimestampSource
+import io.github.pennstatecs.geokit.receiver.emlid.nmea.EmlidNmeaDiagnostics
 
 /**
  * Pure formatter for the "NMEA Stream Diagnostics" section of the diagnostic report.
  *
- * Takes only sanitized inputs (receiver profile, host/port, cumulative sentence/fix counts, EBP/ETC
- * activity). It deliberately emits **no raw NMEA and no coordinates** — not the live position and not
+ * Takes only sanitized inputs (receiver profile, host/port, cumulative sentence/fix counts, the
+ * fuser's extra-sentence stats, read as Emlid EBP/ETC activity through [EmlidNmeaDiagnostics]). It deliberately emits **no raw NMEA and no coordinates** — not the live position and not
  * the EBP base position. Unit-testable with no Android dependencies.
  */
 object NmeaStreamDiagnosticsFormatter {
@@ -18,8 +19,9 @@ object NmeaStreamDiagnosticsFormatter {
         host: String?,
         port: Int?,
         timing: NmeaFuser.FuserTimingStats,
-        custom: NmeaFuser.NmeaCustomStats,
+        extra: NmeaFuser.ExtraSentenceStats,
     ): String {
+        val custom = EmlidNmeaDiagnostics.from(extra)
         val totalSentences = timing.ggaCount + timing.rmcCount + timing.zdaCount +
             custom.ebpCount + custom.etcCount
         val firstNmea = totalSentences > 0

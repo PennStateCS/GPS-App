@@ -50,7 +50,7 @@ class EmlidNmeaGoldenTest {
         val inventory = SatelliteInventory(nowSeconds = { nowMs / 1000.0 }, debugName = "golden")
         val fuser = NmeaFuser(
             provider = Provider.EXTERNAL_TCP,
-            registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true),
+            registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true, extraParsers = EmlidNmea.parsers),
             onFix = { fixes += it },
             onGsv = { gsvs += it; skies += inventory.consume(it) },
             clock = { nowMs },
@@ -71,7 +71,7 @@ class EmlidNmeaGoldenTest {
             appendLine("lastSky=${skies.lastOrNull()}")
             appendLine("timingStats=${fuser.timingStats}")
         }
-        val s = fuser.nmeaCustomStats
+        val s = EmlidNmeaDiagnostics.from(fuser.extraSentenceStats)
         val emlid = buildString {
             appendLine("fixture=$fixture")
             appendLine("ebpSeen=${s.ebpSeen}")

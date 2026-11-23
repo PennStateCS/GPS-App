@@ -3,7 +3,8 @@ package app.surrealar.util.diagnostics
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import io.github.pennstatecs.geokit.gnss.model.TimestampSource
-import io.github.pennstatecs.geokit.gnss.nmea.sentence.ETC
+import io.github.pennstatecs.geokit.receiver.emlid.nmea.EmlidNmea
+import io.github.pennstatecs.geokit.receiver.emlid.nmea.ETC
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File
@@ -30,8 +31,15 @@ class NmeaStreamDiagnosticsFormatterGoldenTest {
     private fun case(name: String, timing: NmeaFuser.FuserTimingStats, ebp: Int, etc: Int, latest: ETC?, imu: Boolean) =
         "##### $name\n" + NmeaStreamDiagnosticsFormatter.format(
             "Emlid Reach RS4", "TCP", "192.168.42.1", 9001, timing,
-            NmeaFuser.NmeaCustomStats(ebp > 0, etc > 0, ebp, etc, latest, imu),
+            emlidStats(ebp, etc, latest, imu),
         )
+
+    /** Extra-sentence stats as the fuser reports them with the Emlid parsers registered. */
+    private fun emlidStats(ebp: Int, etc: Int, latestEtc: ETC?, imu: Boolean) = NmeaFuser.ExtraSentenceStats(
+        countByTag = buildMap { if (ebp > 0) put(EmlidNmea.TAG_EBP, ebp); if (etc > 0) put(EmlidNmea.TAG_ETC, etc) },
+        latestByTag = buildMap { latestEtc?.let { put(EmlidNmea.TAG_ETC, it) } },
+        flagsByTag = if (imu) mapOf(EmlidNmea.TAG_ETC to setOf(EmlidNmea.FLAG_ORIENTATION)) else emptyMap(),
+    )
 
     @Test
     fun `formatter output matches golden`() {

@@ -1,7 +1,7 @@
 package app.surrealar.settings.model
 
 import app.surrealar.di.GnssModule
-import io.github.pennstatecs.geokit.gnss.nmea.sentence.EBP
+import io.github.pennstatecs.geokit.receiver.emlid.nmea.EBP
 import io.github.pennstatecs.geokit.gnss.receiver.AccuracyClass
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor

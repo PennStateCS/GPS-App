@@ -73,7 +73,7 @@ class InternalNmeaSource(
 
     override fun rawNmeaEvents(): SharedFlow<Unit> = _emptyRawNmea
     override fun nmeaTimingStats() = fuser.timingStats
-    override fun nmeaCustomStats() = fuser.nmeaCustomStats
+    override fun nmeaExtraStats() = fuser.extraSentenceStats
 
     private val fuser = NmeaFuser(
         provider = Provider.INTERNAL,

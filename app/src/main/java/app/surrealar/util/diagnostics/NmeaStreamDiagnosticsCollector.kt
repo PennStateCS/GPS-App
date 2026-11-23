@@ -31,7 +31,7 @@ object NmeaStreamDiagnosticsCollector {
             host = host,
             port = port,
             timing = source.nmeaTimingStats(),
-            custom = source.nmeaCustomStats(),
+            extra = source.nmeaExtraStats(),
         )
     } catch (e: Exception) {
         "=== NMEA Stream Diagnostics ===\n(unavailable: ${e.message})\n"

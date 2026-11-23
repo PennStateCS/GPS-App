@@ -26,7 +26,7 @@ class InternalAdapterStopTest {
         override fun gsvStream(): SharedFlow<GsvMessage> = MutableSharedFlow()
         override fun rawNmeaEvents(): SharedFlow<Unit> = MutableSharedFlow()
         override fun nmeaTimingStats(): NmeaFuser.FuserTimingStats = error("unused")
-        override fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats = error("unused")
+        override fun nmeaExtraStats(): NmeaFuser.ExtraSentenceStats = error("unused")
     }
 
     @Test fun `stop when not started does nothing, stop after start stops once`() {

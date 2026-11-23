@@ -8,8 +8,9 @@ Emlid Reach support for SurReal AR, behind the receiver-neutral `ReceiverDevice`
 ## What it covers
 
 Reach **RS2+**, **RS4** and **RS4 Pro**, over the receiver's local HTTP API and socket.io broadcasts,
-plus finding a Reach on the network and each model's antenna phase-centre offset. The position itself
-always comes from the NMEA stream (geokit-gnss's `TcpNmeaSource` and `NmeaFuser`), not from this module.
+plus finding a Reach on the network, each model's antenna phase-centre offset and the Reach
+proprietary NMEA sentences. The position itself always comes from the standard NMEA stream
+(geokit-gnss's `TcpNmeaSource` and `NmeaFuser`), not from this module.
 
 | Data | Source | Cadence | Neutral model |
 |---|---|---|---|
@@ -21,6 +22,23 @@ always comes from the NMEA stream (geokit-gnss's `TcpNmeaSource` and `NmeaFuser`
 them and closes the socket. `EmlidMapping` converts the Reach JSON results to the neutral models
 without dropping fields: anything without a neutral slot goes in `details`. The HTTP and socket.io
 endpoints sit behind `EmlidReachDevice.EmlidApi`, so tests can replace them.
+
+### Proprietary NMEA: EBP and ETC
+
+Package `io.github.pennstatecs.geokit.receiver.emlid.nmea`, plugged into geokit-gnss's extra-parser
+mechanism (see geokit-gnss's README, "Proprietary sentences"):
+
+- `EBP` (base position: lat, lon, altitude; no time field) and `ETC` (time plus raw, undocumented data
+  fields; `hasOrientationData` when any is non-blank, which sets the `orientation` diagnostic flag),
+  parsed by `EbpParser` / `EtcParser`. Neither ever changes a fix, and ETC is never mapped to a heading.
+- `EmlidNmea.parsers`: both parsers keyed by tag, for `DefaultNmeaRegistry.create(extraParsers = …)`
+  and `ReplayAdapter(extraParsers = …)`.
+- `EmlidNmeaDiagnostics.from(fuser.extraSentenceStats)`: `ebpSeen`, `etcSeen`, `ebpCount`, `etcCount`,
+  `imuOrientationSeen` (any ETC had a payload) and `latestEtc`.
+
+The tests replay geokit-gnss's Reach captures (its `src/test/resources` is a test-resource directory
+here, so the fixtures exist once) and check against the pre-move goldens that the fixes are unchanged
+with the parsers registered and that the Emlid counts match.
 
 ### Antenna phase-centre offsets
 
@@ -76,8 +94,11 @@ host changes. The UI reads only the manager's neutral flows and capability flags
    `ReachNetworkScan`); only the Android-specific part (NSD/mDNS, reading the Wi-Fi address) goes in the
    app, like `ReachDiscoveryHelper` / `EmlidDiscovery`. List each model's antenna phase-centre offset
    in the module (like `EmlidReachModel`; null when unknown).
-2. **Proprietary NMEA sentences**: write a `SentenceParser` for each and return them from the
-   profile's `extraParsers`. The live registry registers every profile's parsers.
+2. **Proprietary NMEA sentences**: in the module, a sentence type (`NmeaSentence`, or
+   `FlaggedNmeaSentence` for stream-wide flags) and a `SentenceParser` for each, exposed as one map
+   (like `EmlidNmea.parsers`), and a typed view over `NmeaFuser.ExtraSentenceStats` if the app shows
+   them (like `EmlidNmeaDiagnostics`). Return the map from the profile's `extraParsers`: the live
+   registry and replay register every profile's parsers. geokit-gnss needs no change.
 3. **A profile**: add an `ExternalReceiverProfile` entry (app, `settings.model`) with a stable
    `prefKey`, labels, default port, `vendor`, `accuracyClass` (`SURVEY_MULTIBAND`, `SINGLE_FREQUENCY`
    or `DEVICE`; it selects the DOP × UERE fallback), `phaseCenterOffsetM` (read from your module's
