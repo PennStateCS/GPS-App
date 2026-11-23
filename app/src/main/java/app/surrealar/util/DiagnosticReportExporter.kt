@@ -11,9 +11,14 @@ import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.source.SourceRoutingDecisions
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.util.diagnostics.DiagTags
+import app.surrealar.util.diagnostics.report.ExportOutcome
+import app.surrealar.util.diagnostics.report.ReportAssembler
+import app.surrealar.util.diagnostics.report.ReportFailures
+import app.surrealar.util.diagnostics.report.SectionStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -41,48 +46,85 @@ object DiagnosticReportExporter {
         val models: List<app.surrealar.domain.model.Model>,
     )
 
-    /** A built report: the ZIP plus the short ID that is also in its summary and the email body. */
-    data class Report(val file: File, val reportId: String)
+    /**
+     * A built report: the ZIP plus the short ID that is also in its summary and the email body.
+     * [partial] = the ZIP is valid but some sections failed or files are missing (export-health.txt).
+     */
+    data class Report(val file: File, val reportId: String, val partial: Boolean = false)
 
-    suspend fun buildReport(context: Context): Report? = withContext(Dispatchers.IO) {
+    /**
+     * The ZIP, or null when none could be made (the failure is logged). Kept for existing callers;
+     * [export] says why an export failed.
+     */
+    suspend fun buildReport(context: Context): Report? =
+        (export(context) as? ExportOutcome.Success)?.let { Report(it.file, it.reportId, it.partial) }
+
+    /**
+     * Builds the report on [Dispatchers.IO] (never on the main thread: it flushes and copies the logs
+     * and reads the database). The ZIP is written as `<name>.zip.part`, validated, then renamed; a
+     * failure leaves no file and returns [ExportOutcome.Failure]. Cancelling the caller cancels the export
+     * and deletes the temp file.
+     */
+    suspend fun export(
+        context: Context,
+        sectionTimeoutMs: Long = ReportAssembler.DEFAULT_SECTION_TIMEOUT_MS,
+    ): ExportOutcome = withContext(Dispatchers.IO) {
         try {
             val exportDir = File(context.cacheDir, "diagnostic_exports").also { it.mkdirs() }
 
-            // Keep at most 3 previous exports to avoid filling cache
+            // Keep at most 3 previous exports to avoid filling cache (temp files are cleaned by age instead).
             exportDir.listFiles()
+                ?.filterNot { it.name.endsWith(ReportAssembler.PART_SUFFIX) }
                 ?.sortedByDescending { it.lastModified() }
                 ?.drop(3)
                 ?.forEach { it.delete() }
 
             val reportId = app.surrealar.util.diagnostics.ReportNaming.newReportId()
-            val zipFile = File(exportDir, app.surrealar.util.diagnostics.ReportNaming.fileName(
-                Build.MODEL ?: "device", BuildConfig.VERSION_NAME, System.currentTimeMillis()))
+            val fileName = app.surrealar.util.diagnostics.ReportNaming.fileName(
+                Build.MODEL ?: "device", BuildConfig.VERSION_NAME, System.currentTimeMillis())
 
-            // Gather app data once; never let a single failing section abort the whole export.
-            val data = runCatching { gatherDiagData(context) }.getOrElse {
-                if (it is kotlinx.coroutines.CancellationException) throw it
-                DiagnosticsLogger.w(DiagTags.EXPORT, "Diagnostic report data collection failed: continuing with empty app data", it)
-                DiagData(null, null, false, emptyList(), emptyList())
+            // Gather app data once; never let a single failing source abort the whole export.
+            val start = System.nanoTime()
+            val gathered = ReportFailures.catching { withTimeoutOrNull(sectionTimeoutMs) { gatherDiagData(context) } }
+            val ms = (System.nanoTime() - start) / 1_000_000
+            val data = gathered.getOrNull() ?: DiagData(null, null, false, emptyList(), emptyList())
+            val prep = gathered.fold(
+                onSuccess = {
+                    if (it != null) SectionStatus(APP_DATA, SectionStatus.State.OK, ms)
+                    else SectionStatus(APP_DATA, SectionStatus.State.TIMED_OUT, ms, "no answer within $sectionTimeoutMs ms")
+                },
+                onFailure = { SectionStatus(APP_DATA, SectionStatus.State.FAILED, ms, ReportFailures.describe(it)) },
+            )
+            if (prep.state != SectionStatus.State.OK) {
+                DiagnosticsLogger.w(DiagTags.EXPORT, "Diagnostic report data collection failed: continuing with empty app data " +
+                    "state=${prep.state}", gathered.exceptionOrNull())
             }
             val warnings = runCatching { computeWarnings(data) }.getOrDefault(emptyList())
             val permWarnings = runCatching { computePermissionWarnings(context) }.getOrDefault(emptyList())
 
-            val sources = ContextSources(context, reportId, System.currentTimeMillis(), data, warnings + permWarnings)
+            val sources = ContextSources(context, reportId, System.currentTimeMillis(), data, warnings + permWarnings, listOf(prep))
             // Flush both logs first, so a capture saved just before the export is in captures.txt too.
-            app.surrealar.util.diagnostics.report.ReportAssembler.write(zipFile, sources, flush = {
-                DiagnosticsLogger.flush()
-                app.surrealar.util.diagnostics.CaptureLog.flush()
-            })
-
-            Report(zipFile, reportId)
+            val outcome = ReportAssembler.export(exportDir, fileName, sources, flush = {
+                val events = DiagnosticsLogger.flush()
+                val captures = app.surrealar.util.diagnostics.CaptureLog.flush()
+                events && captures
+            }, sectionTimeoutMs = sectionTimeoutMs)
+            if (outcome is ExportOutcome.Success) {
+                val h = outcome.result.health
+                DiagnosticsLogger.i(DiagTags.EXPORT, "Diagnostic report built verdict=${h.verdict} " +
+                    "problems=${h.problems.size} files=${outcome.result.entries.size} bytes=${outcome.file.length()}")
+            }
+            outcome
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            // The one log line for a failed export (callers only show the message).
+            // The one log line for a failed export (ReportAssembler.export logs its own failures).
             DiagnosticsLogger.e(DiagTags.EXPORT, "Diagnostic report build failed", e)
-            null
+            ExportOutcome.Failure(ReportAssembler.classify(e), ReportFailures.describe(e))
         }
     }
+
+    private const val APP_DATA = "app data (settings, coordinates, models)"
 
     /** The running app as [app.surrealar.util.diagnostics.report.ReportSources]. */
     private class ContextSources(
@@ -91,7 +133,9 @@ object DiagnosticReportExporter {
         override val nowMs: Long,
         private val data: DiagData,
         private val warnings: List<String>,
+        private val prep: List<SectionStatus>,
     ) : app.surrealar.util.diagnostics.report.ReportSources {
+        override fun preparationStatuses() = prep
         override suspend fun summary() = buildSummary(context, warnings, reportId)
         override suspend fun settingsSnapshot() = app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
         override suspend fun permissions() = buildPermissionsStatus(context)
@@ -103,7 +147,7 @@ object DiagnosticReportExporter {
             }.getOrNull()
             val extras = app.surrealar.util.diagnostics.report.AppStateExtrasCollector.Extras(
                 receiverDevice = runCatching { ep?.receiverDeviceManager()?.activeDevice?.value?.javaClass?.simpleName }.getOrNull(),
-                receiverProfile = runCatching { ep?.settingsRepository()?.externalReceiverProfile?.first()?.label }.getOrNull(),
+                receiverProfile = ReportFailures.catching { ep?.settingsRepository()?.externalReceiverProfile?.first()?.label }.getOrNull(),
                 receiverLink = g?.link?.lastLinkState,
                 corrections = g?.link?.correctionsSummary,
                 clockOffsetMs = app.surrealar.util.diagnostics.ClockOffset.lastOffsetMs,
@@ -165,12 +209,12 @@ object DiagnosticReportExporter {
             context.applicationContext, app.surrealar.SurRealApplicationEntryPoint::class.java
         )
         val repo = SurRealApplication.settingsRepo
-        val selectedSource = runCatching { repo.locationSource.first() }.getOrNull()
+        val selectedSource = ReportFailures.catching { repo.locationSource.first() }.getOrNull()
         val activeProvider = runCatching { ep.sourceSettings().activeProvider.value }.getOrNull()
-        val host = runCatching { repo.externalTcpHost.first() }.getOrNull()
-        val port = runCatching { repo.externalTcpPort.first() }.getOrNull()
-        val coordinates = runCatching { ep.coordinateRepository().getAllCoordinatesList() }.getOrDefault(emptyList())
-        val models = runCatching { ep.modelRepository().getAllModels().first() }.getOrDefault(emptyList())
+        val host = ReportFailures.catching { repo.externalTcpHost.first() }.getOrNull()
+        val port = ReportFailures.catching { repo.externalTcpPort.first() }.getOrNull()
+        val coordinates = ReportFailures.catching { ep.coordinateRepository().getAllCoordinatesList() }.getOrDefault(emptyList())
+        val models = ReportFailures.catching { ep.modelRepository().getAllModels().first() }.getOrDefault(emptyList())
         return DiagData(
             selectedSource = selectedSource,
             activeProvider = activeProvider,
@@ -323,7 +367,7 @@ object DiagnosticReportExporter {
         sb.appendLine("--- GNSS / Receiver ---")
         try {
             val repo = SurRealApplication.settingsRepo
-            val locSrc = runCatching { repo.locationSource.first() }.getOrNull()
+            val locSrc = ReportFailures.catching { repo.locationSource.first() }.getOrNull()
             sb.appendLine("Selected source        : ${locSrc?.name ?: "unknown"}")
 
             // Live routing state (active provider + current fix) read via the Hilt entry point.
@@ -350,12 +394,14 @@ object DiagnosticReportExporter {
                     else SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(switchAt)))
             }.onFailure { sb.appendLine("Active provider        : (unavailable: ${it.message})") }
 
-            val host = runCatching { repo.externalTcpHost.first() }.getOrNull()
-            val port = runCatching { repo.externalTcpPort.first() }.getOrNull()
+            val host = ReportFailures.catching { repo.externalTcpHost.first() }.getOrNull()
+            val port = ReportFailures.catching { repo.externalTcpPort.first() }.getOrNull()
             sb.appendLine("Receiver host/port     : ${if (host.isNullOrBlank()) "not configured" else "$host:$port"}")
 
-            val name = runCatching { repo.externalTcpName.first() }.getOrNull()
+            val name = ReportFailures.catching { repo.externalTcpName.first() }.getOrNull()
             sb.appendLine("Receiver name          : ${name?.takeIf { it.isNotBlank() } ?: "not set"}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             sb.appendLine("(settings read error: ${e.message})")
         }

@@ -92,6 +92,27 @@ class DiagnosticReportExporterJvmTest {
         assertEquals(setOf("old-2.zip", "old-3.zip", "old-4.zip", report.file.name), dir.list()!!.toSet())
     }
 
+    @Test fun `export returns a partial Success with export-health and no temp file left`() = runBlocking {
+        deny()
+        val out = DiagnosticReportExporter.export(ctx)
+        out as app.surrealar.util.diagnostics.report.ExportOutcome.Success
+        // No Hilt graph on a mocked context: app data and data-health fail, the ZIP is still valid.
+        assertTrue(out.partial)
+        val health = entries(out.file).getValue("export-health.txt")
+        assertTrue(health, health.contains("Verdict   : PARTIAL"))
+        assertTrue(health, health.lines().any { it.contains("app data (settings, coordinates, models)") && it.contains("FAILED") })
+        assertTrue(health, health.lines().any { it.contains("data-health.txt") && it.contains("FAILED") })
+        assertTrue(out.file.parentFile!!.list()!!.none { it.endsWith(".part") })
+    }
+
+    @Test fun `an unusable cache dir is a WRITE_FAILED failure`() = runBlocking {
+        val notADir = File(tmp.root, "blocker").apply { writeText("file, not a dir") }
+        `when`(ctx.cacheDir).thenReturn(notADir)
+        val out = DiagnosticReportExporter.export(ctx)
+        assertEquals(app.surrealar.util.diagnostics.report.ExportFailure.WRITE_FAILED,
+            (out as app.surrealar.util.diagnostics.report.ExportOutcome.Failure).reason)
+    }
+
     @Test fun `an unusable cache dir returns null instead of throwing`() = runBlocking {
         val notADir = File(tmp.root, "blocker").apply { writeText("file, not a dir") }
         `when`(ctx.cacheDir).thenReturn(notADir)

@@ -108,13 +108,14 @@ latest crash — even from a previous app launch — is always in the export.
 
 ## 2. Exported ZIP contents
 
-Built by `DiagnosticReportExporter.buildReport()` into `cacheDir/diagnostic_exports/` as
+Built by `DiagnosticReportExporter.export()` (or `buildReport()`, which returns null on failure) into `cacheDir/diagnostic_exports/` as
 `surreal-ar-<device>-v<version>-<yyyyMMdd-HHmm>.zip`. The exporter gathers `ReportSources` from the
 running app; `report/ReportAssembler` flushes the logger, then writes every file. The list of files and
 what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes README.txt in the ZIP).
 
 - Each collector (`report/*Collector`) is a pure renderer with a golden test over fake inputs
-  (`FakeReportSources`); `ZipBuilder.textSafe` keeps one failing section from breaking the export.
+  (`FakeReportSources`); a failing section is replaced by one "Section failed…" line and recorded in
+  export-health.txt (see *Export reliability*) instead of breaking the export.
 - `diagnostic-summary.txt` starts with the **First look** block (report ID, time span, sessions,
   last session clean, crashes/ANRs in 24 h, source/RTK, link, correction age, storage, top warnings).
 - Logs over 20 MB → only the last 24 h of each log file; README and manifest say so.
@@ -122,6 +123,32 @@ what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes 
   6+-decimal coordinates are replaced). `ReportRedactionTest` builds a full report from leaky fakes.
 - The share intent: To = `BuildConfig.DIAG_REPORT_EMAIL` (Gradle property `DIAG_REPORT_EMAIL`, blank by
   default), subject with device/version/time, body with three prompts and the report ID.
+
+### Export reliability
+
+- **Off the main thread:** `DiagnosticReportExporter.export()` / `buildReport()` run on
+  `Dispatchers.IO` (flush, database reads, log copies). The Settings button only launches it.
+- **Section statuses:** `ReportAssembler.write` runs every text section and file-list source through a
+  runner that records a `SectionStatus` (`OK`, `FAILED` with exception type + redacted, capped message,
+  `TIMED_OUT`, `UNAVAILABLE` with a reason) and the elapsed ms. Suspending sources get a per-section
+  timeout (`DEFAULT_SECTION_TIMEOUT_MS` = 10 s, injectable); blocking sources cannot be interrupted and
+  run to the end. `CancellationException` is always rethrown (`ReportFailures.catching`, never
+  `runCatching` around suspend calls). The flush result (`FLUSHED` / `NOT_CONFIRMED` / `FAILED`) is kept.
+- **Order:** text sections are collected into memory first, then the ZIP is streamed (logs line by line,
+  never held in memory), then `export-health.txt`, then `manifest.txt`. So a summary can be rendered
+  after the collectors; `ReportResult.completenessSummary()` is the short block meant for it (for now
+  README.txt points to export-health.txt).
+- **export-health.txt:** every status and time, the flush, files omitted (unreadable, unsafe or duplicate
+  name) or truncated (original → included bytes; the 24 h log filter is expected, a read error is not),
+  and the verdict `COMPLETE` / `PARTIAL`.
+- **Manifest:** lists every entry with its size and itself as "(this file)"; it matches the ZIP exactly.
+- **ZIP integrity:** `ReportAssembler.export` writes `<name>.zip.part`, closes it, reopens it with
+  `ZipFile` and checks the entry count and every name + size, then renames it. Any failure deletes the
+  temp file and returns `ExportOutcome.Failure(NO_SPACE | WRITE_FAILED | VALIDATION_FAILED | CANCELLED |
+  UNKNOWN)`; the caller's own cancellation deletes it and is rethrown. A valid ZIP with failed sections is
+  `Success(partial = true)`. `.part` files older than 1 h are removed by the next export.
+- **Entry names** built from file names (logs, exit traces, AR tracks) are limited to `A-Z a-z 0-9 . _ - /`,
+  no `..`, no leading `/`, at most 120 chars (`ZipBuilder.safeEntryName`).
 
 ## 3. Event categories (tags)
 
