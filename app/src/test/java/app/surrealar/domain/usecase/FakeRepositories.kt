@@ -27,6 +27,17 @@ class FakeCoordinateRepository(initial: List<Coordinate> = emptyList()) : Coordi
     }
 
     override suspend fun update(coordinate: Coordinate) = insert(coordinate)
+    var updateByIdCount = 0
+    /** When set, [updateById] throws before touching [store] (simulates a rolled-back transaction). */
+    var failUpdate: Exception? = null
+    override suspend fun updateById(id: String, transform: (Coordinate) -> Coordinate): Coordinate? {
+        failUpdate?.let { throw it }
+        val c = getById(id) ?: return null
+        val updated = transform(c)
+        updateByIdCount++
+        insert(updated)
+        return updated
+    }
     override suspend fun deleteById(id: String) { store.removeAll { it.id == id } }
     override suspend fun deleteAll() { deleteAllCount++; store.clear() }
     var replaceAllCount = 0
