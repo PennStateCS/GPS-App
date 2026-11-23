@@ -66,6 +66,8 @@ class AndroidMockLocationPublisher(
 
     private var publishJob: Job? = null
     private var providerAdded = false
+    /** Set while paused for no live fix: GNSS time of the last fix before the pause (collector only). */
+    private var pausedAfterUtc: Instant? = null
     private var lastPublishedUtc: Instant = Instant.EPOCH
     /** Settings → AR Display → Antenna Height Above Tablet (m); subtracted from the injected altitude. */
     @Volatile private var antennaAboveCameraM: Double = 0.0
@@ -106,19 +108,39 @@ class AndroidMockLocationPublisher(
                 settingsRepo.gnssReceiverSettings.combine(settingsRepo.externalReceiverProfile) { receiver, profile ->
                     app.surrealar.settings.model.AntennaSetup.resolve(receiver, profile).antennaAboveCameraM
                 },
-                fixSwitchboard.fixes
-            ) { userEnabled, arActive, locationSource, aboveCameraM, fix ->
+                // fixStale: the switchboard saw no fix for 10 s (receiver off / out of range).
+                fixSwitchboard.fixes.combine(fixSwitchboard.fixStale) { fix, stale -> fix to stale }
+            ) { userEnabled, arActive, locationSource, aboveCameraM, fixAndStale ->
                 antennaAboveCameraM = aboveCameraM
-                Triple(userEnabled || arActive, locationSource, fix)
+                Triple(userEnabled || arActive, locationSource, fixAndStale)
             }
-            .collect { (mockEnabled, locationSource, fix) ->
+            .collect { (mockEnabled, locationSource, fixAndStale) ->
+                val (fix, fixStale) = fixAndStale
                 if (!mockEnabled || locationSource != LocationSourceType.EXTERNAL) {
                     if (providerAdded) {
                         DiagnosticsLogger.i(DIAG, "Mock location publishing stopped: " +
                             if (locationSource != LocationSourceType.EXTERNAL) "source not external source=$locationSource" else "turned off")
                     }
+                    pausedAfterUtc = null
                     teardownProvider()
                     return@collect
+                }
+                if (fixStale) {
+                    // Don't leave the last position standing as the device's live GPS: remove the test
+                    // provider (other apps see no fix / the real GPS) until a live fix returns.
+                    if (providerAdded) {
+                        DiagnosticsLogger.w(DIAG, "Mock location paused: no live fix from the receiver, test provider removed")
+                        teardownProvider()
+                    }
+                    pausedAfterUtc = fix.timeUtc
+                    return@collect
+                }
+                pausedAfterUtc?.let { pausedAt ->
+                    // The switchboard clears fixStale just before the next fix; the frozen fix it is
+                    // combined with then must not be republished (teardown reset the duplicate check).
+                    if (!fix.timeUtc.isAfter(pausedAt)) return@collect
+                    pausedAfterUtc = null
+                    DiagnosticsLogger.i(DIAG, "Mock location resumed: live fix from the receiver")
                 }
                 val drop = when {
                     !isExternalFix(fix) -> "internal fix"
