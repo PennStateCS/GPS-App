@@ -31,7 +31,7 @@ class ModelReadinessRepository internal constructor(
 
     @Inject
     constructor(models: ModelRepository, coordinates: CoordinateRepository) : this(
-        models, coordinates, GltfFactsReader, ModelReadinessEvaluator, Dispatchers.IO, System::currentTimeMillis,
+        models, coordinates, GeokitGltfFactsSource, ModelReadinessEvaluator, Dispatchers.IO, System::currentTimeMillis,
     )
 
     private val gltfCache = object : LinkedHashMap<String, GltfFacts>(16, 0.75f, true) {

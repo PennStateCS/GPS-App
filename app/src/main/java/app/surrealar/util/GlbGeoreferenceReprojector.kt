@@ -2,254 +2,57 @@ package app.surrealar.util
 
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.util.diagnostics.DiagTags
-import app.surrealar.domain.model.ModelLocationConfidence
-import io.github.pennstatecs.geokit.local.LocalEnu
-import io.github.pennstatecs.geokit.ellipsoid.Ellipsoid
-import org.json.JSONObject
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import kotlin.math.abs
+import io.github.pennstatecs.geokit.models.georef.GlbGeoreferenceReprojector as Reprojector
 
 /**
- * Rewrites a GLB whose mesh POSITION vertices are baked WGS84 coordinates (longitude in X,
- * altitude-in-metres in Y, negative-latitude in Z — the Metashape Y-up convention) into a
- * **local ENU metric frame** recentred on the model's origin.
+ * Rewrites a GLB whose POSITION vertices are baked WGS84 coordinates into a local ENU metric frame
+ * recentred on the model's origin, in place, so the thumbnail, 3D viewer and AR renderer can display
+ * it. The rewrite lives in geokit-models ([Reprojector]: output convention east → −X, north → +Z,
+ * marker `wgs84-enu-north+z-v2`); this wrapper does the file I/O and the app's log lines (never origin
+ * coordinates) and maps the origin to [EmbeddedModelLocation].
  *
- * Such models are unrenderable as-is: the horizontal axes are in degrees (~1e-4 span) while
- * the vertical axis is in metres (~metres span), producing a sub-pixel vertical sliver parked
- * ~150 units from the origin and riding float32 precision limits. After reprojection each axis
- * is in metres and centred on (0,0,0), so the existing camera-framing logic in the thumbnail
- * capturer, 3D viewer, and AR renderer all display it correctly.
- *
- * The returned [EmbeddedModelLocation] is the local origin (the geographic anchor the recentred
- * geometry now sits on). Callers can surface it as the model's embedded location.
- *
- * Must be called off the main thread. Returns null (and leaves the file untouched) when the
- * file is not a plausibly georeferenced single-buffer GLB, so ordinary models are never altered.
+ * Must be called off the main thread. Returns null (and leaves the file untouched) when the file is not
+ * a plausibly georeferenced single-buffer GLB, so ordinary models are never altered.
  */
 object GlbGeoreferenceReprojector {
 
-    private const val GLB_MAGIC = 0x46546C67
-    private const val GLB_VERSION_2 = 2
-    private const val CHUNK_TYPE_JSON = 0x4E4F534A
-    private const val CHUNK_TYPE_BIN = 0x004E4942
-    private const val COMPONENT_TYPE_FLOAT = 5126
-
-    private const val MAX_FILE_BYTES = 128 * 1024 * 1024
-
     /** asset.extras key/value written into reprojected GLBs (WGS84 ENU, north = model +Z). */
-    const val REPROJECTION_MARKER_KEY = "surrealarReprojection"
-    const val REPROJECTION_MARKER_VALUE = "wgs84-enu-north+z-v2"
+    const val REPROJECTION_MARKER_KEY = Reprojector.REPROJECTION_MARKER_KEY
+    const val REPROJECTION_MARKER_VALUE = Reprojector.REPROJECTION_MARKER_VALUE
 
     fun reprojectIfGeoreferenced(file: File): EmbeddedModelLocation? {
         if (!file.exists() || !file.canRead()) return null
-        if (!file.name.lowercase().endsWith(".glb")) return null
-        if (file.length() <= 0 || file.length() > MAX_FILE_BYTES) return null
+        if (!Reprojector.isCandidate(file.name, file.length())) return null
         return try {
-            reprojectInternal(file)
+            val result = Reprojector.reproject(file.readBytes())
+            result.precision?.let { p ->
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection precision limited: float32 degree vertices " +
+                    "file=${file.name} latResM=${"%.1f".format(p.latResM)} lonResM=${"%.1f".format(p.lonResM)}")
+            }
+            when (result) {
+                is Reprojector.Result.Reprojected -> {
+                    file.writeBytes(result.bytes)
+                    val confidence = result.confidence.toDomain()
+                    DiagnosticsLogger.i(DiagTags.MODEL, "Model reprojected to local ENU file=${file.name} " +
+                        "georeferenced=true method=${result.method} confidence=$confidence")   // no origin coordinates
+                    EmbeddedModelLocation(
+                        latitude = result.origin.latitudeDeg,
+                        longitude = result.origin.longitudeDeg,
+                        altitudeMeters = result.origin.heightM,
+                        confidence = confidence,
+                        source = result.method
+                    )
+                }
+                is Reprojector.Result.Failed -> {
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${file.name}", result.error)
+                    null
+                }
+                else -> null
+            }
         } catch (e: Exception) {
             DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${file.name}", e)
             null
         }
     }
-
-    private class Chunk(val type: Int, val contentStart: Int, val length: Int)
-
-    private fun reprojectInternal(file: File): EmbeddedModelLocation? {
-        val bytes = file.readBytes()
-        if (bytes.size < 12) return null
-        val header = ByteBuffer.wrap(bytes, 0, 12).order(ByteOrder.LITTLE_ENDIAN)
-        if (header.int != GLB_MAGIC) return null
-        if (header.int != GLB_VERSION_2) return null
-        // total length (skip)
-
-        // Parse chunks
-        val chunks = ArrayList<Chunk>()
-        var p = 12
-        while (p + 8 <= bytes.size) {
-            val clen = readIntLE(bytes, p)
-            val ctype = readIntLE(bytes, p + 4)
-            val contentStart = p + 8
-            if (clen < 0 || contentStart + clen > bytes.size) break
-            chunks.add(Chunk(ctype, contentStart, clen))
-            p = contentStart + clen
-        }
-        val jsonChunk = chunks.firstOrNull { it.type == CHUNK_TYPE_JSON } ?: return null
-        val binChunk = chunks.firstOrNull { it.type == CHUNK_TYPE_BIN } ?: return null
-
-        val json = String(bytes, jsonChunk.contentStart, jsonChunk.length, Charsets.UTF_8)
-        val root = JSONObject(json)
-
-        val accessors = root.optJSONArray("accessors") ?: return null
-        val bufferViews = root.optJSONArray("bufferViews") ?: return null
-        val buffers = root.optJSONArray("buffers") ?: return null
-
-        // Collect unique POSITION accessor indices across all mesh primitives
-        val meshes = root.optJSONArray("meshes") ?: return null
-        val posAccessorIdx = LinkedHashSet<Int>()
-        for (mi in 0 until meshes.length()) {
-            val prims = meshes.getJSONObject(mi).optJSONArray("primitives") ?: continue
-            for (pi in 0 until prims.length()) {
-                val attrs = prims.getJSONObject(pi).optJSONObject("attributes") ?: continue
-                val idx = attrs.optInt("POSITION", -1)
-                if (idx >= 0) posAccessorIdx.add(idx)
-            }
-        }
-        if (posAccessorIdx.isEmpty()) return null
-
-        // Determine the origin from the first POSITION accessor's min/max, with the same
-        // plausibility gating as the detector, so ordinary local-space models are left alone.
-        val firstAcc = accessors.getJSONObject(posAccessorIdx.first())
-        val minArr = firstAcc.optJSONArray("min")
-        val maxArr = firstAcc.optJSONArray("max")
-        if (minArr == null || maxArr == null || minArr.length() < 3 || maxArr.length() < 3) return null
-
-        val lon0 = (minArr.getDouble(0) + maxArr.getDouble(0)) / 2.0  // X = longitude
-        val alt0 = (minArr.getDouble(1) + maxArr.getDouble(1)) / 2.0  // Y = altitude (m)
-        val z0   = (minArr.getDouble(2) + maxArr.getDouble(2)) / 2.0  // Z = -latitude
-        val lat0 = -z0
-        val spanX = maxArr.getDouble(0) - minArr.getDouble(0)
-        val spanZ = maxArr.getDouble(2) - minArr.getDouble(2)
-
-        if (lon0 !in -180.0..180.0) return null
-        if (lat0 !in -90.0..90.0) return null
-        if (alt0 !in -1000.0..9000.0) return null
-        if (abs(lon0) < 1e-6 && abs(lat0) < 1e-6) return null
-        if (spanX > 0.05 || spanZ > 0.05) return null
-
-        // WGS84 local ENU about the origin (ellipsoidal, Double) — a 111,320 m/° sphere was +0.24 %
-        // N–S and −0.14 % E–W at 41° N. Convert to float only when writing.
-        val enu = LocalEnu(lat0, lon0, alt0)
-
-        // Property of the source file, not something we can fix: its vertices are float32 degrees,
-        // so their resolution near the origin is one float ulp.
-        val latResM = Math.ulp(lat0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLat(lat0)
-        val lonResM = Math.ulp(lon0.toFloat()).toDouble() * Ellipsoid.WGS84.metersPerDegLon(lat0)
-        DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection precision limited: float32 degree vertices " +
-            "file=${file.name} latResM=${"%.1f".format(latResM)} lonResM=${"%.1f".format(lonResM)}")
-
-        // Transform each unique POSITION accessor's vertices in the BIN chunk.
-        for (idx in posAccessorIdx) {
-            val acc = accessors.getJSONObject(idx)
-            if (acc.optInt("componentType", -1) != COMPONENT_TYPE_FLOAT) return null
-            if (acc.optString("type") != "VEC3") return null
-            val bvIdx = acc.optInt("bufferView", -1)
-            if (bvIdx < 0 || bvIdx >= bufferViews.length()) return null
-            val bv = bufferViews.getJSONObject(bvIdx)
-            // Must reference the single embedded BIN buffer (buffer 0, no uri)
-            val bufIdx = bv.optInt("buffer", -1)
-            if (bufIdx < 0 || bufIdx >= buffers.length()) return null
-            if (buffers.getJSONObject(bufIdx).has("uri")) return null
-
-            val count = acc.optInt("count", 0)
-            if (count <= 0) return null
-            val accByteOffset = acc.optInt("byteOffset", 0)
-            val bvByteOffset = bv.optInt("byteOffset", 0)
-            val stride = bv.optInt("byteStride", 12).let { if (it == 0) 12 else it }
-            val base = binChunk.contentStart + bvByteOffset + accByteOffset
-
-            val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-            var nMinX = Double.MAX_VALUE; var nMinY = Double.MAX_VALUE; var nMinZ = Double.MAX_VALUE
-            var nMaxX = -Double.MAX_VALUE; var nMaxY = -Double.MAX_VALUE; var nMaxZ = -Double.MAX_VALUE
-
-            for (i in 0 until count) {
-                val off = base + i * stride
-                if (off + 12 > bytes.size) return null
-                val x = buf.getFloat(off).toDouble()
-                val y = buf.getFloat(off + 4).toDouble()
-                val z = buf.getFloat(off + 8).toDouble()
-
-                // Reproject degrees → local ENU metres about the origin (lat = −Z, lon = X, h = Y).
-                // Written in the renderer's model convention (glTF +Z = north): the AR renderer turns
-                // every model 180° about Y, which maps model +Z → world −Z (north) and model −X →
-                // world +X (east). Writing east→+X / north→−Z here made georeferenced models render
-                // turned 180°. Both horizontal axes flip (a rotation, not a mirror).
-                val p = enu.toEnu(-z, x, y)
-                val nx = (-p[0]).toFloat()       // east  → −X
-                val ny = p[2].toFloat()          // up    → +Y
-                val nz = p[1].toFloat()          // north → +Z
-
-                buf.putFloat(off, nx)
-                buf.putFloat(off + 4, ny)
-                buf.putFloat(off + 8, nz)
-
-                if (nx < nMinX) nMinX = nx.toDouble(); if (nx > nMaxX) nMaxX = nx.toDouble()
-                if (ny < nMinY) nMinY = ny.toDouble(); if (ny > nMaxY) nMaxY = ny.toDouble()
-                if (nz < nMinZ) nMinZ = nz.toDouble(); if (nz > nMaxZ) nMaxZ = nz.toDouble()
-            }
-
-            // Update accessor min/max so bounding-box framing is correct.
-            acc.put("min", org.json.JSONArray(listOf(nMinX, nMinY, nMinZ)))
-            acc.put("max", org.json.JSONArray(listOf(nMaxX, nMaxY, nMaxZ)))
-        }
-
-        // Mark the file so a later version can tell which convention it was rewritten with. Files
-        // reprojected before this marker existed used east→+X / north→−Z (render turned 180°).
-        val asset = root.optJSONObject("asset") ?: JSONObject().also { root.put("asset", it) }
-        val extras = asset.optJSONObject("extras") ?: JSONObject().also { asset.put("extras", it) }
-        extras.put(REPROJECTION_MARKER_KEY, REPROJECTION_MARKER_VALUE)
-
-        // Re-serialise: JSON length changes (min/max edited), so rebuild the container.
-        val newJson = root.toString().toByteArray(Charsets.UTF_8)
-        val newJsonPadded = padTo4(newJson, ' '.code.toByte())
-
-        val out = ByteBuffer.allocate(
-            12 + chunks.sumOf { 8 + alignedLen(if (it.type == CHUNK_TYPE_JSON) newJsonPadded.size else it.length) }
-        ).order(ByteOrder.LITTLE_ENDIAN)
-
-        out.putInt(GLB_MAGIC)
-        out.putInt(GLB_VERSION_2)
-        val totalLenPos = out.position()
-        out.putInt(0) // patched below
-
-        for (c in chunks) {
-            if (c.type == CHUNK_TYPE_JSON) {
-                out.putInt(newJsonPadded.size)
-                out.putInt(c.type)
-                out.put(newJsonPadded)
-            } else {
-                val content = bytes.copyOfRange(c.contentStart, c.contentStart + c.length)
-                val padded = if (c.type == CHUNK_TYPE_BIN) padTo4(content, 0) else content
-                out.putInt(padded.size)
-                out.putInt(c.type)
-                out.put(padded)
-            }
-        }
-        val total = out.position()
-        out.putInt(totalLenPos, total)
-
-        file.writeBytes(out.array().copyOf(total))
-
-        val confidence = when {
-            spanX in 1e-7..0.005 && spanZ in 1e-7..0.005 -> ModelLocationConfidence.HIGH
-            else -> ModelLocationConfidence.MEDIUM
-        }
-        DiagnosticsLogger.i(DiagTags.MODEL, "Model reprojected to local ENU file=${file.name} " +
-            "georeferenced=true method=GLB_POSITION_WGS_LIKE confidence=$confidence")   // no origin coordinates
-
-        return EmbeddedModelLocation(
-            latitude = lat0,
-            longitude = lon0,
-            altitudeMeters = alt0,
-            confidence = confidence,
-            source = "GLB_POSITION_WGS_LIKE"
-        )
-    }
-
-    private fun alignedLen(len: Int): Int = (len + 3) and 3.inv()
-
-    private fun padTo4(data: ByteArray, pad: Byte): ByteArray {
-        val rem = data.size % 4
-        if (rem == 0) return data
-        val out = data.copyOf(data.size + (4 - rem))
-        for (i in data.size until out.size) out[i] = pad
-        return out
-    }
-
-    private fun readIntLE(b: ByteArray, p: Int): Int =
-        (b[p].toInt() and 0xFF) or
-        ((b[p + 1].toInt() and 0xFF) shl 8) or
-        ((b[p + 2].toInt() and 0xFF) shl 16) or
-        ((b[p + 3].toInt() and 0xFF) shl 24)
 }
