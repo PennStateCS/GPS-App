@@ -1,0 +1,103 @@
+name: CI
+
+# Builds and tests the geokit libraries (pure JVM, no Android SDK) and the Android app.
+# No secrets: the app builds with the placeholder Maps key from app/build.gradle.kts and debug
+# builds are signed with the committed shared debug keystore.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  libraries:
+    name: geokit libraries (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The libs/ build is stand-alone (no Android Gradle Plugin). Hide the runner's preinstalled
+      # SDK so an accidental Android dependency fails here instead of passing silently.
+      - name: Test geokit libraries
+        run: ./gradlew -p libs test
+        env:
+          ANDROID_HOME: ''
+          ANDROID_SDK_ROOT: ''
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libs-test-reports
+          path: |
+            libs/*/build/reports/tests/
+            libs/*/build/test-results/
+          if-no-files-found: ignore
+
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # compileSdk 37: the SDK package is named "android-37.0" (new major.minor platform naming).
+      # setup-android accepts the licences, so AGP can still fetch any other build-tools it wants.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-37.0 build-tools;37.0.0 platform-tools'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: ignore
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
