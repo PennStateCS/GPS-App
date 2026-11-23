@@ -1298,18 +1298,39 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * Create a new ARCore session with required configuration
      */
     private fun tryCreateSession() {
+        // Reachable from onViewCreated, onResume, the camera-permission result and the availability
+        // poll. A second Session would replace the first without close(), leaking its native memory.
+        if (session != null) {
+            DevLog.d(TAG) { "tryCreateSession skipped: a session already exists" }
+            return
+        }
+        var created: Session? = null
         try {
             val ses = Session(requireContext())
+            created = ses
             session = ses
             configureSession()
             resumeLateSession(ses)
         } catch (e: CameraNotAvailableException) {
             DiagnosticsLogger.e(DIAG, "AR session create failed: camera unavailable", e)
             setArStatus(getString(R.string.camera_unavailable))
+            discardSession(created)
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "AR session create failed", e)
             setArStatus("Session error: ${e.message ?: "Unknown"}")
+            discardSession(created)
         }
+    }
+
+    /**
+     * Closes a session whose setup threw part-way (e.g. Config(ses) or a support query), so it is
+     * neither leaked nor left half-configured; the next onResume tries again from scratch.
+     */
+    private fun discardSession(ses: Session?) {
+        if (ses == null) return
+        if (session === ses) { session = null; sessionReady = false }
+        runCatching { ses.close() }
+            .onFailure { DiagnosticsLogger.w(DIAG, "AR session close after failed setup failed", it) }
     }
 
     /**
