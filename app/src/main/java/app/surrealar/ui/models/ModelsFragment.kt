@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import app.surrealar.databinding.FragmentModelsBinding
 import app.surrealar.domain.model.Model
 import app.surrealar.util.GlbGeoreferenceReprojector
+import io.github.pennstatecs.geokit.models.gltf.GltfSidecars
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

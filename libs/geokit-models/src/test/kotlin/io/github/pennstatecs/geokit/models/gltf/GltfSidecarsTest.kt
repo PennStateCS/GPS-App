@@ -1,4 +1,4 @@
-package app.surrealar.ui.models
+package io.github.pennstatecs.geokit.models.gltf
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -52,5 +52,21 @@ class GltfSidecarsTest {
 
         assertEquals(listOf("../s2/x.png"), report.unsafe)
         assertFalse("nothing written next to the bundle", File(models, "s2/x.png").exists())
+    }
+
+    // An I/O error on one resource is reported (first error kept) and the others are still copied.
+    @Test fun ioErrorIsReportedAndOtherResourcesAreStillCopied() {
+        val src = tmp.newFolder("picked")
+        File(src, "a.png").writeText("a")
+        File(src, "b.png").writeText("b")
+        val bundle = tmp.newFolder("bundle")
+        File(bundle, "a.png").mkdirs()                   // a directory where the file must go
+
+        val report = GltfSidecars.copy(src, bundle, setOf("a.png", "b.png"))
+
+        assertEquals(listOf("a.png"), report.failed)
+        assertTrue(report.firstError != null)
+        assertEquals("b", File(bundle, "b.png").readText())
+        assertEquals(1, report.problems)
     }
 }

@@ -15,6 +15,7 @@ Plain Kotlin/JVM: no Android, Filament, Hilt or app types. Depends on [`:geokit-
 | `.glb` | `GlbContainer` | The one GLB parser: header + chunks in memory, fully validated (`parse`, or `check` for the `Problem`), rebuild with a new JSON chunk (`rewriteJson`), and a streaming header read (`readHead`) for callers that only need the first chunk. Constants for the magic, version and chunk types. |
 | `.gltf` | `GltfFactsReader`, `GltfFacts`, `GltfBounds` | Facts from a `.glb`/`.gltf` file, reading only the JSON, chunk headers and image headers. Never throws: failures are `GltfFacts.parseError`. |
 | `.gltf` | `GltfUris` | External resource URIs (`externalResourceUris`), decoding (`decode`, `relativePath`), safe resolution next to the model (`resolve` → `Resolution`), and the `isInside` folder check. |
+| `.gltf` | `GltfSidecars` | Importing a `.gltf` with its external files: the relative paths it references (`resourcePaths`, `?query`/`#fragment` dropped) and copying them from the source folder into a destination folder with the same layout (`copy` → `CopyReport` of missing / unsafe / failed paths). |
 | `.gltf` | `Base64Decoder` | Base64 for `data:` URIs with Android `Base64.DEFAULT` leniency. |
 | `.georef` | `GlbGeoreferenceDetector` | Is this GLB's first POSITION accessor a plausible WGS84 location? Reads the header and JSON only. Returns `Result.NotGlb / Rejected / NotGeoreferenced / Found`, each with a reason. |
 | `.georef` | `GlbGeoreferenceReprojector` | Rewrites such a GLB into local ENU metres about its origin. Bytes in (never modified), `Result.NotGlb / Malformed / NotGeoreferenced / Rejected / Failed / Reprojected` out. |
@@ -37,12 +38,16 @@ if (GlbGeoreferenceReprojector.isCandidate(file.name, file.length())) {
 
 val uris = GltfUris.externalResourceUris(json).getOrElse { emptyList() }
 when (val res = GltfUris.resolve(modelFolder, uri)) { is GltfUris.Resolution.Found -> res.file; else -> null }
+
+val report = GltfSidecars.copy(pickedFolder, bundleFolder, GltfSidecars.resourcePaths(json).getOrThrow())
+// report.missing / unsafe / failed (relative paths), report.firstError; the caller logs
 ```
 
 The app keeps thin wrappers that add its logging and map to its own types:
 `util/GlbGeoreferenceDetector` and `util/GlbGeoreferenceReprojector` (→ `EmbeddedModelLocation`),
 `ui/models/GltfResources` (logs unparseable JSON), and `ui/models/readiness/GeokitGltfFacts`
 (`GltfBounds` → the readiness `Bounds` of float `Vec3`).
+The importer (`ui/models/ModelsFragment`) calls `GltfSidecars` directly and logs its `CopyReport`.
 
 ## Conventions
 
@@ -75,6 +80,10 @@ The app keeps thin wrappers that add its logging and map to its own types:
 - **URIs**: `data:` is embedded; other URIs are percent-decoded with `+` kept literal; a scheme or an
   absolute path is not a file next to the model; resolution must land strictly inside the folder
   (prefix plus separator, so `models2/` is not inside `models/`).
+  `GltfSidecars.copy` applies the same check on both sides: a source outside the source folder (or
+  absent) is *missing*, a target outside the destination folder is *unsafe*, an I/O error is *failed*;
+  one bad resource never stops the others. Unlike `GltfUris.resolve` (used by the facts reader),
+  `resourcePaths` drops a `?query`/`#fragment` before decoding, as the app's viewer does.
 - Units and names follow geokit (`latitudeDeg`, `heightM`), `Double` for measurements, `null` = unknown.
 
 ## org.json
