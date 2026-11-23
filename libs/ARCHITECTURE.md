@@ -53,11 +53,15 @@ storage rounding). "It has no Android imports" is not a reason to move code into
   `coords/FeedDatumMapping.kt` (`ReceiverDatum → FixDatum`). The libraries never see a settings class.
 - **App types stay in the app.** `ConvertedPosition`, `Coordinate`, Room entities and `ModelPlacement.resolve`
   (an extension over entities) are app-side; adapters translate at the edge.
-- **Receiver-specific extensions.** `geokit-gnss` parses standard NMEA and accepts extra sentence parsers
-  (a map of sentence id → `SentenceParser`) for the live registry and for replay. It tracks proprietary
-  sentences generically (count and last sentence per id). A receiver module ships its parsers and a typed
-  view of those generic stats; the app registers them through the receiver profile
-  (`ExternalReceiverProfile.extraParsers`) and reads diagnostics through the vendor's view.
+- **Receiver-specific extensions.** `geokit-gnss` parses standard NMEA (`DefaultNmeaRegistry.standardParsers()`)
+  and accepts extra sentence parsers (a map of sentence tag → `SentenceParser`) in
+  `DefaultNmeaRegistry.create(..., extraParsers)` for live data and `ReplayAdapter(..., extraParsers)` for
+  replay. `NmeaFuser.extraSentenceStats` records every parsed sentence that does not feed a fix: count,
+  latest sentence and sticky flags (`FlaggedNmeaSentence`) per tag. It never changes fixes. A receiver
+  module ships its parsers and a typed view of those stats (Emlid: `EmlidNmea.parsers`,
+  `EmlidNmeaDiagnostics.from`); the app registers them through the receiver profile
+  (`ExternalReceiverProfile.extraParsers`) and its diagnostics read the vendor view. `geokit-gnss` never
+  names a vendor sentence.
 - **Logging.** The app installs `AndroidGnssLogger` and passes `DiagnosticsLinkLog`; libraries that don't
   log return results (`Result`/sealed types with reasons) and the app writes the log lines.
 
