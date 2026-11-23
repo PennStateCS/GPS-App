@@ -1,19 +1,14 @@
-package app.surrealar.ui.models
+package io.github.pennstatecs.geokit.models.gltf
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
  * Which sidecar files a .gltf import copies. Regression for the old regex parser, which URL-decoded '+'
  * to a space ("a+b.png" became "a b.png", so the texture was not copied) and stopped at an escaped
- * quote. Robolectric for a real org.json.
+ * quote. Plain JUnit against android-json (the device's org.json); this was an app Robolectric test.
  */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class GltfSidecarsResourcePathsTest {
 
     private fun paths(json: String) = GltfSidecars.resourcePaths(json).getOrThrow()
