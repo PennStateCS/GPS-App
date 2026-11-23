@@ -659,6 +659,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var cameraPermissionRequested = false
     private var locationPermissionRequested = false
 
+    /** Back-off for CameraNotAvailableException (see [recoverCamera]). Main thread only. */
+    private val cameraRecovery = CameraRecoveryPolicy()
+    private val cameraRecoveryHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    /** Set (GL or main) when a recovery is in progress, so the GL thread hands it to main only once. */
+    private val cameraRecoveryActive = java.util.concurrent.atomic.AtomicBoolean(false)
+
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             // The result can be delivered after the view is gone — guard binding access.
@@ -1140,6 +1146,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         displayRotation = readDisplayRotation()
         DevLog.d(TAG) { "Display rotation: $displayRotation" }
+        cameraRecovery.reset()   // returning to AR gets a fresh camera-recovery budget
 
         if (!checkAndRequestCameraPermission()) {
             DiagnosticsLogger.w(DIAG, "AR session start blocked: camera permission not granted")
@@ -1202,10 +1209,80 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (e: CameraNotAvailableException) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
             binding.textArStatus.text = getString(R.string.camera_unavailable)
-            try { session?.pause() } catch (_: Exception) {}   // best effort after a failed resume
+            // Pause + bounded retry once the fragment is RESUMED (it is not yet, inside onResume).
+            if (cameraRecoveryActive.compareAndSet(false, true)) {
+                cameraRecoveryHandler.post { recoverCamera("resume") }
+            }
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed", e)
             binding.textArStatus.text = "AR error: ${e.message}"
+        }
+    }
+
+    /**
+     * GL thread: Session.update() threw CameraNotAvailableException. Stops further update() calls (the
+     * camera is gone, so each would throw again) and hands recovery to the main thread once.
+     */
+    private fun onCameraUnavailableInFrame() {
+        sessionReady = false
+        if (cameraRecoveryActive.compareAndSet(false, true)) {
+            cameraRecoveryHandler.post { recoverCamera("frame") }
+        }
+    }
+
+    /**
+     * Main thread: pauses the session and schedules a resume after [cameraRecovery]'s back-off
+     * (1 s … 16 s, 5 attempts). Out of attempts, it stays paused with a status message until the next
+     * onResume. Never spins: frames stop (sessionReady=false) while the camera is unavailable.
+     */
+    private fun recoverCamera(source: String) {
+        val ses = session
+        if (ses == null || _binding == null ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            cameraRecoveryActive.set(false)   // onResume/onPause own the session from here
+            return
+        }
+        cameraRecoveryActive.set(true)
+        sessionReady = false
+        runCatching { ses.pause() }
+            .onFailure { DiagnosticsLogger.w(DIAG, "AR session pause for camera recovery failed", it) }
+        when (val d = cameraRecovery.onCameraUnavailable(android.os.SystemClock.elapsedRealtime())) {
+            is CameraRecoveryPolicy.Decision.Retry -> {
+                DiagnosticsLogger.w(DIAG, "Camera unavailable: AR paused, resume retry scheduled " +
+                    "delayMs=${d.delayMs} attempt=${d.attempt}/${d.maxAttempts} source=$source")
+                setArStatus("${getString(R.string.camera_unavailable)}: retrying in " +
+                    "${(d.delayMs + 999) / 1000} s (${d.attempt}/${d.maxAttempts})")
+                cameraRecoveryHandler.postDelayed({ attemptCameraResume() }, d.delayMs)
+            }
+            CameraRecoveryPolicy.Decision.GiveUp -> {
+                // Stays active: no frames run and nothing re-posts until onResume resets the budget.
+                DiagnosticsLogger.e(DIAG, "Camera unavailable: AR recovery gave up " +
+                    "attempts=${cameraRecovery.maxAttempts} source=$source")
+                setArStatus("${getString(R.string.camera_unavailable)}: close other camera apps, then reopen AR")
+            }
+        }
+    }
+
+    /** Main thread: one scheduled resume of [recoverCamera]. */
+    private fun attemptCameraResume() {
+        val ses = session
+        if (ses == null || _binding == null ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            cameraRecoveryActive.set(false)
+            return
+        }
+        try {
+            ses.resume()
+            cameraRecoveryActive.set(false)
+            sessionReady = true
+            DiagnosticsLogger.i(DIAG, "AR session resumed after camera unavailable")
+            setArStatus("AR camera active")
+        } catch (e: CameraNotAvailableException) {
+            recoverCamera("retry")
+        } catch (e: Exception) {
+            cameraRecoveryActive.set(false)
+            DiagnosticsLogger.e(DIAG, "AR session resume failed during camera recovery", e)
+            setArStatus("AR error: ${e.message}")
         }
     }
 
@@ -1232,6 +1309,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         sessionReady = false
+        cameraRecoveryHandler.removeCallbacksAndMessages(null)   // onResume restarts the session itself
+        cameraRecoveryActive.set(false)
         binding.glSurfaceViewAr.onPause()
         try { session?.pause() } catch (e: Exception) {
             DiagnosticsLogger.w(DIAG, "AR session pause failed", e)
@@ -1276,6 +1355,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
         choreographerInstance = null
         choreoPrevHadModels = false
+        cameraRecoveryHandler.removeCallbacksAndMessages(null)
+        cameraRecoveryActive.set(false)
         filamentRenderer?.destroy()
         filamentRenderer = null
         arRenderSnapshot  = null
@@ -1431,7 +1512,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (e: CameraNotAvailableException) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
             setArStatus(getString(R.string.camera_unavailable))
-            try { ses.pause() } catch (_: Exception) {}   // best effort after a failed resume
+            // RESUMED here (checked above): pause + bounded retry, as for a camera lost mid-session.
+            if (cameraRecoveryActive.compareAndSet(false, true)) recoverCamera("late_resume")
+            else try { ses.pause() } catch (_: Exception) {}   // best effort after a failed resume
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "AR session resume failed", e)
             setArStatus("AR error: ${e.message}")
@@ -2141,10 +2224,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             postDebugPanelUpdate(earth, earthStatus, planeCount, pointCount, featuresCounted, camFailure, optics)
 
         } catch (_: CameraNotAvailableException) {
-            // Per frame while the camera is taken (e.g. by another app): at most one line per 30 s.
+            // The camera was taken (e.g. by another app): stop calling update() and let the main thread
+            // pause and retry with back-off (recoverCamera) instead of throwing every frame.
             DiagnosticsLogger.every(DIAG, "ar.frag.draw.cameraUnavailable", 30_000L, 'W') {
-                "Camera unavailable: AR frames not updating"
+                "Camera unavailable: AR frames not updating, recovery scheduled"
             }
+            onCameraUnavailableInFrame()
         } catch (e: Exception) {
             DiagnosticsLogger.every(DIAG, "ar.frag.draw.error", 10_000L, 'E', throwable = e) {
                 "AR frame update failed"
