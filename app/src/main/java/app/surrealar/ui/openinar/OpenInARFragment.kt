@@ -2433,7 +2433,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             entry.anchor.pose.toMatrix(model, 0)
             // Terrain mode: put the model on the ground/floor ARCore detected under (or near) it.
             // Far models with no detected surface keep their terrain-anchor height.
-            if (entry.onTerrain) groundSnapper.groundY(model[12], model[14])?.let { model[13] = it }
+            if (entry.onTerrain) groundSnapper.groundY(model[12], model[14], coord.id)?.let { model[13] = it }
             System.arraycopy(model, 0, modelScaled, 0, 16)
 
             if (entryModelFilePath != null) {
