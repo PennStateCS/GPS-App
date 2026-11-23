@@ -122,12 +122,20 @@ The libraries build and test on their own, without Android (Windows commands; us
 
 ```
 cd libs
-..\gradlew.bat test                      # all five libraries
+..\gradlew.bat test                      # all five libraries, plus the JVM smoke tests
 ..\gradlew.bat :geokit-core:test         # one library
 ```
 
 or, from the repository root, `.\gradlew.bat -p libs test`. This uses the repository's Gradle wrapper and
 never configures the app.
+
+`geokit-jvm-smoke` (`libs/geokit-jvm-smoke`, not published) uses the libraries as a plain desktop JVM
+project would: its test suites depend on one library each (`test` → `geokit-receiver-emlid`,
+`modelsTest` → `geokit-models`) and nothing else, so they run with only the runtime dependencies those
+libraries declare. They go through org.json code paths (GLB facts, detection and reprojection; a Reach
+`/battery` JSON read from a local HTTP server) and fail with `NoClassDefFoundError` if a library stops
+shipping `org.json:json` at runtime. Both libraries compile and test against android-json and ship
+`org.json:json` 20240303 as `runtimeOnly`; the app excludes it and uses Android's own copy.
 
 The root build includes `libs/` with `includeBuild("libs")`, so `.\gradlew.bat :app:assembleDebug`
 builds the libraries it needs. From the root, library tasks are addressed through the included build
