@@ -99,6 +99,17 @@
             android:paddingBottom="6dp"
             android:visibility="gone" />
 
+        <!-- Enters Move mode for this point's model (hidden when no model is linked) -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnMoveModel"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:minHeight="56dp"
+            android:text="@string/ar_move_model"
+            android:visibility="gone" />
+
     </LinearLayout>
 </ScrollView>
 

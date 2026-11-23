@@ -551,4 +551,9 @@
 
     </LinearLayout>
 
+    <!-- Move mode: shown while one point's model is being moved (see OpenInARFragment.startModelMove). -->
+    <include
+        android:id="@+id/arMovePanel"
+        layout="@layout/view_ar_move_panel" />
+
 </FrameLayout>

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Move mode panel (OpenInARFragment): shown while one point's model is being moved. -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginBottom="16dp"
+    android:visibility="gone"
+    style="@style/Widget.App.AR.Card">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/txtMoveTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.App.AR.Overlay" />
+
+        <TextView
+            android:id="@+id/txtMoveOffset"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace"
+            android:textAppearance="@style/TextAppearance.App.AR.Overlay" />
+
+        <TextView
+            android:id="@+id/txtMoveAccuracy"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall" />
+
+        <TextView
+            android:id="@+id/txtMoveHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/ar_move_hint"
+            android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall" />
+
+        <!-- Fine nudges, relative to where the camera looks -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeLeft" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="◀"
+                android:contentDescription="@string/ar_move_nudge_left" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeAway" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="▲"
+                android:contentDescription="@string/ar_move_nudge_away" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeToward" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="▼"
+                android:contentDescription="@string/ar_move_nudge_toward" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeRight" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="▶"
+                android:contentDescription="@string/ar_move_nudge_right" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeStep" style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1.3"
+                android:minHeight="48dp" android:text="10 cm"
+                android:contentDescription="@string/ar_move_nudge_step" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeUp" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="@string/ar_move_up" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNudgeDown" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="@string/ar_move_down" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTurnLeft" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginEnd="4dp" android:minHeight="48dp" android:text="⟲"
+                android:contentDescription="@string/ar_move_turn_left" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTurnRight" style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:minHeight="48dp" android:text="⟳"
+                android:contentDescription="@string/ar_move_turn_right" />
+        </LinearLayout>
+
+        <com.google.android.material.checkbox.MaterialCheckBox
+            android:id="@+id/chkMoveSave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:minHeight="48dp"
+            android:text="@string/ar_move_save" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="end"
+            android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMoveReset" style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minHeight="48dp" android:text="@string/ar_move_reset" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMoveCancel" style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minHeight="48dp" android:text="@string/import_cancel" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnMoveDone"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:minHeight="48dp" android:text="@string/ar_move_done" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

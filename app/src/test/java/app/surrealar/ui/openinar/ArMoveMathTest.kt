@@ -84,6 +84,15 @@ class ArMoveMathTest {
         assertEquals(0f, r[0], 1e-6f); assertEquals(-1f, r[2], 1e-6f)
     }
 
+    @Test fun `view-relative nudges follow where the camera looks`() {
+        val cam = camLookingDown()                       // looks toward world -Z = north (identity anchor)
+        val away = ArMoveMath.viewNudgeToEnu(cam, identityAnchor(), rightM = 0f, forwardM = 0.1f)!!
+        assertEquals(0f, away[0], 1e-6f); assertEquals(0.1f, away[1], 1e-6f); assertEquals(0f, away[2], 0f)
+        val right = ArMoveMath.viewNudgeToEnu(cam, identityAnchor(), rightM = 0.1f, forwardM = 0f)!!
+        assertEquals(0.1f, right[0], 1e-6f); assertEquals(0f, right[1], 1e-6f)   // looking north, right is east
+        assertNull(ArMoveMath.viewNudgeToEnu(camLookingDown(pitchDownDeg = 90f), identityAnchor(), 0f, 0.1f))
+    }
+
     @Test fun `session move adds on top of a saved placement`() {
         val saved = ModelPlacement(yawDeg = 10f, moveEastM = 1f)
         val p = saved + ModelMove(eastM = 0.5f, northM = -2f, upM = 0.25f, yawDeg = 5f)

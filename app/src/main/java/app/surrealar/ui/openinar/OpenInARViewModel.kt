@@ -95,6 +95,7 @@ class OpenInARViewModel @Inject constructor(
     private val gnssReceiverRepo: GnssReceiverSettingsRepository,
     private val arVisibilityRepo: ArVisibilitySettingsRepository,
     private val fixSwitchboard: FixSwitchboard,
+    private val saveModelMoveUseCase: SaveModelMoveUseCase,
 ) : ViewModel() {
 
     // ── Coordinate stream ─────────────────────────────────────────────────────
@@ -136,6 +137,29 @@ class OpenInARViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, "📏 <50m")
 
     /** Advance to the next distance-filter step (wraps around). */
+    /**
+     * Saves an AR move onto the point (see [SaveModelMoveUseCase]); [onResult] gets null on success or
+     * the error (main thread). The write is NonCancellable, so leaving AR right after Done still saves;
+     * [onResult] is skipped once this ViewModel is cleared.
+     */
+    fun saveModelMove(coordinateId: String, move: ModelMove, resolvedYawDeg: Float, onResult: (Throwable?) -> Unit) =
+        viewModelScope.launch {
+            val error = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                try {
+                    saveModelMoveUseCase(coordinateId, move, resolvedYawDeg)
+                    // Size of the move only: never the point's position.
+                    DiagnosticsLogger.i(DIAG_MOVE, "AR model move saved coordinateId=$coordinateId " +
+                        "dE=${"%.2f".format(move.eastM)} dN=${"%.2f".format(move.northM)} " +
+                        "dUp=${"%.2f".format(move.upM)} dYaw=${"%.1f".format(move.yawDeg)}")
+                    null
+                } catch (e: Exception) {
+                    DiagnosticsLogger.e(DIAG_MOVE, "AR model move save failed coordinateId=$coordinateId", e)
+                    e
+                }
+            }
+            if (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.isActive == true) onResult(error)
+        }
+
     fun cycleDistanceFilter() {
         _distanceFilterIndex.update { (it + 1) % DISTANCE_FILTER_STEPS.size }
     }
@@ -330,6 +354,8 @@ class OpenInARViewModel @Inject constructor(
     companion object {
         /** Ordered distance-filter steps; null = show all pins regardless of distance. */
         val DISTANCE_FILTER_STEPS: List<Double?> = listOf(null, 50.0, 100.0, 500.0)
+        /** Diagnostics tag for move-model lines (same AR tag as the other lines here). */
+        private const val DIAG_MOVE = "AR"
     }
 }
 

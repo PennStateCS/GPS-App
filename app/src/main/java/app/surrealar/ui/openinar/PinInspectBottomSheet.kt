@@ -31,6 +31,12 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
         private const val KEY_TIMESTAMP= "timestamp"
         private const val KEY_POS_TEXT = "pos_text"
         private const val KEY_HGT_TEXT = "hgt_text"
+        private const val KEY_COORD_ID = "coord_id"
+
+        /** Fragment result (on the host's childFragmentManager) asking to move this point's model. */
+        const val REQUEST_MOVE_MODEL = "pin_inspect_move_model"
+        /** Result key: the coordinate id whose model should move. */
+        const val RESULT_COORD_ID = "coord_id"
 
         fun show(
             fm: FragmentManager,
@@ -46,6 +52,8 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
             /** Position/height already formatted in the user's coordinate system (Settings → Coordinates). */
             positionText: String? = null,
             heightText: String? = null,
+            /** Set (with a [modelId]) to offer "Move model". */
+            coordinateId: String? = null,
         ) {
             // Dismiss any existing instance before showing a new one
             (fm.findFragmentByTag(TAG) as? PinInspectBottomSheet)?.dismiss()
@@ -63,6 +71,7 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
                     putLong(KEY_TIMESTAMP, timestamp)
                     putString(KEY_POS_TEXT, positionText)
                     putString(KEY_HGT_TEXT, heightText)
+                    putString(KEY_COORD_ID, coordinateId)
                 }
             }.show(fm, TAG)
         }
@@ -125,6 +134,15 @@ class PinInspectBottomSheet : BottomSheetDialogFragment() {
         if (modelId != null) {
             modelView.text = "◆ Model:  $modelId"
             modelView.isVisible = true
+        }
+
+        val coordId = args.getString(KEY_COORD_ID)
+        view.findViewById<View>(R.id.btnMoveModel).apply {
+            isVisible = modelId != null && coordId != null
+            setOnClickListener {
+                parentFragmentManager.setFragmentResult(REQUEST_MOVE_MODEL, Bundle().apply { putString(RESULT_COORD_ID, coordId) })
+                dismiss()
+            }
         }
     }
 }

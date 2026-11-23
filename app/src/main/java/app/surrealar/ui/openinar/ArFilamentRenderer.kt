@@ -193,7 +193,7 @@ class ArFilamentRenderer {
             runCatching { scene.removeEntities(cached.asset.entities) }
             cached.addedToScene = false
         }
-        DiagnosticsLogger.i(DIAG, "Model placement updated key=$key")
+        DevLog.d(TAG) { "Model placement updated key=$key" }   // per frame while dragging: logcat only
     }
 
     /**
@@ -683,7 +683,8 @@ class ArFilamentRenderer {
                     val placement = cached.placement
                     val origin = placement.placementOrigin
                     // MODEL_* lines once per model + placement + scale: re-adds after hide/unhide don't re-log.
-                    val firstPlacementLog = placementLogged.add("${pose.key}#${placement.hashCode()}#${pose.coordScale}")
+                    // Keyed without the move shift and yaw, which change every frame while a model is dragged or turned.
+                    val firstPlacementLog = placementLogged.add("${pose.key}#${placement.copy(moveEastM = 0f, moveNorthM = 0f, moveUpM = 0f, yawDeg = 0f).hashCode()}#${pose.coordScale}")
 
                     if (firstPlacementLog) DiagnosticsLogger.d(DIAG) { "MODEL_BOUNDS model=$fileName coordId=${pose.key} " +
                         "boundsMin=[${f(bounds.min.x)},${f(bounds.min.y)},${f(bounds.min.z)}] " +

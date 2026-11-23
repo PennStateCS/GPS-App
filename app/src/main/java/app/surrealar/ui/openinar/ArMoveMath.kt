@@ -79,6 +79,21 @@ object ArMoveMath {
         return -dyPx * (2f * distanceM / (cam.p5 * cam.heightPx))
     }
 
+    /**
+     * A nudge relative to where the camera looks — [rightM] to the right, [forwardM] away from the user,
+     * both horizontal — as metres east / north / up through [anchorWorld] (see [worldDeltaToEnu]).
+     * Null when the camera points straight up or down (no horizontal forward direction).
+     */
+    fun viewNudgeToEnu(cam: CameraState, anchorWorld: FloatArray, rightM: Float, forwardM: Float): FloatArray? {
+        val f = rotate(cam.qx, cam.qy, cam.qz, cam.qw, 0f, 0f, -1f)
+        val fLen = sqrt(f[0] * f[0] + f[2] * f[2])
+        if (fLen < 1e-3f) return null
+        val fx = f[0] / fLen; val fz = f[2] / fLen
+        // Right = forward turned 90° clockwise seen from above (+Y up): (fx, fz) → (-fz, fx).
+        val rx = -fz; val rz = fx
+        return worldDeltaToEnu(anchorWorld, rx * rightM + fx * forwardM, 0f, rz * rightM + fz * forwardM)
+    }
+
     /** Distance from the camera to world point ([x], [y], [z]). */
     fun distance(cam: CameraState, x: Float, y: Float, z: Float): Float {
         val dx = x - cam.px; val dy = y - cam.py; val dz = z - cam.pz

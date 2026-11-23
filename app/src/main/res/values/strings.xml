@@ -265,4 +265,20 @@
     <string name="readiness_link_point_hint">Open a point and choose this model</string>
     <string name="readiness_fix_failed">Could not update the placement</string>
 
+    <!-- AR: move model -->
+    <string name="ar_move_model">Move model</string>
+    <string name="ar_move_title">Moving: %1$s</string>
+    <string name="ar_move_hint">Drag to move · two fingers: twist to turn, slide up/down to raise or lower</string>
+    <string name="ar_move_up">Up</string>
+    <string name="ar_move_down">Down</string>
+    <string name="ar_move_nudge_left">Nudge left</string>
+    <string name="ar_move_nudge_right">Nudge right</string>
+    <string name="ar_move_nudge_away">Nudge away from you</string>
+    <string name="ar_move_nudge_toward">Nudge toward you</string>
+    <string name="ar_move_nudge_step">Nudge step size</string>
+    <string name="ar_move_turn_left">Turn left</string>
+    <string name="ar_move_turn_right">Turn right</string>
+    <string name="ar_move_save">Save to point (otherwise this session only)</string>
+    <string name="ar_move_reset">Reset</string>
+    <string name="ar_move_done">Done</string>
 </resources>

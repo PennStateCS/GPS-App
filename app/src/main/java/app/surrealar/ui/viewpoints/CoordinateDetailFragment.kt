@@ -952,6 +952,11 @@ class CoordinateDetailFragment : Fragment() {
                 c.modelScale, c.modelYawDeg, c.modelPitchDeg, c.modelRollDeg,
                 c.modelVerticalOffsetM, c.modelOriginOffsetXM, c.modelOriginOffsetYM, c.modelOriginOffsetZM
             )?.let { lines += it }
+            // Saved AR move (Move model → Save to point): the model sits this far from the surveyed point.
+            if (c.modelMoveEastM != null || c.modelMoveNorthM != null || c.modelMoveUpM != null) {
+                lines += String.format(java.util.Locale.US, "AR move: E %+.2f m · N %+.2f m · Up %+.2f m",
+                    c.modelMoveEastM ?: 0.0, c.modelMoveNorthM ?: 0.0, c.modelMoveUpM ?: 0.0)
+            }
         }
         textModelPlacement?.text = lines.joinToString("\n")
         textModelPlacement?.visibility = View.VISIBLE
@@ -1131,7 +1136,8 @@ class CoordinateDetailFragment : Fragment() {
             icon = "", modelId = null, iconKey = null, updatedAt = System.currentTimeMillis(),
             modelScale = null, modelYawDeg = null, modelPitchDeg = null, modelRollDeg = null,
             modelVerticalOffsetM = null,
-            modelOriginOffsetXM = null, modelOriginOffsetYM = null, modelOriginOffsetZM = null
+            modelOriginOffsetXM = null, modelOriginOffsetYM = null, modelOriginOffsetZM = null,
+            modelMoveEastM = null, modelMoveNorthM = null, modelMoveUpM = null,
         )
         val priorModelId = coord.modelId
         viewModel.updateCoordinate(updated) { result ->
