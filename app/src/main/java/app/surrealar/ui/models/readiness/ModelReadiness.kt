@@ -6,7 +6,7 @@ import java.io.File
 /*
  * Model readiness for AR: "is this model ready to show at its surveyed point?"
  *
- * Contract shared by the evaluator, the glTF reader and the UI. The evaluator places the model the way
+ * Contract shared by the evaluator, the glTF reader (geokit-models, via GeokitGltfFactsSource) and the UI. The evaluator places the model the way
  * AR does (ui/openinar/ModelBounds + ModelPlacementOrigin: CENTER is the default preset) so every
  * finding describes what the user will actually see outside, not an abstract origin rule.
  */
@@ -118,7 +118,7 @@ interface ReadinessRules {
     fun evaluate(facts: ModelFacts): ReadinessReport
 }
 
-/** Reads [GltfFacts] from a .glb or .gltf file. Implemented in GltfFactsReader.kt. Never throws. */
+/** Reads [GltfFacts] from a .glb or .gltf file. Implemented by GeokitGltfFactsSource (geokit-models). Never throws. */
 interface GltfFactsSource {
     fun read(file: File): GltfFacts
 }

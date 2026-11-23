@@ -1,6 +1,5 @@
-package app.surrealar.ui.models.readiness
+package io.github.pennstatecs.geokit.models.gltf
 
-import android.util.Base64
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -8,30 +7,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Base64
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34], application = android.app.Application::class)
 class GltfFactsReaderTest {
 
     @get:Rule val tmp = TemporaryFolder()
 
-    private val eps = 1e-4f
+    private val eps = 1e-4
 
     private fun fixture(name: String): File {
         val url = javaClass.classLoader!!.getResource("models/$name") ?: error("missing fixture $name")
         return File(url.toURI())
     }
 
-    private fun assertBounds(b: Bounds?, minX: Float, minY: Float, minZ: Float, maxX: Float, maxY: Float, maxZ: Float) {
+    private fun assertBounds(b: GltfBounds?, minX: Double, minY: Double, minZ: Double, maxX: Double, maxY: Double, maxZ: Double) {
         assertNotNull("bounds", b)
-        assertEquals(minX, b!!.min.x, eps); assertEquals(minY, b.min.y, eps); assertEquals(minZ, b.min.z, eps)
-        assertEquals(maxX, b.max.x, eps); assertEquals(maxY, b.max.y, eps); assertEquals(maxZ, b.max.z, eps)
+        assertEquals(minX, b!!.minX, eps); assertEquals(minY, b.minY, eps); assertEquals(minZ, b.minZ, eps)
+        assertEquals(maxX, b.maxX, eps); assertEquals(maxY, b.maxY, eps); assertEquals(maxZ, b.maxZ, eps)
     }
 
     // ------------------------------------------------------------ builders
@@ -76,7 +71,7 @@ class GltfFactsReaderTest {
         val f = GltfFactsReader.read(fixture("surreal-test-cube-1m.glb"))
         assertNull(f.parseError)
         assertEquals(122276L, f.fileSizeBytes)
-        assertBounds(f.bounds, -0.5f, 0f, -0.5f, 0.5f, 1f, 0.5f)
+        assertBounds(f.bounds, -0.5, 0.0, -0.5, 0.5, 1.0, 0.5)
         assertEquals(12L, f.triangleCount)
         assertEquals(24L, f.vertexCount)
         assertEquals(1, f.meshCount)
@@ -108,7 +103,7 @@ class GltfFactsReaderTest {
         val f = GltfFactsReader.read(write("instanced.glb", glb(json, pngHeader(300, 200))))
         assertNull(f.parseError)
         // node 0: x 8..12, y 0..2, z 3..7; node 1: x -1..1, y 0..1, z -21..-19
-        assertBounds(f.bounds, -1f, 0f, -21f, 12f, 2f, 7f)
+        assertBounds(f.bounds, -1.0, 0.0, -21.0, 12.0, 2.0, 7.0)
         assertEquals(4L, f.triangleCount)
         assertEquals(8L, f.vertexCount)
         assertEquals(1, f.meshCount)
@@ -127,7 +122,7 @@ class GltfFactsReaderTest {
             "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]}"""
         val f = GltfFactsReader.read(write("rotated.glb", glb(json)))
         assertNull(f.parseError)
-        assertBounds(f.bounds, -2f, 0f, 0f, 0f, 1f, 3f)
+        assertBounds(f.bounds, -2.0, 0.0, 0.0, 0.0, 1.0, 3.0)
         assertEquals(1L, f.triangleCount)   // non-indexed: 3 positions / 3
         assertEquals(0, f.textureCount)
         assertEquals(0, f.maxTextureSidePx)
@@ -144,7 +139,7 @@ class GltfFactsReaderTest {
             "buffers":[{"uri":"geo.bin","byteLength":100},{"uri":"../escape.bin","byteLength":4}]}"""
         val f = GltfFactsReader.read(write("scene.gltf", json))
         assertNull(f.parseError)
-        assertBounds(f.bounds, -1f, 0f, -1f, 1f, 1f, 1f)
+        assertBounds(f.bounds, -1.0, 0.0, -1.0, 1.0, 1.0, 1.0)
         assertEquals(listOf("EXT_made_up"), f.extensionsRequired)
         assertEquals(listOf("EXT_made_up", "KHR_materials_unlit"), f.extensionsUsed)
         assertEquals(listOf("geo.bin", "../escape.bin (outside the model's folder)", "gone.png"), f.missingResources)
@@ -154,7 +149,7 @@ class GltfFactsReaderTest {
 
     @Test
     fun `data uri image size is read`() {
-        val b64 = Base64.encodeToString(pngHeader(4096, 512), Base64.NO_WRAP)
+        val b64 = Base64.getEncoder().encodeToString(pngHeader(4096, 512))
         val json = """{"asset":{"version":"2.0"},"images":[{"uri":"data:image/png;base64,$b64"}]}"""
         val f = GltfFactsReader.read(write("datauri.gltf", json))
         assertNull(f.parseError)
