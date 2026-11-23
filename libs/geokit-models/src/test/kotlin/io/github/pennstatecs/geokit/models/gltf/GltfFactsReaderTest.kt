@@ -176,4 +176,56 @@ class GltfFactsReaderTest {
         }
         assertNotNull(GltfFactsReader.read(File(tmp.root, "does-not-exist.glb")).parseError)
     }
+
+    private fun setInt(b: ByteArray, at: Int, v: Int) = b.also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(at, v) }
+
+    @Test
+    fun `malformed GLB headers and chunk lengths set parseError`() {
+        val good = glb("""{"asset":{"version":"2.0"}}""", ByteArray(8))
+        val jsonLen = GlbContainerLen.of(good)
+        val binLenAt = 20 + jsonLen
+        val cases = mapOf(
+            "declared-too-long.glb" to setInt(good.copyOf(), 8, good.size + 4),
+            "declared-negative.glb" to setInt(good.copyOf(), 8, -1),
+            "declared-tiny.glb" to setInt(good.copyOf(), 8, 8),
+            "json-past-declared.glb" to setInt(good.copyOf(), 8, 24),
+            "json-negative.glb" to setInt(good.copyOf(), 12, -4),
+            "json-huge.glb" to setInt(good.copyOf(), 12, Int.MAX_VALUE),
+            "bin-past-end.glb" to setInt(good.copyOf(), binLenAt, 64),
+            "bin-negative.glb" to setInt(good.copyOf(), binLenAt, -8),
+        )
+        for ((name, bytes) in cases) {
+            val f = GltfFactsReader.read(write(name, bytes))
+            assertNotNull("$name should fail", f.parseError)
+        }
+    }
+
+    @Test
+    fun `bufferView outside the BIN chunk or with huge offsets is not read`() {
+        for (bv in listOf(
+            """{"buffer":0,"byteOffset":0,"byteLength":64}""",                    // longer than BIN
+            """{"buffer":0,"byteOffset":32,"byteLength":4}""",                    // starts past BIN
+            """{"buffer":0,"byteOffset":-4,"byteLength":4}""",
+            """{"buffer":0,"byteOffset":9223372036854775807,"byteLength":33}""",
+            """{"buffer":0,"byteOffset":4,"byteLength":9223372036854775807}""",
+        )) {
+            val json = """{"asset":{"version":"2.0"},"images":[{"bufferView":0,"mimeType":"image/png"}],
+                "bufferViews":[$bv],"buffers":[{"byteLength":36}]}"""
+            val f = GltfFactsReader.read(write("img.glb", glb(json, pngHeader(300, 200))))
+            assertNull("$bv: ${f.parseError}", f.parseError)
+            assertNull("$bv must not be sized", f.maxTextureSidePx)
+        }
+        // A data: URI buffer with an offset near Long.MAX_VALUE does not overflow.
+        val b64 = Base64.getEncoder().encodeToString(pngHeader(10, 10))
+        val json = """{"asset":{"version":"2.0"},"images":[{"bufferView":0}],
+            "bufferViews":[{"buffer":0,"byteOffset":9223372036854775000,"byteLength":33}],
+            "buffers":[{"byteLength":33,"uri":"data:application/octet-stream;base64,$b64"}]}"""
+        val f = GltfFactsReader.read(write("datauri-huge.gltf", json))
+        assertNull(f.parseError)
+        assertNull(f.maxTextureSidePx)
+    }
+
+    private object GlbContainerLen {
+        fun of(glb: ByteArray): Int = ByteBuffer.wrap(glb).order(ByteOrder.LITTLE_ENDIAN).getInt(12)
+    }
 }

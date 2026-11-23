@@ -57,18 +57,22 @@ public object GltfFactsReader {
                 if (declared > size) return failed(size, "File is truncated")
                 val jsonLen = GlbContainer.unsigned(head.firstChunkLength)
                 if (head.firstChunkType != GlbContainer.CHUNK_JSON) return failed(size, "GLB has no JSON chunk")
-                if (jsonLen <= 0 || jsonLen > MAX_JSON_BYTES || 20 + jsonLen > size) {
+                // Lengths are unsigned Longs: no Int overflow. Chunks must end inside the declared
+                // length (bytes after it are ignored).
+                if (declared < 20) return failed(size, "GLB header is invalid")
+                if (jsonLen <= 0 || jsonLen > MAX_JSON_BYTES || 20 + jsonLen > declared) {
                     return failed(size, "GLB JSON chunk is invalid")
                 }
                 val jsonBytes = ByteArray(jsonLen.toInt()).also { raf.readFully(it) }
                 json = JSONObject(String(jsonBytes, Charsets.UTF_8).trimEnd(' ', '\u0000'))
                 val binHeaderAt = 20 + ((jsonLen + 3) / 4) * 4
-                if (binHeaderAt + 8 <= size) {
+                if (binHeaderAt + 8 <= declared) {
                     raf.seek(binHeaderAt)
                     val ch = ByteArray(8).also { raf.readFully(it) }
                     if (GlbContainer.readIntLE(ch, 4) == GlbContainer.CHUNK_BIN) {
                         val len = GlbContainer.unsigned(GlbContainer.readIntLE(ch, 0))
-                        bin = GlbBin(binHeaderAt + 8, minOf(len, size - binHeaderAt - 8))
+                        if (len > declared - binHeaderAt - 8) return failed(size, "GLB BIN chunk is invalid")
+                        bin = GlbBin(binHeaderAt + 8, len)
                     }
                 }
             }
@@ -133,22 +137,28 @@ public object GltfFactsReader {
             }
         }
 
-        /** Reads up to [max] bytes of a bufferView; null when its buffer is unavailable. */
+        /**
+         * Reads up to [max] bytes of a bufferView; null when its buffer is unavailable or the view does
+         * not lie inside it (embedded BIN) / fit an Int (data: URI).
+         */
         fun bufferViewPrefix(index: Int, max: Int): ByteArray? {
             val bv = bufferViews.optJSONObject(index) ?: return null
             val bufIndex = bv.optInt("buffer", -1)
             val buf = buffers.optJSONObject(bufIndex) ?: return null
             val off = bv.optLong("byteOffset", 0L)
-            val len = minOf(bv.optLong("byteLength", 0L), max.toLong())
+            val fullLen = bv.optLong("byteLength", 0L)
+            val len = minOf(fullLen, max.toLong())
             if (off < 0 || len <= 0) return null
             val uri = buf.optString("uri", "")
             return when {
                 uri.isEmpty() -> {
                     val b = bin ?: return null
-                    if (off >= b.length) return null
-                    readAt(file, b.offset + off, minOf(len, b.length - off).toInt())
+                    // The whole view must lie inside the BIN chunk (no clamping of a bad view).
+                    if (off > b.length || fullLen > b.length - off) return null
+                    readAt(file, b.offset + off, len.toInt())
                 }
                 uri.startsWith("data:") -> {
+                    if (off > Int.MAX_VALUE - len) return null
                     val all = decodeDataUri(uri, (off + len).toInt()) ?: return null
                     if (off >= all.size) null else all.copyOfRange(off.toInt(), minOf(all.size.toLong(), off + len).toInt())
                 }

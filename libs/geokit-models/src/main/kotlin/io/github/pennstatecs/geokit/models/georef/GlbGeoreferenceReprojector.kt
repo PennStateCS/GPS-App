@@ -21,11 +21,17 @@ import java.nio.ByteOrder
  * every model 180° about Y, which maps model +Z to world north and model −X to world east. The
  * rewritten file carries `asset.extras.`[REPROJECTION_MARKER_KEY] = [REPROJECTION_MARKER_VALUE].
  *
+ * Two phases: every POSITION accessor is validated against its bufferView, buffer and the BIN chunk
+ * (with overflow-safe `Long` arithmetic) before any vertex is transformed, and the output is a new
+ * array. The input array is never modified.
+ *
  * Pure: bytes in, result out. Never logs and never throws (failures are [Result.Failed]).
  */
 public object GlbGeoreferenceReprojector {
 
     private const val COMPONENT_TYPE_FLOAT = 5126
+    /** Bytes in one float32 VEC3 element. */
+    private const val VEC3_BYTES = 12L
 
     /** Files larger than this are not reprojected (the whole file is processed in memory). */
     public const val MAX_FILE_BYTES: Int = 128 * 1024 * 1024
@@ -44,8 +50,11 @@ public object GlbGeoreferenceReprojector {
     public sealed class Result {
         public open val precision: Precision? get() = null
 
-        /** Not a GLB 2.0 container, or it has no JSON or no BIN chunk. */
+        /** Not a GLB 2.0 container (too short, wrong magic or version), or it has no BIN chunk. */
         public object NotGlb : Result()
+
+        /** A GLB 2.0 header, but the container itself is malformed (see [GlbContainer.Problem]). */
+        public data class Malformed(val problem: GlbContainer.Problem) : Result()
 
         /** A GLB, but its first POSITION accessor does not describe a plausible WGS84 origin. */
         public data class NotGeoreferenced(val reason: Reason) : Result() {
@@ -55,12 +64,25 @@ public object GlbGeoreferenceReprojector {
             }
         }
 
-        /** Plausibly georeferenced, but a POSITION accessor has a layout this rewriter does not handle. */
+        /**
+         * Plausibly georeferenced, but a POSITION accessor has a layout this rewriter does not handle
+         * or that is inconsistent. Nothing was written.
+         */
         public data class Rejected(val reason: Reason, override val precision: Precision) : Result() {
             public enum class Reason {
                 NOT_FLOAT, NOT_VEC3, BAD_BUFFER_VIEW, BAD_BUFFER, EXTERNAL_BUFFER, NO_VERTICES,
-                /** A vertex lies past the end of the file. */
+                /** The accessor's elements run past its bufferView, or the bufferView past the buffer/BIN. */
                 OUT_OF_BOUNDS,
+                /** POSITION index is not an accessor. */
+                BAD_ACCESSOR,
+                /** Sparse accessor (substitutions are not reprojected). */
+                SPARSE,
+                /** `normalized: true` (not valid for float positions). */
+                NORMALIZED,
+                /** byteStride below 12 bytes or not a multiple of 4. */
+                BAD_STRIDE,
+                /** Two POSITION accessors partly share vertex bytes (would be transformed twice). */
+                OVERLAPPING,
             }
         }
 
@@ -83,7 +105,7 @@ public object GlbGeoreferenceReprojector {
 
     /**
      * Reprojects [glb] if it is a plausibly georeferenced GLB with embedded float VEC3 positions.
-     * [glb] is used as scratch space (vertices are rewritten in place) and must not be reused.
+     * [glb] is not modified; a [Result.Reprojected] carries a new array.
      */
     public fun reproject(glb: ByteArray): Result {
         var precision: Precision? = null
@@ -94,8 +116,20 @@ public object GlbGeoreferenceReprojector {
         }
     }
 
+    /** One validated POSITION accessor: element byte offsets relative to the BIN chunk content. */
+    private class Layout(val accessor: JSONObject, val start: Long, val stride: Long, val count: Int) {
+        val end: Long get() = start + (count - 1).toLong() * stride + VEC3_BYTES
+        fun sameElementsAs(o: Layout) = start == o.start && stride == o.stride && count == o.count
+    }
+
     private fun reprojectInternal(bytes: ByteArray, onPrecision: (Precision) -> Unit): Result {
-        val glb = GlbContainer.parse(bytes) ?: return Result.NotGlb
+        when (val problem = GlbContainer.check(bytes)) {
+            null -> Unit
+            GlbContainer.Problem.TOO_SHORT, GlbContainer.Problem.BAD_MAGIC, GlbContainer.Problem.BAD_VERSION ->
+                return Result.NotGlb
+            else -> return Result.Malformed(problem)
+        }
+        val glb = GlbContainer.parse(bytes) ?: return Result.NotGlb   // valid: check() passed
         val jsonChunk = glb.json ?: return Result.NotGlb
         val binChunk = glb.bin ?: return Result.NotGlb
 
@@ -136,9 +170,6 @@ public object GlbGeoreferenceReprojector {
 
         GeoreferenceRules.reject(lon0, lat0, alt0, span)?.let { return not(it.toReason()) }
 
-        // WGS84 local ENU about the origin (ellipsoidal, Double). Convert to float only when writing.
-        val enu = LocalEnu(lat0, lon0, alt0)
-
         // Property of the source file: its vertices are float32 degrees, so their resolution near the
         // origin is one float ulp.
         val precision = Precision(
@@ -148,57 +179,111 @@ public object GlbGeoreferenceReprojector {
         onPrecision(precision)
         fun rejected(r: Result.Rejected.Reason) = Result.Rejected(r, precision)
 
-        // Transform each unique POSITION accessor's vertices in the BIN chunk.
-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        // ── Phase 1: validate every POSITION accessor. Nothing is transformed or written yet. ──
+        val binLength = binChunk.length.toLong()
+        val layouts = ArrayList<Layout>(posAccessorIdx.size)
         for (idx in posAccessorIdx) {
-            val acc = accessors.getJSONObject(idx)
+            val acc = accessors.optJSONObject(idx) ?: return rejected(Result.Rejected.Reason.BAD_ACCESSOR)
+            if (acc.has("sparse")) return rejected(Result.Rejected.Reason.SPARSE)
             if (acc.optInt("componentType", -1) != COMPONENT_TYPE_FLOAT) return rejected(Result.Rejected.Reason.NOT_FLOAT)
             if (acc.optString("type") != "VEC3") return rejected(Result.Rejected.Reason.NOT_VEC3)
-            val bvIdx = acc.optInt("bufferView", -1)
-            if (bvIdx < 0 || bvIdx >= bufferViews.length()) return rejected(Result.Rejected.Reason.BAD_BUFFER_VIEW)
-            val bv = bufferViews.getJSONObject(bvIdx)
-            // Must reference the embedded BIN buffer (no uri)
-            val bufIdx = bv.optInt("buffer", -1)
-            if (bufIdx < 0 || bufIdx >= buffers.length()) return rejected(Result.Rejected.Reason.BAD_BUFFER)
-            if (buffers.getJSONObject(bufIdx).has("uri")) return rejected(Result.Rejected.Reason.EXTERNAL_BUFFER)
+            if (acc.optBoolean("normalized", false)) return rejected(Result.Rejected.Reason.NORMALIZED)
 
-            val count = acc.optInt("count", 0)
+            val bvIdx = acc.optLong("bufferView", -1L)
+            if (bvIdx < 0 || bvIdx >= bufferViews.length()) return rejected(Result.Rejected.Reason.BAD_BUFFER_VIEW)
+            val bv = bufferViews.optJSONObject(bvIdx.toInt()) ?: return rejected(Result.Rejected.Reason.BAD_BUFFER_VIEW)
+            // Compressed bufferViews (meshopt) hold encoded data, not vertices.
+            val bvExt = bv.optJSONObject("extensions")
+            if (bvExt != null && (bvExt.has("EXT_meshopt_compression") || bvExt.has("KHR_meshopt_compression"))) {
+                return rejected(Result.Rejected.Reason.BAD_BUFFER_VIEW)
+            }
+
+            // Must reference the embedded BIN buffer: buffer 0 with no uri.
+            val bufIdx = bv.optLong("buffer", -1L)
+            if (bufIdx < 0 || bufIdx >= buffers.length()) return rejected(Result.Rejected.Reason.BAD_BUFFER)
+            val buffer = buffers.optJSONObject(bufIdx.toInt()) ?: return rejected(Result.Rejected.Reason.BAD_BUFFER)
+            if (buffer.has("uri")) return rejected(Result.Rejected.Reason.EXTERNAL_BUFFER)
+            if (bufIdx != 0L) return rejected(Result.Rejected.Reason.BAD_BUFFER)
+            // The BIN chunk may carry up to 3 padding bytes past the buffer's byteLength.
+            val bufLength = buffer.optLong("byteLength", binLength)
+            if (bufLength < 0 || bufLength > binLength) return rejected(Result.Rejected.Reason.BAD_BUFFER)
+
+            val count = acc.optLong("count", 0L)
             if (count <= 0) return rejected(Result.Rejected.Reason.NO_VERTICES)
-            val accByteOffset = acc.optInt("byteOffset", 0)
-            val bvByteOffset = bv.optInt("byteOffset", 0)
-            val stride = bv.optInt("byteStride", 12).let { if (it == 0) 12 else it }
-            val base = binChunk.contentStart + bvByteOffset + accByteOffset
+            if (count > Int.MAX_VALUE) return rejected(Result.Rejected.Reason.OUT_OF_BOUNDS)
+
+            val bvOffset = bv.optLong("byteOffset", 0L)
+            val bvLength = bv.optLong("byteLength", -1L)
+            if (bvOffset < 0 || bvLength < 0 || bvOffset > bufLength || bvLength > bufLength - bvOffset) {
+                return rejected(Result.Rejected.Reason.BAD_BUFFER_VIEW)
+            }
+            val stride = bv.optLong("byteStride", VEC3_BYTES).let { if (it == 0L) VEC3_BYTES else it }
+            if (stride < VEC3_BYTES || stride % 4 != 0L) return rejected(Result.Rejected.Reason.BAD_STRIDE)
+
+            val accOffset = acc.optLong("byteOffset", 0L)
+            if (accOffset < 0 || accOffset > bvLength) return rejected(Result.Rejected.Reason.OUT_OF_BOUNDS)
+            // byteOffset + (count − 1)·stride + 12 ≤ bufferView.byteLength, without overflow.
+            val lastStart = try {
+                Math.addExact(accOffset, Math.multiplyExact(count - 1, stride))
+            } catch (overflow: ArithmeticException) {
+                return rejected(Result.Rejected.Reason.OUT_OF_BOUNDS)
+            }
+            if (lastStart > bvLength - VEC3_BYTES) return rejected(Result.Rejected.Reason.OUT_OF_BOUNDS)
+
+            layouts += Layout(acc, bvOffset + accOffset, stride, count.toInt())
+        }
+
+        // Accessors that share exactly the same elements are transformed once; any other overlap of
+        // element bytes would transform some vertices twice.
+        val aliasOf = IntArray(layouts.size) { it }
+        for (i in layouts.indices) for (j in 0 until i) {
+            val a = layouts[j]; val b = layouts[i]
+            if (a.end <= b.start || b.end <= a.start) continue
+            if (a.sameElementsAs(b)) { if (aliasOf[i] == i) aliasOf[i] = aliasOf[j]; continue }
+            if (a.stride == b.stride) {
+                // Same stride: element windows [0,12) and [d,d+12) modulo the stride must be disjoint.
+                val d = Math.floorMod(b.start - a.start, a.stride)
+                if (d >= VEC3_BYTES && d + VEC3_BYTES <= a.stride) continue
+            }
+            return rejected(Result.Rejected.Reason.OVERLAPPING)
+        }
+
+        // ── Phase 2: transform into separately owned arrays, then build a new GLB. ──
+        // WGS84 local ENU about the origin (ellipsoidal, Double). Convert to float only when writing.
+        val enu = LocalEnu(lat0, lon0, alt0)
+        val src = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val binStart = binChunk.contentStart.toLong()
+        val transformed = arrayOfNulls<FloatArray>(layouts.size)
+        for ((li, layout) in layouts.withIndex()) {
+            val out = transformed[aliasOf[li]] ?: FloatArray(layout.count * 3).also { v ->
+                for (i in 0 until layout.count) {
+                    val off = (binStart + layout.start + i.toLong() * layout.stride).toInt()
+                    val x = src.getFloat(off).toDouble()
+                    val y = src.getFloat(off + 4).toDouble()
+                    val z = src.getFloat(off + 8).toDouble()
+
+                    // Degrees → local ENU metres about the origin (lat = −Z, lon = X, h = Y), written in
+                    // the renderer's model convention (+Z = north). Both horizontal axes flip relative to
+                    // east→+X / north→−Z: a rotation, not a mirror.
+                    val p = enu.toEnu(-z, x, y)
+                    v[i * 3] = (-p[0]).toFloat()       // east  → −X
+                    v[i * 3 + 1] = p[2].toFloat()      // up    → +Y
+                    v[i * 3 + 2] = p[1].toFloat()      // north → +Z
+                }
+            }
+            transformed[li] = out
 
             var nMinX = Double.MAX_VALUE; var nMinY = Double.MAX_VALUE; var nMinZ = Double.MAX_VALUE
             var nMaxX = -Double.MAX_VALUE; var nMaxY = -Double.MAX_VALUE; var nMaxZ = -Double.MAX_VALUE
-
-            for (i in 0 until count) {
-                val off = base + i * stride
-                if (off + 12 > bytes.size) return rejected(Result.Rejected.Reason.OUT_OF_BOUNDS)
-                val x = buf.getFloat(off).toDouble()
-                val y = buf.getFloat(off + 4).toDouble()
-                val z = buf.getFloat(off + 8).toDouble()
-
-                // Degrees → local ENU metres about the origin (lat = −Z, lon = X, h = Y), written in
-                // the renderer's model convention (+Z = north). Both horizontal axes flip relative to
-                // east→+X / north→−Z: a rotation, not a mirror.
-                val p = enu.toEnu(-z, x, y)
-                val nx = (-p[0]).toFloat()       // east  → −X
-                val ny = p[2].toFloat()          // up    → +Y
-                val nz = p[1].toFloat()          // north → +Z
-
-                buf.putFloat(off, nx)
-                buf.putFloat(off + 4, ny)
-                buf.putFloat(off + 8, nz)
-
+            for (i in 0 until layout.count) {
+                val nx = out[i * 3]; val ny = out[i * 3 + 1]; val nz = out[i * 3 + 2]
                 if (nx < nMinX) nMinX = nx.toDouble(); if (nx > nMaxX) nMaxX = nx.toDouble()
                 if (ny < nMinY) nMinY = ny.toDouble(); if (ny > nMaxY) nMaxY = ny.toDouble()
                 if (nz < nMinZ) nMinZ = nz.toDouble(); if (nz > nMaxZ) nMaxZ = nz.toDouble()
             }
-
             // Update accessor min/max so bounding-box framing is correct.
-            acc.put("min", JSONArray(listOf(nMinX, nMinY, nMinZ)))
-            acc.put("max", JSONArray(listOf(nMaxX, nMaxY, nMaxZ)))
+            layout.accessor.put("min", JSONArray(listOf(nMinX, nMinY, nMinZ)))
+            layout.accessor.put("max", JSONArray(listOf(nMaxX, nMaxY, nMaxZ)))
         }
 
         // Mark the file so a later version can tell which convention it was rewritten with. Files
@@ -207,11 +292,24 @@ public object GlbGeoreferenceReprojector {
         val extras = asset.optJSONObject("extras") ?: JSONObject().also { asset.put("extras", it) }
         extras.put(REPROJECTION_MARKER_KEY, REPROJECTION_MARKER_VALUE)
 
-        // Re-serialise: JSON length changes (min/max edited), so rebuild the container.
-        val out = glb.rewriteJson(root.toString().toByteArray(Charsets.UTF_8))
+        // Re-serialise: JSON length changes (min/max edited), so rebuild the container (a new array),
+        // then write the transformed vertices into its BIN chunk.
+        val outBytes = glb.rewriteJson(root.toString().toByteArray(Charsets.UTF_8))
+        val outBin = GlbContainer.parse(outBytes)?.bin ?: error("Rewritten GLB has no BIN chunk")
+        val dst = ByteBuffer.wrap(outBytes).order(ByteOrder.LITTLE_ENDIAN)
+        for ((li, layout) in layouts.withIndex()) {
+            if (aliasOf[li] != li) continue
+            val v = transformed[li]!!
+            for (i in 0 until layout.count) {
+                val off = (outBin.contentStart.toLong() + layout.start + i.toLong() * layout.stride).toInt()
+                dst.putFloat(off, v[i * 3])
+                dst.putFloat(off + 4, v[i * 3 + 1])
+                dst.putFloat(off + 8, v[i * 3 + 2])
+            }
+        }
 
         return Result.Reprojected(
-            bytes = out,
+            bytes = outBytes,
             origin = GeoreferencedOrigin(latitudeDeg = lat0, longitudeDeg = lon0, heightM = alt0),
             confidence = GeoreferenceRules.confidence(span, withLowBranch = false),
             precision = precision,
