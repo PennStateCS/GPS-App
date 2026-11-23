@@ -2819,7 +2819,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 coordWithModel = item
             )
         }
-        if (newItems == geoItems) return   // nothing changed — avoid spurious anchor rebuild
+        if (newItems == geoItems) {
+            // Anchors unchanged (GeoItem equality covers position, colour and model file only). A
+            // placement edit (scale, rotation, origin, offsets) still has to reach the rendered model.
+            items.forEach { item ->
+                if (item.modelFilePath != null) filamentRenderer?.updatePlacement(item.coordinate.id, item.placement)
+            }
+            return   // nothing else changed — avoid spurious anchor rebuild
+        }
 
         // Logged only for real changes (after the no-change return), so Room's repeat emissions are silent.
         DiagnosticsLogger.i(DIAG,
@@ -2830,6 +2837,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (geoAnchorsCreated) DiagnosticsLogger.i(DIAG,
             "Anchors invalidated reason=coordinates_changed newCount=${newItems.size} prevAnchors=${geoAnchors.size}")
         geoAnchorsCreated = false
+
+        // Free the cached GLBs of coordinates that were deleted or lost their model link.
+        filamentRenderer?.retainModels(items.filter { it.modelFilePath != null }.mapTo(HashSet()) { it.coordinate.id })
 
         // Kick off Filament GLB loading for every model-linked coordinate. preload() must run on the
         // main thread (Filament requirement), but the per-file existence/size stat is filesystem I/O —
@@ -2857,6 +2867,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     "altitude=$altState coordScale=$arModelScale placement=${item.placement}" }
                 when {
                     !exists -> {
+                        // Relinked to a file that is missing: don't keep showing the previous model.
+                        filamentRenderer?.forgetModel(coord.id)
                         ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
                             exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "missing_file")
                         DiagnosticsLogger.w(DIAG,

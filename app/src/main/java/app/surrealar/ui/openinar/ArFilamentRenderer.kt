@@ -113,8 +113,13 @@ class ArFilamentRenderer {
          * Computed once when the asset is first added to the scene.
          */
         var correctionMatrix: FloatArray? = null,
-        /** Per-coordinate placement (scale/rotation/offset) folded into [correctionMatrix]. */
-        val placement: ModelPlacement = ModelPlacement(),
+        /**
+         * Per-coordinate placement (scale/rotation/offset) folded into [correctionMatrix]. Replaced by
+         * [updatePlacement]; the matrix is then recomputed on the next scene add.
+         */
+        var placement: ModelPlacement = ModelPlacement(),
+        /** The GLB this asset was loaded from. A different file for the same key (relink) reloads. */
+        val filePath: String = "",
         /**
          * True once the asset has been in the scene at least once. A hidden asset
          * (addedToScene=false) that was previously shown has already finished its upload and
@@ -168,6 +173,61 @@ class ArFilamentRenderer {
 
     private fun loaderFor(key: String): ResourceLoader =
         if (key.startsWith(TEST_GRID_KEY_PREFIX)) testResourceLoader else resourceLoader
+
+    /** File each in-flight real-model load was started with (main thread). */
+    private val loadingPaths = HashMap<String, String>()
+    /** Latest preload request that arrived while that key was loading: file, placement, scope (main thread). */
+    private val pendingPreloads = HashMap<String, Triple<String, ModelPlacement, CoroutineScope>>()
+
+    /**
+     * Applies a new per-coordinate placement (scale / yaw / pitch / roll / origin / offsets) to an
+     * already-loaded model without reloading it. The correction matrix was computed when the model was
+     * added to the scene, so the model is taken out of the scene here and the normal re-add path (the
+     * same one hide/unhide uses) recomputes it from the new placement on the next frame. Main thread.
+     */
+    fun updatePlacement(key: String, placement: ModelPlacement) {
+        val cached = anchorAssets[key] ?: return
+        if (cached.placement == placement) return
+        cached.placement = placement
+        if (cached.addedToScene) {
+            runCatching { scene.removeEntities(cached.asset.entities) }
+            cached.addedToScene = false
+        }
+        DiagnosticsLogger.i(DIAG, "Model placement updated key=$key")
+    }
+
+    /**
+     * Drops the cached model for [key] (a coordinate that was deleted, unlinked, or relinked to another
+     * file) and frees its Filament asset. An asset still uploading can't be destroyed mid-load
+     * (PreconditionPanic), so the real-model loader's pending loads are cancelled first and restarted for
+     * the other assets that haven't finished — the same pattern used for test-grid assets. Main thread.
+     */
+    fun forgetModel(key: String) {
+        if (isTestKey(key)) return
+        pendingPreloads.remove(key)
+        val cached = anchorAssets.remove(key) ?: return
+        val stillLoading = !cached.everAddedToScene
+        if (stillLoading) resourceLoader.asyncCancelLoad()
+        if (cached.addedToScene) runCatching { scene.removeEntities(cached.asset.entities) }
+        runCatching { assetLoader.destroyAsset(cached.asset) }
+            .onFailure { DiagnosticsLogger.w(DIAG, "Model asset destroy failed key=$key", it) }
+        loadStartMs.remove(key)
+        if (stillLoading) {
+            for ((k, c) in anchorAssets) {
+                if (!isTestKey(k) && !c.everAddedToScene) {
+                    runCatching { resourceLoader.asyncBeginLoad(c.asset) }
+                        .onFailure { DiagnosticsLogger.w(DIAG, "Model asset load restart failed key=$k", it) }
+                }
+            }
+        }
+        DiagnosticsLogger.i(DIAG, "Model removed from AR cache key=$key")
+    }
+
+    /** Forgets every cached real model whose key is not in [keys] (deleted or unlinked coordinates). */
+    fun retainModels(keys: Set<String>) {
+        anchorAssets.keys.filter { !isTestKey(it) && it !in keys }.forEach(::forgetModel)
+        pendingPreloads.keys.retainAll(keys)
+    }
 
     /** One [CachedAsset] per anchor key (coordinate ID). */
     private val anchorAssets = mutableMapOf<String, CachedAsset>()
@@ -322,6 +382,12 @@ class ArFilamentRenderer {
     private fun settlePreload(key: String, ok: Boolean) {
         if (!isTestKey(key)) {
             if (!ok) loadStartMs.remove(key)
+            loadingPaths.remove(key)
+            // An edit or relink that arrived while this load ran: apply it now (placement update, or
+            // reload if the file changed). Skipped once the renderer is gone.
+            pendingPreloads.remove(key)?.let { (path, placement, scope) ->
+                if (initialized) preload(key, path, scope, placement)
+            }
             return
         }
         var summary: String? = null
@@ -352,14 +418,27 @@ class ArFilamentRenderer {
             }
             return
         }
-        if (anchorAssets.containsKey(key)) {
-            DevLog.d(TAG) { "preload($key) skipped — already in anchorAssets (state=${modelLoadState(key)})" }
-            return
+        anchorAssets[key]?.let { cached ->
+            when (if (isTestKey(key)) CachedModelAction.NONE
+                  else cachedModelAction(cached.filePath, cached.placement, filePath, placement)) {
+                CachedModelAction.NONE -> return
+                // Same file: no reload; the new placement must still reach the render transform.
+                CachedModelAction.UPDATE_PLACEMENT -> { updatePlacement(key, placement); return }
+                CachedModelAction.RELOAD -> {
+                    // Same coordinate, different model (relinked): the cached GLB is the old model.
+                    DiagnosticsLogger.i(DIAG, "Model relinked: reloading key=$key file=${File(filePath).name}")
+                    forgetModel(key)
+                }
+            }
         }
         if (!loadingKeys.add(key)) {
-            DevLog.d(TAG) { "preload($key) skipped — already in loadingKeys" }
+            // A load for this key is in flight; it was started with the placement/file known then.
+            // Re-apply this request when it finishes so an edit or relink made meanwhile isn't lost.
+            if (!isTestKey(key)) pendingPreloads[key] = Triple(filePath, placement, scope)
+            DevLog.d(TAG) { "preload($key) deferred — already in loadingKeys" }
             return
         }
+        loadingPaths[key] = filePath
         val testKey = isTestKey(key)
         val fileName = File(filePath).name
         if (testKey) {
@@ -413,8 +492,9 @@ class ArFilamentRenderer {
                         }
                         loaderFor(key).asyncBeginLoad(asset)
                         asset.releaseSourceData()
-                        anchorAssets[key] = CachedAsset(asset, placement = placement)
+                        anchorAssets[key] = CachedAsset(asset, placement = placement, filePath = filePath)
                         loadingKeys.remove(key)
+                        loadingPaths.remove(key)
                         // The GLB is now parsed and its GPU upload is queued — the raw file bytes are no
                         // longer needed. Drop them (under the same mutex that guards the cache) so a long
                         // session with many/large models doesn't retain every file's bytes until destroy().
@@ -883,6 +963,8 @@ class ArFilamentRenderer {
         resourceLoader.asyncCancelLoad()
         testResourceLoader.asyncCancelLoad()
         loadingKeys.clear()
+        loadingPaths.clear()
+        pendingPreloads.clear()
         fileBytesCache.clear()
         loadStartMs.clear()
         stuckLogged.clear()
