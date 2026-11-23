@@ -110,8 +110,11 @@ the platform.
 ## Build and test
 
 ```
-.\gradlew.bat :geokit-receiver-emlid:test
+cd libs
+..\gradlew.bat :geokit-receiver-emlid:test     # without Android
 ```
+
+From the repository root: `.\gradlew.bat :libs:geokit-receiver-emlid:test`.
 
 ## Licence
 
