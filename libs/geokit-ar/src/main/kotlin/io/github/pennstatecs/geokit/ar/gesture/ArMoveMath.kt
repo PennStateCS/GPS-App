@@ -1,5 +1,6 @@
-package app.surrealar.ui.openinar
+package io.github.pennstatecs.geokit.ar.gesture
 
+import io.github.pennstatecs.geokit.ar.frame.ArFrames
 import kotlin.math.atan2
 import kotlin.math.sqrt
 
@@ -8,12 +9,12 @@ import kotlin.math.sqrt
  *
  * Frames: ARCore world (metres, +Y up against gravity) and the anchor frame of a geospatial anchor,
  * which is East-Up-South (anchors are created with an identity rotation): east = +X, up = +Y,
- * north = -Z. Matrices are column-major float[16], as ARCore and OpenGL give them.
+ * north = -Z. Matrices are column-major float[16], as ARCore and OpenGL give them. See [ArFrames].
  */
-object ArMoveMath {
+public object ArMoveMath {
 
     /** The camera as the frame loop saw it: display-oriented pose and the projection terms needed. */
-    data class CameraState(
+    public data class CameraState(
         /** Camera position in world. */
         val px: Float, val py: Float, val pz: Float,
         /** Camera rotation (display-oriented pose) as a unit quaternion x, y, z, w. */
@@ -28,11 +29,11 @@ object ArMoveMath {
      * Where the screen point ([xPx], [yPx], y down) hits the horizontal plane at world height [planeY],
      * or null when the ray points away from it (above the horizon) or is nearly parallel.
      */
-    fun hitHorizontalPlane(cam: CameraState, xPx: Float, yPx: Float, planeY: Float): FloatArray? {
+    public fun hitHorizontalPlane(cam: CameraState, xPx: Float, yPx: Float, planeY: Float): FloatArray? {
         if (cam.widthPx <= 0 || cam.heightPx <= 0) return null
         // Normalised device coordinates, then the camera-space ray direction (camera looks down -Z).
-        val ndcX = 2f * xPx / cam.widthPx - 1f
-        val ndcY = 1f - 2f * yPx / cam.heightPx
+        val ndcX = ArFrames.screenToNdcX(xPx, cam.widthPx)
+        val ndcY = ArFrames.screenToNdcY(yPx, cam.heightPx)
         val cx = (ndcX + cam.p8) / cam.p0
         val cy = (ndcY + cam.p9) / cam.p5
         val d = rotate(cam.qx, cam.qy, cam.qz, cam.qw, cx, cy, -1f)
@@ -45,17 +46,13 @@ object ArMoveMath {
     /**
      * A world-frame displacement as metres east / north / up, given the anchor's world matrix
      * ([anchorWorld], column-major; its rotation maps the anchor's East-Up-South frame into world).
+     * Same as [ArFrames.worldDeltaToEnu].
      */
-    fun worldDeltaToEnu(anchorWorld: FloatArray, dx: Float, dy: Float, dz: Float): FloatArray {
-        // local = Rᵀ · d, with R's columns = the anchor's X (east), Y (up), Z (south) axes in world.
-        val east = anchorWorld[0] * dx + anchorWorld[1] * dy + anchorWorld[2] * dz
-        val up = anchorWorld[4] * dx + anchorWorld[5] * dy + anchorWorld[6] * dz
-        val south = anchorWorld[8] * dx + anchorWorld[9] * dy + anchorWorld[10] * dz
-        return floatArrayOf(east, -south, up)
-    }
+    public fun worldDeltaToEnu(anchorWorld: FloatArray, dx: Float, dy: Float, dz: Float): FloatArray =
+        ArFrames.worldDeltaToEnu(anchorWorld, dx, dy, dz)
 
     /** Angle (degrees, screen coordinates with y down) of the line from pointer 0 to pointer 1. */
-    fun pointerAngleDeg(x0: Float, y0: Float, x1: Float, y1: Float): Float =
+    public fun pointerAngleDeg(x0: Float, y0: Float, x1: Float, y1: Float): Float =
         Math.toDegrees(atan2((y1 - y0).toDouble(), (x1 - x0).toDouble())).toFloat()
 
     /**
@@ -63,7 +60,7 @@ object ArMoveMath {
      * clockwise twist on screen turns the model clockwise seen from above, which is negative yaw in the
      * renderer's convention (counter-clockwise positive about +Y). Wrapped to (-180, 180].
      */
-    fun twistToYawDeg(startAngleDeg: Float, angleDeg: Float): Float {
+    public fun twistToYawDeg(startAngleDeg: Float, angleDeg: Float): Float {
         var d = angleDeg - startAngleDeg
         while (d > 180f) d -= 360f
         while (d <= -180f) d += 360f
@@ -74,7 +71,7 @@ object ArMoveMath {
      * Metres of height for a vertical finger drag of [dyPx] pixels (y down, so dragging up raises the
      * model) at [distanceM] from the camera: one pixel covers 2·d·tan(fovY/2)/height = 2·d/(proj[5]·h).
      */
-    fun verticalDragToUpM(cam: CameraState, dyPx: Float, distanceM: Float): Float {
+    public fun verticalDragToUpM(cam: CameraState, dyPx: Float, distanceM: Float): Float {
         if (cam.heightPx <= 0 || cam.p5 == 0f) return 0f
         return -dyPx * (2f * distanceM / (cam.p5 * cam.heightPx))
     }
@@ -84,7 +81,7 @@ object ArMoveMath {
      * both horizontal — as metres east / north / up through [anchorWorld] (see [worldDeltaToEnu]).
      * Null when the camera points straight up or down (no horizontal forward direction).
      */
-    fun viewNudgeToEnu(cam: CameraState, anchorWorld: FloatArray, rightM: Float, forwardM: Float): FloatArray? {
+    public fun viewNudgeToEnu(cam: CameraState, anchorWorld: FloatArray, rightM: Float, forwardM: Float): FloatArray? {
         val f = rotate(cam.qx, cam.qy, cam.qz, cam.qw, 0f, 0f, -1f)
         val fLen = sqrt(f[0] * f[0] + f[2] * f[2])
         if (fLen < 1e-3f) return null
@@ -95,7 +92,7 @@ object ArMoveMath {
     }
 
     /** Distance from the camera to world point ([x], [y], [z]). */
-    fun distance(cam: CameraState, x: Float, y: Float, z: Float): Float {
+    public fun distance(cam: CameraState, x: Float, y: Float, z: Float): Float {
         val dx = x - cam.px; val dy = y - cam.py; val dz = z - cam.pz
         return sqrt(dx * dx + dy * dy + dz * dz)
     }

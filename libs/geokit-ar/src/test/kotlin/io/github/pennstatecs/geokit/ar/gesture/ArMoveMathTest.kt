@@ -1,4 +1,4 @@
-package app.surrealar.ui.openinar
+package io.github.pennstatecs.geokit.ar.gesture
 
 import io.github.pennstatecs.geokit.ar.model.ModelMove
 import io.github.pennstatecs.geokit.ar.model.ModelPlacement

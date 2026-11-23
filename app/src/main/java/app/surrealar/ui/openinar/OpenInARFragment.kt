@@ -18,9 +18,12 @@ import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.ArTrackLog
 import app.surrealar.util.diagnostics.ArTrackRow
 import app.surrealar.util.argbIntToRgba
+import io.github.pennstatecs.geokit.ar.accuracy.ArPlacementError
+import io.github.pennstatecs.geokit.ar.gesture.ArMoveMath
 import io.github.pennstatecs.geokit.ar.model.ModelMove
 import io.github.pennstatecs.geokit.ar.model.ModelPlacement
 import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
+import io.github.pennstatecs.geokit.ar.projection.projectToScreen
 import io.github.pennstatecs.geokit.heading.Compass
 import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 
@@ -1671,7 +1674,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // says whether this placement can be trusted at range.
         // Every anchored point (pins too — a pin placed wrong is as misleading as a model).
         val farthestM = geoItems.maxOfOrNull { Geodesic.distanceM(gnssFix.latDeg, gnssFix.lonDeg, it.lat, it.lng) }
-        val expErr = farthestM?.let { GeoAnchorGate.expectedErrorM(arHAcc, arYawAcc, it) }
+        val expErr = farthestM?.let { ArPlacementError.expectedErrorM(arHAcc, arYawAcc, it) }
         DiagnosticsLogger.i(DIAG, "Anchor gate passed decision=$gate profile=$profile " +
             "arHAccM=${"%.2f".format(arHAcc)} arYawDeg=${"%.1f".format(arYawAcc)} elapsedMs=$trackingElapsed " +
             "farthestPointM=${farthestM?.let { "%.1f".format(it) } ?: "unknown"} " +
