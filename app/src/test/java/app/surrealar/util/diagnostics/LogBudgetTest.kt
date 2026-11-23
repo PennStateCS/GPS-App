@@ -1,7 +1,7 @@
 package app.surrealar.util.diagnostics
 
-import app.surrealar.gnss.replay.NmeaLineSource
-import app.surrealar.gnss.replay.ReplayAdapter
+import io.github.pennstatecs.geokit.gnss.replay.NmeaLineSource
+import io.github.pennstatecs.geokit.gnss.replay.ReplayAdapter
 import app.surrealar.util.DiagnosticsLogger
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCorrections

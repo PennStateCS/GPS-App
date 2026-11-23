@@ -7,9 +7,9 @@ import java.util.concurrent.ConcurrentHashMap
 public enum class LinkLogLevel { DEBUG, INFO, WARN, ERROR }
 
 /**
- * Where [TcpNmeaSource] and [ReconnectingNmeaAdapter] write their connection lines (connect, retry,
- * dead link, reconnect). These are field-diagnostics events, so a host usually keeps them in its
- * exportable log; they never contain coordinates or sentence text.
+ * Where [TcpNmeaSource], [ReconnectingNmeaAdapter] and the replay adapter write their field-diagnostics
+ * lines (connect, retry, dead link, reconnect, replay started/stopped). A host usually keeps them in
+ * its exportable log; they never contain coordinates or sentence text.
  *
  * Besides plain levels it has two throttles, because a receiver that is off retries for hours:
  * [logOnChange] (only when a value changes) and [every] (at most once per interval). Both are keyed;

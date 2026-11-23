@@ -1,15 +1,17 @@
-package app.surrealar.gnss.replay
+package io.github.pennstatecs.geokit.gnss.replay
 
 import io.github.pennstatecs.geokit.gnss.bus.adapters.SkyProvider
 import io.github.pennstatecs.geokit.gnss.bus.adapters.SourceAdapter
 import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
+import io.github.pennstatecs.geokit.gnss.link.GnssLinkLog
+import io.github.pennstatecs.geokit.gnss.link.LinkLog
+import io.github.pennstatecs.geokit.gnss.link.LinkLogLevel
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry
 import io.github.pennstatecs.geokit.gnss.satellites.SatelliteInventory
-import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,16 +30,18 @@ import kotlinx.coroutines.launch
 /**
  * NMEA replay as a regular GNSS source: lines from an [NmeaLineSource] go through the same
  * [NmeaFuser] the live sources use (lenient registry — replay logs may omit checksums) and out
- * through [FixSwitchboard][app.surrealar.gnss.bus.FixSwitchboard] like any live adapter, so the map,
- * toolbar, sky view and Developer page all show the replayed data. (The old FixAccumulator path fed
- * a StateFlow nothing observed, so replay displayed nothing.)
+ * through the host's switchboard like any live adapter, so everything that shows live data shows the
+ * replayed data too.
  *
- * Fixes carry [Provider.REPLAY] so they are never averaged into a capture (see CaptureViewModel).
+ * Fixes carry [Provider.REPLAY] so a host can refuse to average them into a capture.
+ *
+ * @param log where the started/stopped and error lines go (tag `GNSS`).
  */
-class ReplayAdapter(
+public class ReplayAdapter(
     private val scope: CoroutineScope,
     private val inventory: SatelliteInventory = SatelliteInventory(debugName = "replay"),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val log: LinkLog = GnssLinkLog(),
 ) : SourceAdapter, SkyProvider, Startable {
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -55,7 +59,7 @@ class ReplayAdapter(
         onGsv = { gsv ->
             runCatching { inventory.consume(gsv) }
                 .onSuccess { _sky.value = it }
-                .onFailure { DiagnosticsLogger.every("GNSS", "replay.gsv", 60_000L, 'E', throwable = it) { "NMEA replay satellite update failed: GSV message skipped" } }
+                .onFailure { log.every(TAG, "replay.gsv", 60_000L, LinkLogLevel.ERROR, throwable = it) { "NMEA replay satellite update failed: GSV message skipped" } }
         },
     )
 
@@ -64,15 +68,16 @@ class ReplayAdapter(
     private var tickJob: Job? = null
 
     /** Sets what [start] plays. Call before switching the active provider to REPLAY. */
-    fun load(lineSource: NmeaLineSource) { source = lineSource }
+    public fun load(lineSource: NmeaLineSource) { source = lineSource }
 
-    val sourceName: String? get() = source?.name
+    /** Name of the loaded source, or null when none is loaded. */
+    public val sourceName: String? get() = source?.name
 
     override fun start() {
         val src = source ?: return
         if (playJob != null) return
         inventory.reset()
-        DiagnosticsLogger.i("GNSS", "NMEA replay started source=${src.name}")
+        log.i(TAG, "NMEA replay started source=${src.name}")
         // Same 300 ms GST-hold cap as the live sources — only while the file plays. Started first so a
         // file that ends at once still finds it to cancel.
         val tick = scope.launch(dispatcher) {
@@ -84,7 +89,7 @@ class ReplayAdapter(
                 src.lines().collect { line ->
                     if (line.isNotEmpty() && line[0] == '$') {
                         runCatching { fuser.accept(line) }
-                            .onFailure { DiagnosticsLogger.every("GNSS", "replay.line", 60_000L, 'E', throwable = it) { "NMEA replay line rejected: fuser error" } }
+                            .onFailure { log.every(TAG, "replay.line", 60_000L, LinkLogLevel.ERROR, throwable = it) { "NMEA replay line rejected: fuser error" } }
                     }
                 }
             } finally {
@@ -101,11 +106,14 @@ class ReplayAdapter(
         fuser.reset()
         _fixes.resetReplayCache()
         _sky.value = SkySnapshot()
-        DiagnosticsLogger.i("GNSS", "NMEA replay stopped")
+        log.i(TAG, "NMEA replay stopped")
     }
 
     /** True while the GST-hold ticker runs (tests: it must stop when the file ends). */
     internal val isTicking: Boolean get() = tickJob?.isActive == true
 
-    private companion object { const val HOLD_TICK_MS = 100L }
+    private companion object {
+        const val HOLD_TICK_MS = 100L
+        const val TAG = "GNSS"
+    }
 }

@@ -12,6 +12,7 @@ import app.surrealar.gnss.diagnostics.DiagnosticsService
 import app.surrealar.gnss.external.DiagnosticsLinkLog
 import app.surrealar.gnss.external.ExternalAdapter
 import io.github.pennstatecs.geokit.gnss.link.TcpNmeaSource
+import io.github.pennstatecs.geokit.gnss.replay.ReplayAdapter
 import app.surrealar.gnss.internal.InternalAdapter
 import app.surrealar.gnss.internal.InternalNmeaSource
 import io.github.pennstatecs.geokit.gnss.nmea.parse.*
@@ -47,8 +48,8 @@ object GnssModule {
      */
     @Provides
     @Singleton
-    fun provideReplayAdapter(appScope: CoroutineScope): app.surrealar.gnss.replay.ReplayAdapter =
-        app.surrealar.gnss.replay.ReplayAdapter(appScope)
+    fun provideReplayAdapter(appScope: CoroutineScope): ReplayAdapter =
+        ReplayAdapter(appScope, log = DiagnosticsLinkLog)   // GNSS lines to DiagnosticsLogger, as before
 
     /**
      * Provides a singleton [DiagnosticsService] for tracking NMEA processing metrics.
@@ -221,7 +222,7 @@ object GnssModule {
         sourceSettings: SourceSettings,
         internalAdapter: InternalAdapter,
         externalAdapter: ExternalAdapter,
-        replayAdapter: app.surrealar.gnss.replay.ReplayAdapter,
+        replayAdapter: ReplayAdapter,
         coordinateSettings: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository,
     ): FixSwitchboard {
         // Settings → Coordinates → External Receiver Datum. Internal GNSS is always WGS84.

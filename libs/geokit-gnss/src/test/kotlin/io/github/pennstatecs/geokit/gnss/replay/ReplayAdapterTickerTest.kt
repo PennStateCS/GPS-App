@@ -1,4 +1,4 @@
-package app.surrealar.gnss.replay
+package io.github.pennstatecs.geokit.gnss.replay
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow

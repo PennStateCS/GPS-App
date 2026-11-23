@@ -154,7 +154,7 @@ android {
         getByName("androidTest") {
             assets.directories.add("$projectDir/schemas")
         }
-        // The NMEA fixtures live with geokit-gnss; ReplayAdapterTest and AndroidGnssLoggerTest replay them too.
+        // The NMEA fixtures live with geokit-gnss; LogBudgetTest and AndroidGnssLoggerTest replay them too.
         getByName("test") {
             resources.directories.add("$rootDir/libs/geokit-gnss/src/test/resources")
         }

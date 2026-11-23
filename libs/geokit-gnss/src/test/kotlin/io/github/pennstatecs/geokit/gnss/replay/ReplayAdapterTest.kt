@@ -1,4 +1,4 @@
-package app.surrealar.gnss.replay
+package io.github.pennstatecs.geokit.gnss.replay
 
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
@@ -13,17 +13,11 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
 /**
- * Replay now runs through the same NmeaFuser as live sources and publishes like a live adapter.
- * Robolectric: android.util.Log in the fuser/inventory/diagnostics.
+ * Replay runs through the same NmeaFuser as live sources and publishes like a live adapter.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class ReplayAdapterTest {
 
     private class ResourceSource(private val res: String) : NmeaLineSource {

@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var switchboard: FixSwitchboard
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     @Inject lateinit var externalAdapter: ExternalAdapter
-    @Inject lateinit var replayAdapter: app.surrealar.gnss.replay.ReplayAdapter
+    @Inject lateinit var replayAdapter: io.github.pennstatecs.geokit.gnss.replay.ReplayAdapter
     @Inject lateinit var gnssSourceCoordinator: app.surrealar.gnss.source.GnssSourceCoordinator
     @Inject lateinit var diagnosticsService: DiagnosticsService
     @Inject lateinit var sourceSettings: app.surrealar.gnss.source.SourceSettings
