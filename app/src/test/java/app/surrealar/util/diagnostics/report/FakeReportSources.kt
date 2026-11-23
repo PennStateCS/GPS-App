@@ -2,38 +2,68 @@ package app.surrealar.util.diagnostics.report
 
 import java.io.File
 
-/** Fixed report inputs for tests. Log files are written into [dir]. */
+/**
+ * Fixed report inputs for tests. Log files are written into [dir].
+ *
+ * Failure injection (optional, off by default): [failing] maps a section key ([Keys]) to the exception
+ * that source throws; sections in [hanging] suspend until cancelled; [extraLogFiles] are listed after
+ * the event log (e.g. a missing file, to test an unreadable log).
+ */
 open class FakeReportSources(
     private val dir: File,
     override val reportId: String = "7K3M-QX2D",
     override val nowMs: Long = java.time.OffsetDateTime.parse("2026-11-21T15:00:00-05:00").toInstant().toEpochMilli(),
     val eventLog: String = DEFAULT_EVENT_LOG,
     val errorLog: String = DEFAULT_ERROR_LOG,
+    val failing: Map<String, Throwable> = emptyMap(),
+    val hanging: Set<String> = emptySet(),
+    val extraLogFiles: List<File> = emptyList(),
 ) : ReportSources {
 
-    override suspend fun summary() = "=== Diagnostic Summary ===\nReport ID        : $reportId\n"
-    override suspend fun settingsSnapshot() = "=== Current Settings Snapshot ===\n"
-    override suspend fun permissions() = "=== Permissions Status ===\n"
-    override suspend fun appState() = "=== App State Summary ===\n"
-    override suspend fun coordinates() = "=== Coordinates ===\nTotal coordinates        : 3\n"
-    override suspend fun models() = "=== Model Integrity ===\n"
-    override fun arSession() = "No AR session has been recorded yet.\n"
-    override suspend fun mapDiagnostics() = "=== Map ===\n"
-    override suspend fun nmeaStream() = "=== NMEA Stream Diagnostics ===\n"
+    /** Section keys for [failing] / [hanging] ([hanging] only applies to suspending sources). */
+    object Keys {
+        const val SUMMARY = "summary"; const val SETTINGS = "settings"; const val PERMISSIONS = "permissions"
+        const val APP_STATE = "appState"; const val COORDINATES = "coordinates"; const val MODELS = "models"
+        const val AR_SESSION = "arSession"; const val MAP = "map"; const val NMEA = "nmea"; const val GNSS = "gnss"
+        const val DEVICE_HEALTH = "deviceHealth"; const val DATA_HEALTH = "dataHealth"; const val LIVE_STATE = "liveState"
+    }
 
-    override fun liveState() = LiveState("EXTERNAL_TCP", "FIX", "CONNECTED", 1.2, "receiving station=PAWB age=1.2s", 12L * 1024 * 1024 * 1024)
+    private suspend fun <T> section(key: String, value: () -> T): T {
+        failing[key]?.let { throw it }
+        if (key in hanging) kotlinx.coroutines.awaitCancellation()
+        return value()
+    }
+
+    private fun <T> blocking(key: String, value: () -> T): T {
+        failing[key]?.let { throw it }
+        return value()
+    }
+
+    override suspend fun summary() = section(Keys.SUMMARY) { "=== Diagnostic Summary ===\nReport ID        : $reportId\n" }
+    override suspend fun settingsSnapshot() = section(Keys.SETTINGS) { "=== Current Settings Snapshot ===\n" }
+    override suspend fun permissions() = section(Keys.PERMISSIONS) { "=== Permissions Status ===\n" }
+    override suspend fun appState() = section(Keys.APP_STATE) { "=== App State Summary ===\n" }
+    override suspend fun coordinates() = section(Keys.COORDINATES) { "=== Coordinates ===\nTotal coordinates        : 3\n" }
+    override suspend fun models() = section(Keys.MODELS) { "=== Model Integrity ===\n" }
+    override fun arSession() = blocking(Keys.AR_SESSION) { "No AR session has been recorded yet.\n" }
+    override suspend fun mapDiagnostics() = section(Keys.MAP) { "=== Map ===\n" }
+    override suspend fun nmeaStream() = section(Keys.NMEA) { "=== NMEA Stream Diagnostics ===\n" }
+
+    override fun liveState() = blocking(Keys.LIVE_STATE) {
+        LiveState("EXTERNAL_TCP", "FIX", "CONNECTED", 1.2, "receiving station=PAWB age=1.2s", 12L * 1024 * 1024 * 1024)
+    }
 
     override fun exitTraceFiles(): List<File> =
         listOf(File(dir, "20261121-133000-ANR.txt").apply { writeText("----- pid 123 at 2026-11-21 13:30:00 -----\n\"main\" prio=5 tid=1 Blocked\n") })
 
-    override fun deviceHealth() = FAKE_HEALTH
+    override fun deviceHealth() = blocking(Keys.DEVICE_HEALTH) { FAKE_HEALTH }
     override fun capturesLog(): File? = File(dir, "captures.log").apply {
         writeText((1..55).joinToString("\n") { "2026-11-21T14:%02d:00.000-05:00 Capture saved name=\"P$it\" mode=EXTERNAL samples=150 duration=60s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=0/150".format(it % 60) } + "\n")
     }
-    override suspend fun gnssStats() = FAKE_GNSS
-    override fun dataHealth() = DataHealth(12, mapOf("coordinates" to 42L, "models" to 3L), "ok")
+    override suspend fun gnssStats() = section(Keys.GNSS) { FAKE_GNSS }
+    override fun dataHealth() = blocking(Keys.DATA_HEALTH) { DataHealth(12, mapOf("coordinates" to 42L, "models" to 3L), "ok") }
 
-    override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) })
+    override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) }) + extraLogFiles
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
 
     companion object {

@@ -2,7 +2,11 @@ package app.surrealar.util.diagnostics.report
 
 import app.surrealar.util.diagnostics.LogLineFormat
 
-/** manifest.txt: every file in the ZIP with its size (uncompressed), the report time and ID. */
+/**
+ * manifest.txt: every file in the ZIP with its size (uncompressed), the report time and ID. It is the
+ * last entry and lists itself as "(this file)" without a size; every other line matches the ZIP entry
+ * exactly (ReportAssembler.validate checks the written ZIP against the same list).
+ */
 object ManifestCollector {
     fun render(entries: List<Pair<String, Long>>, reportId: String, nowMs: Long, logsTruncatedTo24h: Boolean): String = buildString {
         appendLine("=== Manifest ===")

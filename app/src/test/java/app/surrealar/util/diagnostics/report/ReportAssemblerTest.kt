@@ -19,16 +19,16 @@ class ReportAssemblerTest {
 
     @Test fun `golden list of files in the zip`() = runTest {
         val zip = File(tmp.root, "r.zip")
-        val written = ReportAssembler.write(zip, FakeReportSources(tmp.newFolder("logs")), flush = {})
+        val written = ReportAssembler.write(zip, FakeReportSources(tmp.newFolder("logs")), flush = { true })
         val expected = listOf(
             "README.txt", "diagnostic-summary.txt", "timeline.txt", "sessions.txt", "exits.txt",
             "exits/20261121-133000-ANR.txt", "device-health.txt", "captures.txt", "gnss-stats.txt", "data-health.txt",
             "settings-snapshot.txt", "permissions-status.txt", "app-state-summary.txt",
             "coordinates.txt", "model-integrity.txt", "ar-session-summary.txt", "map-diagnostics.txt",
-            "nmea-stream-diagnostics.txt", "app-log-current.txt", "app-errors-current.txt", "manifest.txt",
+            "nmea-stream-diagnostics.txt", "app-log-current.txt", "app-errors-current.txt", "export-health.txt", "manifest.txt",
         )
         assertEquals(expected, names(zip))
-        assertEquals(expected, written.map { it.first })
+        assertEquals(expected, written.entries.map { it.first })
     }
 
     private fun entry(zip: File, name: String) = ZipFile(zip).use { z -> z.getInputStream(z.getEntry(name)).reader().readText() }
@@ -37,7 +37,7 @@ class ReportAssemblerTest {
         val old = "2026-11-19T10:00:00.000-05:00 W GNSS [main] two days old\n\tcontinuation of the old line\n"
         val src = FakeReportSources(tmp.newFolder("logs"), eventLog = old + FakeReportSources.DEFAULT_EVENT_LOG)
         val small = File(tmp.root, "small.zip")
-        ReportAssembler.write(small, src, flush = {}, maxLogBytes = 10)
+        ReportAssembler.write(small, src, flush = { true }, maxLogBytes = 10)
         val log = entry(small, "app-log-current.txt")
         assertEquals(false, log.contains("two days old") || log.contains("continuation of the old line"))
         assertEquals(true, log.contains("Capture saved name=\"CP-1\""))
@@ -45,7 +45,7 @@ class ReportAssemblerTest {
         assertEquals(true, entry(small, "manifest.txt").contains("truncated to the last 24 hours"))
 
         val full = File(tmp.root, "full.zip")
-        ReportAssembler.write(full, src, flush = {})
+        ReportAssembler.write(full, src, flush = { true })
         assertEquals(true, entry(full, "app-log-current.txt").contains("two days old"))
         assertEquals(false, entry(full, "manifest.txt").contains("truncated"))
     }
@@ -55,9 +55,9 @@ class ReportAssemblerTest {
         val src = object : FakeReportSources(tmp.newFolder("logs")) {
             override suspend fun models(): String = throw IllegalStateException("db closed")
         }
-        ReportAssembler.write(zip, src, flush = {})
+        ReportAssembler.write(zip, src, flush = { true })
         val text = ZipFile(zip).use { z -> z.getInputStream(z.getEntry("model-integrity.txt")).reader().readText() }
         assertEquals("Section failed to generate: IllegalStateException: db closed\n", text)
-        assertEquals(21, names(zip).size)
+        assertEquals(22, names(zip).size)
     }
 }

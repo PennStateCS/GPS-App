@@ -59,9 +59,13 @@ class LogIndex(val nowMs: Long) {
         /** Numbers → "#" so "over 10 s (12.0 s)" and "(14.0 s)" count as one message. */
         fun normalize(m: String): String = m.replace(Regex("\\d+(\\.\\d+)?"), "#")
 
-        fun build(files: List<File>, nowMs: Long): LogIndex {
+        /** A file that cannot be read is skipped and reported to [onFileError] (export-health.txt). */
+        fun build(files: List<File>, nowMs: Long, onFileError: (File, Throwable) -> Unit = { _, _ -> }): LogIndex {
             val idx = LogIndex(nowMs)
-            files.forEach { f -> runCatching { f.bufferedReader(Charsets.UTF_8).useLines { forEachEntry(it, idx::add) } } }
+            files.forEach { f ->
+                runCatching { f.bufferedReader(Charsets.UTF_8).useLines { forEachEntry(it, idx::add) } }
+                    .onFailure { onFileError(f, it) }
+            }
             return idx.finish()
         }
 

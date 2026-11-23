@@ -26,11 +26,14 @@ object ReadmeCollector {
         "app-log-*.txt" to "the event log (current, then rotated 1..4)",
         "app-errors-*.txt" to "errors and crashes only (kept longer than the event log)",
         "ar-track*.csv" to "debug builds: ARCore camera pose next to each GNSS fix while AR is open (metres from each session's first fix; no coordinates)",
-        "manifest.txt" to "every file in this ZIP with its size, the report time and report ID",
+        "export-health.txt" to "how the export went: each section's status (OK, FAILED, TIMED_OUT, UNAVAILABLE) and time, log flush, files left out or cut short, verdict COMPLETE / PARTIAL",
+        "manifest.txt" to "every file in this ZIP (itself included) with its size, the report time and report ID",
     )
 
     fun render(reportId: String, logsTruncatedTo24h: Boolean): String = buildString {
         appendLine("SurReal AR diagnostic report  (Report ID: $reportId)")
+        appendLine()
+        appendLine("Export completeness: see export-health.txt (COMPLETE, or PARTIAL with the sections or files that are missing).")
         appendLine()
         appendLine("Files")
         val w = FILES.maxOf { it.first.length }

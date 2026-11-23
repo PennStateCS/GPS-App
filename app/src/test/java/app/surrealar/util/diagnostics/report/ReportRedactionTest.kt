@@ -42,7 +42,7 @@ class ReportRedactionTest {
 
     @Test fun `no password, key, raw NMEA or coordinate anywhere in the zip`() = runTest {
         val zip = File(tmp.root, "r.zip")
-        ReportAssembler.write(zip, LeakySources(tmp.newFolder("logs")), flush = {})
+        ReportAssembler.write(zip, LeakySources(tmp.newFolder("logs")), flush = { true })
         val all = ZipFile(zip).use { z -> z.entries().toList().associate { it.name to z.getInputStream(it).reader().readText() } }
         assertTrue(all.size > 15)
         for ((name, text) in all) {
