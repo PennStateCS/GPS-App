@@ -7,6 +7,7 @@ import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
 import io.github.pennstatecs.geokit.gnss.receiver.AccuracyClass
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
+import io.github.pennstatecs.geokit.receiver.emlid.EmlidReachModel
 
 /**
  * Selectable external-receiver *profile*. This is metadata only — every profile uses the same live
@@ -36,7 +37,8 @@ enum class ExternalReceiverProfile(
     /**
      * Height (metres) of the antenna phase centre (L1) above the antenna reference point on the
      * bottom of the receiver: what the receiver's reported height refers to, relative to the point
-     * users measure to. Null when unknown (the user enters it on the Receiver page).
+     * users measure to. Null when unknown (the user enters it on the Receiver page). Vendor values
+     * come from the receiver library (Emlid: geokit-receiver-emlid's EmlidReachModel).
      */
     val phaseCenterOffsetM: Double?,
     /** What the receiver reports beyond NMEA (drives which status UI is shown). */
@@ -69,7 +71,7 @@ enum class ExternalReceiverProfile(
         hint = null,
         vendor = ReceiverVendor.EMLID,
         accuracyClass = AccuracyClass.SURVEY_MULTIBAND,
-        phaseCenterOffsetM = 0.134,   // Emlid RS2/RS2+ manual: ARP → APC 134 mm
+        phaseCenterOffsetM = EmlidReachModel.RS2_PLUS.phaseCenterOffsetM,   // 134 mm
         capabilities = ReceiverCapabilities.ALL,
         extraParsers = ::emlidParsers,
     ),
@@ -81,7 +83,7 @@ enum class ExternalReceiverProfile(
         hint = "Configure Emlid Flow → Position Streaming 1 as a TCP server with NMEA format.",
         vendor = ReceiverVendor.EMLID,
         accuracyClass = AccuracyClass.SURVEY_MULTIBAND,
-        phaseCenterOffsetM = 0.095,   // Emlid RS4 specs: L1 phase-centre offset 95 mm
+        phaseCenterOffsetM = EmlidReachModel.RS4.phaseCenterOffsetM,        // 95 mm (L1)
         capabilities = ReceiverCapabilities.ALL,
         extraParsers = ::emlidParsers,
     ),
@@ -93,7 +95,7 @@ enum class ExternalReceiverProfile(
         hint = "Configure Emlid Flow → Position Streaming 1 as a TCP server with NMEA format.",
         vendor = ReceiverVendor.EMLID,
         accuracyClass = AccuracyClass.SURVEY_MULTIBAND,
-        phaseCenterOffsetM = null,    // not confirmed separately from the RS4; user enters it
+        phaseCenterOffsetM = EmlidReachModel.RS4_PRO.phaseCenterOffsetM,    // unknown (null): user enters it
         capabilities = ReceiverCapabilities.ALL,
         extraParsers = ::emlidParsers,
     );

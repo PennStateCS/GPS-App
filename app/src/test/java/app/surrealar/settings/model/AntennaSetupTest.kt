@@ -32,6 +32,25 @@ class AntennaSetupTest {
         assertEquals(2.0, s.captureOffsetM, 1e-12)
     }
 
+    @Test fun `profiles take their phase-centre offsets from geokit-receiver-emlid`() {
+        assertEquals(0.134, ExternalReceiverProfile.REACH_RS2_PLUS.phaseCenterOffsetM!!, 0.0)
+        assertEquals(0.095, ExternalReceiverProfile.REACH_RS4.phaseCenterOffsetM!!, 0.0)
+        assertEquals(null, ExternalReceiverProfile.REACH_RS4_PRO.phaseCenterOffsetM)
+        assertEquals(null, ExternalReceiverProfile.GENERIC_NMEA_TCP.phaseCenterOffsetM)
+        // RS4 Pro: unknown, so 0 until the user enters one.
+        val s = AntennaSetup.resolve(receiver, ExternalReceiverProfile.REACH_RS4_PRO)
+        assertEquals(0.0, s.phaseCenterOffsetM, 0.0)
+        assertFalse(s.offsetFromProfile)
+    }
+
+    @Test fun `heights match geokit's AntennaGeometry`() {
+        val s = AntennaSetup.resolve(receiver, ExternalReceiverProfile.REACH_RS4)
+        val g = io.github.pennstatecs.geokit.gnss.receiver.AntennaGeometry(2.0, 0.4, 0.095)
+        assertEquals(g, s.geometry)
+        assertEquals(g.captureOffsetM, s.captureOffsetM, 0.0)
+        assertEquals(g.antennaAboveCameraM, s.antennaAboveCameraM, 0.0)
+    }
+
     @Test fun `camera above the receiver gives a smaller antenna height`() {
         val s = AntennaSetup.resolve(receiver.copy(cameraBelowReceiverM = -0.05), ExternalReceiverProfile.REACH_RS2_PLUS)
         assertEquals(0.084, s.antennaAboveCameraM, 1e-12)
