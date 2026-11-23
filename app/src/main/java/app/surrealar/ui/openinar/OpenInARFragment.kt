@@ -488,6 +488,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private const val NEAR_CLIP = 0.1f
         /** Id of the temporary test cube point (never stored; not a test-grid key). */
         private const val TEST_CUBE_ID = "ar_test_cube"
+        /** The test cube model shipped in assets: a 1 m textured cube standing on its origin. */
+        private const val TEST_CUBE_ASSET_NAME = "surreal-test-cube-1m.glb"
+        private const val TEST_CUBE_ASSET = "model_images/$TEST_CUBE_ASSET_NAME"
         private const val FAR_CLIP  = 2000f
         /**
          * Minimum milliseconds between any two anchor rebuilds (manual button resets this).
@@ -3169,7 +3172,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     // ── Test cube ──────────────────────────────────────────────────────────────────────────────────
-    // A temporary point with a generated 1 m cube (TestCubeGlb), placed in front of the user so model
+    // A temporary point with the bundled 1 m test cube (assets/model_images), placed in front of the user so model
     // manipulation can be tried without a real point. It goes through the normal anchor/model pipeline
     // (pin, Move model, gestures) but is never stored and disappears when AR closes.
 
@@ -3211,14 +3214,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (_binding == null) return
         val scope = viewLifecycleOwner.lifecycleScope
         scope.launch {
+            // The bundled 1 m test cube (Filament loads models from files, so copy it out of the APK once).
+            val ctx = requireContext().applicationContext
             val file = withContext(Dispatchers.IO) {
                 runCatching {
-                    File(requireContext().cacheDir, "debug_models/ar_test_cube.glb").apply {
+                    File(ctx.cacheDir, "debug_models/$TEST_CUBE_ASSET_NAME").apply {
                         parentFile?.mkdirs()
-                        if (!exists() || length() == 0L) writeBytes(TestCubeGlb.build())
+                        // 120 KB: read it rather than openFd (fails on compressed assets); rewrite if it changed.
+                        val bytes = ctx.assets.open(TEST_CUBE_ASSET).use { it.readBytes() }
+                        if (!exists() || length() != bytes.size.toLong()) writeBytes(bytes)
                     }
-                }.getOrNull()
-            } ?: run { showMoveMessage("Couldn't create the test cube model"); return@launch }
+                }.onFailure { DiagnosticsLogger.w(DIAG, "Test cube model copy failed", it) }.getOrNull()
+            } ?: run { showMoveMessage("Couldn't load the test cube model"); return@launch }
             val now = System.currentTimeMillis()
             val entity = app.surrealar.data.local.entity.CoordinateEntity(
                 id = TEST_CUBE_ID, name = "Test cube", latitude = lat, longitude = lon, altitude = altM,
