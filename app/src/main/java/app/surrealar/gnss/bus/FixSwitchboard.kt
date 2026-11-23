@@ -35,7 +35,7 @@ class FixSwitchboard(
     /** No fix for this long ⇒ [currentFix] is cleared (the position is no longer live). */
     private val fixStaleAfterMs: Long = DEFAULT_FIX_STALE_MS,
     private val monotonicNowMs: () -> Long = { System.nanoTime() / 1_000_000L },
-    /** Applied to every fix before it is published (datum normalisation; see FeedDatum). */
+    /** Applied to every fix before it is published (datum normalisation; see geokit-gnss FixDatumNormalizer). */
     private val fixTransform: (Fix) -> Fix = { it },
 ) : FixBus, SkyBus {
 

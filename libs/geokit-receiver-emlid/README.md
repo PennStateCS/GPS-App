@@ -97,8 +97,8 @@ the platform.
   (`com.vaadin.external.google:android-json`, `compileOnly` + `testImplementation`), so the API and
   behaviour match the device. `org.json:json` is kept off the test runtime classpath so the tests see
   only that one copy.
-- **Runtime on a plain JVM**: the module declares `org.json:json:20090211` as `runtimeOnly` (the
-  version socket.io-client 1.0.1's POM asks for; its own transitive copy is excluded), so a desktop
+- **Runtime on a plain JVM**: the module declares `org.json:json:20240303` as `runtimeOnly` (the
+  public-domain release; socket.io-client 1.0.1's POM asks for 20090211, which is under the GPL-incompatible JSON License, so its transitive copy is excluded and this newer, API-compatible one is used), so a desktop
   consumer gets org.json without adding it and doesn't fail with `NoClassDefFoundError`.
 - **Android**: exclude `org.json:json` from the app's configurations so the APK uses the platform copy
   instead of bundling a duplicate. SurReal AR does this in `app/build.gradle.kts`:
@@ -116,4 +116,4 @@ the platform.
 ## Licence
 
 GPL-3.0, like the rest of the repository (see the repository `LICENSE`). Runtime dependencies are
-`:geokit-gnss`, kotlinx-coroutines, socket.io-client (MIT) and, on a plain JVM, org.json (JSON License).
+`:geokit-gnss`, kotlinx-coroutines, socket.io-client (MIT) and, on a plain JVM, org.json (public domain, 20231013 and later).

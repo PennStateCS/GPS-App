@@ -33,8 +33,8 @@ dependencies {
         exclude(group = "org.json", module = "json")
     }
     // org.json: compile and test against Android's own org.json API (android-json, packaged as a jar).
-    // At runtime a plain JVM consumer gets org.json:json (the version socket.io-client's POM asks for);
-    // the app excludes it again so the APK uses the Android platform copy. See README.
+    // At runtime a plain JVM consumer gets org.json:json 20240303 (public domain; socket.io-client's own
+    // 20090211 is JSON-licensed, GPL-incompatible). The app excludes it so the APK uses the platform copy.
     compileOnly(libs.android.json)
     runtimeOnly(libs.org.json)
     testImplementation(libs.android.json)

@@ -35,7 +35,7 @@ socketIo = "1.0.1"
 androidJson = "0.0.20131108.vaadin1"
 # org.json reference implementation, the version socket.io-client 1.0.1 / engine.io-client 1.0.1 declare in their POMs.
 # runtimeOnly in :geokit-receiver-emlid so desktop JVM consumers get org.json; the app excludes it (platform copy).
-orgJson = "20090211"
+orgJson = "20240303"   # public domain since 20231013 (older releases: JSON License, GPL-incompatible)
 desugarJdkLibs = "2.1.5"
 robolectric = "4.18"
 androidxTestCore = "1.7.0"
