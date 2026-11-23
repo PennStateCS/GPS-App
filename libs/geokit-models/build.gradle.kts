@@ -24,9 +24,17 @@ kotlin {
 }
 dependencies {
     implementation(project(":geokit-core"))
-    // org.json: compile and test against Android's own org.json API (android-json); Android apps use the
-    // platform copy. Same arrangement as geokit-receiver-emlid (see libs/README.md).
+    // org.json: compile and test against Android's own org.json API (android-json, packaged as a jar).
+    // At runtime a plain JVM consumer gets org.json:json 20240303 (public domain). The app excludes it so
+    // the APK uses the platform copy. Same arrangement as geokit-receiver-emlid (see libs/README.md).
     compileOnly(libs.android.json)
+    runtimeOnly(libs.org.json)
     testImplementation(libs.android.json)
     testImplementation(libs.junit)
+}
+
+// Tests keep running against android-json only (same API and behaviour as the device), so the
+// runtimeOnly org.json:json is kept off the test runtime classpath to avoid two org.json copies.
+configurations.named("testRuntimeClasspath") {
+    exclude(group = "org.json", module = "json")
 }

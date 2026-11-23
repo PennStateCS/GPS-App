@@ -30,11 +30,11 @@ jmdns = "3.6.5"
 # client 2.x speaks EIO=4 only and fails every handshake with "server error" (corrections/status lost).
 # Plain HTTP on the receiver's LAN only. Re-check with the Reach before any bump.
 socketIo = "1.0.1"
-# Android's org.json API as a plain jar, for JVM compile/tests of :geokit-receiver-emlid only (compileOnly — the APK
+# Android's org.json API as a plain jar, for JVM compile/tests of :geokit-receiver-emlid and :geokit-models only (compileOnly — the APK
 # uses the platform copy).
 androidJson = "0.0.20131108.vaadin1"
 # org.json reference implementation, the version socket.io-client 1.0.1 / engine.io-client 1.0.1 declare in their POMs.
-# runtimeOnly in :geokit-receiver-emlid so desktop JVM consumers get org.json; the app excludes it (platform copy).
+# runtimeOnly in :geokit-receiver-emlid and :geokit-models so desktop JVM consumers get org.json; the app excludes it (platform copy).
 orgJson = "20240303"   # public domain since 20231013 (older releases: JSON License, GPL-incompatible)
 desugarJdkLibs = "2.1.5"
 robolectric = "4.18"
