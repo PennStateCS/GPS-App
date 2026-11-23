@@ -1,6 +1,7 @@
 package app.surrealar.di
 
 import android.content.Context
+import app.surrealar.coords.toFixDatum
 import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
 import app.surrealar.domain.repository.LocationSourceSettingsRepository
 import app.surrealar.domain.model.LocationSourceType
@@ -238,9 +239,9 @@ object GnssModule {
                 ProviderChoice.REPLAY       to replayAdapter,
             ),
             fixTransform   = { fix ->
-                if (fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL &&
-                    rxDatum.value == app.surrealar.settings.model.ReceiverDatum.NAD83_2011
-                ) app.surrealar.coords.FeedDatum.nad83ToWgs84(fix) else fix
+                if (fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL)
+                    io.github.pennstatecs.geokit.gnss.datum.FixDatumNormalizer.toWgs84(fix, rxDatum.value.toFixDatum())
+                else fix
             },
         ).also { it.start() }
     }

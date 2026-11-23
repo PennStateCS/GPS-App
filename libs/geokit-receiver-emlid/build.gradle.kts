@@ -32,10 +32,18 @@ dependencies {
     implementation(libs.socket.io.client) {
         exclude(group = "org.json", module = "json")
     }
-    // org.json: compile and test against Android's own org.json API (android-json, packaged as a jar),
-    // but don't ship it — the APK uses the platform copy. See README.
+    // org.json: compile and test against Android's own org.json API (android-json, packaged as a jar).
+    // At runtime a plain JVM consumer gets org.json:json (the version socket.io-client's POM asks for);
+    // the app excludes it again so the APK uses the Android platform copy. See README.
     compileOnly(libs.android.json)
+    runtimeOnly(libs.org.json)
     testImplementation(libs.android.json)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// Tests keep running against android-json only (same API and behaviour as the device), so the
+// runtimeOnly org.json:json is kept off the test runtime classpath to avoid two org.json copies.
+configurations.named("testRuntimeClasspath") {
+    exclude(group = "org.json", module = "json")
 }

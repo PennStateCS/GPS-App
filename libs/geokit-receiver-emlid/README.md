@@ -90,11 +90,22 @@ host changes. The UI reads only the manager's neutral flows and capability flags
 
 ## org.json
 
-The Reach parsers use `org.json`, which Android provides on the platform. This module compiles and
-tests against Android's own org.json implementation packaged as a jar
-(`com.vaadin.external.google:android-json`, `compileOnly` + `testImplementation`). That way the API
-and behaviour match the device, and the APK uses the platform copy instead of bundling a duplicate. socket.io-client's own org.json dependency is
-excluded for the same reason.
+The Reach parsers and socket.io-client / engine.io-client use `org.json`, which Android provides on
+the platform.
+
+- **Compile and test**: against Android's own org.json implementation packaged as a jar
+  (`com.vaadin.external.google:android-json`, `compileOnly` + `testImplementation`), so the API and
+  behaviour match the device. `org.json:json` is kept off the test runtime classpath so the tests see
+  only that one copy.
+- **Runtime on a plain JVM**: the module declares `org.json:json:20090211` as `runtimeOnly` (the
+  version socket.io-client 1.0.1's POM asks for; its own transitive copy is excluded), so a desktop
+  consumer gets org.json without adding it and doesn't fail with `NoClassDefFoundError`.
+- **Android**: exclude `org.json:json` from the app's configurations so the APK uses the platform copy
+  instead of bundling a duplicate. SurReal AR does this in `app/build.gradle.kts`:
+
+  ```kotlin
+  configurations.configureEach { exclude(group = "org.json", module = "json") }
+  ```
 
 ## Build and test
 
@@ -105,4 +116,4 @@ excluded for the same reason.
 ## Licence
 
 GPL-3.0, like the rest of the repository (see the repository `LICENSE`). Runtime dependencies are
-`:geokit-gnss`, kotlinx-coroutines and socket.io-client (MIT).
+`:geokit-gnss`, kotlinx-coroutines, socket.io-client (MIT) and, on a plain JVM, org.json (JSON License).

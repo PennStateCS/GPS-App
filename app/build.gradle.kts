@@ -161,6 +161,12 @@ android {
     }
 }
 
+// :geokit-receiver-emlid ships org.json:json at runtime for plain JVM consumers. Android provides
+// org.json on the platform, so keep that artifact out of every app configuration (APK and tests).
+configurations.configureEach {
+    exclude(group = "org.json", module = "json")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

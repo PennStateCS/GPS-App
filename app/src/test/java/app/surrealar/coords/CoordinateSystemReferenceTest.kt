@@ -14,13 +14,13 @@ import app.surrealar.settings.model.VerticalReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
-import java.io.File
 
 /**
  * Checks the conversions against independent authorities (values captured 2026-11-19):
  *  - NGS NCAT (geodesy.noaa.gov/api/ncat) for SPCS83 PA North/South and UTM 18N on NAD83(2011);
  *  - PROJ 9.8.1 (pyproj 3.8.0) for "ITRF2014 to NAD83(2011) (1)" at epoch 2026.886;
- *  - NGS geoid service (geodesy.noaa.gov/api/geoid/ght, model GEOID18) for N.
+ *  - NGS geoid service (geodesy.noaa.gov/api/geoid/ght, model GEOID18) for N (the GEOID18 grid
+ *    checks themselves live in geokit-core's Geoid18GridTest).
  */
 class CoordinateSystemReferenceTest {
 
@@ -68,41 +68,11 @@ class CoordinateSystemReferenceTest {
         assertEquals(2026.886, Itrf2014ToNad83.decimalYear(java.time.Instant.parse("2026-11-20T04:00:00Z").toEpochMilli()), 0.001)
     }
 
-    // ── GEOID18 (bundled CONUS + PR/VI tiles vs NGS) ─────────────────────────────────────────────
+    // ── GEOID18 (bundled CONUS + PR/VI tiles) ────────────────────────────────────────────────────
 
-    private val geoid: Geoid18Grid by lazy {
-        Geoid18Grid(File("src/main/assets/${Geoid18Grid.ASSET_PATH}").readBytes())
-    }
-
-    @Test fun `GEOID18 grid matches the NGS geoid service`() {
-        assertEquals(-31.601, geoid.undulation(41.3477, -76.0226)!!, 0.01)
-        assertEquals(-33.298, geoid.undulation(40.7934, -77.8600)!!, 0.01)
-        assertEquals(-32.957, geoid.undulation(39.9526, -75.1652)!!, 0.01)
-        assertEquals(-34.197, geoid.undulation(41.9000, -80.1000)!!, 0.01)
-    }
-
-    @Test fun `GEOID18 matches the NGS geoid service across CONUS, Puerto Rico and the Virgin Islands`() {
-        // geodesy.noaa.gov/api/geoid/ght?model=14 (GEOID18), queried 2026-11-19.
-        val ngs = listOf(
-            Triple(34.0522, -118.2437, -35.109), Triple(29.7604, -95.3698, -27.334),
-            Triple(25.7617, -80.1918, -25.531), Triple(47.6062, -122.3321, -23.686),
-            Triple(44.8000, -68.7800, -24.874), Triple(39.7392, -104.9903, -17.111),
-            Triple(46.8700, -113.9900, -14.754), Triple(41.8800, -87.6300, -33.597),
-            Triple(18.4655, -66.1057, -43.121), Triple(18.3419, -64.9307, -42.190),
-            Triple(17.7500, -64.7500, -41.468),
-        )
-        for ((lat, lon, n) in ngs) assertEquals("N at $lat, $lon", n, geoid.undulation(lat, lon)!!, 0.005)
-    }
-
-    @Test fun `packed tiles reproduce the raw NGS grids to a millimetre`() {
-        // 600 seeded random points bilinear-interpolated from the raw g2018u0/g2018p0 float grids.
-        val rows = File("src/test/resources/coords/geoid18_vectors.csv").readLines().drop(1).filter { it.isNotBlank() }
-        assertEquals(600, rows.size)
-        for (line in rows) {
-            val (lat, lon, n) = line.split(",").map { it.toDouble() }
-            assertEquals("N at $lat, $lon", n, geoid.undulation(lat, lon)!!, 0.001)
-        }
-    }
+    // The grid ships in geokit-core and is loaded the way the app loads it. The NGS geoid-service
+    // points and the 600 raw-grid vectors are checked in geokit-core's Geoid18GridTest.
+    private val geoid: Geoid18Grid by lazy { Geoid18Grid.fromClasspath() }
 
     @Test fun `outside GEOID18 coverage there is no geoid value`() {
         assertNull(geoid.undulation(61.2, -149.9))   // Anchorage (GEOID12B territory)
