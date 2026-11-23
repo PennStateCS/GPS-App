@@ -38,6 +38,7 @@ Conventions: units in names (`latDeg`, `altMslM`, `diffAgeS`), `null` means unkn
 | `io.github.pennstatecs.geokit.gnss.model` | `Fix`, `RtkStatus`, `Provider`, `TimestampSource`, `SkySnapshot`, `SatInfo`, `SkyGeometry`, `Constellation`, `FixSnapshot` |
 | `io.github.pennstatecs.geokit.gnss.satellites` | `SatelliteInventory` (smoothed SNR, used flags, stale eviction → `SkySnapshot`) |
 | `io.github.pennstatecs.geokit.gnss.accuracy` | `AccuracyEstimator`, `UereTable` |
+| `io.github.pennstatecs.geokit.gnss.datum` | `FixDatum` (`ITRF2014`, `NAD83_2011`), `FixDatumNormalizer` (receiver output → WGS84 / ITRF2014) |
 | `io.github.pennstatecs.geokit.gnss.capture` | `ObservationSession` (averaging), `AveragingPolicy`, `CapturePreset`, `CaptureResult`, `FixFreshnessGate`, `GnssCaptureSettings` |
 | `io.github.pennstatecs.geokit.gnss.log` | `GnssLog`, `GnssLogger`, `NmeaDebugSampler` (periodic raw-sentence samples in debug traces) |
 
@@ -96,6 +97,21 @@ adapter.stop()
 
 Replay works the same way: `ReplayAdapter(scope).apply { load(myLineSource); start() }`, where
 `myLineSource` is any `NmeaLineSource` (a file, a test resource). Its fixes are `Provider.REPLAY`.
+
+## Receiver datum
+
+A receiver on an RTK network in the US usually outputs NAD83(2011), about 1–1.5 m from WGS84. Map
+SDKs, ARCore and stored captures want WGS84, so normalise each fix once as it enters the feed:
+
+```kotlin
+val wgs84Fix = FixDatumNormalizer.toWgs84(fix, FixDatum.NAD83_2011)   // ITRF2014 returns the same Fix
+```
+
+The conversion is the inverse ITRF2014 → NAD83(2011) Helmert from geokit-core at the fix's own epoch
+(decimal year of `timeUtc`); converting back for display round-trips to < 0.1 mm. The ellipsoidal
+height moves with the position (null stays null); the receiver's MSL height is kept and the geoid
+separation recomputed. SurReal AR applies it to external receivers when Settings → Coordinates →
+External Receiver Datum is NAD83(2011).
 
 ## Antenna geometry
 
