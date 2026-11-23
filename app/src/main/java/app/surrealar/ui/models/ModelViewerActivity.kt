@@ -65,6 +65,19 @@ import kotlin.math.sqrt
 /** Logcat tag for this file's DevLog traces. */
 private const val VIEWER_TAG = "ModelViewerActivity"
 
+/**
+ * The file a glTF resource URI refers to inside [baseDir] (decoded with [decode], query and fragment
+ * dropped), or null when it doesn't exist or escapes the folder. The containment check is the
+ * separator-aware [io.github.pennstatecs.geokit.models.gltf.GltfUris.isInside]: a plain path-prefix test
+ * let a sibling folder that shares the name prefix (bundle → bundle2/…) through.
+ */
+internal fun viewerGltfResourceFile(baseDir: File, uriString: String, decode: (String) -> String): File? {
+    val decoded = decode(uriString).substringBefore('#').substringBefore('?')
+    val base = baseDir.canonicalFile
+    val candidate = File(base, decoded).canonicalFile
+    return candidate.takeIf { io.github.pennstatecs.geokit.models.gltf.GltfUris.isInside(base, it) && it.exists() }
+}
+
 @AndroidEntryPoint
 class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
@@ -499,9 +512,8 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             return ByteBuffer.allocateDirect(0)
         }
         return try {
-            val decoded = Uri.decode(uriString).substringBefore('#').substringBefore('?')
-            val candidate = File(baseDir, decoded).canonicalFile
-            if (!candidate.path.startsWith(baseDir.path) || !candidate.exists()) {
+            val candidate = viewerGltfResourceFile(baseDir, uriString, Uri::decode)
+            if (candidate == null) {
                 // Per resource: logcat only (missing sidecars are reported once at import).
                 DevLog.d(VIEWER_TAG) { "Missing glTF resource: $uriString" }
                 return ByteBuffer.allocateDirect(0)
