@@ -1,27 +1,28 @@
 package app.surrealar.coords
 
-import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
+import io.github.pennstatecs.geokit.convert.Epsg
+import io.github.pennstatecs.geokit.convert.GeodeticDatum
+import io.github.pennstatecs.geokit.convert.GeoidLookup
 import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
-import io.github.pennstatecs.geokit.geoid.Geoid18Grid
-import io.github.pennstatecs.geokit.projection.SpcsZone
-import io.github.pennstatecs.geokit.projection.SpcsZones
+import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
 
 import app.surrealar.settings.model.CoordinateSystemSettings
 import app.surrealar.settings.model.HorizontalSystem
 import app.surrealar.settings.model.LinearUnit
 import app.surrealar.settings.model.OutputDatum
 import app.surrealar.settings.model.VerticalReference
-import io.github.pennstatecs.geokit.projection.Utm
 import java.util.Locale
+import io.github.pennstatecs.geokit.convert.CoordinateConverter as GeoConverter
+import io.github.pennstatecs.geokit.convert.SourcePosition as GeoSourcePosition
 
 /** EPSG codes recorded in Coordinate.crsEpsg for the datum of stored lat/lon/height. */
 object StoredDatum {
-    const val WGS84_3D = 4979
-    const val WGS84_2D = 4326
-    const val NAD83_2011_3D = 6319
-    const val NAD83_2011_2D = 6318
+    const val WGS84_3D = Epsg.WGS84_3D
+    const val WGS84_2D = Epsg.WGS84_2D
+    const val NAD83_2011_3D = Epsg.NAD83_2011_3D
+    const val NAD83_2011_2D = Epsg.NAD83_2011_2D
 
-    fun isNad83(epsg: Int?) = epsg == NAD83_2011_3D || epsg == NAD83_2011_2D
+    fun isNad83(epsg: Int?) = Epsg.isNad83_2011(epsg)
 
     /**
      * A stored point as WGS84 (ITRF2014) for placement on Google Maps / ARCore Geospatial, which work
@@ -86,65 +87,39 @@ data class ConvertedPosition(
 )
 
 /**
- * Converts stored/received positions into the configured coordinate system. Pure (no Android): the
- * GEOID18 lookup is injected so it can be unit-tested and loaded from assets on device.
+ * Converts stored/received positions into the configured coordinate system. A thin adapter over
+ * geokit-core's [io.github.pennstatecs.geokit.convert.CoordinateConverter]: it maps the app's
+ * settings onto the library's neutral types (CoordinateSettingsMapping.kt) and the library result
+ * back onto [ConvertedPosition]. Pure (no Android): the GEOID18 lookup is injected so it can be
+ * unit-tested and loaded in the background on device. Output is pinned by CoordinateConverterGoldenTest.
  */
-class CoordinateConverter(private val geoidN: (latDeg: Double, lonDeg: Double) -> Double?) {
+class CoordinateConverter(geoidN: (latDeg: Double, lonDeg: Double) -> Double?) {
+
+    private val engine = GeoConverter(GeoidLookup { lat, lon -> geoidN(lat, lon) })
 
     fun convert(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition {
-        val h = src.ellipsoidalHeightM ?: 0.0
-        val source = GeodeticPosition(src.latDeg, src.lonDeg, h)
-        // Each datum computed only when needed.
-        val nad by lazy { if (src.isNad83) source else Itrf2014ToNad83.forward(source, src.epochYear) }
-        val itrf by lazy { if (src.isNad83) Itrf2014ToNad83.inverse(source, src.epochYear) else source }
-
-        val datum = s.effectiveDatum
-        val geo = if (datum == OutputDatum.NAD83_2011) nad else itrf
+        val r = engine.convert(src.toGeoSource(), s.toOutputSystem())
         val unit = s.unit
-
-        var easting: Double? = null; var northing: Double? = null; var zone: String? = null
-        var spcsZone: SpcsZone? = null
-        when (s.horizontal) {
-            HorizontalSystem.GEOGRAPHIC -> Unit
-            HorizontalSystem.UTM -> {
-                val u = Utm.forward(geo.latDeg, geo.lonDeg)
-                easting = unit.fromMeters(u.eastingM); northing = unit.fromMeters(u.northingM)
-                zone = "UTM ${u.zone}${if (geo.latDeg >= 0) "N" else "S"}"
-            }
-            HorizontalSystem.STATE_PLANE -> {
-                val z = SpcsZones.byEpsg(s.spcsZoneEpsg)
-                    ?: SpcsZones.byEpsg(CoordinateSystemSettings.DEFAULT_SPCS_ZONE_EPSG)!!
-                val (e, n) = z.projection.forward(nad.latDeg, nad.lonDeg)
-                easting = unit.fromMeters(e); northing = unit.fromMeters(n); zone = "SPCS ${z.zoneCode}"
-                spcsZone = z
-            }
-        }
-
-        var reason: String? = null
-        val heightM: Double? = when (s.vertical) {
-            VerticalReference.ELLIPSOIDAL ->
-                if (src.ellipsoidalHeightM == null) { reason = "no ellipsoidal height"; null } else geo.heightM
-            VerticalReference.NAVD88_GEOID18 -> when {
-                src.ellipsoidalHeightM == null -> { reason = "no ellipsoidal height"; null }
-                else -> geoidN(nad.latDeg, nad.lonDeg)?.let { n -> nad.heightM - n }
-                    ?: run { reason = "outside GEOID18 coverage"; null }
-            }
-            VerticalReference.RECEIVER_MSL ->
-                src.receiverMslM ?: run { reason = "receiver reported no MSL height"; null }
-        }
-
         return ConvertedPosition(
-            horizontal = s.horizontal, datum = datum, unit = unit,
-            latDeg = geo.latDeg, lonDeg = geo.lonDeg,
-            easting = easting, northing = northing, zoneLabel = zone,
-            vertical = s.vertical, height = heightM?.let { unit.fromMeters(it) },
-            heightUnavailableReason = reason,
-            outsideZone = spcsZone?.contains(nad.latDeg, nad.lonDeg) == false,
-            verticalLabel = if (s.vertical == VerticalReference.NAVD88_GEOID18)
-                Geoid18Grid.verticalDatumName(nad.latDeg, nad.lonDeg) else s.vertical.shortLabel,
+            horizontal = s.horizontal, datum = s.effectiveDatum, unit = unit,
+            latDeg = r.latDeg, lonDeg = r.lonDeg,
+            easting = r.eastingM?.let { unit.fromMeters(it) }, northing = r.northingM?.let { unit.fromMeters(it) },
+            zoneLabel = r.zoneLabel,
+            vertical = s.vertical, height = r.heightM?.let { unit.fromMeters(it) },
+            heightUnavailableReason = r.heightUnavailableReason?.description,
+            outsideZone = r.outsideZone,
+            verticalLabel = r.verticalDatumName ?: s.vertical.shortLabel,
         )
     }
 }
+
+/** The app's source position as geokit-core's. */
+fun SourcePosition.toGeoSource(): GeoSourcePosition = GeoSourcePosition(
+    latDeg = latDeg, lonDeg = lonDeg,
+    ellipsoidalHeightM = ellipsoidalHeightM, receiverMslHeightM = receiverMslM,
+    datum = if (isNad83) GeodeticDatum.NAD83_2011 else GeodeticDatum.WGS84_ITRF2014,
+    epochYear = epochYear,
+)
 
 /** Display strings for [ConvertedPosition] (shared by toolbar, detail screen, labels, export). */
 object CoordinateFormat {
