@@ -1,5 +1,6 @@
 package app.surrealar.ui.openinar
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import kotlinx.coroutines.CoroutineScope
@@ -66,7 +67,7 @@ class ArModelRenderer(private val scope: CoroutineScope) {
                 DevLog.d(TAG) { "GLB validated: ${File(filePath).name}" }
             } catch (e: Exception) {
                 cache[filePath] = CacheEntry(LoadState.FAILED, e.message)
-                DiagnosticsLogger.w(ArFilamentRenderer.DIAG, "Model GLB validation failed file=${File(filePath).name}", e)
+                DiagnosticsLogger.w(ArFilamentRenderer.DIAG, "Model GLB validation failed file=${LogPrivacy.file(filePath)}", e)
             }
         }
     }

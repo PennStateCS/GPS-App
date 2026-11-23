@@ -139,8 +139,8 @@ class GlbGeoreferenceGoldenTest {
             DiagnosticsLogger.flush()
             val log = File(dir, "app-log-current.txt").readText()
             val wanted = listOf(
-                "Model reprojection precision limited: float32 degree vertices file=${repro.name} latResM=",
-                "Model reprojected to local ENU file=${repro.name} georeferenced=true method=GLB_POSITION_WGS_LIKE confidence=HIGH",
+                "Model reprojection precision limited: float32 degree vertices file=${app.surrealar.util.diagnostics.LogPrivacy.file(repro.name)} latResM=",
+                "Model reprojected to local ENU file=${app.surrealar.util.diagnostics.LogPrivacy.file(repro.name)} georeferenced=true method=GLB_POSITION_WGS_LIKE confidence=HIGH",
                 "method=GLB_POSITION_WGS_LIKE confidence=HIGH",
                 "Model georeference detection skipped: unsupported GLB version file=",
                 "version=3",

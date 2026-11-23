@@ -1,5 +1,6 @@
 package app.surrealar.ui.openinar
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
@@ -488,7 +489,7 @@ class ArFilamentRenderer {
                 CachedModelAction.UPDATE_PLACEMENT -> { updatePlacement(key, placement); return }
                 CachedModelAction.RELOAD -> {
                     // Same coordinate, different model (relinked): the cached GLB is the old model.
-                    DiagnosticsLogger.i(DIAG, "Model relinked: reloading key=$key file=${File(filePath).name}")
+                    DiagnosticsLogger.i(DIAG, "Model relinked: reloading key=$key file=${LogPrivacy.file(filePath)}")
                     forgetModel(key)
                 }
             }
@@ -516,7 +517,7 @@ class ArFilamentRenderer {
             // No file stat here (main thread); OpenInARFragment's "preload dispatch" line has the file facts.
             loadStartMs[key] = SystemClock.elapsedRealtime()
             stuckLogged.remove(key)
-            DiagnosticsLogger.i(DIAG, "Model preload started key=$key file=$fileName")
+            DiagnosticsLogger.i(DIAG, "Model preload started key=$key file=${LogPrivacy.file(fileName)}")
         }
         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.LOADING)
         scope.launch {
@@ -551,7 +552,7 @@ class ArFilamentRenderer {
                             // Deleted, unlinked or relinked while the file was being read: the asset is
                             // never created (nothing to destroy mid-upload); a newer request is re-issued
                             // by settlePreload. Checked and published with no suspension in between.
-                            DiagnosticsLogger.i(DIAG, "Model load discarded: request superseded key=$key file=$fileName")
+                            DiagnosticsLogger.i(DIAG, "Model load discarded: request superseded key=$key file=${LogPrivacy.file(fileName)}")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.SKIPPED, "superseded")
                             loadingKeys.remove(key)
                             fileReadMutex.withLock { fileBytesCache.remove(filePath) }
@@ -563,7 +564,7 @@ class ArFilamentRenderer {
                         val asset = assetLoader.createAsset(buffer)
                         if (asset == null) {
                             DiagnosticsLogger.e(DIAG, "Model preload failed: GLB parse or asset creation failed key=$key " +
-                                "file=$fileName ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}")
+                                "file=${LogPrivacy.file(fileName)} ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
                             settlePreload(key, ok = false, ticket)
@@ -594,7 +595,7 @@ class ArFilamentRenderer {
                 throw e
             } catch (e: Exception) {
                 loadingKeys.remove(key)
-                DiagnosticsLogger.e(DIAG, "Model preload failed key=$key file=$fileName", e)
+                DiagnosticsLogger.e(DIAG, "Model preload failed key=$key file=${LogPrivacy.file(fileName)}", e)
                 ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
                 settlePreload(key, ok = false, ticket)
             }
@@ -765,7 +766,7 @@ class ArFilamentRenderer {
                     // Keyed without the move shift and yaw, which change every frame while a model is dragged or turned.
                     val firstPlacementLog = placementLogged.add("${pose.key}#${placement.copy(moveEastM = 0f, moveNorthM = 0f, moveUpM = 0f, yawDeg = 0f).hashCode()}#${pose.coordScale}")
 
-                    if (firstPlacementLog) DiagnosticsLogger.d(DIAG) { "MODEL_BOUNDS model=$fileName coordId=${pose.key} " +
+                    if (firstPlacementLog) DiagnosticsLogger.d(DIAG) { "MODEL_BOUNDS model=${LogPrivacy.file(fileName)} coordId=${pose.key} " +
                         "boundsMin=[${f(bounds.min.x)},${f(bounds.min.y)},${f(bounds.min.z)}] " +
                         "boundsMax=[${f(bounds.max.x)},${f(bounds.max.y)},${f(bounds.max.z)}] " +
                         "size=[${f(bounds.size.x)},${f(bounds.size.y)},${f(bounds.size.z)}] " +
@@ -776,7 +777,7 @@ class ArFilamentRenderer {
                     // presets would leave it misplaced — steer the user to Bottom Center / Custom Offset.
                     if (bounds.originToBottomCenterM > ModelBounds.FAR_FROM_ORIGIN_M &&
                         (origin == ModelPlacementOrigin.ORIGIN || origin == ModelPlacementOrigin.CUSTOM)) {
-                        if (firstPlacementLog) DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=$fileName " +
+                        if (firstPlacementLog) DiagnosticsLogger.w(DIAG, "MODEL_PLACEMENT_WARN model=${LogPrivacy.file(fileName)} " +
                             "originToBottomCenterM=${f(bounds.originToBottomCenterM)} " +
                             "hint=\"geometry far from origin; use Bottom Center or Custom Offset\"")
                         onModelPlacementWarning?.invoke(pose.key, fileName, bounds.originToBottomCenterM)
@@ -827,12 +828,12 @@ class ArFilamentRenderer {
                         else -> "trueScale"
                     }
                     if (firstPlacementLog) {
-                        val scaleMsg = "MODEL_SCALE model=$fileName coordId=${pose.key} fileSizeM=${f(maxHalfExtent * 2f)} " +
+                        val scaleMsg = "MODEL_SCALE model=${LogPrivacy.file(fileName)} coordId=${pose.key} fileSizeM=${f(maxHalfExtent * 2f)} " +
                             "worldSizeM=${f(worldSizeM)} effScale=${f(effScale)} ns=${"%.6f".format(ns)} " +
                             "perModel=${f(placement.scale)} global=${f(pose.coordScale)} state=$scaleCause"
                         if (scaleCause == "trueScale") DiagnosticsLogger.i(DIAG, scaleMsg) else DiagnosticsLogger.w(DIAG, scaleMsg)
 
-                        DiagnosticsLogger.d(DIAG) { "MODEL_PLACEMENT model=$fileName coordId=${pose.key} origin=$origin " +
+                        DiagnosticsLogger.d(DIAG) { "MODEL_PLACEMENT model=${LogPrivacy.file(fileName)} coordId=${pose.key} origin=$origin " +
                             "anchorPoint=[${f(ap.x)},${f(ap.y)},${f(ap.z)}] " +
                             "computedOffset=[${f(-ap.x)},${f(-ap.y)},${f(-ap.z)}] " +
                             "customOffset=[${f(customOffset.x)},${f(customOffset.y)},${f(customOffset.z)}] " +

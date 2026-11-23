@@ -8,7 +8,7 @@ object CapturesCollector {
 
     fun render(lines: List<String>): String = buildString {
         appendLine("=== Captures (last $LAST) ===")
-        appendLine("One line per capture outcome: name (when saved), mode, samples, duration, RTK, accuracy bucket, rejected fixes.")
+        appendLine("One line per capture outcome: point id (when saved), mode, samples, duration, RTK, accuracy bucket, rejected fixes.")
         appendLine()
         val tail = lines.filter { it.isNotBlank() }.takeLast(LAST)
         if (tail.isEmpty()) appendLine("(no captures recorded)")

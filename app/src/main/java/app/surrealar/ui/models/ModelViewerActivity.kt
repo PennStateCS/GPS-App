@@ -1,5 +1,6 @@
 package app.surrealar.ui.models
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
@@ -363,7 +364,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
 
             if (modelBuffer == null) {
                 // loadFile already logged why (with the exception); this records which file.
-                DiagnosticsLogger.e("MODEL", "Model viewer file read failed file=${modelFile.name}")
+                DiagnosticsLogger.e("MODEL", "Model viewer file read failed file=${LogPrivacy.file(modelFile.name)}")
                 showLoadFailure()
                 return@launch
             }
@@ -476,7 +477,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             GltfResources.externalResourceUris(modelFile.readText())
                 .associateWith { uri -> resolveGltfResource(baseDir, uri) }
         } catch (t: Throwable) {
-            DiagnosticsLogger.w("MODEL", "Model viewer glTF resource pre-read failed: loading on demand file=${modelFile.name}", t)
+            DiagnosticsLogger.w("MODEL", "Model viewer glTF resource pre-read failed: loading on demand file=${LogPrivacy.file(modelFile.name)}", t)
             emptyMap()
         }
     }
@@ -502,7 +503,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }
             true
         } catch (e: Throwable) {
-            DiagnosticsLogger.e("MODEL", "Model viewer load failed file=${modelFile.name}", e)
+            DiagnosticsLogger.e("MODEL", "Model viewer load failed file=${LogPrivacy.file(modelFile.name)}", e)
             false
         }
     }
@@ -1374,7 +1375,7 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
                     ?.substringAfterLast('/')?.substringAfterLast('\\') ?: "model"
 
                 DiagnosticsLogger.w("MODEL", "Model viewer thumbnail capture failed: falling back to off-screen capture " +
-                    "attempts=$CAPTURE_MAX_ATTEMPTS file=$modelFileName")
+                    "attempts=$CAPTURE_MAX_ATTEMPTS file=${LogPrivacy.file(modelFileName)}")
                 ThumbnailCaptureActivity.start(this, modelPath, modelName, modelFileName)
             } catch (e: Exception) {
                 DiagnosticsLogger.e("MODEL", "Model viewer off-screen thumbnail capture start failed", e)

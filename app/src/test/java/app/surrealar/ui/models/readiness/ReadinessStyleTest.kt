@@ -48,11 +48,11 @@ class ReadinessStyleTest {
             ReadinessCheck("links", "t", CheckStatus.PASS, "d"),
         )
         assertEquals(
-            "MODEL_READINESS model=shed.glb verdict=NOT_READY fails=[file] warns=[placement,units]",
+            "MODEL_READINESS model=${app.surrealar.util.diagnostics.LogPrivacy.file("shed.glb")} verdict=NOT_READY fails=[file] warns=[placement,units]",
             ReadinessStyle.logLine("shed.glb", r),
         )
         assertEquals(
-            "MODEL_READINESS model=x.glb verdict=READY fails=[] warns=[]",
+            "MODEL_READINESS model=${app.surrealar.util.diagnostics.LogPrivacy.file("x.glb")} verdict=READY fails=[] warns=[]",
             ReadinessStyle.logLine("x.glb", report(Verdict.READY)),
         )
     }

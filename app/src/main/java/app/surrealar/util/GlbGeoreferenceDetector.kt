@@ -1,5 +1,6 @@
 package app.surrealar.util
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.domain.model.ModelLocationConfidence
 import app.surrealar.util.diagnostics.DiagTags
@@ -57,7 +58,7 @@ object GlbGeoreferenceDetector {
             is Detector.Result.Found -> {
                 logSpan(name, r.span)
                 val confidence = r.confidence.toDomain()
-                DiagnosticsLogger.i(DiagTags.MODEL, "Model georeference detected file=$name georeferenced=true " +
+                DiagnosticsLogger.i(DiagTags.MODEL, "Model georeference detected file=${LogPrivacy.file(name)} georeferenced=true " +
                     "method=${r.method} confidence=$confidence")   // no coordinates
                 EmbeddedModelLocation(
                     latitude = r.origin.latitudeDeg,
@@ -73,19 +74,19 @@ object GlbGeoreferenceDetector {
     private fun logRejected(name: String, r: Detector.Result.Rejected) {
         when (r.reason) {
             Detector.Result.Rejected.Reason.UNSUPPORTED_VERSION ->
-                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: unsupported GLB version file=$name version=${r.value}")
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: unsupported GLB version file=${LogPrivacy.file(name)} version=${r.value}")
             Detector.Result.Rejected.Reason.FIRST_CHUNK_NOT_JSON ->
                 DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: first chunk is not JSON " +
-                    "file=$name chunkType=0x${(r.value ?: 0).toString(16)}")
+                    "file=${LogPrivacy.file(name)} chunkType=0x${(r.value ?: 0).toString(16)}")
             Detector.Result.Rejected.Reason.JSON_CHUNK_LENGTH ->
                 DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection skipped: JSON chunk length out of safe range " +
-                    "file=$name chunkBytes=${r.value}")
+                    "file=${LogPrivacy.file(name)} chunkBytes=${r.value}")
             Detector.Result.Rejected.Reason.TRUNCATED ->
-                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed: unexpected end of file file=$name", r.cause)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed: unexpected end of file file=${LogPrivacy.file(name)}", r.cause)
             Detector.Result.Rejected.Reason.JSON_PARSE_ERROR ->
-                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed: JSON parse error file=$name", r.cause)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed: JSON parse error file=${LogPrivacy.file(name)}", r.cause)
             Detector.Result.Rejected.Reason.FAILED ->
-                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed file=$name", r.cause)
+                DiagnosticsLogger.w(DiagTags.MODEL, "Model georeference detection failed file=${LogPrivacy.file(name)}", r.cause)
         }
     }
 

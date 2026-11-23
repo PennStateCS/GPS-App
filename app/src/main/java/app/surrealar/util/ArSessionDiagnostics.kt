@@ -233,7 +233,7 @@ object ArSessionDiagnostics {
             appendLine("(no model-linked coordinates considered)")
         } else {
             models().forEach { m ->
-                appendLine("coordId=${m.coordinateId} name=\"${m.coordinateName}\" modelId=${m.modelId} " +
+                appendLine("coordId=${m.coordinateId} nameRef=${app.surrealar.util.diagnostics.LogPrivacy.ref(m.coordinateName)} modelId=${m.modelId} " +
                     "exists=${m.fileExists} sizeBytes=${m.fileSizeBytes} status=${m.status}" +
                     (m.reason?.let { " reason=$it" } ?: ""))
             }
