@@ -64,7 +64,7 @@ class CoordinateSystemService @Inject constructor(
 
     /**
      * EPSG code to store in Coordinate.crsEpsg for a capture. Fixes on the GNSS feed are always
-     * WGS84: NAD83(2011) receiver output is normalised as it enters FixSwitchboard (FeedDatum),
+     * WGS84: NAD83(2011) receiver output is normalised as it enters FixSwitchboard (geokit-gnss FixDatumNormalizer),
      * so captures are stored in WGS84 and converted back to NAD83 on display.
      */
     @Suppress("UNUSED_PARAMETER")
