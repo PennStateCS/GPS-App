@@ -273,6 +273,13 @@ class ArFilamentRenderer {
 
     private var initialized = false
 
+    /** Native objects [init] creates, each marked as soon as it exists (see [destroy]). */
+    internal enum class FilamentResource {
+        ENGINE, RENDERER, SCENE, EMPTY_SCENE, CAMERA_ENTITY, CAMERA, VIEW,
+        ASSET_LOADER, RESOURCE_LOADER, TEST_RESOURCE_LOADER, UI_HELPER,
+    }
+    private val resources = NativeResourceTracker<FilamentResource>()
+
     /**
      * Called on the main thread when a model whose geometry is far from its local origin
      * is first added to the scene with a placement preset (ORIGIN or CUSTOM) that is unlikely
@@ -324,18 +331,34 @@ class ArFilamentRenderer {
 
     /**
      * Create the Filament engine and attach [UiHelper] to [textureView].
+     *
+     * If any step throws, everything created so far is released (via [destroy]) before the error is
+     * rethrown, so a failed init leaks no native objects; calling [destroy] afterwards is a no-op.
      */
     fun init(textureView: TextureView) {
-        Utils.init()   // loads Filament native .so — must precede Engine.create()
-        engine   = Engine.create()
-        renderer = engine.createRenderer()
-        scene    = engine.createScene()
-        emptyScene = engine.createScene()
+        check(!initialized && resources.isEmpty) { "ArFilamentRenderer.init() called on a live renderer" }
+        try {
+            initResources(textureView)
+        } catch (t: Throwable) {
+            DiagnosticsLogger.e(DIAG, "AR renderer init failed: releasing partially created resources " +
+                "created=${resources.liveResources}", t)
+            destroy()
+            throw t
+        }
+    }
 
-        cameraEntity = EntityManager.get().create()
-        camera = engine.createCamera(cameraEntity)
+    private fun initResources(textureView: TextureView) {
+        Utils.init()   // loads Filament native .so — must precede Engine.create()
+        engine   = Engine.create().also { resources.created(FilamentResource.ENGINE) }
+        renderer = engine.createRenderer().also { resources.created(FilamentResource.RENDERER) }
+        scene    = engine.createScene().also { resources.created(FilamentResource.SCENE) }
+        emptyScene = engine.createScene().also { resources.created(FilamentResource.EMPTY_SCENE) }
+
+        cameraEntity = EntityManager.get().create().also { resources.created(FilamentResource.CAMERA_ENTITY) }
+        camera = engine.createCamera(cameraEntity).also { resources.created(FilamentResource.CAMERA) }
 
         view = engine.createView().also { v ->
+            resources.created(FilamentResource.VIEW)
             v.scene  = scene
             v.camera = camera
         }
@@ -365,8 +388,9 @@ class ArFilamentRenderer {
 
         // GLB loading infrastructure.
         assetLoader    = AssetLoader(engine, UbershaderProvider(engine), EntityManager.get())
-        resourceLoader = ResourceLoader(engine, true)
-        testResourceLoader = ResourceLoader(engine, true)
+            .also { resources.created(FilamentResource.ASSET_LOADER) }
+        resourceLoader = ResourceLoader(engine, true).also { resources.created(FilamentResource.RESOURCE_LOADER) }
+        testResourceLoader = ResourceLoader(engine, true).also { resources.created(FilamentResource.TEST_RESOURCE_LOADER) }
 
         // UiHelper: replaces manual SurfaceTextureListener.
         // isOpaque = false → requests a translucent EGL surface config, which combined
@@ -376,6 +400,8 @@ class ArFilamentRenderer {
         // and the TextureView covers the GLSurfaceView as solid black.
         textureView.isOpaque = false
         uiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK).also { h ->
+            // Marked before attachTo(): a throw part-way through attaching still gets detach().
+            resources.created(FilamentResource.UI_HELPER)
             h.isOpaque = false
             h.renderCallback = object : UiHelper.RendererCallback {
                 override fun onNativeWindowChanged(surface: android.view.Surface) {
@@ -980,13 +1006,20 @@ class ArFilamentRenderer {
      *  4. Destroy remaining engine-owned objects (renderer, view, camera, scene).
      *  5. Deferred: engine.flushAndWait() + engine.destroy() after 50 ms so that any
      *     messages posted by UiHelper/DisplayHelper have already run on the main thread.
+     *
+     * Each native step runs only if [init] got as far as creating that object ([resources]), so this
+     * is also the cleanup for a partial init. Idempotent: a second call (or one after a failed init)
+     * finds nothing live and returns.
      */
     fun destroy() {
-        if (!initialized) return
+        if (!initialized && resources.isEmpty) return
         initialized = false
+        val logFailure: (FilamentResource, Exception) -> Unit = { r, e ->
+            DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: $r destroy error", e)
+        }
 
-        resourceLoader.asyncCancelLoad()
-        testResourceLoader.asyncCancelLoad()
+        if (resources.isLive(FilamentResource.RESOURCE_LOADER)) resourceLoader.asyncCancelLoad()
+        if (resources.isLive(FilamentResource.TEST_RESOURCE_LOADER)) testResourceLoader.asyncCancelLoad()
         loadingKeys.clear()
         loadingPaths.clear()
         pendingPreloads.clear()
@@ -1024,32 +1057,48 @@ class ArFilamentRenderer {
         // Explicitly destroy gltfio utility objects BEFORE the engine.
         // Their JVM finalizers call back into native; if the engine is already
         // gone when finalizers run, Filament throws PreconditionPanic.
-        runCatching { resourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: resource loader destroy error", it) }
-        runCatching { testResourceLoader.destroy() }.onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: test resource loader destroy error", it) }
-        runCatching { assetLoader.destroy()    }.onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: asset loader destroy error", it) }
+        resources.release(FilamentResource.RESOURCE_LOADER, logFailure) { resourceLoader.destroy() }
+        resources.release(FilamentResource.TEST_RESOURCE_LOADER, logFailure) { testResourceLoader.destroy() }
+        resources.release(FilamentResource.ASSET_LOADER, logFailure) { assetLoader.destroy() }
 
         // Detach UiHelper — triggers onDetachedFromSurface() → destroySwapChain().
-        runCatching { uiHelper.detach() }
+        resources.release(FilamentResource.UI_HELPER, logFailure) { uiHelper.detach() }
+        // A detach that threw (or never reached the callback) must not leave the swap chain behind.
+        swapChain?.let { sc ->
+            if (resources.isLive(FilamentResource.ENGINE)) {
+                runCatching { engine.destroySwapChain(sc) }
+                    .onFailure { DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: swap chain destroy error", it) }
+            }
+        }
+        swapChain = null
 
-        runCatching { engine.destroyRenderer(renderer) }
-        runCatching { engine.destroyView(view) }
-        runCatching { engine.destroyCameraComponent(cameraEntity) }
-        runCatching { EntityManager.get().destroy(cameraEntity) }
-        runCatching { engine.destroyScene(scene) }
-        runCatching { engine.destroyScene(emptyScene) }
+        resources.release(FilamentResource.RENDERER, logFailure) { engine.destroyRenderer(renderer) }
+        resources.release(FilamentResource.VIEW, logFailure) { engine.destroyView(view) }
+        resources.release(FilamentResource.CAMERA, logFailure) { engine.destroyCameraComponent(cameraEntity) }
+        resources.release(FilamentResource.CAMERA_ENTITY, logFailure) { EntityManager.get().destroy(cameraEntity) }
+        cameraEntity = 0
+        resources.release(FilamentResource.SCENE, logFailure) { engine.destroyScene(scene) }
+        resources.release(FilamentResource.EMPTY_SCENE, logFailure) { engine.destroyScene(emptyScene) }
 
         // Defer engine.destroy() so any queued Filament main-thread messages
         // (e.g. from UiHelper's DisplayHelper) can run while the engine is still alive.
-        val eng = engine
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                eng.flushAndWait()
-                eng.destroy()
-                DevLog.d(TAG) { "Engine destroyed" }
-            } catch (t: Throwable) {
-                DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: Filament engine destroy error", t)
+        if (resources.isLive(FilamentResource.ENGINE)) {
+            val eng = engine
+            resources.release(FilamentResource.ENGINE, logFailure) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        eng.flushAndWait()
+                        eng.destroy()
+                        DevLog.d(TAG) { "Engine destroyed" }
+                    } catch (t: Throwable) {
+                        DiagnosticsLogger.w(DIAG, "AR renderer teardown failed: Filament engine destroy error", t)
+                    }
+                }, 50)
             }
-        }, 50)
+        }
+        if (!resources.isEmpty) {
+            DiagnosticsLogger.e(DIAG, "AR renderer teardown left native resources live=${resources.liveResources}")
+        }
 
         DevLog.d(TAG) { "Destroyed" }
     }

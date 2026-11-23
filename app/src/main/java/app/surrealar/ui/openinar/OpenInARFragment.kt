@@ -710,8 +710,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // device) must not take down the whole AR screen. On failure the renderer stays null and
         // every `filamentRenderer?.` call no-ops, so GLES pins/labels still work — only GLB models
         // are unavailable. Throwable (not Exception) to also catch UnsatisfiedLinkError.
+        var createdRenderer: ArFilamentRenderer? = null
         filamentRenderer = try {
             ArFilamentRenderer().also { renderer ->
+                createdRenderer = renderer
                 renderer.init(binding.filamentSurface)
                 // Surface the "geometry far from origin" warning as an in-app snackbar.
                 // Fires once per affected model when it is first added to the Filament scene.
@@ -735,6 +737,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         } catch (t: Throwable) {
             DiagnosticsLogger.e(DIAG, "AR renderer init failed: 3D models disabled, " +
                 "pins and labels still render", t)
+            // init() already released what it created; destroy() is idempotent and also covers a
+            // failure after init() returned (e.g. in the callback setup above).
+            createdRenderer?.destroy()
             null
         }
 
