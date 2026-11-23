@@ -27,6 +27,12 @@ interface CoordinateRepository {
     suspend fun insert(coordinate: Coordinate)
     suspend fun insertAll(coordinates: List<Coordinate>)
     suspend fun update(coordinate: Coordinate)
+    /**
+     * Read-modify-write of one coordinate in a single transaction: reads [id], applies [transform] and
+     * stores the result. Returns the stored coordinate, or null when [id] doesn't exist. If
+     * [transform] or the write fails, the stored coordinate is unchanged.
+     */
+    suspend fun updateById(id: String, transform: (Coordinate) -> Coordinate): Coordinate?
     suspend fun deleteById(id: String)
     suspend fun deleteAll()
     /** Deletes every coordinate and inserts [coordinates] atomically (all or nothing). */

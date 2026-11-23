@@ -43,6 +43,9 @@ class CoordinateRepositoryImpl @javax.inject.Inject constructor(
         coordinateDao.update(coordinate.toEntity())
     }
 
+    override suspend fun updateById(id: String, transform: (Coordinate) -> Coordinate): Coordinate? =
+        coordinateDao.updateById(id) { row -> transform(row.toDomain()).toEntity() }?.toDomain()
+
     override suspend fun deleteById(id: String) {
         coordinateDao.deleteById(id)
     }

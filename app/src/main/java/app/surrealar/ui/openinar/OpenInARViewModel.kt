@@ -9,7 +9,6 @@ import app.surrealar.domain.repository.GnssReceiverSettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.settings.model.ArDisplaySettings
 import app.surrealar.util.DiagnosticsLogger
-import io.github.pennstatecs.geokit.ar.model.ModelMove
 import io.github.pennstatecs.geokit.ar.model.ModelPlacement
 import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -140,26 +139,34 @@ class OpenInARViewModel @Inject constructor(
 
     /** Advance to the next distance-filter step (wraps around). */
     /**
-     * Saves an AR move onto the point (see [SaveModelMoveUseCase]); [onResult] gets null on success or
-     * the error (main thread). The write is NonCancellable, so leaving AR right after Done still saves;
-     * [onResult] is skipped once this ViewModel is cleared.
+     * Saves an AR move onto the point (see [SaveModelMoveUseCase]); [onResult] gets the stored point's
+     * updatedAt on success, or the error (main thread). The point is stamped no earlier than
+     * [MoveSessionController.SaveRequest.startedAtMs], which is how the AR screen tells when the
+     * database shows the save. The write is NonCancellable, so leaving AR right after Done still
+     * saves; [onResult] is skipped once this ViewModel is cleared. [provenance] goes to the
+     * diagnostics log (never the point's position).
      */
-    fun saveModelMove(coordinateId: String, move: ModelMove, resolvedYawDeg: Float, onResult: (Throwable?) -> Unit) =
+    fun saveModelMove(
+        request: MoveSessionController.SaveRequest,
+        fallbackYawDeg: Float,
+        provenance: MoveSaveProvenance,
+        onResult: (Result<Long>) -> Unit,
+    ) =
         viewModelScope.launch {
-            val error = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 try {
-                    saveModelMoveUseCase(coordinateId, move, resolvedYawDeg)
-                    // Size of the move only: never the point's position.
-                    DiagnosticsLogger.i(DIAG_MOVE, "AR model move saved coordinateId=$coordinateId " +
-                        "dE=${"%.2f".format(move.eastM)} dN=${"%.2f".format(move.northM)} " +
-                        "dUp=${"%.2f".format(move.upM)} dYaw=${"%.1f".format(move.yawDeg)}")
-                    null
+                    val nowMs = maxOf(System.currentTimeMillis(), request.startedAtMs)
+                    val saved = saveModelMoveUseCase(request.id, request.move, fallbackYawDeg, nowMs)
+                    val storedHorizM = kotlin.math.hypot(saved.modelMoveEastM ?: 0.0, saved.modelMoveNorthM ?: 0.0)
+                    DiagnosticsLogger.i(DIAG_MOVE, provenance.logLine(request.id, request.move, storedHorizM))
+                    Result.success(saved.updatedAt)
                 } catch (e: Exception) {
-                    DiagnosticsLogger.e(DIAG_MOVE, "AR model move save failed coordinateId=$coordinateId", e)
-                    e
+                    DiagnosticsLogger.e(DIAG_MOVE, "AR model move save failed coordinateId=${request.id} " +
+                        "(stored point unchanged, move kept for this session)", e)
+                    Result.failure(e)
                 }
             }
-            if (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.isActive == true) onResult(error)
+            if (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.isActive == true) onResult(result)
         }
 
     fun cycleDistanceFilter() {

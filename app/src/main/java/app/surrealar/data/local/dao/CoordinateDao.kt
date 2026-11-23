@@ -44,6 +44,20 @@ interface CoordinateDao {
     @Query("DELETE FROM coordinates WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    /**
+     * Reads row [id], applies [transform] and writes the result back in one transaction, so a
+     * concurrent write can't slip in between the read and the write. Returns the written row, or
+     * null when there is no such row. If [transform] or the write throws, nothing is changed.
+     */
+    @Transaction
+    suspend fun updateById(id: String, transform: (CoordinateEntity) -> CoordinateEntity): CoordinateEntity? {
+        val row = getById(id) ?: return null
+        val updated = transform(row)
+        require(updated.id == id) { "updateById must not change the id" }
+        update(updated)
+        return updated
+    }
+
     // --- Reactive Flow ---
     @Query("SELECT * FROM coordinates ORDER BY timestamp DESC")
     fun observeAll(): Flow<List<CoordinateEntity>>
