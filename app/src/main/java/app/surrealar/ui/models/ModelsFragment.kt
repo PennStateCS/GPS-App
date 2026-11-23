@@ -488,37 +488,14 @@ class ModelsFragment : Fragment() {
         if (sourceRoot == null || !sourceRoot.exists()) return
 
         // Per resource: logcat detail only; one summary line for the export.
-        var missing = 0
-        var unsafe = 0
-        var failed = 0
-        var firstError: Exception? = null
-        resources.forEach { relative ->
-            try {
-                val source = File(sourceRoot, relative).canonicalFile
-                if (!source.path.startsWith(sourceRoot.canonicalPath) || !source.exists()) {
-                    missing++
-                    DevLog.d("ModelsFragment") { "Missing glTF sidecar resource: $relative" }
-                    return@forEach
-                }
-                val target = File(targetRoot, relative).canonicalFile
-                if (!target.path.startsWith(targetRoot.canonicalPath)) {
-                    unsafe++
-                    DevLog.d("ModelsFragment") { "Skipping unsafe glTF resource path: $relative" }
-                    return@forEach
-                }
-                target.parentFile?.mkdirs()
-                source.inputStream().use { input ->
-                    FileOutputStream(target).use { output -> input.copyTo(output) }
-                }
-            } catch (e: Exception) {
-                failed++
-                if (firstError == null) firstError = e
-                DevLog.d("ModelsFragment") { "Failed to copy glTF resource: $relative" }
-            }
-        }
-        if (missing + unsafe + failed > 0) {
+        val report = GltfSidecars.copy(sourceRoot, targetRoot, resources)
+        report.missing.forEach { relative -> DevLog.d("ModelsFragment") { "Missing glTF sidecar resource: $relative" } }
+        report.unsafe.forEach { relative -> DevLog.d("ModelsFragment") { "Skipping unsafe glTF resource path: $relative" } }
+        report.failed.forEach { relative -> DevLog.d("ModelsFragment") { "Failed to copy glTF resource: $relative" } }
+        if (report.problems > 0) {
             DiagnosticsLogger.w("MODEL", "Model glTF sidecar copy incomplete: model may render without some textures " +
-                "total=${resources.size} missing=$missing unsafe=$unsafe failed=$failed", firstError)
+                "total=${resources.size} missing=${report.missing.size} unsafe=${report.unsafe.size} failed=${report.failed.size}",
+                report.firstError)
         }
     }
 
