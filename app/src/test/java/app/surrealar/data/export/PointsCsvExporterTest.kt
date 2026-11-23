@@ -53,6 +53,16 @@ class PointsCsvExporterTest {
         assertTrue(row.contains(",'-note,"))
     }
 
+    @Test fun `each row names its own UTM zone across the 78W line`() {
+        val west = point("W17").copy(longitude = -78.2)    // zone 17
+        val east = point("E18").copy(longitude = -77.8)    // zone 18
+        val s = CoordinateSystemSettings(HorizontalSystem.UTM, unit = LinearUnit.METERS)
+        val rows = PointsCsvExporter.build(listOf(west, east), convert(s)).trim().lines().drop(1)
+        assertTrue(rows[0], rows[0].contains("UTM 17N"))
+        assertTrue(rows[1], rows[1].contains("UTM 18N"))
+        assertTrue(rows[1], !rows[1].contains("UTM 17N"))
+    }
+
     @Test fun `geographic output uses latitude and longitude columns`() {
         val csv = PointsCsvExporter.build(listOf(point("P1")), convert(CoordinateSystemSettings()))
         assertTrue(csv.startsWith("Point,Latitude,Longitude,"))

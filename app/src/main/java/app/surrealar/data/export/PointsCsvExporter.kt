@@ -24,7 +24,6 @@ object PointsCsvExporter {
         val grid = first?.easting != null
         val unit = first?.unit?.suffix ?: "m"
         val heightRef = first?.vertical?.shortLabel ?: ""
-        val system = first?.let { CoordinateFormat.systemSummary(it) } ?: ""
         if (grid) {
             sb.append("Point,Northing ($unit),Easting ($unit),Elevation ($unit $heightRef),Description,System\n")
         } else {
@@ -37,6 +36,9 @@ object PointsCsvExporter {
                 String.format(Locale.US, "%.${d}f,%.${d}f", p.northing, p.easting)
             else
                 String.format(Locale.US, "%.9f,%.9f", p.latDeg, p.lonDeg)
+            // Per row: UTM picks each point's own zone, and "outside zone" is per point, so a job that
+            // crosses a zone line must not carry the first point's zone onto every row.
+            val system = CoordinateFormat.systemSummary(p)
             sb.append(csv(c.name)).append(',').append(xy).append(',').append(elev).append(',')
                 .append(csv(c.note.orEmpty())).append(',').append(csv(system)).append('\n')
         }
