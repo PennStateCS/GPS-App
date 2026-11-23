@@ -149,6 +149,20 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    // Coverage for Robolectric tests: Robolectric loads app classes through its own class loader, and
+    // those classes have no code-source location, so JaCoCo ignored them by default (backup/import,
+    // Room DAOs and migrations read 0% even though tests run them). jdk.internal is excluded because
+    // instrumenting it breaks with includeNoLocationClasses. Registered once AGP has applied the
+    // jacoco plugin (enableUnitTestCoverage), so the task extension exists.
+    pluginManager.withPlugin("jacoco") {
+        tasks.withType<Test>().configureEach {
+            extensions.configure<JacocoTaskExtension> {
+                isIncludeNoLocationClasses = true
+                excludes = listOf("jdk.internal.*")
+            }
+        }
+    }
+
     // Expose the exported Room schemas to instrumented tests so MigrationTestHelper can load them.
     sourceSets {
         getByName("androidTest") {
