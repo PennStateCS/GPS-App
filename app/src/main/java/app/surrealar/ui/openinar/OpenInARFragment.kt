@@ -580,7 +580,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             val vm = snapshot?.viewMatrix ?: return
             val pm = snapshot.projMatrix
-            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, hideModels = !snapshot.cameraTracking)
+            filamentRenderer?.renderFrame(frameTimeNs, vm, pm, hideModels =
+                !ArTrackingVisibility.drawGeospatialModels(snapshot.cameraTracking, snapshot.earthTracking))
             // Update only after a successful render so we retry the clear frame if
             // camera matrices were unavailable this tick.
             choreoPrevHadModels = hasModels
@@ -603,6 +604,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val liveTestKeys: Set<String> = emptySet(),
         /** False once ARCore camera tracking is lost — the matrices above are stale; hide models. */
         val cameraTracking: Boolean = true,
+        /**
+         * False while Earth (geospatial) tracking is lost although the camera tracks: anchor poses are
+         * stale and labels are gone, so models are hidden too (see [ArTrackingVisibility]).
+         */
+        val earthTracking: Boolean = true,
         /** Real-world depth occluder for this frame; null when occlusion is off or no depth yet. */
         val occlusion: OcclusionFrame? = null,
         /** Latest ARCore Environmental HDR light estimate (null = none yet / keep current lighting). */
@@ -2175,9 +2181,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 else groundSnapper.reset()
 
                 frameMoveAnchor = null
+                // Without Earth tracking collectGeoAnchors draws nothing (stale geospatial poses); the
+                // test grid (also Earth anchors) follows suit, and models are hidden via the snapshot.
+                val earthTracking = earth?.trackingState == TrackingState.TRACKING
                 collectGeoAnchors(earth, vp, margin, pinPositions, labelEntries, arrowEntries, newModelPoses)
                 moveFrame = if (moveTargetId != null) moveFrameFor(camera) else null
-                testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
+                if (earthTracking) testAnchorController.render(vp, model, modelScaled, mvp, cubeRenderer,
                     surfaceWidth, surfaceHeight, margin, labelEntries, arrowEntries, newModelPoses,
                     groundSnapper)
 
@@ -2197,6 +2206,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     modelPoses  = newModelPoses,
                     visibleKeys = modelVisibleKeys,
                     liveTestKeys = testAnchorController.liveModelKeys(),
+                    earthTracking = earthTracking,
                     occlusion   = occlusion,
                     light       = captureLightEstimate(frame)
                 )
