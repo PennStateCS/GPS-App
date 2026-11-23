@@ -107,7 +107,14 @@ class ImportCoordinateBackupUseCase @Inject constructor(
                 val name = obj.optString("name", id)
                 val lat = obj.optDouble("latitude")
                 val lon = obj.optDouble("longitude")
-                val alt = obj.optDouble("altitude", 0.0)
+                // A row with no (or a non-numeric) altitude is skipped and reported, as in full backups:
+                // importing it at 0.0 m would place the point ~360 m too low in PA (altitude is
+                // ellipsoidal and its column is non-null). 0.0 itself is a real height and is kept.
+                val alt = if (obj.isNull("altitude")) Double.NaN else obj.optDouble("altitude")
+                if (!alt.isFinite()) {
+                    skipped += "'$name' ($id): no altitude in backup"
+                    continue
+                }
                 val ts = obj.optLong("timestamp", now)
                 val rawIcon = obj.optString("icon", "ic_pin")
                 val icon = when (rawIcon) {

@@ -211,6 +211,42 @@ class ImportCoordinateBackupIntegrityTest {
         assertEquals(listOf("row 3 (malformed)", "'NoLat' (n)", "'OutOfRange' (o)"), plan.skippedInvalid)
     }
 
+    @Test fun legacyArray_rowWithoutAltitude_isSkippedAndReported_notImportedAtZero() = runTest {
+        val repo = FakeCoordinateRepository(emptyList())
+        val raw = """[
+            {"id":"m","name":"Missing","latitude":41.0,"longitude":-76.0,"timestamp":1},
+            {"id":"n","name":"NullAlt","latitude":41.0,"longitude":-76.0,"altitude":null,"timestamp":1},
+            {"id":"s","name":"TextAlt","latitude":41.0,"longitude":-76.0,"altitude":"high","timestamp":1},
+            {"id":"z","name":"Zero","latitude":41.0,"longitude":-76.0,"altitude":0.0,"timestamp":1},
+            {"id":"g","name":"Good","latitude":41.0,"longitude":-76.0,"altitude":187.25,"timestamp":1}
+        ]"""
+        val plan = useCase(repo)(raw, replace = false)
+        // 0.0 is a legitimate height and is kept exactly; missing / null / non-numeric never become 0.
+        assertEquals(listOf("Zero", "Good"), repo.store.map { it.name })
+        assertEquals(0.0, repo.store[0].altitude, 0.0)
+        assertEquals(187.25, repo.store[1].altitude, 0.0)
+        assertEquals(
+            listOf(
+                "'Missing' (m): no altitude in backup",
+                "'NullAlt' (n): no altitude in backup",
+                "'TextAlt' (s): no altitude in backup",
+            ),
+            plan.skippedInvalid,
+        )
+    }
+
+    @Test fun legacyArray_replaceWithRowsMissingAltitude_asksBeforeWiping() = runTest {
+        // A skipped row makes the replace "partial", so the default (CANCEL) keeps the local points.
+        val repo = FakeCoordinateRepository(listOf(coord("keep", "Keep")))
+        val raw = """[
+            {"id":"m","name":"Missing","latitude":41.0,"longitude":-76.0,"timestamp":1},
+            {"id":"g","name":"Good","latitude":41.0,"longitude":-76.0,"altitude":1.0,"timestamp":1}
+        ]"""
+        val plan = useCase(repo)(raw, replace = true)
+        assertTrue(plan.cancelled)
+        assertEquals(listOf("Keep"), repo.store.map { it.name })
+    }
+
     @Test fun legacyEmptyArray_isANoOp() = runTest {
         val repo = FakeCoordinateRepository(listOf(coord("keep", "Keep")))
         val plan = useCase(repo)("[]", replace = true)
