@@ -1903,15 +1903,20 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         glRendererInitFailures = 0
         glRendererInitGaveUp = false
         glRendererInitLastAttemptMs = android.os.SystemClock.elapsedRealtime()
-        if (!createGlRenderers()) {
-            // backgroundRenderer remains null; onDrawFrame retries (bounded, see retryGlRenderersIfDue).
-            return
-        }
+        // A new surface means a new GL context: objects from the old one are gone with it. Clear them so
+        // createGlRenderers builds the whole set and a failure never leaves a dead-context renderer.
+        backgroundRenderer = null
+        cubeRenderer = null
+        planeVisualizer = null
+        pointCloudRenderer = null
+        // Whatever failed stays null; onDrawFrame retries just the missing ones (bounded, see
+        // retryGlRenderersIfDue).
+        createGlRenderers()
 
         // Pre-register the camera texture name with the session so that ARCore can start
         // delivering camera frames immediately without waiting for the first onDrawFrame call.
         // If the session is not created yet (first launch), onDrawFrame will set it anyway.
-        session?.setCameraTextureName(backgroundRenderer!!.textureId)
+        backgroundRenderer?.let { session?.setCameraTextureName(it.textureId) }
     }
 
     // GL renderer init retry (GL thread only). onSurfaceCreated is attempt 1; onDrawFrame retries at most
@@ -1920,30 +1925,49 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var glRendererInitGaveUp = false
     private var glRendererInitLastAttemptMs = 0L
 
-    /** Creates the GLES renderers (GL thread). Returns false, logging the failure, if one throws. */
-    private fun createGlRenderers(): Boolean = try {
-        backgroundRenderer   = BackgroundRenderer()
-        cubeRenderer         = SimpleObjectRenderer()
-        planeVisualizer      = PlaneVisualizer()
-        pointCloudRenderer   = PointCloudRenderer()
-        true
-    } catch (e: Exception) {
+    /** True once every GLES renderer exists (GL thread). */
+    private fun glRenderersComplete(): Boolean =
+        backgroundRenderer != null && cubeRenderer != null && planeVisualizer != null && pointCloudRenderer != null
+
+    /**
+     * Creates the GLES renderers that don't exist yet (GL thread), each independently, so a later one
+     * failing neither discards nor re-creates (leaks) one that succeeded. Returns false, logging the
+     * failure, while any is still missing.
+     */
+    private fun createGlRenderers(): Boolean {
+        var failure: Exception? = null
+        fun <T : Any> make(existing: T?, create: () -> T): T? = existing ?: try {
+            create()
+        } catch (e: Exception) {
+            if (failure == null) failure = e
+            null
+        }
+        backgroundRenderer   = make(backgroundRenderer) { BackgroundRenderer() }
+        cubeRenderer         = make(cubeRenderer) { SimpleObjectRenderer() }
+        planeVisualizer      = make(planeVisualizer) { PlaneVisualizer() }
+        pointCloudRenderer   = make(pointCloudRenderer) { PointCloudRenderer() }
+        val e = failure ?: return true
+        val missing = listOfNotNull(
+            "background".takeIf { backgroundRenderer == null }, "pins".takeIf { cubeRenderer == null },
+            "planes".takeIf { planeVisualizer == null }, "pointCloud".takeIf { pointCloudRenderer == null },
+        )
+        val impact = if (backgroundRenderer == null) "camera view stays black until a retry succeeds"
+            else "camera view works, missing overlays are not drawn"
         glRendererInitFailures++
         if (glRendererInitFailures == 1) {
-            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed (will retry): " +
-                "camera view stays black until a retry succeeds", e)
+            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed (will retry): $impact missing=$missing", e)
         } else if (glRendererInitFailures > GL_RENDERER_MAX_RETRIES) {
             glRendererInitGaveUp = true
-            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed: giving up, AR camera view unavailable " +
-                "attempts=$glRendererInitFailures", e)
+            DiagnosticsLogger.e(DIAG, "AR camera renderer init failed: giving up, $impact " +
+                "missing=$missing attempts=$glRendererInitFailures", e)
         }
-        false
+        return false
     }
 
     /**
-     * onDrawFrame side of the retry: while [backgroundRenderer] is null (its constructor threw, so nothing
-     * else was created and nothing leaks), re-runs [createGlRenderers] when due. The GL context is current
-     * here. Returns true once the renderers exist.
+     * onDrawFrame side of the retry: while any GLES renderer is missing (its constructor threw), re-runs
+     * [createGlRenderers] for just the missing ones when due. The GL context is current here. Returns
+     * true once all renderers exist.
      */
     private fun retryGlRenderersIfDue(): Boolean {
         if (glRendererInitGaveUp) return false
@@ -1972,7 +1996,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
 
         // Renderer init failed in onSurfaceCreated: retry here (bounded) instead of staying black forever.
-        if (backgroundRenderer == null && !retryGlRenderersIfDue()) return
+        // Only the camera background is required to draw; the overlay renderers are null-safe below.
+        if (!glRenderersComplete()) retryGlRenderersIfDue()
+        if (backgroundRenderer == null) return
 
         val s = session ?: return
         if (!sessionReady) return
