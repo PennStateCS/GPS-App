@@ -33,6 +33,9 @@ socketIo = "1.0.1"
 # Android's org.json API as a plain jar, for JVM compile/tests of :geokit-receiver-emlid only (compileOnly — the APK
 # uses the platform copy).
 androidJson = "0.0.20131108.vaadin1"
+# org.json reference implementation, the version socket.io-client 1.0.1 / engine.io-client 1.0.1 declare in their POMs.
+# runtimeOnly in :geokit-receiver-emlid so desktop JVM consumers get org.json; the app excludes it (platform copy).
+orgJson = "20090211"
 desugarJdkLibs = "2.1.5"
 robolectric = "4.18"
 androidxTestCore = "1.7.0"
@@ -71,6 +74,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 jmdns = { group = "org.jmdns", name = "jmdns", version.ref = "jmdns" }
 socket-io-client = { group = "io.socket", name = "socket.io-client", version.ref = "socketIo" }
 android-json = { group = "com.vaadin.external.google", name = "android-json", version.ref = "androidJson" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
