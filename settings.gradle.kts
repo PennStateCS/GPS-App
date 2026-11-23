@@ -35,7 +35,9 @@ dependencyResolutionManagement {
 rootProject.name = "SurveyingApp"
 include(":app")
 // geokit: the reusable, Android-free libraries (libs/README.md).
-include(":geokit-core", ":geokit-gnss", ":geokit-receiver-emlid")
+include(":geokit-core", ":geokit-gnss", ":geokit-receiver-emlid", ":geokit-ar", ":geokit-models")
 project(":geokit-core").projectDir = file("libs/geokit-core")
 project(":geokit-gnss").projectDir = file("libs/geokit-gnss")
 project(":geokit-receiver-emlid").projectDir = file("libs/geokit-receiver-emlid")
+project(":geokit-ar").projectDir = file("libs/geokit-ar")
+project(":geokit-models").projectDir = file("libs/geokit-models")

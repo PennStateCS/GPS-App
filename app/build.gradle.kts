@@ -212,6 +212,8 @@ dependencies {
     // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
     implementation(project(":geokit-core"))
     implementation(project(":geokit-gnss"))
+    implementation(project(":geokit-ar"))
+    implementation(project(":geokit-models"))
     // Emlid Reach receiver status (HTTP API + socket.io) behind ReceiverDevice.
     implementation(project(":geokit-receiver-emlid"))
 
