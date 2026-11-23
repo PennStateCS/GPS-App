@@ -126,7 +126,7 @@ what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes 
 ## 3. Event categories (tags)
 
 Only the tags in `util/diagnostics/DiagTags` are used: `APP, LIFECYCLE, NAV, SETTINGS, SYSTEM, GNSS,
-RECEIVER, CORRECTIONS, NMEA, CAPTURE, COORD, DATA, MODEL, AR, MAP, STAKEOUT, EXPORT, ERROR`.
+RECEIVER, CORRECTIONS, NMEA, CAPTURE, COORD, DATA, MODEL, AR, MAP, STAKEOUT, EXPORT, ERROR, DIAG`.
 Line format (`LogLineFormat`): `2026-11-21T14:03:07.412-05:00 W RECEIVER [main] message`.
 
 - One place per kind of event: `LifecycleLogger`, `NavLogger`, `SettingsChangeLogger`,
@@ -139,6 +139,22 @@ Line format (`LogLineFormat`): `2026-11-21T14:03:07.412-05:00 W RECEIVER [main] 
 - Crashes: `DiagnosticsLogger.writeCrashSync` (fsynced, before the process dies). Exit reasons and
   ANR traces: `ExitReasonRecorder` (`diagnostics/exits/`). Sessions: `SessionTracker` (SESSION_START).
 - Never log raw NMEA, coordinates (lat/lon/height, ECEF, N/E), passwords or keys.
+## 3a. Incident markers ("Mark Problem")
+
+Settings → About → **Mark Problem** lets a tester flag the moment something went wrong and export a
+report later. `util/diagnostics/incident/IncidentStore` appends one JSON line per incident to
+`filesDir/diagnostics/incidents.jsonl` (newest 20 kept; corrupt or partial lines are skipped and
+counted). Each incident has an ID, UTC + local time and zone, session ID, app version, current screen,
+the tester's optional note (trimmed, max 500 chars) and an `IncidentContext` snapshot read once from
+existing state: source, receiver profile, link (`ReceiverLinkTracker`), RTK / fix age / hAcc / vAcc /
+correction age (`GnssFeedTracker.latest`), AR tracking + model counts (`ArSessionDiagnostics`, only
+while an AR session is open), free storage and permissions. No coordinates, point names or NMEA.
+
+- The event log gets only `I DIAG INCIDENT_MARKED id=… screen=… session=… description=true|false`.
+  The note is free text: it stays in the incident file (and the share text the tester sees), never in the log.
+- `IncidentMarker.render()` is the plain-text block for reports (note excluded unless asked for).
+- The share text adds the latest incident (last 24 h) and its note under the three prompts.
+
 ## 4. Where to add future diagnostic events
 
 - **AR lifecycle / anchors / model load** → `ui/openinar/OpenInARFragment` and

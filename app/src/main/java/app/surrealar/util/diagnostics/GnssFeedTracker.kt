@@ -151,6 +151,15 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
     fun currentCorrectionAgeS(): Double? = synchronized(lock) { lastFix?.diffAgeS }
     fun currentSource(): String? = synchronized(lock) { source }
 
+    /** Quality of the latest fix (no coordinates) and how long ago it arrived; read by incident markers. */
+    data class Latest(val rtk: RtkStatus, val ageMs: Long, val hAccM: Double?, val vAccM: Double?, val correctionAgeS: Double?)
+
+    /** The latest fix's quality, or null before the first fix of the current source. */
+    fun latest(nowMs: Long): Latest? = synchronized(lock) {
+        val f = lastFix ?: return@synchronized null
+        Latest(f.rtkStatus, (nowMs - lastFixAtMs).coerceAtLeast(0L), f.hAccM, f.vAccM, f.diffAgeS)
+    }
+
     private fun closeStatus(nowMs: Long) {
         val r = lastRtk ?: return
         timeInStatus[r] = (timeInStatus[r] ?: 0L) + (nowMs - rtkSinceMs)

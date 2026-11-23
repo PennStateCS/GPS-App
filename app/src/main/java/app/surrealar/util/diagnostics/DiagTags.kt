@@ -20,7 +20,9 @@ object DiagTags {
     const val STAKEOUT = "STAKEOUT"
     const val EXPORT = "EXPORT"
     const val ERROR = "ERROR"
+    /** Diagnostics tooling itself (e.g. a tester marking a problem with "Mark Problem"). */
+    const val DIAG = "DIAG"
 
     val ALL: Set<String> = setOf(APP, LIFECYCLE, NAV, SETTINGS, SYSTEM, GNSS, RECEIVER, CORRECTIONS, NMEA,
-        CAPTURE, COORD, DATA, MODEL, AR, MAP, STAKEOUT, EXPORT, ERROR)
+        CAPTURE, COORD, DATA, MODEL, AR, MAP, STAKEOUT, EXPORT, ERROR, DIAG)
 }
