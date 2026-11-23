@@ -26,7 +26,7 @@ import app.surrealar.domain.model.Model
 import app.surrealar.ui.models.readiness.ArPlacementPreview
 import app.surrealar.ui.models.readiness.Bounds
 import app.surrealar.ui.models.readiness.LinkFacts
-import app.surrealar.ui.openinar.ModelBounds
+import io.github.pennstatecs.geokit.ar.model.ModelBounds
 import app.surrealar.ui.models.readiness.FixAction
 import app.surrealar.ui.models.readiness.ModelFacts
 import app.surrealar.ui.models.readiness.ModelReadinessRepository
@@ -34,7 +34,7 @@ import app.surrealar.ui.models.readiness.ReadinessCheck
 import app.surrealar.ui.models.readiness.ReadinessHost
 import app.surrealar.ui.models.readiness.ReadinessStyle
 import app.surrealar.ui.models.readiness.ReadinessUiState
-import app.surrealar.ui.openinar.Vec3
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import app.surrealar.ui.viewpoints.SimpleCoordinatesAdapter
 import app.surrealar.util.DiagnosticsLogger
 import dagger.hilt.android.AndroidEntryPoint

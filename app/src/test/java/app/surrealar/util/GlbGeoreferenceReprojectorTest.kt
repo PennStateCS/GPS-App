@@ -194,9 +194,9 @@ class GlbGeoreferenceReprojectorTest {
 
     @Test fun `after the renderer's correction, north is world north and east is world east`() {
         val v = reprojectedCompass()
-        val cm = app.surrealar.ui.openinar.ModelCorrectionMatrix.base(1f, 0f, 0f, 0f)
-        val north = app.surrealar.ui.openinar.ModelCorrectionMatrix.transformPoint(cm, v[0][0], v[0][1], v[0][2])
-        val east = app.surrealar.ui.openinar.ModelCorrectionMatrix.transformPoint(cm, v[2][0], v[2][1], v[2][2])
+        val cm = io.github.pennstatecs.geokit.ar.model.ModelCorrectionMatrix.base(1f, 0f, 0f, 0f)
+        val north = io.github.pennstatecs.geokit.ar.model.ModelCorrectionMatrix.transformPoint(cm, v[0][0], v[0][1], v[0][2])
+        val east = io.github.pennstatecs.geokit.ar.model.ModelCorrectionMatrix.transformPoint(cm, v[2][0], v[2][1], v[2][2])
         // ARCore Earth anchors are east-up-south: north = −Z, east = +X.
         assertTrue("north vertex must land north (z < 0), was ${north.toList()}", north[2] < -100f)
         assertEquals(0f, north[0], 0.01f)

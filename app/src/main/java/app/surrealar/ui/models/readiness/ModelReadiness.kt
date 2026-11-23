@@ -1,6 +1,6 @@
 package app.surrealar.ui.models.readiness
 
-import app.surrealar.ui.openinar.Vec3
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import java.io.File
 
 /*

@@ -1,10 +1,10 @@
 package app.surrealar.ui.models.readiness
 
 import app.surrealar.domain.model.Model
-import app.surrealar.ui.openinar.ModelBounds
-import app.surrealar.ui.openinar.ModelPlacement
-import app.surrealar.ui.openinar.ModelPlacementOrigin
-import app.surrealar.ui.openinar.Vec3
+import io.github.pennstatecs.geokit.ar.model.ModelBounds
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -60,7 +60,7 @@ class ArPlacementPreview(
 
     companion object {
         /** Matches ArFilamentRenderer.BB_NORMALIZE_THRESHOLD_M. */
-        const val NORMALIZE_THRESHOLD_M = 2000f
+        const val NORMALIZE_THRESHOLD_M = io.github.pennstatecs.geokit.ar.model.ModelTransform.NORMALIZE_HALF_EXTENT_M
 
         /**
          * The placement AR uses for [link] (per-point override → model default → hard default),

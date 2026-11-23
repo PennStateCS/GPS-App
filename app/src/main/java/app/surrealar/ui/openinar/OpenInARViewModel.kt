@@ -9,6 +9,8 @@ import app.surrealar.domain.repository.GnssReceiverSettingsRepository
 import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.settings.model.ArDisplaySettings
 import app.surrealar.util.DiagnosticsLogger
+import io.github.pennstatecs.geokit.ar.model.ModelMove
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
 import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow

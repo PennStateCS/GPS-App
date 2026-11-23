@@ -131,12 +131,5 @@ object GeoAnchorGate {
         cooldownElapsed: Boolean,
     ): Boolean = reanchorReason(accuracyAtCreationM, currentAccuracyM, cooldownElapsed) == ReanchorReason.HORIZONTAL
 
-    /**
-     * Worst-case sideways placement error (m) of a model [distanceM] away, from ARCore's horizontal
-     * accuracy plus the heading error's lever: h + d·tan(yaw). Used by the debug readout/logs.
-     */
-    fun expectedErrorM(horizontalAccuracyM: Double, yawAccuracyDeg: Double, distanceM: Double): Double? {
-        if (!horizontalAccuracyM.isFinite() || !yawAccuracyDeg.isFinite() || !distanceM.isFinite()) return null
-        return horizontalAccuracyM + distanceM * kotlin.math.tan(Math.toRadians(yawAccuracyDeg))
-    }
+    // The expected-error maths (h + d·tan yaw) is geokit-ar's ArPlacementError.expectedErrorM.
 }

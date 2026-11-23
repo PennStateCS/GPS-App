@@ -2,6 +2,7 @@ package app.surrealar.ui.openinar
 
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.usecase.FakeCoordinateRepository
+import io.github.pennstatecs.geokit.ar.model.ModelMove
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

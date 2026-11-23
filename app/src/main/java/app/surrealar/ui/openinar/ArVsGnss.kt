@@ -1,7 +1,7 @@
 package app.surrealar.ui.openinar
 
-import io.github.pennstatecs.geokit.ellipsoid.Geodesic
-import kotlin.math.hypot
+import io.github.pennstatecs.geokit.ar.accuracy.ArGnssOffset
+import io.github.pennstatecs.geokit.ar.accuracy.ArPlacementError
 
 /**
  * How far ARCore's idea of where the camera is (Earth `cameraGeospatialPose`) is from the GNSS feed's
@@ -13,6 +13,7 @@ import kotlin.math.hypot
  * Tablet". Only meaningful when standing still (the fix and the camera pose are sampled at slightly
  * different instants), so [speedMps] is carried for the reader.
  *
+ * The maths is geokit-ar's ArGnssOffset; this adds ARCore's accuracy context and the grade.
  * Pure (no ARCore types) → unit-tested.
  */
 data class ArVsGnss(
@@ -45,18 +46,14 @@ data class ArVsGnss(
             arHAccM: Double?, arYawAccDeg: Double?,
             farthestModelM: Double?, speedMps: Double?,
         ): ArVsGnss? {
-            if (!arLat.isFinite() || !arLon.isFinite() || !gnssLat.isFinite() || !gnssLon.isFinite()) return null
-            // WGS84 geodesic from the GNSS fix to ARCore's camera position (was 111,132 m/° on a sphere).
-            val ne = Geodesic.northEastDeltaM(gnssLat, gnssLon, arLat, arLon)
-            val h = hypot(ne.northM, ne.eastM)
-            val bearing = Geodesic.initialBearingDeg(gnssLat, gnssLon, arLat, arLon)
-            val v = if (arAlt != null && arAlt.isFinite() && gnssEllipsoidalM != null && gnssEllipsoidalM.isFinite())
-                arAlt - (gnssEllipsoidalM - antennaAboveCameraM) else null
+            // WGS84 geodesic offset + camera-height difference (geokit-ar); null for non-finite positions.
+            val o = ArGnssOffset.compute(arLat, arLon, arAlt, gnssLat, gnssLon, gnssEllipsoidalM, antennaAboveCameraM)
+                ?: return null
             val hAcc = arHAccM?.takeIf { it.isFinite() }
             val yaw = arYawAccDeg?.takeIf { it.isFinite() }
             val err = if (hAcc != null && yaw != null && farthestModelM != null)
-                GeoAnchorGate.expectedErrorM(hAcc, yaw, farthestModelM) else null
-            return ArVsGnss(h, bearing, v, hAcc, yaw, farthestModelM, err, speedMps)
+                ArPlacementError.expectedErrorM(hAcc, yaw, farthestModelM) else null
+            return ArVsGnss(o.horizontalM, o.bearingDeg, o.verticalM, hAcc, yaw, farthestModelM, err, speedMps)
         }
     }
 }

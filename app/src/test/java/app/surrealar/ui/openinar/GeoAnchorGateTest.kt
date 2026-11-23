@@ -123,9 +123,4 @@ class GeoAnchorGateTest {
         assertEquals(GeoAnchorGate.Decision.WAIT,
             GeoAnchorGate.decide(10.0, 7.0, 2_000, GeoAnchorGate.Profile.RTK, vpsAvailable = false))
     }
-
-    @Test fun `expected error is horizontal accuracy plus the heading lever`() {
-        assertEquals(1.0 + 20.0 * kotlin.math.tan(Math.toRadians(5.0)), GeoAnchorGate.expectedErrorM(1.0, 5.0, 20.0)!!, 1e-9)
-        assertNull(GeoAnchorGate.expectedErrorM(Double.NaN, 5.0, 20.0))
-    }
 }

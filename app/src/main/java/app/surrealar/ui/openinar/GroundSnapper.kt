@@ -4,6 +4,8 @@ import com.google.ar.core.Plane
 import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
+import io.github.pennstatecs.geokit.ar.ground.GroundSurface
+import io.github.pennstatecs.geokit.ar.ground.MainFloor
 import kotlin.math.hypot
 
 /**
@@ -22,8 +24,6 @@ import kotlin.math.hypot
  */
 internal class GroundSnapper {
 
-    /** One horizontal surface, reduced to what the selection logic needs (unit-testable). */
-    data class Surface(val y: Float, val area: Float)
 
     private var planes: List<Plane> = emptyList()
     private var mainFloorY: Float? = null
@@ -44,7 +44,7 @@ internal class GroundSnapper {
                 it.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
                 it.centerPose.ty() < camY - MIN_BELOW_CAMERA_M
         }
-        val floor = chooseMainFloor(planes.map { Surface(it.centerPose.ty(), it.extentX * it.extentZ) })
+        val floor = MainFloor.choose(planes.map { GroundSurface(it.centerPose.ty(), it.extentX * it.extentZ) })
         mainFloorY = floor
         // Per frame: log detected/lost only once the state holds 3 s (planes flicker). Nothing is logged
         // before the first detection, so start-up doesn't report a spurious "lost".
@@ -83,20 +83,9 @@ internal class GroundSnapper {
     companion object {
         /** Surfaces must be at least this far below the camera (excludes the plane the tablet rests on). */
         const val MIN_BELOW_CAMERA_M = 0.3f
-        /** Surfaces smaller than this are ignored when picking the main floor (tables, steps, noise). */
-        const val MIN_FLOOR_AREA_M2 = 0.5f
         /** Points within this horizontal distance of the camera use the main floor when not over a surface. */
         const val NEAR_RADIUS_M = 15f
         private const val FLOOR_LOG_KEY = "ar.groundsnap.floor"
-
-        /**
-         * Main floor = the LOWEST reasonably large surface below the camera (a floor sits below
-         * tables/benches). Falls back to the largest surface when none reach [MIN_FLOOR_AREA_M2].
-         */
-        fun chooseMainFloor(surfaces: List<Surface>): Float? {
-            if (surfaces.isEmpty()) return null
-            val large = surfaces.filter { it.area >= MIN_FLOOR_AREA_M2 }
-            return if (large.isNotEmpty()) large.minOf { it.y } else surfaces.maxByOrNull { it.area }!!.y
-        }
+        // Main-floor selection (lowest large surface, MIN_FLOOR_AREA_M2) is geokit-ar's MainFloor.
     }
 }

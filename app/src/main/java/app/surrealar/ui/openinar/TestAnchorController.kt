@@ -7,6 +7,8 @@ import app.surrealar.util.DiagnosticsLogger
 import com.google.ar.core.Anchor
 import com.google.ar.core.Earth
 import com.google.ar.core.TrackingState
+import io.github.pennstatecs.geokit.ar.projection.ScreenProjection
+import io.github.pennstatecs.geokit.ar.projection.projectToScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -1,5 +1,7 @@
 package app.surrealar.ui.openinar
 
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

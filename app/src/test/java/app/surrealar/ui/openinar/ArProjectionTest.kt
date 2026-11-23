@@ -1,8 +1,8 @@
 package app.surrealar.ui.openinar
 
 import android.opengl.Matrix
+import io.github.pennstatecs.geokit.ar.projection.projectToScreen
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -33,49 +33,31 @@ class ArProjectionTest {
 
     private fun point(x: Float, y: Float, z: Float) = floatArrayOf(x, y, z, 1f)
 
-    // ── projectToScreen ──────────────────────────────────────────────────────
+    // ── projectToScreen (geokit-ar) against the old android.opengl.Matrix path ─
 
-    @Test
-    fun ndcCorners_mapToScreenWithYFlipped() {
-        val vp = identity()
-        val center = projectToScreen(point(0f, 0f, 0f), vp, w, h)!!
-        assertEquals(500f, center.sx, 1e-3f)
-        assertEquals(250f, center.sy, 1e-3f)
-        assertTrue(center.onScreen)
-
-        val topLeft = projectToScreen(point(-1f, 1f, 0f), vp, w, h)!!   // NDC +Y is up
-        assertEquals(0f, topLeft.sx, 1e-3f)
-        assertEquals(0f, topLeft.sy, 1e-3f)
-        assertTrue(topLeft.onScreen)
-
-        val bottomRight = projectToScreen(point(1f, -1f, 0f), vp, w, h)!!
-        assertEquals(1000f, bottomRight.sx, 1e-3f)
-        assertEquals(500f, bottomRight.sy, 1e-3f)
+    /** The pre-geokit implementation, kept here as the golden reference. */
+    private fun oldProject(worldPos: FloatArray, vp: FloatArray): FloatArray? {
+        val clip = FloatArray(4)
+        Matrix.multiplyMV(clip, 0, vp, 0, worldPos, 0)
+        if (clip[3] <= 0f) return null
+        val ndcX = clip[0] / clip[3]
+        val ndcY = clip[1] / clip[3]
+        return floatArrayOf((ndcX + 1f) * 0.5f * w, (1f - ndcY) * 0.5f * h)
     }
 
     @Test
-    fun outsideViewport_isReportedButNotClamped() {
-        val p = projectToScreen(point(2f, 0f, 0f), identity(), w, h)!!
-        assertEquals(1500f, p.sx, 1e-3f)
-        assertFalse(p.onScreen)
-    }
-
-    @Test
-    fun pointInFrontOfCamera_projectsOnScreen() {
-        val p = projectToScreen(point(0f, 0f, -5f), perspectiveVp(), w, h)!!
-        assertEquals(500f, p.sx, 1e-2f)
-        assertEquals(250f, p.sy, 1e-2f)
-        assertTrue(p.onScreen)
-    }
-
-    @Test
-    fun pointBehindCamera_returnsNull() =
-        assertNull(projectToScreen(point(0f, 0f, 5f), perspectiveVp(), w, h))
-
-    @Test
-    fun zeroSizedViewport_returnsNull() {
-        assertNull(projectToScreen(point(0f, 0f, 0f), identity(), 0, h))
-        assertNull(projectToScreen(point(0f, 0f, 0f), identity(), w, 0))
+    fun libraryProjection_matchesAndroidMatrix() {
+        val view = FloatArray(16)
+        Matrix.setLookAtM(view, 0, 1f, 1.6f, 2f, 0.3f, 0.2f, -4f, 0f, 1f, 0f)
+        val vp = FloatArray(16).also { Matrix.multiplyMM(it, 0, perspectiveVp(), 0, view, 0) }
+        for (p in listOf(point(0f, 0f, -5f), point(3f, -1f, -20f), point(-7f, 2f, -3f), point(0.5f, 0.5f, 10f))) {
+            val old = oldProject(p, vp)
+            val new = projectToScreen(p, vp, w, h)
+            if (old == null) { assertNull(new); continue }
+            assertEquals(old[0], new!!.sx, 1e-3f)
+            assertEquals(old[1], new.sy, 1e-3f)
+        }
+        assertTrue(projectToScreen(point(0f, 0f, -5f), identity(), w, h)!!.onScreen)
     }
 
     // ── computeEdgeArrow ─────────────────────────────────────────────────────

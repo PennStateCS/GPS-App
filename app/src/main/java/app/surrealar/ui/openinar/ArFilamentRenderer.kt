@@ -15,6 +15,12 @@ import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.android.UiHelper
 import com.google.android.filament.utils.Utils
+import io.github.pennstatecs.geokit.ar.model.ModelBounds
+import io.github.pennstatecs.geokit.ar.model.ModelCorrectionMatrix
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
+import io.github.pennstatecs.geokit.ar.model.ModelTransform
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -693,8 +699,7 @@ class ArFilamentRenderer {
                 // Normalize scale ONLY for implausibly large models (wrong units, e.g. mm, or absolute
                 // projected coordinates baked into the vertices). Real site/building models of a few
                 // hundred metres must stay true scale — the old 50 m threshold shrank them to 1 m.
-                val ns = if (maxHalfExtent > BB_NORMALIZE_THRESHOLD_M)
-                    1.0f / (maxHalfExtent * 2f) else 1.0f
+                val ns = ModelTransform.normalizationScale(maxHalfExtent)
                 // Center: pull models whose geometry is far from their local origin back
                 // to the anchor.  Small offsets (< BB_CENTER_THRESHOLD_M) are left alone
                 // so models intentionally pivoted at their base remain ground-level.
@@ -753,25 +758,15 @@ class ArFilamentRenderer {
                     // The "move model" shift is added here too: the anchor frame is ARCore's East-Up-South
                     // (geospatial anchors are created with an identity rotation), so east = +X, up = +Y and
                     // north = -Z. Being outermost, it moves the whole model without changing its rotation.
-                    val nudgeX = offsets.nudge.x + placement.moveEastM
-                    val nudgeY = offsets.nudge.y + placement.moveUpM
-                    val nudgeZ = offsets.nudge.z - placement.moveNorthM
-                    val hasRot = placement.yawDeg != 0f || placement.pitchDeg != 0f || placement.rollDeg != 0f
-                    val hasNudge = nudgeX != 0f || nudgeY != 0f || nudgeZ != 0f
+                    val nudge = ModelTransform.nudge(offsets, placement)
+                    val nudgeX = nudge.x
+                    val nudgeY = nudge.y
+                    val nudgeZ = nudge.z
 
-                    cached.correctionMatrix = if (!hasRot && !hasNudge) {
-                        cm
-                    } else {
-                        // final = T(nudge) · R(yaw,pitch,roll) · cm
-                        val rot = FloatArray(16); Matrix.setIdentityM(rot, 0)
-                        Matrix.rotateM(rot, 0, placement.yawDeg,   0f, 1f, 0f) // yaw about Up (Y)
-                        Matrix.rotateM(rot, 0, placement.pitchDeg, 1f, 0f, 0f) // pitch about East (X)
-                        Matrix.rotateM(rot, 0, placement.rollDeg,  0f, 0f, 1f) // roll about Z
-                        val rc = FloatArray(16); Matrix.multiplyMM(rc, 0, rot, 0, cm, 0)
-                        val trans = FloatArray(16); Matrix.setIdentityM(trans, 0)
-                        Matrix.translateM(trans, 0, nudgeX, nudgeY, nudgeZ)
-                        FloatArray(16).also { Matrix.multiplyMM(it, 0, trans, 0, rc, 0) }
-                    }
+                    // final = T(nudge) · Ry(yaw) · Rx(pitch) · Rz(roll) · cm (cm itself when nothing to add).
+                    // geokit-ar maths; ModelTransformGoldenTest pins it to the old android.opengl.Matrix sequence.
+                    cached.correctionMatrix = ModelTransform.compose(
+                        cm, placement.yawDeg, placement.pitchDeg, placement.rollDeg, nudgeX, nudgeY, nudgeZ)
 
                     // Scale audit: what the model will actually measure in the world. "trueScale" is the
                     // only correct state for real-world placement; anything else is called out so a
@@ -1084,7 +1079,7 @@ class ArFilamentRenderer {
          * true-scale models are never shrunk; the old 50 m threshold shrank anything over 100 m.
          * Every load logs MODEL_SCALE with the resulting world size and the cause of any non-1 scale.
          */
-        private const val BB_NORMALIZE_THRESHOLD_M = 2000.0f
+        private const val BB_NORMALIZE_THRESHOLD_M = ModelTransform.NORMALIZE_HALF_EXTENT_M  // 2000 m, single-sourced in geokit-ar
         /**
          * Bounding-box centre threshold (metres) above which the model's geometry is considered
          * offset from its local origin and the centre is snapped to the anchor position.

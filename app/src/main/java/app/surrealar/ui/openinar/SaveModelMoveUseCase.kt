@@ -2,6 +2,7 @@ package app.surrealar.ui.openinar
 
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.repository.CoordinateRepository
+import io.github.pennstatecs.geokit.ar.model.ModelMove
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.roundToLong
