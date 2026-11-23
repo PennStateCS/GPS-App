@@ -35,7 +35,8 @@ import app.surrealar.data.local.entity.ModelEntity
     //      (checksum/isValid/validationErrorsJson) + default placement/units metadata.
     // v11: coordinates gained antennaHeightM (pole/antenna offset applied at capture, provenance).
     // v12: coordinates gained modelPlacementOrigin (AR model placement preset; NULL = CENTER).
-    version = 12,
+    // v13: coordinates gained modelMoveEastM/NorthM/UpM (AR move-model offset; NULL = not moved).
+    version = 13,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -66,7 +67,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
-                        MIGRATION_11_12
+                        MIGRATION_11_12,
+                        MIGRATION_12_13
                     )
                     // Destructive fallback is OPT-IN only (Gradle property
                     // ALLOW_DESTRUCTIVE_MIGRATION, default false). Field testers run debug builds,

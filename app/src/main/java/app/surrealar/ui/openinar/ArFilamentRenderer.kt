@@ -723,9 +723,12 @@ class ArFilamentRenderer {
 
                     // Fine nudge applied on top (T(nudge) · R · cm). For CUSTOM the offset is already in the
                     // anchor point above, so only the vertical nudge remains; other presets keep the nudge.
-                    val nudgeX = offsets.nudge.x
-                    val nudgeY = offsets.nudge.y
-                    val nudgeZ = offsets.nudge.z
+                    // The "move model" shift is added here too: the anchor frame is ARCore's East-Up-South
+                    // (geospatial anchors are created with an identity rotation), so east = +X, up = +Y and
+                    // north = -Z. Being outermost, it moves the whole model without changing its rotation.
+                    val nudgeX = offsets.nudge.x + placement.moveEastM
+                    val nudgeY = offsets.nudge.y + placement.moveUpM
+                    val nudgeZ = offsets.nudge.z - placement.moveNorthM
                     val hasRot = placement.yawDeg != 0f || placement.pitchDeg != 0f || placement.rollDeg != 0f
                     val hasNudge = nudgeX != 0f || nudgeY != 0f || nudgeZ != 0f
 

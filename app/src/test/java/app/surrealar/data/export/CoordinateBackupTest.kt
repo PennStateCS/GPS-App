@@ -31,7 +31,8 @@ class CoordinateBackupTest {
         modelId = modelId, iconKey = null, renderEnabled = false, createdAt = 1_000L, updatedAt = 2_000L,
         modelScale = 2.5, modelYawDeg = 90.0, modelPitchDeg = 0.0, modelRollDeg = 0.0,
         modelVerticalOffsetM = 1.5, modelOriginOffsetXM = 0.1, modelOriginOffsetYM = 0.2, modelOriginOffsetZM = 0.3,
-        modelPlacementOrigin = "BOTTOM_CENTER"
+        modelPlacementOrigin = "BOTTOM_CENTER",
+        modelMoveEastM = 1.25, modelMoveNorthM = -0.5, modelMoveUpM = 0.1,
     )
 
     private fun model(id: String = "m1") = Model(
@@ -62,6 +63,9 @@ class CoordinateBackupTest {
         assertEquals(90.0, c.modelYawDeg!!, 1e-9)
         assertEquals(1.5, c.modelVerticalOffsetM!!, 1e-9)
         assertEquals("BOTTOM_CENTER", c.modelPlacementOrigin)
+        assertEquals(1.25, c.modelMoveEastM!!, 1e-9)
+        assertEquals(-0.5, c.modelMoveNorthM!!, 1e-9)
+        assertEquals(0.1, c.modelMoveUpM!!, 1e-9)
         assertEquals(150, c.averagedSamples)
         assertEquals(2_000L, c.updatedAt)
     }

@@ -145,6 +145,19 @@ val MIGRATION_11_12 = object : Migration(11, 12) {
 }
 
 /**
+ * Migration 12 -> 13: coordinates gain the AR "move model" offset — metres east / north / up of the
+ * surveyed point that the rendered model is shifted by. Nullable; NULL = not moved, so existing
+ * coordinates render exactly as before. Latitude/longitude/altitude are untouched.
+ */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN modelMoveEastM REAL")
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN modelMoveNorthM REAL")
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN modelMoveUpM REAL")
+    }
+}
+
+/**
  * Migration 6 -> 7: no-op.
  *
  * The exported schemas (schemas/.../6.json and 7.json) are byte-identical for both the

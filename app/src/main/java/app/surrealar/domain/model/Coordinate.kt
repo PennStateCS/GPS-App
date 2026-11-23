@@ -94,5 +94,10 @@ data class Coordinate(
     val modelOriginOffsetZM: Double? = null,
 
     // v12: model-local placement origin preset (ORIGIN/CENTER/BOTTOM_CENTER/CUSTOM); null = CENTER.
-    val modelPlacementOrigin: String? = null
+    val modelPlacementOrigin: String? = null,
+
+    // v13: AR move offset (metres east / north / up of the surveyed point); the point itself never moves.
+    val modelMoveEastM: Double? = null,
+    val modelMoveNorthM: Double? = null,
+    val modelMoveUpM: Double? = null,
 )

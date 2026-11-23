@@ -101,5 +101,11 @@ data class CoordinateEntity(
 
     // ─── v12: which model-local point aligns to the anchor (ORIGIN/CENTER/BOTTOM_CENTER/CUSTOM).
     // Null → the renderer's historical CENTER behavior, so existing coordinates do not shift. ───
-    val modelPlacementOrigin: String? = null
+    val modelPlacementOrigin: String? = null,
+
+    // ─── v13: AR "move model" offset (metres east / north / up of the surveyed point, nullable).
+    // A world-frame shift of the rendered model only; latitude/longitude/altitude never change. ───
+    val modelMoveEastM: Double? = null,
+    val modelMoveNorthM: Double? = null,
+    val modelMoveUpM: Double? = null,
 )

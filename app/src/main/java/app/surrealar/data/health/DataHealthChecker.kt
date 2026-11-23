@@ -170,7 +170,10 @@ class DataHealthChecker @Inject constructor(
                 "modelVerticalOffsetM" to c.modelVerticalOffsetM,
                 "modelOriginOffsetXM" to c.modelOriginOffsetXM,
                 "modelOriginOffsetYM" to c.modelOriginOffsetYM,
-                "modelOriginOffsetZM" to c.modelOriginOffsetZM
+                "modelOriginOffsetZM" to c.modelOriginOffsetZM,
+                "modelMoveEastM" to c.modelMoveEastM,
+                "modelMoveNorthM" to c.modelMoveNorthM,
+                "modelMoveUpM" to c.modelMoveUpM
             )
             for ((label, v) in offsets) v?.let {
                 if (!it.isFinite()) {

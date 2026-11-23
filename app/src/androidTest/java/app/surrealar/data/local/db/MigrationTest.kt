@@ -75,6 +75,25 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate12To13_addsMoveOffset_andKeepsPoints() {
+        helper.createDatabase(testDb, 12).apply {
+            execSQL(
+                "INSERT INTO coordinates (id,name,latitude,longitude,altitude,timestamp,icon,color,provider,modelYawDeg) " +
+                    "VALUES ('c1','Pt',41.0,-76.0,10.0,555,'',-1,'INTERNAL',45.0)"
+            )
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(testDb, 13, true, MIGRATION_12_13)
+        db.query("SELECT latitude, modelYawDeg, modelMoveEastM, modelMoveNorthM, modelMoveUpM FROM coordinates WHERE id='c1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(41.0, c.getDouble(0), 0.0)        // the point is untouched
+            assertEquals(45.0, c.getDouble(1), 0.0)        // existing placement kept
+            assertTrue(c.isNull(2) && c.isNull(3) && c.isNull(4))   // not moved
+        }
+        db.close()
+    }
+
+    @Test
     fun fullChain_3To10_isContiguous() {
         // The earliest exported schema is v3; it must upgrade all the way to v10 without a
         // destructive fallback (exercises the 3->4 and 6->7 no-op bridges).

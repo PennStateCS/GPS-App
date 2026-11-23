@@ -39,6 +39,9 @@ class ValidateCoordinateForSaveUseCase @Inject constructor() {
             "model origin offset X" to coordinate.modelOriginOffsetXM,
             "model origin offset Y" to coordinate.modelOriginOffsetYM,
             "model origin offset Z" to coordinate.modelOriginOffsetZM,
+            "model move east" to coordinate.modelMoveEastM,
+            "model move north" to coordinate.modelMoveNorthM,
+            "model move up" to coordinate.modelMoveUpM,
         )
         for ((label, value) in placement) {
             if (value != null && !value.isFinite()) errors += "$label must be a finite number"

@@ -27,11 +27,26 @@ data class ModelPlacement(
      * not shift. Large structure GLBs whose geometry is far from the origin should use BOTTOM_CENTER.
      */
     val placementOrigin: ModelPlacementOrigin = ModelPlacementOrigin.CENTER,
+    /**
+     * "Move model" shift of the whole rendered model, metres east / north / up of the surveyed point,
+     * in the world frame (applied last, so it is unaffected by scale, rotation and origin). Saved moves
+     * come from the coordinate; session-only moves are added in AR and never stored.
+     */
+    val moveEastM: Float = 0f,
+    val moveNorthM: Float = 0f,
+    val moveUpM: Float = 0f,
 ) {
     /** True when this placement changes nothing — lets the renderer skip the extra matrix math. */
     val isIdentity: Boolean
         get() = scale == 1f && yawDeg == 0f && pitchDeg == 0f && rollDeg == 0f &&
-            verticalOffsetM == 0f && originOffsetXM == 0f && originOffsetYM == 0f && originOffsetZM == 0f
+            verticalOffsetM == 0f && originOffsetXM == 0f && originOffsetYM == 0f && originOffsetZM == 0f &&
+            moveEastM == 0f && moveNorthM == 0f && moveUpM == 0f
+
+    /** This placement with [m] added on top (a session-only move over the saved placement). */
+    operator fun plus(m: ModelMove): ModelPlacement = if (m.isZero) this else copy(
+        moveEastM = moveEastM + m.eastM, moveNorthM = moveNorthM + m.northM, moveUpM = moveUpM + m.upM,
+        yawDeg = yawDeg + m.yawDeg,
+    )
 
     companion object {
         /**
@@ -50,7 +65,25 @@ data class ModelPlacement(
                 originOffsetYM  = (coordinate.modelOriginOffsetYM ?: model.originOffsetYM).toFloat(),
                 originOffsetZM  = (coordinate.modelOriginOffsetZM ?: model.originOffsetZM).toFloat(),
                 placementOrigin = ModelPlacementOrigin.from(coordinate.modelPlacementOrigin),
+                moveEastM       = (coordinate.modelMoveEastM ?: 0.0).toFloat(),
+                moveNorthM      = (coordinate.modelMoveNorthM ?: 0.0).toFloat(),
+                moveUpM         = (coordinate.modelMoveUpM ?: 0.0).toFloat(),
             )
         }
     }
+}
+
+/**
+ * A move made in AR: metres east / north / up and a yaw change (degrees, positive = counter-clockwise
+ * seen from above, the renderer's yaw convention). Session-only moves live as one of these in the AR
+ * screen; saving folds it into the coordinate's modelMove* fields and modelYawDeg.
+ */
+data class ModelMove(
+    val eastM: Float = 0f,
+    val northM: Float = 0f,
+    val upM: Float = 0f,
+    val yawDeg: Float = 0f,
+) {
+    val isZero: Boolean get() = eastM == 0f && northM == 0f && upM == 0f && yawDeg == 0f
+    operator fun plus(o: ModelMove) = ModelMove(eastM + o.eastM, northM + o.northM, upM + o.upM, yawDeg + o.yawDeg)
 }
