@@ -5,7 +5,8 @@ processing and receiver plug-ins. The app (`app/`) builds on them, and nothing i
 Android, Hilt, Room or the app.
 
 Group `io.github.pennstatecs.geokit`. All five artifacts share one version, `GEOKIT_VERSION` in
-the root `gradle.properties` (currently `0.1.0-SNAPSHOT`). Publishing isn't set up yet.
+`libs/gradle.properties` (currently `0.1.0-SNAPSHOT`). `libs/` is its own Gradle build (no Android
+SDK needed); the app uses it through `includeBuild("libs")`. Publishing isn't set up yet.
 
 | Artifact | Gradle project / directory | Package root | What it is |
 |---|---|---|---|
