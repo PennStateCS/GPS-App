@@ -120,7 +120,7 @@ class HomeViewModel @Inject constructor(
 
     /**
      * Live NMEA throughput/parse stats from the same [DiagnosticsService] singleton that both
-     * [app.surrealar.gnss.external.TcpNmeaSource] and the internal source feed (and that
+     * [io.github.pennstatecs.geokit.gnss.link.TcpNmeaSource] and the internal source feed (and that
      * Developer Tools reads). This is the *real* live stream rate — unlike [NmeaLogger], whose
      * logging path is not wired into the production NMEA flow. Used by the Home Field Status card.
      */

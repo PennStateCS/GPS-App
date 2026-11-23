@@ -392,7 +392,7 @@ class InternalNmeaSource(
     }
 
     /** Debug builds: periodic raw-sentence samples with Android's own satellite counts (logcat only). */
-    private val debugSampler = app.surrealar.gnss.debug.NmeaDebugSampler("nmea-int")
+    private val debugSampler = io.github.pennstatecs.geokit.gnss.log.NmeaDebugSampler("nmea-int")
 
     private fun unregisterGnssStatus() {
         if (gnssStatusRegistered) runCatching { lm.unregisterGnssStatusCallback(gnssStatusCallback) }

@@ -149,6 +149,16 @@ public object GnssLog {
         logger.diagnostic(tag, message, DiagnosticLevel.ERROR, throwable)
 
     /**
+     * Unthrottled debug trace under [area], for rare events (state changes, fallbacks, errors). Only
+     * while [enabled]; the message is not built otherwise.
+     */
+    public inline fun event(area: String, message: () -> String) {
+        val l = logger
+        if (!l.enabled) return
+        l.trace(area, message())
+    }
+
+    /**
      * Throttled debug trace: writes [message] under [area] at most once per [intervalMs] for [key].
      * Inline, so when tracing is disabled or the key is throttled the message lambda is neither
      * allocated nor evaluated (one volatile read and a boolean check).

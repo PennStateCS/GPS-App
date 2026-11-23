@@ -23,7 +23,7 @@ class ReceiverLinkTracker(private val sink: (level: Char, tag: String, message: 
     var correctionsSummary: String = "unknown"
         private set
 
-    /** [name] is ExternalAdapter.ConnectionState.name. */
+    /** [name] is ReconnectingNmeaAdapter.ConnectionState.name (geokit-gnss, via ExternalAdapter). */
     fun onConnectionState(name: String, nowMs: Long) = synchronized(lock) {
         val before = state
         if (before == name) return@synchronized

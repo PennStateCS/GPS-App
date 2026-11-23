@@ -731,7 +731,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun toolbarLinkFlow(): Flow<app.surrealar.ui.toolbar.ToolbarLinkInputs> = combine(
         externalAdapter.connectionState.map {
-            if (it == ExternalAdapter.ConnectionState.CONNECTED) app.surrealar.ui.toolbar.ExternalLinkPhase.CONNECTED
+            if (it == io.github.pennstatecs.geokit.gnss.link.ReconnectingNmeaAdapter.ConnectionState.CONNECTED) app.surrealar.ui.toolbar.ExternalLinkPhase.CONNECTED
             else app.surrealar.ui.toolbar.ExternalLinkPhase.CONNECTING
         },
         @OptIn(kotlinx.coroutines.FlowPreview::class)

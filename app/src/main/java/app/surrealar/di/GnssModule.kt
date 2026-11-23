@@ -9,8 +9,9 @@ import app.surrealar.gnss.bus.SkyBus
 import app.surrealar.gnss.bus.FixSwitchboard
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
 import app.surrealar.gnss.diagnostics.DiagnosticsService
+import app.surrealar.gnss.external.DiagnosticsLinkLog
 import app.surrealar.gnss.external.ExternalAdapter
-import app.surrealar.gnss.external.TcpNmeaSource
+import io.github.pennstatecs.geokit.gnss.link.TcpNmeaSource
 import app.surrealar.gnss.internal.InternalAdapter
 import app.surrealar.gnss.internal.InternalNmeaSource
 import io.github.pennstatecs.geokit.gnss.nmea.parse.*
@@ -95,15 +96,19 @@ object GnssModule {
     fun provideExternalNmeaSource(
         appScope: CoroutineScope,
         settingsRepository: ExternalReceiverSettingsRepository,
-        sourceSettings: SourceSettings,
         registry: NmeaRegistry,
         diagnosticsService: DiagnosticsService
     ): NmeaSource = TcpNmeaSource(
-        scope               = appScope,
-        settingsRepository  = settingsRepository,
-        sourceSettings      = sourceSettings,  // Reserved for future profile support
-        registry            = registry,
-        diagnostics         = diagnosticsService
+        scope    = appScope,
+        // Saved host/port, read once per connection attempt; null when either is missing.
+        endpoint = {
+            val host = settingsRepository.externalTcpHost.first()
+            val port = settingsRepository.externalTcpPort.first()
+            if (host.isNullOrBlank() || port == null) null else host to port
+        },
+        registry = registry,
+        onLine   = diagnosticsService::recordLine,   // the live NMEA rate/diagnostics counters
+        linkLog  = DiagnosticsLinkLog,               // shared with ExternalAdapter (same throttle keys)
     )
 
     // --- GNSS settings & satellite store ---
@@ -197,6 +202,8 @@ object GnssModule {
             nmea  = nmea,
             inv   = externalInventory,
             currentProfile = { profile.value },
+            monotonicNowMs = { android.os.SystemClock.elapsedRealtime() },
+            linkLog = DiagnosticsLinkLog,
         )
     }
 

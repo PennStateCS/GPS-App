@@ -1,5 +1,6 @@
 package app.surrealar.gnss.bus
 
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SourceAdapter
 import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider

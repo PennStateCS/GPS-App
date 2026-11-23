@@ -1,7 +1,7 @@
 package app.surrealar.gnss.replay
 
-import app.surrealar.gnss.bus.SkyProvider
-import app.surrealar.gnss.bus.SourceAdapter
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SkyProvider
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SourceAdapter
 import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
 import io.github.pennstatecs.geokit.gnss.model.Fix

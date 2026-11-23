@@ -1,13 +1,31 @@
 package io.github.pennstatecs.geokit.gnss.bus.adapters
 
 import io.github.pennstatecs.geokit.gnss.model.Fix
+import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Shared NMEA-pipeline contracts and data types used by BOTH the internal and external GNSS
  * adapters. Kept in this neutral `gnss.bus.adapters` package (alongside [NmeaFuser]) so that
  * `gnss.internal` and `gnss.external` depend on a common contract rather than on each other.
  */
+
+/**
+ * Minimum contract for a source that can publish GNSS fixes (what a host's switchboard binds to).
+ */
+public interface SourceAdapter {
+    /** Fixes from this source, in receive order. */
+    public val fixes: SharedFlow<Fix>
+}
+
+/**
+ * Optional contract for adapters that publish satellite sky state.
+ */
+public interface SkyProvider {
+    /** The latest satellite snapshot from this source. */
+    public val sky: StateFlow<SkySnapshot>
+}
 
 /**
  * Optional contract for adapters that need explicit lifecycle control.

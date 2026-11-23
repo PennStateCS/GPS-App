@@ -2,8 +2,8 @@ package app.surrealar.gnss.internal
 
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
 import app.surrealar.gnss.bus.PermissionRetryable
-import app.surrealar.gnss.bus.SourceAdapter
-import app.surrealar.gnss.bus.SkyProvider
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SourceAdapter
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SkyProvider
 import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot

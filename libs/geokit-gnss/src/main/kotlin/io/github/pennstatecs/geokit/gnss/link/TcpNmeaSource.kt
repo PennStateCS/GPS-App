@@ -1,16 +1,15 @@
-package app.surrealar.gnss.external
+package io.github.pennstatecs.geokit.gnss.link
 
-import app.surrealar.util.DevLog
-import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
 import io.github.pennstatecs.geokit.gnss.bus.adapters.GsvMessage
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaFuser
 import io.github.pennstatecs.geokit.gnss.bus.adapters.NmeaSource
-import app.surrealar.util.DiagnosticsLogger
-import app.surrealar.gnss.diagnostics.DiagnosticsService
+import io.github.pennstatecs.geokit.gnss.link.LinkLog.Companion.TAG_NMEA
+import io.github.pennstatecs.geokit.gnss.link.LinkLog.Companion.TAG_RECEIVER
+import io.github.pennstatecs.geokit.gnss.log.GnssLog
+import io.github.pennstatecs.geokit.gnss.log.NmeaDebugSampler
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.nmea.parse.NmeaRegistry
-import app.surrealar.gnss.source.SourceSettings
 import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -20,10 +19,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.Socket
@@ -33,48 +30,51 @@ import kotlin.coroutines.coroutineContext
 /**
  * [NmeaSource] that reads NMEA sentences from an external GNSS receiver over TCP.
  *
- * Connection parameters (host/port) are read from `SettingsRepository`.
- *
- * **Future**: [SourceSettings] is wired for multi-profile support but profiles are not yet
- * populated from UI. When profile UI is implemented, this class can switch to using
- * [SourceSettings.getConnectionInfo] instead of `SettingsRepository` for connection parameters.
+ * The receiver's host and port come from [endpoint], asked once per connection attempt; null means
+ * none is configured, and the attempt ends at once (logged once per outage).
  *
  * This source makes a **single connection attempt** and streams until the connection drops or
  * [stop] is called. Reconnection logic (with exponential back-off) is the responsibility of
- * [ExternalAdapter], which owns the lifecycle of this source.
+ * [ReconnectingNmeaAdapter], which owns the lifecycle of this source.
  *
- * Sentence parsing and fix fusion are delegated to [NmeaFuser]; the shared [NmeaRegistry]
- * instance from DI is reused to avoid redundant parser allocations.
+ * Sentence parsing and fix fusion are delegated to [NmeaFuser]; the caller's [NmeaRegistry]
+ * instance is reused to avoid redundant parser allocations.
  *
  * This implementation is intentionally provider-agnostic: any TCP NMEA source (RS2+, Reach,
  * u-blox, etc.) will work — the [Provider] tag stamped onto emitted [Fix] objects is the only
- * RS2-specific coupling, and it can be changed at construction time.
+ * receiver coupling, and it can be changed at construction time.
+ *
+ * @param onLine called with every NMEA sentence (trimmed, starting with `$`) before it is parsed,
+ *   e.g. for the host's rate/diagnostics counters. An exception from it drops only that sentence.
+ * @param linkLog where connection lines go; share one instance with the [ReconnectingNmeaAdapter].
+ * @param readTimeoutMs socket read timeout; [DEAD_LINK_TIMEOUTS] in a row with no data ends the
+ *   connection. Tests shorten it.
  */
-class TcpNmeaSource(
+public class TcpNmeaSource(
     private val scope: CoroutineScope,
-    private val settingsRepository: ExternalReceiverSettingsRepository,
-    @Suppress("UNUSED_PARAMETER") sourceSettings: SourceSettings,  // Reserved for future profile support
+    private val endpoint: suspend () -> Pair<String, Int>?,
     registry: NmeaRegistry,
     private val provider: Provider = Provider.EXTERNAL_TCP,
-    private val diagnostics: DiagnosticsService? = null,
-    /** Socket read timeout; [DEAD_LINK_TIMEOUTS] in a row with no data ends the connection. Tests shorten it. */
+    private val onLine: ((String) -> Unit)? = null,
+    private val linkLog: LinkLog = GnssLinkLog(),
     private val readTimeoutMs: Int = SOCKET_TIMEOUT_MS,
 ) : NmeaSource {
 
-    companion object {
+    public companion object {
         private const val TAG = "TcpNmeaSource"
-        /** Throttle keys for the connect / retry lines; ExternalAdapter resets them on a real connect. */
-        private const val RETRY = ExternalAdapter.RETRY_LOG_PREFIX
-        private const val SOCKET_TIMEOUT_MS = 5_000
+        /** Throttle keys for the connect / retry lines; the adapter resets them on a real connect. */
+        private const val RETRY = ReconnectingNmeaAdapter.RETRY_LOG_PREFIX
+        /** Default socket connect and read timeout, milliseconds. */
+        public const val SOCKET_TIMEOUT_MS: Int = 5_000
         /** How often the fuser's GST hold cap (300 ms) is checked while reading. */
         private const val HOLD_TICK_MS = 100L
         /**
          * Consecutive read timeouts with no line received that mean the link is dead (half-open socket:
          * Wi-Fi dropped, receiver powered off without closing). 2 × 5 s ≈ 10 s on a ≥1 Hz stream, instead
-         * of the adapter's 30 s no-data timeout. Ending the connection lets ExternalAdapter's existing
+         * of the adapter's 30 s no-data timeout. Ending the connection lets the adapter's existing
          * reconnect/backoff run.
          */
-        private const val DEAD_LINK_TIMEOUTS = 2
+        public const val DEAD_LINK_TIMEOUTS: Int = 2
     }
 
     private val _fixes = MutableSharedFlow<Fix>(
@@ -90,8 +90,8 @@ class TcpNmeaSource(
     override fun parsedFixes(): SharedFlow<Fix> = _fixes.asSharedFlow()
     override fun gsvStream(): SharedFlow<GsvMessage> = _gsv.asSharedFlow()
     override fun rawNmeaEvents(): SharedFlow<Unit> = _rawNmea.asSharedFlow()
-    override fun nmeaTimingStats() = fuser.timingStats
-    override fun nmeaCustomStats() = fuser.nmeaCustomStats
+    override fun nmeaTimingStats(): NmeaFuser.FuserTimingStats = fuser.timingStats
+    override fun nmeaCustomStats(): NmeaFuser.NmeaCustomStats = fuser.nmeaCustomStats
 
     private val fuser = NmeaFuser(
         provider = provider,
@@ -112,8 +112,8 @@ class TcpNmeaSource(
     @Volatile private var generation = 0L
     private val readerGeneration = ThreadLocal<Long>()
 
-    /** Debug builds: periodic raw-sentence samples from the receiver (logcat only). Reader thread only. */
-    private val debugSampler = app.surrealar.gnss.debug.NmeaDebugSampler("nmea-ext")
+    /** Debug builds: periodic raw-sentence samples from the receiver (developer log only). Reader thread only. */
+    private val debugSampler = NmeaDebugSampler("nmea-ext")
 
     private var connectionJob: Job? = null
     /** Open socket, so [stop] can close it and unblock a pending readLine() immediately. */
@@ -121,36 +121,36 @@ class TcpNmeaSource(
 
     /**
      * True while a connection attempt or open stream is in progress. False once the remote closed the
-     * socket, the connect failed, or [stop] ran — lets [ExternalAdapter] reconnect right away instead
-     * of waiting for its no-data timeout.
+     * socket, the connect failed, or [stop] ran — lets [ReconnectingNmeaAdapter] reconnect right away
+     * instead of waiting for its no-data timeout.
      */
     override fun isConnectionActive(): Boolean = connectionJob?.isActive == true
     @Volatile private var started = false
     @Volatile private var firstDataLogged = false
 
     /**
-     * Reads host/port from `SettingsRepository` and initiates a single TCP connection attempt.
+     * Asks [endpoint] for host/port and initiates a single TCP connection attempt.
      * The connection streams lines until the remote closes it, a read error occurs, or [stop]
-     * is called. Reconnection with exponential back-off is the responsibility of [ExternalAdapter].
+     * is called. Reconnection with exponential back-off is the responsibility of [ReconnectingNmeaAdapter].
      */
     override fun start() {
         if (started) return
-        DevLog.d(TAG) { "Starting TCP NMEA source (single-connect)" }
+        GnssLog.d(TAG) { "Starting TCP NMEA source (single-connect)" }
         connectionJob = scope.launch(Dispatchers.IO) {
             try {
-                val host = settingsRepository.externalTcpHost.first()
-                val port = settingsRepository.externalTcpPort.first()
+                val target = endpoint()
 
-                if (host.isNullOrBlank() || port == null) {
+                if (target == null || target.first.isBlank()) {
                     // Repeats every reconnect attempt: once per outage (keys reset on a real connect).
-                    DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "nohost", true, 'W') { "External receiver connect skipped: no host or port configured" }
+                    linkLog.logOnChange(TAG_RECEIVER, RETRY + "nohost", true, LinkLogLevel.WARN) { "External receiver connect skipped: no host or port configured" }
                     return@launch
                 }
+                val (host, port) = target
 
                 started = true
                 firstDataLogged = false
-                // Once per target per outage; ExternalAdapter's throttled summary covers the retries.
-                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "connecting", "$host:$port") { "External receiver connecting host=$host port=$port" }
+                // Once per target per outage; the adapter's throttled summary covers the retries.
+                linkLog.logOnChange(TAG_RECEIVER, RETRY + "connecting", "$host:$port") { "External receiver connecting host=$host port=$port" }
                 connectAndRead(host, port)
 
             } catch (ce: CancellationException) {
@@ -159,19 +159,19 @@ class TcpNmeaSource(
                 // stop() closes the socket, which surfaces here as "Socket closed" — not an error.
                 if (!isActive) return@launch
                 // Refused / unreachable is expected while the receiver is off or out of range, and is
-                // retried: the first failure of an outage in full, then ExternalAdapter's summary.
-                val logged = DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "tcp.error", "failing", 'W', throwable = e) {
+                // retried: the first failure of an outage in full, then the adapter's summary.
+                val logged = linkLog.logOnChange(TAG_RECEIVER, RETRY + "tcp.error", "failing", LinkLogLevel.WARN, throwable = e) {
                     "External receiver TCP connect failed (will retry)"
                 }
-                if (!logged) DevLog.d(TAG) { "TCP connect failed again: ${e.javaClass.simpleName}: ${e.message}" }
+                if (!logged) GnssLog.d(TAG) { "TCP connect failed again: ${e.javaClass.simpleName}: ${e.message}" }
                 started = false
-                // Let ExternalAdapter's reconnect loop handle the retry
+                // Let the adapter's reconnect loop handle the retry
             }
         }
     }
 
     override fun stop() {
-        DevLog.d(TAG) { "Stopping TCP NMEA source" }
+        GnssLog.d(TAG) { "Stopping TCP NMEA source" }
         generation++            // first: an in-flight sentence from the old reader is now discarded
         started = false
         firstDataLogged = false
@@ -204,7 +204,7 @@ class TcpNmeaSource(
                 connect(java.net.InetSocketAddress(host, port), SOCKET_TIMEOUT_MS)
             }
             socketConnected = true
-            DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "socket", "$host:$port") { "External receiver TCP socket connected host=$host port=$port" }
+            linkLog.logOnChange(TAG_RECEIVER, RETRY + "socket", "$host:$port") { "External receiver TCP socket connected host=$host port=$port" }
             reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8), 1024)
 
             // Enforce the fuser's GST hold cap in time (readLine() blocks, so the cap can't rely on the
@@ -223,7 +223,7 @@ class TcpNmeaSource(
                     val line = reader.readLine()
                     silentTimeouts = 0
                     if (line == null) {
-                        DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "remoteclosed", true, 'W') {
+                        linkLog.logOnChange(TAG_RECEIVER, RETRY + "remoteclosed", true, LinkLogLevel.WARN) {
                             "External receiver TCP connection closed by remote host=$host port=$port"
                         }
                         break
@@ -233,20 +233,20 @@ class TcpNmeaSource(
                     if (clean.isNotEmpty() && clean[0] == '$') {
                         if (!firstDataLogged) {
                             firstDataLogged = true
-                            DiagnosticsLogger.i("RECEIVER", "External receiver first NMEA sentence received host=$host port=$port")
+                            linkLog.i(TAG_RECEIVER, "External receiver first NMEA sentence received host=$host port=$port")
                         }
                         // An exception from an odd sentence anywhere downstream (fusion, fix
                         // listeners) used to end the connection and force a reconnect. Drop just
                         // that sentence and log it (throttled, never the sentence text).
                         try {
-                            diagnostics?.recordLine(clean)
+                            onLine?.invoke(clean)
                             _rawNmea.tryEmit(Unit)
                             fuser.accept(clean)
                             debugSampler.accept(clean) { "$host:$port" }
                         } catch (ce: CancellationException) {
                             throw ce
                         } catch (e: Exception) {
-                            DiagnosticsLogger.every("NMEA", "tcp.sentence.error", 60_000L, 'E', throwable = e) {
+                            linkLog.every(TAG_NMEA, "tcp.sentence.error", 60_000L, LinkLogLevel.ERROR, throwable = e) {
                                 "External receiver NMEA processing failed: sentence dropped, repeats suppressed for 60 s"
                             }
                         }
@@ -255,7 +255,7 @@ class TcpNmeaSource(
                     if (!coroutineContext.isActive) break
                     if (++silentTimeouts >= DEAD_LINK_TIMEOUTS) {
                         val silentMs = silentTimeouts.toLong() * readTimeoutMs
-                        DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "deadlink", true, 'W') {
+                        linkLog.logOnChange(TAG_RECEIVER, RETRY + "deadlink", true, LinkLogLevel.WARN) {
                             "External receiver TCP link dead: no data, reconnecting host=$host port=$port silentMs=$silentMs"
                         }
                         break
@@ -279,7 +279,7 @@ class TcpNmeaSource(
             readerGeneration.remove()
             // Only after a socket that actually connected; once per outage.
             if (socketConnected) {
-                DiagnosticsLogger.logOnChange("RECEIVER", RETRY + "disconnected", "$host:$port") { "External receiver TCP disconnected host=$host port=$port" }
+                linkLog.logOnChange(TAG_RECEIVER, RETRY + "disconnected", "$host:$port") { "External receiver TCP disconnected host=$host port=$port" }
             }
         }
     }

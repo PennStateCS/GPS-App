@@ -1,16 +1,12 @@
-package app.surrealar.gnss.external
+package io.github.pennstatecs.geokit.gnss.link
 
-import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
-import app.surrealar.gnss.source.SourceSettings
 import io.github.pennstatecs.geokit.gnss.nmea.parse.DefaultNmeaRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mockito.Mockito
 import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
@@ -31,13 +27,8 @@ class TcpNmeaSourceDeadLinkTest {
         return server
     }
 
-    private fun source(scope: CoroutineScope, port: Int): TcpNmeaSource {
-        val settings = Mockito.mock(ExternalReceiverSettingsRepository::class.java)
-        Mockito.`when`(settings.externalTcpHost).thenReturn(flowOf("127.0.0.1"))
-        Mockito.`when`(settings.externalTcpPort).thenReturn(flowOf(port))
-        return TcpNmeaSource(scope, settings, Mockito.mock(SourceSettings::class.java),
-            DefaultNmeaRegistry.create(verifyChecksum = false))
-    }
+    private fun source(scope: CoroutineScope, port: Int): TcpNmeaSource =
+        TcpNmeaSource(scope, endpoint = { "127.0.0.1" to port }, registry = DefaultNmeaRegistry.create(verifyChecksum = false))
 
     private fun waitUntil(timeoutMs: Long, cond: () -> Boolean): Boolean {
         val end = System.nanoTime() + timeoutMs * 1_000_000

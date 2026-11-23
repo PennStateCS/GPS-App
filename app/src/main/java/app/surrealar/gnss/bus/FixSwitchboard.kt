@@ -1,6 +1,8 @@
 package app.surrealar.gnss.bus
 
 import io.github.pennstatecs.geokit.gnss.bus.adapters.RawNmeaProvider
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SkyProvider
+import io.github.pennstatecs.geokit.gnss.bus.adapters.SourceAdapter
 import io.github.pennstatecs.geokit.gnss.bus.adapters.Startable
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
@@ -303,20 +305,6 @@ class FixSwitchboard(
             scope.launch { provider.rawNmea.collect { _rawNmea.emit(Unit) } }
         }
     }
-}
-
-/**
- * Minimum contract for a source that can publish GNSS fixes.
- */
-interface SourceAdapter {
-    val fixes: SharedFlow<Fix>
-}
-
-/**
- * Optional contract for adapters that publish satellite sky state.
- */
-interface SkyProvider {
-    val sky: StateFlow<SkySnapshot>
 }
 
 /**
