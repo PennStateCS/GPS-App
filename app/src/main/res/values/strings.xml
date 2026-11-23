@@ -285,4 +285,28 @@
     <string name="ar_move_confirm_message">This saves the model shift for %1$s.\n\nThe shift is measured against ARCore\'s current localization (AR accuracy %2$s, heading %3$s), not a surveyed calibration. If ARCore is off, the saved shift is off by the same amount.\n\nThe point\'s surveyed latitude, longitude and height are not changed. Only the model\'s display offset is stored.</string>
     <string name="ar_move_confirm_save">Save to point</string>
     <string name="ar_move_confirm_back">Keep adjusting</string>
+
+    <!-- Settings > About > Diagnostics -->
+    <string name="diag_export_title">Export Diagnostic Report</string>
+    <string name="diag_export_button">Export Diagnostic Report</string>
+    <string name="diag_export_button_busy">Exporting…</string>
+    <string name="diag_export_explanation">Contains technical information to help diagnose problems. No coordinates or passwords.</string>
+    <string name="diag_export_share_chooser">Share diagnostic report</string>
+    <string name="diag_export_ready">Diagnostic report ready.</string>
+    <string name="diag_export_failed_storage_full">Couldn\'t create the report: the device storage is full. Free some space and try again.</string>
+    <string name="diag_export_failed_write">Couldn\'t write the report file. Try again.</string>
+    <string name="diag_export_failed_cancelled">Report export was cancelled.</string>
+    <string name="diag_export_failed_no_share_app">The report was created, but no app is available to share it.</string>
+    <string name="diag_export_failed_unknown">Couldn\'t create the diagnostic report. Try again.</string>
+    <string name="diag_mark_title">Mark Problem</string>
+    <string name="diag_mark_explanation">Something went wrong? Mark the time now and export a report later.</string>
+    <string name="diag_mark_button">Mark Problem</string>
+    <string name="diag_mark_button_description">Mark a problem now so it can be found in a later diagnostic report</string>
+    <string name="diag_mark_dialog_title">Mark a problem</string>
+    <string name="diag_mark_dialog_message">The time and app status are saved so the problem is easy to find in a report. You can add a short note.</string>
+    <string name="diag_mark_dialog_hint">What happened? (optional)</string>
+    <string name="diag_mark_dialog_mark">Mark</string>
+    <string name="diag_mark_dialog_skip">Skip note</string>
+    <string name="diag_mark_done">Problem marked at %1$s — export a report when convenient</string>
+    <string name="diag_mark_failed">Couldn\'t mark the problem. Try exporting a report instead.</string>
 </resources>

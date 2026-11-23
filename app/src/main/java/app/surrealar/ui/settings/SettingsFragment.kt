@@ -879,39 +879,31 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             )
             btnExport?.setOnClickListener {
                 btnExport.isEnabled = false
-                btnExport.text = "Exporting…"
+                btnExport.setText(R.string.diag_export_button_busy)
                 categoryScope.launch {
+                    val ctx = requireContext()
                     // buildReport logs its own failure and returns null.
-                    val report = app.surrealar.util.DiagnosticReportExporter.buildReport(requireContext())
+                    val report = app.surrealar.util.DiagnosticReportExporter.buildReport(ctx)
                     btnExport.isEnabled = true
-                    btnExport.text = "Export Diagnostic Report"
-                    if (report == null) {
-                        showSettingsMessage("Could not create diagnostic report.")
-                        return@launch
-                    }
-                    try {
-                        val uri = androidx.core.content.FileProvider.getUriForFile(
-                            requireContext(),
-                            "${requireContext().packageName}.fileprovider",
-                            report.file
+                    btnExport.setText(R.string.diag_export_button)
+                    val failure = if (report == null) DiagnosticExportUi.noReportFailure(ctx)
+                        else DiagnosticExportUi.share(ctx, report.file, report.reportId)
+                    showSettingsMessage(getString(failure?.messageRes ?: R.string.diag_export_ready),
+                        if (failure == null) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG)
+                }
+            }
+
+            view.findViewById<View>(R.id.btn_mark_problem)?.setOnClickListener {
+                val appContext = requireContext().applicationContext
+                DiagnosticExportUi.showMarkProblemDialog(requireContext()) { note ->
+                    categoryScope.launch {
+                        val marker = DiagnosticExportUi.markProblem(appContext, note)
+                        if (!isAdded) return@launch
+                        showSettingsMessage(
+                            if (marker == null) getString(R.string.diag_mark_failed)
+                            else getString(R.string.diag_mark_done, DiagnosticExportUi.markTime(marker.epochMs)),
+                            Snackbar.LENGTH_LONG,
                         )
-                        val naming = app.surrealar.util.diagnostics.ReportNaming
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "application/zip"
-                            putExtra(Intent.EXTRA_STREAM, uri)
-                            naming.recipients(app.surrealar.BuildConfig.DIAG_REPORT_EMAIL)
-                                .takeIf { it.isNotEmpty() }?.let { putExtra(Intent.EXTRA_EMAIL, it) }
-                            putExtra(Intent.EXTRA_SUBJECT, naming.subject(android.os.Build.MODEL ?: "device",
-                                app.surrealar.BuildConfig.VERSION_NAME, app.surrealar.BuildConfig.VERSION_CODE,
-                                System.currentTimeMillis()))
-                            putExtra(Intent.EXTRA_TEXT, naming.body(report.reportId))
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        startActivity(Intent.createChooser(shareIntent, "Share diagnostic report"))
-                        showSettingsMessage("Diagnostic report ready.")
-                    } catch (ex: Exception) {
-                        settingsError("Diagnostic report share failed", ex, DiagTags.EXPORT)
-                        showSettingsMessage("Could not create diagnostic report.")
                     }
                 }
             }
