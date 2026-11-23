@@ -269,6 +269,12 @@ class ModelsFragment : Fragment() {
                 val fromPath = uri.path!!.substringAfterLast('/')
                 if (fromPath.isNotBlank()) fileName = fromPath
             }
+            // The provider's name is used as a file name in models/: never as a path.
+            val reportedName = fileName
+            fileName = ModelFileIo.safeImportName(fileName)
+            if (fileName != reportedName) {
+                DiagnosticsLogger.w("MODEL", "Model import name sanitized: path characters removed name=\"$fileName\"")
+            }
 
             DevLog.d("ModelsFragment") { "Selected URI: $uri  fileName: $fileName  size: $fileSize" }
             DiagnosticsLogger.i("MODEL",
@@ -390,6 +396,8 @@ class ModelsFragment : Fragment() {
 
     private fun copyModelToInternalStorage(sourceUri: Uri, fileName: String, inputStream: java.io.InputStream, filesDir: File): File? {
         val modelsDir = File(filesDir, "models").also { it.mkdirs() }
+        // Second guard behind safeImportName: refuse anything that would land outside models/.
+        require(ModelFileIo.isInside(modelsDir, File(modelsDir, fileName))) { "Unsafe model file name" }
         val lowerName = fileName.lowercase()
 
         return if (lowerName.endsWith(".gltf")) {
