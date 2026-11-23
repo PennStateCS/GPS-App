@@ -90,41 +90,54 @@ See [geokit-receiver-emlid](geokit-receiver-emlid/README.md#adding-another-recei
 
 ## Using geokit from another Gradle project
 
-**Now**: use a composite build or a git submodule.
+**Now**: include `libs/` as a composite build. `libs/` is its own Gradle build (`libs/settings.gradle.kts`,
+Kotlin JVM plugin 2.4.21, no Android Gradle Plugin), so this needs neither the Android SDK nor the app.
+This is exactly how the app itself uses geokit.
+
+Check out the whole repository (a clone or a git submodule), not just `libs/`: the build reads the
+repository's version catalog, `gradle/libs.versions.toml`.
 
 ```kotlin
-// settings.gradle.kts of the other project — composite build against a checkout of this repository
-includeBuild("../GPS-App") {
-    dependencySubstitution {
-        substitute(module("io.github.pennstatecs.geokit:geokit-core")).using(project(":geokit-core"))
-        substitute(module("io.github.pennstatecs.geokit:geokit-gnss")).using(project(":geokit-gnss"))
-        substitute(module("io.github.pennstatecs.geokit:geokit-receiver-emlid")).using(project(":geokit-receiver-emlid"))
-    }
+// settings.gradle.kts of the other project (here the repository is a submodule in GPS-App/)
+includeBuild("GPS-App/libs")
+
+// build.gradle.kts: Gradle substitutes the included projects by group:name, so no version is needed
+dependencies {
+    implementation("io.github.pennstatecs.geokit:geokit-gnss")
+    implementation("io.github.pennstatecs.geokit:geokit-receiver-emlid")
 }
-// build.gradle.kts
-dependencies { implementation("io.github.pennstatecs.geokit:geokit-gnss:0.1.0-SNAPSHOT") }
 ```
 
-A composite build configures the whole repository, including the Android app, so it needs the
-Android SDK. To avoid that, add the repository as a git submodule and include only the libraries:
-
-```kotlin
-include(":geokit-core", ":geokit-gnss")
-project(":geokit-core").projectDir = file("GPS-App/libs/geokit-core")
-project(":geokit-gnss").projectDir = file("GPS-App/libs/geokit-gnss")
-```
-
-(The modules use the version catalog entries `geographiclib`, `kotlinx-coroutines-core`, `junit`, …;
-add the same entries to your catalog.)
+The artifacts are `geokit-core`, `geokit-gnss`, `geokit-receiver-emlid`, `geokit-ar` and
+`geokit-models` (version `GEOKIT_VERSION` in `libs/gradle.properties`). Dependencies between them come
+along transitively.
 
 **Later**: publish to Maven Central or JitPack under the `io.github.pennstatecs` namespace. That isn't
 set up yet.
 
 ## Build and test
 
+The libraries build and test on their own, without Android (Windows commands; use `./gradlew` elsewhere):
+
 ```
-.\gradlew.bat :geokit-core:test :geokit-gnss:test :geokit-receiver-emlid:test
+cd libs
+..\gradlew.bat test                      # all five libraries
+..\gradlew.bat :geokit-core:test         # one library
 ```
+
+or, from the repository root, `.\gradlew.bat -p libs test`. This uses the repository's Gradle wrapper and
+never configures the app.
+
+The root build includes `libs/` with `includeBuild("libs")`, so `.\gradlew.bat :app:assembleDebug`
+builds the libraries it needs. From the root, library tasks are addressed through the included build
+name `libs`:
+
+```
+.\gradlew.bat :libs:geokit-core:test :libs:geokit-gnss:test :libs:geokit-receiver-emlid:test :libs:geokit-ar:test :libs:geokit-models:test
+```
+
+The libraries' Kotlin version (2.4.21, in `libs/settings.gradle.kts`) must stay equal to the root
+`kotlin-gradle-plugin` pin in `build.gradle.kts`.
 
 ## Licence
 

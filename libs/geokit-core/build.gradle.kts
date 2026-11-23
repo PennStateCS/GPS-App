@@ -1,8 +1,8 @@
 // geokit-core: Android-free geodesy for SurReal AR (ellipsoids, datum, projections, geoid, local
 // frames, accuracy, heading). GPL-3.0 like the rest of the repository.
 //
-// No version on the Kotlin plugin: the compiler is pinned through the buildscript classpath in the
-// root build.gradle.kts (kotlin-gradle-plugin 2.4.21), the same one the app uses.
+// No version on the Kotlin plugin: libs/settings.gradle.kts pins it (2.4.21, the same compiler the app
+// uses through the root build.gradle.kts).
 plugins {
     id("org.jetbrains.kotlin.jvm")
 }

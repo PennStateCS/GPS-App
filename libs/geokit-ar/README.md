@@ -61,7 +61,7 @@ when changing it.
 Policy, thresholds and UI (anchor gate profiles, GNSS gate, altitude policy, view quality, lighting,
 depth occlusion, grades) stay in the app.
 
-Tests: `.\gradlew.bat :geokit-ar:test`.
+Tests: `..\gradlew.bat :geokit-ar:test` from `libs/` (no Android), or `.\gradlew.bat :libs:geokit-ar:test` from the repository root.
 
 ## Future: control-point alignment
 

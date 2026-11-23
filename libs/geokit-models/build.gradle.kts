@@ -1,8 +1,8 @@
 // geokit-models: Android-free glTF/GLB processing (container parsing, facts, resource URIs, embedded
 // georeference detection and reprojection). No Android, Filament or app types. GPL-3.0 like the repo.
 //
-// No version on the Kotlin plugin: the compiler is pinned through the buildscript classpath in the
-// root build.gradle.kts (kotlin-gradle-plugin 2.4.21), the same one the app and the other modules use.
+// No version on the Kotlin plugin: libs/settings.gradle.kts pins it (2.4.21, the same compiler the app
+// uses through the root build.gradle.kts).
 plugins {
     id("org.jetbrains.kotlin.jvm")
 }

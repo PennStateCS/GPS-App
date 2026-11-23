@@ -43,27 +43,26 @@ row live in `libs/geokit-core/src/test` unless noted.
 
 ## Using it from another Gradle project
 
-Now: either a composite build or a git submodule.
+Now: include the geokit build (`libs/` of a checkout or submodule of this repository) as a composite
+build. It needs no Android SDK. See [Using geokit from another Gradle project](../README.md#using-geokit-from-another-gradle-project).
 
 ```kotlin
-// settings.gradle.kts of the other project (composite build)
-includeBuild("../GPS-App") {
-    dependencySubstitution { substitute(module("io.github.pennstatecs.geokit:geokit-core")).using(project(":geokit-core")) }
-}
+// settings.gradle.kts of the other project
+includeBuild("GPS-App/libs")
 // build.gradle.kts
 dependencies { implementation("io.github.pennstatecs.geokit:geokit-core") }
 ```
-
-or add this repository as a submodule and `include(":geokit-core")` with
-`project(":geokit-core").projectDir = file("GPS-App/libs/geokit-core")`.
 
 Later: publish through JitPack or GitHub Packages (not set up yet).
 
 ## Build and test
 
 ```
-.\gradlew.bat :geokit-core:build      # compiles and runs the module's tests on its own
+cd libs
+..\gradlew.bat :geokit-core:build     # compiles and runs the module's tests, without Android
 ```
+
+From the repository root: `.\gradlew.bat :libs:geokit-core:test`.
 
 ## GEOID18 grid
 

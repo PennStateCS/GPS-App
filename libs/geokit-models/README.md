@@ -109,7 +109,7 @@ Documented, not changed (changing them would change how existing or new imports 
 
 ## Tests
 
-`.\gradlew.bat :geokit-models:test` (plain JUnit, no Robolectric). Fixture: `src/test/resources/models/surreal-test-cube-1m.glb`
+`..\gradlew.bat :geokit-models:test` from `libs/` (plain JUnit, no Robolectric or Android), or `.\gradlew.bat :libs:geokit-models:test` from the repository root. Fixture: `src/test/resources/models/surreal-test-cube-1m.glb`
 (also in the app's test resources). Golden inputs are built in code by `GoldenGlbs`, kept byte-identical
 with the app copy (`app/src/test/java/app/surrealar/util/GlbGeoreferenceGoldenTest.kt`); their SHA-256 is
 asserted too.

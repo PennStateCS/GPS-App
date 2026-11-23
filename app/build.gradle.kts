@@ -216,12 +216,14 @@ dependencies {
     // through :geokit-receiver-emlid (pinned to 1.0.1 for the Reach's EIO=3 protocol - see libs.versions.toml).
 
     // Android-free geodesy (ellipsoids, datum, projections, geoid, local frames, accuracy, heading)
-    implementation(project(":geokit-core"))
-    implementation(project(":geokit-gnss"))
-    implementation(project(":geokit-ar"))
-    implementation(project(":geokit-models"))
+    // geokit is the included build libs/ (settings.gradle.kts); Gradle substitutes these coordinates
+    // with its projects, so no version is needed.
+    implementation("io.github.pennstatecs.geokit:geokit-core")
+    implementation("io.github.pennstatecs.geokit:geokit-gnss")
+    implementation("io.github.pennstatecs.geokit:geokit-ar")
+    implementation("io.github.pennstatecs.geokit:geokit-models")
     // Emlid Reach receiver status (HTTP API + socket.io) behind ReceiverDevice.
-    implementation(project(":geokit-receiver-emlid"))
+    implementation("io.github.pennstatecs.geokit:geokit-receiver-emlid")
 
     // Desugaring
     coreLibraryDesugaring(libs.desugar.jdk.libs)

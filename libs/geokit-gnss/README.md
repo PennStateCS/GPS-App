@@ -168,30 +168,27 @@ folder as a test-resource directory).
 
 ## Using it from another Gradle project
 
-For now, use either a composite build or a git submodule. `geokit-gnss` depends on `geokit-core`, so
-include both.
+For now, include the geokit build (`libs/` of a checkout or submodule of this repository) as a
+composite build; it needs no Android SDK. `geokit-core` comes along transitively. See
+[Using geokit from another Gradle project](../README.md#using-geokit-from-another-gradle-project).
 
 ```kotlin
-// settings.gradle.kts of the other project (composite build)
-includeBuild("../GPS-App") {
-    dependencySubstitution {
-        substitute(module("io.github.pennstatecs.geokit:geokit-gnss")).using(project(":geokit-gnss"))
-        substitute(module("io.github.pennstatecs.geokit:geokit-core")).using(project(":geokit-core"))
-    }
-}
+// settings.gradle.kts of the other project
+includeBuild("GPS-App/libs")
 // build.gradle.kts
 dependencies { implementation("io.github.pennstatecs.geokit:geokit-gnss") }
 ```
 
-Or add this repository as a submodule and include `:geokit-core` and `:geokit-gnss` with their
-`projectDir` pointing into it. Publishing through JitPack or GitHub Packages may come later; it is
-not set up yet.
+Publishing through JitPack or GitHub Packages may come later; it is not set up yet.
 
 ## Build and test
 
 ```
-.\gradlew.bat :geokit-gnss:build     # compiles and runs the module's tests on its own
+cd libs
+..\gradlew.bat :geokit-gnss:build    # compiles and runs the module's tests, without Android
 ```
+
+From the repository root: `.\gradlew.bat :libs:geokit-gnss:test`.
 
 ## Licence
 

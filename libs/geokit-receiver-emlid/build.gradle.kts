@@ -1,8 +1,8 @@
 // geokit-receiver-emlid: Emlid Reach RS2+ / RS4 / RS4 Pro status (battery, device info, corrections) over the
 // receiver's HTTP API and socket.io broadcasts, behind geokit-gnss's ReceiverDevice. GPL-3.0 like the repo.
 //
-// No version on the Kotlin plugin: the compiler is pinned through the buildscript classpath in the
-// root build.gradle.kts (kotlin-gradle-plugin 2.4.21), the same one the app and the other modules use.
+// No version on the Kotlin plugin: libs/settings.gradle.kts pins it (2.4.21, the same compiler the app
+// uses through the root build.gradle.kts).
 plugins {
     id("org.jetbrains.kotlin.jvm")
 }
