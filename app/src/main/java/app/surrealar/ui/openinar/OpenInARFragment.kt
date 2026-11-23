@@ -652,6 +652,13 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var hasWarnedNoNetwork = false
 
     // Permission request launchers using modern Activity Result API
+    // A permission request (even one the system answers at once after "Don't ask again") pauses and
+    // resumes the fragment, and onResume asks again: a denial looped requests every onResume. Each
+    // permission is requested at most once per fragment instance; once denied, the status says so and
+    // AR waits until the permission is granted (e.g. in system Settings — checked on every onResume).
+    private var cameraPermissionRequested = false
+    private var locationPermissionRequested = false
+
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             // The result can be delivered after the view is gone — guard binding access.
@@ -1330,7 +1337,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         return if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) true else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            if (!cameraPermissionRequested) {
+                cameraPermissionRequested = true
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            } else {
+                setArStatus(getString(R.string.camera_permission_denied))
+            }
             false
         }
     }
@@ -1345,7 +1357,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             )
             == PackageManager.PERMISSION_GRANTED
         ) true else {
-            locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (!locationPermissionRequested) {
+                locationPermissionRequested = true
+                locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            } else {
+                setArStatus(getString(R.string.location_permission_needed))
+            }
             false
         }
     }
