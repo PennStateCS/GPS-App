@@ -281,4 +281,8 @@
     <string name="ar_move_save">Save to point (otherwise this session only)</string>
     <string name="ar_move_reset">Reset</string>
     <string name="ar_move_done">Done</string>
+    <string name="ar_move_confirm_title">Save model adjustment?</string>
+    <string name="ar_move_confirm_message">This saves the model shift for %1$s.\n\nThe shift is measured against ARCore\'s current localization (AR accuracy %2$s, heading %3$s), not a surveyed calibration. If ARCore is off, the saved shift is off by the same amount.\n\nThe point\'s surveyed latitude, longitude and height are not changed. Only the model\'s display offset is stored.</string>
+    <string name="ar_move_confirm_save">Save to point</string>
+    <string name="ar_move_confirm_back">Keep adjusting</string>
 </resources>

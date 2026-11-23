@@ -287,17 +287,21 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var pinScreenCache: List<PinScreenEntry> = emptyList()
 
     // ── Move model (see startModelMove) ──────────────────────────────────────────────────────────
+    /** Move model state (session moves, target, Cancel/Done/Reset/Save, pending saves). Main thread. */
+    private val moveSession = MoveSessionController(TEST_CUBE_ID)
     /** Coordinate id whose model is being moved, or null. Written on main, read on the GL thread. */
-    @Volatile private var moveTargetId: String? = null
+    private var moveTargetId: String?
+        get() = moveSession.targetId
+        set(value) { if (value == null) { moveSession.end(); dismissMoveConfirm() } }   // leaving Move mode / AR
     /** Camera and the move target's anchor matrix from the last tracked frame (GL thread → touch handler). */
     private class MoveFrame(val camera: ArMoveMath.CameraState, val anchor: FloatArray?)
     @Volatile private var moveFrame: MoveFrame? = null
     /** GL thread only: the move target's anchor matrix captured by collectGeoAnchors this frame. */
     private var frameMoveAnchor: FloatArray? = null
     /** Session-only moves per coordinate id, on top of the saved placement; gone when AR closes (main thread). */
-    private val sessionMoves = HashMap<String, ModelMove>()
-    /** Main thread: the target's session move when Move mode started (Cancel restores it). */
-    private var moveStartSession = ModelMove()
+    private val sessionMoves get() = moveSession.sessionMoves
+    /** The "save to point" confirmation while it shows (main thread). */
+    private var moveConfirmDialog: androidx.appcompat.app.AlertDialog? = null
     private var moveTicker: kotlinx.coroutines.Job? = null
     private var nudgeStepM = 0.10f
     // Gesture state (main thread).
@@ -318,6 +322,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Volatile private var lastGeoHAccM: Double? = null
     @Volatile private var lastGeoYawAccDeg: Double? = null
     @Volatile private var lastArQualityGood = false
+    /** Anchors placed by timeout / without VPS: ARCore's position is a guess, so a move can't be saved. */
+    @Volatile private var lastPlacedByTimeout = false
 
     /**
      * Snapshot of ARCore Earth state extracted on the GL thread before posting to the main thread.
@@ -2447,6 +2453,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Logged only once a new level has held for QUALITY_LOG_HOLD_MS, so a value hovering at a
         // threshold can't flood the log.
         lastGeoHAccM = qHAcc; lastGeoYawAccDeg = qYaw; lastArQualityGood = quality.level == ArViewQuality.Level.GOOD
+        lastPlacedByTimeout = placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT
         val qualityChange = qualityLogHysteresis.update(quality.level, android.os.SystemClock.elapsedRealtime())
         if (qualityChange != null) {
             DiagnosticsLogger.i(DIAG, "AR_QUALITY ${qualityChange.from ?: "unknown"} → ${qualityChange.to} " +
@@ -2884,22 +2891,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     // Moves the rendered model relative to its surveyed point; the point itself never changes. By
     // default a move lasts for this AR session only (it can line a model up with reality when ARCore's
     // own position is off). "Save to point" stores it (modelMove* + modelYawDeg), allowed only while AR
-    // quality is Good so ARCore's error isn't baked into the point.
-
-    /** A saved move whose database update has not come back through setCoordinates yet: move + start time. */
-    private val pendingSaves = HashMap<String, Pair<ModelMove, Long>>()
+    // quality is Good and the anchors weren't placed by timeout, and only after the user confirms that
+    // the adjustment is relative to ARCore's current localization. State lives in MoveSessionController.
 
     /** The point's saved placement, including a just-saved move until the database reflects it. */
-    private fun basePlacement(item: CoordWithModel): ModelPlacement {
-        val id = item.coordinate.id
-        val pending = pendingSaves[id] ?: return item.placement
-        if (item.coordinate.updatedAt >= pending.second) { pendingSaves.remove(id); return item.placement }
-        return item.placement + pending.first
-    }
+    private fun basePlacement(item: CoordWithModel): ModelPlacement =
+        moveSession.basePlacement(item.coordinate.id, item.placement, item.coordinate.updatedAt)
 
     /** What the renderer shows: the saved placement plus this session's move. */
     private fun effectivePlacement(item: CoordWithModel): ModelPlacement =
-        basePlacement(item) + (sessionMoves[item.coordinate.id] ?: ModelMove())
+        moveSession.effectivePlacement(item.coordinate.id, item.placement, item.coordinate.updatedAt)
 
     private fun moveItem(id: String): CoordWithModel? =
         geoItems.firstOrNull { it.coordWithModel.coordinate.id == id }?.coordWithModel?.takeIf { it.modelFilePath != null }
@@ -2922,8 +2923,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             p.btnNudgeStep.text = if (nudgeStepM >= 0.1f) "10 cm" else "1 cm"
         }
         p.btnMoveReset.setOnClickListener { resetModelMove() }
-        p.btnMoveCancel.setOnClickListener { endModelMove(save = false, restore = true, reason = "cancel") }
-        p.btnMoveDone.setOnClickListener { endModelMove(save = p.chkMoveSave.isChecked, restore = false, reason = "done") }
+        p.btnMoveCancel.setOnClickListener { endModelMove(restore = true, reason = "cancel") }
+        p.btnMoveDone.setOnClickListener { doneModelMove(p.chkMoveSave.isChecked) }
     }
 
     /** 10° per tap at the 10 cm step, 1° at the 1 cm step. */
@@ -2932,9 +2933,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Enters Move mode for [coordId]'s model (from the pin sheet's "Move model"). */
     private fun startModelMove(coordId: String) {
         val item = moveItem(coordId) ?: run { showMoveMessage("This point's model isn't in AR right now"); return }
-        if (moveTargetId != null) endModelMove(save = false, restore = false, reason = "switched")
-        moveTargetId = coordId
-        moveStartSession = sessionMoves[coordId] ?: ModelMove()
+        if (moveTargetId != null) endModelMove(restore = false, reason = "switched")
+        moveSession.start(coordId)
         dragStartHit = null; twisting = false
         val p = binding.arMovePanel
         p.txtMoveTitle.text = getString(R.string.ar_move_title, item.coordinate.name)
@@ -2949,48 +2949,113 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         DiagnosticsLogger.i(DIAG, "AR model move started coordinateId=$coordId")
     }
 
+    private fun moveConditions() = MoveSessionController.Conditions(lastArQualityGood, lastPlacedByTimeout)
+
+    /** Done: session-only, or (with "Save to point") a confirmation first, then the save. */
+    private fun doneModelMove(saveChecked: Boolean) {
+        val end = moveSession.done(saveChecked, moveConditions())
+        if (end is MoveSessionController.End.ConfirmSave) showMoveConfirm(end) else finishModelMove(end, "done")
+    }
+
     /**
-     * Leaves Move mode. [restore] (Cancel) puts back the session move from when Move mode started;
-     * [save] stores the session move on the point when AR quality is Good, else it stays session-only.
+     * Leaves Move mode without saving. [restore] (Cancel) puts back the session move from when Move
+     * mode started; otherwise (switched point, point removed) the session move stays.
      */
-    private fun endModelMove(save: Boolean, restore: Boolean, reason: String) {
-        val id = moveTargetId ?: return
+    private fun endModelMove(restore: Boolean, reason: String) {
+        val id = moveSession.targetId ?: return
+        val move = moveSession.sessionMove(id)
+        if (restore) moveSession.cancel() else moveSession.end()
+        dismissMoveConfirm()
+        val after = moveSession.sessionMove(id)
+        leaveMoveMode()
+        if (restore) moveItem(id)?.let { filamentRenderer?.updatePlacement(id, effectivePlacement(it)) }
+        DiagnosticsLogger.i(DIAG, "AR model move ended coordinateId=$id reason=$reason moved=${!move.isZero} " +
+            "sessionOnly=${!after.isZero}")
+    }
+
+    /** Hides the panel and drops the gesture state (Move mode already ended in [moveSession]). */
+    private fun leaveMoveMode() {
         moveTicker?.cancel(); moveTicker = null
-        moveTargetId = null; moveFrame = null; dragStartHit = null; twisting = false
+        moveFrame = null; dragStartHit = null; twisting = false
         _binding?.arMovePanel?.root?.visibility = View.GONE
-        if (restore) applySessionMove(id, moveStartSession)
-        val item = moveItem(id)
-        val move = sessionMoves[id] ?: ModelMove()
-        when {
-            item == null || move.isZero -> {
-                DiagnosticsLogger.i(DIAG, "AR model move ended coordinateId=$id reason=$reason moved=${!move.isZero}")
+    }
+
+    /**
+     * Asks before saving: the adjustment is relative to ARCore's current localization (with its
+     * current accuracy), not a surveyed calibration, and the point's surveyed coordinates don't change.
+     */
+    private fun showMoveConfirm(end: MoveSessionController.End.ConfirmSave) {
+        val ctx = context ?: run { moveSession.confirmDismissed(); return }
+        val name = moveItem(end.id)?.coordinate?.name ?: ""
+        val h = lastGeoHAccM?.takeIf { it.isFinite() }?.let { String.format(java.util.Locale.US, "±%.1f m", it) } ?: "unknown"
+        val y = lastGeoYawAccDeg?.takeIf { it.isFinite() }?.let { String.format(java.util.Locale.US, "±%.0f°", it) } ?: "unknown"
+        var confirmed = false
+        moveConfirmDialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.ar_move_confirm_title)
+            .setMessage(getString(R.string.ar_move_confirm_message, name, h, y))
+            .setPositiveButton(R.string.ar_move_confirm_save) { _, _ ->
+                confirmed = true
+                finishModelMove(moveSession.confirmSave(moveConditions(), System.currentTimeMillis()), "done")
             }
-            save && id == TEST_CUBE_ID -> Unit   // the test cube has no stored point
-            save && !lastArQualityGood -> {
-                DiagnosticsLogger.w(DIAG, "AR model move not saved: AR quality not Good coordinateId=$id")
-                showMoveMessage("AR quality dropped: moved for this session only (not saved)")
+            .setNegativeButton(R.string.ar_move_confirm_back, null)
+            .setOnDismissListener {
+                moveConfirmDialog = null
+                if (!confirmed) moveSession.confirmDismissed()   // still in Move mode, nothing saved
             }
-            save -> {
-                val baseYaw = basePlacement(item).yawDeg
-                // Hand the move from the session to a pending save: the model stays where it is on screen.
-                sessionMoves.remove(id)
-                pendingSaves[id] = move to System.currentTimeMillis()
-                filamentRenderer?.updatePlacement(id, effectivePlacement(item))
-                viewModel.saveModelMove(id, move, baseYaw) { err ->
-                    if (err == null) {
+            .show()
+    }
+
+    private fun dismissMoveConfirm() {
+        moveConfirmDialog?.let { moveConfirmDialog = null; it.dismiss() }
+    }
+
+    /** Acts on how Move mode ended: messages, the save, and the log. */
+    private fun finishModelMove(end: MoveSessionController.End, reason: String) {
+        when (end) {
+            MoveSessionController.End.Ignored, is MoveSessionController.End.ConfirmSave -> return
+            is MoveSessionController.End.NothingMoved -> {
+                leaveMoveMode()
+                DiagnosticsLogger.i(DIAG, "AR model move ended coordinateId=${end.id} reason=$reason moved=false")
+            }
+            is MoveSessionController.End.SessionOnly -> {
+                leaveMoveMode()
+                val m = end.move
+                DiagnosticsLogger.i(DIAG, "AR model move ended coordinateId=${end.id} reason=$reason sessionOnly=true " +
+                    "dE=${"%.2f".format(m.eastM)} dN=${"%.2f".format(m.northM)} dUp=${"%.2f".format(m.upM)} dYaw=${"%.1f".format(m.yawDeg)}")
+                showMoveMessage("Moved for this session only (not saved)")
+            }
+            is MoveSessionController.End.NotSaved -> {
+                leaveMoveMode()
+                DiagnosticsLogger.w(DIAG, "AR model move not saved coordinateId=${end.id} block=${end.block} " +
+                    "placedByTimeout=$lastPlacedByTimeout")
+                showMoveMessage(when (end.block) {
+                    MoveSessionController.SaveBlock.PLACED_BY_TIMEOUT -> "AR placed by timeout: moved for this session only (not saved)"
+                    MoveSessionController.SaveBlock.SAVE_IN_PROGRESS -> "Previous save still in progress: moved for this session only"
+                    MoveSessionController.SaveBlock.TEST_CUBE -> "Test cube moved for this session only"
+                    MoveSessionController.SaveBlock.QUALITY_NOT_GOOD -> "AR quality dropped: moved for this session only (not saved)"
+                })
+            }
+            is MoveSessionController.End.Save -> {
+                leaveMoveMode()
+                val req = end.request
+                val item = moveItem(req.id)
+                // The move is now a pending save: the model stays where it is on screen.
+                item?.let { filamentRenderer?.updatePlacement(req.id, effectivePlacement(it)) }
+                // A twist is added to the point's own yaw; this is the yaw used when it has none.
+                val fallbackYaw = item?.placement?.yawDeg ?: 0f
+                val provenance = MoveSaveProvenance(lastArQualityGood, lastGeoHAccM, lastGeoYawAccDeg, lastPlacedByTimeout)
+                viewModel.saveModelMove(req, fallbackYaw, provenance) { result ->
+                    result.onSuccess { updatedAt ->
+                        moveSession.saveSucceeded(req.id, req.token, updatedAt)
                         showMoveMessage("Model placement saved to the point")
-                    } else {
-                        // Not stored: keep it as a session move so nothing visibly changes.
-                        pendingSaves.remove(id)
-                        applySessionMove(id, (sessionMoves[id] ?: ModelMove()) + move)
+                    }.onFailure { err ->
+                        // Not stored: back to a session move so nothing visibly changes.
+                        moveSession.saveFailed(req.id, req.token)
+                        moveItem(req.id)?.let { filamentRenderer?.updatePlacement(req.id, effectivePlacement(it)) }
+                        if (req.id == moveTargetId) updateMovePanel()
                         showMoveMessage("Not saved (${err.message ?: err.javaClass.simpleName}): kept for this session")
                     }
                 }
-            }
-            else -> {
-                DiagnosticsLogger.i(DIAG, "AR model move ended coordinateId=$id reason=$reason sessionOnly=true " +
-                    "dE=${"%.2f".format(move.eastM)} dN=${"%.2f".format(move.northM)} dUp=${"%.2f".format(move.upM)} dYaw=${"%.1f".format(move.yawDeg)}")
-                if (reason == "done") showMoveMessage("Moved for this session only (not saved)")
             }
         }
     }
@@ -2998,13 +3063,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** Back to the surveyed point, and undoes this session's turn. Saved only if "Save to point" is then used. */
     private fun resetModelMove() {
         val id = moveTargetId ?: return
-        val base = basePlacement(moveItem(id) ?: return)
-        applySessionMove(id, ModelMove(eastM = -base.moveEastM, northM = -base.moveNorthM, upM = -base.moveUpM))
+        val item = moveItem(id) ?: return
+        moveSession.reset(basePlacement(item)) ?: return
+        applySessionMove(id, moveSession.sessionMove(id))
     }
 
     /** Sets [id]'s session move and re-renders it (main thread). */
     private fun applySessionMove(id: String, move: ModelMove) {
-        if (move.isZero) sessionMoves.remove(id) else sessionMoves[id] = move
+        moveSession.setSessionMove(id, move)
         moveItem(id)?.let { filamentRenderer?.updatePlacement(id, effectivePlacement(it)) }
         if (id == moveTargetId) updateMovePanel()
     }
@@ -3030,12 +3096,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val turn = sessionMoves[id]?.yawDeg ?: 0f
         p.txtMoveOffset.text = String.format(java.util.Locale.US, "E %+.2f m · N %+.2f m · Up %+.2f m · Turn %+.0f°",
             eff.moveEastM, eff.moveNorthM, eff.moveUpM, turn)
-        val good = lastArQualityGood
+        val block = moveSession.saveBlock(moveConditions())
         val h = lastGeoHAccM?.let { String.format(java.util.Locale.US, "±%.1f m", it) } ?: "—"
         val y = lastGeoYawAccDeg?.let { String.format(java.util.Locale.US, "±%.0f°", it) } ?: "—"
-        p.txtMoveAccuracy.text = "AR accuracy $h · heading $y" + if (good) "" else " · saving needs AR quality Good"
-        p.chkMoveSave.isEnabled = good
-        if (!good && p.chkMoveSave.isChecked) p.chkMoveSave.isChecked = false
+        p.txtMoveAccuracy.text = "AR accuracy $h · heading $y" + when (block) {
+            MoveSessionController.SaveBlock.QUALITY_NOT_GOOD -> " · saving needs AR quality Good"
+            MoveSessionController.SaveBlock.PLACED_BY_TIMEOUT -> " · placed by timeout: can't save"
+            MoveSessionController.SaveBlock.SAVE_IN_PROGRESS -> " · saving…"
+            MoveSessionController.SaveBlock.TEST_CUBE, null -> ""
+        }
+        val canSave = block == null
+        p.chkMoveSave.isEnabled = canSave
+        if (!canSave && p.chkMoveSave.isChecked) p.chkMoveSave.isChecked = false
         p.txtMoveHint.text = if (moveFrame?.anchor == null) "Point the camera at the model to move it"
                              else getString(R.string.ar_move_hint)
     }
@@ -3249,7 +3321,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     }
 
     private fun removeTestCube() {
-        if (moveTargetId == TEST_CUBE_ID) endModelMove(save = false, restore = false, reason = "test cube removed")
+        if (moveTargetId == TEST_CUBE_ID) endModelMove(restore = false, reason = "test cube removed")
         testCube = null
         sessionMoves.remove(TEST_CUBE_ID)
         setCoordinates(lastDbItems)
@@ -3307,7 +3379,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Session moves and Move mode only for points that still have a model.
         val modelIds = items.filter { it.modelFilePath != null }.mapTo(HashSet()) { it.coordinate.id }
         sessionMoves.keys.retainAll(modelIds)
-        moveTargetId?.let { if (it !in modelIds) endModelMove(save = false, restore = false, reason = "point removed") }
+        moveTargetId?.let { if (it !in modelIds) endModelMove(restore = false, reason = "point removed") }
 
         // Free the cached GLBs of coordinates that were deleted or lost their model link.
         filamentRenderer?.retainModels(items.filter { it.modelFilePath != null }.mapTo(HashSet()) { it.coordinate.id })
