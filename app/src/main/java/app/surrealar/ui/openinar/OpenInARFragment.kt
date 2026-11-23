@@ -1106,7 +1106,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Resume AR session and related components
         try {
             session?.resume()
-            sessionReady = true
+            // Only a session that actually resumed is ready. On a cold start ARCore's availability can
+            // still be UNKNOWN_CHECKING here: the session is then created later and resumed in
+            // tryCreateSession() (see resumeLateSession).
+            sessionReady = session != null
             binding.glSurfaceViewAr.onResume()
 
             // Ensure the camera texture name is registered with the session.
@@ -1174,14 +1177,18 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         hasWarnedLocationOff = false
         hasWarnedNoNetwork   = false
 
-        // Restore previous screen brightness and allow screen to sleep
+        // Give the window back to the user's Field Display settings (keep awake / max brightness). Only
+        // if they haven't loaded: restore what AR found and let the screen sleep, as before.
         try {
-            val window = requireActivity().window
-            val lp = window.attributes
-            lp.screenBrightness = previousBrightness
-            window.attributes = lp
-            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            DevLog.d(TAG) { "Screen brightness restored to $previousBrightness" }
+            val restored = (activity as? app.surrealar.MainActivity)?.reapplyDisplayBehaviorSettings() == true
+            if (!restored) {
+                val window = requireActivity().window
+                val lp = window.attributes
+                lp.screenBrightness = previousBrightness
+                window.attributes = lp
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            DevLog.d(TAG) { if (restored) "Screen settings restored from Field Display settings" else "Screen brightness restored to $previousBrightness" }
         } catch (e: Exception) {
             DiagnosticsLogger.w(DIAG, "AR screen brightness and sleep restore failed", e)
         }
@@ -1295,12 +1302,37 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val ses = Session(requireContext())
             session = ses
             configureSession()
+            resumeLateSession(ses)
         } catch (e: CameraNotAvailableException) {
             DiagnosticsLogger.e(DIAG, "AR session create failed: camera unavailable", e)
             setArStatus(getString(R.string.camera_unavailable))
         } catch (e: Exception) {
             DiagnosticsLogger.e(DIAG, "AR session create failed", e)
             setArStatus("Session error: ${e.message ?: "Unknown"}")
+        }
+    }
+
+    /**
+     * Resumes [ses] when it was created after onResume already ran — the availability poll on a cold
+     * start (UNKNOWN_CHECKING → 200 ms later). onResume only resumes a session that existed then, so
+     * without this the camera stayed black (update() threw every frame) until the user left AR and came
+     * back. A session created inside onResume is skipped here (the fragment is not RESUMED yet) and
+     * resumed by onResume as before.
+     */
+    private fun resumeLateSession(ses: Session) {
+        if (sessionReady || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+        try {
+            ses.resume()
+            sessionReady = true
+            DiagnosticsLogger.i(DIAG, "AR session resumed after late creation: camera active")
+            setArStatus("AR camera active")
+        } catch (e: CameraNotAvailableException) {
+            DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
+            setArStatus(getString(R.string.camera_unavailable))
+            try { ses.pause() } catch (_: Exception) {}   // best effort after a failed resume
+        } catch (e: Exception) {
+            DiagnosticsLogger.e(DIAG, "AR session resume failed", e)
+            setArStatus("AR error: ${e.message}")
         }
     }
 

@@ -550,6 +550,21 @@ class MainActivity : AppCompatActivity() {
      *   Uses app-window brightness only — does not require WRITE_SETTINGS permission and
      *   does not change the Android system brightness permanently.
      */
+    /** Last Field Display settings applied (main thread), so a screen that overrode them can restore them. */
+    private var latestDisplaySettings: app.surrealar.settings.model.AppearanceSettings? = null
+
+    /**
+     * Re-applies the user's keep-awake / max-brightness settings. For screens that override the window
+     * temporarily (AR forces both on): the settings flow only re-emits on a change, so without this
+     * leaving AR cleared keep-awake (and max brightness) until the setting was toggled. Returns false if
+     * the settings have not loaded yet.
+     */
+    fun reapplyDisplayBehaviorSettings(): Boolean {
+        val settings = latestDisplaySettings ?: return false
+        applyDisplayBehaviorSettings(settings)
+        return true
+    }
+
     private fun applyDisplayBehaviorSettings(settings: app.surrealar.settings.model.AppearanceSettings) {
         if (settings.keepScreenAwake) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -677,7 +692,10 @@ class MainActivity : AppCompatActivity() {
                         a.keepScreenAwake == b.keepScreenAwake &&
                         a.maxBrightnessWhileOpen == b.maxBrightnessWhileOpen
                     }
-                    .collect { settings -> applyDisplayBehaviorSettings(settings) }
+                    .collect { settings ->
+                        latestDisplaySettings = settings
+                        applyDisplayBehaviorSettings(settings)
+                    }
             }
         }
     }
