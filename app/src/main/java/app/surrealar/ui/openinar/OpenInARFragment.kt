@@ -303,6 +303,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     private var twistStartCy = 0f
     private var twistDistM = 0f
     private var twistStartMove = ModelMove()
+    /** Test cube: placement requested (main → GL thread), and the temporary point itself (main thread). */
+    @Volatile private var testCubeRequested = false
+    private var testCube: CoordWithModel? = null
+    /** The database points last received, so the test cube can be added or removed without waiting for Room. */
+    private var lastDbItems: List<CoordWithModel> = emptyList()
     /** ARCore geospatial accuracy and the AR quality level, for the move panel (GL thread → main). */
     @Volatile private var lastGeoHAccM: Double? = null
     @Volatile private var lastGeoYawAccDeg: Double? = null
@@ -481,6 +486,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         private const val MODEL_SCALE = 1f
         /** Near/far clip planes — must match [ArFilamentRenderer] constants. */
         private const val NEAR_CLIP = 0.1f
+        /** Id of the temporary test cube point (never stored; not a test-grid key). */
+        private const val TEST_CUBE_ID = "ar_test_cube"
         private const val FAR_CLIP  = 2000f
         /**
          * Minimum milliseconds between any two anchor rebuilds (manual button resets this).
@@ -760,6 +767,14 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
         }
 
+        binding.btnTestCube.setOnClickListener {
+            if (testCube != null) removeTestCube() else {
+                DiagnosticsLogger.i(DIAG, "Test cube placement requested by user")
+                testCubeRequested = true
+                showMoveMessage("Placing a test cube in front of you…")
+            }
+        }
+
         binding.btnToggleDebugOverlay.setOnClickListener {
             DiagnosticsLogger.i(DIAG, "AR debug overlay toggled by user enabled=${!debugOverlayVisible}")
             viewModel.toggleDebug()
@@ -812,7 +827,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Observe coordinate + model data from ViewModel.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.coordsWithModels.collect { items -> setCoordinates(items) }
+                viewModel.coordsWithModels.collect { items -> lastDbItems = items; setCoordinates(withTestCube(items)) }
             }
         }
 
@@ -1233,6 +1248,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         moveTargetId = null
         moveFrame = null
         sessionMoves.clear()
+        testCube = null; testCubeRequested = false
         DiagnosticsLogger.i(DIAG, "AR screen closed " +
             "anchors=${geoAnchors.size} modelPoses=${arRenderSnapshot?.modelPoses?.size ?: 0} items=${geoItems.size}")
         writeArSessionSummary()
@@ -1973,6 +1989,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
             // 2) Earth / anchor management
             val earth       = s.earth
+            if (testCubeRequested) { testCubeRequested = false; placeTestCube(frame, camera, earth) }
             val earthStatus = processEarthAndAnchors(earth)
 
             // Debug builds: ARCore local camera pose next to the GNSS fix, for RTK alignment work.
@@ -2249,7 +2266,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // flicker). Toggling one item only changes this set — the anchors are untouched, no rebuild.
             val inRange = ArVisibilityLogic.inRange(mode, distM, filterM)
             val modelVisible = entryModelFilePath != null &&
-                ArVisibilityLogic.renderable(mode, inRange, coord.id in visibleIds)
+                ArVisibilityLogic.renderable(mode, inRange, coord.id in visibleIds || coord.id == TEST_CUBE_ID)
             if (modelVisible) visibleKeys += coord.id
             if (!inRange) distanceSkipped += coord.id
 
@@ -2913,6 +2930,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val p = binding.arMovePanel
         p.txtMoveTitle.text = getString(R.string.ar_move_title, item.coordinate.name)
         p.chkMoveSave.isChecked = false
+        p.chkMoveSave.visibility = if (coordId == TEST_CUBE_ID) View.GONE else View.VISIBLE   // nothing to save to
         p.root.visibility = View.VISIBLE
         updateMovePanel()
         moveTicker?.cancel()
@@ -2938,6 +2956,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             item == null || move.isZero -> {
                 DiagnosticsLogger.i(DIAG, "AR model move ended coordinateId=$id reason=$reason moved=${!move.isZero}")
             }
+            save && id == TEST_CUBE_ID -> Unit   // the test cube has no stored point
             save && !lastArQualityGood -> {
                 DiagnosticsLogger.w(DIAG, "AR model move not saved: AR quality not Good coordinateId=$id")
                 showMoveMessage("AR quality dropped: moved for this session only (not saved)")
@@ -3088,6 +3107,82 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         )
     }
 
+    // ── Test cube ──────────────────────────────────────────────────────────────────────────────────
+    // A temporary point with a generated 1 m cube (TestCubeGlb), placed in front of the user so model
+    // manipulation can be tried without a real point. It goes through the normal anchor/model pipeline
+    // (pin, Move model, gestures) but is never stored and disappears when AR closes.
+
+    private fun withTestCube(items: List<CoordWithModel>): List<CoordWithModel> =
+        testCube?.let { items + it } ?: items
+
+    /**
+     * GL thread: where to put the cube — the detected floor under the middle of the view (within 6 m),
+     * else 2 m ahead and 1.4 m below the camera (about the floor with a hand-held tablet) — converted to
+     * latitude/longitude/height with Earth, then handed to the main thread.
+     */
+    private fun placeTestCube(frame: com.google.ar.core.Frame, camera: com.google.ar.core.Camera, earth: com.google.ar.core.Earth?) {
+        if (earth == null || earth.trackingState != TrackingState.TRACKING || camera.trackingState != TrackingState.TRACKING) {
+            activity?.runOnUiThread { showMoveMessage("AR isn't localized yet: try the test cube again in a moment") }
+            return
+        }
+        val floor = runCatching {
+            frame.hitTest(surfaceWidth / 2f, surfaceHeight * 0.6f).firstOrNull { h ->
+                val t = h.trackable
+                t is com.google.ar.core.Plane && t.type == com.google.ar.core.Plane.Type.HORIZONTAL_UPWARD_FACING &&
+                    t.isPoseInPolygon(h.hitPose) && h.distance <= 6f
+            }?.hitPose
+        }.getOrNull()
+        val pose = floor ?: run {
+            val cp = camera.pose
+            val z = cp.zAxis                                  // camera looks along -Z
+            val len = kotlin.math.sqrt(z[0] * z[0] + z[2] * z[2]).takeIf { it > 1e-3f } ?: 1f
+            com.google.ar.core.Pose.makeTranslation(cp.tx() - 2f * z[0] / len, cp.ty() - 1.4f, cp.tz() - 2f * z[2] / len)
+        }
+        val geo = runCatching { earth.getGeospatialPose(pose) }.getOrNull()
+        if (geo == null) { activity?.runOnUiThread { showMoveMessage("Couldn't place the test cube: AR position unavailable") }; return }
+        val onFloor = floor != null
+        val lat = geo.latitude; val lon = geo.longitude; val alt = geo.altitude
+        activity?.runOnUiThread { addTestCube(lat, lon, alt, onFloor) }
+    }
+
+    /** Main thread: writes the cube model if needed and adds the temporary point. */
+    private fun addTestCube(lat: Double, lon: Double, altM: Double, onFloor: Boolean) {
+        if (_binding == null) return
+        val scope = viewLifecycleOwner.lifecycleScope
+        scope.launch {
+            val file = withContext(Dispatchers.IO) {
+                runCatching {
+                    File(requireContext().cacheDir, "debug_models/ar_test_cube.glb").apply {
+                        parentFile?.mkdirs()
+                        if (!exists() || length() == 0L) writeBytes(TestCubeGlb.build())
+                    }
+                }.getOrNull()
+            } ?: run { showMoveMessage("Couldn't create the test cube model"); return@launch }
+            val now = System.currentTimeMillis()
+            val entity = app.surrealar.data.local.entity.CoordinateEntity(
+                id = TEST_CUBE_ID, name = "Test cube", latitude = lat, longitude = lon, altitude = altM,
+                timestamp = now, icon = "", color = 0xFFFF8C0D.toInt(),
+                verticalAccuracyM = 0.01,   // AUTO altitude uses this exact height (not terrain)
+                modelId = TEST_CUBE_ID, renderEnabled = true, createdAt = now, updatedAt = now,
+            )
+            testCube = CoordWithModel(entity, TEST_CUBE_ID, file.absolutePath,
+                ModelPlacement(placementOrigin = ModelPlacementOrigin.BOTTOM_CENTER))   // stands on its point
+            setCoordinates(withTestCube(lastDbItems))
+            _binding?.txtTestCube?.text = "Remove"
+            DiagnosticsLogger.i(DIAG, "Test cube placed onFloor=$onFloor")
+            showMoveMessage("Test cube placed: tap its pin, then Move model")
+        }
+    }
+
+    private fun removeTestCube() {
+        if (moveTargetId == TEST_CUBE_ID) endModelMove(save = false, restore = false, reason = "test cube removed")
+        testCube = null
+        sessionMoves.remove(TEST_CUBE_ID)
+        setCoordinates(lastDbItems)
+        _binding?.txtTestCube?.text = "Cube"
+        DiagnosticsLogger.i(DIAG, "Test cube removed")
+    }
+
     private fun showMoveMessage(msg: String) {
         _binding?.root?.let { com.google.android.material.snackbar.Snackbar.make(it, msg, com.google.android.material.snackbar.Snackbar.LENGTH_LONG).show() }
     }
@@ -3147,7 +3242,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // main thread (Filament requirement), but the per-file existence/size stat is filesystem I/O —
         // batch those off the main thread first, then dispatch the preloads back on main.
         val scope = viewLifecycleOwner.lifecycleScope
-        logModelReadinessOnce(items.mapNotNull { it.modelId }.distinct(), scope)
+        logModelReadinessOnce(items.mapNotNull { it.modelId }.filter { it != TEST_CUBE_ID }.distinct(), scope)
         scope.launch {
             val stats: Map<String, Pair<Boolean, Long>> = withContext(Dispatchers.IO) {
                 items.mapNotNull { it.modelFilePath }.distinct().associateWith { p ->

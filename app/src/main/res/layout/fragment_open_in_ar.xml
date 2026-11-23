@@ -292,6 +292,35 @@
                     android:gravity="center" />
             </LinearLayout>
 
+            <!-- Test cube: a temporary model in front of the user, for trying Move model -->
+            <LinearLayout
+                android:id="@+id/btnTestCube"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:background="@drawable/ripple_ar_toolbar_btn"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="Place a test cube in front of you">
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_models_24"
+                    app:tint="@color/ar_overlay_text"
+                    android:importantForAccessibility="no" />
+                <TextView
+                    android:id="@+id/txtTestCube"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:text="Cube"
+                    android:textAppearance="@style/TextAppearance.App.AR.OverlaySmall"
+                    android:gravity="center" />
+            </LinearLayout>
+
             <View android:layout_width="match_parent" android:layout_height="1dp"
                 android:background="@color/ar_overlay_divider" android:layout_marginHorizontal="8dp" />
 
