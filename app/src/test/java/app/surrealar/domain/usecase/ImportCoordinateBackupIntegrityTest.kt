@@ -72,6 +72,22 @@ class ImportCoordinateBackupIntegrityTest {
         assertEquals("Imported 1 · 1 missing model(s) · merged", plan.summaryMessage())
     }
 
+    @Test fun fullBackup_withNonPositiveModelScale_neverReachesTheRepository() = runTest {
+        val repo = FakeCoordinateRepository()
+        val raw = backupOf(surveyed("bad").copy(modelScale = 0.0), surveyed("good"))
+        val plan = useCase(repo, FakeModelRepository(listOf(localModel("m1"))))(raw, replace = false)
+        assertEquals(listOf("good"), repo.store.map { it.id })
+        assertEquals(1, plan.skippedInvalid.size)
+        assertTrue(plan.skippedInvalid.single(), "Model scale must be a positive number" in plan.skippedInvalid.single())
+    }
+
+    @Test fun fullBackup_pointWithNoRecordedCrs_isRestoredWithNoCrs() = runTest {
+        val repo = FakeCoordinateRepository()
+        val original = surveyed().copy(crsEpsg = null)
+        useCase(repo, FakeModelRepository(listOf(localModel("m1"))))(backupOf(original), replace = false)
+        assertEquals(listOf(original), repo.store)
+    }
+
     @Test fun garbageInput_throws_andLeavesExistingDataIntact() = runTest {
         for (replace in listOf(true, false)) {
             val repo = FakeCoordinateRepository(listOf(coord("a", "Keep")))

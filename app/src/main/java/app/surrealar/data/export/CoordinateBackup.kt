@@ -1,8 +1,8 @@
 package app.surrealar.data.export
 
-import app.surrealar.domain.coordinates.CoordinateValidator
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.model.Model
+import app.surrealar.domain.usecase.ValidateCoordinateForSaveUseCase
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -17,6 +17,9 @@ object CoordinateBackup {
 
     const val FORMAT_ID = "surreal-coordinate-backup"
     const val SCHEMA_VERSION = 1
+
+    /** Stateless; the single place that decides whether a coordinate may be persisted. */
+    private val saveGate = ValidateCoordinateForSaveUseCase()
 
     /** Returns true when [raw] looks like a full backup (vs. the basic JSON array). */
     fun isFullBackup(raw: String): Boolean =
@@ -175,7 +178,10 @@ object CoordinateBackup {
                 null
             } ?: continue
 
-            val validation = CoordinateValidator.validate(c)
+            // The same save gate as capture, manual entry and the legacy import: CoordinateValidator plus
+            // the model-placement checks (positive scale, finite angles/offsets). CoordinateValidator
+            // alone let a 0 or negative modelScale in, which hides the model in AR.
+            val validation = saveGate(c)
             if (!validation.isValid) {
                 skipped += "'${c.name}' (${c.id}): ${validation.errors.joinToString()}"
                 continue
@@ -223,7 +229,9 @@ object CoordinateBackup {
             courseDeg = o.optDoubleN("courseDeg"),
             timestampSource = o.optStringN("timestampSource"),
             multipathIndex = o.optDoubleN("multipathIndex"),
-            crsEpsg = o.optIntN("crsEpsg") ?: 4326,
+            // An explicit null (exported from a point with no recorded CRS) stays null; only a backup
+            // written before the key existed gets the historical 4326 default.
+            crsEpsg = if (o.has("crsEpsg")) o.optIntN("crsEpsg") else 4326,
             easting = o.optDoubleN("easting"),
             northing = o.optDoubleN("northing"),
             utmZone = o.optStringN("utmZone"),

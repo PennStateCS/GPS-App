@@ -369,6 +369,34 @@ class CoordinateBackupFidelityTest {
     }
 
     @Test
+    fun nonPositiveModelScale_isSkippedLikeEverySaveGate() {
+        // Capture, manual entry and the legacy import reject these; the full backup must too.
+        val result = roundTrip(
+            everyField("zero").copy(modelScale = 0.0),
+            everyField("neg").copy(modelScale = -1.0),
+            everyField("ok"),
+            minimal("noscale"),                       // null scale = not overridden, still valid
+        )
+        assertEquals(listOf("ok", "noscale"), result.coordinates.map { it.id })
+        assertEquals(2, result.skippedInvalid.size)
+        assertTrue(result.skippedInvalid[0], result.skippedInvalid[0].startsWith("'${everyField().name}' (zero): "))
+        assertTrue(result.skippedInvalid.all { "Model scale must be a positive number" in it })
+    }
+
+    @Test
+    fun explicitNullCrs_staysNull_butAMissingKeyGets4326() {
+        val back = roundTrip(minimal("nocrs").copy(crsEpsg = null)).coordinates.single()
+        assertNull(back.crsEpsg)
+        val exported = CoordinateBackup.export(listOf(minimal("nocrs").copy(crsEpsg = null)), emptyList(), null)
+        assertTrue(JSONObject(exported).getJSONArray("coordinates").getJSONObject(0).isNull("crsEpsg"))
+        // Backups written before the key existed keep the historical default.
+        val old = """{"coordinates":[{"id":"o","name":"O","latitude":41.1,"longitude":-75.9,"altitude":1.0}]}"""
+        assertEquals(4326, CoordinateBackup.parse(old).coordinates.single().crsEpsg)
+        // NAD83 / other codes are unaffected.
+        assertEquals(6318, roundTrip(everyField()).coordinates.single().crsEpsg)
+    }
+
+    @Test
     fun noAltitudeRow_withoutNameOrId_isLabelledByIndex() {
         val json = """{"coordinates":[{"latitude":41.1,"longitude":-75.9}]}"""
         assertEquals(listOf("'entry #0' (#0): no altitude in backup"), CoordinateBackup.parse(json).skippedInvalid)
