@@ -1,4 +1,4 @@
-package app.surrealar.ui.openinar
+package io.github.pennstatecs.geokit.ar.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

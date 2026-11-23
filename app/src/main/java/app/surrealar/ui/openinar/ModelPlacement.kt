@@ -2,88 +2,30 @@ package app.surrealar.ui.openinar
 
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.data.local.entity.ModelEntity
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
 
 /**
- * Resolved per-placement transform applied to a linked model in AR, on top of the renderer's
- * automatic centering/normalization.
+ * Effective placement = per-coordinate override, else the model's default, else the hard
+ * default (scale 1.0, no rotation/offset). Returns identity when no model is linked.
  *
- * Values are already resolved (per-coordinate override → model default → hard default) so the
- * renderer can apply them directly. The default instance is the identity, for which the renderer
- * reproduces its previous behavior exactly.
+ * [ModelPlacement] itself lives in geokit-ar; this resolution stays in the app because it reads the
+ * database entities.
  */
-data class ModelPlacement(
-    /** Multiplies the renderer's auto-normalized scale. */
-    val scale: Float = 1f,
-    val yawDeg: Float = 0f,
-    val pitchDeg: Float = 0f,
-    val rollDeg: Float = 0f,
-    val verticalOffsetM: Float = 0f,
-    val originOffsetXM: Float = 0f,
-    val originOffsetYM: Float = 0f,
-    val originOffsetZM: Float = 0f,
-    /**
-     * Which model-local point aligns to the AR anchor. Defaults to [ModelPlacementOrigin.CENTER] —
-     * the renderer's historical behavior (bounding-box center at the anchor) — so existing models do
-     * not shift. Large structure GLBs whose geometry is far from the origin should use BOTTOM_CENTER.
-     */
-    val placementOrigin: ModelPlacementOrigin = ModelPlacementOrigin.CENTER,
-    /**
-     * "Move model" shift of the whole rendered model, metres east / north / up of the surveyed point,
-     * in the world frame (applied last, so it is unaffected by scale, rotation and origin). Saved moves
-     * come from the coordinate; session-only moves are added in AR and never stored.
-     */
-    val moveEastM: Float = 0f,
-    val moveNorthM: Float = 0f,
-    val moveUpM: Float = 0f,
-) {
-    /** True when this placement changes nothing — lets the renderer skip the extra matrix math. */
-    val isIdentity: Boolean
-        get() = scale == 1f && yawDeg == 0f && pitchDeg == 0f && rollDeg == 0f &&
-            verticalOffsetM == 0f && originOffsetXM == 0f && originOffsetYM == 0f && originOffsetZM == 0f &&
-            moveEastM == 0f && moveNorthM == 0f && moveUpM == 0f
-
-    /** This placement with [m] added on top (a session-only move over the saved placement). */
-    operator fun plus(m: ModelMove): ModelPlacement = if (m.isZero) this else copy(
-        moveEastM = moveEastM + m.eastM, moveNorthM = moveNorthM + m.northM, moveUpM = moveUpM + m.upM,
-        yawDeg = yawDeg + m.yawDeg,
+fun ModelPlacement.Companion.resolve(coordinate: CoordinateEntity, model: ModelEntity?): ModelPlacement {
+    if (model == null) return ModelPlacement()
+    return ModelPlacement(
+        scale           = (coordinate.modelScale ?: model.defaultScale).toFloat(),
+        yawDeg          = (coordinate.modelYawDeg ?: model.defaultYawDeg).toFloat(),
+        pitchDeg        = (coordinate.modelPitchDeg ?: 0.0).toFloat(),
+        rollDeg         = (coordinate.modelRollDeg ?: 0.0).toFloat(),
+        verticalOffsetM = (coordinate.modelVerticalOffsetM ?: 0.0).toFloat(),
+        originOffsetXM  = (coordinate.modelOriginOffsetXM ?: model.originOffsetXM).toFloat(),
+        originOffsetYM  = (coordinate.modelOriginOffsetYM ?: model.originOffsetYM).toFloat(),
+        originOffsetZM  = (coordinate.modelOriginOffsetZM ?: model.originOffsetZM).toFloat(),
+        placementOrigin = ModelPlacementOrigin.from(coordinate.modelPlacementOrigin),
+        moveEastM       = (coordinate.modelMoveEastM ?: 0.0).toFloat(),
+        moveNorthM      = (coordinate.modelMoveNorthM ?: 0.0).toFloat(),
+        moveUpM         = (coordinate.modelMoveUpM ?: 0.0).toFloat(),
     )
-
-    companion object {
-        /**
-         * Effective placement = per-coordinate override, else the model's default, else the hard
-         * default (scale 1.0, no rotation/offset). Returns identity when no model is linked.
-         */
-        fun resolve(coordinate: CoordinateEntity, model: ModelEntity?): ModelPlacement {
-            if (model == null) return ModelPlacement()
-            return ModelPlacement(
-                scale           = (coordinate.modelScale ?: model.defaultScale).toFloat(),
-                yawDeg          = (coordinate.modelYawDeg ?: model.defaultYawDeg).toFloat(),
-                pitchDeg        = (coordinate.modelPitchDeg ?: 0.0).toFloat(),
-                rollDeg         = (coordinate.modelRollDeg ?: 0.0).toFloat(),
-                verticalOffsetM = (coordinate.modelVerticalOffsetM ?: 0.0).toFloat(),
-                originOffsetXM  = (coordinate.modelOriginOffsetXM ?: model.originOffsetXM).toFloat(),
-                originOffsetYM  = (coordinate.modelOriginOffsetYM ?: model.originOffsetYM).toFloat(),
-                originOffsetZM  = (coordinate.modelOriginOffsetZM ?: model.originOffsetZM).toFloat(),
-                placementOrigin = ModelPlacementOrigin.from(coordinate.modelPlacementOrigin),
-                moveEastM       = (coordinate.modelMoveEastM ?: 0.0).toFloat(),
-                moveNorthM      = (coordinate.modelMoveNorthM ?: 0.0).toFloat(),
-                moveUpM         = (coordinate.modelMoveUpM ?: 0.0).toFloat(),
-            )
-        }
-    }
-}
-
-/**
- * A move made in AR: metres east / north / up and a yaw change (degrees, positive = counter-clockwise
- * seen from above, the renderer's yaw convention). Session-only moves live as one of these in the AR
- * screen; saving folds it into the coordinate's modelMove* fields and modelYawDeg.
- */
-data class ModelMove(
-    val eastM: Float = 0f,
-    val northM: Float = 0f,
-    val upM: Float = 0f,
-    val yawDeg: Float = 0f,
-) {
-    val isZero: Boolean get() = eastM == 0f && northM == 0f && upM == 0f && yawDeg == 0f
-    operator fun plus(o: ModelMove) = ModelMove(eastM + o.eastM, northM + o.northM, upM + o.upM, yawDeg + o.yawDeg)
 }

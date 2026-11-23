@@ -15,6 +15,11 @@ import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.android.UiHelper
 import com.google.android.filament.utils.Utils
+import io.github.pennstatecs.geokit.ar.model.ModelBounds
+import io.github.pennstatecs.geokit.ar.model.ModelCorrectionMatrix
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

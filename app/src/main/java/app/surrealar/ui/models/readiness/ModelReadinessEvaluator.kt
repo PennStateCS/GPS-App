@@ -1,8 +1,8 @@
 package app.surrealar.ui.models.readiness
 
-import app.surrealar.ui.openinar.ModelBounds
-import app.surrealar.ui.openinar.ModelPlacementOrigin
-import app.surrealar.ui.openinar.Vec3
+import io.github.pennstatecs.geokit.ar.model.ModelBounds
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos

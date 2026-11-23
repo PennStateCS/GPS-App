@@ -3,6 +3,7 @@ package app.surrealar.ui.openinar
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.data.local.entity.ModelEntity
 import app.surrealar.domain.model.CoordinateModelLink
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
 import javax.inject.Inject
 
 /**

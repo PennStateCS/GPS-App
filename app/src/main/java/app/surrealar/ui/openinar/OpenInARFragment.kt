@@ -18,6 +18,9 @@ import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.ArTrackLog
 import app.surrealar.util.diagnostics.ArTrackRow
 import app.surrealar.util.argbIntToRgba
+import io.github.pennstatecs.geokit.ar.model.ModelMove
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
 import io.github.pennstatecs.geokit.heading.Compass
 import io.github.pennstatecs.geokit.ellipsoid.Geodesic
 

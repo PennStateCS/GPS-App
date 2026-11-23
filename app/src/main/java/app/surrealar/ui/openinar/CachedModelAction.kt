@@ -1,5 +1,7 @@
 package app.surrealar.ui.openinar
 
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+
 /** What a new preload request means for a model that is already cached for the same coordinate. */
 internal enum class CachedModelAction {
     /** Same file, same placement: nothing to do. */

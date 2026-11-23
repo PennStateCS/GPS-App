@@ -1,7 +1,7 @@
 package app.surrealar.ui.models.readiness
 
 import android.util.Base64
-import app.surrealar.ui.openinar.Vec3
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

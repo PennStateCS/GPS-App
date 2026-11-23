@@ -1,10 +1,10 @@
 package app.surrealar.ui.models.readiness
 
 import app.surrealar.domain.model.Model
-import app.surrealar.ui.openinar.ModelBounds
-import app.surrealar.ui.openinar.ModelPlacement
-import app.surrealar.ui.openinar.ModelPlacementOrigin
-import app.surrealar.ui.openinar.Vec3
+import io.github.pennstatecs.geokit.ar.model.ModelBounds
+import io.github.pennstatecs.geokit.ar.model.ModelPlacement
+import io.github.pennstatecs.geokit.ar.model.ModelPlacementOrigin
+import io.github.pennstatecs.geokit.ar.model.Vec3
 import kotlin.math.cos
 import kotlin.math.sin
 
