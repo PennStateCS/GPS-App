@@ -10,6 +10,17 @@ import java.io.FileOutputStream
  */
 internal object GltfSidecars {
 
+    /**
+     * The relative files a .gltf document references (`buffers`/`images` URIs), decoded by geokit-models'
+     * [GltfUris]: `%xx` decoded, `+` kept literal, `data:` URIs, schemes and absolute paths skipped. A
+     * `?query` or `#fragment` is dropped first (the viewer resolves resources without them). Failure =
+     * the JSON can't be parsed.
+     */
+    fun resourcePaths(gltfJson: String): Result<Set<String>> =
+        GltfUris.externalResourceUris(gltfJson).map { uris ->
+            uris.mapNotNull { GltfUris.relativePath(it.substringBefore('#').substringBefore('?')) }.toSet()
+        }
+
     /** What [copy] could not copy, by reason (relative paths as given). */
     class CopyReport(
         val missing: List<String>,

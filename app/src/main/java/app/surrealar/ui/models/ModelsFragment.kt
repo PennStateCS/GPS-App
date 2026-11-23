@@ -29,8 +29,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 /**
  * Imported-models management screen: lists models from `ModelsViewModel` and offers add/edit/delete
@@ -456,13 +454,7 @@ class ModelsFragment : Fragment() {
 
     private fun parseGltfResourceUris(gltfFile: File): Set<String> {
         return try {
-            val text = gltfFile.readText()
-            Regex("\"uri\"\\s*:\\s*\"([^\"]+)\"")
-                .findAll(text)
-                .map { it.groupValues[1] }
-                .filterNot { it.startsWith("data:") || it.startsWith("http://") || it.startsWith("https://") }
-                .map { URLDecoder.decode(it.substringBefore('#').substringBefore('?'), StandardCharsets.UTF_8.name()) }
-                .toSet()
+            GltfSidecars.resourcePaths(gltfFile.readText()).getOrThrow()
         } catch (e: Exception) {
             DiagnosticsLogger.w("MODEL", "Model glTF resource listing failed: sidecar files not copied file=${gltfFile.name}", e)
             emptySet()
