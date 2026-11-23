@@ -376,6 +376,10 @@ class MainActivity : AppCompatActivity() {
         // Replay is app-scoped now; leaving the app ends it and restores the previous source.
         providerBeforeReplay?.let { gnssSourceCoordinator.endReplay(it, "activity destroyed") }
         providerBeforeReplay = null
+        // The user left the app (Back out / finish), not a rotation or recreate: stop the foreground
+        // service so nothing keeps the app running for hours afterwards. Backgrounding keeps it, so mock
+        // location keeps feeding other apps. The next launch starts it again.
+        if (isFinishing && !isChangingConfigurations) LocationService.stop(this, "app exited")
     }
 
     private fun findToken(id: Int): ToolbarTokens {

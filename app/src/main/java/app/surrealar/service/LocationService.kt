@@ -61,10 +61,19 @@ class LocationService : Service() {
             }
         }
 
-        /** Requests the service to stop. */
-        fun stop(context: Context) {
-            val intent = Intent(context, LocationService::class.java).setAction(ACTION_STOP)
-            context.startService(intent)
+        /**
+         * Stops the service ([reason] is logged). stopService, not an ACTION_STOP start: Android refuses
+         * startService from the background, and this runs while the app is closing. No-op when stopped.
+         */
+        fun stop(context: Context, reason: String) {
+            if (!isRunning) return
+            app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
+                "Location service stop requested reason=\"$reason\"")
+            runCatching { context.stopService(Intent(context, LocationService::class.java)) }
+                .onFailure {
+                    app.surrealar.util.DiagnosticsLogger.w(app.surrealar.util.diagnostics.DiagTags.APP,
+                        "Location service stop failed", it)
+                }
         }
     }
 
@@ -96,7 +105,9 @@ class LocationService : Service() {
                 // Already started in onCreate; nothing else needed.
             }
             ACTION_STOP -> {
-                app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP, "Location service stop requested")
+                // The notification's Stop action.
+                app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
+                    "Location service stop requested reason=\"notification\"")
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -104,6 +115,15 @@ class LocationService : Service() {
         // Not sticky: Android 14 refuses a location service restarted from the background, and the app
         // starts it again when it is opened.
         return START_NOT_STICKY
+    }
+
+    /** The user swiped the app away in Recents: that is leaving the app, so stop like an exit. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        app.surrealar.util.DiagnosticsLogger.i(app.surrealar.util.diagnostics.DiagTags.APP,
+            "Location service stop requested reason=\"task removed\"")
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
@@ -129,6 +149,11 @@ class LocationService : Service() {
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setContentIntent(openIntent)
+            // Lets the user end background running without opening the app or force-stopping it.
+            .addAction(R.drawable.ic_stat_location, "Stop", PendingIntent.getService(
+                this, 1, Intent(this, LocationService::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ))
             .build()
     }
 
