@@ -1,6 +1,7 @@
 package io.github.pennstatecs.geokit.local
 
 import io.github.pennstatecs.geokit.ellipsoid.Ellipsoid
+import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -30,6 +31,17 @@ public class LocalEnu(
     public fun toEnu(latDeg: Double, lonDeg: Double, heightM: Double): DoubleArray {
         val p = ellipsoid.toEcef(latDeg, lonDeg, heightM)
         return enuFromEcefDelta(p.xM - origin.xM, p.yM - origin.yM, p.zM - origin.zM)
+    }
+
+    /**
+     * The geodetic position (degrees, ellipsoidal metres) of the point [eastM]/[northM]/[upM] metres
+     * from the origin: the exact inverse of [toEnu] (transposed rotation, then ECEF → geodetic).
+     */
+    public fun toGeodetic(eastM: Double, northM: Double, upM: Double = 0.0): GeodeticPosition {
+        val dx = -sinLon * eastM - sinLat * cosLon * northM + cosLat * cosLon * upM
+        val dy = cosLon * eastM - sinLat * sinLon * northM + cosLat * sinLon * upM
+        val dz = cosLat * northM + sinLat * upM
+        return ellipsoid.fromEcef(origin.xM + dx, origin.yM + dy, origin.zM + dz)
     }
 
     /** Rotates an ECEF offset (metres) into (east, north, up) metres at the origin. */

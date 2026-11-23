@@ -318,8 +318,8 @@ class TestAnchorController(private val context: Context) {
         }
         val useTerrainNow = storedAlt == null
 
-        val dLatPerM = 1.0 / 111_111.0
-        val dLonPerM = 1.0 / (111_111.0 * kotlin.math.cos(Math.toRadians(lat0)))
+        // Grid offsets in the local tangent plane at the spawn point (WGS84, geokit-core).
+        val enu = io.github.pennstatecs.geokit.local.LocalEnu(lat0, lon0)
 
         val pinPath = pinModelFilePath
         var created = 0
@@ -329,8 +329,9 @@ class TestAnchorController(private val context: Context) {
 
         for (latOff in -GRID_RADIUS..GRID_RADIUS) {
             for (lonOff in -GRID_RADIUS..GRID_RADIUS) {
-                val lat    = lat0 + latOff * GRID_SPACING_M * dLatPerM
-                val lon    = lon0 + lonOff * GRID_SPACING_M * dLonPerM
+                val pos    = enu.toGeodetic(eastM = lonOff * GRID_SPACING_M, northM = latOff * GRID_SPACING_M)
+                val lat    = pos.latDeg
+                val lon    = pos.lonDeg
                 val label  = if (latOff == 0 && lonOff == 0) "●" else "($latOff,$lonOff)"
                 val dist   = kotlin.math.sqrt((latOff * latOff + lonOff * lonOff).toDouble())
                 val bright = (1.0 - dist / (GRID_RADIUS * 2.0)).coerceIn(0.4, 1.0).toFloat()

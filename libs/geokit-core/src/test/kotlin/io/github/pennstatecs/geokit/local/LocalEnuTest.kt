@@ -12,6 +12,24 @@ class LocalEnuTest {
         assertEquals(84_135.0, Ellipsoid.WGS84.metersPerDegLon(41.0), 1.0)    // sphere: 84,015
     }
 
+    @Test fun `toGeodetic inverts toEnu`() {
+        val enu = LocalEnu(41.3, -76.0, 300.0)
+        for ((e, n, u) in listOf(Triple(0.0, 0.0, 0.0), Triple(2.0, -2.0, 0.0), Triple(-150.0, 75.0, 12.5), Triple(1000.0, 1000.0, -30.0))) {
+            val p = enu.toGeodetic(e, n, u)
+            val back = enu.toEnu(p.latDeg, p.lonDeg, p.heightM)
+            assertEquals(e, back[0], 1e-6); assertEquals(n, back[1], 1e-6); assertEquals(u, back[2], 1e-6)
+        }
+        val origin = enu.toGeodetic(0.0, 0.0)
+        assertEquals(41.3, origin.latDeg, 1e-12); assertEquals(-76.0, origin.lonDeg, 1e-12); assertEquals(300.0, origin.heightM, 1e-6)
+    }
+
+    @Test fun `a 1 m north step matches the WGS84 meridian scale, not 111,111 m per degree`() {
+        val p = LocalEnu(41.3, -76.0).toGeodetic(eastM = 0.0, northM = 1.0)
+        assertEquals(1.0 / Ellipsoid.WGS84.metersPerDegLat(41.3), p.latDeg - 41.3, 1e-11)
+        val q = LocalEnu(41.3, -76.0).toGeodetic(eastM = 1.0, northM = 0.0)
+        assertEquals(1.0 / Ellipsoid.WGS84.metersPerDegLon(41.3), q.lonDeg + 76.0, 1e-11)
+    }
+
     @Test fun `ENU offsets about an origin at 41N`() {
         val enu = LocalEnu(41.0, -76.0, 300.0)
         val n = enu.toEnu(41.001, -76.0, 300.0)

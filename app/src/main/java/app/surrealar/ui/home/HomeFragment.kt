@@ -556,9 +556,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         val now = System.currentTimeMillis()
         if (now - lastCameraMoveMs < 2_000) return false
         val prev = lastCameraLocation ?: return true
-        val result = FloatArray(1)
-        android.location.Location.distanceBetween(prev.latitude, prev.longitude, newLocation.latitude, newLocation.longitude, result)
-        return result[0] >= 5f
+        // WGS84 geodesic (geokit-core), the project's one distance function.
+        return io.github.pennstatecs.geokit.ellipsoid.Geodesic.distanceM(
+            prev.latitude, prev.longitude, newLocation.latitude, newLocation.longitude,
+        ) >= 5.0
     }
 
     /**
