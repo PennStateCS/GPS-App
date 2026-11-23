@@ -47,3 +47,9 @@ dependencies {
 configurations.named("testRuntimeClasspath") {
     exclude(group = "org.json", module = "json")
 }
+
+// The NMEA fixtures (Emlid RS4 / RS2+ captures) and the pipeline goldens live once, in geokit-gnss's
+// test resources; the Emlid NMEA tests read them from there instead of keeping a copy.
+sourceSets.named("test") {
+    resources.srcDir("../geokit-gnss/src/test/resources")
+}
