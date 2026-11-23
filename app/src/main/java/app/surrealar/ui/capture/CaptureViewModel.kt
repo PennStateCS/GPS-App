@@ -319,7 +319,7 @@ class CaptureViewModel @Inject constructor(
         captureDiag?.let { d ->
             app.surrealar.util.diagnostics.CaptureLog.append(d.outcomeLine("saved", finished.samples,
                 java.time.Duration.between(finished.startedAt, finished.endedAt).seconds, finished.rtkStatus,
-                finished.hAccM, finished.vAccM, name = name))
+                finished.hAccM, finished.vAccM, pointId = saved.id))
         }
         resetCaptureDiag()
     }

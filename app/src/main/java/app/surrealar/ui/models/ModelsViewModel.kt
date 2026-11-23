@@ -1,5 +1,6 @@
 package app.surrealar.ui.models
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.asLiveData
@@ -139,15 +140,15 @@ class ModelsViewModel @Inject constructor(
                     embeddedAltitudeM = embeddedAltitudeM
                 )
                 repository.insertModel(model)
-                DiagnosticsLogger.i("MODEL", "Model record created id=$modelId name=\"$name\" " +
-                    "file=\"$fileName\" sizeBytes=$fileSize")
+                DiagnosticsLogger.i("MODEL", "Model record created id=$modelId nameRef=${LogPrivacy.ref(name)} " +
+                    "file=${LogPrivacy.file(fileName)} sizeBytes=$fileSize")
                 // Mark thumbnail as generating BEFORE notifying caller so the UI
                 // shows the spinner as soon as the item appears in the list.
                 markThumbnailGenerating(modelId)
                 onModelId?.invoke(modelId)
                 _statusMessage.value = "Model '$name' added successfully"
             } catch (e: Exception) {
-                DiagnosticsLogger.e("MODEL", "Model record insert failed name=\"$name\"", e)
+                DiagnosticsLogger.e("MODEL", "Model record insert failed nameRef=${LogPrivacy.ref(name)}", e)
                 _statusMessage.value = "Failed to add model: ${e.message ?: "Unknown error"}"
             } finally {
                 _isLoading.value = false
@@ -178,7 +179,7 @@ class ModelsViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 repository.deleteModel(model)
-                DiagnosticsLogger.i("MODEL", "Model record deleted id=${model.id} name=\"${model.name}\"")
+                DiagnosticsLogger.i("MODEL", "Model record deleted id=${model.id} nameRef=${LogPrivacy.ref(model.name)}")
                 // Only remove the file once the row is gone, so a failed DB delete never leaves
                 // a record pointing at a missing file.
                 val fileDeleted = withContext(Dispatchers.IO) {

@@ -36,9 +36,18 @@ class CaptureDiagnosticsTest {
         repeat(3) { d.onFix(fix(RtkStatus.FIX, 15.0)) }
         assertEquals("Capture fix summary received=110 accepted=100 rejected=10: corrections too old=3, rtk below FIX=7",
             d.rejectedSummary(100))
-        val line = d.outcomeLine("saved", 100, 34, RtkStatus.FIX, 0.012, 0.025, name = "CP-1")
-        assertEquals("Capture saved name=\"CP-1\" mode=EXTERNAL samples=100 duration=34s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=10/110", line)
+        val line = d.outcomeLine("saved", 100, 34, RtkStatus.FIX, 0.012, 0.025, pointId = 42L)
+        assertEquals("Capture saved id=42 mode=EXTERNAL samples=100 duration=34s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=10/110", line)
         assertFalse(line.contains("41.23") || line.contains("76.12"))
+    }
+
+    @Test fun `outcome line carries the point id, never the point name`() {
+        val d = CaptureDiagnostics(policy, "EXTERNAL")
+        val saved = d.outcomeLine("saved", 1, 1, RtkStatus.FIX, 0.01, 0.02, pointId = 7L)
+        assertTrue(saved.startsWith("Capture saved id=7 "))
+        assertFalse(saved.contains("name="))
+        val cancelled = d.outcomeLine("cancelled", null, null, null, null, null)
+        assertTrue(cancelled.startsWith("Capture cancelled mode="))
     }
 
     @Test fun `pause and resume are logged once each`() {

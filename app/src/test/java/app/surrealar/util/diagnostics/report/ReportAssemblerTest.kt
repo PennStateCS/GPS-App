@@ -40,7 +40,7 @@ class ReportAssemblerTest {
         ReportAssembler.write(small, src, flush = { true }, maxLogBytes = 10)
         val log = entry(small, "app-log-current.txt")
         assertEquals(false, log.contains("two days old") || log.contains("continuation of the old line"))
-        assertEquals(true, log.contains("Capture saved name=\"CP-1\""))
+        assertEquals(true, log.contains("Capture saved name=\"(redacted)\""))   // point names are redacted in the ZIP
         assertEquals(true, entry(small, "README.txt").contains("only the last 24 hours"))
         assertEquals(true, entry(small, "manifest.txt").contains("truncated to the last 24 hours"))
 

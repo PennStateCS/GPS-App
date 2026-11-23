@@ -1,5 +1,6 @@
 package app.surrealar.data.files
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.DiagTags
@@ -73,7 +74,7 @@ object ModelFileCleaner {
             if (file.exists() && file.isFile) {
                 val deleted = file.delete()
                 if (!deleted) {
-                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail deletion failed file=${file.name}")
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail deletion failed file=${LogPrivacy.file(file.name)}")
                 } else {
                     DevLog.d(TAG) { "Deleted thumbnail: ${file.name}" }
                 }

@@ -1,5 +1,6 @@
 package app.surrealar.ui.models.readiness
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import androidx.annotation.ColorRes
 import androidx.annotation.DrawableRes
 import app.surrealar.R
@@ -83,7 +84,7 @@ object ReadinessStyle {
     fun logLine(fileName: String, report: ReadinessReport): String {
         val fails = report.checks.filter { it.status == CheckStatus.FAIL }.joinToString(",") { it.id }
         val warns = report.checks.filter { it.status == CheckStatus.WARN }.joinToString(",") { it.id }
-        return "MODEL_READINESS model=$fileName verdict=${report.verdict} " +
+        return "MODEL_READINESS model=${LogPrivacy.file(fileName)} verdict=${report.verdict} " +
             "fails=[$fails] warns=[$warns]"
     }
 }

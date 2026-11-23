@@ -1,5 +1,6 @@
 package app.surrealar.ui.openinar
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -773,7 +774,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                                 .show()
                         }
                         // The renderer already logged MODEL_PLACEMENT_WARN for this model.
-                        DiagnosticsLogger.d(DIAG) { "MODEL_PLACEMENT_WARN_UI shown=true coordId=$coordId model=$modelFileName" }
+                        DiagnosticsLogger.d(DIAG) { "MODEL_PLACEMENT_WARN_UI shown=true coordId=$coordId model=${LogPrivacy.file(modelFileName)}" }
                     }
                 }
             }
@@ -3612,7 +3613,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 val basename = path.substringAfterLast('/')
                 DiagnosticsLogger.d(DIAG) {
                     "Model preload dispatched coordinateId=${coord.id} modelId=${item.modelId} " +
-                    "file=$basename exists=$exists " +
+                    "file=${LogPrivacy.file(basename)} exists=$exists " +
                     "sizeBytes=$sizeBytes renderEnabled=${coord.renderEnabled} " +
                     "altitude=$altState coordScale=$arModelScale placement=${item.placement}" }
                 when {
@@ -3622,7 +3623,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
                             exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "missing_file")
                         DiagnosticsLogger.w(DIAG,
-                            "Model skipped: file missing coordinateId=${coord.id} modelId=${item.modelId} file=$basename")
+                            "Model skipped: file missing coordinateId=${coord.id} modelId=${item.modelId} file=${LogPrivacy.file(basename)}")
                     }
                     else -> {
                         // Preload every model that exists on disk regardless of visibility — the AR

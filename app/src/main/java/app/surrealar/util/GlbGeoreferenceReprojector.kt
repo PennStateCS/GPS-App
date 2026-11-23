@@ -1,5 +1,6 @@
 package app.surrealar.util
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.util.diagnostics.DiagTags
 import java.io.File
@@ -28,13 +29,13 @@ object GlbGeoreferenceReprojector {
             val result = Reprojector.reproject(file.readBytes())
             result.precision?.let { p ->
                 DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection precision limited: float32 degree vertices " +
-                    "file=${file.name} latResM=${"%.1f".format(p.latResM)} lonResM=${"%.1f".format(p.lonResM)}")
+                    "file=${LogPrivacy.file(file.name)} latResM=${"%.1f".format(p.latResM)} lonResM=${"%.1f".format(p.lonResM)}")
             }
             when (result) {
                 is Reprojector.Result.Reprojected -> {
                     file.writeBytes(result.bytes)
                     val confidence = result.confidence.toDomain()
-                    DiagnosticsLogger.i(DiagTags.MODEL, "Model reprojected to local ENU file=${file.name} " +
+                    DiagnosticsLogger.i(DiagTags.MODEL, "Model reprojected to local ENU file=${LogPrivacy.file(file.name)} " +
                         "georeferenced=true method=${result.method} confidence=$confidence")   // no origin coordinates
                     EmbeddedModelLocation(
                         latitude = result.origin.latitudeDeg,
@@ -45,13 +46,13 @@ object GlbGeoreferenceReprojector {
                     )
                 }
                 is Reprojector.Result.Failed -> {
-                    DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${file.name}", result.error)
+                    DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${LogPrivacy.file(file.name)}", result.error)
                     null
                 }
                 else -> null
             }
         } catch (e: Exception) {
-            DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${file.name}", e)
+            DiagnosticsLogger.w(DiagTags.MODEL, "Model reprojection failed file=${LogPrivacy.file(file.name)}", e)
             null
         }
     }

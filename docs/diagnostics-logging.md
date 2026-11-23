@@ -89,6 +89,11 @@ Readers depend on these line starts and fields — **don't change them**: `SESSI
 - **Never**: coordinates (lat/lon/height, ECEF, northing/easting), raw NMEA, point names or notes,
   passwords, keys, tokens, full file paths with user names. Use IDs, counts, booleans and accuracy
   values instead.
+- **User-chosen text** (point names, model names, imported file names): log the record id, or
+  `LogPrivacy.ref(name)` (`nameRef=#4f1c2a`) / `LogPrivacy.file(fileName)` (`file=#9b03de.glb`, a short
+  hash plus the extension) so the same item can be followed across lines without revealing it.
+- **Exception messages are free text** (they can hold paths, hosts, names): attach the throwable to a
+  W/E line rather than pasting `${e.message}` into an I line; use `error=${LogPrivacy.errorType(e)}`.
 
 ## 1. Loggers (where events are stored)
 
@@ -119,8 +124,16 @@ what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes 
 - `diagnostic-summary.txt` starts with the **First look** block (report ID, time span, sessions,
   last session clean, crashes/ANRs in 24 h, source/RTK, link, correction age, storage, top warnings).
 - Logs over 20 MB → only the last 24 h of each log file; README and manifest say so.
-- Everything written passes through `ReportRedactor` (raw NMEA, API keys, password/token values and
-  6+-decimal coordinates are replaced). `ReportRedactionTest` builds a full report from leaky fakes.
+- Everything written passes through `ReportRedactor`, the last line of defence (its KDoc lists every
+  rule): raw NMEA; API keys, Authorization/Bearer values, JWTs, URL user info (`ntrip://user:pass@`),
+  password/token/user-name/credential values and long tokens after key-like labels; e-mail
+  addresses; personal file paths (`/storage/…`, `content://…`, `C:\Users\…`; file names hashed, the
+  extension kept); quoted names and notes; and coordinates **by context** (labelled lat/lon/easting/
+  northing/position, lat,lon pairs, NMEA `ddmm.mmmm,N`), so accuracy values such as `hAcc=0.0123456`
+  survive. `ReportPrivacyTest` builds the complete ZIP from sources full of synthetic secrets and
+  scans every entry; `ReportRedactorTest` covers each rule (positive and negative cases).
+- Raw NMEA is only ever in the separate, optional NMEA export (`LogZip`); nothing in the ordinary
+  report attaches it.
 - The share intent: To = `BuildConfig.DIAG_REPORT_EMAIL` (Gradle property `DIAG_REPORT_EMAIL`, blank by
   default), subject with device/version/time, body with three prompts and the report ID.
 

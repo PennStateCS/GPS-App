@@ -52,9 +52,12 @@ class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: 
         "Capture fix summary received=$received accepted=${accepted ?: "unknown"} rejected=${rejected.values.sum()}" +
             if (rejected.isEmpty()) "" else ": " + rejected.entries.joinToString(", ") { "${it.key}=${it.value}" }
 
-    /** One line for the log and captures.log. [name] only when the point was saved. */
-    fun outcomeLine(outcome: String, samples: Int?, durationS: Long?, rtk: RtkStatus?, hAccM: Double?, vAccM: Double?, name: String? = null): String =
-        "Capture $outcome" + (name?.let { " name=\"${it.replace('"', '\'')}\"" } ?: "") +
+    /**
+     * One line for the log and captures.log. [pointId] only when the point was saved: the
+     * user-entered point name never goes in (the report is shared; names can be personal).
+     */
+    fun outcomeLine(outcome: String, samples: Int?, durationS: Long?, rtk: RtkStatus?, hAccM: Double?, vAccM: Double?, pointId: Any? = null): String =
+        "Capture $outcome" + (pointId?.let { " id=$it" } ?: "") +
             " mode=$mode samples=${samples ?: 0} duration=${durationS ?: 0}s rtk=${rtk?.name ?: "none"}" +
             " hAcc=${GnssFeedTracker.hAccBucket(hAccM)} vAcc=${GnssFeedTracker.hAccBucket(vAccM)}" +
             " rejected=${rejected.values.sum()}/$received"

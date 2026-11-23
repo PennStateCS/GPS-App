@@ -1,5 +1,6 @@
 package app.surrealar.ui.models
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import android.app.Activity
 import android.content.Intent
 import android.content.res.AssetFileDescriptor
@@ -272,17 +273,17 @@ class ModelsFragment : Fragment() {
             val reportedName = fileName
             fileName = ModelFileIo.safeImportName(fileName)
             if (fileName != reportedName) {
-                DiagnosticsLogger.w("MODEL", "Model import name sanitized: path characters removed name=\"$fileName\"")
+                DiagnosticsLogger.w("MODEL", "Model import name sanitized: path characters removed file=${LogPrivacy.file(fileName)}")
             }
 
             DevLog.d("ModelsFragment") { "Selected URI: $uri  fileName: $fileName  size: $fileSize" }
             DiagnosticsLogger.i("MODEL",
-                "Model import started name=\"$fileName\" sizeBytes=$fileSize uriScheme=${uri.scheme}")
+                "Model import started file=${LogPrivacy.file(fileName)} sizeBytes=$fileSize uriScheme=${uri.scheme}")
 
             // Validate file extension — accept .glb and .gltf
             val lowerName = fileName.lowercase()
             if (!lowerName.endsWith(".glb") && !lowerName.endsWith(".gltf")) {
-                DiagnosticsLogger.w("MODEL", "Model import rejected: unsupported file type name=\"$fileName\" expected=[glb,gltf]")
+                DiagnosticsLogger.w("MODEL", "Model import rejected: unsupported file type file=${LogPrivacy.file(fileName)} expected=[glb,gltf]")
                 Toast.makeText(requireContext(), "Please select a .glb or .gltf file", Toast.LENGTH_LONG).show()
                 return
             }
@@ -290,7 +291,7 @@ class ModelsFragment : Fragment() {
             // Open the stream — this works for all URI schemes including content:// from SAF
             val inputStream = contentResolver.openInputStream(uri)
                 ?: run {
-                    DiagnosticsLogger.w("MODEL", "Model import failed: cannot open input stream name=\"$fileName\"")
+                    DiagnosticsLogger.w("MODEL", "Model import failed: cannot open input stream file=${LogPrivacy.file(fileName)}")
                     Toast.makeText(requireContext(), "Cannot open file", Toast.LENGTH_LONG).show()
                     return
                 }
@@ -320,7 +321,7 @@ class ModelsFragment : Fragment() {
                 // cloud provider or a full disk crashed the app. Fail into the "target null" path.
                 val targetFile = withContext(Dispatchers.IO) {
                     runCatching { copyModelToInternalStorage(uri, fileName, inputStream, filesDir) }
-                        .onFailure { DiagnosticsLogger.e("MODEL", "Model file copy failed name=\"$fileName\"", it) }
+                        .onFailure { DiagnosticsLogger.e("MODEL", "Model file copy failed file=${LogPrivacy.file(fileName)}", it) }
                         .getOrNull()
                 }
                 if (targetFile == null) {
@@ -361,8 +362,8 @@ class ModelsFragment : Fragment() {
                 }
                 // File may have been rewritten by reprojection; use its current size.
                 val finalSize = targetFile.length()
-                DiagnosticsLogger.i("MODEL", "Model file copied name=\"${targetFile.name}\" " +
-                    "sizeBytes=$finalSize path=\"models/${targetFile.name}\" georeferenced=${embedded != null}")
+                DiagnosticsLogger.i("MODEL", "Model file copied file=${LogPrivacy.file(targetFile.name)} " +
+                    "sizeBytes=$finalSize dir=models georeferenced=${embedded != null}")
 
                 // Prompt user for name/description — once the screen is started again (the copy and
                 // reprojection can take seconds; showing a dialog after the state is saved throws).
@@ -383,7 +384,7 @@ class ModelsFragment : Fragment() {
 
     private fun rejectTooLarge(fileName: String, sizeBytes: Long) {
         val sizeMb = String.format(java.util.Locale.US, "%.0f", sizeBytes / (1024.0 * 1024.0))
-        DiagnosticsLogger.w("MODEL", "Model import rejected: file too large name=\"$fileName\" " +
+        DiagnosticsLogger.w("MODEL", "Model import rejected: file too large file=${LogPrivacy.file(fileName)} " +
             "sizeBytes=$sizeBytes limitBytes=${ModelFileIo.MAX_IMPORT_BYTES}")
         val ctx = context ?: return
         Toast.makeText(
@@ -457,7 +458,7 @@ class ModelsFragment : Fragment() {
         return try {
             GltfSidecars.resourcePaths(gltfFile.readText()).getOrThrow()
         } catch (e: Exception) {
-            DiagnosticsLogger.w("MODEL", "Model glTF resource listing failed: sidecar files not copied file=${gltfFile.name}", e)
+            DiagnosticsLogger.w("MODEL", "Model glTF resource listing failed: sidecar files not copied file=${LogPrivacy.file(gltfFile.name)}", e)
             emptySet()
         }
     }

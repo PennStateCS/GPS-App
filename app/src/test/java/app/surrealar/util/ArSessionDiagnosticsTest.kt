@@ -36,7 +36,8 @@ class ArSessionDiagnosticsTest {
         assertTrue(text.contains("coordinatesWithModel : 2"))
         assertTrue(text.contains("inScene  : 1"))
         assertTrue(text.contains("queued   : 1"))
-        assertTrue(text.contains("name=\"Valve\""))
+        assertTrue(text.contains("nameRef=#"))
+        assertFalse(text.contains("Valve"))   // point names stay out of the report
     }
 
     @Test fun `setStatus advances a queued model through to in-scene`() {

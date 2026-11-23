@@ -1,5 +1,6 @@
 package app.surrealar.ui.models
 
+import app.surrealar.util.diagnostics.LogPrivacy
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -247,7 +248,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                 try {
                     val glbFile = File(modelPath)
                     if (!glbFile.exists()) {
-                        DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail failed: model file not found file=${glbFile.name}")
+                        DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail failed: model file not found file=${LogPrivacy.file(glbFile.name)}")
                         withContext(Dispatchers.Main) { finish() }
                         return@launch
                     }
@@ -292,7 +293,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             }
             true
         } catch (e: Throwable) {
-            DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail model load failed file=${modelFile.name}", e)
+            DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail model load failed file=${LogPrivacy.file(modelFile.name)}", e)
             false
         }
     }
@@ -448,7 +449,7 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
     private fun tryCapture(attempt: Int) {
         if (attempt > CAPTURE_MAX_ATTEMPTS) {
             DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail capture failed: no thumbnail " +
-                "attempts=$CAPTURE_MAX_ATTEMPTS file=$modelFileName")
+                "attempts=$CAPTURE_MAX_ATTEMPTS file=${LogPrivacy.file(modelFileName)}")
             finishWithCleanup()
             return
         }
@@ -587,17 +588,17 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
                         )
                         DevLog.d(TAG) { "Thumbnail saved and DB updated: $thumbFileName" }
                     } else {
-                        DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail saved without a model record file=$modelFileName")
+                        DiagnosticsLogger.w(DiagTags.MODEL, "Model thumbnail saved without a model record file=${LogPrivacy.file(modelFileName)}")
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail record update failed file=$modelFileName", e)
+                    DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail record update failed file=${LogPrivacy.file(modelFileName)}", e)
                 }
 
                 withContext(Dispatchers.Main) { finishWithCleanup() }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail save failed file=$modelFileName", e)
+                DiagnosticsLogger.e(DiagTags.MODEL, "Model thumbnail save failed file=${LogPrivacy.file(modelFileName)}", e)
                 withContext(Dispatchers.Main) { finishWithCleanup() }
             }
         }
