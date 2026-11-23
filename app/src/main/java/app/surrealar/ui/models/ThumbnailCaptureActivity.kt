@@ -302,9 +302,10 @@ class ThumbnailCaptureActivity : AppCompatActivity() {
             return ByteBuffer.allocateDirect(0)
         }
         return try {
-            val decoded = Uri.decode(uriString).substringBefore('#').substringBefore('?')
-            val candidate = File(baseDir, decoded).canonicalFile
-            if (!candidate.path.startsWith(baseDir.path) || !candidate.exists()) {
+            // Same resolution as the model viewer: separator-aware containment (a bare prefix test let a
+            // sibling folder sharing the name prefix through) — covered by ViewerGltfResourceFileTest.
+            val candidate = viewerGltfResourceFile(baseDir, uriString, Uri::decode)
+            if (candidate == null) {
                 // Per resource: logcat only (the viewer and import already report missing sidecars).
                 DevLog.d(TAG) { "Missing glTF resource: $uriString" }
                 return ByteBuffer.allocateDirect(0)
