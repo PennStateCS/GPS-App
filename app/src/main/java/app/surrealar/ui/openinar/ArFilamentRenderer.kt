@@ -208,6 +208,8 @@ class ArFilamentRenderer {
     private val loadingPaths = HashMap<String, String>()
     /** Latest preload request that arrived while that key was loading: file, placement, scope (main thread). */
     private val pendingPreloads = HashMap<String, Triple<String, ModelPlacement, CoroutineScope>>()
+    /** Wanted file + generation per real-model key: discards loads that finish after a delete/relink (main thread). */
+    private val loadTracker = ModelLoadTracker()
 
     /**
      * Applies a new per-coordinate placement (scale / yaw / pitch / roll / origin / offsets) to an
@@ -235,6 +237,7 @@ class ArFilamentRenderer {
     fun forgetModel(key: String) {
         if (isTestKey(key)) return
         pendingPreloads.remove(key)
+        loadTracker.forget(key)   // a load still in flight for it is discarded when it finishes
         val cached = anchorAssets.remove(key) ?: return
         worldBounds.remove(key)
         val stillLoading = !cached.everAddedToScene
@@ -258,6 +261,7 @@ class ArFilamentRenderer {
     fun retainModels(keys: Set<String>) {
         anchorAssets.keys.filter { !isTestKey(it) && it !in keys }.forEach(::forgetModel)
         pendingPreloads.keys.retainAll(keys)
+        loadTracker.retain(keys)   // also covers keys whose first load is still in flight (not cached yet)
     }
 
     /** One [CachedAsset] per anchor key (coordinate ID). */
@@ -410,10 +414,11 @@ class ArFilamentRenderer {
      * Logging only: a preload for [key] finished ([ok]) or failed. Real models leave the stuck-loading
      * watch on failure; test-grid keys are counted and one summary line is written when the batch settles.
      */
-    private fun settlePreload(key: String, ok: Boolean) {
+    private fun settlePreload(key: String, ok: Boolean, ticket: ModelLoadTracker.Ticket? = null) {
         if (!isTestKey(key)) {
             if (!ok) loadStartMs.remove(key)
             loadingPaths.remove(key)
+            ticket?.let { loadTracker.ended(it) }   // frees the key for the next request on every outcome
             // An edit or relink that arrived while this load ran: apply it now (placement update, or
             // reload if the file changed). Skipped once the renderer is gone.
             pendingPreloads.remove(key)?.let { (path, placement, scope) ->
@@ -462,7 +467,12 @@ class ArFilamentRenderer {
                 }
             }
         }
-        if (!loadingKeys.add(key)) {
+        // Real models: the tracker allows one load per key and remembers the wanted file + generation
+        // (loadingKeys mirrors it for the diagnostics). Test-grid pins keep the plain loadingKeys guard.
+        val ticket = if (isTestKey(key)) null
+                     else (loadTracker.request(key, filePath) as? ModelLoadTracker.Request.Start)?.ticket
+        val start = if (ticket != null) { loadingKeys.add(key); true } else isTestKey(key) && loadingKeys.add(key)
+        if (!start) {
             // A load for this key is in flight; it was started with the placement/file known then.
             // Re-apply this request when it finishes so an edit or relink made meanwhile isn't lost.
             if (!isTestKey(key)) pendingPreloads[key] = Triple(filePath, placement, scope)
@@ -507,7 +517,19 @@ class ArFilamentRenderer {
                             if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload aborted key=$key reason=\"renderer destroyed while loading\"" }
                             else DiagnosticsLogger.w(DIAG, "Model preload aborted: renderer destroyed while loading key=$key")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
-                            settlePreload(key, ok = false)
+                            loadingKeys.remove(key)
+                            settlePreload(key, ok = false, ticket)
+                            return@withContext
+                        }
+                        if (ticket != null && !loadTracker.isCurrent(ticket)) {
+                            // Deleted, unlinked or relinked while the file was being read: the asset is
+                            // never created (nothing to destroy mid-upload); a newer request is re-issued
+                            // by settlePreload. Checked and published with no suspension in between.
+                            DiagnosticsLogger.i(DIAG, "Model load discarded: request superseded key=$key file=$fileName")
+                            ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.SKIPPED, "superseded")
+                            loadingKeys.remove(key)
+                            fileReadMutex.withLock { fileBytesCache.remove(filePath) }
+                            settlePreload(key, ok = false, ticket)
                             return@withContext
                         }
                         val buffer = ByteBuffer.wrap(bytes)
@@ -518,7 +540,7 @@ class ArFilamentRenderer {
                                 "file=$fileName ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
-                            settlePreload(key, ok = false)
+                            settlePreload(key, ok = false, ticket)
                             return@withContext
                         }
                         loaderFor(key).asyncBeginLoad(asset)
@@ -535,20 +557,20 @@ class ArFilamentRenderer {
                         if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload success key=$key entities=${asset.entities.size}" }
                         else DiagnosticsLogger.i(DIAG, "Model preload succeeded key=$key entities=${asset.entities.size}")
                         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
-                        settlePreload(key, ok = true)
+                        settlePreload(key, ok = true, ticket)
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Scope cancelled (screen left): not a model failure. Same cleanup, no error line.
                 loadingKeys.remove(key)
                 ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
-                settlePreload(key, ok = false)
+                settlePreload(key, ok = false, ticket)
                 throw e
             } catch (e: Exception) {
                 loadingKeys.remove(key)
                 DiagnosticsLogger.e(DIAG, "Model preload failed key=$key file=$fileName", e)
                 ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
-                settlePreload(key, ok = false)
+                settlePreload(key, ok = false, ticket)
             }
         }
     }

@@ -170,9 +170,26 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
     }
 
+    /** Everything the anchor build reads from a point: a change here (and only here) rebuilds anchors. */
+    private data class GeoAnchorKey(
+        val id: String, val lat: Double, val lng: Double, val alt: Double?, val color: Int,
+        val modelFilePath: String?, val modelId: String?,
+        val verticalAccuracyM: Double?, val rtkStatus: io.github.pennstatecs.geokit.gnss.model.RtkStatus?,
+    )
+
     // Collections for managing geospatial anchors.
-    // @Volatile + immutable List: main thread assigns a new snapshot; GL thread reads it safely.
-    @Volatile private var geoItems: List<GeoItem> = emptyList()
+    // One immutable snapshot (list + revisions) in a @Volatile field: main thread publishes every
+    // list (setCoordinates); GL thread reads it and rebuilds anchors only when anchorRevision moved.
+    private val coordSnapshots = ArCoordinateSnapshots<GeoItem> { anchorKeyOf(it.coordWithModel) }
+
+    private fun anchorKeyOf(cwm: CoordWithModel): GeoAnchorKey {
+        val c = cwm.coordinate
+        val alt = if (c.altitude.isNaN() || !c.altitude.isFinite()) null else c.altitude   // as GeoItem.alt
+        return GeoAnchorKey(c.id, c.latitude, c.longitude, alt, c.color, cwm.modelFilePath, cwm.modelId,
+            c.verticalAccuracyM, c.rtkStatus)
+    }
+    /** The latest published list (always current metadata: names, placements, updatedAt…). */
+    private val geoItems: List<GeoItem> get() = coordSnapshots.current.items
 
     /**
      * Tracks each live ARCore geospatial anchor alongside its rendering metadata.
@@ -184,7 +201,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      */
     private class AnchorEntry(
         val anchor: Anchor,
-        val coordWithModel: CoordWithModel,
+        /** Refreshed in place (GL thread, [refreshAnchorMetadata]) when only metadata changes. */
+        @Volatile var coordWithModel: CoordWithModel,
         /** Anchored on terrain (snapped to the detected ground) rather than at its stored height. */
         val onTerrain: Boolean = false,
         /** TerrainAnchorState name from the resolve future (terrain anchors only), for the debug panel. */
@@ -204,7 +222,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     /** A terrain anchor still resolving (resolveAnchorOnTerrainAsync); joins [geoAnchors] on success. */
     private class PendingTerrainAnchor(
         val future: com.google.ar.core.ResolveAnchorOnTerrainFuture,
-        val coordWithModel: CoordWithModel,
+        @Volatile var coordWithModel: CoordWithModel,
     )
     private val pendingTerrainAnchors: MutableList<PendingTerrainAnchor> = CopyOnWriteArrayList()
 
@@ -1594,7 +1612,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
      * to the non-volatile [session] field from the GL thread.
      */
     private fun rebuildGeoAnchorsIfNeeded(earth: Earth) {
-        if (geoAnchorsCreated || geoItems.isEmpty()) return
+        refreshAnchorMetadata()
+        // Rebuild when cleared (re-anchor) or built from an older anchor input than the latest list.
+        if ((geoAnchorsCreated && !coordSnapshots.anchorsOutdated()) || geoItems.isEmpty()) return
         if (earth.trackingState != TrackingState.TRACKING) return
 
         // Use GNSS fix from switchboard for positioning instead of ARCore's camera pose
@@ -1746,14 +1766,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // altEllipsoidalM (WGS84 HAE) is required because ARCore's createAnchor() expects it.
         // If ellipsoidal alt is unavailable, derive it from MSL + geoid separation.
         // Never use raw altMslM alone — omitting geoid separation causes ±15–85m errors.
-        val fallbackAlt = fixEllipsoidalAltM(gnssFix) ?: 0.0
+        // Never 0 m HAE either: with no fix height the point goes on terrain (AltitudePolicy.storedAnchorHeightM).
+        val fallbackAlt = fixEllipsoidalAltM(gnssFix)
 
         // Record the RTK status at the time of anchor creation for auto re-anchor logic.
         lastAnchorRtkStatus = gnssFix.rtkStatus
 
-        // Create new anchors for each coordinate — snapshot geoItems (volatile read) so the
-        // main thread can safely call setCoordinates() concurrently without a CME.
-        val items = geoItems
+        // Create new anchors for each coordinate from ONE snapshot (volatile read): the main thread
+        // may publish a newer list meanwhile; markBuilt() below then leaves a rebuild pending.
+        val snap = coordSnapshots.current
+        val items = snap.items
 
         val earthStateName = earth.earthState?.name ?: "unknown"
         // Per point (AltitudePolicy): stored ellipsoidal height when it is trustworthy (RTK-grade), else
@@ -1766,21 +1788,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         for (item in items) {
             val c = item.coordWithModel.coordinate
             val choice = AltitudePolicy.choose(mode, item.alt, c.verticalAccuracyM, c.rtkStatus)
+            // Stored-height anchor: the point's height, else the user's fix height; null → terrain.
+            val storedHeight = if (choice.onTerrain) null else AltitudePolicy.storedAnchorHeightM(item.alt, fallbackAlt)
+            if (!choice.onTerrain && storedHeight == null && noHeightLoggedIds.add(c.id)) {
+                DiagnosticsLogger.w(DIAG, "Anchor height unavailable: no stored height and no fix height, " +
+                    "anchoring on terrain instead coordinateId=${c.id} mode=$mode choice=$choice")
+            }
             try {
-                if (choice.onTerrain) {
+                if (storedHeight == null) {
                     // Async resolve (the sync call is deprecated); polled in pollTerrainAnchors().
                     val future = earth.resolveAnchorOnTerrainAsync(item.lat, item.lng, 0.0, 0f, 0f, 0f, 1f, null)
                     pendingTerrainAnchors.add(PendingTerrainAnchor(future, item.coordWithModel))
                 } else {
-                    val anchor = earth.createAnchor(item.lat, item.lng, item.alt ?: fallbackAlt, 0f, 0f, 0f, 1f)
+                    val anchor = earth.createAnchor(item.lat, item.lng, storedHeight, 0f, 0f, 0f, 1f)
                     geoAnchors.add(AnchorEntry(anchor, item.coordWithModel))
                 }
-                if (choice.onTerrain) terrain++ else stored++
+                if (storedHeight == null) terrain++ else stored++
                 // Per point (debug builds): which height source it got and why — no absolute heights.
                 DiagnosticsLogger.d(DIAG) { "Anchor height chosen coordinateId=${c.id} mode=$mode " +
                     "choice=$choice hasStoredAlt=${item.alt != null} " +
                     "vAccM=${c.verticalAccuracyM?.let { "%.2f".format(it) } ?: "unknown"} rtk=${c.rtkStatus ?: "unknown"}" +
-                    (if (!choice.onTerrain && item.alt == null) " heightSource=userFix" else "") }
+                    (if (!choice.onTerrain && item.alt == null)
+                        (if (storedHeight != null) " heightSource=userFix" else " heightSource=terrainNoHeight") else "") }
             } catch (e: Exception) {
                 failed++
                 if (item.coordWithModel.modelFilePath != null)
@@ -1800,7 +1829,42 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         recordAnchorOutcome(items.size, geoAnchors.size + pendingTerrainAnchors.size, failed)
 
         lastPlacedVia = placedVia
-        geoAnchorsCreated = true
+        // Done only if no newer coordinate list arrived during the build; otherwise the next frame
+        // rebuilds (anchorsOutdated() stays true even if setCoordinates' flag write raced this one).
+        val stillCurrent = coordSnapshots.markBuilt(snap)
+        if (!stillCurrent) DiagnosticsLogger.i(DIAG, "Anchors outdated: coordinates changed during build, rebuild pending")
+        geoAnchorsCreated = stillCurrent
+    }
+
+    /** Points already logged as having no usable anchor height (GL thread; once per point). */
+    private val noHeightLoggedIds = HashSet<String>()
+
+    /**
+     * GL thread, once per new coordinate snapshot: drops the anchors of deleted points at once, and gives
+     * each live anchor whose own anchor inputs are unchanged the latest metadata (name, placement,
+     * updatedAt, renderEnabled…) without a rebuild. A point whose inputs changed waits for the rebuild.
+     */
+    private fun refreshAnchorMetadata() {
+        val snap = coordSnapshots.takeUpdate() ?: return
+        val byId = snap.items.associateBy { it.coordWithModel.coordinate.id }
+        for (entry in geoAnchors) {
+            val item = byId[entry.coordWithModel.coordinate.id]
+            if (item == null) {
+                runCatching { entry.anchor.detach() }   // best effort: may already be detached
+                geoAnchors.remove(entry)
+            } else if (anchorKeyOf(item.coordWithModel) == anchorKeyOf(entry.coordWithModel)) {
+                entry.coordWithModel = item.coordWithModel
+            }
+        }
+        for (p in pendingTerrainAnchors) {
+            val item = byId[p.coordWithModel.coordinate.id]
+            if (item == null) {
+                runCatching { p.future.cancel() }
+                pendingTerrainAnchors.remove(p)
+            } else if (anchorKeyOf(item.coordWithModel) == anchorKeyOf(p.coordWithModel)) {
+                p.coordWithModel = item.coordWithModel
+            }
+        }
     }
 
     /** Records anchor-build tallies into the session diagnostics (GL thread). */
@@ -3267,9 +3331,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         ArSessionDiagnostics.coordinateCount = maxOf(ArSessionDiagnostics.coordinateCount, items.size)
         ArSessionDiagnostics.linkedModelCount = maxOf(ArSessionDiagnostics.linkedModelCount, withModels.size)
         ArSessionDiagnostics.coordinatesVisible = maxOf(ArSessionDiagnostics.coordinatesVisible, visibleModels)
-        // Skip rebuild if the incoming list is identical to what we already have.
-        // Room emits on every observed change; without this guard a no-op emission
-        // clears geoAnchorsCreated and forces a full anchor rebuild at 60fps.
+        // Every list is published (metadata is never stale); anchors rebuild only when an anchor input
+        // changed (GeoAnchorKey). Room emits on every observed change; without this a no-op emission
+        // would clear geoAnchorsCreated and force a full anchor rebuild at 60fps.
         val newItems = items.map { item ->
             val c = item.coordinate
             // Only treat altitude as absent when it is NaN or infinite.
@@ -3285,9 +3349,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 coordWithModel = item
             )
         }
-        if (newItems == geoItems) {
-            // Anchors unchanged (GeoItem equality covers position, colour and model file only). A
-            // placement edit (scale, rotation, origin, offsets) still has to reach the rendered model.
+        if (!coordSnapshots.publish(newItems)) {
+            // Anchor inputs unchanged (position, height inputs, colour, model file). The new snapshot
+            // (names, placement, updatedAt…) is already published; a placement edit (scale, rotation,
+            // origin, offsets) still has to reach the rendered model.
             items.forEach { item ->
                 if (item.modelFilePath != null) filamentRenderer?.updatePlacement(item.coordinate.id, effectivePlacement(item))
             }
@@ -3297,7 +3362,6 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         // Logged only for real changes (after the no-change return), so Room's repeat emissions are silent.
         DiagnosticsLogger.i(DIAG,
             "AR coordinates updated total=${items.size} withModels=${withModels.size} visible=$visibleModels")
-        geoItems = newItems
         // Invalidate anchors so they rebuild for the new coordinate set. Logged so the export shows
         // every reason anchors are cleared/rebuilt (here: the coordinate list changed, not user motion).
         if (geoAnchorsCreated) DiagnosticsLogger.i(DIAG,

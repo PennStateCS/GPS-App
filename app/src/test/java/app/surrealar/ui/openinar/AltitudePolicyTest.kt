@@ -37,6 +37,15 @@ class AltitudePolicyTest {
         assertEquals(Choice.TERRAIN_FORCED, AltitudePolicy.choose(AltitudePolicy.TERRAIN, 390.0, 0.02, RtkStatus.FIX))
     }
 
+    @Test fun `stored anchor height falls back to the fix height, then to terrain, never 0 m`() {
+        assertEquals(390.0, AltitudePolicy.storedAnchorHeightM(390.0, 120.0)!!, 0.0)
+        assertEquals(0.0, AltitudePolicy.storedAnchorHeightM(0.0, 120.0)!!, 0.0)      // sea level is a real height
+        assertEquals(120.0, AltitudePolicy.storedAnchorHeightM(null, 120.0)!!, 0.0)
+        assertEquals(120.0, AltitudePolicy.storedAnchorHeightM(Double.NaN, 120.0)!!, 0.0)
+        assertEquals(null, AltitudePolicy.storedAnchorHeightM(null, null))             // → terrain anchor
+        assertEquals(null, AltitudePolicy.storedAnchorHeightM(null, Double.NaN))
+    }
+
     @Test fun `modes normalize, cycle and label`() {
         assertEquals(AltitudePolicy.AUTO, AltitudePolicy.normalize(null))
         assertEquals(AltitudePolicy.AUTO, AltitudePolicy.normalize("garbage"))
