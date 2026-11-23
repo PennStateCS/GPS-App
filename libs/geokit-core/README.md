@@ -5,7 +5,7 @@
 Android-free geodesy for SurReal AR: ellipsoids and geocentric conversions, the ITRF2014 ⇄ NAD83(2011)
 Helmert transform, State Plane / UTM / transverse Mercator projections, the GEOID18 grid, local ENU
 frames, WGS84 geodesics (distance and bearing), the 68 % horizontal-accuracy convention, compass
-heading math, and running statistics. Plain Kotlin/JVM (no Android, ARCore, Room or Hilt), so it can
+heading math, running statistics, stakeout guidance and a lat/lon plausibility check. Plain Kotlin/JVM (no Android, ARCore, Room or Hilt), so it can
 be reused by other JVM projects and tested on a desktop.
 
 Package root `io.github.pennstatecs.geokit`:
@@ -16,10 +16,12 @@ Package root `io.github.pennstatecs.geokit`:
 | `.datum` | `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`) |
 | `.projection` | `Tm` (Krüger series, forward + inverse), `Lcc2`, `HomA`, `Utm`, `SpcsZone` / `SpcsZones` (all 118 SPCS83 zones on NAD83(2011)) |
 | `.geoid` | `Geoid18Grid` (from a `ByteArray` or `InputStream` of the packed SRGT grid) |
-| `.local` | `LocalEnu` (east/north/up about an origin, for short-range local work) |
+| `.local` | `LocalEnu` (east/north/up about an origin, for short-range local work: `toEnu`, and its exact inverse `toGeodetic`) |
 | `.accuracy` | `HorizontalAccuracy` (horizontal accuracy is a **68 % radius**; vertical is **1σ**) |
 | `.heading` | `HeadingMath` (true heading, display-rotation remap, upright detection), `Compass.point8` |
 | `.stats` | `RunningStats` (Welford mean / variance) |
+| `.stakeout` | `StakeoutGuidance` (status within tolerance, relative arrow angle, heading source, direction word; takes distance and bearing from `Geodesic`), `StakeoutGuidanceState`, `StakeoutFeedbackGate` (arrival fires once, navigation pulses throttled; clock injected) |
+| `.validation` | `LatLonValidation.isValidLatLon` (finite, in range, not the 0,0 "null island" placeholder) |
 
 Conventions: angles in degrees, lengths in metres, `Double` everywhere, units in parameter names
 (`latDeg`, `heightM`, `epochYear`), `null` means unknown. No `java.time` types in the public API

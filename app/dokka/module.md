@@ -332,13 +332,6 @@ Foreground services and their notifications. `LocationService` keeps location ru
 background with a foreground notification; `LocationNotifications` builds that notification and owns
 the shared channel id (`surveying_location`) — keep the two in sync so the channel doesn't drift.
 
-# Package app.surrealar.stakeout
-
-Stakeout (navigate-to-target) guidance. `StakeoutGuidance` turns already-computed distance/bearing into
-a `StakeoutGuidanceState` (status, arrow angle, direction text); `StakeoutFeedbackGate` rate-limits the
-haptic/audio cues. Pure and Android-free — it computes neither distance nor bearing, so the existing
-map math is untouched, and tolerance handling is display-only.
-
 # Package app.surrealar.data.files
 
 Model file housekeeping on disk. `ModelFileCleaner` deletes the GLB and thumbnail files backing a
@@ -373,11 +366,10 @@ to captured coordinates — these observe and report, they don't alter survey da
 
 # Package app.surrealar.gnss.external
 
-External receiver integration (Emlid Reach RS2+). `TcpNmeaSource`/`ExternalAdapter` stream and adapt
-NMEA over TCP into the fix pipeline; the `Reach*Service` classes and `ReachHttpClient` talk to the
-device's HTTP/socket API for battery, corrections, and device info. The JSON DTOs here
-(`BatteryStatus`, `ReachDeviceInfoDto`) are raw service shapes mapped into the app-facing
-`gnss.external.model` types. External data must never be reported as internal GPS.
+External receiver as the switchboard sees it. `ExternalAdapter` wraps geokit-gnss's
+`ReconnectingNmeaAdapter` (around its `TcpNmeaSource`) and stamps each fix with the active receiver
+profile's label and accuracy class; `DiagnosticsLinkLog` sends the link's RECEIVER/NMEA lines to
+`DiagnosticsLogger`. External data must never be reported as internal GPS.
 
 # Package app.surrealar.gnss.external.model
 
@@ -418,9 +410,9 @@ this class. Parsing never throws; an unrecognized line is a normal `ParseResult.
 
 # Package app.surrealar.gnss.replay
 
-Deterministic NMEA replay for testing and demos. `NmeaReplayController` drives lines from an
-`NmeaLineSource` (e.g. `AssetNmeaReplaySource`) through the normal parse/fuse pipeline, so recorded
-sessions reproduce a fix stream without a live receiver. Test/dev tooling only.
+`AssetNmeaReplaySource`: an `NmeaLineSource` that plays a bundled asset file in a loop. The replay
+adapter itself (`ReplayAdapter`, lines → `NmeaFuser` → fixes and sky) is in geokit-gnss
+(`io.github.pennstatecs.geokit.gnss.replay`). Test/dev tooling only.
 
 # Package app.surrealar.gnss.satellites
 
@@ -437,8 +429,8 @@ configuration consumed by the GNSS sources; persisted via the settings layer, no
 
 Cross-cutting helpers with no obvious home: coordinate conversion (`UtmConverter`, `GeoUtils`), GLB
 georeference detection/reprojection, runtime permissions (`PermissionManager`/`PermissionsGuard` —
-keep their permission lists in sync), Reach network discovery (`ReachDiscoveryHelper`,
-`ReachNameResolver`), and diagnostics export (`DiagnosticReportExporter`, `LogZip`, `DiagnosticsLogger`).
+keep their permission lists in sync), Reach network discovery (`ReachDiscoveryHelper` — mDNS here, the
+HTTP sweep in geokit-receiver-emlid — and `ReachNameResolver`), and diagnostics export (`DiagnosticReportExporter`, `LogZip`, `DiagnosticsLogger`).
 Stateless utilities; avoid putting feature logic here.
 
 # Package app.surrealar.util.diagnostics

@@ -7,9 +7,9 @@ Emlid Reach support for SurReal AR, behind the receiver-neutral `ReceiverDevice`
 
 ## What it covers
 
-Reach **RS2+**, **RS4** and **RS4 Pro**, over the receiver's local HTTP API and socket.io broadcasts.
-The position itself always comes from the NMEA stream (the app's TCP source and `NmeaFuser`), not
-from this module.
+Reach **RS2+**, **RS4** and **RS4 Pro**, over the receiver's local HTTP API and socket.io broadcasts,
+plus finding a Reach on the network and each model's antenna phase-centre offset. The position itself
+always comes from the NMEA stream (geokit-gnss's `TcpNmeaSource` and `NmeaFuser`), not from this module.
 
 | Data | Source | Cadence | Neutral model |
 |---|---|---|---|
@@ -21,6 +21,32 @@ from this module.
 them and closes the socket. `EmlidMapping` converts the Reach JSON results to the neutral models
 without dropping fields: anything without a neutral slot goes in `details`. The HTTP and socket.io
 endpoints sit behind `EmlidReachDevice.EmlidApi`, so tests can replace them.
+
+### Antenna phase-centre offsets
+
+`EmlidReachModel` lists each model's L1 phase-centre height above the antenna reference point (the
+bottom of the receiver), for geokit-gnss's `AntennaGeometry`:
+
+| Model | `phaseCenterOffsetM` | Source |
+|---|---|---|
+| `RS2`, `RS2_PLUS` | 0.134 | Emlid RS2/RS2+ manual |
+| `RS4` | 0.095 | Emlid RS4 specs (L1) |
+| `RS4_PRO` | null (unknown) | not published separately; the user enters it |
+
+### Finding a Reach on the network
+
+`ReachNetworkScan` is a JVM `ReceiverDiscovery`: an HTTP sweep of the local subnet (port 80, 250 ms
+connect / 300 ms read, 32 hosts at a time; a page mentioning "reach", "emlid" or "rs2" counts), then a
+probe of ports 5000 and 9001 on each hit. Give it the device's address and netmask
+(`localNetwork = { ip to mask }`); a missing or wider-than-/20 mask is treated as /24, and a range over
+512 hosts is cut to the first /24. `Ipv4Subnet` holds the address maths (including
+`littleEndianIntToString` for Android's `DhcpInfo`).
+
+A host with mDNS runs that first and reuses the pieces, so both phases report alike:
+`validateHttpService`, `probeBothPorts`, `sweep(ip, mask, found, onNew)` and one shared `ReachDeviceSet`
+(one entry per IP, later finds merged in, each new or changed device logged once). In SurReal AR,
+`ReachDiscoveryHelper` does mDNS with NsdManager and falls back to `sweep`. Results convert to the
+neutral `DiscoveredReceiver` with `ReachDevice.toDiscoveredReceiver(profileKey)`.
 
 ## The ReceiverDevice contract (geokit-gnss)
 
@@ -45,14 +71,19 @@ host changes. The UI reads only the manager's neutral flows and capability flags
 
 1. **A module** such as `receiver-ublox`, set up like this one (plain Kotlin JVM, `explicitApi()`,
    `api(project(":geokit-gnss"))`). In it, implement `ReceiverDevice` for whatever status the receiver
-   offers. Log through `GnssLog` (never `android.util.Log`). Add a `ReceiverDiscovery` if it can be
-   found on the network; Android-only discovery (NSD, Wi-Fi) goes in the app, like `EmlidDiscovery`.
+   offers. Log through `GnssLog` (never `android.util.Log`), and connection-style lines through a
+   `LinkLog` the host passes in. Add a JVM `ReceiverDiscovery` if it can be found on the network (like
+   `ReachNetworkScan`); only the Android-specific part (NSD/mDNS, reading the Wi-Fi address) goes in the
+   app, like `ReachDiscoveryHelper` / `EmlidDiscovery`. List each model's antenna phase-centre offset
+   in the module (like `EmlidReachModel`; null when unknown).
 2. **Proprietary NMEA sentences**: write a `SentenceParser` for each and return them from the
    profile's `extraParsers`. The live registry registers every profile's parsers.
 3. **A profile**: add an `ExternalReceiverProfile` entry (app, `settings.model`) with a stable
    `prefKey`, labels, default port, `vendor`, `accuracyClass` (`SURVEY_MULTIBAND`, `SINGLE_FREQUENCY`
-   or `DEVICE`; it selects the DOP × UERE fallback) and `capabilities`. Add a `ReceiverVendor` value
-   if it is a new manufacturer.
+   or `DEVICE`; it selects the DOP × UERE fallback), `phaseCenterOffsetM` (read from your module's
+   model table, not typed in) and `capabilities`. Add a `ReceiverVendor` value if it is a new
+   manufacturer. The NMEA stream needs nothing new: geokit-gnss's `TcpNmeaSource` and
+   `ReconnectingNmeaAdapter` work for any receiver that streams NMEA over TCP.
 4. **Wiring**: map the vendor to your device (and discovery) in the app's `di/ReceiverModule`. No UI
    change is needed: the toolbar battery, the Settings status rows and the Developer page follow the
    capabilities.

@@ -9,9 +9,9 @@ the root `gradle.properties` (currently `0.1.0-SNAPSHOT`). Publishing isn't set 
 
 | Artifact | Gradle project / directory | Package root | What it is |
 |---|---|---|---|
-| [`geokit-core`](geokit-core/README.md) | `:geokit-core`, `libs/geokit-core` | `io.github.pennstatecs.geokit` | Earth math: ellipsoids/ECEF, ITRF2014⇄NAD83(2011), TM/LCC/HOM/UTM/State Plane, GEOID18, local ENU, WGS84 geodesics, the 68 % accuracy convention, heading, running statistics |
-| [`geokit-gnss`](geokit-gnss/README.md) | `:geokit-gnss`, `libs/geokit-gnss` | `io.github.pennstatecs.geokit.gnss` | NMEA 0183 parsing and epoch fusion into fixes, satellite inventory, accuracy estimation (DOP × UERE by accuracy class), averaged capture, the `ReceiverDevice` contract, `GnssLog` |
-| [`geokit-receiver-emlid`](geokit-receiver-emlid/README.md) | `:geokit-receiver-emlid`, `libs/geokit-receiver-emlid` | `io.github.pennstatecs.geokit.receiver.emlid` | Emlid Reach RS2+/RS4/RS4 Pro status (battery, device info, corrections) over HTTP and socket.io, as a `ReceiverDevice` |
+| [`geokit-core`](geokit-core/README.md) | `:geokit-core`, `libs/geokit-core` | `io.github.pennstatecs.geokit` | Earth math: ellipsoids/ECEF, ITRF2014⇄NAD83(2011), TM/LCC/HOM/UTM/State Plane, GEOID18, local ENU, WGS84 geodesics, the 68 % accuracy convention, heading, running statistics, stakeout guidance, lat/lon validation |
+| [`geokit-gnss`](geokit-gnss/README.md) | `:geokit-gnss`, `libs/geokit-gnss` | `io.github.pennstatecs.geokit.gnss` | NMEA 0183 parsing and epoch fusion into fixes, satellite inventory, accuracy estimation (DOP × UERE by accuracy class), averaged capture, a TCP NMEA source with automatic reconnect, NMEA replay, antenna geometry, the `ReceiverDevice` contract, `GnssLog` |
+| [`geokit-receiver-emlid`](geokit-receiver-emlid/README.md) | `:geokit-receiver-emlid`, `libs/geokit-receiver-emlid` | `io.github.pennstatecs.geokit.receiver.emlid` | Emlid Reach RS2+/RS4/RS4 Pro status (battery, device info, corrections) over HTTP and socket.io, as a `ReceiverDevice`; network scan (`ReachNetworkScan`); antenna phase-centre offsets per model |
 
 ## How they stack
 
@@ -20,10 +20,10 @@ geokit-core  ←  geokit-gnss  ←  geokit-receiver-emlid  (← further geokit-r
 ```
 
 - **Only coordinates and Earth math** (projections, datum shifts, geoid, distances): `geokit-core`.
-- **Parsing NMEA from a receiver, turning it into fixes with honest accuracy, or averaging a point**:
-  `geokit-gnss`. It brings `geokit-core` with it.
-- **Reading an Emlid Reach's battery, device and correction status**: `geokit-receiver-emlid`. It
-  brings `geokit-gnss` as an API dependency.
+- **Connecting to a receiver over TCP, parsing its NMEA into fixes with honest accuracy, replaying a
+  log, or averaging a point**: `geokit-gnss`. It brings `geokit-core` with it.
+- **Reading an Emlid Reach's battery, device and correction status, finding one on the network, or
+  its antenna offset**: `geokit-receiver-emlid`. It brings `geokit-gnss` as an API dependency.
 
 Conventions everywhere: units in names (`latDeg`, `heightM`, `ageS`), `Double` for measurements,
 `null` means unknown (never 0). Horizontal accuracy is a **68 % radius**, and vertical accuracy is
@@ -42,13 +42,15 @@ full table, with the tests that check each row, is in the
 1. Create `libs/geokit-receiver-<vendor>`, set up like `geokit-receiver-emlid`: plain Kotlin JVM,
    `explicitApi()`, `api(project(":geokit-gnss"))`, package `io.github.pennstatecs.geokit.receiver.<vendor>`.
    Register it in `settings.gradle.kts` with its `projectDir`.
-2. Implement `ReceiverDevice` (and `ReceiverDiscovery` if the receiver can be found on the network)
-   for the status the receiver offers. Log through `GnssLog`.
+2. Implement `ReceiverDevice` for the status the receiver offers, and a JVM `ReceiverDiscovery` if it
+   can be found on the network (Android-only parts such as mDNS stay in the app). List each model's
+   antenna phase-centre offset (null if unknown). Log through `GnssLog`.
 3. Write a `SentenceParser` for each proprietary NMEA sentence, and return the parsers from the
-   receiver's profile (`extraParsers`).
+   receiver's profile (`extraParsers`). The NMEA connection itself needs no new code: geokit-gnss's
+   `TcpNmeaSource` and `ReconnectingNmeaAdapter` handle any NMEA-over-TCP receiver.
 4. In the app: add an `ExternalReceiverProfile` entry (stable `prefKey`, labels, port, vendor,
-   `accuracyClass`, `capabilities`) and map the vendor to your device in `di/ReceiverModule`. The UI
-   follows the capabilities, so it needs no change.
+   `accuracyClass`, `phaseCenterOffsetM` from your module, `capabilities`) and map the vendor to your
+   device in `di/ReceiverModule`. The UI follows the capabilities, so it needs no change.
 
 See [geokit-receiver-emlid](geokit-receiver-emlid/README.md#adding-another-receiver) for more detail.
 

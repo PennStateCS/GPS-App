@@ -3,7 +3,8 @@
 `io.github.pennstatecs.geokit:geokit-gnss` · version `GEOKIT_VERSION` (0.1.0-SNAPSHOT) · package `io.github.pennstatecs.geokit.gnss` · Gradle project `:geokit-gnss` in `libs/geokit-gnss`. Part of the [geokit](../README.md) libraries.
 
 Android-free GNSS core for SurReal AR: NMEA 0183 parsing, epoch fusion into position fixes, the
-satellite inventory, accuracy estimation and averaged point capture. Plain Kotlin/JVM (no Android,
+satellite inventory, accuracy estimation, averaged point capture, a TCP NMEA source with automatic
+reconnect, NMEA file replay, and receiver antenna geometry. Plain Kotlin/JVM (no Android,
 Hilt, Room or app UI types), so it can be reused by other JVM projects and tested on a desktop. It
 depends on [`:geokit-core`](../geokit-core/README.md) for the Earth math.
 
@@ -30,12 +31,15 @@ Conventions: units in names (`latDeg`, `altMslM`, `diffAgeS`), `null` means unkn
 |---|---|
 | `io.github.pennstatecs.geokit.gnss.nmea.parse` | `NmeaRegistry`, `DefaultNmeaRegistry`, `SentenceParser` and one parser per sentence |
 | `io.github.pennstatecs.geokit.gnss.nmea.sentence` | `GGA`, `RMC`, `GSA`, `GSV`, `ZDA`, `GST`, `ACCURACY`, `EBP`, `ETC` |
-| `io.github.pennstatecs.geokit.gnss.bus.adapters` | `NmeaFuser` (+ `FuserTimingStats`, `NmeaCustomStats`), `GsvMessage`, source contracts (`NmeaSource`, `Startable`, `RawNmeaProvider`) |
+| `io.github.pennstatecs.geokit.gnss.bus.adapters` | `NmeaFuser` (+ `FuserTimingStats`, `NmeaCustomStats`), `GsvMessage`, source contracts (`NmeaSource`, `Startable`, `RawNmeaProvider`, `SourceAdapter`, `SkyProvider`) |
+| `io.github.pennstatecs.geokit.gnss.link` | `TcpNmeaSource` (one TCP connection per start, dead-link detection, GST hold ticker), `ReconnectingNmeaAdapter` (exponential-backoff reconnect, health checks, sky, per-fix stamping hook), `LinkLog` / `GnssLinkLog` / `LinkLogLevel` (connection lines with keyed throttles) |
+| `io.github.pennstatecs.geokit.gnss.replay` | `NmeaLineSource`, `ReplayAdapter` (lines → `NmeaFuser` → fixes tagged `Provider.REPLAY`, and sky) |
+| `io.github.pennstatecs.geokit.gnss.receiver` | `ReceiverDevice`, `ReceiverDiscovery`, `DiscoveredReceiver`, neutral status models, `AccuracyClass`, `ReceiverCapabilities`, `AntennaGeometry` (pole / camera heights + phase-centre offset) |
 | `io.github.pennstatecs.geokit.gnss.model` | `Fix`, `RtkStatus`, `Provider`, `TimestampSource`, `SkySnapshot`, `SatInfo`, `SkyGeometry`, `Constellation`, `FixSnapshot` |
 | `io.github.pennstatecs.geokit.gnss.satellites` | `SatelliteInventory` (smoothed SNR, used flags, stale eviction → `SkySnapshot`) |
 | `io.github.pennstatecs.geokit.gnss.accuracy` | `AccuracyEstimator`, `UereTable` |
 | `io.github.pennstatecs.geokit.gnss.capture` | `ObservationSession` (averaging), `AveragingPolicy`, `CapturePreset`, `CaptureResult`, `FixFreshnessGate`, `GnssCaptureSettings` |
-| `io.github.pennstatecs.geokit.gnss.log` | `GnssLog`, `GnssLogger` |
+| `io.github.pennstatecs.geokit.gnss.log` | `GnssLog`, `GnssLogger`, `NmeaDebugSampler` (periodic raw-sentence samples in debug traces) |
 
 ## Feeding it
 
@@ -43,7 +47,7 @@ Conventions: units in names (`latDeg`, `altMslM`, `diffAgeS`), `null` means unkn
 val registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true)
 val sky = SatelliteInventory()
 val fuser = NmeaFuser(
-    provider = Provider.RS2_TCP,
+    provider = Provider.EXTERNAL_TCP,
     registry = registry,
     onFix = { fix -> println("${fix.latDeg}, ${fix.lonDeg} ${fix.rtkStatus} ±${fix.hAccM} m") },
     onGsv = { gsv -> val snapshot = sky.consume(gsv) /* satellites in view */ },
@@ -61,6 +65,44 @@ so `flushIfStale`, `flush`, `reset` and the stats getters may run on other threa
 `onGsv` are called synchronously while that lock is held, so keep them short and non-blocking.
 `NmeaRegistry.parse` is thread-safe. `SatelliteInventory`, `FixFreshnessGate` and
 `ObservationSession` are not: use each from one collector.
+
+## Connecting to a receiver over TCP
+
+`TcpNmeaSource` makes one connection per `start()` and reads until the receiver closes it, two read
+timeouts pass in silence (about 10 s: a half-open link), or `stop()` is called. `ReconnectingNmeaAdapter`
+owns it: it waits up to 10 s for the first data, then checks every second that the link is up and that
+data arrived in the last 30 s, and reconnects with backoff 1 s doubling to 30 s (+ up to 0.5 s jitter).
+
+```kotlin
+val log = GnssLinkLog()   // or your own LinkLog; share one between the source and the adapter
+val source = TcpNmeaSource(
+    scope = scope,
+    endpoint = { "192.168.42.1" to 9001 },          // asked on every attempt; null = not configured
+    registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true),
+    onLine = { line -> /* raw sentence, before parsing */ },
+    linkLog = log,
+)
+val adapter = ReconnectingNmeaAdapter(
+    scope = scope, nmea = source, inv = SatelliteInventory(),
+    stampFix = { fix -> fix.copy(receiverLabel = "Emlid Reach RS2+") },   // optional
+    linkLog = log,
+)
+adapter.start()
+scope.launch { adapter.fixes.collect { fix -> /* ... */ } }
+scope.launch { adapter.connectionState.collect { state -> /* CONNECTING, CONNECTED, ... */ } }
+adapter.reconnectNow("receiver changed")   // drop and reconnect, e.g. after a new host is saved
+adapter.stop()
+```
+
+Replay works the same way: `ReplayAdapter(scope).apply { load(myLineSource); start() }`, where
+`myLineSource` is any `NmeaLineSource` (a file, a test resource). Its fixes are `Provider.REPLAY`.
+
+## Antenna geometry
+
+`AntennaGeometry(poleHeightM, cameraBelowArpM, phaseCenterOffsetM)` gives `captureOffsetM` (mark →
+phase centre, subtracted from a captured height) and `antennaAboveCameraM` (for AR placement). Heights
+are measured to the antenna reference point; the phase-centre offset per receiver model comes from
+the receiver module (Emlid: `EmlidReachModel` in geokit-receiver-emlid).
 
 ## Logging
 
@@ -90,6 +132,11 @@ exportable log, and never carries coordinates. Debug traces (`GnssLog.every`) ar
 per key, so they cost one volatile read when disabled. In SurReal AR, `AndroidGnssLogger` sends the
 calls to logcat, the diagnostics log and the debug-only `GnssDebug` tag.
 
+The TCP source, the reconnecting adapter and replay also take a `LinkLog` for their connection and
+replay lines (connect, retry, dead link, replay started). The default `GnssLinkLog` writes them through
+`GnssLog.diagnostic*` with its own throttles; SurReal AR passes `DiagnosticsLinkLog`, which writes to
+its diagnostics logger.
+
 ## Receivers it is tested against
 
 - **Emlid Reach RS4**: real captures in `src/test/resources/nmea/`. `reach_nmea_capture.txt` is the
@@ -100,8 +147,8 @@ calls to logcat, the diagnostics log and the debug-only `GnssDebug` tag.
 - **Samsung SM-X940** tablet internal GNSS sentences: decimal SNR in GSV, no GST,
   `$GNACCURACY`. These are covered in the GSV, fuser and accuracy tests.
 
-The fixtures are also used by the app's own replay and logging tests (the app adds this folder as
-a test-resource directory).
+`ReplayAdapterTest` replays them here. The app's logging tests use them too (the app adds this
+folder as a test-resource directory).
 
 ## Using it from another Gradle project
 
