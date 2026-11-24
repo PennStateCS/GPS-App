@@ -1,0 +1,10 @@
+# SPCS2022 zone catalog for io.github.pennstatecs.geokit.crs.CrsRegistry (format: CrsCatalogCsv KDoc).
+#
+# Intentionally EMPTY. As of 2026-11 the SPCS2022 zones are not in the EPSG dataset (v12.029) or
+# PROJ 9.8.1 (only the offshore "NATRF2022 / Gulf" CRSs), and NATRF2022 has no verified
+# transformation in GeoKit. Every SPCS2022 lookup therefore reports "unsupported".
+#
+# To add zones once NGS/EPSG publish final definitions: see docs/geodesy/reference-frames-roadmap.md
+# (section 3.4) and libs/geokit-core/README.md. Rows stay non-operational until verified_by names
+# checked-in reference vectors that a geokit-core test verifies.
+zone_code,epsg,name,frame,method,parameters,unit,west,south,east,north,dataset,verified_by

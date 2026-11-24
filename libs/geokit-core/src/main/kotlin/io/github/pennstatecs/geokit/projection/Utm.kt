@@ -41,6 +41,16 @@ public object Utm {
     /** Central meridian of [zone], degrees. */
     public fun centralMeridianDeg(zone: Int): Double = (zone - 1) * 6.0 - 180.0 + 3.0
 
+    /**
+     * The cached [Tm] of [zone] / [hemisphere] ('N' or 'S'): the very object [forward] and [inverse]
+     * use (the CRS registry exposes it for its UTM definitions).
+     */
+    internal fun projection(zone: Int, hemisphere: Char): Tm {
+        require(zone in 1..60) { "UTM zone must be between 1 and 60" }
+        require(hemisphere == 'N' || hemisphere == 'S') { "Hemisphere must be 'N' or 'S'" }
+        return tm(zone, hemisphere)
+    }
+
     private fun tm(zone: Int, hemisphere: Char): Tm {
         val cache = if (hemisphere == 'S') south else north
         return synchronized(cache) {

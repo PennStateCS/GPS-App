@@ -1,13 +1,16 @@
 package io.github.pennstatecs.geokit.convert
 
-import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.datum.CoordinateEpoch
+import io.github.pennstatecs.geokit.datum.FrameTransformationLookup
+import io.github.pennstatecs.geokit.datum.FrameTransformationRegistry
 import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
 import io.github.pennstatecs.geokit.geoid.Geoid18Grid
 import io.github.pennstatecs.geokit.projection.Utm
 
 /**
  * Converts measured positions ([SourcePosition]) into an [OutputSystem]: datum (ITRF2014 ⇄
- * NAD83(2011) at the observation epoch), geographic / UTM / State Plane, length unit and height
+ * NAD83(2011), ITRF2014 ⇄ ITRF2020, chained through [frames] at the observation epoch), geographic /
+ * UTM / State Plane, length unit and height
  * reference. Stateless and thread-safe; the geoid is injected so it can be loaded lazily (a lookup
  * that returns null while the grid is loading simply makes GEOID18 heights unavailable).
  *
@@ -21,27 +24,38 @@ import io.github.pennstatecs.geokit.projection.Utm
  *   shifted at a height of 0 m. A height of exactly 0.0 is a real height.
  * - The receiver MSL height is passed through unchanged (only converted to the unit).
  *
- * Throws [IllegalArgumentException] for a latitude/longitude out of range (from [Utm.forward]).
+ * Throws [IllegalArgumentException] for a latitude/longitude out of range (from [Utm.forward]), and
+ * [IllegalStateException] if [frames] has no transformation between two [GeodeticDatum]s (never with
+ * [FrameTransformationRegistry.DEFAULT]: every datum there is connected by verified transformations).
  */
-public class CoordinateConverter(private val geoid: GeoidLookup) {
+public class CoordinateConverter(
+    private val geoid: GeoidLookup,
+    private val frames: FrameTransformationRegistry,
+) {
+
+    /** Uses [FrameTransformationRegistry.DEFAULT] for datum steps. */
+    public constructor(geoid: GeoidLookup) : this(geoid, FrameTransformationRegistry.DEFAULT)
 
     /** Uses a loaded GEOID18 grid for orthometric heights. */
     public constructor(grid: Geoid18Grid) : this(GeoidLookup.of(grid))
 
     /** Converts [source] into [output]. */
     public fun convert(source: SourcePosition, output: OutputSystem): ConvertedCoordinate {
-        val sourceIsNad83 = source.datum == GeodeticDatum.NAD83_2011
         val src = GeodeticPosition(source.latDeg, source.lonDeg, source.ellipsoidalHeightM ?: 0.0)
+        val epoch = CoordinateEpoch(source.epochYear)
+        // A source already in the needed frame is used as is; otherwise the registry's verified chain.
+        fun inFrame(datum: GeodeticDatum): GeodeticPosition =
+            if (datum.frame.coordinatesFrame == source.datum.frame.coordinatesFrame) src
+            else when (val t = frames.find(source.datum.frame, datum.frame, epoch)) {
+                is FrameTransformationLookup.Available -> t.apply(src)
+                is FrameTransformationLookup.Unavailable ->
+                    throw IllegalStateException("${t.source} → ${t.target}: ${t.reason}: ${t.explanation}")
+            }
         // Each datum computed only when needed.
-        val nad by lazy(LazyThreadSafetyMode.NONE) {
-            if (sourceIsNad83) src else Itrf2014ToNad83.forward(src, source.epochYear)
-        }
-        val itrf by lazy(LazyThreadSafetyMode.NONE) {
-            if (sourceIsNad83) Itrf2014ToNad83.inverse(src, source.epochYear) else src
-        }
+        val nad by lazy(LazyThreadSafetyMode.NONE) { inFrame(GeodeticDatum.NAD83_2011) }
 
         val datum = output.effectiveDatum
-        val geo = if (datum == GeodeticDatum.NAD83_2011) nad else itrf
+        val geo = if (datum == GeodeticDatum.NAD83_2011) nad else inFrame(datum)
 
         var eastingM: Double? = null
         var northingM: Double? = null

@@ -1,5 +1,6 @@
 package io.github.pennstatecs.geokit.convert
 
+import io.github.pennstatecs.geokit.datum.ReferenceFrame
 import io.github.pennstatecs.geokit.projection.SpcsZone
 import io.github.pennstatecs.geokit.projection.SpcsZones
 
@@ -28,10 +29,11 @@ public enum class LengthUnit(public val metresPerUnit: Double, public val symbol
 }
 
 /**
- * The geodetic datum of a latitude/longitude/ellipsoidal height. WGS84 is realised as ITRF2014 (the
- * two agree at the centimetre level, the convention GNSS receivers and ARCore use); NAD83(2011) is
- * the US realisation. Converting between them uses [io.github.pennstatecs.geokit.datum.Itrf2014ToNad83]
- * at the observation epoch.
+ * The geodetic datum of a latitude/longitude/ellipsoidal height, as selectable for conversion. Each
+ * maps to a [ReferenceFrame] ([frame]); conversions between them go through
+ * [io.github.pennstatecs.geokit.datum.FrameTransformationRegistry] at the observation epoch.
+ * [WGS84_ITRF2014] is the legacy convention "WGS84 (ITRF2014)": coordinates labelled WGS84 that are
+ * ITRF2014 coordinates ([ReferenceFrame.WGS84_AS_ITRF2014]). Constant names and EPSG values are stable.
  */
 public enum class GeodeticDatum(
     /** EPSG code of the geographic 3D CRS (lat, lon, ellipsoidal height). */
@@ -43,16 +45,28 @@ public enum class GeodeticDatum(
     WGS84_ITRF2014(Epsg.WGS84_3D, Epsg.WGS84_2D),
 
     /** NAD83(2011) (EPSG 6319 / 6318). */
-    NAD83_2011(Epsg.NAD83_2011_3D, Epsg.NAD83_2011_2D);
+    NAD83_2011(Epsg.NAD83_2011_3D, Epsg.NAD83_2011_2D),
+
+    /** ITRF2020 (EPSG 9989 / 9990), from/to the others via ITRF2014 at the observation epoch. */
+    ITRF2020(Epsg.ITRF2020_3D, Epsg.ITRF2020_2D);
+
+    /** The reference frame of this datum's coordinates. */
+    public val frame: ReferenceFrame
+        get() = when (this) {
+            WGS84_ITRF2014 -> ReferenceFrame.WGS84_AS_ITRF2014
+            NAD83_2011 -> ReferenceFrame.NAD83_2011
+            ITRF2020 -> ReferenceFrame.ITRF2020
+        }
 
     public companion object {
         /**
          * The datum of a geographic CRS EPSG code: 4979/4326 → WGS84, 6319/6318 → NAD83(2011),
-         * anything else (including null) → null (unknown).
+         * 9989/9990 → ITRF2020, anything else (including null) → null (unknown).
          */
         public fun fromEpsg(epsg: Int?): GeodeticDatum? = when (epsg) {
             Epsg.WGS84_3D, Epsg.WGS84_2D -> WGS84_ITRF2014
             Epsg.NAD83_2011_3D, Epsg.NAD83_2011_2D -> NAD83_2011
+            Epsg.ITRF2020_3D, Epsg.ITRF2020_2D -> ITRF2020
             else -> null
         }
     }
@@ -72,11 +86,17 @@ public object Epsg {
     /** NAD83(2011) geographic 2D. */
     public const val NAD83_2011_2D: Int = 6318
 
+    /** ITRF2020 geographic 3D. */
+    public const val ITRF2020_3D: Int = 9989
+
+    /** ITRF2020 geographic 2D. */
+    public const val ITRF2020_2D: Int = 9990
+
     /** True for the NAD83(2011) geographic codes (2D or 3D). */
     public fun isNad83_2011(epsg: Int?): Boolean = epsg == NAD83_2011_3D || epsg == NAD83_2011_2D
 
     /** True for a 2D geographic code (no height axis). */
-    public fun is2d(epsg: Int?): Boolean = epsg == WGS84_2D || epsg == NAD83_2011_2D
+    public fun is2d(epsg: Int?): Boolean = epsg == WGS84_2D || epsg == NAD83_2011_2D || epsg == ITRF2020_2D
 }
 
 /**
@@ -90,8 +110,9 @@ public object Epsg {
  * @property receiverMslHeightM height above mean sea level as the receiver reported it (its own geoid
  *   model), metres; null = not reported. Used only for [VerticalReference.RECEIVER_MSL], unchanged.
  * @property datum datum of lat/lon/height.
- * @property epochYear observation epoch as a decimal year (ITRF2014 ⇄ NAD83(2011) is time-dependent;
- *   see [io.github.pennstatecs.geokit.datum.Itrf2014ToNad83.decimalYear]).
+ * @property epochYear observation epoch as a decimal year, used as the coordinate epoch of the datum
+ *   transformations (they are time-dependent; see
+ *   [io.github.pennstatecs.geokit.datum.Itrf2014ToNad83.decimalYear]).
  */
 public data class SourcePosition(
     val latDeg: Double,

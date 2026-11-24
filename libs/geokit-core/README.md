@@ -2,8 +2,8 @@
 
 `io.github.pennstatecs.geokit:geokit-core` · version `GEOKIT_VERSION` (0.1.0-SNAPSHOT) · package `io.github.pennstatecs.geokit` · Gradle project `:geokit-core` in `libs/geokit-core`. Part of the [geokit](../README.md) libraries.
 
-Android-free geodesy for SurReal AR: ellipsoids and geocentric conversions, the ITRF2014 ⇄ NAD83(2011)
-Helmert transform, State Plane / UTM / transverse Mercator projections, the GEOID18 grid, local ENU
+Android-free geodesy for SurReal AR: ellipsoids and geocentric conversions, reference frames with a
+registry of verified transformations (ITRF2014 ⇄ NAD83(2011), ITRF2014 ⇄ ITRF2020), State Plane / UTM / transverse Mercator projections, the GEOID18 grid, local ENU
 frames, WGS84 geodesics (distance and bearing), the 68 % horizontal-accuracy convention, compass
 heading math, running statistics, stakeout guidance, a lat/lon plausibility check and a coordinate
 conversion engine that combines them (datum, grid system, unit and height reference in one call). Plain Kotlin/JVM (no Android, ARCore, Room or Hilt), so it can
@@ -14,8 +14,9 @@ Package root `io.github.pennstatecs.geokit`:
 | Package | Contents |
 |---|---|
 | `.ellipsoid` | `Ellipsoid` (`WGS84`, `GRS80`: `toEcef`, `fromEcef`, meridian / prime-vertical radii), `GeodeticPosition`, `EcefPosition`, `Geodesic` (`distanceM`, `initialBearingDeg`, `northEastDeltaM` on WGS84, via GeographicLib) |
-| `.datum` | `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`) |
+| `.datum` | `ReferenceFrame` (stable persistable ids, EPSG codes, reference epoch, global / plate-fixed), `CoordinateEpoch`, `FrameTransformationRegistry` (`find(source, target, epoch)` → `Available` chain of verified `FrameEdge`s or `Unavailable(UNKNOWN_FRAME / NOT_DEFINED / NOT_VERIFIED)`), `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`), `Itrf2014ToItrf2020` |
 | `.projection` | `Tm` (Krüger series, forward + inverse), `Lcc2`, `HomA`, `Utm`, `SpcsZone` / `SpcsZones` (all 118 SPCS83 zones on NAD83(2011)), `SpcsZoneLocator` / `SpcsZoneSet` / `SpcsZoneSuggestion` (zone suggestion from county-defined zone extents) |
+| `.crs` | `CrsRegistry` (catalogs `GEOGRAPHIC`, `UTM`, `SPCS83`, `SPCS2022`; `byId` / `byEpsg` → `Found` / `Unsupported` / `NotFound`, `search`, `atPosition`), `CrsDefinition` (id, EPSG, name, zone code, frame, `ProjectionMethod` + parameters, unit, `AreaOfUse`, dataset, `operational`), `CrsCatalogCsv` (catalog file format for SPCS2022) |
 | `.geoid` | `Geoid18Grid` (`fromClasspath()` loads the GEOID18 grid bundled in this jar; or from a `ByteArray` / `InputStream` of a packed SRGT grid) |
 | `.local` | `LocalEnu` (east/north/up about an origin, for short-range local work: `toEnu`, and its exact inverse `toGeodetic`) |
 | `.accuracy` | `HorizontalAccuracy` (horizontal accuracy is a **68 % radius**; vertical is **1σ**) |
@@ -50,9 +51,9 @@ out.verticalDatumName                          // "NAVD88"
 
 | Input | Options |
 |---|---|
-| Source datum (`GeodeticDatum`) | `WGS84_ITRF2014` (EPSG 4979/4326) or `NAD83_2011` (6319/6318), plus the observation epoch as a decimal year |
+| Source datum (`GeodeticDatum`) | `WGS84_ITRF2014` (EPSG 4979/4326), `NAD83_2011` (6319/6318) or `ITRF2020` (9989/9990), plus the observation epoch as a decimal year |
 | Horizontal (`TargetSystem`) | `Geographic`, `UtmAuto` (zone from longitude), `StatePlane(zoneEpsg)` (any of the 118 SPCS83 zones; unknown EPSG throws) |
-| Output datum | `WGS84_ITRF2014` or `NAD83_2011` for geographic and UTM; State Plane is always NAD83(2011) (`OutputSystem.effectiveDatum`) |
+| Output datum | `WGS84_ITRF2014`, `NAD83_2011` or `ITRF2020` for geographic and UTM; State Plane is always NAD83(2011) (`OutputSystem.effectiveDatum`) |
 | Unit (`LengthUnit`) | `METRE`, `US_SURVEY_FOOT` (1200/3937 m), `INTERNATIONAL_FOOT` (0.3048 m) |
 | Height (`VerticalReference`) | `ELLIPSOIDAL` (output datum), `GEOID18_ORTHOMETRIC` (NAD83(2011) h − N; NAVD88 / PRVD02 / VIVD09), `RECEIVER_MSL` (passed through) |
 
@@ -103,7 +104,57 @@ unreadable resource falls back to boxes; nothing throws.
 Details of the county mapping (independent cities, Broomfield CO, Washington's Grant County split, spelling
 aliases) are in the generator's docstring; its county → zone table is `tools/coords/spcs83_county_zones.csv`.
 SPCS2022 (new, layered zones) is meant to plug in as a second `SpcsZoneSet` with its own zone table and
-boundary resource in the same format; see the `SpcsZoneSet` KDoc.
+boundary resource in the same format; see the `SpcsZoneSet` KDoc and the CRS registry below.
+
+## CRS registry (`.crs`)
+
+`CrsRegistry.DEFAULT` lists the coordinate reference systems GeoKit can express positions in, as
+structured definitions rather than enum entries. It wraps the existing projections — no number changes:
+
+| Catalog | Ids | Content |
+|---|---|---|
+| `GEOGRAPHIC` | `geographic:<frame id>` | One per `ReferenceFrame`; operational only where `FrameTransformationRegistry` has a verified path from WGS84 (ITRF2014) (ITRF2014, ITRF2020, WGS84 (ITRF2014), NAD83(2011)). NATRF2022 and the WGS 84 realisations are listed non-operational. |
+| `UTM` | `EPSG:32601`…`32660`, `EPSG:32701`…`32760` | WGS 84 / UTM, frame WGS84 (ITRF2014), the cached `Tm` objects `Utm` itself uses |
+| `SPCS83` | `EPSG:<zone code>`, e.g. `EPSG:6562` | The 118 `SpcsZone`s (same objects, same EPSG codes = the values the app persists), frame NAD83(2011) |
+| `SPCS2022` | `EPSG:<code>` or `spcs2022:<zone code>` | Loaded from `crs/spcs2022_catalog.csv`; ships **empty**, so the catalog is `UNSUPPORTED` |
+
+```kotlin
+val reg = CrsRegistry.DEFAULT
+when (val l = reg.byEpsg(6562)) {                  // or byId("EPSG:6562"), byId("6562")
+    is CrsLookup.Found -> l.definition.forward(lat, lon)   // identical to SpcsZones.byEpsg(6562)!!.projection.forward
+    is CrsLookup.Unsupported -> show(l.explanation)        // SPCS2022 ids, non-operational entries
+    is CrsLookup.NotFound -> …
+}
+reg.search("penn north")                           // zone picker: every term must match name / zone code / EPSG / id
+reg.search("3701", CrsCatalogId.SPCS83)            // exact id / EPSG / zone-code matches rank first
+reg.atPosition(lat, lon, CrsCatalogId.SPCS83)      // SpcsZoneLocator candidates, suggested first
+reg.atPosition(lat, lon, CrsCatalogId.UTM)         // the zone of the longitude, hemisphere from the latitude
+```
+
+Each `CrsDefinition` carries the projection method (`ProjectionMethod`: EPSG 9807 / 9802 / 9812) and its
+named parameters (`lat_0`, `lon_0`, `k_0`, `x_0`, `y_0`, …), unit, EPSG area of use, the dataset
+(`EPSG v12.029 via PROJ 9.8.1 (pyproj 3.8.0)`) and `operational`. Only operational definitions are
+returned as `Found`, by `search` (unless `includeNonOperational`) and by `atPosition`; a non-operational
+definition has no `projection`. Geographic CRSs are looked up by frame (`geographic(frame)`), because
+WGS 84 and WGS84 (ITRF2014) share EPSG 4326. The registry is lazy and thread-safe. Tests
+(`CrsRegistryTest`) run `spcs83_vectors.csv` and `utm_vectors.csv` through the registry and require
+bit-identical results to the direct `SpcsZone` / `Utm` paths.
+
+**SPCS2022.** As of 2026-11 the SPCS2022 zones are not in the EPSG dataset (v12.029) or PROJ 9.8.1 (only
+the offshore "NATRF2022 / Gulf" CRSs) and NATRF2022 has no verified transformation, so every SPCS2022
+lookup is `Unsupported` with `CrsRegistry.SPCS2022_UNSUPPORTED`. The catalog file format (`CrsCatalogCsv`
+KDoc) is:
+
+```
+zone_code,epsg,name,frame,method,parameters,unit,west,south,east,north,dataset,verified_by
+3701,,Pennsylvania North,natrf2022,lcc2sp,lat_0=…;lon_0=…;lat_1=…;lat_2=…;x_0=…;y_0=…,metre,-80.53,40.6,-74.7,42.53,NGS SPCS2022 v1,coords/spcs2022_vectors.csv
+```
+
+A row is operational only if `verified_by` names checked-in reference vectors **and** method, parameters,
+frame ellipsoid and unit are valid; otherwise it loads non-operational with a `statusNote`. Rows that cannot
+be represented (column count, unknown frame, malformed numbers, duplicate id, an id already used by UTM /
+SPCS83) are skipped and listed in `CrsCatalog.problems`; loading never throws. How to add the real catalog:
+`docs/geodesy/reference-frames-roadmap.md` §3.4.
 
 ## Verified accuracy
 
@@ -115,6 +166,8 @@ row live in `libs/geokit-core/src/test` unless noted.
 | SPCS83, all 118 zones (LCC 2SP, TM, HOM A) | worst 1.5 × 10⁻⁷ m (< 1 µm) | `SpcsZonesTest`: 9 points per zone vs PROJ (`spcs83_vectors.csv`) |
 | UTM forward / inverse / round trip | 1.8 × 10⁻⁷ / 5.0 × 10⁻⁸ / 1.6 × 10⁻⁷ m (< 1 mm required) | `UtmProjTest`: 1 134 PROJ vectors, 9 zones, both hemispheres, zone edges (`tools/utm/gen_utm_vectors.py`) |
 | ITRF2014 → NAD83(2011) Helmert | worst 1.9 × 10⁻⁹ m vs PROJ at 5 US sites (PA, CA, WA, FL, AK), epochs 2020–2030 | `convert/ReferencePointsTest` (PROJ point + round trip) |
+| ITRF2014 ⇄ ITRF2020 Helmert; ITRF2020 → NAD83(2011) chain | worst 8.7 × 10⁻⁸ m horizontal / 4.9 × 10⁻⁷ m vertical vs PROJ (EPSG:7912 ⇄ 9989, 19 points incl. AK/HI/PR, poles, antimeridian × epochs 2010–2026.9); the chain via ITRF2014 within 1.0 × 10⁻⁷ m of PROJ's direct EPSG "ITRF2020 to NAD83(2011) (1)" | `datum/FrameTransformationRegistryTest` (`itrf2020_vectors.csv`, `tools/coords/gen_itrf2020_vectors.py`) |
+| Registry routing in the converter | legacy WGS84 (ITRF2014) / NAD83(2011) results bit-identical to the pre-registry converter (> 50 000 combinations) | `convert/LegacyConverterIdentityTest` |
 | GEOID18 | worst 0.46 mm on the 600 grid vectors (`geoid18_vectors.csv`, 1 mm tolerance); within 1.3 mm of the 4 NGS geoid-service points; 11 NGS points across CONUS, PR and VI within 5 mm | `Geoid18GridTest` |
 | ECEF (GRS80 / WGS84) | NCAT XYZ to 1 mm (NCAT's rounding); merged code within 7.2 × 10⁻⁷ m of the previous implementations | `convert/ReferencePointsTest`, `LegacyEllipsoidComparisonTest` |
 | Conversion engine | SPCS (all PROJ vectors) and UTM vectors to 1 µm through the engine; PROJ datum shift to 2 × 10⁻⁹ °; NCAT PA North / UTM 18N to 1–2 mm; NGS GEOID18 heights to 1 cm | `convert/CoordinateConverterTest` |

@@ -110,6 +110,28 @@ downloads and bundles nothing.
   PATRF/CATRF/MATRF per zone).
 - Zone suggestion uses zone **boundaries** (polygons) for both generations, not EPSG boxes.
 
+**Status (Phase 2, WP D, 2026-11).** geokit-core `.crs.CrsRegistry` holds structured CRS definitions in
+catalogs `GEOGRAPHIC`, `UTM`, `SPCS83` (ids `EPSG:<code>` = the persisted settings values, numbers
+unchanged and pinned bit-for-bit to the direct `SpcsZone` / `Utm` paths) and `SPCS2022`. The SPCS2022
+catalog is read from `libs/geokit-core/src/main/resources/crs/spcs2022_catalog.csv` (format: `CrsCatalogCsv`
+KDoc / geokit-core README) and **ships with no zones**: the zones are not in EPSG v12.029 or PROJ 9.8.1
+(only offshore "NATRF2022 / Gulf"), so every SPCS2022 lookup reports *unsupported* and nothing can be
+selected.
+
+How to add SPCS2022 once NGS publishes final definitions and EPSG/PROJ include them (see §6):
+
+1. Generate the rows (zone code, EPSG code if assigned, name, frame `natrf2022` — or the PATRF/CATRF/MATRF
+   frame once `ReferenceFrame` has it —, method token, parameters, area of use, dataset/version) from the
+   released EPSG database with a script under `libs/geokit-core/tools/coords/`, like `gen_spcs.py`. Leave
+   `verified_by` empty: the rows load as non-operational.
+2. Generate PROJ reference vectors per zone (as `spcs83_vectors.csv`), add a test that runs them through
+   `CrsRegistry`, and only then fill `verified_by` for the zones that pass.
+3. Add the zone polygons as a second `SpcsZoneSet` (layered zones overlap legally) and route
+   `atPosition(…, SPCS2022)` through its locator.
+4. Converter/app: a `TargetSystem` for SPCS2022 needs a verified ITRF2020 → NATRF2022 transformation in
+   `FrameTransformationRegistry`; until then an operational SPCS2022 projection is still unusable for GNSS
+   positions and must stay unselectable.
+
 ## 4. Backward compatibility and stored points
 
 Rules:
