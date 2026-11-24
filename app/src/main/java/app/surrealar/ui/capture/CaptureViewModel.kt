@@ -310,7 +310,8 @@ class CaptureViewModel @Inject constructor(
 
         // Frame the external receiver delivered (Settings → Coordinates → External receiver datum at
         // capture start), for provenance only: the feed already normalised the fixes to WGS84. Null when
-        // the setting couldn't be read, or not an external receiver.
+        // the setting couldn't be read, or not an external receiver. Known limitation: a datum change
+        // while averaging records the capture-start frame (provenance only; numbers unaffected).
         val receiverFrame = if (src == LocationSourceType.EXTERNAL)
             snap?.coordinateSystemSettings?.externalReceiverDatum?.frameToken()
         else null

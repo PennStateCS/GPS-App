@@ -795,8 +795,9 @@ class CoordinateDetailFragment : Fragment() {
         container.removeAllViews()
         val inflater = LayoutInflater.from(requireContext())
         // The stored measurement, in the datum it was captured in (WGS84, or NAD83(2011) for an
-        // external receiver on NAD83 corrections). The Location card below re-expresses it.
-        val stored = if (app.surrealar.coords.StoredDatum.isNad83(c.crsEpsg)) "NAD83" else "WGS84"
+        // external receiver on NAD83 corrections; ITRF2020 for an imported 9989/9990 point). The
+        // Location card below re-expresses it.
+        val stored = app.surrealar.coords.StoredDatum.label(c.crsEpsg)
         val tiles = listOf(
             // Same precision as the rows below: 8-decimal degrees, mm-level heights (0.01 in feet).
             DetailRow("Latitude ($stored)", "${CoordinateDetailFormatter.fmt8(c.latitude)}°"),

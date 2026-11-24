@@ -84,6 +84,25 @@ class CoordinateBackupProvenanceTest {
     }
 
     @Test
+    fun implausibleCoordinateEpoch_isRestoredAsUnknown() {
+        // Review LOW-3: only a finite decimal year in 1980..2100 is kept; the point itself is restored.
+        fun epochOf(raw: String): Double? {
+            val json = """{"format":"surreal-coordinate-backup","schemaVersion":1,"coordinates":[
+                {"id":"e","name":"E","latitude":41.0,"longitude":-76.0,"altitude":300.0,"timestamp":5,"color":0,
+                 "icon":"","coordinateEpoch":$raw}]}"""
+            val result = CoordinateBackup.parse(json)
+            assertTrue(raw, result.skippedInvalid.isEmpty())
+            return result.coordinates.single().coordinateEpoch
+        }
+        for (bad in listOf("0", "0.0", "-2026.5", "1979.99", "2100.5", "1e300", "\"NaN\"", "\"Infinity\"", "\"-Infinity\"", "\"soon\"")) {
+            assertNull(bad, epochOf(bad))
+        }
+        assertEquals(1980.0, epochOf("1980")!!, 0.0)
+        assertEquals(2026.886, epochOf("2026.886")!!, 0.0)
+        assertEquals(2100.0, epochOf("2100.0")!!, 0.0)
+    }
+
+    @Test
     fun explicitNulls_andUnknownFutureKeys_areAccepted() {
         val json = """{"format":"surreal-coordinate-backup","schemaVersion":3,"futureRootKey":{"x":1},"coordinates":[
             {"id":"f","name":"Future","latitude":41.0,"longitude":-76.0,"altitude":300.0,"timestamp":5,"color":0,

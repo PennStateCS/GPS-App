@@ -29,13 +29,36 @@ object StoredDatum {
     const val NAD83_2011_3D = Epsg.NAD83_2011_3D
     const val NAD83_2011_2D = Epsg.NAD83_2011_2D
 
+    const val ITRF2020_3D = Epsg.ITRF2020_3D
+    const val ITRF2020_2D = Epsg.ITRF2020_2D
+
     fun isNad83(epsg: Int?) = Epsg.isNad83_2011(epsg)
+
+    /** True for a point stored in ITRF2020 (EPSG 9989/9990). Captures never store it today (imports could). */
+    fun isItrf2020(epsg: Int?) = epsg == ITRF2020_3D || epsg == ITRF2020_2D
+
+    /**
+     * Datum of stored lat/lon/height for conversions: 6318/6319 → NAD83(2011), 9989/9990 → ITRF2020,
+     * everything else (4326/4979, null, unknown codes) → WGS84 (ITRF2014), the historical default.
+     */
+    fun geodeticDatum(epsg: Int?): GeodeticDatum = GeodeticDatum.fromEpsg(epsg) ?: GeodeticDatum.WGS84_ITRF2014
+
+    /** Short label of the stored datum for display: "NAD83", "ITRF2020" or "WGS84". */
+    fun label(epsg: Int?): String = when (geodeticDatum(epsg)) {
+        GeodeticDatum.NAD83_2011 -> "NAD83"
+        GeodeticDatum.ITRF2020 -> "ITRF2020"
+        GeodeticDatum.WGS84_ITRF2014 -> "WGS84"
+    }
 
     /**
      * A stored point as WGS84 (ITRF2014) for placement on Google Maps / ARCore Geospatial, which work
      * in WGS84. Points already in WGS84 come back unchanged (the same instance); NAD83(2011) points
      * (imports, or captures from before the feed normalised receiver output) are transformed at
      * their capture epoch. Use for plotting only, not for re-saving over the stored record.
+     *
+     * ITRF2020 points (EPSG 9989/9990) are plotted as they are, like WGS84: ITRF2020 and ITRF2014 differ by
+     * a few millimetres (EPSG Helmert: ~1.4 mm translations, 0.42 ppb), far below Maps/ARCore accuracy.
+     * Conversions ([SourcePosition.datum]) apply the exact ITRF2020 → ITRF2014 step instead.
      */
     fun toWgs84(c: app.surrealar.domain.model.Coordinate): app.surrealar.domain.model.Coordinate {
         if (!isNad83(c.crsEpsg)) return c
@@ -63,11 +86,20 @@ data class SourcePosition(
     val ellipsoidalHeightM: Double?,
     /** Receiver-reported MSL height, metres (for VerticalReference.RECEIVER_MSL). */
     val receiverMslM: Double?,
-    /** True if lat/lon/height are NAD83(2011); false = WGS84/ITRF2014. */
+    /** True if lat/lon/height are NAD83(2011); false = WGS84/ITRF2014 (or ITRF2020, see [datum]). */
     val isNad83: Boolean,
     /** Observation epoch as a decimal year (ITRF ⇄ NAD83 is time-dependent). */
     val epochYear: Double,
-)
+    /**
+     * Datum of lat/lon/height. Defaults from [isNad83] (NAD83(2011) or WGS84 (ITRF2014)); stored points in
+     * ITRF2020 pass [GeodeticDatum.ITRF2020] so they are transformed, never read as WGS84.
+     */
+    val datum: GeodeticDatum = if (isNad83) GeodeticDatum.NAD83_2011 else GeodeticDatum.WGS84_ITRF2014,
+) {
+    init {
+        require(isNad83 == (datum == GeodeticDatum.NAD83_2011)) { "isNad83=$isNad83 contradicts datum $datum" }
+    }
+}
 
 /** A position expressed in the user's chosen coordinate system. Lengths are in [unit]. */
 data class ConvertedPosition(
@@ -192,7 +224,7 @@ class CoordinateConverter(
 fun SourcePosition.toGeoSource(): GeoSourcePosition = GeoSourcePosition(
     latDeg = latDeg, lonDeg = lonDeg,
     ellipsoidalHeightM = ellipsoidalHeightM, receiverMslHeightM = receiverMslM,
-    datum = if (isNad83) GeodeticDatum.NAD83_2011 else GeodeticDatum.WGS84_ITRF2014,
+    datum = datum,
     epochYear = epochYear,
 )
 
