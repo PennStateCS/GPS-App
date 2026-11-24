@@ -161,7 +161,7 @@ class RenderMapFragment : Fragment() {
             map = { googleMap },
             context = { context },
             markers = markers,
-            liveLatLng = { lastFixLatLng },
+            liveLatLng = { live.lastFixLatLng },
             coordinateSystemService = coordinateSystemService,
             coordSystemSettings = { coordSystemSettings },
             mapUiVm = mapUiVm,
@@ -177,7 +177,7 @@ class RenderMapFragment : Fragment() {
             mapView = { mapView },
             mapUiVm = mapUiVm,
             markers = markers,
-            liveLatLng = { lastFixLatLng },
+            liveLatLng = { live.lastFixLatLng },
             showSnackbar = ::showSnackbar,
         )
     }
@@ -218,26 +218,31 @@ class RenderMapFragment : Fragment() {
             mapUiVm = mapUiVm,
             coordinateSystemService = coordinateSystemService,
             modelRepository = modelRepository,
-            liveLatLng = { lastFixLatLng },
+            liveLatLng = { live.lastFixLatLng },
             onSelectionChanged = { id -> drawer.setSelectedId(id) },
             logMapEvent = ::logMapEvent,
             refreshMapDiag = ::refreshMapDiag,
         )
     }
 
-    // Live tracking
-    private var currentMarker: Marker? = null
-    // Map-display-only toggle for the live-location overlays. Does NOT affect fix collection,
-    // recenter, or stakeout — those use the latest fix (lastFixLatLng / currentFix) directly.
-    // TODO: persist via a future map-display settings model; fragment-only state for now.
-    private var showCurrentLocationOnMap = true
-    private var lastFixLatLng: LatLng? = null
-    private var accuracyCircle: Circle? = null
-    private var liveTrail: Polyline? = null
-    private val trailPoints = mutableListOf<LatLng>()
-    private var lastTrailFix: Fix? = null
-    private var currentFix: Fix? = null
-    private var lastCurrentMarkerHue: Float? = null
+    // Live GNSS position (owner of the latest fix): marker, accuracy circle, trail, heading arrow.
+    private val live: LiveTrackingController by lazy {
+        LiveTrackingController(
+            map = { googleMap },
+            context = { context },
+            fixes = fixSwitchboard.fixes,
+            fixStale = fixSwitchboard.fixStale,
+            activeProvider = sourceSettings.activeProvider,
+            locationSource = locationSourceRepo.locationSource,
+            compassHeading = { compassHeadingDeg },
+            onLivePosition = { pos ->
+                try { updateStakeoutCalculations(pos) } catch (e: Exception) { logFail("live.updateStakeoutCalculations", e) }
+                // Distance labels follow the live position, throttled to avoid heavy marker rebuilds.
+                overlays.refreshDistanceLabelsIfDue()
+            },
+        )
+    }
+
     private var lastStakeoutMarkerHue: Float? = null
 
     // Stakeout
@@ -277,14 +282,10 @@ class RenderMapFragment : Fragment() {
     private var toneGenerator: android.media.ToneGenerator? = null
     // TRUE heading (declination at the latest FixSwitchboard fix, display rotation, flat/upright).
     private val headingProvider = HeadingProvider(
-        latestFix = { currentFix },
+        latestFix = { live.currentFix },
         // Before the first fix: declination from the last known position (changes little over tens of km).
         lastKnownPosition = { if (::lastKnownPositionStore.isInitialized) lastKnownPositionStore.get() else null },
     )
-    // Current-location heading indicator (a flat, rotating arrow shown under the My Location marker).
-    private var headingMarker: Marker? = null
-    private var headingDescriptor: BitmapDescriptor? = null
-    private var lastAppliedHeadingDeg: Double? = null
     private val rotationListener = object : android.hardware.SensorEventListener {
         override fun onSensorChanged(event: android.hardware.SensorEvent) {
             if (event.sensor.type != android.hardware.Sensor.TYPE_ROTATION_VECTOR) return
@@ -294,7 +295,7 @@ class RenderMapFragment : Fragment() {
             logHeadingSourceIfChanged(null)
             // Keep the on-map heading arrow following the compass between fixes (throttled). Delivered
             // on the main thread, so touching the map here is safe.
-            updateHeadingIndicator()
+            live.updateHeadingIndicator()
         }
         override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {
             app.surrealar.util.diagnostics.HeadingDiagnostics.onCompassAccuracy(accuracy)
@@ -339,7 +340,7 @@ class RenderMapFragment : Fragment() {
         mapUiVm.state.let { s ->
             tools.restoreState(s.mapType, s.isMapToolsOpen)
             overlays.restoreModes(s.gridMode, s.pointLabelMode)
-            showCurrentLocationOnMap = s.showCurrentLocation
+            live.restoreShowCurrentLocation(s.showCurrentLocation)
             drawer.restoreState(s.isLeftPanelCollapsed)
             selection.restoreState(s.selectedCoordinateId)
         }
@@ -390,7 +391,7 @@ class RenderMapFragment : Fragment() {
             }
             overlays.redrawGrid()   // restore the grid if a mode was active before view recreation
             bindData()
-            startFixCollection()
+            live.collectFixes(viewLifecycleOwner)
             setupMapClickListener()
             app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
                 it.copy(cameraRestored = cameraRestored)
@@ -400,7 +401,7 @@ class RenderMapFragment : Fragment() {
 
         // Map Tools overlay wiring. The toggle slides the panel in/out (AR pattern); each row
         // delegates to the SAME existing map action handlers — only the presentation changed.
-        tools.bindViews(root, showCurrentLocationOnMap, onMyLocationClick = { toggleMyLocationVisibility() })
+        tools.bindViews(root, live.showCurrentLocationOnMap, onMyLocationClick = { toggleMyLocationVisibility() })
         root.findViewById<View>(R.id.btnMapCenter)?.setOnClickListener { camera.recenterMap() }
         overlays.bindViews(root)   // Grid + Labels rows
         root.findViewById<View>(R.id.btnMapZoomIn)?.setOnClickListener { camera.zoomIn() }
@@ -457,7 +458,7 @@ class RenderMapFragment : Fragment() {
         }
 
         drawer.initPanel()
-        startProviderObservation()
+        live.observeProviderChanges(viewLifecycleOwner)
     }
 
     // ── Lifecycle pass-throughs ────────────────────────────────────────────────
@@ -476,7 +477,7 @@ class RenderMapFragment : Fragment() {
     }
 
     override fun onStop() {
-        try { clearLiveTrail(); clearAccuracyCircle(); mapView?.onStop() } catch (e: Exception) { logFail("onStop", e) }
+        try { live.onStop(); mapView?.onStop() } catch (e: Exception) { logFail("onStop", e) }
         super.onStop()
     }
 
@@ -485,14 +486,12 @@ class RenderMapFragment : Fragment() {
             stopGuidance()   // release tone, clear keep-screen-on
             fragmentResumed = false
             unregisterCompass()   // make sure the shared sensor is released with the view
-            clearLiveTrail(); clearAccuracyCircle()
-            overlays.onDestroyView()   // grid lines, label markers + label cache, Grid/Labels rows
-            currentMarker?.remove(); currentMarker = null
-            headingMarker?.remove(); headingMarker = null; lastAppliedHeadingDeg = null
             stakeoutLine?.remove(); stakeoutLine = null
         } catch (e: Exception) { logFail("onDestroyView cleanup", e) }
-        lastCurrentMarkerHue = null
         lastStakeoutMarkerHue = null
+        // Map objects go before mapView.onDestroy(); each component catches/logs its own cleanup.
+        live.onDestroyView()       // trail, accuracy circle, current marker, heading arrow
+        overlays.onDestroyView()   // grid lines, label markers + label cache, Grid/Labels rows
         // The map + its markers are destroyed with the view. Drop the stale marker references and the
         // observe-guard so that when this fragment's view is recreated (e.g. returning from the point
         // Details screen), bindData() re-attaches the coordinate observer and rebuilds markers on the
@@ -511,95 +510,6 @@ class RenderMapFragment : Fragment() {
         // can draw on it between view destruction and recreation.
         mapView = null; googleMap = null
         super.onDestroyView()
-    }
-
-    // ── GNSS fix collection ────────────────────────────────────────────────────
-
-    private fun startProviderObservation() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                var previousProvider: app.surrealar.gnss.source.SourceSettings.ProviderChoice? = null
-                sourceSettings.activeProvider.collect { provider ->
-                    if (previousProvider != null && previousProvider != provider) {
-                        clearLiveTrail()
-                        clearAccuracyCircle()
-                        currentMarker?.remove(); currentMarker = null
-                        removeHeadingIndicator()
-                        lastFixLatLng = null
-                        currentFix = null
-                        lastCurrentMarkerHue = null
-                    }
-                    previousProvider = provider
-                }
-            }
-        }
-    }
-
-    private fun startFixCollection() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                try {
-                    // Live position from the GNSS feed, only when it comes from the SELECTED source
-                    // (same rule as the toolbar and Home map): during the External connecting window
-                    // the live provider can still be Internal, and the map must not show that as the
-                    // receiver's position.
-                    kotlinx.coroutines.flow.combine(fixSwitchboard.fixes, locationSourceRepo.locationSource) { fix, src -> fix to src }
-                        .conflate()
-                        .sample(250)
-                        .collect { (fix, src) ->
-                            val matches = if (src == app.surrealar.domain.model.LocationSourceType.INTERNAL)
-                                fix.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL
-                            else fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL
-                            if (matches) updateLiveTracking(fix) else clearLiveMarker()
-                        }
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    // The map stops following GNSS until the screen restarts.
-                    logFail("fix collector", e, 'E')
-                }
-            }
-        }
-        // Fixes stopped (signal lost / receiver disconnected): remove the live marker instead of
-        // leaving a frozen position on the map that looks current. It reappears with the next fix.
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                fixSwitchboard.fixStale.collect { stale -> if (stale) clearLiveMarker() }
-            }
-        }
-    }
-
-    /** Removes the live-position overlays (they come back with the next matching GNSS fix). */
-    private fun clearLiveMarker() {
-        if (currentMarker == null && currentFix == null && lastFixLatLng == null) return
-        clearAccuracyCircle()
-        currentMarker?.remove(); currentMarker = null
-        removeHeadingIndicator()
-        currentFix = null
-        lastFixLatLng = null   // recenter must not jump to a position that is no longer live
-        lastCurrentMarkerHue = null
-    }
-
-    private fun updateLiveTracking(fix: Fix) {
-        try {
-            if (fix.latDeg !in -90.0..90.0 || fix.lonDeg !in -180.0..180.0) return
-            val pos = LatLng(fix.latDeg, fix.lonDeg)
-            currentFix = fix
-            lastFixLatLng = pos   // always tracked — recenter/stakeout use this regardless of display toggle
-            // The current-location overlays are display-only; the toggle hides them without affecting
-            // fix collection, recenter, or stakeout (which run below/elsewhere off the latest fix).
-            if (showCurrentLocationOnMap) {
-                // Per fix: each step logs at most once a minute (logFail).
-                try { updateCurrentMarker(fix.latDeg, fix.lonDeg, fix.rtkStatus) } catch (e: Exception) { logFail("live.updateCurrentMarker", e) }
-                try { updateAccuracyCircle(pos, fix.hAccM) } catch (e: Exception) { logFail("live.updateAccuracyCircle", e) }
-                try { updateLiveTrail(pos, fix) } catch (e: Exception) { logFail("live.updateLiveTrail", e) }
-                try { updateHeadingIndicator() } catch (e: Exception) { logFail("live.updateHeadingIndicator", e) }
-            }
-            try { updateStakeoutCalculations(pos) } catch (e: Exception) { logFail("live.updateStakeoutCalculations", e) }
-            // Distance labels follow the live position, throttled to avoid heavy marker rebuilds.
-            overlays.refreshDistanceLabelsIfDue()
-        } catch (e: Exception) {
-            logFail("live.updateLiveTracking", e, 'E')
-        }
     }
 
     // ── Stakeout calculations ──────────────────────────────────────────────────
@@ -656,14 +566,14 @@ class RenderMapFragment : Fragment() {
 
     /** Re-render the stakeout card from the latest fix, or the waiting state if none yet. */
     private fun refreshStakeout() {
-        val fix = lastFixLatLng
+        val fix = live.lastFixLatLng
         if (fix != null) updateStakeoutCalculations(fix) else showStakeoutWaiting()
     }
 
     /** Live horizontal accuracy (the only GNSS detail in the card) + non-blocking low-accuracy warning. */
     private fun updateStakeoutAccuracy() {
         val tv = txtStakeoutAccuracy ?: return
-        val acc = currentFix?.hAccM
+        val acc = live.currentFix?.hAccM
         if (acc == null || acc <= 0.0) { tv.visibility = View.GONE; return }
         tv.visibility = View.VISIBLE
         if (acc > stakeoutSettings.warningAccuracyMeters) {
@@ -783,8 +693,8 @@ class RenderMapFragment : Fragment() {
         val (source, heading) = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.resolveHeading(
             preferCompass = s.guidanceUsesCompassHeading,
             compassHeadingDeg = compassHeadingDeg,
-            courseOverGroundDeg = currentFix?.courseDeg,
-            speedMps = currentFix?.speedMps,
+            courseOverGroundDeg = live.currentFix?.courseDeg,
+            speedMps = live.currentFix?.speedMps,
         )
         val relative = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.relativeBearing(bearingToTargetDeg, heading)
         // Arrow shows the relative direction when heading is known, else points at the map-north bearing.
@@ -823,7 +733,7 @@ class RenderMapFragment : Fragment() {
      */
     private fun syncCompass() {
         val guidanceWants = isGuidanceActive && stakeoutSettings.guidanceUsesCompassHeading
-        val myLocationWants = showCurrentLocationOnMap
+        val myLocationWants = live.showCurrentLocationOnMap
         val needed = fragmentResumed && (guidanceWants || myLocationWants)
         if (needed) registerCompass() else unregisterCompass()
     }
@@ -913,94 +823,6 @@ class RenderMapFragment : Fragment() {
         } catch (_: Exception) { null }
     }
 
-    // ── Current position marker ────────────────────────────────────────────────
-
-    private fun updateCurrentMarker(lat: Double, lon: Double, rtkStatus: RtkStatus = RtkStatus.NONE) {
-        val pos = LatLng(lat, lon)
-        lastFixLatLng = pos
-        val hue = when (rtkStatus) {
-            RtkStatus.FIX            -> BitmapDescriptorFactory.HUE_GREEN
-            RtkStatus.FLOAT          -> BitmapDescriptorFactory.HUE_YELLOW
-            RtkStatus.DGPS           -> BitmapDescriptorFactory.HUE_AZURE
-            RtkStatus.SINGLE         -> BitmapDescriptorFactory.HUE_ORANGE
-            RtkStatus.DEAD_RECKONING -> BitmapDescriptorFactory.HUE_VIOLET
-            RtkStatus.NONE,
-            RtkStatus.INVALID        -> BitmapDescriptorFactory.HUE_RED
-        }
-        if (currentMarker == null) {
-            currentMarker = googleMap?.addMarker(
-                MarkerOptions().position(pos).title("Current Position")
-                    .icon(BitmapDescriptorFactory.defaultMarker(hue))
-            )
-            lastCurrentMarkerHue = hue
-        } else {
-            try {
-                currentMarker?.position = pos
-                if (hue != lastCurrentMarkerHue) {
-                    currentMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
-                    lastCurrentMarkerHue = hue
-                }
-            } catch (e: Exception) { logFail("live.currentMarker position", e) }
-        }
-    }
-
-    // ── Accuracy circle ────────────────────────────────────────────────────────
-
-    private fun updateAccuracyCircle(position: LatLng, hAccM: Double?) {
-        val map = googleMap ?: return
-        val accuracy = hAccM?.takeIf { it > 0 && it < 1000 }
-        if (accuracy == null) {
-            accuracyCircle?.remove(); accuracyCircle = null
-            return
-        }
-        val existing = accuracyCircle
-        if (existing != null) {
-            try { existing.center = position; existing.radius = accuracy; return }
-            catch (e: Exception) { logFail("live.accuracyCircle update (recreating)", e); existing.remove(); accuracyCircle = null }
-        }
-        try {
-            accuracyCircle = map.addCircle(
-                CircleOptions().center(position).radius(accuracy)
-                    .strokeColor(0x880000FF.toInt()).fillColor(0x220000FF.toInt()).strokeWidth(2f)
-            )
-        } catch (e: Exception) { logFail("live.accuracyCircle add", e) }
-    }
-
-    private fun clearAccuracyCircle() { accuracyCircle?.remove(); accuracyCircle = null }
-
-    // ── Live trail ─────────────────────────────────────────────────────────────
-
-    private fun updateLiveTrail(currentPos: LatLng, fix: Fix) {
-        val map = googleMap ?: return
-        if (!shouldAddTrailPoint(currentPos, fix)) return
-        try {
-            trailPoints.add(currentPos); lastTrailFix = fix
-            if (trailPoints.size > MAX_TRAIL_POINTS) trailPoints.removeAt(0)
-            if (trailPoints.size < 2) return
-            val existing = liveTrail
-            if (existing != null) {
-                try { existing.points = trailPoints; return }
-                catch (e: Exception) { logFail("live.liveTrail update (recreating)", e); existing.remove(); liveTrail = null }
-            }
-            liveTrail = map.addPolyline(
-                // Not geodesic: at survey scale the great-circle and straight segments are identical, and the
-                // geodesic version is recomputed for up to MAX_TRAIL_POINTS points on every new point.
-                PolylineOptions().addAll(trailPoints).color(0xFFFF6B35.toInt()).width(4f).geodesic(false)
-            )
-        } catch (e: Exception) { logFail("live.liveTrail", e) }
-    }
-
-    private fun shouldAddTrailPoint(pos: LatLng, fix: Fix): Boolean {
-        val lastFix = lastTrailFix ?: return true
-        val lastPos = trailPoints.lastOrNull() ?: return true
-        if (calculateDistance(lastPos, pos) >= MIN_DISTANCE_METERS) return true
-        val cc = fix.courseDeg; val lc = lastFix.courseDeg
-        if (cc != null && lc != null && calculateHeadingChange(lc, cc) >= MIN_HEADING_CHANGE_DEGREES) return true
-        return false
-    }
-
-    private fun clearLiveTrail() { liveTrail?.remove(); liveTrail = null; trailPoints.clear(); lastTrailFix = null }
-
     // ── Data binding ───────────────────────────────────────────────────────────
 
     private fun bindData() {
@@ -1088,9 +910,9 @@ class RenderMapFragment : Fragment() {
                     gridMode = overlays.gridMode.label,
                     gridSpacing = overlays.currentGridSpacingM?.let { m -> MapGrid.formatSpacing(m) },
                     pointLabelMode = overlays.pointLabelMode.label,
-                    currentLocationVisible = showCurrentLocationOnMap,
-                    headingAvailable = headingMarker != null,
-                    accuracyCircleVisible = accuracyCircle != null,
+                    currentLocationVisible = live.showCurrentLocationOnMap,
+                    headingAvailable = live.headingAvailable,
+                    accuracyCircleVisible = live.accuracyCircleVisible,
                     markersTotal = total,
                     markersVisible = visible,
                     selectedActive = selection.selectedCoordinateId != null,
@@ -1104,97 +926,13 @@ class RenderMapFragment : Fragment() {
     // ── My Location display toggle (map display only) ──────────────────────────
 
     private fun toggleMyLocationVisibility() {
-        showCurrentLocationOnMap = !showCurrentLocationOnMap
-        mapUiVm.update { it.copy(showCurrentLocation = showCurrentLocationOnMap) }
-        tools.updateMyLocationRowState(showCurrentLocationOnMap)
-        applyCurrentLocationVisibility()
+        val show = !live.showCurrentLocationOnMap
+        mapUiVm.update { it.copy(showCurrentLocation = show) }
+        tools.updateMyLocationRowState(show)
+        live.setShowCurrentLocation(show)   // shows/hides the live overlays only
         syncCompass()   // My Location heading shares the one compass listener
-        logMapEvent("MAP", "Map location overlay ${if (showCurrentLocationOnMap) "on" else "off"}")
-        showSnackbar(if (showCurrentLocationOnMap) "Showing my location" else "Hiding my location")
-    }
-
-    /**
-     * Shows/hides the live-location overlays (marker, accuracy circle, trail, heading arrow) only.
-     * The latest fix is untouched, so recenter and stakeout keep working while hidden. When re-enabled,
-     * the marker/accuracy/arrow are recreated from the latest known fix; the trail resumes on next fix.
-     */
-    private fun applyCurrentLocationVisibility() {
-        if (showCurrentLocationOnMap) {
-            currentFix?.let { f ->
-                if (f.latDeg in -90.0..90.0 && f.lonDeg in -180.0..180.0) {
-                    updateCurrentMarker(f.latDeg, f.lonDeg, f.rtkStatus)
-                    updateAccuracyCircle(LatLng(f.latDeg, f.lonDeg), f.hAccM)
-                }
-            }
-            updateHeadingIndicator()
-        } else {
-            currentMarker?.remove(); currentMarker = null; lastCurrentMarkerHue = null
-            clearAccuracyCircle()
-            clearLiveTrail()
-            removeHeadingIndicator()
-        }
-    }
-
-    /**
-     * Draws/updates the heading arrow under the current-location marker. Heading source priority is
-     * shared with stakeout (compass → course-over-ground when moving → none). The marker is FLAT so
-     * Google Maps compensates for camera bearing automatically — no manual rotation needed. The arrow
-     * is hidden when My Location is off, there's no live position, or no reliable direction exists.
-     */
-    private fun updateHeadingIndicator() {
-        val map = googleMap
-        val pos = lastFixLatLng
-        if (!showCurrentLocationOnMap || map == null || pos == null) { removeHeadingIndicator(); return }
-
-        val (source, heading) = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.resolveHeading(
-            preferCompass = true,
-            compassHeadingDeg = compassHeadingDeg,
-            courseOverGroundDeg = currentFix?.courseDeg,
-            speedMps = currentFix?.speedMps,
-        )
-        if (heading == null || source == io.github.pennstatecs.geokit.stakeout.HeadingSource.NORTH_UP) {
-            removeHeadingIndicator(); return
-        }
-
-        // Throttle marker churn: skip tiny rotation deltas.
-        val last = lastAppliedHeadingDeg
-        val descriptor = headingArrowDescriptor() ?: return
-        if (headingMarker == null) {
-            headingMarker = map.addMarker(
-                MarkerOptions().position(pos).icon(descriptor)
-                    .anchor(0.5f, 0.5f).flat(true).rotation(heading.toFloat())
-                    .zIndex(0.5f)   // under coordinate pins, with the current-location dot
-            )
-            lastAppliedHeadingDeg = heading
-        } else {
-            try {
-                headingMarker?.position = pos
-                if (last == null || io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.normalize180(heading - last).let { kotlin.math.abs(it) } >= 2.0) {
-                    headingMarker?.rotation = heading.toFloat()
-                    lastAppliedHeadingDeg = heading
-                }
-            } catch (e: Exception) { logFail("live.headingMarker update", e) }
-        }
-    }
-
-    private fun removeHeadingIndicator() {
-        try { headingMarker?.remove() } catch (_: Exception) {}
-        headingMarker = null
-        lastAppliedHeadingDeg = null
-    }
-
-    /** Lazily builds (and caches) the heading-arrow bitmap descriptor from the vector drawable. */
-    private fun headingArrowDescriptor(): BitmapDescriptor? {
-        headingDescriptor?.let { return it }
-        return try {
-            val d = ContextCompat.getDrawable(requireContext(), R.drawable.ic_location_heading) ?: return null
-            val size = requireContext().dpToPx(36f)
-            val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bmp)
-            d.setBounds(0, 0, size, size)
-            d.draw(canvas)
-            BitmapDescriptorFactory.fromBitmap(bmp).also { headingDescriptor = it }
-        } catch (e: Exception) { logFail("headingArrowDescriptor", e); null }
+        logMapEvent("MAP", "Map location overlay ${if (show) "on" else "off"}")
+        showSnackbar(if (show) "Showing my location" else "Hiding my location")
     }
 
     /** Opens the global AR scene (all saved points, including the selected one). */
