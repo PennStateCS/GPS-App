@@ -41,6 +41,17 @@ class EmlidNmeaGoldenTest {
     private fun read(path: String): String =
         javaClass.getResourceAsStream(path)?.bufferedReader()?.readText()?.replace("\r\n", "\n") ?: error("Missing golden $path")
 
+    /**
+     * A fixture without ZDA/RMC dates gets its date from the device clock (TimestampSource.DEVICE:
+     * `LocalDate.now`), so the recorded date would change every day. Pin such fixes to a fixed day,
+     * keeping the GNSS time-of-day; fixes dated by the receiver are compared unchanged.
+     */
+    private fun pinDeviceDate(fix: Fix): Fix =
+        if (fix.timestampSource != io.github.pennstatecs.geokit.gnss.model.TimestampSource.DEVICE) fix
+        else fix.copy(timeUtc = java.time.LocalDate.of(2000, 1, 1)
+            .atTime(fix.timeUtc.atOffset(java.time.ZoneOffset.UTC).toLocalTime())
+            .toInstant(java.time.ZoneOffset.UTC))
+
     /** Same deterministic replay as geokit-gnss's NmeaFixtureGoldenTest (7 ms fake clock per line). */
     private fun replay(fixture: String): Pair<String, String> {
         var nowMs = 1_782_000_000_000L
@@ -51,7 +62,7 @@ class EmlidNmeaGoldenTest {
         val fuser = NmeaFuser(
             provider = Provider.EXTERNAL_TCP,
             registry = DefaultNmeaRegistry.create(verifyChecksum = true, requireChecksum = true, extraParsers = EmlidNmea.parsers),
-            onFix = { fixes += it },
+            onFix = { fixes += pinDeviceDate(it) },
             onGsv = { gsvs += it; skies += inventory.consume(it) },
             clock = { nowMs },
         )

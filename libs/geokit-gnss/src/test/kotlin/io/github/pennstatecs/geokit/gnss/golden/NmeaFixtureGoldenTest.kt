@@ -45,6 +45,17 @@ class NmeaFixtureGoldenTest {
     }
 
     companion object {
+        /**
+         * A fixture without ZDA/RMC dates gets its date from the device clock (TimestampSource.DEVICE:
+         * `LocalDate.now`), so the recorded date would change every day. Pin such fixes to a fixed day,
+         * keeping the GNSS time-of-day; fixes dated by the receiver are compared unchanged.
+         */
+        private fun pinDeviceDate(fix: Fix): Fix =
+            if (fix.timestampSource != io.github.pennstatecs.geokit.gnss.model.TimestampSource.DEVICE) fix
+            else fix.copy(timeUtc = java.time.LocalDate.of(2000, 1, 1)
+                .atTime(fix.timeUtc.atOffset(java.time.ZoneOffset.UTC).toLocalTime())
+                .toInstant(java.time.ZoneOffset.UTC))
+
         /** Deterministic replay of a fixture: 7 ms of fake wall clock per line. */
         fun goldenText(fixture: String, registry: NmeaRegistry): String {
             var nowMs = 1_782_000_000_000L
@@ -55,7 +66,7 @@ class NmeaFixtureGoldenTest {
             val fuser = NmeaFuser(
                 provider = Provider.EXTERNAL_TCP,
                 registry = registry,
-                onFix = { fixes += it },
+                onFix = { fixes += pinDeviceDate(it) },
                 onGsv = { gsvs += it; skies += inventory.consume(it) },
                 clock = { nowMs },
             )
