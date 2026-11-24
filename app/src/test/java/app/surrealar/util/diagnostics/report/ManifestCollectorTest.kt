@@ -28,6 +28,6 @@ class ManifestCollectorTest {
     }
 
     @Test fun `truncation is stated`() {
-        assertTrue(ManifestCollector.render(emptyList(), "X", now, true).contains("truncated to the last 24 hours"))
+        assertTrue(ManifestCollector.render(emptyList(), "X", now, true).contains("reduced to fit the log size budget"))
     }
 }

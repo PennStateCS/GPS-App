@@ -17,10 +17,11 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Builds the diagnostic ZIP from [ReportSources].
  *
- * [write]: flush the logs, collect every text section into memory (each under a timeout, each with a
- * [SectionStatus]), then stream the ZIP: the texts, the logs (copied line by line, never held in
- * memory), export-health.txt and manifest.txt last. Because the texts exist before anything is written,
- * a later summary can be rendered after the collectors (see [ReportResult.completenessSummary]).
+ * [write]: flush the logs, index them in one pass (and plan the log budget when they are too large),
+ * collect every text section into memory (each under a timeout, each with a [SectionStatus]), then
+ * stream the ZIP: the texts, the logs (copied line by line, never held in memory), then
+ * diagnostic-summary.txt (findings + export completeness, computed after everything else),
+ * export-health.txt and manifest.txt last.
  *
  * [export]: [write] into `<name>.zip.part`, reopen and check it against the entries written, then
  * rename it to the final name. A ZIP whose structure is broken is never kept.
@@ -29,7 +30,7 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 object ReportAssembler {
 
-    /** Above this many bytes of logs, only the last 24 h of each log file goes in (keeps the ZIP emailable). */
+    /** Log size budget: above this many bytes the logs are reduced by [LogBudget] (keeps the ZIP emailable). */
     const val MAX_LOG_BYTES = 20L * 1024 * 1024
 
     /** Longest a single section may take. Only suspending sources can be stopped; blocking ones run to the end. */
@@ -42,9 +43,9 @@ object ReportAssembler {
     const val HEALTH_FILE = "export-health.txt"
     const val MANIFEST_FILE = "manifest.txt"
 
-    private const val LOGS_24H_REASON = "last 24 hours only (logs over the size limit)"
+    private const val LOGS_24H_REASON = "last 24 hours only (logs over the size limit; the budget plan failed)"
 
-    /** Keeps lines from the last 24 h; stack-trace lines follow the line they belong to. */
+    /** Keeps lines from the last 24 h; stack-trace lines follow the line they belong to. Fallback when the budget plan fails. */
     fun last24hFilter(nowMs: Long): (String) -> Boolean {
         var keep = false
         return { line ->
@@ -57,7 +58,8 @@ object ReportAssembler {
     /**
      * Writes the report into [zipFile]. Source failures are recorded (the section says so, the export
      * goes on); ZIP write failures and cancellation propagate. [flush] returns false when the writers did
-     * not confirm in time. [openOutput] lets tests simulate a failing disk.
+     * not confirm in time. [openOutput] lets tests simulate a failing disk. Logs larger than [maxLogBytes]
+     * are reduced by [LogBudget] (crash, incident-window and recent error lines kept first).
      */
     suspend fun write(
         zipFile: File,
@@ -71,39 +73,56 @@ object ReportAssembler {
         ReportFailures.catchingBlocking { src.preparationStatuses() }.getOrNull()?.forEach(run::record)
         val flushStatus = runFlush(flush)
 
+        // ── Marked problems and report facts (small) ──
+        val incidents = run.items("source: incidents", "no problem was marked", "incident") { src.incidents() }
+            .sortedByDescending { it.epochMs }
+        val info = ReportFailures.catchingBlocking { src.reportInfo() }.getOrElse {
+            run.record(SectionStatus("source: report info", SectionStatus.State.FAILED, 0, ReportFailures.describe(it)))
+            ReportInfo()
+        }
+        val incidentTimes = incidents.map { it.epochMs }
+
         // ── File sources (names only; contents are streamed below) ──
         val logs = run.files("source: log files", "no event log files") { src.logFiles() }
         val errors = run.files("source: error files", "no error log files") { src.errorFiles() }
         val traces = run.files("source: exit traces", "no saved ANR or crash traces") { src.exitTraceFiles() }
         val tracks = run.files("source: AR track files", "no AR track recordings (debug builds only)") { src.arTrackFiles() }
-        val truncated = (logs + errors).sumOf { f -> ReportFailures.catchingBlocking { f.length() }.getOrDefault(0L) } > maxLogBytes
-        val idx = run.logIndex(logs + errors, src.nowMs)
+        val overBudget = (logs + errors).sumOf { f -> ReportFailures.catchingBlocking { f.length() }.getOrDefault(0L) } > maxLogBytes
+        // One pass over the logs feeds the index (summaries, findings, incident windows) and, when the logs
+        // are over the budget, the budget planner.
+        val budget = if (overBudget) LogBudget(src.nowMs, maxLogBytes, incidentTimes) else null
+        val idx = run.logIndex(logs + errors, src.nowMs, incidentTimes, budget)
+        val plans = budget?.let { b ->
+            ReportFailures.catchingBlocking { b.plan() }.getOrElse {
+                DiagnosticsLogger.w(DiagTags.EXPORT, "Report log budget plan failed: falling back to the last 24 hours", it)
+                run.record(SectionStatus("log budget plan", SectionStatus.State.FAILED, 0, ReportFailures.describe(it)))
+                null
+            }
+        }
+        val currentSession = info.sessionId ?: idx.lastSessionId()
+        val live = ReportFailures.catchingBlocking { src.liveState() }
+        var device: DeviceHealth? = null
+        var data: DataHealth? = null
 
         // ── Text sections, into memory first (small) ──
-        // Written in this order; the exit traces follow exits.txt.
+        // Written in this order; the exit traces follow exits.txt. diagnostic-summary.txt is written last
+        // (before export-health.txt), once every other section and the logs are done.
         val head = listOf(
-            run.textEntry("README.txt") { ReadmeCollector.render(src.reportId, logsTruncatedTo24h = truncated) },
-            run.textEntry("diagnostic-summary.txt") {
-                val first = ReportFailures.catching { FirstLookCollector.render(src.reportId, idx, src.liveState()) }.getOrElse {
-                    val why = ReportFailures.describe(it)
-                    run.record(SectionStatus("diagnostic-summary.txt: first look", SectionStatus.State.FAILED, 0, why))
-                    "=== First look ===\n(failed: $why)\n\n"
-                }
-                first + src.summary()
-            },
-            run.textEntry("timeline.txt") { TimelineCollector.render(idx) },
+            run.textEntry("README.txt") { ReadmeCollector.render(src.reportId, logsReduced = overBudget) },
+            run.textEntry("incidents.txt") { IncidentsCollector.render(incidents, idx, currentSession) },
+            run.textEntry("timeline.txt") { TimelineCollector.render(idx, incidents) },
             run.textEntry("sessions.txt") { SessionsCollector.render(idx) },
             run.textEntry("exits.txt") { ExitsCollector.render(idx, traces.map { it.name }) },
         )
         val sections = listOf(
-            run.textEntry("device-health.txt") { DeviceHealthCollector.render(src.deviceHealth()) },
+            run.textEntry("device-health.txt") { DeviceHealthCollector.render(src.deviceHealth().also { device = it }) },
             run.textEntry("captures.txt") {
                 val log = src.capturesLog()
                 if (log == null) unavailable = "no captures log yet"
                 CapturesCollector.render(CapturesCollector.read(log))
             },
             run.textEntry("gnss-stats.txt") { GnssStatsCollector.render(src.gnssStats()) },
-            run.textEntry("data-health.txt") { DataHealthCollector.render(src.dataHealth(), idx.lastDbEvent?.raw) },
+            run.textEntry("data-health.txt") { DataHealthCollector.render(src.dataHealth().also { data = it }, idx.lastDbEvent?.raw) },
             run.textEntry("settings-snapshot.txt") { src.settingsSnapshot() },
             run.textEntry("permissions-status.txt") { src.permissions() },
             run.textEntry("app-state-summary.txt") { src.appState() },
@@ -113,6 +132,15 @@ object ReportAssembler {
             run.textEntry("map-diagnostics.txt") { src.mapDiagnostics() },
             run.textEntry("nmea-stream-diagnostics.txt") { src.nmeaStream() },
         )
+        val firstLook = live.fold(
+            onSuccess = { l -> ReportFailures.catching { FirstLookCollector.render(src.reportId, idx, l) } },
+            onFailure = { Result.failure(it) },
+        ).getOrElse {
+            val why = ReportFailures.describe(it)
+            run.record(SectionStatus("diagnostic-summary.txt: first look", SectionStatus.State.FAILED, 0, why))
+            "=== First look ===\n(failed: $why)\n\n"
+        }
+        val appSummary = run.text("diagnostic-summary.txt") { src.summary() }
 
         // ── Stream the ZIP ──
         // ZipOutputStream.close() skips closing its target when finishing fails, so the file is closed
@@ -124,18 +152,39 @@ object ReportAssembler {
                 head.forEach { (name, text) -> z.text(name, text) }
                 traces.forEach { z.file("exits/${it.name}", it) }
                 sections.forEach { (name, text) -> z.text(name, text) }
-                // Rolling logs (event history + crashes)
-                val reason = if (truncated) LOGS_24H_REASON else null
-                (logs + errors).forEach { z.file(it.name, it, if (truncated) last24hFilter(src.nowMs) else { _ -> true }, reason) }
+                // Rolling logs (event history + crashes), reduced to the budget when over it
+                (logs + errors).forEach { f ->
+                    val plan = plans?.get(f)
+                    when {
+                        plan != null && plan.reduced -> z.file(f.name, f, plan.filter(), plan.note(LogBudget.REASON))
+                        overBudget && plans == null -> z.file(f.name, f, last24hFilter(src.nowMs), LOGS_24H_REASON)
+                        else -> z.file(f.name, f)
+                    }
+                }
                 // AR alignment recordings (debug builds only; no coordinates)
                 tracks.forEach { z.file(it.name, it) }
+
+                // The summary, now that every section, the logs and their reduction are known.
+                val soFar = ExportHealth(run.statuses.toList(), flushStatus, z.omitted.toList(), z.truncated.toList())
+                val summary = ReportFailures.catching {
+                    val fi = FindingsInput(src.nowMs, idx.signals.toList(), idx.crashes.toList(), idx.sessions.toList(),
+                        incidents.firstOrNull(), live.getOrNull(), device, data, info)
+                    SummaryCollector.render(SummaryInput(src.reportId, src.nowMs, info, incidents, currentSession,
+                        ReportFindings.evaluate(fi), ReportFindings.subsystemStatus(fi), soFar, firstLook + appSummary))
+                }.getOrElse {
+                    DiagnosticsLogger.w(DiagTags.EXPORT, "Report summary findings failed", it)
+                    val why = ReportFailures.describe(it)
+                    run.record(SectionStatus("diagnostic-summary.txt: findings", SectionStatus.State.FAILED, 0, why))
+                    "=== Diagnostic summary ===\n(findings failed: $why)\n\n" + soFar.completenessSummary() + "\n" + firstLook + appSummary
+                }
+                z.text("diagnostic-summary.txt", summary)
 
                 val health = ExportHealth(run.statuses.toList(), flushStatus, z.omitted.toList(), z.truncated.toList())
                 z.text(HEALTH_FILE, ExportHealthCollector.render(src.reportId, health))
                 // Last: lists every entry above, and itself.
                 val listed = z.entries.toList()
                 z.text(MANIFEST_FILE, ReportFailures.catchingBlocking {
-                    ManifestCollector.render(listed, src.reportId, src.nowMs, logsTruncatedTo24h = truncated)
+                    ManifestCollector.render(listed, src.reportId, src.nowMs, logsReduced = overBudget)
                 }.getOrElse { "Section failed to generate: ${ReportFailures.describe(it)}\n" })
                 ReportResult(z.entries.toList(), health)
             }
@@ -282,18 +331,21 @@ object ReportAssembler {
         suspend fun textEntry(name: String, build: suspend SectionScope.() -> String): Pair<String, String> = name to text(name, build)
 
         /** A file-list source: FAILED when it throws, UNAVAILABLE ([emptyReason]) when it lists nothing. */
-        fun files(name: String, emptyReason: String, list: () -> List<File>): List<File> {
+        fun files(name: String, emptyReason: String, list: () -> List<File>): List<File> = items(name, emptyReason, "file", list)
+
+        /** A list source: FAILED when it throws, UNAVAILABLE ([emptyReason]) when it is empty. */
+        fun <T> items(name: String, emptyReason: String, noun: String, list: () -> List<T>): List<T> {
             val start = System.nanoTime()
             val result = ReportFailures.catchingBlocking(list)
             val ms = elapsedSince(start)
             return result.fold(
-                onSuccess = { files ->
-                    record(if (files.isEmpty()) SectionStatus(name, SectionStatus.State.UNAVAILABLE, ms, emptyReason)
-                        else SectionStatus(name, SectionStatus.State.OK, ms, "${files.size} file${if (files.size == 1) "" else "s"}"))
-                    files
+                onSuccess = { items ->
+                    record(if (items.isEmpty()) SectionStatus(name, SectionStatus.State.UNAVAILABLE, ms, emptyReason)
+                        else SectionStatus(name, SectionStatus.State.OK, ms, "${items.size} $noun${if (items.size == 1) "" else "s"}"))
+                    items
                 },
                 onFailure = {
-                    DiagnosticsLogger.w(DiagTags.EXPORT, "Report file source failed source=\"$name\"", it)
+                    DiagnosticsLogger.w(DiagTags.EXPORT, "Report source failed source=\"$name\"", it)
                     record(SectionStatus(name, SectionStatus.State.FAILED, ms, ReportFailures.describe(it)))
                     emptyList()
                 },
@@ -301,11 +353,13 @@ object ReportAssembler {
         }
 
         /** One pass over the logs for the summaries; unreadable files are noted in the status. */
-        fun logIndex(files: List<File>, nowMs: Long): LogIndex {
+        fun logIndex(files: List<File>, nowMs: Long, incidentTimes: List<Long>, budget: LogBudget?): LogIndex {
             val start = System.nanoTime()
             val unreadable = mutableListOf<String>()
             val idx = ReportFailures.catchingBlocking {
-                LogIndex.build(files, nowMs) { f, t -> unreadable += "${f.name} (${t.javaClass.simpleName})" }
+                LogIndex.build(files, nowMs, incidentTimes, budget?.let { b -> b::onEntry }) { f, t ->
+                    unreadable += "${f.name} (${t.javaClass.simpleName})"
+                }
             }
             val ms = elapsedSince(start)
             return idx.fold(
@@ -321,7 +375,7 @@ object ReportAssembler {
                 onFailure = {
                     DiagnosticsLogger.w(DiagTags.EXPORT, "Report log index failed", it)
                     record(SectionStatus("log index", SectionStatus.State.FAILED, ms, ReportFailures.describe(it)))
-                    LogIndex(nowMs)
+                    LogIndex(nowMs, incidentTimes).finish()
                 },
             )
         }

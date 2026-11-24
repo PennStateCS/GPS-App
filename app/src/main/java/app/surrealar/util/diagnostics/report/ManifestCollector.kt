@@ -8,11 +8,11 @@ import app.surrealar.util.diagnostics.LogLineFormat
  * exactly (ReportAssembler.validate checks the written ZIP against the same list).
  */
 object ManifestCollector {
-    fun render(entries: List<Pair<String, Long>>, reportId: String, nowMs: Long, logsTruncatedTo24h: Boolean): String = buildString {
+    fun render(entries: List<Pair<String, Long>>, reportId: String, nowMs: Long, logsReduced: Boolean): String = buildString {
         appendLine("=== Manifest ===")
         appendLine("Report ID   : $reportId")
         appendLine("Report time : ${LogLineFormat.timestamp(nowMs)}")
-        if (logsTruncatedTo24h) appendLine("Logs        : truncated to the last 24 hours (the full logs would make the ZIP larger than 20 MB)")
+        if (logsReduced) appendLine("Logs        : reduced to fit the log size budget (omitted spans are marked in each log; see export-health.txt)")
         appendLine()
         val w = (entries.maxOfOrNull { it.first.length } ?: 0).coerceAtLeast("manifest.txt".length)
         entries.forEach { (name, size) -> appendLine("${name.padEnd(w)}  ${size.toString().padStart(10)} bytes") }

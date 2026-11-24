@@ -6,8 +6,10 @@ object ReadmeCollector {
     /** File (or pattern) → what it is. Order = reading order. */
     val FILES: List<Pair<String, String>> = listOf(
         "README.txt" to "this file",
-        "diagnostic-summary.txt" to "start here: the First look block, then build/device info and warnings",
-        "timeline.txt" to "last 2 hours of warnings/errors and lifecycle, navigation, receiver, corrections, capture and session lines, in time order",
+        "diagnostic-summary.txt" to "start here: report info, the reported problem, rule-based findings with evidence, subsystem status, where to look, export completeness; then the First look block and build/device details",
+        "incidents.txt" to "each marked problem (Mark Problem): note, app state, and the log lines from 5 min before to 2 min after it",
+        "timeline.txt" to "last 2 hours of warnings/errors, state changes and lifecycle, navigation, receiver, corrections, GNSS, AR, model, data, capture and session lines, in time order (>> = near a marked problem)",
+        "export-health.txt" to "how the export went: each section's status (OK, FAILED, TIMED_OUT, UNAVAILABLE) and time, log flush, files left out or reduced (with the time spans kept), verdict COMPLETE / PARTIAL",
         "sessions.txt" to "one row per app start (SESSION_START) and how that session ended",
         "exits.txt" to "why earlier app processes ended (Android exit reasons: crash, ANR, low memory, ...)",
         "exits/" to "saved ANR and native-crash traces (newest 5)",
@@ -26,14 +28,14 @@ object ReadmeCollector {
         "app-log-*.txt" to "the event log (current, then rotated 1..4)",
         "app-errors-*.txt" to "errors and crashes only (kept longer than the event log)",
         "ar-track*.csv" to "debug builds: ARCore camera pose next to each GNSS fix while AR is open (metres from each session's first fix; no coordinates)",
-        "export-health.txt" to "how the export went: each section's status (OK, FAILED, TIMED_OUT, UNAVAILABLE) and time, log flush, files left out or cut short, verdict COMPLETE / PARTIAL",
         "manifest.txt" to "every file in this ZIP (itself included) with its size, the report time and report ID",
     )
 
-    fun render(reportId: String, logsTruncatedTo24h: Boolean): String = buildString {
+    fun render(reportId: String, logsReduced: Boolean): String = buildString {
         appendLine("SurReal AR diagnostic report  (Report ID: $reportId)")
         appendLine()
-        appendLine("Export completeness: see export-health.txt (COMPLETE, or PARTIAL with the sections or files that are missing).")
+        appendLine("Reading order: diagnostic-summary.txt → incidents.txt → timeline.txt → export-health.txt → the rest.")
+        appendLine("Export completeness: the end of diagnostic-summary.txt, details in export-health.txt (COMPLETE, or PARTIAL with what is missing).")
         appendLine()
         appendLine("Files")
         val w = FILES.maxOf { it.first.length }
@@ -45,9 +47,11 @@ object ReadmeCollector {
         appendLine("    E error), tag, [thread], message. Lines without a timestamp belong to the line above (stack traces).")
         appendLine("  Times are the tablet's clock; gnss lines log its offset from GNSS time (\"Clock offset\").")
         appendLine("  The report never contains raw NMEA, coordinates, passwords or keys.")
-        if (logsTruncatedTo24h) {
+        if (logsReduced) {
             appendLine()
-            appendLine("NOTE: the logs were too large for one email, so only the last 24 hours of each log file are included.")
+            appendLine("NOTE: the logs were larger than the size budget, so parts were left out. Crash and ANR evidence, the")
+            appendLine("  minutes around each marked problem and recent errors were kept first, then the newest lines. Each gap is")
+            appendLine("  marked in the log as \"… [N lines omitted <from> → <to>] …\"; export-health.txt lists the spans kept.")
         }
     }
 }

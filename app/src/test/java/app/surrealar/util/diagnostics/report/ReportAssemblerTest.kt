@@ -21,11 +21,12 @@ class ReportAssemblerTest {
         val zip = File(tmp.root, "r.zip")
         val written = ReportAssembler.write(zip, FakeReportSources(tmp.newFolder("logs")), flush = { true })
         val expected = listOf(
-            "README.txt", "diagnostic-summary.txt", "timeline.txt", "sessions.txt", "exits.txt",
+            "README.txt", "incidents.txt", "timeline.txt", "sessions.txt", "exits.txt",
             "exits/20261121-133000-ANR.txt", "device-health.txt", "captures.txt", "gnss-stats.txt", "data-health.txt",
             "settings-snapshot.txt", "permissions-status.txt", "app-state-summary.txt",
             "coordinates.txt", "model-integrity.txt", "ar-session-summary.txt", "map-diagnostics.txt",
-            "nmea-stream-diagnostics.txt", "app-log-current.txt", "app-errors-current.txt", "export-health.txt", "manifest.txt",
+            "nmea-stream-diagnostics.txt", "app-log-current.txt", "app-errors-current.txt",
+            "diagnostic-summary.txt", "export-health.txt", "manifest.txt",
         )
         assertEquals(expected, names(zip))
         assertEquals(expected, written.entries.map { it.first })
@@ -33,21 +34,24 @@ class ReportAssemblerTest {
 
     private fun entry(zip: File, name: String) = ZipFile(zip).use { z -> z.getInputStream(z.getEntry(name)).reader().readText() }
 
-    @Test fun `over the size limit only the last 24 h of logs go in, and README and manifest say so`() = runTest {
+    @Test fun `over the size budget the logs are reduced, the crash is kept, and README and manifest say so`() = runTest {
         val old = "2026-11-19T10:00:00.000-05:00 W GNSS [main] two days old\n\tcontinuation of the old line\n"
         val src = FakeReportSources(tmp.newFolder("logs"), eventLog = old + FakeReportSources.DEFAULT_EVENT_LOG)
         val small = File(tmp.root, "small.zip")
-        ReportAssembler.write(small, src, flush = { true }, maxLogBytes = 10)
+        // Room for the crash entry and the newest lines, not for the two-day-old line.
+        ReportAssembler.write(small, src, flush = { true }, maxLogBytes = 1_700)
         val log = entry(small, "app-log-current.txt")
         assertEquals(false, log.contains("two days old") || log.contains("continuation of the old line"))
+        assertEquals(true, log.contains("Uncaught exception (fatal)") && log.contains("at app.surrealar.Foo.bar"))
+        assertEquals(true, log.contains("lines omitted 2026-11-19T10:00:00.000"))
         assertEquals(true, log.contains("Capture saved name=\"(redacted)\""))   // point names are redacted in the ZIP
-        assertEquals(true, entry(small, "README.txt").contains("only the last 24 hours"))
-        assertEquals(true, entry(small, "manifest.txt").contains("truncated to the last 24 hours"))
+        assertEquals(true, entry(small, "README.txt").contains("larger than the size budget"))
+        assertEquals(true, entry(small, "manifest.txt").contains("reduced to fit the log size budget"))
 
         val full = File(tmp.root, "full.zip")
         ReportAssembler.write(full, src, flush = { true })
         assertEquals(true, entry(full, "app-log-current.txt").contains("two days old"))
-        assertEquals(false, entry(full, "manifest.txt").contains("truncated"))
+        assertEquals(false, entry(full, "manifest.txt").contains("reduced"))
     }
 
     @Test fun `a failing section is replaced by its error, the rest is still written`() = runTest {
@@ -58,6 +62,6 @@ class ReportAssemblerTest {
         ReportAssembler.write(zip, src, flush = { true })
         val text = ZipFile(zip).use { z -> z.getInputStream(z.getEntry("model-integrity.txt")).reader().readText() }
         assertEquals("Section failed to generate: IllegalStateException: db closed\n", text)
-        assertEquals(22, names(zip).size)
+        assertEquals(23, names(zip).size)
     }
 }

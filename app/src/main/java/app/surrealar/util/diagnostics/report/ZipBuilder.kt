@@ -40,13 +40,27 @@ class ZipBuilder(private val zos: ZipOutputStream, private val scrub: (String) -
         text(name, content)
     }
 
+    /** Decides, line by line, what of a source file is written: [emit] zero or more lines per input line. */
+    interface LineFilter {
+        fun onLine(line: String, emit: (String) -> Unit)
+    }
+
     /**
      * Copies [file] line by line through [scrub], keeping only lines [keep] accepts. [name] comes from
      * outside text (a file name) and is made safe with [safeEntryName]. [filterReason] (set when [keep]
      * drops lines by policy) records the file as truncated with its original and included sizes.
      * Returns whether the entry was written.
      */
-    fun file(name: String, file: File, keep: (String) -> Boolean = { true }, filterReason: String? = null): Boolean {
+    fun file(name: String, file: File, keep: (String) -> Boolean = { true }, filterReason: String? = null): Boolean =
+        file(name, file, object : LineFilter {
+            override fun onLine(line: String, emit: (String) -> Unit) { if (keep(line)) emit(line) }
+        }, filterReason?.let { TruncationNote(it) })
+
+    /**
+     * Copies [file] through [filter] (which may drop lines or add marker lines) and [scrub]. [note]
+     * (set when the filter reduces the file by policy) records it as an expected truncation.
+     */
+    fun file(name: String, file: File, filter: LineFilter, note: TruncationNote?): Boolean {
         val safe = safeEntryName(name)
         if (safe == null) return omit(name.take(MAX_ENTRY_NAME), "unsafe file name")
         if (_entries.any { it.first == safe }) return omit(safe, "duplicate name")
@@ -58,18 +72,24 @@ class ZipBuilder(private val zos: ZipOutputStream, private val scrub: (String) -
         }
         var size = 0L
         var readError: Exception? = null
+        var writeError: Throwable? = null
+        val emit: (String) -> Unit = { out ->
+            val bytes = (scrub(out) + "\n").toByteArray(Charsets.UTF_8)
+            try { zos.write(bytes) } catch (e: Throwable) { writeError = e; throw e }
+            size += bytes.size
+        }
         try {
             zos.putNextEntry(ZipEntry(safe))                      // ZIP write errors propagate
             while (true) {
-                val bytes = try {
+                // Reading, filtering and scrubbing are the source side: a failure there cuts the copy
+                // short. A failure writing the ZIP propagates.
+                try {
                     val line = reader.readLine() ?: break
-                    if (!keep(line)) continue
-                    (scrub(line) + "\n").toByteArray(Charsets.UTF_8)
+                    filter.onLine(line, emit)
                 } catch (e: Exception) {
-                    if (e is kotlin.coroutines.cancellation.CancellationException) throw e
+                    if (e is kotlin.coroutines.cancellation.CancellationException || e === writeError) throw e
                     readError = e; break
                 }
-                zos.write(bytes); size += bytes.size              // ZIP write errors propagate
             }
             zos.closeEntry()
         } finally {
@@ -80,7 +100,8 @@ class ZipBuilder(private val zos: ZipOutputStream, private val scrub: (String) -
         readError?.let {
             DiagnosticsLogger.w(DiagTags.EXPORT, "Report file copy cut short file=$safe bytes=$size", it)
             _truncated += TruncatedFile(safe, original, size, "read failed: ${it.javaClass.simpleName}", expected = false)
-        } ?: filterReason?.let { _truncated += TruncatedFile(safe, original, size, it, expected = true) }
+        } ?: note?.let { _truncated += TruncatedFile(safe, original, size, it.reason, expected = true,
+            originalSpan = it.originalSpan, includedSpan = it.includedSpan, omittedSpans = it.omittedSpans, omittedLines = it.omittedLines) }
         return true
     }
 
