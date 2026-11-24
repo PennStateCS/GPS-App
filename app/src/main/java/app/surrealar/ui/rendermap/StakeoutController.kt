@@ -136,6 +136,8 @@ internal class StakeoutController(
      */
     var isTargetConfirmed = true
         private set
+    /** One-shot after a restore: the first guidance update does not play the arrival cue. */
+    private var suppressNextArrivalCue = false
 
     /** Guidance is running and set to steer by the compass. */
     val wantsCompass: Boolean get() = isGuidanceActive && settings.guidanceUsesCompassHeading
@@ -173,7 +175,13 @@ internal class StakeoutController(
      * A saved-point target waits for [revalidateTarget] before its marker/readout appear.
      */
     private fun restoreFromSession() {
-        val s = loadSession() ?: return
+        val s = loadSession()
+        if (s == null) {
+            // No session (never started, or ended elsewhere): make sure nothing stale survives here.
+            isStakeoutMode = false; isGuidanceActive = false
+            stakeoutTarget = null; stakeoutTargetId = null; targetLabel = "—"; isTargetConfirmed = true
+            return
+        }
         isStakeoutMode = true
         stakeoutTargetId = s.targetId
         stakeoutTarget = if (s.targetLat != null && s.targetLng != null) LatLng(s.targetLat, s.targetLng) else null
@@ -185,7 +193,10 @@ internal class StakeoutController(
         txtStakeoutTarget?.text = s.targetLabel
         showStakeoutWaiting()
         isGuidanceActive = s.guidanceActive && stakeoutTarget != null
-        feedbackGate.reset()   // no replayed arrival cue on return
+        feedbackGate.reset()
+        // The user already had the arrival cue before leaving: standing on the point when coming back
+        // must not fire it again (it fires again after they leave tolerance and re-enter).
+        suppressNextArrivalCue = isGuidanceActive
         if (isGuidanceActive) showGuidanceControls()
         logMapEvent("STAKEOUT", "Stakeout restored targetId=${s.targetId ?: "free"} guidance=$isGuidanceActive")
     }
@@ -225,6 +236,7 @@ internal class StakeoutController(
             persist()
         }
         if (moved && !firstConfirm) { lastStakeoutFixElapsedMs = null; showStakeoutWaiting() }
+        if (moved) feedbackGate.reset()   // a new position gets its own arrival cue
         ensureTargetMarker()
     }
 
@@ -365,6 +377,7 @@ internal class StakeoutController(
             stakeoutTargetId = null   // free map-tap target (not tied to a saved coordinate)
             isTargetConfirmed = true
             lastStakeoutFixElapsedMs = null
+            feedbackGate.reset()   // a new target gets its own arrival cue
             targetLabel = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
             txtStakeoutTarget?.text = targetLabel
             if (stakeoutMarker == null) {
@@ -582,8 +595,11 @@ internal class StakeoutController(
         val status = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.status(
             hasTarget = true, hasPosition = true, distanceMeters = distanceMeters, toleranceMeters = s.toleranceMeters
         )
-        when (feedbackGate.onUpdate(status, clock.nowMs())) {
-            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
+        val feedback = feedbackGate.onUpdate(status, clock.nowMs())
+        val suppressArrival = suppressNextArrivalCue
+        suppressNextArrivalCue = false
+        when (feedback) {
+            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> if (!suppressArrival) {
                 // Distance to target only (no positions): the gate fires once per arrival.
                 logMapEvent("STAKEOUT", "Stakeout target within tolerance distM=${"%.3f".format(java.util.Locale.US, distanceMeters)} toleranceM=${s.toleranceMeters}")
                 if (s.enableHaptics) haptic(arrived = true); if (s.enableAudio) beep(arrived = true)

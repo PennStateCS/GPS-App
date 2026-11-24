@@ -130,6 +130,9 @@ class StakeoutRestoreFlowTest {
             clock = ElapsedClock { now },
         )
 
+        // RenderMapFragment seeds a new controller from the last settings kept in the activity ViewModel.
+        init { vm.state.stakeoutSettings?.let(stakeout::onSettingsChanged) }
+
         fun syncCompass() = compass.sync(CompassHeadingController.isNeeded(
             resumed = resumed,
             guidanceActive = stakeout.isGuidanceActive,
@@ -138,15 +141,21 @@ class StakeoutRestoreFlowTest {
         ))
 
         /** onCreateView/onViewCreated, onStart/onResume, onMapReady, the first coordinate emission. */
-        fun open(points: List<Coordinate>? = listOf(point)) {
+        fun open(points: List<Coordinate>? = listOf(point), deliverSettings: Boolean = true) {
             view = LayoutInflater.from(themed).inflate(R.layout.fragment_render_map, null, false)
             viewScope = CoroutineScope(testScope.coroutineContext + Job(testScope.coroutineContext[Job]))
             stakeout.bindViews(view!!)
-            stakeout.onSettingsChanged(settings)
+            if (deliverSettings) deliverSettings()
             resumed = true; stakeout.resumeGuidanceFeedback(); syncCompass()
             fakeMap = FakeMap(); stakeout.onMapReady()
             if (points != null) stakeout.revalidateTarget(points)
             testScope.testScheduler.runCurrent()
+        }
+
+        /** The settings collector's emission (DataStore). */
+        fun deliverSettings() {
+            vm.update { it.copy(stakeoutSettings = settings) }
+            stakeout.onSettingsChanged(settings)
         }
 
         /** onPause, onStop, onDestroyView (Details/AR on top, tab switch, recreation). */
@@ -435,5 +444,58 @@ class StakeoutRestoreFlowTest {
         assertEquals(0, activeTones())
         assertFalse(h.view!!.keepScreenOn)
         assertEquals(0, compassListeners(h))
+    }
+
+    @Test fun `standing on the point when returning does not replay the arrival cue`() {
+        val h = MapHost(); h.open()
+        val target = LatLng(point.latitude, point.longitude)
+        h.stakeout.startForCoordinate(point)
+        h.stakeout.startGuidance()
+        h.stakeout.updateStakeoutCalculations(target)
+        assertEquals(listOf(true), tones.single().plays)   // arrived before leaving
+        h.leave(); h.open()
+        h.stakeout.updateStakeoutCalculations(target)
+        assertTrue(tones.last().plays.none { it })          // no second arrival on return
+        // Leaving tolerance and coming back fires it again.
+        h.stakeout.updateStakeoutCalculations(LatLng(41.2470, point.longitude))
+        h.stakeout.updateStakeoutCalculations(target)
+        assertTrue(tones.last().plays.contains(true))
+    }
+
+    @Test fun `a moved target gets its own arrival cue`() {
+        val h = MapHost(); h.open()
+        h.stakeout.startForCoordinate(point)
+        h.stakeout.startGuidance()
+        h.stakeout.updateStakeoutCalculations(LatLng(point.latitude, point.longitude))
+        val moved = point.copy(latitude = point.latitude + 0.0000001)   // edited, still within tolerance
+        h.stakeout.revalidateTarget(listOf(moved))
+        h.stakeout.updateStakeoutCalculations(LatLng(point.latitude, point.longitude))
+        assertEquals(2, tones.single().plays.count { it })
+    }
+
+    @Test fun `a session cleared elsewhere leaves no ghost stakeout in this controller`() {
+        val h = MapHost(); h.open()
+        h.startStakeoutWithGuidance()
+        h.leave()
+        vm.update { it.copy(stakeout = null) }   // ended by another map instance
+        h.open()
+        assertFalse(h.stakeout.isStakeoutMode)
+        assertFalse(h.stakeout.isGuidanceActive)
+        assertFalse(h.stakeout.onMapTap(LatLng(41.0, -76.0)))
+        assertEquals(0, activeTones())
+        assertEquals(0, compassListeners(h))
+        assertTrue(h.fakeMap!!.markers.isEmpty())
+    }
+
+    @Test fun `tab switch restore uses the last settings before DataStore emits`() {
+        settings = settings.copy(enableAudio = false, keepScreenOnDuringStakeout = false, guidanceUsesCompassHeading = false)
+        val first = MapHost(); first.open()
+        first.startStakeoutWithGuidance()
+        first.leave()
+        val second = MapHost(); second.open(deliverSettings = false)   // settings not emitted yet
+        assertTrue(second.stakeout.isGuidanceActive)
+        assertTrue(tones.isEmpty())
+        assertFalse(second.view!!.keepScreenOn)
+        assertEquals(0, compassListeners(second))
     }
 }

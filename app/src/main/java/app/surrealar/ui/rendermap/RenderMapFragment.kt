@@ -234,7 +234,10 @@ class RenderMapFragment : Fragment() {
             loadSession = { mapUiVm.state.stakeout },
             saveSession = { s -> mapUiVm.update { it.copy(stakeout = s) } },
             isFixStale = { fixSwitchboard.fixStale.value },
-        )
+        ).also { c ->
+            // A new instance (tab switch) starts from the last known stakeout settings, not defaults.
+            mapUiVm.state.stakeoutSettings?.let(c::onSettingsChanged)
+        }
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -342,8 +345,9 @@ class RenderMapFragment : Fragment() {
         // running guidance immediately (e.g. toggling audio/compass/keep-screen-on mid-stakeout).
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                stakeoutSettingsRepo.stakeoutSettings.collect {
-                    stakeout.onSettingsChanged(it)
+                stakeoutSettingsRepo.stakeoutSettings.collect { s ->
+                    mapUiVm.update { it.copy(stakeoutSettings = s) }
+                    stakeout.onSettingsChanged(s)
                 }
             }
         }

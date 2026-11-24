@@ -33,6 +33,11 @@ data class MapUiState(
     val camera: MapCameraState? = null,
     /** The running stakeout, so it continues after Details/AR/tab switches; null = no stakeout. */
     val stakeout: StakeoutSession? = null,
+    /**
+     * Last Settings → Stakeout values seen by the map, so a restored guidance in a NEW fragment
+     * (tab switch) uses them instead of the defaults until DataStore emits. A cache, never written back.
+     */
+    val stakeoutSettings: app.surrealar.settings.model.StakeoutSettings? = null,
 )
 
 /**
