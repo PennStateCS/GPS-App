@@ -63,7 +63,7 @@ Response to the technical-method review of the SurReal AR survey calculations by
 | 29 | Compass point | — | Correct | |
 | 30 | AR camera vs GNSS check | How is ARCore's camera position estimated? | Question | See question (g) |
 | 31 | Expected AR placement error | — | Correct | |
-| 32 | Georeferenced 3D model | — (see Q09) | Question | See question (e) |
+| 32 | Georeferenced 3D model | Margin comment: "I don't expect Metashape to export the height in the Y component" (see also Q09) | Question | See question (e) |
 | 33 | Model frame conventions | — | Correct | |
 
 ## Questions for Dr. Bolkas
@@ -90,7 +90,8 @@ points are reduced to the ground mark (pole + phase-centre offset). Which should
 show — the mark height (assuming the pole is on the mark), the APC height, or both?
 
 **(e) Model export convention.** The georeferenced-model import assumes a Metashape-style Y-up glTF with
-X = longitude (°), Y = ellipsoidal height (m), Z = −latitude (°), WGS84 (section 32). Given your Q09
+X = longitude (°), Y = ellipsoidal height (m), Z = −latitude (°), WGS84 (section 32). Your margin comment on
+section 32 doubts that Metashape puts height in Y. Given that, and your Q09
 answer that models will likely be in SPCS/NAD83: what export should we expect — projected
 easting/northing in a stated SPCS zone, which height (ellipsoidal or H with which geoid), and which
 file format/axis convention?

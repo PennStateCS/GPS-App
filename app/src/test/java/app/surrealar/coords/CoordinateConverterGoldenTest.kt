@@ -90,9 +90,8 @@ class CoordinateConverterGoldenTest {
 
     private fun row(c: ConvertedPosition): String = listOf(
         c.horizontal.name, c.datum.name, c.unit.name, d(c.latDeg), d(c.lonDeg), d(c.easting), d(c.northing),
-        c.zoneLabel ?: "null", c.vertical.name, d(c.height),
-        legacy(c.heightUnavailableReason ?: "null"),
-        c.outsideZone.toString(), legacy(c.verticalLabel),
+        c.zoneLabel ?: "null", c.vertical.name, d(c.height), c.heightUnavailableReason ?: "null",
+        c.outsideZone.toString(), c.verticalLabel,
     ).joinToString("\t")
 
     private fun generate(): List<String> {
@@ -130,21 +129,7 @@ class CoordinateConverterGoldenTest {
         for (i in expected.indices) assertEquals("golden row $i", expected[i], actual[i])
     }
 
-    /**
-     * The survey-terminology rename (2026-11, surveyor review) changed only display wording:
-     * "Ellip" → "h", "MSL" → "H rcvr", "receiver reported no MSL height" → "...no orthometric height".
-     * The golden keeps the recorded tokens so every number stays pinned bit for bit against the
-     * original file; the new wording itself is pinned by CoordinateSettingsMappingTest and
-     * CoordinateDetailFormatterTest. Any other label change still fails this test.
-     */
-    private fun legacy(label: String): String = LEGACY_LABELS[label] ?: label
-
     private companion object {
-        val LEGACY_LABELS = mapOf(
-            "h" to "Ellip",
-            "H rcvr" to "MSL",
-            "receiver reported no orthometric height" to "receiver reported no MSL height",
-        )
         const val RESOURCE = "coords/converter_golden.tsv"
     }
 }
