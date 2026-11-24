@@ -173,6 +173,62 @@ object CoordinateDetailFormatter {
     /** The receiver's geoid undulation N (h = H + N), from the same unknown model. */
     const val RECEIVER_GEOID_SEPARATION = "N (receiver geoid, model unknown)"
 
+    /**
+     * Label of the receiver's H row: [RECEIVER_ORTHOMETRIC_HEIGHT] while the model is unknown (NULL, all
+     * receiver captures today), "H at mark (receiver geoid, EGM96)" once a model is recorded.
+     */
+    fun receiverOrthometricHeightLabel(orthometricModel: String?): String =
+        orthometricModel?.let { "H at mark (receiver geoid, ${geoidModelName(it)})" } ?: RECEIVER_ORTHOMETRIC_HEIGHT
+
+    /** Label of the receiver's N row, like [receiverOrthometricHeightLabel]. */
+    fun receiverGeoidSeparationLabel(orthometricModel: String?): String =
+        orthometricModel?.let { "N (receiver geoid, ${geoidModelName(it)})" } ?: RECEIVER_GEOID_SEPARATION
+
+    // ── Coordinate provenance (v14 columns). NULL = unknown: shown as "unknown", never guessed. ───
+
+    const val UNKNOWN = "unknown"
+
+    /** A stored frame token as its name ("WGS84 (ITRF2014)", "NAD83(2011)"); NULL → "unknown". */
+    fun frameLabel(token: String?): String = when (token) {
+        null -> UNKNOWN
+        else -> io.github.pennstatecs.geokit.datum.ReferenceFrame.fromId(token)?.displayName ?: "$UNKNOWN ($token)"
+    }
+
+    /** A coordinate epoch as a decimal year ("2026.886"); NULL → "unknown". */
+    fun coordinateEpochLabel(epoch: Double?): String =
+        epoch?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.3f", it) } ?: UNKNOWN
+
+    /** Where the stored orthometric height (altitudeMsl) came from; NULL → "unknown". */
+    fun orthometricHeightSourceLabel(source: String?): String = when (source) {
+        null -> UNKNOWN
+        app.surrealar.domain.model.OrthometricHeightSource.RECEIVER_GGA -> "External receiver (NMEA GGA)"
+        app.surrealar.domain.model.OrthometricHeightSource.DEVICE_GNSS -> "Device GNSS"
+        app.surrealar.domain.model.OrthometricHeightSource.COMPUTED -> "Computed in the app"
+        else -> "$UNKNOWN ($source)"
+    }
+
+    /** The geoid model of the stored orthometric height; NULL → "model unknown" (receivers do not report it). */
+    fun orthometricModelLabel(model: String?): String = model?.let { geoidModelName(it) } ?: "model unknown"
+
+    private fun geoidModelName(token: String): String =
+        io.github.pennstatecs.geokit.geoid.GeoidModelId.fromToken(token)?.token ?: "$UNKNOWN ($token)"
+
+    /** One provenance row (label, value). */
+    data class ProvenanceRow(val label: String, val value: String)
+
+    /**
+     * Provenance rows for the detail screen: source frame, coordinate epoch, receiver frame, orthometric
+     * height source and its geoid model. Every row is always present, with "unknown" for NULL (legacy,
+     * manual or imported points), so absence of metadata is visible rather than guessed.
+     */
+    fun provenanceRows(c: Coordinate): List<ProvenanceRow> = listOf(
+        ProvenanceRow("Source frame", frameLabel(c.sourceFrame)),
+        ProvenanceRow("Coordinate epoch", coordinateEpochLabel(c.coordinateEpoch)),
+        ProvenanceRow("Receiver frame", frameLabel(c.receiverFrame)),
+        ProvenanceRow("Orthometric height source", orthometricHeightSourceLabel(c.orthometricHeightSource)),
+        ProvenanceRow("Orthometric height model", orthometricModelLabel(c.orthometricModel)),
+    )
+
     // ── Compact values for the Survey/GNSS stat tiles ──────────────────────────────────
 
     /** Short fix-status label for a stat tile: "Fix", "Float", "DGPS", "Single", … Null when absent. */

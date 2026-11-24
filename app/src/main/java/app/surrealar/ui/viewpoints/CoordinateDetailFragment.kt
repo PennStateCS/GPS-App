@@ -605,7 +605,7 @@ class CoordinateDetailFragment : Fragment() {
                 rows += DetailRow("Northing", String.format(Locale.US, "%,.${d}f %s", p.northing, p.unit.suffix))
                 rows += DetailRow("Easting", String.format(Locale.US, "%,.${d}f %s", p.easting, p.unit.suffix))
             } else {
-                rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel("Lat / Lon", p.datum.label),
+                rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel("Lat / Lon", app.surrealar.coords.CoordinateFormat.datumLabel(p)),
                     app.surrealar.coords.CoordinateFormat.horizontal(p))
             }
             // Saved points are reduced to the ground mark at capture (pole + phase-centre offset).
@@ -625,15 +625,20 @@ class CoordinateDetailFragment : Fragment() {
         val altRows = mutableListOf<DetailRow>()
         // Skipped when the Height row above already shows the receiver's H (same value twice otherwise).
         if (CoordinateDetailFormatter.showReceiverMslRow(coordSystemSettings.vertical)) {
-            c.altitudeMsl?.let { altRows += DetailRow(CoordinateDetailFormatter.RECEIVER_ORTHOMETRIC_HEIGHT,
+            c.altitudeMsl?.let { altRows += DetailRow(CoordinateDetailFormatter.receiverOrthometricHeightLabel(c.orthometricModel),
                 app.surrealar.coords.CoordinateFormat.length(it, unit)) }
         }
-        c.geoidSeparationM?.let { altRows += DetailRow(CoordinateDetailFormatter.RECEIVER_GEOID_SEPARATION, len(it, 3)) }
+        c.geoidSeparationM?.let { altRows += DetailRow(CoordinateDetailFormatter.receiverGeoidSeparationLabel(c.orthometricModel), len(it, 3)) }
         // Antenna/pole offset applied at capture — shown so the user can see what it was set to.
         c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", len(it, 3)) }
         if (altRows.isNotEmpty()) {
             renderStackedColumns(container, altRows)
         }
+
+        // Provenance of the stored numbers (frame, epoch, receiver frame, height source/model). Unknown
+        // (legacy / manual / imported points) reads "unknown"; nothing is inferred.
+        addCardSubheading(container, "Provenance")
+        renderStackedColumns(container, CoordinateDetailFormatter.provenanceRows(c).map { DetailRow(it.label, it.value) })
 
         cardLocation?.visibility = View.VISIBLE
     }

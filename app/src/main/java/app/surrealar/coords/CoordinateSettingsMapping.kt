@@ -9,6 +9,7 @@ import io.github.pennstatecs.geokit.convert.GeodeticDatum
 import io.github.pennstatecs.geokit.convert.LengthUnit
 import io.github.pennstatecs.geokit.convert.OutputSystem
 import io.github.pennstatecs.geokit.convert.TargetSystem
+import io.github.pennstatecs.geokit.geoid.GeoidModelId
 import io.github.pennstatecs.geokit.projection.SpcsZones
 import io.github.pennstatecs.geokit.convert.VerticalReference as GeoVerticalReference
 
@@ -26,12 +27,27 @@ fun LinearUnit.toLengthUnit(): LengthUnit = when (this) {
 fun OutputDatum.toGeodeticDatum(): GeodeticDatum = when (this) {
     OutputDatum.WGS84 -> GeodeticDatum.WGS84_ITRF2014
     OutputDatum.NAD83_2011 -> GeodeticDatum.NAD83_2011
+    OutputDatum.ITRF2020 -> GeodeticDatum.ITRF2020
 }
 
+/**
+ * The geokit vertical reference the engine computes. For the global-model heights ([globalGeoidModel]
+ * non-null) the engine is not asked for a height at all: [CoordinateConverter] computes
+ * H = h − N(model) itself from the WGS84 (ITRF2014) ellipsoidal height, so this returns ELLIPSOIDAL only
+ * as a placeholder that is always replaced (never a second geoid correction).
+ */
 fun VerticalReference.toGeoVerticalReference(): GeoVerticalReference = when (this) {
     VerticalReference.ELLIPSOIDAL -> GeoVerticalReference.ELLIPSOIDAL
     VerticalReference.NAVD88_GEOID18 -> GeoVerticalReference.GEOID18_ORTHOMETRIC
     VerticalReference.RECEIVER_MSL -> GeoVerticalReference.RECEIVER_MSL
+    VerticalReference.EGM2008, VerticalReference.EGM96 -> GeoVerticalReference.ELLIPSOIDAL
+}
+
+/** The global geoid model of an orthometric-height choice (EGM2008 / EGM96), null for the others. */
+fun VerticalReference.globalGeoidModel(): GeoidModelId? = when (this) {
+    VerticalReference.EGM2008 -> GeoidModelId.EGM2008
+    VerticalReference.EGM96 -> GeoidModelId.EGM96
+    VerticalReference.ELLIPSOIDAL, VerticalReference.NAVD88_GEOID18, VerticalReference.RECEIVER_MSL -> null
 }
 
 /**

@@ -1,5 +1,8 @@
 package app.surrealar.ui.settings.categories
 
+import io.github.pennstatecs.geokit.crs.CrsCatalogId
+import io.github.pennstatecs.geokit.crs.CrsCatalogStatus
+import io.github.pennstatecs.geokit.crs.CrsRegistry
 import io.github.pennstatecs.geokit.projection.SpcsZone
 import io.github.pennstatecs.geokit.projection.SpcsZoneBasis
 import io.github.pennstatecs.geokit.projection.SpcsZoneCheck
@@ -13,6 +16,30 @@ import io.github.pennstatecs.geokit.projection.SpcsZoneSuggestion
  */
 internal object SpcsZoneHints {
     private const val MAX_ALTERNATIVES = 3
+
+    /** More than the 118 SPCS83 zones, so a search never truncates the list. */
+    private const val SEARCH_LIMIT = 500
+
+    private val NON_ALPHANUMERIC = Regex("[^\\p{L}\\p{N}]+")
+
+    /**
+     * Zones offered by the State Plane picker for the text typed so far, through geokit's
+     * [CrsRegistry.search] over the SPCS83 catalog (operational entries only, so SPCS2022 never shows).
+     * Every word must match the zone name, code, EPSG code or catalog ("tex", "north", "3701", "6562");
+     * exact code matches rank first. Punctuation is ignored, so the full label of the chosen zone
+     * ("Pennsylvania North (3701)") still finds it. A blank query lists all zones by label.
+     */
+    fun searchZones(query: String, registry: CrsRegistry = CrsRegistry.DEFAULT): List<SpcsZone> {
+        val q = query.replace(NON_ALPHANUMERIC, " ").trim()
+        return if (q.isEmpty())
+            registry.catalog(CrsCatalogId.SPCS83).operational.mapNotNull { it.spcsZone }.sortedBy { it.label }
+        else registry.search(q, CrsCatalogId.SPCS83, includeNonOperational = false, limit = SEARCH_LIMIT)
+            .mapNotNull { it.spcsZone }
+    }
+
+    /** One-line note while SPCS2022 cannot be offered (from the registry's catalog status), else null. */
+    fun spcs2022Note(registry: CrsRegistry = CrsRegistry.DEFAULT): String? =
+        if (registry.catalog(CrsCatalogId.SPCS2022).status == CrsCatalogStatus.UNSUPPORTED) "SPCS2022: not yet available." else null
 
     /**
      * Zone to propose when the user switches to State Plane, or null to keep [saved]. The saved zone is

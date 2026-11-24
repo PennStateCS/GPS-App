@@ -45,3 +45,23 @@ Then: independent review, full sequential verification, consolidated Phase 1+2 t
 - No identity transformation between WGS84/ITRF2020 and NATRF2022; unverified systems are not selectable.
 - Historical rows are never reinterpreted; unknown metadata stays NULL.
 - GNSS feed, NMEA fusion, antenna geometry, AR/Maps WGS84 path unchanged.
+
+## WP E (app wiring) notes
+
+- Settings (appended values; keys, old tokens and defaults unchanged; unknown tokens fall back to the old
+  defaults): Datum `itrf2020` "ITRF2020" (Geographic/UTM; the 2020 frame at each position's coordinate
+  epoch: stored `coordinateEpoch`, else the capture time; live fixes at fix time; State Plane stays
+  NAD83(2011)); Height `egm2008` "Orthometric height H (EGM2008)" / "H EGM2008" and `egm96`
+  "Orthometric height H (EGM96, fallback)" / "H EGM96". No receiver-frame options were added.
+- EGM heights are computed by the app adapter (`coords/CoordinateConverter`) as H = h − N(model), with h
+  and the lookup position = the source in WGS84 (ITRF2014), i.e. the stored WGS84-as-ITRF2014 numbers as
+  they are (NAD83(2011) sources transformed at their epoch). One subtraction per height; GEOID18 path and
+  receiver H passthrough unchanged. A missing EGM2008 tile is "outside EGM2008 coverage bundled in this
+  app (US regions)", never EGM96. One model instance per process (`coords/AppGeoidModels`), opened on
+  Dispatchers.IO when the option is selected.
+- Display: ITRF2020 positions are labelled "ITRF2020 epoch 2026.886" (system summary, CSV System column,
+  copy text, detail Lat/Lon row). Point details show a Provenance block (source frame, coordinate epoch,
+  receiver frame, orthometric height source and model; NULL → "unknown").
+- Zone picker: `CrsRegistry.search` over the operational SPCS83 catalog; "SPCS2022: not yet available."
+- `CoordinateConverterGoldenTest` now iterates the pre-Phase-2 enum values explicitly (same order); the
+  golden resource is unchanged.
