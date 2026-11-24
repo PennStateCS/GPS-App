@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 
 /** Settings → Appearance: theme mode, live GNSS status bar, keep screen awake, max brightness. */
 internal class AppearanceSettingsController(
-    private val host: Fragment,
+    private val fragment: Fragment,
     private val settingsRepo: AppearanceSettingsRepository,
     /** Outlives the screen so a change made as the user leaves still saves. */
     private val saveScope: CoroutineScope,
@@ -40,7 +40,7 @@ internal class AppearanceSettingsController(
             )
 
             spinner?.setAdapter(
-                ArrayAdapter(host.requireContext(), R.layout.list_item_dropdown_settings, options.map { it.first })
+                ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, options.map { it.first })
             )
 
             categoryScope.launch {
@@ -71,7 +71,7 @@ internal class AppearanceSettingsController(
                         )
                     } catch (e: Exception) {
                         settingsError("Settings save failed section=appearance", e)
-                        host.showSettingsMessage("Failed to save theme.")
+                        fragment.showSettingsMessage("Failed to save theme.")
                     }
                 }
             }
