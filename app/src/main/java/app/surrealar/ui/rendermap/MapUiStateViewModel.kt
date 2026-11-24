@@ -31,6 +31,26 @@ data class MapUiState(
     val isLeftPanelCollapsed: Boolean = false,
     val selectedCoordinateId: String? = null,
     val camera: MapCameraState? = null,
+    /** The running stakeout, so it continues after Details/AR/tab switches; null = no stakeout. */
+    val stakeout: StakeoutSession? = null,
+)
+
+/**
+ * The stakeout operation to restore when the map view comes back. Plain values only. A
+ * coordinate-backed target ([targetId] != null) is re-checked against the database on return
+ * (deleted → stakeout ends, moved → follows the point); the readout is never restored, it is
+ * recomputed from the next live fix.
+ */
+data class StakeoutSession(
+    /** Saved coordinate being staked out; null for a free map-tap target. */
+    val targetId: String?,
+    /** Target position (WGS84, as plotted); null only when stakeout mode is on without a target yet. */
+    val targetLat: Double?,
+    val targetLng: Double?,
+    /** Text shown as the card's target line (point name, or the tapped lat/lon). */
+    val targetLabel: String,
+    /** Guidance mode was on; its resources are re-acquired by the normal onResume path. */
+    val guidanceActive: Boolean,
 )
 
 /**

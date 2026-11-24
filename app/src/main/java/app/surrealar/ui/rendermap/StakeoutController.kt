@@ -48,8 +48,13 @@ private class ToneGeneratorTone(private val tone: android.media.ToneGenerator) :
  *
  * Distance/bearing maths and the guidance rules are geokit-core's; this class only presents them.
  * Guidance resources follow the screen: [pauseGuidanceFeedback]/[resumeGuidanceFeedback] (onPause /
- * onResume), [stopGuidance] (onDestroyView). The compass is the host's ([syncCompass] after any
+ * onResume), released again in [onDestroyView]. The compass is the host's ([syncCompass] after any
  * guidance change; [wantsCompass] says whether guidance needs it).
+ *
+ * The stakeout itself outlives the view: every change is mirrored to a [StakeoutSession] (kept by the
+ * activity-scoped MapUiStateViewModel), and [bindViews] restores it, so leaving the map for Details,
+ * AR or another tab and coming back continues the same stakeout ([onMapReady] redraws the marker,
+ * [revalidateTarget] re-checks a saved-point target against the database).
  */
 internal class StakeoutController(
     private val map: () -> GoogleMap?,
@@ -66,6 +71,12 @@ internal class StakeoutController(
     private val syncCompass: () -> Unit,
     private val logMapEvent: (category: String, message: String) -> Unit,
     private val showSnackbar: (String) -> Unit,
+    /** The session kept outside this controller (MapUiStateViewModel), read when the view is bound. */
+    private val loadSession: () -> StakeoutSession? = { null },
+    /** Mirrors every target/mode/guidance change into that session. */
+    private val saveSession: (StakeoutSession?) -> Unit = {},
+    /** True while the GNSS feed is stale: a replayed old fix must not drive the readout. */
+    private val isFixStale: () -> Boolean = { false },
     private val toneFactory: () -> GuidanceTone? = {
         ToneGeneratorTone(android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80))
     },
@@ -117,6 +128,14 @@ internal class StakeoutController(
     private var guidanceStaleJob: kotlinx.coroutines.Job? = null
     private val feedbackGate = io.github.pennstatecs.geokit.stakeout.StakeoutFeedbackGate()
     private var toneGenerator: GuidanceTone? = null
+    /** Card target line (kept so the session can restore it). */
+    private var targetLabel: String = "—"
+    /**
+     * The target is known to still exist. A saved-point target restored after view recreation is
+     * unconfirmed until the first coordinate load ([revalidateTarget]); no marker or readout until then.
+     */
+    var isTargetConfirmed = true
+        private set
 
     /** Guidance is running and set to steer by the compass. */
     val wantsCompass: Boolean get() = isGuidanceActive && settings.guidanceUsesCompassHeading
@@ -142,6 +161,105 @@ internal class StakeoutController(
         btnToggleStakeout?.setOnClickListener { toggleStakeoutMode() }
         btnClearStakeout?.setOnClickListener { stopStakeout() }
         btnStakeoutGuidance?.setOnClickListener { if (isGuidanceActive) stopGuidance() else startGuidance() }
+        restoreFromSession()
+    }
+
+    /**
+     * Brings back a stakeout that was running when the previous view went away (Details/AR, tab
+     * switch): target, card and guidance mode. The readout starts in the waiting state and is
+     * recomputed from the next live fix (never from the position seen before leaving). Guidance
+     * resources (tone, keep-screen-on, stale watcher, compass) are re-acquired by the host's normal
+     * onResume path ([resumeGuidanceFeedback] + syncCompass), so nothing starts while not resumed.
+     * A saved-point target waits for [revalidateTarget] before its marker/readout appear.
+     */
+    private fun restoreFromSession() {
+        val s = loadSession() ?: return
+        isStakeoutMode = true
+        stakeoutTargetId = s.targetId
+        stakeoutTarget = if (s.targetLat != null && s.targetLng != null) LatLng(s.targetLat, s.targetLng) else null
+        targetLabel = s.targetLabel
+        isTargetConfirmed = s.targetId == null
+        lastStakeoutFixElapsedMs = null
+        lastStakeoutMarkerHue = null
+        stakeoutPanel?.visibility = View.VISIBLE
+        txtStakeoutTarget?.text = s.targetLabel
+        showStakeoutWaiting()
+        isGuidanceActive = s.guidanceActive && stakeoutTarget != null
+        feedbackGate.reset()   // no replayed arrival cue on return
+        if (isGuidanceActive) showGuidanceControls()
+        logMapEvent("STAKEOUT", "Stakeout restored targetId=${s.targetId ?: "free"} guidance=$isGuidanceActive")
+    }
+
+    /** The map is ready (also after view recreation): draws the target marker of a confirmed target. */
+    fun onMapReady() {
+        if (isStakeoutMode && isTargetConfirmed && stakeoutTarget != null) ensureTargetMarker()
+    }
+
+    /**
+     * Every coordinate load (WGS84 points): re-checks a saved-point target. Deleted → stakeout ends
+     * with an explanation; moved/renamed → the target follows the point (the readout waits for the
+     * next fix). First confirmation after a restore draws the marker.
+     */
+    fun revalidateTarget(points: List<Coordinate>) {
+        val id = stakeoutTargetId ?: return
+        if (!isStakeoutMode) return
+        val c = points.firstOrNull { it.id == id }
+        if (c == null) {
+            logMapEvent("STAKEOUT", "Stakeout target removed targetId=$id")
+            stopStakeout(reason = "Stakeout target was removed")
+            return
+        }
+        val latLng = LatLng(c.latitude, c.longitude)
+        val moved = latLng != stakeoutTarget
+        val renamed = c.name != targetLabel
+        val firstConfirm = !isTargetConfirmed
+        isTargetConfirmed = true
+        if (moved || renamed) {
+            stakeoutTarget = latLng
+            targetLabel = c.name
+            txtStakeoutTarget?.text = c.name
+            try {
+                stakeoutMarker?.position = latLng
+                stakeoutMarker?.title = "Stakeout: ${c.name}"
+            } catch (e: Exception) { logFail("stakeout marker update", e) }
+            persist()
+        }
+        if (moved && !firstConfirm) { lastStakeoutFixElapsedMs = null; showStakeoutWaiting() }
+        ensureTargetMarker()
+    }
+
+    private fun ensureTargetMarker() {
+        val target = stakeoutTarget ?: return
+        if (stakeoutMarker != null) return
+        lastStakeoutMarkerHue = null
+        stakeoutMarker = map()?.addMarker(
+            MarkerOptions()
+                .position(target)
+                .title(if (stakeoutTargetId != null) "Stakeout: $targetLabel" else "Stakeout Target")
+                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
+                .zIndex(5f)   // keep the active target above the regular coordinate markers
+        )
+        if (stakeoutMarker != null) lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
+    }
+
+    private fun persist() {
+        saveSession(
+            if (!isStakeoutMode) null
+            else StakeoutSession(
+                targetId = stakeoutTargetId,
+                targetLat = stakeoutTarget?.latitude,
+                targetLng = stakeoutTarget?.longitude,
+                targetLabel = targetLabel,
+                guidanceActive = isGuidanceActive,
+            )
+        )
+    }
+
+    private fun showGuidanceControls() {
+        btnStakeoutGuidance?.text = "Stop Guidance"
+        imgStakeoutArrow?.visibility = View.VISIBLE
+        txtStakeoutTolerance?.visibility = View.VISIBLE
+        txtStakeoutTolerance?.text = "Tolerance: " + coordinateSystemService.lengthText(settings.toleranceMeters, 2)
     }
 
     /**
@@ -154,11 +272,18 @@ internal class StakeoutController(
     }
 
     /**
-     * The view (and its map) is going away. The host calls [stopGuidance] first. Removes the line
-     * and drops the marker and view references (the marker died with the map; it used to be kept
-     * and then touched on the next map). The target itself is kept, as before.
+     * The view (and its map) is going away. Releases the guidance resources (tone, keep-screen-on,
+     * stale watcher) but keeps the stakeout and the guidance mode, so the next view restores them
+     * (see [restoreFromSession]). Removes the line and drops the marker and view references (the
+     * marker died with the map; it used to be kept and then touched on the next map).
      */
     fun onDestroyView() {
+        guidanceStaleJob?.cancel(); guidanceStaleJob = null
+        releaseToneGenerator()
+        setKeepScreenOn(false)
+        feedbackGate.reset()
+        // A saved-point target is re-checked against the database when the view comes back.
+        isTargetConfirmed = stakeoutTargetId == null
         try { stakeoutLine?.remove() } catch (e: Exception) { logFail("onDestroyView cleanup", e) }
         stakeoutLine = null
         stakeoutMarker = null
@@ -185,40 +310,40 @@ internal class StakeoutController(
 
         stakeoutTarget = latLng
         stakeoutTargetId = id
+        targetLabel = coord.name
+        isTargetConfirmed = true
         lastStakeoutFixElapsedMs = null
         txtStakeoutTarget?.text = coord.name
         showStakeoutWaiting()
 
         stakeoutMarker?.remove()
-        lastStakeoutMarkerHue = null
-        stakeoutMarker = map()?.addMarker(
-            MarkerOptions()
-                .position(latLng)
-                .title("Stakeout: ${coord.name}")
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                .zIndex(5f)   // keep the active target above the regular coordinate markers
-        )
-        lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
+        stakeoutMarker = null
+        ensureTargetMarker()
+        persist()
 
         refreshStakeout()
         logMapEvent("STAKEOUT", "Stakeout started targetId=${coord.id}")   // id only: no point names in logs
         showSnackbar("Stakeout started: ${coord.name}")
     }
 
-    fun stopStakeout() {
+    /** Ends stakeout. [reason] replaces the "Stakeout stopped" snackbar (e.g. the target was deleted). */
+    fun stopStakeout(reason: String? = null) {
         if (!isStakeoutMode) return
         if (isGuidanceActive) stopGuidance()
         isStakeoutMode = false
         stakeoutPanel?.visibility = View.GONE
         stakeoutTarget = null
         stakeoutTargetId = null
+        targetLabel = "—"
+        isTargetConfirmed = true
         lastStakeoutFixElapsedMs = null
         txtStakeoutTarget?.text = "—"
         showStakeoutWaiting()
         stakeoutMarker?.remove(); stakeoutMarker = null; lastStakeoutMarkerHue = null
         stakeoutLine?.remove(); stakeoutLine = null
+        persist()
         logMapEvent("STAKEOUT", "Stakeout stopped")
-        showSnackbar("Stakeout stopped")
+        showSnackbar(reason ?: "Stakeout stopped")
     }
 
     private fun toggleStakeoutMode() {
@@ -228,6 +353,7 @@ internal class StakeoutController(
             isStakeoutMode = true
             stakeoutPanel?.visibility = View.VISIBLE
             stakeoutMarker?.remove(); stakeoutMarker = null
+            persist()
         }
     }
 
@@ -237,17 +363,16 @@ internal class StakeoutController(
         try {
             stakeoutTarget = latLng
             stakeoutTargetId = null   // free map-tap target (not tied to a saved coordinate)
+            isTargetConfirmed = true
             lastStakeoutFixElapsedMs = null
-            txtStakeoutTarget?.text = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
+            targetLabel = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
+            txtStakeoutTarget?.text = targetLabel
             if (stakeoutMarker == null) {
-                stakeoutMarker = map()?.addMarker(
-                    MarkerOptions().position(latLng).title("Stakeout Target")
-                        .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                        .zIndex(5f)   // keep the active target above the regular coordinate markers
-                )
+                ensureTargetMarker()
             } else {
                 try { stakeoutMarker?.position = latLng } catch (e: Exception) { logFail("stakeout marker move", e) }
             }
+            persist()
             refreshStakeout()
         } catch (e: Exception) { logFail("map click stakeout", e) }
         return true
@@ -258,6 +383,9 @@ internal class StakeoutController(
     fun updateStakeoutCalculations(currentPos: LatLng) {
         val target = stakeoutTarget ?: return
         if (!isStakeoutMode) return
+        // A restored saved-point target is not used until the database confirms it still exists,
+        // and a fix replayed while the feed is stale is not a live position.
+        if (!isTargetConfirmed || isFixStale()) return
         lastStakeoutFixElapsedMs = clock.nowMs()
         try {
             // Distance + bearing: WGS84 geodesic (geokit-core Geodesic).
@@ -354,10 +482,8 @@ internal class StakeoutController(
         if (!isStakeoutMode || stakeoutTarget == null) { showSnackbar("Select a stakeout target first"); return }
         isGuidanceActive = true
         feedbackGate.reset()
-        btnStakeoutGuidance?.text = "Stop Guidance"
-        imgStakeoutArrow?.visibility = View.VISIBLE
-        txtStakeoutTolerance?.visibility = View.VISIBLE
-        txtStakeoutTolerance?.text = "Tolerance: " + coordinateSystemService.lengthText(settings.toleranceMeters, 2)
+        showGuidanceControls()
+        persist()
         syncCompass()
         if (settings.enableAudio) ensureToneGenerator()
         if (settings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
@@ -368,6 +494,7 @@ internal class StakeoutController(
 
     fun stopGuidance() {
         isGuidanceActive = false
+        persist()
         btnStakeoutGuidance?.text = "Start Guidance"
         imgStakeoutArrow?.visibility = View.GONE
         txtStakeoutTolerance?.visibility = View.GONE

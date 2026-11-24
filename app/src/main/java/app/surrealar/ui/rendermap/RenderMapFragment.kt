@@ -231,6 +231,9 @@ class RenderMapFragment : Fragment() {
             syncCompass = ::syncCompass,
             logMapEvent = ::logMapEvent,
             showSnackbar = ::showSnackbar,
+            loadSession = { mapUiVm.state.stakeout },
+            saveSession = { s -> mapUiVm.update { it.copy(stakeout = s) } },
+            isFixStale = { fixSwitchboard.fixStale.value },
         )
     }
 
@@ -310,6 +313,7 @@ class RenderMapFragment : Fragment() {
             bindData()
             live.collectFixes(viewLifecycleOwner)
             setupMapClickListener()
+            stakeout.onMapReady()   // a restored stakeout's target marker on the new map
             MapRuntimeDiagnostics.update {
                 it.copy(cameraRestored = cameraRestored)
             }
@@ -332,7 +336,7 @@ class RenderMapFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         drawer.bindPanelViews(view)   // panel, counts, search, Show all / Hide all
-        stakeout.bindViews(view)      // stakeout card + guidance controls
+        stakeout.bindViews(view)      // stakeout card + guidance controls; restores a running stakeout
 
         // Keep the latest stakeout settings in memory for the guidance loop, and apply changes to
         // running guidance immediately (e.g. toggling audio/compass/keep-screen-on mid-stakeout).
@@ -379,12 +383,13 @@ class RenderMapFragment : Fragment() {
 
     override fun onDestroyView() {
         try {
-            stakeout.stopGuidance()   // release tone, clear keep-screen-on
             fragmentResumed = false
             compass.unregister()   // make sure the shared sensor is released with the view
         } catch (e: Exception) { logFail("onDestroyView cleanup", e) }
         // Map objects go before mapView.onDestroy(); each component catches/logs its own cleanup.
-        stakeout.onDestroyView()   // stakeout line; drops the target marker + card views
+        // Stakeout: releases tone/keep-screen-on/stale watcher and the line, drops the marker + card
+        // views; the stakeout (and guidance mode) is kept and restored by the next view.
+        stakeout.onDestroyView()
         live.onDestroyView()       // trail, accuracy circle, current marker, heading arrow
         overlays.onDestroyView()   // grid lines, label markers + label cache, Grid/Labels rows
         // The map + its markers are destroyed with the view. Drop the stale marker references and the
@@ -442,21 +447,17 @@ class RenderMapFragment : Fragment() {
                     camera.clearCoordinates()
                     drawer.showNoPoints()
                     // A coordinate-backed stakeout target no longer exists — end stakeout cleanly.
-                    if (stakeout.isStakeoutMode && stakeout.stakeoutTargetId != null) {
-                        showSnackbar("Stakeout target was removed"); stakeout.stopStakeout()
-                    }
+                    stakeout.revalidateTarget(points)
                     return@observe
                 }
                 drawer.hidePlaceholder()
 
                 // Remove markers for coordinates that were deleted
                 val newIds = points.map { it.id }.toHashSet()
-                val removedIds = markers.removeMissing(newIds)
-                // If the active stakeout target was the deleted coordinate, end stakeout cleanly.
-                val targetId = stakeout.stakeoutTargetId
-                if (stakeout.isStakeoutMode && targetId != null && targetId in removedIds) {
-                    showSnackbar("Stakeout target was removed"); stakeout.stopStakeout()
-                }
+                markers.removeMissing(newIds)
+                // Stakeout target: deleted (also while away from the map) → end stakeout with an
+                // explanation; moved → follow it; first load after a restore → draw its marker.
+                stakeout.revalidateTarget(points)
 
                 val latLngsVisible = ArrayList<LatLng>()
                 val toggleItems = mutableListOf<CoordinateToggleItem>()
