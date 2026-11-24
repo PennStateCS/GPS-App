@@ -256,4 +256,77 @@ class CoordinateFactoryTest {
         assertNull(coord.correctionAgeS)
         assertNull(coord.correctionStationId)
     }
+
+    // ── v14 provenance ──────────────────────────────────────────────────────────
+
+    private fun build(
+        provider: Provider = Provider.EXTERNAL_TCP,
+        result: CaptureResult = captureResult(),
+        crsEpsg: Int = 4326,
+        receiverFrame: String? = null,
+        antennaHeightM: Double = 0.0,
+    ) = CoordinateFactory.fromCaptureResult(
+        id = "p", name = "P", note = null, color = 0, iconId = "pin",
+        provider = provider, result = result, crsEpsg = crsEpsg, receiverFrame = receiverFrame,
+        antennaHeightM = antennaHeightM,
+    )
+
+    @Test
+    fun `external capture records frame, epoch and receiver GGA height provenance`() {
+        val coord = build(receiverFrame = FrameTokens.NAD83_2011)
+        assertEquals(FrameTokens.WGS84_AS_ITRF2014, coord.sourceFrame)
+        assertEquals(FrameTokens.NAD83_2011, coord.receiverFrame)
+        // The epoch of the stored timestamp (the last fix time), exactly as the feed transform computes it.
+        assertEquals(io.github.pennstatecs.geokit.datum.Itrf2014ToNad83.decimalYear(1_700_000_059_800L), coord.coordinateEpoch!!, 0.0)
+        assertEquals(OrthometricHeightSource.RECEIVER_GGA, coord.orthometricHeightSource)
+        assertNull("receivers don't report their geoid model", coord.orthometricModel)
+    }
+
+    @Test
+    fun `provenance never changes any stored value`() {
+        val result = captureResult()
+        val with = build(receiverFrame = FrameTokens.ITRF2014, antennaHeightM = 1.8)
+        val without = build(antennaHeightM = 1.8)
+        assertEquals(
+            without.copy(sourceFrame = null, receiverFrame = null, coordinateEpoch = null, orthometricHeightSource = null),
+            with.copy(sourceFrame = null, receiverFrame = null, coordinateEpoch = null, orthometricHeightSource = null),
+        )
+        assertEquals(result.altEllipsoidalM - 1.8, with.altitude, 0.0)
+        assertEquals(result.altMslM!! - 1.8, with.altitudeMsl!!, 0.0)
+        assertEquals(result.latDeg, with.latitude, 0.0)
+    }
+
+    @Test
+    fun `internal capture records device GNSS height and no receiver frame`() {
+        val coord = build(provider = Provider.INTERNAL)
+        assertEquals(FrameTokens.WGS84_AS_ITRF2014, coord.sourceFrame)
+        assertNull(coord.receiverFrame)
+        assertEquals(OrthometricHeightSource.DEVICE_GNSS, coord.orthometricHeightSource)
+    }
+
+    @Test
+    fun `no MSL height means no height provenance`() {
+        val coord = build(result = captureResult(altMslM = null, geoidSeparationM = null))
+        assertNull(coord.altitudeMsl)
+        assertNull(coord.orthometricHeightSource)
+        assertNull(coord.orthometricModel)
+    }
+
+    @Test
+    fun `other providers leave height provenance unknown`() {
+        assertNull(build(provider = Provider.OTHER).orthometricHeightSource)
+        assertEquals(OrthometricHeightSource.RECEIVER_GGA, build(provider = Provider.REPLAY).orthometricHeightSource)
+        assertEquals(OrthometricHeightSource.RECEIVER_GGA, build(provider = Provider.EXTERNAL_BT).orthometricHeightSource)
+    }
+
+    @Test
+    fun `NAD83 stored datum records the NAD83 frame`() {
+        assertEquals(FrameTokens.NAD83_2011, build(crsEpsg = 6319).sourceFrame)
+    }
+
+    @Test
+    fun `device clock fallback epoch follows the stored timestamp`() {
+        val coord = build(result = captureResult(lastFixTimeUtc = null))
+        assertEquals(coordinateEpochOf(coord.timestamp), coord.coordinateEpoch!!, 0.0)
+    }
 }

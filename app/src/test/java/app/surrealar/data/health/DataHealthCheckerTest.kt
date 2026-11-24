@@ -5,6 +5,7 @@ import app.surrealar.data.local.dao.ModelDao
 import app.surrealar.data.local.entity.CoordinateEntity
 import app.surrealar.data.local.entity.ModelEntity
 import io.github.pennstatecs.geokit.gnss.model.Provider
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.Mockito.mock
@@ -97,6 +98,16 @@ class DataHealthCheckerTest {
     @Test fun cleanData_hasNoIssues() {
         val report = analyze(listOf(coord()))
         assertTrue("expected no issues, got ${report.issues}", report.issues.isEmpty())
+    }
+
+    @Test fun v14Provenance_setOrNull_doesNotChangeTheReport() {
+        val legacy = coord()
+        val captured = legacy.copy(
+            sourceFrame = "wgs84-as-itrf2014", receiverFrame = "nad83-2011", coordinateEpoch = 2026.9,
+            orthometricHeightSource = "RECEIVER_GGA", orthometricModel = null,
+        )
+        assertEquals(analyze(listOf(legacy)).issues, analyze(listOf(captured)).issues)
+        assertTrue(analyze(listOf(captured)).issues.isEmpty())
     }
 
     @Test fun flagsFakeZeroAltitudeWithoutMetadata() =

@@ -108,4 +108,12 @@ data class CoordinateEntity(
     val modelMoveEastM: Double? = null,
     val modelMoveNorthM: Double? = null,
     val modelMoveUpM: Double? = null,
+
+    // ─── v14: coordinate provenance (all nullable; NULL = unknown/legacy, never back-filled).
+    // Tokens: app.surrealar.domain.model.FrameTokens / OrthometricHeightSource / OrthometricModel. ───
+    val sourceFrame: String? = null,             // frame of latitude/longitude/altitude (geokit ReferenceFrame id)
+    val receiverFrame: String? = null,           // frame the receiver delivered before feed normalisation
+    val coordinateEpoch: Double? = null,         // decimal year of the coordinates (≠ timestamp, ≠ frame ref. epoch)
+    val orthometricHeightSource: String? = null, // provenance of altitudeMsl/geoidSeparationM
+    val orthometricModel: String? = null,        // geoid model of altitudeMsl when known
 )

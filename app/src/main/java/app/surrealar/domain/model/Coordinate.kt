@@ -100,4 +100,17 @@ data class Coordinate(
     val modelMoveEastM: Double? = null,
     val modelMoveNorthM: Double? = null,
     val modelMoveUpM: Double? = null,
+
+    // v14: coordinate provenance. Null = unknown (legacy rows, manual/imported/model points); readers
+    // resolve unknown to today's behaviour. Tokens in CoordinateProvenance.kt.
+    /** Frame of [latitude]/[longitude]/[altitude]: a geokit `ReferenceFrame` id ([FrameTokens]). */
+    val sourceFrame: String? = null,
+    /** Frame the receiver/network delivered before the feed normalised it ([FrameTokens.ITRF2014] / [FrameTokens.NAD83_2011]). */
+    val receiverFrame: String? = null,
+    /** Decimal year the coordinates refer to; distinct from [timestamp] and from a frame's reference epoch. */
+    val coordinateEpoch: Double? = null,
+    /** Provenance of [altitudeMsl]/[geoidSeparationM] ([OrthometricHeightSource]). */
+    val orthometricHeightSource: String? = null,
+    /** Geoid model of [altitudeMsl] when known ([OrthometricModel]); null = unknown. */
+    val orthometricModel: String? = null,
 )

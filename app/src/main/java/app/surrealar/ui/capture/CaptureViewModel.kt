@@ -2,6 +2,7 @@ package app.surrealar.ui.capture
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.surrealar.coords.frameToken
 import app.surrealar.domain.model.LocationSourceType
 import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.capture.toAveragingPolicy
@@ -307,6 +308,13 @@ class CaptureViewModel @Inject constructor(
             return
         }
 
+        // Frame the external receiver delivered (Settings → Coordinates → External receiver datum at
+        // capture start), for provenance only: the feed already normalised the fixes to WGS84. Null when
+        // the setting couldn't be read, or not an external receiver.
+        val receiverFrame = if (src == LocationSourceType.EXTERNAL)
+            snap?.coordinateSystemSettings?.externalReceiverDatum?.frameToken()
+        else null
+
         // Build → validate → save is centralized in the use case (it rejects an invalid coordinate
         // rather than persisting it). The source/provider/device mapping above stays here because it
         // reads UI/settings state.
@@ -320,6 +328,7 @@ class CaptureViewModel @Inject constructor(
             captureMethod  = captureMethod,
             sourceDevice   = sourceDevice,
             antennaHeightM = antennaHeightM,
+            receiverFrame  = receiverFrame,
         )
 
         // Id only: point names stay out of the event log.

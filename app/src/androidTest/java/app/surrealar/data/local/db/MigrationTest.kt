@@ -94,6 +94,31 @@ class MigrationTest {
     }
 
     @Test
+    fun migrate13To14_addsNullProvenance_andKeepsPoints() {
+        helper.createDatabase(testDb, 13).apply {
+            execSQL(
+                "INSERT INTO coordinates (id,name,latitude,longitude,altitude,timestamp,icon,color,provider,altitudeMsl,crsEpsg,modelMoveUpM) " +
+                    "VALUES ('c1','Pt',41.246813579246813,-76.0,187.12345678901234,555,'',-1,'EXTERNAL_TCP',219.5,6319,0.25)"
+            )
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(testDb, 14, true, MIGRATION_13_14)
+        db.query(
+            "SELECT latitude, altitude, altitudeMsl, crsEpsg, modelMoveUpM, sourceFrame, receiverFrame, " +
+                "coordinateEpoch, orthometricHeightSource, orthometricModel FROM coordinates WHERE id='c1'"
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(41.246813579246813, c.getDouble(0), 0.0)   // the point is untouched
+            assertEquals(187.12345678901234, c.getDouble(1), 0.0)
+            assertEquals(219.5, c.getDouble(2), 0.0)
+            assertEquals(6319, c.getInt(3))
+            assertEquals(0.25, c.getDouble(4), 0.0)
+            for (i in 5..9) assertTrue(c.isNull(i))                  // unknown provenance, no back-fill
+        }
+        db.close()
+    }
+
+    @Test
     fun fullChain_3To10_isContiguous() {
         // The earliest exported schema is v3; it must upgrade all the way to v10 without a
         // destructive fallback (exercises the 3->4 and 6->7 no-op bridges).

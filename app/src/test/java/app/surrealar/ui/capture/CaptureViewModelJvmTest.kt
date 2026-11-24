@@ -68,7 +68,9 @@ class CaptureViewModelJvmTest {
             flowOf(GnssReceiverSettings(poleHeightM = 1.8, internalAntennaHeightM = 0.5)),
         profile: Flow<ExternalReceiverProfile> = flowOf(ExternalReceiverProfile.REACH_RS2_PLUS),
         capture: Flow<GnssCaptureSettings>? = null,
+        coordinateSystem: Flow<app.surrealar.settings.model.CoordinateSystemSettings>? = null,
     ): SettingsRepository = Mockito.mock(SettingsRepository::class.java).also {
+        if (coordinateSystem != null) Mockito.`when`(it.coordinateSystemSettings).thenReturn(coordinateSystem)
         Mockito.`when`(it.externalReceiverProfile).thenReturn(profile)
         Mockito.`when`(it.locationSource).thenReturn(sourceFlow)
         Mockito.`when`(it.externalTcpName).thenReturn(flowOf("Reach"))
@@ -284,6 +286,40 @@ class CaptureViewModelJvmTest {
             ExternalReceiverProfile.DEFAULT
         ).captureOffsetM
         assertEquals(expected, c.altitude, 1e-9)
+    }
+
+    private fun nad83Setting() = flowOf(app.surrealar.settings.model.CoordinateSystemSettings(
+        externalReceiverDatum = app.surrealar.settings.model.ReceiverDatum.NAD83_2011))
+
+    @Test fun save_external_recordsReceiverFrameFromSetting_andFrameAndEpoch() = runBlocking {
+        val vm = vm(settings(coordinateSystem = nad83Setting()))
+        complete(vm)
+        vm.save("P", null, 0, "ic_pin")
+        val c = repo.store.single()
+        assertEquals(app.surrealar.domain.model.FrameTokens.NAD83_2011, c.receiverFrame)
+        assertEquals(app.surrealar.domain.model.FrameTokens.WGS84_AS_ITRF2014, c.sourceFrame)
+        assertEquals(app.surrealar.domain.model.coordinateEpochOf(c.timestamp), c.coordinateEpoch!!, 0.0)
+        assertNull("the test fixes carry no MSL height", c.orthometricHeightSource)
+        assertNull(c.orthometricModel)
+        assertEquals(98.066, c.altitude, 1e-9)   // values unchanged by provenance
+    }
+
+    @Test fun save_external_unreadableDatumSetting_leavesReceiverFrameUnknown() = runBlocking {
+        val vm = vm(settings(coordinateSystem = flow { throw java.io.IOException("datastore") }))
+        complete(vm)
+        vm.save("P", null, 0, "ic_pin")
+        val c = repo.store.single()
+        assertNull(c.receiverFrame)
+        assertEquals(app.surrealar.domain.model.FrameTokens.WGS84_AS_ITRF2014, c.sourceFrame)
+    }
+
+    @Test fun save_internal_hasNoReceiverFrame_evenWithNad83Setting() = runBlocking {
+        val vm = vm(settings(source = LocationSourceType.INTERNAL, coordinateSystem = nad83Setting()))
+        complete(vm, internal = true)
+        vm.save("P", null, 0, "ic_pin")
+        val c = repo.store.single()
+        assertNull(c.receiverFrame)
+        assertEquals(app.surrealar.domain.model.FrameTokens.WGS84_AS_ITRF2014, c.sourceFrame)
     }
 
     @Test fun save_internal_unreadableReceiver_isBlockedWithError() = runBlocking {

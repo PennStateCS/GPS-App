@@ -35,6 +35,7 @@ import app.surrealar.domain.model.CoordinateModelLink
 import app.surrealar.domain.model.displayIconKey
 import app.surrealar.domain.model.hasLinkedModel
 import app.surrealar.domain.model.linkedModelId
+import app.surrealar.domain.model.withPositionProvenanceUnknown
 import app.surrealar.domain.repository.CoordinateDisplaySettingsRepository
 import app.surrealar.domain.repository.ModelRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -1088,8 +1089,8 @@ class CoordinateDetailFragment : Fragment() {
             val lon = embedded.longitude
             val alt = embedded.altitudeMeters ?: coord.altitude
             val utm = try { Utm.forward(lat, lon) } catch (_: Exception) { null }
-            // Position now comes from the model file, so mark provenance accordingly.
-            coord.copy(
+            // Position now comes from the model file, so mark provenance accordingly (frame/epoch unknown).
+            coord.withPositionProvenanceUnknown().copy(
                 icon = CoordinateModelLink.toLegacyIcon(modelId),
                 modelId = modelId,
                 iconKey = null,

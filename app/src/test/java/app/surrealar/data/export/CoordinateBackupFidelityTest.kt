@@ -47,6 +47,8 @@ class CoordinateBackupFidelityTest {
         modelVerticalOffsetM = -0.75, modelOriginOffsetXM = 12.5, modelOriginOffsetYM = -3.25, modelOriginOffsetZM = 0.0625,
         modelPlacementOrigin = "CUSTOM",
         modelMoveEastM = 0.1, modelMoveNorthM = -0.2, modelMoveUpM = 0.30000000000000004,
+        sourceFrame = "wgs84-as-itrf2014", receiverFrame = "nad83-2011", coordinateEpoch = 2026.8986301369863,
+        orthometricHeightSource = "RECEIVER_GGA", orthometricModel = "EGM2008",
     )
 
     /** Only the required fields; every nullable one null. */

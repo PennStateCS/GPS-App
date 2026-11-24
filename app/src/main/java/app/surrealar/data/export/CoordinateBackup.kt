@@ -12,6 +12,10 @@ import org.json.JSONObject
  * Unlike the basic CSV/JSON export (id/name/lat/lon/alt/timestamp/icon/color), this preserves
  * every survey-quality and model-link field so a backup can be restored without data loss.
  * The file is schema-versioned so future readers can migrate older backups.
+ *
+ * Fields are added as optional keys without a [SCHEMA_VERSION] bump (readers ignore unknown keys
+ * and treat absent ones as null/default), e.g. the v14 provenance keys `sourceFrame`,
+ * `receiverFrame`, `coordinateEpoch`, `orthometricHeightSource`, `orthometricModel`.
  */
 object CoordinateBackup {
 
@@ -126,6 +130,12 @@ object CoordinateBackup {
         putN("modelMoveEastM", c.modelMoveEastM)
         putN("modelMoveNorthM", c.modelMoveNorthM)
         putN("modelMoveUpM", c.modelMoveUpM)
+        // v14 provenance (optional keys; absent in older backups → null = unknown)
+        putN("sourceFrame", c.sourceFrame)
+        putN("receiverFrame", c.receiverFrame)
+        putN("coordinateEpoch", c.coordinateEpoch)
+        putN("orthometricHeightSource", c.orthometricHeightSource)
+        putN("orthometricModel", c.orthometricModel)
     }
 
     // ── Import ──────────────────────────────────────────────────────────────────
@@ -261,6 +271,12 @@ object CoordinateBackup {
             modelMoveEastM = o.optDoubleN("modelMoveEastM"),
             modelMoveNorthM = o.optDoubleN("modelMoveNorthM"),
             modelMoveUpM = o.optDoubleN("modelMoveUpM"),
+            // v14 provenance: absent (older backup) or null → unknown. Never inferred on import.
+            sourceFrame = o.optStringN("sourceFrame"),
+            receiverFrame = o.optStringN("receiverFrame"),
+            coordinateEpoch = o.optDoubleN("coordinateEpoch"),
+            orthometricHeightSource = o.optStringN("orthometricHeightSource"),
+            orthometricModel = o.optStringN("orthometricModel"),
         )
     }
 }

@@ -34,7 +34,9 @@ class CoordinateMappersTest {
         modelId = "m1", iconKey = "ic_pin", renderEnabled = false, createdAt = 1_000L, updatedAt = 2_000L,
         modelScale = 2.5, modelYawDeg = 90.0, modelPitchDeg = 1.0, modelRollDeg = 2.0,
         modelVerticalOffsetM = 1.5, modelOriginOffsetXM = 0.1, modelOriginOffsetYM = 0.2, modelOriginOffsetZM = 0.3,
-            modelMoveEastM = 1.25, modelMoveNorthM = -0.5, modelMoveUpM = 0.1
+            modelMoveEastM = 1.25, modelMoveNorthM = -0.5, modelMoveUpM = 0.1,
+        sourceFrame = "wgs84-as-itrf2014", receiverFrame = "nad83-2011", coordinateEpoch = 2026.8986301369863,
+        orthometricHeightSource = "RECEIVER_GGA", orthometricModel = "GEOID18",
     )
 
     @Test
@@ -93,6 +95,12 @@ class CoordinateMappersTest {
         assertEquals(rich.modelMoveEastM, back.modelMoveEastM)
         assertEquals(rich.modelMoveNorthM, back.modelMoveNorthM)
         assertEquals(rich.modelMoveUpM, back.modelMoveUpM)
+        // v14 provenance
+        assertEquals(rich.sourceFrame, back.sourceFrame)
+        assertEquals(rich.receiverFrame, back.receiverFrame)
+        assertEquals(rich.coordinateEpoch, back.coordinateEpoch)
+        assertEquals(rich.orthometricHeightSource, back.orthometricHeightSource)
+        assertEquals(rich.orthometricModel, back.orthometricModel)
     }
 
     @Test

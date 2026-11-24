@@ -36,7 +36,9 @@ import app.surrealar.data.local.entity.ModelEntity
     // v11: coordinates gained antennaHeightM (pole/antenna offset applied at capture, provenance).
     // v12: coordinates gained modelPlacementOrigin (AR model placement preset; NULL = CENTER).
     // v13: coordinates gained modelMoveEastM/NorthM/UpM (AR move-model offset; NULL = not moved).
-    version = 13,
+    // v14: coordinates gained provenance: sourceFrame, receiverFrame, coordinateEpoch,
+    //      orthometricHeightSource, orthometricModel (all nullable; NULL = unknown/legacy).
+    version = 14,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -54,7 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )
-                    // Full, contiguous migration chain v2 -> v10. Every step has an explicit
+                    // Full, contiguous migration chain v2 -> v14. Every step has an explicit
                     // migration (3->4 and 6->7 are documented no-op bridges), so release builds
                     // upgrade existing installs without ever losing saved coordinates/models.
                     .addMigrations(
@@ -68,7 +70,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_9_10,
                         MIGRATION_10_11,
                         MIGRATION_11_12,
-                        MIGRATION_12_13
+                        MIGRATION_12_13,
+                        MIGRATION_13_14
                     )
                     // Destructive fallback is OPT-IN only (Gradle property
                     // ALLOW_DESTRUCTIVE_MIGRATION, default false). Field testers run debug builds,
