@@ -57,6 +57,7 @@ import app.surrealar.ui.settings.categories.ArDisplaySettingsController
 import app.surrealar.ui.settings.categories.MapSettingsController
 import app.surrealar.ui.settings.categories.CaptureSettingsController
 import app.surrealar.ui.settings.categories.CoordinatesSettingsController
+import app.surrealar.ui.settings.categories.DeveloperSettingsController
 import app.surrealar.ui.settings.categories.SettingsCategoryController
 import app.surrealar.ui.settings.common.dpToPx
 import app.surrealar.ui.settings.common.inputLayoutOf
@@ -277,6 +278,7 @@ private const val CAT_ID_DEV                = 7
     private val mapController by lazy { MapSettingsController(this, settingsRepo, settingsRepo, saveScope) }
     private val captureController by lazy { CaptureSettingsController(this, settingsRepo, saveScope) }
     private val coordinatesController by lazy { CoordinatesSettingsController(this, settingsRepo, fixSwitchboard, coordinateSystemService, saveScope) }
+    private val developerController by lazy { DeveloperSettingsController(this, settingsRepo, saveScope) }
 
     private fun controllerFor(categoryId: Int): SettingsCategoryController? = when (categoryId) {
         CAT_ID_APPEARANCE -> appearanceController
@@ -284,6 +286,7 @@ private const val CAT_ID_DEV                = 7
         CAT_ID_MAP -> mapController
         CAT_ID_GNSS_CAPTURE -> captureController
         CAT_ID_COORDINATE_DISPLAY -> coordinatesController
+        CAT_ID_DEV -> developerController
         else -> null
     }
 
@@ -300,7 +303,6 @@ private const val CAT_ID_DEV                = 7
             else when (category.id) {
                 CAT_ID_LOCATION           -> setupLocationContent(inflater)
                 CAT_ID_DATA               -> setupDataContent(inflater)
-CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 CAT_ID_ABOUT              -> setupAboutContent(inflater)
                 else -> null
             }
@@ -341,38 +343,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
             view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { settingsError("Import cancel failed", e) } }
         } catch (e: Exception) {
             settingsError("Settings section setup failed section=data", e)
-        }
-        return view
-    }
-
-    private fun setupDeveloperContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.content_settings_developer, contentContainer, false)
-        try {
-            val switchDevTools = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_dev_tools)
-            if (switchDevTools != null) {
-                lifecycleScope.launch {
-                    try {
-                        switchDevTools.isChecked = settingsRepo.developerSettings.first().developerToolsEnabled
-                    } catch (e: Exception) {
-                        settingsError("Settings load failed section=developerTools", e)
-                    }
-                }
-                switchDevTools.setOnCheckedChangeListener { _, v ->
-                    try {
-                        saveScope.launch {
-                            try {
-                                settingsRepo.setDeveloperSettings(DeveloperSettings(developerToolsEnabled = v))
-                            } catch (e: Exception) {
-                                settingsError("Settings save failed section=developerTools", e)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        settingsError("Settings developer tools switch failed", e)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            settingsError("Settings section setup failed section=developer", e)
         }
         return view
     }
