@@ -593,8 +593,12 @@
         android:layout_marginEnd="72dp"
         android:layout_marginBottom="12dp"
         app:cardElevation="8dp"
+        android:translationZ="4dp"
         app:cardCornerRadius="20dp"
         android:visibility="gone">
+        <!-- translationZ: a point selected while stakeout is running opens its card IN FRONT of the
+             stakeout panel (declared later, same elevation), so Details/AR/close stay reachable; the
+             taller stakeout panel's title, target and arrow remain visible above it. -->
 
         <LinearLayout
             android:layout_width="match_parent"

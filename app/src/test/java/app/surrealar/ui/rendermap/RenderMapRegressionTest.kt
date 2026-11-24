@@ -61,6 +61,14 @@ class RenderMapRegressionTest {
         drawer.showNoPoints()   // a late coordinate emission touches no destroyed view
     }
 
+    /** A point selected during stakeout must open its card in front of the stakeout panel (device finding). */
+    @Test fun `selected point card draws above the stakeout panel`() {
+        val root = LayoutInflater.from(themed).inflate(R.layout.fragment_render_map, null, false)
+        val card = root.findViewById<android.view.View>(R.id.card_selected_coordinate)
+        val stakeout = root.findViewById<android.view.View>(R.id.stakeout_panel)
+        assertTrue("selected z=${card.z} stakeout z=${stakeout.z}", card.z > stakeout.z)
+    }
+
     /** The marker icon cache is written from Dispatchers.IO and Main: it must be a concurrent map. */
     @Test fun `marker icon cache is thread-safe`() {
         val field = CoordinateMarkerLayer::class.java.getDeclaredField("markerDescriptorCache")
