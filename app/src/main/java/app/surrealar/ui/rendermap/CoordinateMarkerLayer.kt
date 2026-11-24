@@ -64,7 +64,9 @@ internal class CoordinateMarkerLayer(
     private val coordinateMap = mutableMapOf<String, Coordinate>()
 
     // Marker descriptor cache — keyed by "icon:$name:$color" or "model:$id:$path"
-    private val markerDescriptorCache = mutableMapOf<String, BitmapDescriptor>()
+    // Read and written from both Dispatchers.IO (model thumbnails) and Main (drawable icons): a plain
+    // map is not safe for that. Same contents and lifetime (cleared in onDestroyView), no ordering used.
+    private val markerDescriptorCache = java.util.concurrent.ConcurrentHashMap<String, BitmapDescriptor>()
 
     /** Loaded coordinates by id (display datum, WGS84), in load order. */
     val coordinates: Map<String, Coordinate> get() = coordinateMap
