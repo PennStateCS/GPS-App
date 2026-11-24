@@ -7,7 +7,8 @@ import java.io.File
  *
  * Failure injection (optional, off by default): [failing] maps a section key ([Keys]) to the exception
  * that source throws; sections in [hanging] suspend until cancelled; [extraLogFiles] are listed after
- * the event log (e.g. a missing file, to test an unreadable log).
+ * the event log (e.g. a missing file, to test an unreadable log). [incidents] (newest first) and
+ * [info] feed incidents.txt and the summary header; [health] overrides device-health inputs.
  */
 open class FakeReportSources(
     private val dir: File,
@@ -18,6 +19,10 @@ open class FakeReportSources(
     val failing: Map<String, Throwable> = emptyMap(),
     val hanging: Set<String> = emptySet(),
     val extraLogFiles: List<File> = emptyList(),
+    val incidentList: List<app.surrealar.util.diagnostics.incident.IncidentMarker> = emptyList(),
+    val info: ReportInfo = FAKE_INFO,
+    val health: DeviceHealth = FAKE_HEALTH,
+    val integrity: String = "ok",
 ) : ReportSources {
 
     /** Section keys for [failing] / [hanging] ([hanging] only applies to suspending sources). */
@@ -56,17 +61,21 @@ open class FakeReportSources(
     override fun exitTraceFiles(): List<File> =
         listOf(File(dir, "20261121-133000-ANR.txt").apply { writeText("----- pid 123 at 2026-11-21 13:30:00 -----\n\"main\" prio=5 tid=1 Blocked\n") })
 
-    override fun deviceHealth() = blocking(Keys.DEVICE_HEALTH) { FAKE_HEALTH }
+    override fun deviceHealth() = blocking(Keys.DEVICE_HEALTH) { health }
+    override fun incidents() = incidentList
+    override fun reportInfo() = info
     override fun capturesLog(): File? = File(dir, "captures.log").apply {
         writeText((1..55).joinToString("\n") { "2026-11-21T14:%02d:00.000-05:00 Capture saved name=\"P$it\" mode=EXTERNAL samples=150 duration=60s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=0/150".format(it % 60) } + "\n")
     }
     override suspend fun gnssStats() = section(Keys.GNSS) { FAKE_GNSS }
-    override fun dataHealth() = blocking(Keys.DATA_HEALTH) { DataHealth(12, mapOf("coordinates" to 42L, "models" to 3L), "ok") }
+    override fun dataHealth() = blocking(Keys.DATA_HEALTH) { DataHealth(12, mapOf("coordinates" to 42L, "models" to 3L), integrity) }
 
     override fun logFiles() = listOf(File(dir, "app-log-current.txt").apply { writeText(eventLog) }) + extraLogFiles
     override fun errorFiles() = listOf(File(dir, "app-errors-current.txt").apply { writeText(errorLog) })
 
     companion object {
+        val FAKE_INFO = ReportInfo(appVersion = "1.4 (14) debug", gitCommit = "abc1234", device = "samsung SM-X940",
+            android = "15 (API 35)", sessionId = "bbb222", missingModelLinks = 0)
         val FAKE_HEALTH = DeviceHealth(
             batteryPercent = 57, charging = false, powerSave = false, thermal = "LIGHT",
             storageFreeBytes = 12L * 1024 * 1024 * 1024, storageTotalBytes = 128L * 1024 * 1024 * 1024, appDataBytes = 350L * 1024 * 1024,

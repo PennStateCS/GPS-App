@@ -11,6 +11,7 @@ import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.source.SourceRoutingDecisions
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.util.diagnostics.DiagTags
+import app.surrealar.util.diagnostics.LogPrivacy
 import app.surrealar.util.diagnostics.report.ExportOutcome
 import app.surrealar.util.diagnostics.report.ReportAssembler
 import app.surrealar.util.diagnostics.report.ReportFailures
@@ -136,6 +137,15 @@ object DiagnosticReportExporter {
         private val prep: List<SectionStatus>,
     ) : app.surrealar.util.diagnostics.report.ReportSources {
         override fun preparationStatuses() = prep
+        override fun incidents() = app.surrealar.util.diagnostics.incident.IncidentStore.shared.recent()
+        override fun reportInfo() = app.surrealar.util.diagnostics.report.ReportInfo(
+            appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) ${if (BuildConfig.DEBUG) "debug" else "release"}",
+            gitCommit = BuildInfo.gitHashWithDirty.takeUnless { BuildInfo.gitHash == "unknown" || BuildInfo.gitHash.isBlank() },
+            device = "${Build.MANUFACTURER} ${Build.MODEL}",
+            android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            sessionId = DiagnosticsLogger.sessionId,
+            missingModelLinks = missingModelLinks(data),
+        )
         override suspend fun summary() = buildSummary(context, warnings, reportId)
         override suspend fun settingsSnapshot() = app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
         override suspend fun permissions() = buildPermissionsStatus(context)
@@ -253,7 +263,7 @@ object DiagnosticReportExporter {
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
             sb.appendLine("GPS provider enabled     : ${lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)}")
             sb.appendLine("Network provider enabled : ${lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)}")
-        }.onFailure { sb.appendLine("Location services        : (unavailable: ${it.message})") }
+        }.onFailure { sb.appendLine("Location services        : (unavailable: ${LogPrivacy.errorType(it)})") }
         return sb.toString()
     }
 
@@ -291,14 +301,19 @@ object DiagnosticReportExporter {
             add("GNSS: external receiver selected but no host/port configured")
         }
         // Coordinates link a model whose file is missing on disk.
-        val modelById = d.models.associateBy { it.id }
-        val missing = d.coordinates.count { c ->
-            val mid = c.modelId
-            mid != null && (modelById[mid]?.filePath?.let { !File(it).exists() } ?: true)
-        }
+        val missing = missingModelLinks(d)
         if (missing > 0) add("MODEL: $missing coordinate(s) link a model whose file is missing or unresolved — models will not render")
         // Pointers for AR/model issues that can only be reconstructed from the event/error logs.
         add("Note: AR session, Earth-tracking, anchor and model-load outcomes are in app-log-*.txt (tags AR / MODEL); crashes are in app-errors-*.txt.")
+    }
+
+    /** Coordinates that link a model whose record or file is missing. */
+    private fun missingModelLinks(d: DiagData): Int {
+        val modelById = d.models.associateBy { it.id }
+        return d.coordinates.count { c ->
+            val mid = c.modelId
+            mid != null && (modelById[mid]?.filePath?.let { !File(it).exists() } ?: true)
+        }
     }
 
     // ── section builders ───────────────────────────────────────────────────────
@@ -392,7 +407,7 @@ object DiagnosticReportExporter {
                 sb.appendLine("Last provider switch   : " +
                     if (switchAt == 0L) "none this session"
                     else SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(switchAt)))
-            }.onFailure { sb.appendLine("Active provider        : (unavailable: ${it.message})") }
+            }.onFailure { sb.appendLine("Active provider        : (unavailable: ${LogPrivacy.errorType(it)})") }
 
             val host = ReportFailures.catching { repo.externalTcpHost.first() }.getOrNull()
             val port = ReportFailures.catching { repo.externalTcpPort.first() }.getOrNull()
@@ -403,7 +418,7 @@ object DiagnosticReportExporter {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            sb.appendLine("(settings read error: ${e.message})")
+            sb.appendLine("(settings read error: ${LogPrivacy.errorType(e)})")
         }
         sb.appendLine()
         sb.appendLine("--- Maps ---")
@@ -431,7 +446,7 @@ object DiagnosticReportExporter {
                 sb.appendLine("WARNING: internet=true but validated=false — device may be on receiver WiFi; map tiles may not load")
             }
         } catch (e: Exception) {
-            sb.appendLine("(network state unavailable: ${e.message})")
+            sb.appendLine("(network state unavailable: ${LogPrivacy.errorType(e)})")
         }
         return sb.toString()
     }
@@ -467,7 +482,7 @@ object DiagnosticReportExporter {
                     !File(model.filePath).exists() -> "file_missing"
                     else -> "ok(${File(model.filePath).length()}B)"
                 }
-                sb.appendLine("id=${c.id} name=\"${c.name}\" modelId=${c.modelId} " +
+                sb.appendLine("id=${c.id} nameRef=${LogPrivacy.ref(c.name)} modelId=${c.modelId} " +
                     "renderEnabled=${c.renderEnabled} altitude=${if (c.altitude.isFinite()) "yes" else "missing"} file=$fileState")
             }
         }
@@ -504,7 +519,7 @@ object DiagnosticReportExporter {
                 }
                 val arReason = arEntry?.reason?.let { " reason=$it" } ?: ""
                 // Show only the file name, not the full internal path.
-                sb.appendLine("id=${m.id} name=\"${m.name}\" file=\"${f.name}\" type=${m.fileType} " +
+                sb.appendLine("id=${m.id} nameRef=${LogPrivacy.ref(m.name)} file=${LogPrivacy.file(f.name)} type=${m.fileType} " +
                     "exists=$exists sizeBytes=${if (exists) f.length() else -1L} storedSize=${m.fileSize} " +
                     "linkedCoordinates=${linkCounts[m.id] ?: 0} lastArStatus=$arStatus$arReason")
             }

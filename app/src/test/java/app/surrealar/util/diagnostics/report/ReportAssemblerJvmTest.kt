@@ -62,7 +62,7 @@ class ReportAssemblerJvmTest {
         assertFalse(names.contains("app-errors-current.txt"))
         assertFalse(names.any { it.startsWith("exits/") })
         val e = entries(zip)
-        assertTrue(e.getValue("diagnostic-summary.txt").startsWith("=== First look ===\n(failed: IllegalStateException: feed down)"))
+        assertTrue(e.getValue("diagnostic-summary.txt").contains("=== First look ===\n(failed: IllegalStateException: feed down)"))
         assertEquals("Section failed to generate: IllegalStateException: no health\n", e.getValue("device-health.txt"))
         assertEquals("Section failed to generate: IllegalArgumentException: nmea gone\n", e.getValue("nmea-stream-diagnostics.txt"))
     }
@@ -75,7 +75,7 @@ class ReportAssemblerJvmTest {
         }
         val zip = File(tmp.root, "r.zip")
         val names = ReportAssembler.write(zip, src, flush = { true }).entries.map { it.first }
-        assertEquals(listOf("app-errors-current.txt", "ar-track-1.csv", "export-health.txt", "manifest.txt"), names.takeLast(4))
+        assertEquals(listOf("app-errors-current.txt", "ar-track-1.csv", "diagnostic-summary.txt", "export-health.txt", "manifest.txt"), names.takeLast(5))
         assertEquals("t,east,north\n0,0.0,0.0\n", entries(zip).getValue("ar-track-1.csv"))
     }
 
@@ -90,7 +90,7 @@ class ReportAssemblerJvmTest {
         assertTrue(keep("\tat recent.Frame"))
     }
 
-    @Test fun `logs are filtered to 24 h only when over the byte limit`() = runBlocking {
+    @Test fun `logs are reduced only when over the byte limit`() = runBlocking {
         val old = "2026-11-19T10:00:00.000-05:00 W GNSS [main] two days old\n"
         val src = FakeReportSources(tmp.newFolder("logs"), eventLog = old + FakeReportSources.DEFAULT_EVENT_LOG)
         val small = File(tmp.root, "small.zip")

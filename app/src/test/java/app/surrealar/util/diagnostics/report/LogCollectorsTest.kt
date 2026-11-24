@@ -17,16 +17,17 @@ class LogCollectorsTest {
 
     private fun idx(): LogIndex { val s = FakeReportSources(tmp.newFolder("logs")); return LogIndex.build(s.logFiles() + s.errorFiles(), s.nowMs) }
 
-    @Test fun `golden timeline - last 2 hours, story tags, warnings, crash once with its trace`() {
+    @Test fun `golden timeline - last 2 hours, story tags incl GNSS, warnings, crash once with its trace`() {
         assertEquals("""
             === Timeline (last 2 hours) ===
-            Warnings, errors and LIFECYCLE / NAV / RECEIVER / CORRECTIONS / CAPTURE / SESSION lines from all log files.
+            Warnings, errors, state-change codes and LIFECYCLE / NAV / RECEIVER / CORRECTIONS / CAPTURE / GNSS / AR / MODEL / DATA / ERROR / DIAG / SESSION lines from all log files.
 
             2026-11-21T13:00:00.000-05:00 I APP [main] SESSION_START session=aaa111 install=i-1 version=1.4 code=14 build=debug commit=abc device="Samsung SM-X940" android=15 sdk=35 locale=en-US tz=America/New_York lastSessionClean=unknown(first run) previous=none
             2026-11-21T13:05:00.000-05:00 I LIFECYCLE [main] App foreground
             2026-11-21T13:05:01.000-05:00 I NAV [main] Screen nav_home
             2026-11-21T13:10:00.000-05:00 W RECEIVER [diag] Link down: reconnecting (attempt 1), was up 300s
             2026-11-21T13:10:05.000-05:00 I RECEIVER [diag] Link up after 2 attempts
+            2026-11-21T13:20:00.000-05:00 I GNSS [DefaultDispatcher-worker-1] Heartbeat source=EXTERNAL_TCP rtk=FIX sats=18/27 hdop=0.7 hAcc=<2cm corrAge=1.2s fixes/s=5.0 lastNmea=0.2s
             2026-11-21T13:30:00.000-05:00 E ERROR [main] Uncaught exception (fatal) thread=main screen=nav_render_map session=aaa111 type=java.lang.IllegalStateException: boom
             java.lang.IllegalStateException: boom
             	at app.surrealar.Foo.bar(Foo.kt:1)

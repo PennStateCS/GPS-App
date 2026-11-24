@@ -65,10 +65,35 @@ data class FlushStatus(val state: State, val detail: String? = null) {
 data class OmittedFile(val name: String, val reason: String)
 
 /**
- * A file copied only in part. [expected] = by policy (logs over the size limit keep the last 24 h);
+ * A file copied only in part. [expected] = by policy (logs over the size budget, reduced by LogBudget);
  * otherwise the copy was cut short (read error) and the export counts as partial.
  */
-data class TruncatedFile(val name: String, val originalBytes: Long, val includedBytes: Long, val reason: String, val expected: Boolean)
+data class TruncatedFile(
+    val name: String, val originalBytes: Long, val includedBytes: Long, val reason: String, val expected: Boolean,
+    /** Log budget: first → last timestamp in the original file and in the copy (null = not a log or unknown). */
+    val originalSpan: String? = null,
+    val includedSpan: String? = null,
+    /** Log budget: spans left out (each marked in the copy) and the lines in them. */
+    val omittedSpans: Int = 0,
+    val omittedLines: Long = 0,
+)
+
+/** How a file copied in part was reduced (passed to ZipBuilder.file, completed into a [TruncatedFile]). */
+data class TruncationNote(
+    val reason: String, val originalSpan: String? = null, val includedSpan: String? = null,
+    val omittedSpans: Int = 0, val omittedLines: Long = 0,
+)
+
+/** Build, device and session facts for the summary header (null = unknown), plus app-data facts for the findings. */
+data class ReportInfo(
+    val appVersion: String? = null,
+    val gitCommit: String? = null,
+    val device: String? = null,
+    val android: String? = null,
+    val sessionId: String? = null,
+    /** Points that link a model whose file is missing (null = unknown). */
+    val missingModelLinks: Int? = null,
+)
 
 /** Everything export-health.txt reports. */
 data class ExportHealth(
@@ -96,9 +121,8 @@ data class ExportHealth(
     val verdict: Verdict get() = if (problems.isEmpty()) Verdict.COMPLETE else Verdict.PARTIAL
 
     /**
-     * Short "Export completeness" block meant for diagnostic-summary.txt. The summary is still written
-     * before the logs are copied, so for now README.txt points at export-health.txt; a summary written
-     * after the collectors run can append this block directly.
+     * Short "Export completeness" block: the summary's fallback when its findings fail (the full block
+     * is SummaryCollector.completeness).
      */
     fun completenessSummary(): String = buildString {
         appendLine("=== Export completeness ===")

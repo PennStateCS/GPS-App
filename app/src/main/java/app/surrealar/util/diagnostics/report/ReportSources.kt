@@ -35,4 +35,10 @@ interface ReportSources {
 
     /** Statuses of work done before the report was assembled (the exporter's app-data gathering). */
     fun preparationStatuses(): List<SectionStatus> = emptyList()
+
+    /** Marked problems ("Mark Problem"), newest first. */
+    fun incidents(): List<app.surrealar.util.diagnostics.incident.IncidentMarker> = emptyList()
+
+    /** App version, commit, device, session for the summary header. */
+    fun reportInfo(): ReportInfo = ReportInfo()
 }

@@ -35,6 +35,9 @@ object ExportHealthCollector {
         if (health.truncated.isEmpty()) appendLine("  (none)")
         health.truncated.forEach {
             appendLine("  ${it.name}  ${it.originalBytes} → ${it.includedBytes} bytes  ${it.reason}" + if (it.expected) "" else "  [unexpected]")
+            it.originalSpan?.let { s -> appendLine("      original span : $s") }
+            it.includedSpan?.let { s -> appendLine("      included span : $s") }
+            if (it.omittedSpans > 0) appendLine("      omitted       : ${it.omittedSpans} span(s), ${it.omittedLines} lines (marked \"… [N lines omitted …] …\" in the file)")
         }
         appendLine()
         appendLine("export-health.txt and manifest.txt are written after this file and are not listed here.")
