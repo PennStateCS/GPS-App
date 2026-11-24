@@ -1,101 +1,55 @@
 package app.surrealar.ui.rendermap
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.RectF
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AccelerateDecelerateInterpolator
-import android.widget.Button
-import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
-import androidx.navigation.fragment.findNavController
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import androidx.navigation.fragment.findNavController
 import app.surrealar.R
-import app.surrealar.domain.model.Coordinate
-import app.surrealar.domain.model.displayIconKey
-import app.surrealar.domain.model.hasLinkedModel
-import app.surrealar.domain.model.linkedModelId
 import app.surrealar.gnss.bus.FixSwitchboard
-import io.github.pennstatecs.geokit.gnss.model.Fix
-import io.github.pennstatecs.geokit.gnss.model.RtkStatus
-import app.surrealar.ui.map.MapThemeHelper
 import app.surrealar.ui.viewpoints.CoordinatesViewModel
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.GoogleMap
-import com.google.android.gms.maps.MapView
-import com.google.android.gms.maps.model.BitmapDescriptor
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.Circle
-import com.google.android.gms.maps.model.CircleOptions
-import com.google.android.gms.maps.model.Dash
-import com.google.android.gms.maps.model.Gap
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.LatLngBounds
-import com.google.android.gms.maps.model.Marker
-import com.google.android.gms.maps.model.MarkerOptions
-import com.google.android.gms.maps.model.Polyline
-import com.google.android.gms.maps.model.PolylineOptions
-import com.google.android.material.snackbar.Snackbar
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.conflate
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.Locale
-import javax.inject.Inject
-import kotlin.math.abs
-import kotlin.math.atan2
-import io.github.pennstatecs.geokit.projection.Utm
-import app.surrealar.util.diagnostics.MapRuntimeDiagnostics
 import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.DiagTags
-import kotlin.math.cos
-import kotlin.math.min
-import kotlin.math.pow
-import kotlin.math.roundToInt
-import kotlin.math.sin
-import kotlin.math.sqrt
+import app.surrealar.util.diagnostics.MapRuntimeDiagnostics
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.MapView
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.Marker
+import com.google.android.material.snackbar.Snackbar
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import java.util.Locale
+import javax.inject.Inject
 
 /**
- * The full survey map screen: draws saved coordinates, the meter grid, point labels, visibility
- * toggles, and the info bottom sheet. The grid/label math lives in pure helpers (`MapGrid`,
- * `PointLabel`); camera/UI state is retained by `MapUiStateViewModel`.
+ * The full survey map screen. The fragment hosts the Google Maps lifecycle (MapView pass-throughs,
+ * GoogleMap ready/destroy), navigation, the coordinate data binding and the coordination between
+ * the map components in this package:
+ *
+ * - [CoordinateMarkerLayer] saved-point markers + visibility, [MapOverlayController] grid/labels,
+ * - [MapToolsController], [MapDrawerController], [MapCameraController], [SelectedCoordinateController],
+ * - [LiveTrackingController] live GNSS position, [CompassHeadingController] the shared compass,
+ * - [StakeoutController] stakeout target, readout and guidance.
+ *
+ * Shared state has one owner each: the GoogleMap/MapView here; coordinates + visibility in the
+ * marker layer; the selected id in the selection controller; the latest fix in live tracking; the
+ * stakeout target in the stakeout controller. Camera/UI session state is kept by
+ * [MapUiStateViewModel]; grid/label math lives in pure helpers ([MapGrid], [PointLabel]).
  */
 @AndroidEntryPoint
 class RenderMapFragment : Fragment() {
 
     companion object {
         private const val TAG = "RenderMapFragment"
-        private const val MIN_DISTANCE_METERS = 0.5
-        private const val MIN_HEADING_CHANGE_DEGREES = 5.0
-        private const val MAX_TRAIL_POINTS = 1000
-        // Stakeout thresholds come from Settings → Stakeout (toleranceMeters = green / "Within
-        // tolerance", warningAccuracyMeters = low-accuracy warning). Amber spans out to this multiple
-        // of the tolerance (the previous fixed 0.10 / 0.25 m pair had the same 2.5× ratio).
-        private const val STAKEOUT_AMBER_FACTOR = 2.5
-        // Guidance falls back to the "waiting" state if no live fix arrives within this window.
-        private const val STAKEOUT_STALE_FIX_MS = 5000L
-        private const val STAKEOUT_STALE_TICK_MS = 1500L
     }
 
     @Inject
@@ -139,13 +93,13 @@ class RenderMapFragment : Fragment() {
     private var mapView: MapView? = null
     private var googleMap: GoogleMap? = null
     private var dataObserved = false
+    private var fragmentResumed = false
 
     // ── Map components ─────────────────────────────────────────────────────────
     // Created lazily (after Hilt injection), one per fragment instance: their session state survives
     // view recreation, and each drops its views / map objects in its onDestroyView().
 
     // Saved-coordinate markers: the one owner of the loaded coordinates, markers and visibility.
-    // Created lazily (after Hilt injection); one per fragment instance so visibility survives the view.
     private val markers: CoordinateMarkerLayer by lazy {
         CoordinateMarkerLayer(
             map = { googleMap },
@@ -234,88 +188,51 @@ class RenderMapFragment : Fragment() {
             fixStale = fixSwitchboard.fixStale,
             activeProvider = sourceSettings.activeProvider,
             locationSource = locationSourceRepo.locationSource,
-            compassHeading = { compassHeadingDeg },
+            compassHeading = { compass.compassHeadingDeg },
             onLivePosition = { pos ->
-                try { updateStakeoutCalculations(pos) } catch (e: Exception) { logFail("live.updateStakeoutCalculations", e) }
+                try { stakeout.updateStakeoutCalculations(pos) } catch (e: Exception) { logFail("live.updateStakeoutCalculations", e) }
                 // Distance labels follow the live position, throttled to avoid heavy marker rebuilds.
                 overlays.refreshDistanceLabelsIfDue()
             },
         )
     }
 
-    private var lastStakeoutMarkerHue: Float? = null
-
-    // Stakeout
-    private var isStakeoutMode = false
-    private var stakeoutTarget: LatLng? = null
-    private var stakeoutMarker: Marker? = null
-    private var stakeoutLine: Polyline? = null
-    private var stakeoutPanel: View? = null
-    private var btnToggleStakeout: Button? = null   // GONE compat stub
-    private var btnClearStakeout: View? = null
-    private var txtStakeoutTarget: TextView? = null
-    private var txtStakeoutDistance: TextView? = null
-    private var txtStakeoutBearing: TextView? = null
-    private var txtStakeoutDelta: TextView? = null
-    private var txtStakeoutStatus: TextView? = null
-    private var txtStakeoutAccuracy: TextView? = null
-    private var stakeoutAccuracyDefaultColor: Int = 0
-
-    // Stakeout guidance mode (display/feedback only — does not touch distance/bearing math)
-    private var imgStakeoutArrow: ImageView? = null
-    private var txtStakeoutTolerance: TextView? = null
-    private var txtStakeoutHeadingNote: TextView? = null
-    private var btnStakeoutGuidance: com.google.android.material.button.MaterialButton? = null
-    private var stakeoutSettings = app.surrealar.settings.model.StakeoutSettings()
-    private var isGuidanceActive = false
-    /** Coordinate id backing the active target (null for a free map-tap target). */
-    private var stakeoutTargetId: String? = null
-    /** elapsedRealtime() of the last fix applied to the stakeout readout; null until the first. */
-    private var lastStakeoutFixElapsedMs: Long? = null
-    private var guidanceStaleJob: kotlinx.coroutines.Job? = null
-    private val feedbackGate = io.github.pennstatecs.geokit.stakeout.StakeoutFeedbackGate()
-    private var compassHeadingDeg: Double? = null
-    private var sensorManager: android.hardware.SensorManager? = null
-    private var rotationSensor: android.hardware.Sensor? = null
-    private var compassRegistered = false
-    private var fragmentResumed = false
-    private var toneGenerator: android.media.ToneGenerator? = null
     // TRUE heading (declination at the latest FixSwitchboard fix, display rotation, flat/upright).
     private val headingProvider = HeadingProvider(
         latestFix = { live.currentFix },
         // Before the first fix: declination from the last known position (changes little over tens of km).
         lastKnownPosition = { if (::lastKnownPositionStore.isInitialized) lastKnownPositionStore.get() else null },
     )
-    private val rotationListener = object : android.hardware.SensorEventListener {
-        override fun onSensorChanged(event: android.hardware.SensorEvent) {
-            if (event.sensor.type != android.hardware.Sensor.TYPE_ROTATION_VECTOR) return
-            // Was getOrientation() azimuth = MAGNETIC north, screen-top only (≈11.6° off near Hazleton).
-            val rotation = view?.display?.rotation ?: android.view.Surface.ROTATION_0
-            compassHeadingDeg = headingProvider.trueHeadingDeg(event.values, rotation)
-            logHeadingSourceIfChanged(null)
-            // Keep the on-map heading arrow following the compass between fixes (throttled). Delivered
-            // on the main thread, so touching the map here is safe.
-            live.updateHeadingIndicator()
-        }
-        override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {
-            app.surrealar.util.diagnostics.HeadingDiagnostics.onCompassAccuracy(accuracy)
-        }
+
+    // The one rotation-vector listener, shared by stakeout guidance and the My Location arrow.
+    private val compass: CompassHeadingController by lazy {
+        CompassHeadingController(
+            sensorManagerProvider = {
+                requireContext().getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+            },
+            displayRotation = { view?.display?.rotation ?: android.view.Surface.ROTATION_0 },
+            headingProvider = headingProvider,
+            onHeadingChanged = { live.updateHeadingIndicator() },
+        )
     }
 
-    // Diagnostics only: log the heading source when its parts change (enum compares, no allocation).
-    private var loggedDeclSource: Any? = null
-    private var loggedMagneticOnly: Boolean? = null
-    private var loggedStakeoutSource: Any? = null
-    private fun logHeadingSourceIfChanged(stakeoutSource: io.github.pennstatecs.geokit.stakeout.HeadingSource?) {
-        val decl = headingProvider.declinationSource
-        val mag = headingProvider.isMagneticOnly
-        val st = stakeoutSource ?: loggedStakeoutSource
-        if (decl == loggedDeclSource && mag == loggedMagneticOnly && st == loggedStakeoutSource) return
-        loggedDeclSource = decl; loggedMagneticOnly = mag; loggedStakeoutSource = st
-        app.surrealar.util.diagnostics.HeadingDiagnostics.onSource(
-            app.surrealar.util.diagnostics.HeadingDiagnostics.describe((st as? Enum<*>)?.name, decl.name, mag))
+    // Stakeout target, card readout and guidance (haptics/audio/keep-screen-on/stale watcher).
+    private val stakeout: StakeoutController by lazy {
+        StakeoutController(
+            map = { googleMap },
+            view = { view },
+            scope = { viewLifecycleOwner.lifecycleScope },
+            coordinateSystemService = coordinateSystemService,
+            currentFix = { live.currentFix },
+            liveLatLng = { live.lastFixLatLng },
+            compassHeading = { compass.compassHeadingDeg },
+            isMagneticOnly = { compass.isMagneticOnly },
+            logHeadingSource = { source -> compass.logHeadingSourceIfChanged(source) },
+            syncCompass = ::syncCompass,
+            logMapEvent = ::logMapEvent,
+            showSnackbar = ::showSnackbar,
+        )
     }
-
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -380,7 +297,7 @@ class RenderMapFragment : Fragment() {
 
             map.setOnMapLoadedCallback {
                 camera.onMapLoaded()
-                app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update { it.copy(mapLoaded = true) }
+                MapRuntimeDiagnostics.update { it.copy(mapLoaded = true) }
                 logMapEvent("MAP", "Map tiles loaded")
             }
             // Redraw the meter grid when the camera settles so Auto spacing adapts to zoom/pan.
@@ -393,7 +310,7 @@ class RenderMapFragment : Fragment() {
             bindData()
             live.collectFixes(viewLifecycleOwner)
             setupMapClickListener()
-            app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
+            MapRuntimeDiagnostics.update {
                 it.copy(cameraRestored = cameraRestored)
             }
             logMapEvent("MAP", "Map ready type=${MapTypes.label(tools.currentMapType)} cameraRestored=$cameraRestored")
@@ -415,35 +332,14 @@ class RenderMapFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         drawer.bindPanelViews(view)   // panel, counts, search, Show all / Hide all
-
-        stakeoutPanel = view.findViewById(R.id.stakeout_panel)
-        btnToggleStakeout = view.findViewById(R.id.btn_toggle_stakeout)  // GONE stub
-        btnClearStakeout = view.findViewById(R.id.btn_clear_stakeout)
-        txtStakeoutTarget = view.findViewById(R.id.txt_stakeout_target)
-        txtStakeoutDistance = view.findViewById(R.id.txt_stakeout_distance)
-        txtStakeoutBearing = view.findViewById(R.id.txt_stakeout_bearing)
-        txtStakeoutDelta = view.findViewById(R.id.txt_stakeout_delta)
-        txtStakeoutStatus = view.findViewById(R.id.txt_stakeout_status)
-        txtStakeoutAccuracy = view.findViewById(R.id.txt_stakeout_accuracy)
-        // Capture the theme default text color so the low-accuracy warning can revert cleanly.
-        stakeoutAccuracyDefaultColor = txtStakeoutAccuracy?.currentTextColor ?: 0
-
-        imgStakeoutArrow = view.findViewById(R.id.img_stakeout_arrow)
-        txtStakeoutTolerance = view.findViewById(R.id.txt_stakeout_tolerance)
-        txtStakeoutHeadingNote = view.findViewById(R.id.txt_stakeout_heading_note)
-        btnStakeoutGuidance = view.findViewById(R.id.btn_stakeout_guidance)
-
-        btnToggleStakeout?.setOnClickListener { toggleStakeoutMode() }
-        btnClearStakeout?.setOnClickListener { stopStakeout() }
-        btnStakeoutGuidance?.setOnClickListener { if (isGuidanceActive) stopGuidance() else startGuidance() }
+        stakeout.bindViews(view)      // stakeout card + guidance controls
 
         // Keep the latest stakeout settings in memory for the guidance loop, and apply changes to
         // running guidance immediately (e.g. toggling audio/compass/keep-screen-on mid-stakeout).
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 stakeoutSettingsRepo.stakeoutSettings.collect {
-                    stakeoutSettings = it
-                    reconcileGuidanceResources()
+                    stakeout.onSettingsChanged(it)
                 }
             }
         }
@@ -467,11 +363,11 @@ class RenderMapFragment : Fragment() {
     override fun onLowMemory() { super.onLowMemory(); try { mapView?.onLowMemory() } catch (e: Exception) { logFail("onLowMemory", e) } }
     override fun onResume() {
         super.onResume()
-        try { mapView?.onResume(); fragmentResumed = true; resumeGuidanceFeedback(); syncCompass() }
+        try { mapView?.onResume(); fragmentResumed = true; stakeout.resumeGuidanceFeedback(); syncCompass() }
         catch (e: Exception) { logFail("onResume", e) }
     }
     override fun onPause() {
-        try { camera.saveCameraState(); mapView?.onPause(); fragmentResumed = false; pauseGuidanceFeedback(); syncCompass() }
+        try { camera.saveCameraState(); mapView?.onPause(); fragmentResumed = false; stakeout.pauseGuidanceFeedback(); syncCompass() }
         catch (e: Exception) { logFail("onPause", e) }
         super.onPause()
     }
@@ -483,13 +379,12 @@ class RenderMapFragment : Fragment() {
 
     override fun onDestroyView() {
         try {
-            stopGuidance()   // release tone, clear keep-screen-on
+            stakeout.stopGuidance()   // release tone, clear keep-screen-on
             fragmentResumed = false
-            unregisterCompass()   // make sure the shared sensor is released with the view
-            stakeoutLine?.remove(); stakeoutLine = null
+            compass.unregister()   // make sure the shared sensor is released with the view
         } catch (e: Exception) { logFail("onDestroyView cleanup", e) }
-        lastStakeoutMarkerHue = null
         // Map objects go before mapView.onDestroy(); each component catches/logs its own cleanup.
+        stakeout.onDestroyView()   // stakeout line; drops the target marker + card views
         live.onDestroyView()       // trail, accuracy circle, current marker, heading arrow
         overlays.onDestroyView()   // grid lines, label markers + label cache, Grid/Labels rows
         // The map + its markers are destroyed with the view. Drop the stale marker references and the
@@ -512,315 +407,18 @@ class RenderMapFragment : Fragment() {
         super.onDestroyView()
     }
 
-    // ── Stakeout calculations ──────────────────────────────────────────────────
-
-    private fun updateStakeoutCalculations(currentPos: LatLng) {
-        val target = stakeoutTarget ?: return
-        if (!isStakeoutMode) return
-        lastStakeoutFixElapsedMs = android.os.SystemClock.elapsedRealtime()
-        try {
-            // Distance + bearing: WGS84 geodesic (geokit-core Geodesic).
-            val distance = calculateDistance(currentPos, target)
-            val bearing = calculateBearing(currentPos, target)
-            // Distance in the units chosen under Settings → Coordinates.
-            txtStakeoutDistance?.text = coordinateSystemService.distanceText(distance)
-            // Bearing shown with an 8-point compass label, e.g. "NE 42°".
-            txtStakeoutBearing?.text =
-                String.format(Locale.getDefault(), "%s %.0f°", compassPoint(bearing), bearing)
-            val tol = stakeoutSettings.toleranceMeters
-            val color = when {
-                distance < tol                         -> 0xFF4CAF50.toInt()
-                distance < tol * STAKEOUT_AMBER_FACTOR -> 0xFFFF9800.toInt()
-                else                                   -> 0xFFF44336.toInt()
-            }
-            txtStakeoutDistance?.setTextColor(color)
-            txtStakeoutBearing?.setTextColor(color)
-
-            // Display-only north/east offsets (true north, local tangent plane) in the chosen units.
-            val (dN, dE) = northEastDeltaMeters(currentPos, target)
-            txtStakeoutDelta?.text =
-                "ΔN ${coordinateSystemService.deltaText(dN, 2)}    ΔE ${coordinateSystemService.deltaText(dE, 2)}"
-
-            // State line: within tolerance vs. which way to move.
-            txtStakeoutStatus?.text =
-                if (distance < tol) "Within tolerance"
-                else "Move ${compassDirectionWord(bearing)}"
-
-            updateStakeoutAccuracy()
-            updateStakeoutMarkerColor(distance)
-            updateStakeoutLine(currentPos, target)
-            updateGuidance(distance, bearing)
-        } catch (e: Exception) {
-            logFail("stakeout.calculations", e)
-        }
-    }
-
-    /** Target is set but there is no live fix yet — show a clear "waiting" state. Display-only. */
-    private fun showStakeoutWaiting() {
-        txtStakeoutDistance?.text = "—"
-        txtStakeoutBearing?.text = "—"
-        txtStakeoutDelta?.text = "—"
-        txtStakeoutStatus?.text = "Waiting for live position…"
-        txtStakeoutAccuracy?.visibility = View.GONE
-    }
-
-    /** Re-render the stakeout card from the latest fix, or the waiting state if none yet. */
-    private fun refreshStakeout() {
-        val fix = live.lastFixLatLng
-        if (fix != null) updateStakeoutCalculations(fix) else showStakeoutWaiting()
-    }
-
-    /** Live horizontal accuracy (the only GNSS detail in the card) + non-blocking low-accuracy warning. */
-    private fun updateStakeoutAccuracy() {
-        val tv = txtStakeoutAccuracy ?: return
-        val acc = live.currentFix?.hAccM
-        if (acc == null || acc <= 0.0) { tv.visibility = View.GONE; return }
-        tv.visibility = View.VISIBLE
-        if (acc > stakeoutSettings.warningAccuracyMeters) {
-            tv.text = String.format(
-                Locale.getDefault(), "Accuracy ±%.2f m · Low accuracy — stakeout may be unreliable", acc
-            )
-            tv.setTextColor(0xFFF44336.toInt())
-        } else {
-            tv.text = String.format(Locale.getDefault(), "Accuracy ±%.2f m", acc)
-            tv.setTextColor(stakeoutAccuracyDefaultColor)
-        }
-    }
-
-    /** 8-point compass abbreviation for a bearing in degrees (display-only; geokit-core helper). */
-    private fun compassPoint(bearing: Double): String = io.github.pennstatecs.geokit.heading.Compass.point8(bearing)
-
-    /** Human-readable "move" word for a bearing (display-only). */
-    private fun compassDirectionWord(bearing: Double): String = when (compassPoint(bearing)) {
-        "N"  -> "north"
-        "NE" -> "northeast"
-        "E"  -> "east"
-        "SE" -> "southeast"
-        "S"  -> "south"
-        "SW" -> "southwest"
-        "W"  -> "west"
-        else -> "northwest"
-    }
-
-    /** Local north/east offsets (metres) from [from] to [to] — same WGS84 frame as distance/bearing. */
-    private fun northEastDeltaMeters(from: LatLng, to: LatLng): Pair<Double, Double> =
-        io.github.pennstatecs.geokit.ellipsoid.Geodesic.northEastDeltaM(from.latitude, from.longitude, to.latitude, to.longitude).let { it.northM to it.eastM }
-
-    // ── Stakeout guidance mode (display + feedback only) ───────────────────────
-
-    private fun startGuidance() {
-        if (!isStakeoutMode || stakeoutTarget == null) { showSnackbar("Select a stakeout target first"); return }
-        isGuidanceActive = true
-        feedbackGate.reset()
-        btnStakeoutGuidance?.text = "Stop Guidance"
-        imgStakeoutArrow?.visibility = View.VISIBLE
-        txtStakeoutTolerance?.visibility = View.VISIBLE
-        txtStakeoutTolerance?.text = "Tolerance: " + coordinateSystemService.lengthText(stakeoutSettings.toleranceMeters, 2)
-        syncCompass()
-        if (stakeoutSettings.enableAudio) ensureToneGenerator()
-        if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
-        startStaleWatcher()
-        refreshStakeout()
-        logMapEvent("STAKEOUT", "Stakeout guidance started toleranceM=${stakeoutSettings.toleranceMeters}")
-    }
-
-    private fun stopGuidance() {
-        isGuidanceActive = false
-        btnStakeoutGuidance?.text = "Start Guidance"
-        imgStakeoutArrow?.visibility = View.GONE
-        txtStakeoutTolerance?.visibility = View.GONE
-        txtStakeoutHeadingNote?.visibility = View.GONE
-        guidanceStaleJob?.cancel(); guidanceStaleJob = null
-        syncCompass()   // My Location may still need the compass even after guidance stops
-        releaseToneGenerator()
-        setKeepScreenOn(false)
-        feedbackGate.reset()
-        logMapEvent("STAKEOUT", "Stakeout guidance stopped")
-    }
-
-    /**
-     * Ticks while guidance is active; if no fresh fix arrives within [STAKEOUT_STALE_FIX_MS] the
-     * readout drops to the waiting state and the feedback latch resets, so a frozen arrow never
-     * looks live and re-acquiring position fires feedback cleanly. Lifecycle-scoped → dies with the view.
-     */
-    private fun startStaleWatcher() {
-        guidanceStaleJob?.cancel()
-        guidanceStaleJob = viewLifecycleOwner.lifecycleScope.launch {
-            while (isGuidanceActive) {
-                val stale = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.isPositionStale(
-                    lastStakeoutFixElapsedMs, android.os.SystemClock.elapsedRealtime(), STAKEOUT_STALE_FIX_MS
-                )
-                if (stale) {
-                    txtStakeoutStatus?.text = "Waiting for live position…"
-                    txtStakeoutHeadingNote?.visibility = View.GONE
-                    feedbackGate.reset()
-                }
-                kotlinx.coroutines.delay(STAKEOUT_STALE_TICK_MS)
-            }
-        }
-    }
-
-    /** Applies live settings changes to running guidance resources (sensor/audio/screen). */
-    private fun reconcileGuidanceResources() {
-        if (!isGuidanceActive) return
-        syncCompass()
-        if (!stakeoutSettings.enableAudio) releaseToneGenerator()
-        setKeepScreenOn(stakeoutSettings.keepScreenOnDuringStakeout)
-        txtStakeoutTolerance?.text = "Tolerance: " + coordinateSystemService.lengthText(stakeoutSettings.toleranceMeters, 2)
-    }
-
-    /** Pause feedback (audio/screen/ticker) but keep the active target — for backgrounding. Compass
-     *  is handled by [onPause]/[syncCompass] since My Location may also be using it. */
-    private fun pauseGuidanceFeedback() {
-        if (!isGuidanceActive) return
-        guidanceStaleJob?.cancel(); guidanceStaleJob = null
-        releaseToneGenerator()
-        setKeepScreenOn(false)
-        feedbackGate.reset()   // returning to the map shouldn't replay a stale arrival cue
-    }
-
-    private fun resumeGuidanceFeedback() {
-        if (!isGuidanceActive) return
-        if (stakeoutSettings.enableAudio) ensureToneGenerator()
-        if (stakeoutSettings.keepScreenOnDuringStakeout) setKeepScreenOn(true)
-        startStaleWatcher()
-    }
-
-    /** Updates the arrow + fires throttled haptics/audio. Uses the passed-in distance/bearing — no new math. */
-    private fun updateGuidance(distanceMeters: Double, bearingToTargetDeg: Double) {
-        if (!isGuidanceActive) return
-        val s = stakeoutSettings
-        val (source, heading) = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.resolveHeading(
-            preferCompass = s.guidanceUsesCompassHeading,
-            compassHeadingDeg = compassHeadingDeg,
-            courseOverGroundDeg = live.currentFix?.courseDeg,
-            speedMps = live.currentFix?.speedMps,
-        )
-        val relative = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.relativeBearing(bearingToTargetDeg, heading)
-        // Arrow shows the relative direction when heading is known, else points at the map-north bearing.
-        imgStakeoutArrow?.rotation = (relative ?: bearingToTargetDeg).toFloat()
-        logHeadingSourceIfChanged(source)
-        if (source == io.github.pennstatecs.geokit.stakeout.HeadingSource.NORTH_UP) {
-            txtStakeoutHeadingNote?.visibility = View.VISIBLE
-            txtStakeoutHeadingNote?.text = "Arrow is north-up until heading is available."
-        } else if (source == io.github.pennstatecs.geokit.stakeout.HeadingSource.COMPASS && headingProvider.isMagneticOnly) {
-            // No position at all yet → no declination: the compass heading is magnetic (~11.6° off here).
-            txtStakeoutHeadingNote?.visibility = View.VISIBLE
-            txtStakeoutHeadingNote?.text = "Magnetic heading (no position yet)"
-        } else {
-            txtStakeoutHeadingNote?.visibility = View.GONE
-        }
-        val status = io.github.pennstatecs.geokit.stakeout.StakeoutGuidance.status(
-            hasTarget = true, hasPosition = true, distanceMeters = distanceMeters, toleranceMeters = s.toleranceMeters
-        )
-        when (feedbackGate.onUpdate(status, android.os.SystemClock.elapsedRealtime())) {
-            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.ENTERED_TOLERANCE -> {
-                // Distance to target only (no positions): the gate fires once per arrival.
-                logMapEvent("STAKEOUT", "Stakeout target within tolerance distM=${"%.3f".format(java.util.Locale.US, distanceMeters)} toleranceM=${s.toleranceMeters}")
-                if (s.enableHaptics) haptic(arrived = true); if (s.enableAudio) beep(arrived = true)
-            }
-            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.NAVIGATING_PULSE -> {
-                if (s.enableHaptics) haptic(arrived = false); if (s.enableAudio) beep(arrived = false)
-            }
-            io.github.pennstatecs.geokit.stakeout.StakeoutFeedback.NONE -> {}
-        }
-    }
-
     /**
      * Single source of compass truth shared by stakeout guidance AND the My Location heading arrow.
      * Registers exactly ONE rotation-vector listener when any feature needs it and the fragment is
      * resumed; unregisters when nothing needs it. Idempotent — safe to call from any of the callers.
      */
     private fun syncCompass() {
-        val guidanceWants = isGuidanceActive && stakeoutSettings.guidanceUsesCompassHeading
-        val myLocationWants = live.showCurrentLocationOnMap
-        val needed = fragmentResumed && (guidanceWants || myLocationWants)
-        if (needed) registerCompass() else unregisterCompass()
-    }
-
-    private fun registerCompass() {
-        if (compassRegistered) return
-        try {
-            val sm = sensorManager ?: (requireContext()
-                .getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager)
-                ?.also { sensorManager = it }
-            rotationSensor = sm?.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR)
-            if (rotationSensor != null) {
-                sm?.registerListener(rotationListener, rotationSensor, android.hardware.SensorManager.SENSOR_DELAY_UI)
-                compassRegistered = true
-            } else {
-                compassHeadingDeg = null  // no rotation-vector sensor → callers fall back to COG/north-up
-            }
-        } catch (e: Exception) { logFail("registerCompass", e); compassHeadingDeg = null }
-    }
-
-    private fun unregisterCompass() {
-        if (compassRegistered) {
-            try { sensorManager?.unregisterListener(rotationListener) } catch (_: Exception) {}
-            compassRegistered = false
-        }
-        compassHeadingDeg = null
-    }
-
-    private fun ensureToneGenerator() {
-        if (toneGenerator == null) {
-            toneGenerator = try {
-                android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 80)
-            } catch (e: Exception) { logFail("ToneGenerator init", e); null }
-        }
-    }
-
-    private fun releaseToneGenerator() {
-        try { toneGenerator?.release() } catch (_: Exception) {}
-        toneGenerator = null
-    }
-
-    private fun haptic(arrived: Boolean) {
-        val v = view ?: return
-        v.performHapticFeedback(
-            if (arrived) android.view.HapticFeedbackConstants.CONFIRM
-            else android.view.HapticFeedbackConstants.CLOCK_TICK
-        )
-    }
-
-    private fun beep(arrived: Boolean) {
-        ensureToneGenerator()
-        try {
-            if (arrived) toneGenerator?.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 200)
-            else toneGenerator?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 80)
-        } catch (e: Exception) { logFail("stakeout beep", e) }
-    }
-
-    /** Uses a per-view keep-screen-on request so it never clobbers a global window flag. */
-    private fun setKeepScreenOn(on: Boolean) {
-        try { view?.keepScreenOn = on } catch (e: Exception) { logFail("keepScreenOn", e) }
-    }
-
-    private fun updateStakeoutMarkerColor(distance: Double) {
-        val tol = stakeoutSettings.toleranceMeters
-        val hue = when {
-            distance < tol                         -> BitmapDescriptorFactory.HUE_GREEN
-            distance < tol * STAKEOUT_AMBER_FACTOR -> BitmapDescriptorFactory.HUE_ORANGE
-            else                                   -> BitmapDescriptorFactory.HUE_RED
-        }
-        if (hue != lastStakeoutMarkerHue) {
-            stakeoutMarker?.setIcon(BitmapDescriptorFactory.defaultMarker(hue))
-            lastStakeoutMarkerHue = hue
-        }
-    }
-
-    private fun updateStakeoutLine(from: LatLng, to: LatLng) {
-        val map = googleMap ?: return
-        val existing = stakeoutLine
-        if (existing != null) {
-            try { existing.points = listOf(from, to); return }
-            catch (e: Exception) { logFail("stakeoutLine update (recreating)", e); try { existing.remove() } catch (_: Exception) {}; stakeoutLine = null }
-        }
-        stakeoutLine = try {
-            map.addPolyline(
-                PolylineOptions().add(from, to).color(0xCCFF5722.toInt()).width(4f).geodesic(true)
-            )
-        } catch (_: Exception) { null }
+        compass.sync(CompassHeadingController.isNeeded(
+            resumed = fragmentResumed,
+            guidanceActive = stakeout.isGuidanceActive,
+            guidanceUsesCompass = stakeout.settings.guidanceUsesCompassHeading,
+            showMyLocation = live.showCurrentLocationOnMap,
+        ))
     }
 
     // ── Data binding ───────────────────────────────────────────────────────────
@@ -844,8 +442,8 @@ class RenderMapFragment : Fragment() {
                     camera.clearCoordinates()
                     drawer.showNoPoints()
                     // A coordinate-backed stakeout target no longer exists — end stakeout cleanly.
-                    if (isStakeoutMode && stakeoutTargetId != null) {
-                        showSnackbar("Stakeout target was removed"); stopStakeout()
+                    if (stakeout.isStakeoutMode && stakeout.stakeoutTargetId != null) {
+                        showSnackbar("Stakeout target was removed"); stakeout.stopStakeout()
                     }
                     return@observe
                 }
@@ -855,8 +453,9 @@ class RenderMapFragment : Fragment() {
                 val newIds = points.map { it.id }.toHashSet()
                 val removedIds = markers.removeMissing(newIds)
                 // If the active stakeout target was the deleted coordinate, end stakeout cleanly.
-                if (isStakeoutMode && stakeoutTargetId != null && stakeoutTargetId in removedIds) {
-                    showSnackbar("Stakeout target was removed"); stopStakeout()
+                val targetId = stakeout.stakeoutTargetId
+                if (stakeout.isStakeoutMode && targetId != null && targetId in removedIds) {
+                    showSnackbar("Stakeout target was removed"); stakeout.stopStakeout()
                 }
 
                 val latLngsVisible = ArrayList<LatLng>()
@@ -902,7 +501,7 @@ class RenderMapFragment : Fragment() {
         try {
             val total = markers.coordinates.size
             val visible = markers.visibility.visibleCount
-            app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
+            MapRuntimeDiagnostics.update {
                 it.copy(
                     mapReady = googleMap != null,
                     mapType = MapTypes.label(tools.currentMapType),
@@ -916,8 +515,8 @@ class RenderMapFragment : Fragment() {
                     markersTotal = total,
                     markersVisible = visible,
                     selectedActive = selection.selectedCoordinateId != null,
-                    stakeoutActive = isStakeoutMode,
-                    guidanceActive = isGuidanceActive,
+                    stakeoutActive = stakeout.isStakeoutMode,
+                    guidanceActive = stakeout.isGuidanceActive,
                 )
             }
         } catch (e: Exception) { logFail("diagnostic snapshot refresh", e) }
@@ -934,6 +533,8 @@ class RenderMapFragment : Fragment() {
         logMapEvent("MAP", "Map location overlay ${if (show) "on" else "off"}")
         showSnackbar(if (show) "Showing my location" else "Hiding my location")
     }
+
+    // ── Navigation ─────────────────────────────────────────────────────────────
 
     /** Opens the global AR scene (all saved points, including the selected one). */
     private fun openSelectedInAr() {
@@ -955,86 +556,14 @@ class RenderMapFragment : Fragment() {
     private fun startStakeoutForSelectedCoordinate() {
         val id = selection.selectedCoordinateId ?: run { showSnackbar("Select a coordinate first"); return }
         val coord = markers.coordinate(id) ?: return
-        val latLng = LatLng(coord.latitude, coord.longitude)
-
-        // Start stakeout mode if not already active
-        if (!isStakeoutMode) {
-            isStakeoutMode = true
-            stakeoutPanel?.visibility = View.VISIBLE
-        }
-
-        stakeoutTarget = latLng
-        stakeoutTargetId = id
-        lastStakeoutFixElapsedMs = null
-        txtStakeoutTarget?.text = coord.name
-        showStakeoutWaiting()
-
-        stakeoutMarker?.remove()
-        lastStakeoutMarkerHue = null
-        stakeoutMarker = googleMap?.addMarker(
-            MarkerOptions()
-                .position(latLng)
-                .title("Stakeout: ${coord.name}")
-                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                .zIndex(5f)   // keep the active target above the regular coordinate markers
-        )
-        lastStakeoutMarkerHue = BitmapDescriptorFactory.HUE_RED
-
-        refreshStakeout()
-        logMapEvent("STAKEOUT", "Stakeout started targetId=${coord.id}")   // id only: no point names in logs
-        showSnackbar("Stakeout started: ${coord.name}")
+        stakeout.startForCoordinate(coord)
         selection.dismissSelectedCoordinate()
     }
 
-    private fun stopStakeout() {
-        if (!isStakeoutMode) return
-        if (isGuidanceActive) stopGuidance()
-        isStakeoutMode = false
-        stakeoutPanel?.visibility = View.GONE
-        stakeoutTarget = null
-        stakeoutTargetId = null
-        lastStakeoutFixElapsedMs = null
-        txtStakeoutTarget?.text = "—"
-        showStakeoutWaiting()
-        stakeoutMarker?.remove(); stakeoutMarker = null; lastStakeoutMarkerHue = null
-        stakeoutLine?.remove(); stakeoutLine = null
-        logMapEvent("STAKEOUT", "Stakeout stopped")
-        showSnackbar("Stakeout stopped")
-    }
-
-    private fun toggleStakeoutMode() {
-        if (isStakeoutMode) {
-            stopStakeout()
-        } else {
-            isStakeoutMode = true
-            stakeoutPanel?.visibility = View.VISIBLE
-            stakeoutMarker?.remove(); stakeoutMarker = null
-        }
-    }
-
-
     private fun setupMapClickListener() {
         googleMap?.setOnMapClickListener { latLng ->
-            if (isStakeoutMode) {
-                try {
-                    stakeoutTarget = latLng
-                    stakeoutTargetId = null   // free map-tap target (not tied to a saved coordinate)
-                    lastStakeoutFixElapsedMs = null
-                    txtStakeoutTarget?.text = String.format(Locale.US, "%.5f, %.5f", latLng.latitude, latLng.longitude)
-                    if (stakeoutMarker == null) {
-                        stakeoutMarker = googleMap?.addMarker(
-                            MarkerOptions().position(latLng).title("Stakeout Target")
-                                .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED))
-                                .zIndex(5f)   // keep the active target above the regular coordinate markers
-                        )
-                    } else {
-                        try { stakeoutMarker?.position = latLng } catch (e: Exception) { logFail("stakeout marker move", e) }
-                    }
-                    refreshStakeout()
-                } catch (e: Exception) { logFail("map click stakeout", e) }
-            } else {
-                selection.dismissSelectedCoordinate()
-            }
+            // In stakeout mode a tap sets a free target; otherwise it closes the selected-point card.
+            if (!stakeout.onMapTap(latLng)) selection.dismissSelectedCoordinate()
         }
     }
 
