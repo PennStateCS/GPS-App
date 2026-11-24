@@ -2,6 +2,7 @@ package app.surrealar.data.export
 
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.model.Model
+import app.surrealar.domain.model.validCoordinateEpochOrNull
 import app.surrealar.domain.usecase.ValidateCoordinateForSaveUseCase
 import org.json.JSONArray
 import org.json.JSONObject
@@ -274,7 +275,9 @@ object CoordinateBackup {
             // v14 provenance: absent (older backup) or null → unknown. Never inferred on import.
             sourceFrame = o.optStringN("sourceFrame"),
             receiverFrame = o.optStringN("receiverFrame"),
-            coordinateEpoch = o.optDoubleN("coordinateEpoch"),
+            // Only a finite decimal year in 1980..2100 is kept; anything else (0.0, NaN, Infinity, text)
+            // would shift or break ITRF2020 output later, so it is restored as unknown.
+            coordinateEpoch = validCoordinateEpochOrNull(runCatching { o.optDoubleN("coordinateEpoch") }.getOrNull()),
             orthometricHeightSource = o.optStringN("orthometricHeightSource"),
             orthometricModel = o.optStringN("orthometricModel"),
         )

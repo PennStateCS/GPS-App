@@ -56,6 +56,16 @@ object OrthometricModel {
     const val EGM96 = "EGM96"
 }
 
+/**
+ * Plausible stored coordinate epochs (decimal years). GNSS RTK data before 1980 or after 2100 is not a
+ * real capture: such a value (or 0.0, NaN, ±Infinity from a damaged backup) is treated as unknown.
+ */
+val COORDINATE_EPOCH_RANGE: ClosedFloatingPointRange<Double> = 1980.0..2100.0
+
+/** [epoch] if it is a finite decimal year within [COORDINATE_EPOCH_RANGE], else null (unknown). */
+fun validCoordinateEpochOrNull(epoch: Double?): Double? =
+    epoch?.takeIf { it.isFinite() && it in COORDINATE_EPOCH_RANGE }
+
 /** Decimal-year coordinate epoch of an instant (epoch millis), as the feed's datum transform uses it. */
 fun coordinateEpochOf(epochMillis: Long): Double = CoordinateEpoch.fromEpochMillis(epochMillis).decimalYear
 

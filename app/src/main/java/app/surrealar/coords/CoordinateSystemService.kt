@@ -107,17 +107,11 @@ class CoordinateSystemService @Inject constructor(
     /**
      * Stored coordinate → configured system. `altitude` is ellipsoidal (antenna height already
      * removed) and `altitudeMsl` the receiver MSL height; `crsEpsg` says which datum they are in
-     * (null/4326/4979 = WGS84). The transformation epoch is the capture time ([storedEpochYear]).
+     * (null/4326/4979 = WGS84, 6318/6319 = NAD83(2011), 9989/9990 = ITRF2020; see [storedSourcePosition]).
+     * The transformation epoch is the capture time ([storedEpochYear]).
      */
     fun convertCoordinate(c: Coordinate, s: CoordinateSystemSettings): ConvertedPosition =
-        track(
-            SourcePosition(
-                latDeg = c.latitude, lonDeg = c.longitude,
-                ellipsoidalHeightM = c.altitude, receiverMslM = c.altitudeMsl,
-                isNad83 = StoredDatum.isNad83(c.crsEpsg),
-                epochYear = storedEpochYear(c, s),
-            ), s,
-        )
+        track(storedSourcePosition(c, s), s)
 
     // ── Formatting in the current settings (one place, so every screen agrees) ──────────────────
 
@@ -177,11 +171,27 @@ class CoordinateSystemService @Inject constructor(
 }
 
 /**
- * Coordinate epoch used to convert a stored point. ITRF2020 output (new in Phase 2) uses the recorded
- * `coordinateEpoch` when known, else the capture time. Every other output keeps the capture time exactly
- * as before, so existing outputs are unchanged (for points captured since v14 the two are the same
- * number anyway).
+ * Coordinate epoch used to convert a stored point. ITRF2020 output (new in Phase 2), and a point stored in
+ * ITRF2020 (EPSG 9989/9990), use the recorded `coordinateEpoch` when known, else the capture time. Every
+ * other conversion keeps the capture time exactly as before, so existing outputs are unchanged (for
+ * points captured since v14 the two are the same number anyway). A recorded epoch that is not a finite
+ * decimal year in 1980..2100 ([validCoordinateEpochOrNull]) counts as unknown: the capture time is used.
  */
 internal fun storedEpochYear(c: Coordinate, s: CoordinateSystemSettings): Double =
-    (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020) c.coordinateEpoch else null)
+    (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020 || StoredDatum.isItrf2020(c.crsEpsg))
+        app.surrealar.domain.model.validCoordinateEpochOrNull(c.coordinateEpoch) else null)
         ?: Itrf2014ToNad83.decimalYear(c.timestamp)
+
+/**
+ * A stored point as the converter's source: lat/lon/heights in the datum its `crsEpsg` names
+ * ([StoredDatum.geodeticDatum]: WGS84 (ITRF2014), NAD83(2011) or ITRF2020; null/other codes → WGS84 as
+ * before) at [storedEpochYear].
+ */
+internal fun storedSourcePosition(c: Coordinate, s: CoordinateSystemSettings): SourcePosition =
+    SourcePosition(
+        latDeg = c.latitude, lonDeg = c.longitude,
+        ellipsoidalHeightM = c.altitude, receiverMslM = c.altitudeMsl,
+        isNad83 = StoredDatum.isNad83(c.crsEpsg),
+        epochYear = storedEpochYear(c, s),
+        datum = StoredDatum.geodeticDatum(c.crsEpsg),
+    )
