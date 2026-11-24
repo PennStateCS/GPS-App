@@ -85,14 +85,16 @@ class DataSettingsControllerTest {
         Mockito.verifyNoInteractions(repository, settings, service, exportBackup, importBackup)
     }
 
-    @Test fun `results still route after the category view is destroyed (launcher results outlive the view)`() {
+    @Test fun `a backup result still runs the export after the category view is destroyed`() {
         val host = ControllerHost()
         val data = controller(host)
         host.show(data, mainScope())
-        data.onDestroyView()
+        data.onDestroyView()                              // the user switched category before the save dialog returned
 
-        data.onImportResult(null)                         // no view: must not crash
+        // A real (non-null) save-dialog result: the export must still run on the save scope (it outlives the view).
+        data.onExportBackupResult(android.net.Uri.parse("content://test/coordinates_backup_1.json"))
+        val exportCalls = Mockito.mockingDetails(exportBackup).invocations.count { it.method.name == "invoke" }
+        assertEquals("export use case ran once with no category view", 1, exportCalls)
         assertEquals(0, importLauncher.inputs.size)
-        Mockito.verifyNoInteractions(repository)
     }
 }

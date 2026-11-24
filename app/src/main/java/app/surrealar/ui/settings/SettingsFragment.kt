@@ -49,10 +49,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     @Inject
     lateinit var receiverDevices: ReceiverDeviceManager
 
-    // Comment out the SettingsViewModel injection for now since it may not exist
-    // @Inject
-    // lateinit var settingsViewModel: SettingsViewModel
-
     // ─────────────────────────── Preferences / Data ───────────────────────────
     @Inject lateinit var repository: CoordinateRepository
     @Inject lateinit var settingsRepo: SettingsRepository
@@ -105,7 +101,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
 
     // ───────────────────────────── Lifecycle hooks ─────────────────────────────
-    // repository is Hilt-injected (@Inject above); no manual init needed.
 
     override fun provideCategories(): List<SettingsCategory> = baseCategories()
 

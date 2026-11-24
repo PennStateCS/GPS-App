@@ -51,6 +51,8 @@ class ReceiverSettingsControllerTest {
     private lateinit var server: ServerSocket
     private val respond = CountDownLatch(1)
     private val accepted = AtomicInteger()
+    /** Connections the fake receiver has answered with NMEA (so a probe on them has its result). */
+    private val served = AtomicInteger()
 
     @Before fun startReceiver() {
         server = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
@@ -63,6 +65,7 @@ class ReceiverSettingsControllerTest {
                         respond.await(15, TimeUnit.SECONDS)
                         s.getOutputStream().write("\$GPGGA,120000.00,4114.0,N,07552.0,W,4,12,0.8,180.0,M,-34.0,M,1.0,0000*4A\r\n".toByteArray())
                         s.getOutputStream().flush()
+                        served.incrementAndGet()
                         Thread.sleep(1_000)
                     }
                     runCatching { s.close() }
@@ -143,7 +146,10 @@ class ReceiverSettingsControllerTest {
         Mockito.verify(coordinator, Mockito.atLeastOnce()).activateInternalProvider("settings")
 
         respond.countDown()                       // the receiver answers after the user left External
-        pumpUntil(3_000) { false }                // let the superseded attempt run out
+        // Wait until every probe connection really got its NMEA (so the superseded attempt has a result
+        // to deliver), then let the main looper run its continuation: only then is "never" meaningful.
+        assertTrue("receiver answered every probe", pumpUntil(10_000) { served.get() >= accepted.get() })
+        pumpUntil(1_000) { false }
         Mockito.verify(coordinator, Mockito.never()).activateExternalTcpProvider(anyString(), anyInt(), anyString())
     }
 }
