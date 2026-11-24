@@ -80,9 +80,10 @@ class DataSettingsLifecycleTest {
 
     private val host = ControllerHost()
 
-    private fun controller(on: ControllerHost = host) = DataSettingsController(on.fragment, repository, settings,
+    private fun controller(on: ControllerHost = host, saveScope: kotlinx.coroutines.CoroutineScope = mainScope()) =
+        DataSettingsController(on.fragment, repository, settings,
         Mockito.mock(CoordinateSystemService::class.java), Mockito.mock(ExportCoordinateBackupUseCase::class.java),
-        Mockito.mock(ImportCoordinateBackupUseCase::class.java), mainScope(),
+        Mockito.mock(ImportCoordinateBackupUseCase::class.java), saveScope,
         NoopLauncher(), NoopLauncher(), NoopLauncher(),
         runImport = { _, replace, confirm -> importCalls++; importBody(replace, confirm) })
 
@@ -123,12 +124,18 @@ class DataSettingsLifecycleTest {
     @Test fun `a result delivered to a recreated fragment's controller is handled without a built view`() {
         // After recreation the Activity Result registry delivers to the NEW fragment's launcher, i.e. a
         // new controller that may not have built the Data view yet.
-        val fresh = controller(ControllerHost())
+        val saveScope = mainScope()
+        val fresh = controller(ControllerHost(), saveScope)
         val out = File(tmp.root, "points.csv")
 
         fresh.onExportPointsCsvResult(Uri.fromFile(out))
 
         assertTrue(pumpUntil { out.exists() && out.length() > 0 })
+        // Wait for the export to finish too: its "exported" message is posted to the main thread after the
+        // file is written, and used to land after this test ended (Robolectric teardown -> NPE, flaky).
+        val job = saveScope.coroutineContext[kotlinx.coroutines.Job]!!
+        assertTrue("export finished", pumpUntil { job.children.none { it.isActive } })
+        idle()
     }
 
     @Test fun `an import keeps running across a category switch, shows its progress again and can be cancelled`() {
