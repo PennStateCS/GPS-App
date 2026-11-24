@@ -46,7 +46,7 @@ class GlobalGeoidModelTest {
             // The generator files a point by the tile it starts in; a point exactly on the south edge of a
             // missing tile (here −89° next to the test pack's polar row) is read from the neighbour that
             // stores that edge (GeoidEdgeTileTest), so it has a value that must match PROJ like any other.
-            val onNeighbourEdge = v.tile == "none" && v.lat == Math.floor(v.lat) && r is GeoidResult.Value
+            val onNeighbourEdge = v.tile == "none" && v.lat == Math.floor(v.lat)   // must then have a value (checked below)
             if (v.tile == "none" && !onNeighbourEdge) {
                 assertEquals("${v.lat},${v.lon}", GeoidUnavailableReason.TILE_NOT_AVAILABLE, (r as GeoidResult.Unavailable).reason)
                 assertEquals(GeoidModelId.EGM2008, r.model)
