@@ -1,72 +1,76 @@
 # Phases 1 + 2 — consolidated tablet acceptance checklist
 
-For the SM-X940 test tablet before merging `survey/phase2` (which contains Phase 1). Everything below needs
-the physical device; automated results are in the Phase 1 and Phase 2 reports. Do not uninstall or clear data.
+Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK. Do the installation
+exactly as in [install-and-rollback.md](install-and-rollback.md) (backup first, in-place install, never uninstall).
+Each check lists the **expected result**; tick only what you saw on the device.
 
-## 0. Before installing
-- [ ] Back up app data: `adb exec-out run-as app.surrealar tar cf - databases files shared_prefs no_backup > backup.tar`
-      and check it (5 coordinates, 2 models, schema 13).
-- [ ] Signing/version match the installed build (shared debug keystore, same `app.surrealar`, versionCode ≥).
-- [ ] Install in place: `adb install -r` (never uninstall).
+**Test data needed:** the existing 5 coordinates and 2 models (do not edit or delete them); one throwaway test
+point captured during the test (delete only that one); a position in Hazleton, PA (for zone checks); the RS2+
+receiver on TCP; optionally an old JSON backup made before the update (for import compatibility).
 
-## 1. Data preservation and the v13 → v14 database migration
-- [ ] App opens normally after the update (migration ran; no crash, no "loading" stuck).
-- [ ] All 5 coordinates and both models are present; spot-check one point's lat/lon/h on Details against the backup.
-- [ ] Pull a fresh copy: DB `user_version` = 14, the 5 rows unchanged, the five new columns NULL for old rows.
-- [ ] Old points' Details → Provenance block shows "unknown" (never a guessed frame/model).
+## 1. Data preservation and migration
+| # | Check | Expected result |
+|---|---|---|
+| 1.1 | Open the app after the in-place install | Opens normally, no crash, map/lists load (Room v13 → v14 ran) |
+| 1.2 | Coordinates list | Same 5 points, same names; Models list: same 2 models with thumbnails |
+| 1.3 | Details of one existing point vs the pre-install backup | Lat/lon/h/H/N identical to the backup values |
+| 1.4 | Details → Provenance of an existing point | Source frame, epoch, receiver frame, height source: "unknown" (nothing guessed) |
+| 1.5 | Pull a post-install copy (see install doc §5) | `user_version` 14; the 5 rows' original columns unchanged; 5 new columns NULL |
+| 1.6 | Settings → Coordinates / Map / Receiver | Same choices as before the update (nothing reset, no forced selection) |
 
-## 2. Coordinate and height settings (Settings → Coordinates)
-- [ ] Existing choices are kept after the update (no forced re-selection; same datum/height/zone as before).
-- [ ] Height field lists: Ellipsoidal height (h); Orthometric H (NAVD88, GEOID18); H (receiver geoid, model
-      unknown); H (EGM2008); H (EGM96, fallback) — each shown in full (≤ 2 lines), light and dark theme.
-- [ ] Datum list includes ITRF2020; its description mentions the coordinate epoch; selecting it changes the preview
-      to "ITRF2020 epoch …".
-- [ ] Help text explains h, H, N, H = h − N, receiver model unknown, EGM2008 bundled for US regions, EGM96 coarse
-      fallback, EGM heights are not NAVD88.
+## 2. Coordinate systems
+| # | Check | Expected result |
+|---|---|---|
+| 2.1 | Zone field: type "Penn", then "3701", then "North" | List filters to matching SPCS83 zones; picking one shows its full label; reopening keeps it |
+| 2.2 | In Hazleton, saved zone PA South, switch to State Plane | Proposes Pennsylvania North (3701) with the county-limits hint |
+| 2.3 | Same with PA North saved | Kept; no mismatch hint (or "near boundary" only near a zone line) |
+| 2.4 | Choose PA South manually in Hazleton | "Your position appears to be in Pennsylvania North (3701), not this zone."; hint mentions "SPCS2022: not yet available." |
+| 2.5 | Datum WGS84 (ITRF2014) vs NAD83(2011), Geographic | NAD83 differs by ≈ 1.3 m horizontally / 1.2 m vertically around Hazleton (as before) |
+| 2.6 | Datum ITRF2020, Geographic or UTM | Preview/Details show "ITRF2020 epoch 20xx.xxx"; values differ from WGS84 (ITRF2014) by only a few mm |
+| 2.7 | State Plane with any datum | Datum field disabled; output on NAD83(2011) (as before) |
+| 2.8 | Look for NATRF2022 / SPCS2022 anywhere | Not offered as options |
 
-## 3. Geoid models and labels
-- [ ] Hazleton: H (EGM2008) and H (EGM96) give plausible values (EGM2008 vs GEOID18 typically differ by a few dm
-      — they are different datums); labels/preview/toolbar say "H EGM2008" / "H EGM96", never NAVD88.
-- [ ] Offline (airplane mode): EGM2008 and EGM96 still work in the US (bundled); first selection does not freeze the UI.
-- [ ] Outside the bundled EGM2008 regions (if you can simulate, e.g. replay data abroad): EGM2008 shows the
-      "outside EGM2008 coverage bundled in this app" reason, never an EGM96 value.
-- [ ] Receiver H option still shows the receiver value unchanged.
+## 3. Geoid models and heights
+| # | Check | Expected result |
+|---|---|---|
+| 3.1 | Height = Orthometric H (NAVD88, GEOID18), Hazleton | Same value as before the update for the same point (≈ h + 32.7 m there) |
+| 3.2 | Height = H (EGM2008) | Value shown with label "H EGM2008"; differs from GEOID18 by a few dm (different datum — expected); never labelled NAVD88 |
+| 3.3 | Height = H (EGM96, fallback) | Label "H EGM96 … fallback" in settings; values a few dm from EGM2008 |
+| 3.4 | Airplane mode, choose H (EGM2008), open preview/list | Works offline; UI never freezes; at most a brief "EGM2008 data is loading" then values |
+| 3.5 | Height = H (receiver geoid, model unknown) | Receiver's own value, unchanged by the model choice |
+| 3.6 | Height field in light and dark theme | Every option fully readable (≤ 2 lines), nothing cut off |
+| 3.7 | (Optional, replay data outside US regions) EGM2008 | "outside EGM2008 coverage bundled in this app (US regions)" — never an EGM96 value |
 
-## 4. State Plane zone selection
-- [ ] Zone field search: typing "Penn", "3701", "North" filters correctly; reopening shows the chosen zone's label.
-- [ ] Hazleton with saved PA South → switching to State Plane proposes PA North (3701); with PA North saved it is kept.
-- [ ] Choosing PA South shows "appears to be in Pennsylvania North (3701)"; hint ends with "SPCS2022: not yet available."
+## 4. Capture, provenance and receiver frame
+| # | Check | Expected result |
+|---|---|---|
+| 4.1 | Capture a throwaway point with the RS2+ (receiver datum ITRF2014) | Saved; Details → Provenance: source frame WGS84 (ITRF2014), a coordinate epoch, receiver frame ITRF2014, height source "External receiver (NMEA GGA)", model unknown |
+| 4.2 | Start a capture, then change Settings → Receiver datum before it finishes | Capture stops with a clear message; nothing is saved |
+| 4.3 | Start a capture, then switch receiver source | Capture stops (or behaves as documented); nothing mixed is saved |
+| 4.4 | Delete the throwaway point | Only that point removed; the original 5 remain |
 
-## 5. Reference-frame conversions
-- [ ] Geographic / UTM in ITRF2020: values differ from WGS84 (ITRF2014) by only a few mm (expected at this epoch).
-- [ ] State Plane remains NAD83(2011) regardless of datum choice (datum field disabled as before).
-- [ ] NATRF2022 / SPCS2022 are not offered anywhere.
+## 5. Map, Details, AR, stakeout
+| # | Check | Expected result |
+|---|---|---|
+| 5.1 | Map | Markers where they were before; selected card "Azimuth: …° (N …° … E)" |
+| 5.2 | Stakeout a point; open Details and come back; switch tabs and come back | Stakeout restored (card, marker, guidance); "Azimuth" caption; ΔN/ΔE caption |
+| 5.3 | Details screen | Height rows (h, H at mark, N) and the Provenance block wrap cleanly |
+| 5.4 | AR | Pins/models where they were before the update |
 
-## 6. Capture and provenance (new points)
-- [ ] With the RS2+ (receiver datum ITRF2014) capture a throwaway test point: Details → Provenance shows
-      source frame WGS84 (ITRF2014), a coordinate epoch, receiver frame ITRF2014, orthometric source "External
-      receiver (NMEA GGA)", model unknown. Delete the test point afterwards (only the test point).
-- [ ] (If available) internal-GNSS capture: orthometric source "Device GNSS", receiver frame unknown.
+## 6. GNSS and exports
+| # | Check | Expected result |
+|---|---|---|
+| 6.1 | External (RS2+ TCP) and Internal GNSS | Both work; switching works; toolbar height token label fits |
+| 6.2 | CSV export: State Plane ftUS + GEOID18; lat/lon + EGM2008; ITRF2020 | 6 columns; header e.g. "Elevation (m H EGM2008)"; System column names frame/epoch; values match Details |
+| 6.3 | JSON backup export, then import that backup | Imports; provenance of new points preserved |
+| 6.4 | Import an OLD backup (made before the update) | Imports; provenance shows "unknown" |
 
-## 7. Map, Details, AR and stakeout
-- [ ] Map markers in the same places as before; selected-point card "Azimuth: …° (N …° … E)".
-- [ ] Stakeout on a point: readout, "Azimuth" caption, ΔN/ΔE caption; Details/AR round trips; tab switch restores stakeout.
-- [ ] AR places models/pins where they were before the update (WGS84 path unchanged).
+## 7. Receiver settings
+| # | Check | Expected result |
+|---|---|---|
+| 7.1 | Receiver → antenna section | "Level the pole…" and the conditional RS4 Pro tilt warning, wrapping cleanly |
+| 7.2 | (RS4 Pro, optional) field test in [rs4-pro-tilt.md](rs4-pro-tilt.md) | Records whether GGA is antenna or pole tip with tilt on/off |
 
-## 8. GNSS receiver operation
-- [ ] RS2+ connects over TCP as before; toolbar SRC/SOL/SATS/accuracy/height update; height token label fits.
-- [ ] Switching Internal ⇄ External still works.
-
-## 9. Exports and backup
-- [ ] CSV export (State Plane ftUS + GEOID18; lat/lon + EGM2008; ITRF2020): six columns, header names H and the
-      model (e.g. "Elevation (m H EGM2008)"), System column names frame/epoch; values match Details.
-- [ ] JSON backup export → import into the app: provenance survives; importing an OLD backup (from before the
-      update) works and leaves provenance unknown.
-
-## 10. Receiver settings
-- [ ] Antenna section shows "Level the pole…" and the conditional RS4 Pro tilt warning, wrapping cleanly.
-- [ ] (RS4 Pro owners, optional) field test in docs/geodesy/rs4-pro-tilt.md.
-
-## Needs the tablet (cannot be proven by unit tests)
-Visual layout and text fit on the real screen; real migration of the device database; real receiver/TCP
-behaviour; AR placement; offline first-load timing of the geoid packs; SAF export/import dialogs.
+## Verified only on the device (not by unit tests)
+Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
+offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX.
