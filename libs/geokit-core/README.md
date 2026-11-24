@@ -16,6 +16,7 @@ Package root `io.github.pennstatecs.geokit`:
 | `.ellipsoid` | `Ellipsoid` (`WGS84`, `GRS80`: `toEcef`, `fromEcef`, meridian / prime-vertical radii), `GeodeticPosition`, `EcefPosition`, `Geodesic` (`distanceM`, `initialBearingDeg`, `northEastDeltaM` on WGS84, via GeographicLib) |
 | `.datum` | `ReferenceFrame` (stable persistable ids, EPSG codes, reference epoch, global / plate-fixed), `CoordinateEpoch`, `FrameTransformationRegistry` (`find(source, target, epoch)` → `Available` chain of verified `FrameEdge`s or `Unavailable(UNKNOWN_FRAME / NOT_DEFINED / NOT_VERIFIED)`), `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`), `Itrf2014ToItrf2020` |
 | `.projection` | `Tm` (Krüger series, forward + inverse), `Lcc2`, `HomA`, `Utm`, `SpcsZone` / `SpcsZones` (all 118 SPCS83 zones on NAD83(2011)), `SpcsZoneLocator` / `SpcsZoneSet` / `SpcsZoneSuggestion` (zone suggestion from county-defined zone extents) |
+| `.crs` | `CrsRegistry` (catalogs `GEOGRAPHIC`, `UTM`, `SPCS83`, `SPCS2022`; `byId` / `byEpsg` → `Found` / `Unsupported` / `NotFound`, `search`, `atPosition`), `CrsDefinition` (id, EPSG, name, zone code, frame, `ProjectionMethod` + parameters, unit, `AreaOfUse`, dataset, `operational`), `CrsCatalogCsv` (catalog file format for SPCS2022) |
 | `.geoid` | `Geoid18Grid` (`fromClasspath()` loads the GEOID18 grid bundled in this jar; or from a `ByteArray` / `InputStream` of a packed SRGT grid) |
 | `.local` | `LocalEnu` (east/north/up about an origin, for short-range local work: `toEnu`, and its exact inverse `toGeodetic`) |
 | `.accuracy` | `HorizontalAccuracy` (horizontal accuracy is a **68 % radius**; vertical is **1σ**) |
@@ -103,7 +104,57 @@ unreadable resource falls back to boxes; nothing throws.
 Details of the county mapping (independent cities, Broomfield CO, Washington's Grant County split, spelling
 aliases) are in the generator's docstring; its county → zone table is `tools/coords/spcs83_county_zones.csv`.
 SPCS2022 (new, layered zones) is meant to plug in as a second `SpcsZoneSet` with its own zone table and
-boundary resource in the same format; see the `SpcsZoneSet` KDoc.
+boundary resource in the same format; see the `SpcsZoneSet` KDoc and the CRS registry below.
+
+## CRS registry (`.crs`)
+
+`CrsRegistry.DEFAULT` lists the coordinate reference systems GeoKit can express positions in, as
+structured definitions rather than enum entries. It wraps the existing projections — no number changes:
+
+| Catalog | Ids | Content |
+|---|---|---|
+| `GEOGRAPHIC` | `geographic:<frame id>` | One per `ReferenceFrame`; operational only where `FrameTransformationRegistry` has a verified path from WGS84 (ITRF2014) (ITRF2014, ITRF2020, WGS84 (ITRF2014), NAD83(2011)). NATRF2022 and the WGS 84 realisations are listed non-operational. |
+| `UTM` | `EPSG:32601`…`32660`, `EPSG:32701`…`32760` | WGS 84 / UTM, frame WGS84 (ITRF2014), the cached `Tm` objects `Utm` itself uses |
+| `SPCS83` | `EPSG:<zone code>`, e.g. `EPSG:6562` | The 118 `SpcsZone`s (same objects, same EPSG codes = the values the app persists), frame NAD83(2011) |
+| `SPCS2022` | `EPSG:<code>` or `spcs2022:<zone code>` | Loaded from `crs/spcs2022_catalog.csv`; ships **empty**, so the catalog is `UNSUPPORTED` |
+
+```kotlin
+val reg = CrsRegistry.DEFAULT
+when (val l = reg.byEpsg(6562)) {                  // or byId("EPSG:6562"), byId("6562")
+    is CrsLookup.Found -> l.definition.forward(lat, lon)   // identical to SpcsZones.byEpsg(6562)!!.projection.forward
+    is CrsLookup.Unsupported -> show(l.explanation)        // SPCS2022 ids, non-operational entries
+    is CrsLookup.NotFound -> …
+}
+reg.search("penn north")                           // zone picker: every term must match name / zone code / EPSG / id
+reg.search("3701", CrsCatalogId.SPCS83)            // exact id / EPSG / zone-code matches rank first
+reg.atPosition(lat, lon, CrsCatalogId.SPCS83)      // SpcsZoneLocator candidates, suggested first
+reg.atPosition(lat, lon, CrsCatalogId.UTM)         // the zone of the longitude, hemisphere from the latitude
+```
+
+Each `CrsDefinition` carries the projection method (`ProjectionMethod`: EPSG 9807 / 9802 / 9812) and its
+named parameters (`lat_0`, `lon_0`, `k_0`, `x_0`, `y_0`, …), unit, EPSG area of use, the dataset
+(`EPSG v12.029 via PROJ 9.8.1 (pyproj 3.8.0)`) and `operational`. Only operational definitions are
+returned as `Found`, by `search` (unless `includeNonOperational`) and by `atPosition`; a non-operational
+definition has no `projection`. Geographic CRSs are looked up by frame (`geographic(frame)`), because
+WGS 84 and WGS84 (ITRF2014) share EPSG 4326. The registry is lazy and thread-safe. Tests
+(`CrsRegistryTest`) run `spcs83_vectors.csv` and `utm_vectors.csv` through the registry and require
+bit-identical results to the direct `SpcsZone` / `Utm` paths.
+
+**SPCS2022.** As of 2026-11 the SPCS2022 zones are not in the EPSG dataset (v12.029) or PROJ 9.8.1 (only
+the offshore "NATRF2022 / Gulf" CRSs) and NATRF2022 has no verified transformation, so every SPCS2022
+lookup is `Unsupported` with `CrsRegistry.SPCS2022_UNSUPPORTED`. The catalog file format (`CrsCatalogCsv`
+KDoc) is:
+
+```
+zone_code,epsg,name,frame,method,parameters,unit,west,south,east,north,dataset,verified_by
+3701,,Pennsylvania North,natrf2022,lcc2sp,lat_0=…;lon_0=…;lat_1=…;lat_2=…;x_0=…;y_0=…,metre,-80.53,40.6,-74.7,42.53,NGS SPCS2022 v1,coords/spcs2022_vectors.csv
+```
+
+A row is operational only if `verified_by` names checked-in reference vectors **and** method, parameters,
+frame ellipsoid and unit are valid; otherwise it loads non-operational with a `statusNote`. Rows that cannot
+be represented (column count, unknown frame, malformed numbers, duplicate id, an id already used by UTM /
+SPCS83) are skipped and listed in `CrsCatalog.problems`; loading never throws. How to add the real catalog:
+`docs/geodesy/reference-frames-roadmap.md` §3.4.
 
 ## Verified accuracy
 
