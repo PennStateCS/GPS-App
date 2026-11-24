@@ -2,6 +2,7 @@ package app.surrealar.util.diagnostics
 
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
+import io.github.pennstatecs.geokit.validation.LatLonValidation
 import java.util.ArrayDeque
 import java.util.EnumMap
 import java.util.Locale
@@ -17,7 +18,11 @@ import java.util.Locale
  * and keeps per-session stats for gnss-stats.txt. Per fix it does a few comparisons; it writes only
  * on a change. Thread-safe (the fix collector and the heartbeat timer run on different threads).
  */
-class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) {
+class GnssFeedTracker(
+    /** The receiver connection id (`conn=`) for lines about an external source; null for other sources. */
+    private val connId: () -> String? = { null },
+    private val sink: (level: Char, message: String) -> Unit,
+) {
 
     enum class CorrectionBucket(val label: String, val minS: Double) {
         OK("<5s", 0.0), OVER_5(">5s", 5.0), OVER_10(">10s", 10.0), OVER_30(">30s", 30.0);
@@ -56,6 +61,12 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
     private var lastNmeaAtMs = 0L
     private var skyUsed: Int? = null
     private var skyVisible: Int? = null
+    // GNSS_FEED (see checkFeed): times are for the current source only.
+    private var sourceSinceMs = 0L
+    private var lastValidFixAtMs = 0L
+    private var feedLogged: String? = null
+    private var feedPending: String? = null
+    private var feedPendingSinceMs = 0L
 
     fun onSource(name: String, nowMs: Long) = synchronized(lock) {
         val old = source
@@ -66,11 +77,13 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         lastRtk = null; corrBucket = null; lastFix = null; fixTimes.clear()
         loggedRtk = null; pendingRtk = null; lastBeatKey = null
         skyUsed = null; skyVisible = null
+        sourceSinceMs = nowMs; lastValidFixAtMs = 0L; feedLogged = null; feedPending = null
     }
 
     fun onFix(fix: Fix, nowMs: Long) = synchronized(lock) {
         fixCount++
         lastFix = fix; lastFixAtMs = nowMs
+        if (LatLonValidation.isValidLatLon(fix.latDeg, fix.lonDeg)) lastValidFixAtMs = nowMs
         fixTimes.addLast(nowMs)
         while (fixTimes.isNotEmpty() && nowMs - fixTimes.first > 60_000L) fixTimes.removeFirst()
 
@@ -93,8 +106,10 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         } else if (nowMs - pendingRtkSinceMs >= RTK_HOLD_MS) {
             val from = loggedRtk
             loggedRtk = rtk; pendingRtk = null
-            sink(if (from == RtkStatus.FIX) 'W' else 'I', "RTK status ${from?.name ?: "start"} → ${rtk.name} sats=${fix.satsUsed ?: "unknown"}" +
-                " hdop=${fmt1(fix.hDop)} corrAgeBucket=${bucket?.label ?: "none"}")
+            sink(if (from == RtkStatus.FIX) 'W' else 'I', DiagLine.of(DiagEvents.RTK_CHANGE,
+                "from" to (from?.name ?: "unknown"), "to" to rtk.name, "hAccM" to fmt3(fix.hAccM), DiagEvents.K_CONN to connId(),
+                extra = "sats=${fix.satsUsed ?: "unknown"} hdop=${fmt1(fix.hDop)} corrAgeBucket=${bucket?.label ?: "none"}",
+                text = "RTK status ${from?.name ?: "start"} → ${rtk.name}"))
         }
 
         if (bucket != null && bucket != corrBucket) {
@@ -102,11 +117,51 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
             corrBucket = bucket
             when {
                 bucket == CorrectionBucket.OK && before != null ->
-                    sink('I', "Corrections age recovered ageS=${fmt1(diffAge)}")
-                bucket != CorrectionBucket.OK && (before == null || bucket.minS > before.minS) ->
+                    sink('I', DiagLine.of(DiagEvents.CORRECTIONS_STATE, "state" to "OK", "ageS" to fmt1(diffAge), "via" to "nmea",
+                        DiagEvents.K_CONN to connId(), text = "Corrections age recovered"))
+                // The first crossing is the STALE transition; a later, higher threshold is an escalation.
+                bucket != CorrectionBucket.OK && (before == null || before == CorrectionBucket.OK) ->
+                    sink('W', DiagLine.of(DiagEvents.CORRECTIONS_STATE, "state" to "STALE", "ageS" to fmt1(diffAge),
+                        "thresholdS" to bucket.minS.toInt(), "via" to "nmea", DiagEvents.K_CONN to connId(),
+                        text = "Corrections age over threshold"))
+                bucket != CorrectionBucket.OK && before != null && bucket.minS > before.minS ->
                     sink('W', "Corrections age over threshold thresholdS=${bucket.minS.toInt()} ageS=${fmt1(diffAge)}")
             }
         }
+    }
+
+    /**
+     * GNSS_FEED: the feed as the app sees it, checked on a timer (not per fix). LIVE = a fix with a
+     * valid position in the last [FEED_LIVE_MS]; NO_FIX = NMEA or position-less fixes still arrive
+     * (within [FEED_STALE_MS]) but no usable position; STALE = nothing at all for [FEED_STALE_MS]. A new
+     * state is logged once it has held [FEED_HOLD_MS] (longer than [FEED_LIVE_MS], so a single valid fix
+     * among position-less ones never logs LIVE). Nothing before the source has sent anything (the link
+     * lines cover that).
+     */
+    fun checkFeed(nowMs: Long) = synchronized(lock) {
+        if (source == null) return@synchronized
+        fun ageOf(t: Long): Long? = if (t <= 0L || t < sourceSinceMs) null else nowMs - t
+        val validAge = ageOf(lastValidFixAtMs)
+        val anyAge = listOfNotNull(ageOf(lastFixAtMs), ageOf(lastNmeaAtMs)).minOrNull()
+        val st = when {
+            validAge != null && validAge <= FEED_LIVE_MS -> "LIVE"
+            anyAge != null && anyAge <= FEED_STALE_MS -> "NO_FIX"
+            validAge != null || anyAge != null -> "STALE"
+            else -> return@synchronized
+        }
+        if (st == feedLogged) { feedPending = null; return@synchronized }
+        if (st != feedPending) { feedPending = st; feedPendingSinceMs = nowMs; return@synchronized }
+        if (nowMs - feedPendingSinceMs < FEED_HOLD_MS) return@synchronized
+        val from = feedLogged
+        feedLogged = st; feedPending = null
+        val ageS = validAge?.let { fmt1(it / 1000.0) } ?: "none"
+        sink(if (st == "LIVE") 'I' else 'W', DiagLine.of(DiagEvents.GNSS_FEED, "state" to st,
+            "ageS" to if (st == "LIVE") null else ageS, "source" to source, DiagEvents.K_CONN to connId(),
+            text = when (st) {
+                "LIVE" -> if (from == null) "GNSS position live" else "GNSS position live again"
+                "NO_FIX" -> "GNSS data arriving but no usable position"
+                else -> "GNSS position stale"
+            }))
     }
 
     fun onSky(used: Int, visible: Int) = synchronized(lock) { skyUsed = used; skyVisible = visible }
@@ -170,6 +225,12 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
         const val RTK_HOLD_MS = 5_000L
         /** Heartbeat even when nothing changed, this often. */
         const val HEARTBEAT_EVERY_MS = 600_000L
+        /** A valid position at most this old = LIVE (fixes come at 1–10 Hz). */
+        const val FEED_LIVE_MS = 2_500L
+        /** No data at all (no fix, no NMEA) for this long = STALE. */
+        const val FEED_STALE_MS = 5_000L
+        /** A new GNSS_FEED state must hold this long before it is logged. */
+        const val FEED_HOLD_MS = 3_000L
 
         fun hAccBucket(m: Double?): String = when {
             m == null || !m.isFinite() -> "unknown"
@@ -177,5 +238,6 @@ class GnssFeedTracker(private val sink: (level: Char, message: String) -> Unit) 
             m < 1.0 -> "<1m"; m < 3.0 -> "<3m"; m < 10.0 -> "<10m"; else -> ">=10m"
         }
         private fun fmt1(v: Double?): String = v?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.1f", it) } ?: "unknown"
+        private fun fmt3(v: Double?): String = v?.takeIf { it.isFinite() }?.let { String.format(Locale.US, "%.3f", it) } ?: "unknown"
     }
 }
