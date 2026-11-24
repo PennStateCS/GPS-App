@@ -107,6 +107,14 @@ object CoordinateFactory {
      * UTM easting, northing, and zone are computed from the averaged lat/lon.
      *
      * @param provider The GNSS source active during capture.
+     * @param receiverFrame Frame the receiver delivered before the feed normalised it to WGS84
+     *   ([FrameTokens.ITRF2014] / [FrameTokens.NAD83_2011], from the External receiver datum setting
+     *   at capture start); null when unknown or not an external receiver capture.
+     *
+     * Provenance (v14) is filled from what the capture already knows, without changing any value:
+     * `sourceFrame` from [crsEpsg], `coordinateEpoch` = decimal year of the stored `timestamp` (the
+     * fix time the feed transform used), `orthometricHeightSource` from [provider] when an MSL
+     * height is present. `orthometricModel` stays null: receivers do not report their geoid model.
      */
     fun fromCaptureResult(
         id: String,
@@ -122,7 +130,8 @@ object CoordinateFactory {
         iconKey: String? = null,
         antennaHeightM: Double = 0.0,
         /** EPSG of the datum the result's lat/lon/height are in (4979/4326 WGS84, 6319 NAD83(2011)). */
-        crsEpsg: Int = 4326
+        crsEpsg: Int = 4326,
+        receiverFrame: String? = null,
     ): Coordinate {
         // Same table as CoordinateMappers, so a captured coordinate round-trips through the DB
         // without its provider degrading.
@@ -185,8 +194,24 @@ object CoordinateFactory {
             iconKey             = iconKey,
             renderEnabled       = true,
             createdAt           = capturedAtMs,
-            updatedAt           = capturedAtMs
+            updatedAt           = capturedAtMs,
+            // v14 provenance
+            sourceFrame         = FrameTokens.forStoredCrsEpsg(crsEpsg),
+            receiverFrame       = receiverFrame,
+            coordinateEpoch     = coordinateEpochOf(timestampMs),
+            orthometricHeightSource = result.altMslM?.let { orthometricHeightSourceFor(provider) },
+            orthometricModel    = null,
         )
+    }
+
+    /**
+     * Where a captured MSL height comes from: an external receiver's (or replayed receiver's) GGA, or
+     * the device's own GNSS. Unknown for other providers.
+     */
+    internal fun orthometricHeightSourceFor(provider: Provider): String? = when (provider) {
+        Provider.EXTERNAL_TCP, Provider.EXTERNAL_BT, Provider.REPLAY -> OrthometricHeightSource.RECEIVER_GGA
+        Provider.INTERNAL -> OrthometricHeightSource.DEVICE_GNSS
+        else -> null
     }
 
     /**

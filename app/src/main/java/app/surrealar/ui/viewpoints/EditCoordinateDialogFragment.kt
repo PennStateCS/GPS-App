@@ -20,6 +20,7 @@ import app.surrealar.domain.model.CaptureMethod
 import app.surrealar.domain.model.Coordinate
 import app.surrealar.domain.model.CoordinateModelLink
 import app.surrealar.domain.model.linkedModelId
+import app.surrealar.domain.model.withPositionProvenanceUnknown
 import app.surrealar.domain.model.EmbeddedModelLocation
 import app.surrealar.domain.model.Model
 import app.surrealar.domain.model.ModelLocationConfidence
@@ -243,7 +244,8 @@ class EditCoordinateDialogFragment(
                         val utm = try { Utm.forward(lat, lon) } catch (_: Exception) { null }
                         // Position now comes from the model file, so mark provenance accordingly
                         // (mirrors the Add dialog's "Use Model Location" behavior).
-                        base.copy(
+                        // The model position's frame/epoch are unknown: clear the capture provenance.
+                        base.withPositionProvenanceUnknown().copy(
                             latitude = lat,
                             longitude = lon,
                             altitude = alt,

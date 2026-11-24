@@ -1,6 +1,7 @@
 package app.surrealar.ui.viewpoints
 
 import android.Manifest
+import app.surrealar.coords.frameToken
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
@@ -724,7 +725,10 @@ class AddCoordinateDialogFragment(
                     modelId       = linkedModelId,
                     iconKey       = builtinIconKey,
                     antennaHeightM = antennaHeightM,
-                    crsEpsg       = datumEpsg
+                    crsEpsg       = datumEpsg,
+                    // Provenance only (the feed already normalised to WGS84): the receiver datum setting
+                    // at capture start; null when it couldn't be read or not an external receiver.
+                    receiverFrame = if (isExternalMode) snap?.coordinateSystemSettings?.externalReceiverDatum?.frameToken() else null
                 )
                 if (persistIfValid(coordinate)) dismissAllowingStateLoss()
             }

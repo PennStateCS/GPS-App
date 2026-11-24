@@ -11,3 +11,12 @@ fun ReceiverDatum.toFixDatum(): FixDatum = when (this) {
     ReceiverDatum.ITRF2014 -> FixDatum.ITRF2014
     ReceiverDatum.NAD83_2011 -> FixDatum.NAD83_2011
 }
+
+/**
+ * The receiver datum setting as the stored `receiverFrame` token (geokit `ReferenceFrame` id): the
+ * frame the external receiver/network delivered before the feed normalised it.
+ */
+fun ReceiverDatum.frameToken(): String = when (this) {
+    ReceiverDatum.ITRF2014 -> app.surrealar.domain.model.FrameTokens.ITRF2014
+    ReceiverDatum.NAD83_2011 -> app.surrealar.domain.model.FrameTokens.NAD83_2011
+}
