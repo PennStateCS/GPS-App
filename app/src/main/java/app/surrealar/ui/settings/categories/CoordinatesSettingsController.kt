@@ -128,9 +128,11 @@ internal class CoordinatesSettingsController(
         val zoneRow = view.findViewById<View>(R.id.row_coord_spcs_zone)
         val spinnerZ = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
         val zoneHint = view.findViewById<android.widget.TextView>(R.id.text_coord_zone_hint)
-        val zones = io.github.pennstatecs.geokit.projection.SpcsZones.all.sortedBy { it.label }
+        // Zone list from geokit's CRS registry (operational SPCS83 entries; stored values stay EPSG ints).
+        val zones = SpcsZoneHints.searchZones("")
         val zoneByLabel = zones.associateBy { it.label }
-        val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter."
+        val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter." +
+            (runCatching { SpcsZoneHints.spcs2022Note() }.getOrNull()?.let { " $it" } ?: "")
         var suggestedZoneEpsg: Int? = null
         var suggestion: io.github.pennstatecs.geokit.projection.SpcsZoneSuggestion? = null
 
@@ -159,8 +161,9 @@ internal class CoordinatesSettingsController(
         spinnerU?.setAdapter(adapter(us.map { it.label }))
         spinnerV?.setAdapter(adapter(vs.map { it.label }))
         spinnerR?.setAdapter(adapter(rs.map { it.label }))
-        // Editable so typing filters the 118 zones (ArrayAdapter matches word prefixes: "Tex", "north").
-        spinnerZ?.setAdapter(adapter(zones.map { it.label }))
+        // Editable so typing filters the zones through CrsRegistry.search ("tex", "north", "3701").
+        spinnerZ?.setAdapter(SearchFilterAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings,
+            zones.map { it.label }) { q -> SpcsZoneHints.searchZones(q).map { it.label } })
 
         var current = app.surrealar.settings.model.CoordinateSystemSettings()
 

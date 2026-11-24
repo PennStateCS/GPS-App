@@ -6,6 +6,7 @@ import android.widget.AutoCompleteTextView
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import app.surrealar.R
+import app.surrealar.settings.model.OutputDatum
 import app.surrealar.settings.model.VerticalReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -36,6 +37,8 @@ class CoordinateHeightDropdownFitTest {
         val field = root.findViewById<AutoCompleteTextView>(R.id.spinner_coord_vertical)
         assertEquals(2, field.maxLines)
         val widthPx = (1480 * ctx.resources.displayMetrics.density).toInt()
+        // Phase 2 labels are part of the sweep (entries), named here so dropping one fails loudly.
+        assertTrue(VerticalReference.entries.containsAll(listOf(VerticalReference.EGM2008, VerticalReference.EGM96)))
         for (v in VerticalReference.entries) {
             field.setText(v.label, false)
             root.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
@@ -47,6 +50,25 @@ class CoordinateHeightDropdownFitTest {
             for (line in 0 until layout.lineCount) {
                 assertEquals("${v.label} is ellipsized", 0, layout.getEllipsisCount(line))
             }
+        }
+    }
+
+    @Test fun `every datum label fits the single-line 280dp datum field`() {
+        val host = FrameLayout(ctx)
+        val root = LayoutInflater.from(ctx).inflate(R.layout.content_settings_coordinate_display, host, false)
+        host.addView(root)
+        val field = root.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum)
+        val widthPx = (1480 * ctx.resources.displayMetrics.density).toInt()
+        assertTrue(OutputDatum.entries.contains(OutputDatum.ITRF2020))
+        for (d in OutputDatum.entries) {
+            field.setText(d.label, false)
+            root.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            root.layout(0, 0, widthPx, root.measuredHeight)
+            val available = field.width - field.totalPaddingLeft - field.totalPaddingRight
+            val textPx = field.paint.measureText(d.label)
+            println("${d.label}: ${textPx}px of ${available}px")
+            assertTrue("${d.label} needs ${textPx}px, field has ${available}px", textPx <= available)
         }
     }
 }

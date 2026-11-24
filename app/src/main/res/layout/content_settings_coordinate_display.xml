@@ -190,7 +190,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="Datum for latitude/longitude and UTM output."
+                            android:text="Datum for latitude/longitude and UTM output. ITRF2020 is the 2020 frame at the coordinate epoch of each position (normally its capture time)."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
@@ -296,7 +296,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="h = ellipsoidal height, H = orthometric height, N = geoid undulation; H = h − N. NAVD88 H uses the bundled GEOID18 model (lower 48 states; PRVD02/VIVD09 in Puerto Rico and the Virgin Islands; not Alaska or Hawaii). Receiver geoid H is the orthometric height the receiver reports; the receiver does not say which geoid model it used, so the model is unknown. Live heights are at the antenna phase centre; saved points are at the ground mark."
+                            android:text="h = ellipsoidal height, H = orthometric height, N = geoid undulation; H = h − N. NAVD88 H uses the bundled GEOID18 model (lower 48 states; PRVD02/VIVD09 in Puerto Rico and the Virgin Islands; not Alaska or Hawaii). Receiver geoid H is the orthometric height the receiver reports; the receiver does not say which geoid model it used, so the model is unknown. EGM2008 H uses the NGA model bundled for US regions (lower 48, Alaska, Hawaii, Puerto Rico / Virgin Islands, Guam / CNMI); EGM96 H is a coarse worldwide fallback. EGM heights are global-model heights, not NAVD88. Live heights are at the antenna phase centre; saved points are at the ground mark."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 
