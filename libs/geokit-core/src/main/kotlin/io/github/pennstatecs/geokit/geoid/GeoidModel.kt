@@ -75,7 +75,10 @@ public enum class GeoidAvailability {
     /** Loaded; only some tiles are present — other covered points return TILE_NOT_AVAILABLE. */
     PARTIAL,
 
-    /** Loading or verifying the data failed; lookups return LOAD_FAILED. */
+    /**
+     * Loading or verifying the data failed; lookups return LOAD_FAILED. The load is tried again on a
+     * lookup after a back-off (30 s), so a transient failure does not last for the process lifetime.
+     */
     FAILED,
 }
 
@@ -92,6 +95,13 @@ public enum class GeoidUnavailableReason {
 
     /** The model data (or the tile) could not be loaded, verified or decoded. */
     LOAD_FAILED,
+
+    /**
+     * The data is not loaded yet and the caller chose not to wait for it (e.g. an app wrapper that never
+     * loads on the UI thread and loads in the background instead). The models in this library never
+     * return it: their lookups load synchronously.
+     */
+    DATA_LOADING,
 }
 
 /** Result of a geoid lookup; [model] is always the model that was asked (no silent substitution). */
@@ -166,30 +176,47 @@ public data class GeoidModelInfo(
     public val isFallback: Boolean,
 )
 
-/** Thread-safe lazily loaded value that remembers a load failure. */
-internal class LazyLoad<T : Any>(private val loader: () -> T) {
+/**
+ * Thread-safe lazily loaded value. A load failure is remembered and returned without retrying for
+ * [retryAfterNanos] (so a broken resource is not re-read on every lookup); the next [get] after that
+ * back-off tries the loader again, and a success replaces the failure. [nanoClock] is injectable for tests.
+ */
+internal class LazyLoad<T : Any>(
+    private val loader: () -> T,
+    private val retryAfterNanos: Long = DEFAULT_RETRY_AFTER_NANOS,
+    private val nanoClock: () -> Long = System::nanoTime,
+) {
     @Volatile private var value: T? = null
     @Volatile private var failure: Throwable? = null
+    @Volatile private var failedAtNanos: Long = 0L
 
     val isLoaded: Boolean get() = value != null
-    val isFailed: Boolean get() = failure != null
+    val isFailed: Boolean get() = value == null && failure != null
 
     fun preset(v: T): LazyLoad<T> { value = v; return this }
 
-    /** The value, or the (remembered) failure. */
+    private fun retryDue(): Boolean = nanoClock() - failedAtNanos >= retryAfterNanos
+
+    /** The value, the remembered failure (within the back-off), or the result of a (re)load. */
     fun get(): Result<T> {
         value?.let { return Result.success(it) }
-        failure?.let { return Result.failure(it) }
+        failure?.let { if (!retryDue()) return Result.failure(it) }
         synchronized(this) {
             value?.let { return Result.success(it) }
-            failure?.let { return Result.failure(it) }
+            failure?.let { if (!retryDue()) return Result.failure(it) }
             return try {
-                Result.success(loader().also { value = it })
+                Result.success(loader().also { value = it; failure = null })
             } catch (e: Exception) {
+                failedAtNanos = nanoClock()
                 failure = e
                 Result.failure(e)
             }
         }
+    }
+
+    companion object {
+        /** Back-off before a failed load is tried again: 30 s. */
+        const val DEFAULT_RETRY_AFTER_NANOS: Long = 30_000_000_000L
     }
 }
 
