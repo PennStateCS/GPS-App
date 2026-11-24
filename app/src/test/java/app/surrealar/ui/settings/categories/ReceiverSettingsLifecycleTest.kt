@@ -29,9 +29,11 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyInt
@@ -51,6 +53,20 @@ import java.net.ServerSocket
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
 class ReceiverSettingsLifecycleTest {
+
+    /** Exceptions thrown out of main-thread coroutines (on a device: an app crash). */
+    private val uncaught = mutableListOf<Throwable>()
+    private var previousHandler: Thread.UncaughtExceptionHandler? = null
+
+    @Before fun catchUncaught() {
+        previousHandler = Thread.currentThread().uncaughtExceptionHandler
+        Thread.currentThread().uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, e -> uncaught += e }
+    }
+
+    @After fun noCrashes() {
+        Thread.currentThread().uncaughtExceptionHandler = previousHandler
+        assertEquals("uncaught exceptions on the main thread", emptyList<String>(), uncaught.map { it.toString() })
+    }
 
     private val capabilities = MutableStateFlow(ReceiverCapabilities.NONE)
     private val deviceInfo = MutableStateFlow<ReceiverDeviceInfo?>(null)
