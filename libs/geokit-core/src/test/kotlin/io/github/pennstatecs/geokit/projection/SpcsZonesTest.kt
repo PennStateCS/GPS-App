@@ -38,9 +38,10 @@ class SpcsZonesTest {
         assertTrue("worst error ${"%.4f".format(worst)} m at $worstAt", worst < 0.001)
     }
 
-    // Areas of use are bounding boxes, so near a state line the suggestion is only a hint (the UI says
-    // so): e.g. Philadelphia falls inside New Jersey's box. Points away from borders are unambiguous.
+    // Suggestions come from county-defined zone extents (SpcsZoneLocatorTest covers boundaries, e.g.
+    // Philadelphia, which lies inside New Jersey's area-of-use box, and Hazleton).
     @Test fun `zone suggestion picks the zone covering the point`() {
+        assertEquals(3702, SpcsZone.suggestFor(39.9526, -75.1652)!!.ngsZone)   // Philadelphia
         assertEquals(3701, SpcsZone.suggestFor(41.3477, -76.0226)!!.ngsZone)   // Wilkes-Barre
         assertEquals(3702, SpcsZone.suggestFor(40.2732, -76.8867)!!.ngsZone)   // Harrisburg
         assertEquals(405, SpcsZone.suggestFor(34.0522, -118.2437)!!.ngsZone)   // Los Angeles → CA 5
