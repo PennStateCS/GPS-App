@@ -43,7 +43,10 @@ class ReportAssemblerTest {
         val log = entry(small, "app-log-current.txt")
         assertEquals(false, log.contains("two days old") || log.contains("continuation of the old line"))
         assertEquals(true, log.contains("Uncaught exception (fatal)") && log.contains("at app.surrealar.Foo.bar"))
-        assertEquals(true, log.contains("lines omitted 2026-11-19T10:00:00.000"))
+        // The marker prints the time in the device zone (with its offset): derive it, don't hard-code a zone.
+        val oldMs = java.time.OffsetDateTime.parse("2026-11-19T10:00:00-05:00").toInstant().toEpochMilli()
+        val from = app.surrealar.util.diagnostics.LogLineFormat.timestamp(oldMs)
+        assertEquals("marker in: $log", true, log.contains("lines omitted $from"))
         assertEquals(true, log.contains("Capture saved name=\"(redacted)\""))   // point names are redacted in the ZIP
         assertEquals(true, entry(small, "README.txt").contains("larger than the size budget"))
         assertEquals(true, entry(small, "manifest.txt").contains("reduced to fit the log size budget"))
