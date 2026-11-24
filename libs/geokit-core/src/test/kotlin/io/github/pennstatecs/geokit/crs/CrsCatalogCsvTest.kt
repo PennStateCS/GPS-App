@@ -15,7 +15,7 @@ class CrsCatalogCsvTest {
     @Test fun `fixture parses, unverified or invalid entries load as non-operational`() {
         val r = CrsCatalogCsv.parse(fixture, CrsCatalogId.SPCS2022)
         val byZone = r.entries.associateBy { it.zoneCode }
-        assertEquals(listOf("FX01", "FX02", "FX03", "FX04", "FX05", "FX08"), r.entries.map { it.zoneCode })
+        assertEquals(listOf("FX01", "FX02", "FX03", "FX04", "FX05", "FX08", "FX09"), r.entries.map { it.zoneCode })
 
         val fx1 = byZone.getValue("FX01")
         assertTrue(fx1.operational)

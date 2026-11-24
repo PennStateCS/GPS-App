@@ -100,6 +100,12 @@ public class CrsDefinition internal constructor(
     public val spcsZone: SpcsZone? = null,
     projectionFactory: (() -> SpcsProjection)? = null,
 ) {
+    /** The same entry, listed but not operational (no projection), with [note] as the reason. */
+    internal fun withoutOperation(note: String): CrsDefinition = CrsDefinition(
+        id, epsg, name, zoneCode, catalog, kind, frame, method, parameters, unit, areaOfUse, dataset,
+        operational = false, statusNote = note, spcsZone = spcsZone, projectionFactory = null,
+    )
+
     private val projectionLazy: Lazy<SpcsProjection>? =
         if (operational && projectionFactory != null) lazy(projectionFactory) else null
 

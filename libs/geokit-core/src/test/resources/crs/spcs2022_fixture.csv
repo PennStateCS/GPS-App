@@ -10,3 +10,4 @@ FX06,,Fixture unknown frame,natrf2099,tm,lat_0=39.0;lon_0=-77.75;k_0=1;x_0=0;y_0
 FX07,,Fixture too few columns,natrf2022,tm
 FX01,,Fixture duplicate,natrf2022,tm,lat_0=39.0;lon_0=-77.75;k_0=0.99995;x_0=600000;y_0=0,metre,-80.53,39.71,-74.68,42.27,fixture v0,
 FX08,6562,Fixture clashing with SPCS83 EPSG,natrf2022,tm,lat_0=39.0;lon_0=-77.75;k_0=0.99995;x_0=600000;y_0=0,metre,-80.53,39.71,-74.68,42.27,fixture v0,test/fixture_vectors.csv
+FX09,,Fixture Verified TM on NAD83(2011),nad83-2011,tm,lat_0=39.0;lon_0=-77.75;k_0=0.99995;x_0=600000;y_0=0,metre,-80.53,39.71,-74.68,42.27,fixture v0,test/fixture_vectors.csv

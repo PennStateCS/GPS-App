@@ -40,7 +40,18 @@ public class CrsRegistry(
         val load = spcs2022Source()
         // Ids already used by the built-in catalogs win: a catalog file can never shadow them.
         val builtIn = (utmCatalog.entries + spcs83Catalog.entries).mapTo(HashSet()) { it.id }
-        val (clash, ok) = load.entries.partition { it.id in builtIn }
+        val (clash, loaded) = load.entries.partition { it.id in builtIn }
+        // A verified projection is not enough: the zone's frame must be reachable from the app's stored
+        // frame through verified transformations (NATRF2022 is not, as of 2026-11), else it stays listed only.
+        val probe = CoordinateEpoch(2020.0)
+        val ok = loaded.map { d ->
+            if (!d.operational) d
+            else when (val l = frameRegistry.find(ReferenceFrame.WGS84_AS_ITRF2014, d.frame, probe)) {
+                is FrameTransformationLookup.Available -> d
+                is FrameTransformationLookup.Unavailable ->
+                    d.withoutOperation("${d.statusNote}; but frame ${d.frame.id} has no verified transformation: ${l.explanation}")
+            }
+        }
         CrsCatalog(
             CrsCatalogId.SPCS2022, SPCS2022_DATASET, ok,
             load.problems + clash.map { "id ${it.id} is already used by a built-in catalog; entry ignored" },

@@ -208,17 +208,21 @@ class CrsRegistryTest {
         val text = File("src/test/resources/crs/spcs2022_fixture.csv").readText()
         val r = CrsRegistry(spcs2022Source = { CrsCatalogCsv.parse(text, CrsCatalogId.SPCS2022) })
         val c = r.catalog(CrsCatalogId.SPCS2022)
-        assertEquals(listOf("FX01", "FX02", "FX03", "FX04", "FX05"), c.entries.map { it.zoneCode })
-        assertEquals(listOf("FX01"), c.operational.map { it.zoneCode })
+        assertEquals(listOf("FX01", "FX02", "FX03", "FX04", "FX05", "FX09"), c.entries.map { it.zoneCode })
+        // FX01's projection is verified, but NATRF2022 has no verified transformation: listed, not operational.
+        assertEquals(listOf("FX09"), c.operational.map { it.zoneCode })
         assertEquals(CrsCatalogStatus.SUPPORTED, c.status)
         assertTrue(c.problems.any { it.contains("EPSG:6562") && it.contains("built-in") })
 
-        val fx1 = found(r.byId("SPCS2022:fx01"))
-        assertEquals(ReferenceFrame.NATRF2022, fx1.frame)
-        assertEquals("Fixture Verified TM (FX01)", fx1.label)
-        assertEquals(Tm(39.0, -77.75, 0.99995, 600000.0, 0.0).forward(41.0, -76.0), fx1.forward(41.0, -76.0))
+        val fx9 = found(r.byId("SPCS2022:fx09"))
+        assertEquals(ReferenceFrame.NAD83_2011, fx9.frame)
+        assertEquals("Fixture Verified TM on NAD83(2011) (FX09)", fx9.label)
+        assertEquals(Tm(39.0, -77.75, 0.99995, 600000.0, 0.0).forward(41.0, -76.0), fx9.forward(41.0, -76.0))
+        val fx1 = r.byId("SPCS2022:fx01")
+        assertTrue("$fx1", fx1 is CrsLookup.Unsupported)
+        assertTrue((fx1 as CrsLookup.Unsupported).explanation.contains("frame natrf2022 has no verified transformation"))
 
-        for (id in listOf("spcs2022:FX02", "EPSG:99999", "spcs2022:FX04", "spcs2022:FX05")) {
+        for (id in listOf("spcs2022:FX01", "spcs2022:FX02", "EPSG:99999", "spcs2022:FX04", "spcs2022:FX05")) {
             val l = r.byId(id)
             assertTrue("$id: $l", l is CrsLookup.Unsupported)
             l as CrsLookup.Unsupported
@@ -228,9 +232,9 @@ class CrsRegistryTest {
         }
         assertSame(SpcsZones.byEpsg(6562), found(r.byEpsg(6562)).spcsZone)   // built-in wins
         assertTrue(r.byId("spcs2022:FX99") is CrsLookup.Unsupported)
-        assertEquals(listOf("FX01"), r.atPosition(41.0, -76.0, CrsCatalogId.SPCS2022).map { it.zoneCode })
-        assertEquals(listOf("FX01"), r.search("fixture").map { it.zoneCode })
-        assertEquals(5, r.search("fixture", includeNonOperational = true).size)
+        assertEquals(listOf("FX09"), r.atPosition(41.0, -76.0, CrsCatalogId.SPCS2022).map { it.zoneCode })
+        assertEquals(listOf("FX09"), r.search("fixture").map { it.zoneCode })
+        assertEquals(6, r.search("fixture", includeNonOperational = true).size)
     }
 
     @Test fun `concurrent first use builds each catalog once`() {
