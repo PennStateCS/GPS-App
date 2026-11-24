@@ -3,6 +3,13 @@ package app.surrealar.coords
 import io.github.pennstatecs.geokit.convert.Epsg
 import io.github.pennstatecs.geokit.convert.GeodeticDatum
 import io.github.pennstatecs.geokit.convert.GeoidLookup
+import io.github.pennstatecs.geokit.convert.HeightUnavailableReason
+import io.github.pennstatecs.geokit.convert.LengthUnit
+import io.github.pennstatecs.geokit.convert.OutputSystem
+import io.github.pennstatecs.geokit.convert.TargetSystem
+import io.github.pennstatecs.geokit.geoid.GeoidModel
+import io.github.pennstatecs.geokit.geoid.GeoidModelId
+import io.github.pennstatecs.geokit.geoid.GeoidResult
 import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
 import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
 
@@ -82,8 +89,16 @@ data class ConvertedPosition(
     val heightUnavailableReason: String? = null,
     /** State Plane only: the position lies outside the selected zone's area of use (wrong zone?). */
     val outsideZone: Boolean = false,
-    /** Short height-datum label: "NAVD88" (or PRVD02/VIVD09 from GEOID18 in PR/VI), "h", "H rcvr". */
+    /**
+     * Short height-datum label: "NAVD88" (or PRVD02/VIVD09 from GEOID18 in PR/VI), "EGM2008", "EGM96",
+     * "h", "H rcvr".
+     */
     val verticalLabel: String = vertical.shortLabel,
+    /**
+     * Coordinate epoch (decimal year) of an ITRF2020 output: the frame is time-dependent, so the
+     * position is only meaningful with it. Null for the other datums (their labels are unchanged).
+     */
+    val epochYear: Double? = null,
 )
 
 /**
@@ -91,16 +106,38 @@ data class ConvertedPosition(
  * geokit-core's [io.github.pennstatecs.geokit.convert.CoordinateConverter]: it maps the app's
  * settings onto the library's neutral types (CoordinateSettingsMapping.kt) and the library result
  * back onto [ConvertedPosition]. Pure (no Android): the GEOID18 lookup is injected so it can be
- * unit-tested and loaded in the background on device. Output is pinned by CoordinateConverterGoldenTest.
+ * unit-tested and loaded in the background on device. Output for the pre-Phase-2 settings is pinned by
+ * CoordinateConverterGoldenTest.
+ *
+ * Heights from the global geoid models (H EGM2008 / H EGM96) are computed here, never by the engine's
+ * GEOID18 path: H = h - N(model), where h and the lookup position are the source expressed in
+ * WGS84 (ITRF2014), i.e. the app's stored WGS84-as-ITRF2014 coordinates as they are (NAD83(2011)
+ * sources are first transformed to it at their epoch). EGM2008/EGM96 are defined on WGS84; the
+ * ITRF2014/WGS84 realisation difference is centimetres, which changes N by far less than a millimetre.
+ * The height is that one subtraction, whatever the output frame (one geoid correction per height). A
+ * model without data at the point gives no height with a reason, never a value from another model.
+ *
+ * @param geoidN GEOID18 undulation at a NAD83(2011) position (unchanged path).
+ * @param globalGeoid the shared EGM2008/EGM96 instances (default [AppGeoidModels]); tests inject models.
  */
-class CoordinateConverter(geoidN: (latDeg: Double, lonDeg: Double) -> Double?) {
+class CoordinateConverter(
+    geoidN: (latDeg: Double, lonDeg: Double) -> Double?,
+    private val globalGeoid: (GeoidModelId) -> GeoidModel?,
+) {
+
+    /**
+     * GEOID18 lookup plus the shared [AppGeoidModels]. Kept as its own constructor so the existing
+     * `CoordinateConverter { lat, lon -> … }` call sites keep compiling unchanged.
+     */
+    constructor(geoidN: (latDeg: Double, lonDeg: Double) -> Double?) : this(geoidN, AppGeoidModels::model)
 
     private val engine = GeoConverter(GeoidLookup { lat, lon -> geoidN(lat, lon) })
 
     fun convert(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition {
-        val r = engine.convert(src.toGeoSource(), s.toOutputSystem())
+        val geoSrc = src.toGeoSource()
+        val r = engine.convert(geoSrc, s.toOutputSystem())
         val unit = s.unit
-        return ConvertedPosition(
+        val base = ConvertedPosition(
             horizontal = s.horizontal, datum = s.effectiveDatum, unit = unit,
             latDeg = r.latDeg, lonDeg = r.lonDeg,
             easting = r.eastingM?.let { unit.fromMeters(it) }, northing = r.northingM?.let { unit.fromMeters(it) },
@@ -109,6 +146,44 @@ class CoordinateConverter(geoidN: (latDeg: Double, lonDeg: Double) -> Double?) {
             heightUnavailableReason = r.heightUnavailableReason?.description,
             outsideZone = r.outsideZone,
             verticalLabel = r.verticalDatumName ?: s.vertical.shortLabel,
+        )
+        val epoch = if (s.effectiveDatum == OutputDatum.ITRF2020) src.epochYear else null
+        val model = s.vertical.globalGeoidModel()
+            ?: return if (epoch == null) base else base.copy(epochYear = epoch)
+        val g = globalHeight(geoSrc, model)
+        return base.copy(
+            height = g.heightM?.let { unit.fromMeters(it) },
+            heightUnavailableReason = g.reason,
+            verticalLabel = g.label,
+            epochYear = epoch,
+        )
+    }
+
+    private class GlobalHeight(val heightM: Double?, val reason: String?, val label: String)
+
+    /** H = h - N([id]) at the WGS84 (ITRF2014) position, or the reason it is unavailable. */
+    private fun globalHeight(geoSrc: GeoSourcePosition, id: GeoidModelId): GlobalHeight {
+        val label = id.token   // "EGM2008" / "EGM96": the vertical datum of the height, also when unavailable
+        if (geoSrc.ellipsoidalHeightM == null) {
+            return GlobalHeight(null, HeightUnavailableReason.NO_ELLIPSOIDAL_HEIGHT.description, label)
+        }
+        val model = globalGeoid(id) ?: return GlobalHeight(null, "${id.token} not available in this app", label)
+        val w = engine.convert(geoSrc, WGS84_ELLIPSOIDAL)
+        val h = checkNotNull(w.heightM) { "ellipsoidal height lost in the WGS84 step" }
+        return when (val n = model.undulation(w.latDeg, w.lonDeg)) {
+            is GeoidResult.Value -> {
+                check(n.model == id) { "asked ${id.token}, got ${n.model.token}" }   // no silent substitution
+                GlobalHeight(n.orthometricHeightM(h), null, n.verticalDatum)
+            }
+            is GeoidResult.Unavailable -> GlobalHeight(null, AppGeoidModels.unavailableText(id, n.reason), label)
+        }
+    }
+
+    private companion object {
+        /** The source as WGS84 (ITRF2014) lat/lon/ellipsoidal height, metres (identity for WGS84 sources). */
+        val WGS84_ELLIPSOIDAL = OutputSystem(
+            horizontal = TargetSystem.Geographic, datum = GeodeticDatum.WGS84_ITRF2014,
+            unit = LengthUnit.METRE, vertical = io.github.pennstatecs.geokit.convert.VerticalReference.ELLIPSOIDAL,
         )
     }
 }
@@ -141,9 +216,20 @@ object CoordinateFormat {
     fun height(p: ConvertedPosition): String =
         p.height?.let { "${grouped(it, linearDecimals(p.unit))} ${p.unit.suffix} ${p.verticalLabel}" } ?: "—"
 
+    /**
+     * The output frame for display: the datum label ("WGS84 (ITRF2014)", "NAD83(2011)"), or for
+     * ITRF2020 the frame with its coordinate epoch, "ITRF2020 epoch 2026.886".
+     */
+    fun datumLabel(p: ConvertedPosition): String {
+        val epoch = p.epochYear
+        return if (p.datum == OutputDatum.ITRF2020 && epoch != null)
+            String.format(Locale.US, "ITRF2020 epoch %.3f", epoch)
+        else p.datum.label
+    }
+
     /** Short system description: "NAD83(2011) · SPCS 3701 · ftUS · NAVD88" (+ an outside-zone warning). */
     fun systemSummary(p: ConvertedPosition): String =
-        listOfNotNull(p.datum.label, p.zoneLabel, p.unit.suffix, p.verticalLabel,
+        listOfNotNull(datumLabel(p), p.zoneLabel, p.unit.suffix, p.verticalLabel,
             if (p.outsideZone) "outside zone" else null).joinToString(" · ")
 
     /** Copyable text: "N 435037.47, E 2442754.19 ftUS (NAD83(2011) SPCS 3701)" or "lat, lon". No grouping commas. */
@@ -153,7 +239,7 @@ object CoordinateFormat {
         else {
             val d = linearDecimals(p.unit)
             String.format(Locale.US, "N %.${d}f, E %.${d}f %s (%s %s)", p.northing, p.easting, p.unit.suffix,
-                p.datum.label, p.zoneLabel.orEmpty()).trimEnd()
+                datumLabel(p), p.zoneLabel.orEmpty()).trimEnd()
         }
 
     /** A length in [unit] with a fixed precision: "12.346 m", "40.50 ftUS". */

@@ -15,6 +15,8 @@ import app.surrealar.util.diagnostics.DiagTags
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 /**
@@ -60,7 +62,25 @@ class CoordinateSystemService @Inject constructor(
         }
     }
 
-    private val converter = CoordinateConverter { lat, lon -> geoid?.undulation(lat, lon) }
+    /** Global geoid models already opened (each at most once per process). */
+    private val warmedUp = java.util.Collections.synchronizedSet(HashSet<io.github.pennstatecs.geokit.geoid.GeoidModelId>())
+
+    init {
+        // EGM2008 / EGM96 heights: open the chosen model's data off the main thread as soon as it is
+        // selected (at start-up if already saved). Lookups before this finishes still work (they load
+        // synchronously once); each model is opened at most once per process (AppGeoidModels).
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            settingsFlow.map { it.vertical.globalGeoidModel() }.distinctUntilChanged().collect { id ->
+                if (id == null || !warmedUp.add(id)) return@collect
+                val t0 = System.nanoTime()
+                runCatching { AppGeoidModels.warmUp(id) }
+                    .onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "${id.token} geoid opened availability=$it durationMs=${(System.nanoTime() - t0) / 1_000_000}") }
+                    .onFailure { DiagnosticsLogger.e(DiagTags.DATA, "${id.token} geoid open failed: ${id.token} heights unavailable", it) }
+            }
+        }
+    }
+
+    private val converter = CoordinateConverter({ lat, lon -> geoid?.undulation(lat, lon) })
 
     /**
      * EPSG code to store in Coordinate.crsEpsg for a capture. Fixes on the GNSS feed are always
@@ -84,7 +104,7 @@ class CoordinateSystemService @Inject constructor(
     /**
      * Stored coordinate → configured system. `altitude` is ellipsoidal (antenna height already
      * removed) and `altitudeMsl` the receiver MSL height; `crsEpsg` says which datum they are in
-     * (null/4326/4979 = WGS84). The capture time is the transformation epoch.
+     * (null/4326/4979 = WGS84). The transformation epoch is the capture time ([storedEpochYear]).
      */
     fun convertCoordinate(c: Coordinate, s: CoordinateSystemSettings): ConvertedPosition =
         track(
@@ -92,7 +112,7 @@ class CoordinateSystemService @Inject constructor(
                 latDeg = c.latitude, lonDeg = c.longitude,
                 ellipsoidalHeightM = c.altitude, receiverMslM = c.altitudeMsl,
                 isNad83 = StoredDatum.isNad83(c.crsEpsg),
-                epochYear = Itrf2014ToNad83.decimalYear(c.timestamp),
+                epochYear = storedEpochYear(c, s),
             ), s,
         )
 
@@ -104,7 +124,8 @@ class CoordinateSystemService @Inject constructor(
      */
     private fun track(src: SourcePosition, s: CoordinateSystemSettings, live: Boolean = false): ConvertedPosition =
         try {
-            converter.convert(src, s).also { CoordDiagnostics.onResult(it, live, geoidLoaded) }
+            // geoidLoaded concerns the background GEOID18 grid only; EGM models load on demand.
+            converter.convert(src, s).also { CoordDiagnostics.onResult(it, live, geoidLoaded || s.vertical.globalGeoidModel() != null) }
         } catch (e: Exception) {
             CoordDiagnostics.onFailure(s, e); throw e
         }
@@ -151,3 +172,13 @@ class CoordinateSystemService @Inject constructor(
                 .coordinateSystemService()
     }
 }
+
+/**
+ * Coordinate epoch used to convert a stored point. ITRF2020 output (new in Phase 2) uses the recorded
+ * `coordinateEpoch` when known, else the capture time. Every other output keeps the capture time exactly
+ * as before, so existing outputs are unchanged (for points captured since v14 the two are the same
+ * number anyway).
+ */
+internal fun storedEpochYear(c: Coordinate, s: CoordinateSystemSettings): Double =
+    (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020) c.coordinateEpoch else null)
+        ?: Itrf2014ToNad83.decimalYear(c.timestamp)

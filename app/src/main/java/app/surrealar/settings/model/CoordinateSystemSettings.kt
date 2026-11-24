@@ -58,9 +58,17 @@ enum class HorizontalSystem(val prefKey: String, val label: String, val isStateP
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: GEOGRAPHIC }
 }
 
+/**
+ * Output frame for Geographic/UTM. [ITRF2020] (added in Phase 2) is the 2020 frame **at the
+ * coordinate epoch** of each position (no time propagation): stored points use their recorded
+ * coordinate epoch, or the capture time when none was recorded; live fixes use the fix time. It is
+ * reached from the stored WGS84 (ITRF2014) coordinates by the verified EPSG ITRF2014 → ITRF2020
+ * transformation (geokit FrameTransformationRegistry). New entries are only ever appended.
+ */
 enum class OutputDatum(val prefKey: String, val label: String) {
     WGS84("wgs84", "WGS84 (ITRF2014)"),
-    NAD83_2011("nad83_2011", "NAD83(2011)");
+    NAD83_2011("nad83_2011", "NAD83(2011)"),
+    ITRF2020("itrf2020", "ITRF2020");
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: WGS84 }
 }
@@ -86,7 +94,16 @@ enum class LinearUnit(val prefKey: String, val label: String, val metersPerUnit:
 enum class VerticalReference(val prefKey: String, val label: String, val shortLabel: String) {
     ELLIPSOIDAL("ellipsoidal", "Ellipsoidal height (h)", "h"),
     NAVD88_GEOID18("navd88_geoid18", "Orthometric height H (NAVD88, GEOID18)", "H GEOID18"),
-    RECEIVER_MSL("receiver_msl", "Orthometric height H (receiver geoid, model unknown)", "H rcvr");
+    RECEIVER_MSL("receiver_msl", "Orthometric height H (receiver geoid, model unknown)", "H rcvr"),
+
+    /**
+     * H = h − N(EGM2008), h the WGS84 (ITRF2014) ellipsoidal height. The app bundles EGM2008 for US
+     * regions only; elsewhere the height is unavailable (never replaced by EGM96).
+     */
+    EGM2008("egm2008", "Orthometric height H (EGM2008)", "H EGM2008"),
+
+    /** H = h − N(EGM96): the coarse global model, offered only as an explicitly labelled fallback. */
+    EGM96("egm96", "Orthometric height H (EGM96, fallback)", "H EGM96");
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: RECEIVER_MSL }
 }

@@ -20,7 +20,7 @@ import java.security.MessageDigest
  * UTM zone edges, the equator and the southern hemisphere; heights null / 0 / negative / positive;
  * receiver MSL present or not; both source datums; three epochs. Settings cover every
  * [HorizontalSystem] (incl. several SPCS zones, a point outside its zone and an unknown zone EPSG that
- * falls back to the default), every [OutputDatum], [LinearUnit] and [VerticalReference].
+ * falls back to the default), every pre-Phase-2 [OutputDatum] and [VerticalReference], and every [LinearUnit].
  *
  * The golden file holds (a) one readable row per (source, horizontal system) with datum, unit and
  * vertical reference rotating, every field of [ConvertedPosition], doubles as their exact shortest representation; and
@@ -78,7 +78,17 @@ class CoordinateConverterGoldenTest {
             listOf(6562, 6564, 6423, 6596, 6437, 6577, 6427, 6394, 6397, 6566, 99999)
                 .map { HorizontalSystem.STATE_PLANE to it }
 
-    private val datumUnits = OutputDatum.entries.flatMap { d -> LinearUnit.entries.map { d to it } }
+    /**
+     * The settings that existed when the golden file was recorded, in their original enum order. Phase 2
+     * appended OutputDatum.ITRF2020 and VerticalReference.EGM2008 / EGM96; they are covered by
+     * CoordinateConverterGlobalGeoidTest, and this test keeps proving that the old settings are unchanged
+     * (iterating over `entries` would silently fold the new values into the old digests).
+     */
+    private val legacyDatums = listOf(OutputDatum.WGS84, OutputDatum.NAD83_2011)
+    private val legacyVerticals =
+        listOf(VerticalReference.ELLIPSOIDAL, VerticalReference.NAVD88_GEOID18, VerticalReference.RECEIVER_MSL)
+
+    private val datumUnits = legacyDatums.flatMap { d -> LinearUnit.entries.map { d to it } }
 
     private fun source(p: Pt, v: Variant) =
         SourcePosition(p.lat, p.lon, v.h(p), v.msl, isNad83 = v.nad, epochYear = v.epoch)
@@ -103,11 +113,11 @@ class CoordinateConverterGoldenTest {
                 // (a) readable sample.
                 for ((hi, h) in horizontals.withIndex()) {
                     val (dt, u) = datumUnits[(pi + vi + hi) % datumUnits.size]
-                    val vr = VerticalReference.entries[(pi + 2 * vi + hi) % VerticalReference.entries.size]
+                    val vr = legacyVerticals[(pi + 2 * vi + hi) % legacyVerticals.size]
                     out += "${p.name}\tv$vi\th$hi\t" + row(converter.convert(src, settings(h, dt, u, vr)))
                 }
                 // (b) full cross product, digested.
-                for (h in horizontals) for ((dt, u) in datumUnits) for (vr in VerticalReference.entries) {
+                for (h in horizontals) for ((dt, u) in datumUnits) for (vr in legacyVerticals) {
                     digest.update((row(converter.convert(src, settings(h, dt, u, vr))) + "\n").toByteArray())
                 }
             }
