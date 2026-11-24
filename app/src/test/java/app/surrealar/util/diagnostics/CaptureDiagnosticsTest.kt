@@ -29,34 +29,60 @@ class CaptureDiagnosticsTest {
     )
 
     @Test fun `policy, rejected summary and outcome without coordinates`() {
-        val d = CaptureDiagnostics(policy, "EXTERNAL")
-        assertEquals("Capture started mode=EXTERNAL minDurationS=30 maxDurationS=60 minFixes=100 requiredRtk=FIX maxCorrAgeS=10", d.startLine())
+        val d = CaptureDiagnostics(policy, "EXTERNAL", id = "cap9")
+        assertEquals("Capture started capture=cap9 mode=EXTERNAL minDurationS=30 maxDurationS=60 minFixes=100 requiredRtk=FIX maxCorrAgeS=10", d.startLine())
         repeat(100) { d.onFix(fix(RtkStatus.FIX, 1.0)) }
         repeat(7) { d.onFix(fix(RtkStatus.FLOAT, 1.0)) }
         repeat(3) { d.onFix(fix(RtkStatus.FIX, 15.0)) }
-        assertEquals("Capture fix summary received=110 accepted=100 rejected=10: corrections too old=3, rtk below FIX=7",
+        assertEquals("Capture fix summary capture=cap9 received=110 accepted=100 rejected=10: corrections too old=3, rtk below FIX=7",
             d.rejectedSummary(100))
         val line = d.outcomeLine("saved", 100, 34, RtkStatus.FIX, 0.012, 0.025, pointId = 42L)
-        assertEquals("Capture saved id=42 mode=EXTERNAL samples=100 duration=34s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=10/110", line)
+        assertEquals("Capture saved id=42 capture=cap9 mode=EXTERNAL samples=100 duration=34s rtk=FIX hAcc=<2cm vAcc=<5cm rejected=10/110", line)
         assertFalse(line.contains("41.23") || line.contains("76.12"))
     }
 
     @Test fun `outcome line carries the point id, never the point name`() {
         val d = CaptureDiagnostics(policy, "EXTERNAL")
         val saved = d.outcomeLine("saved", 1, 1, RtkStatus.FIX, 0.01, 0.02, pointId = 7L)
-        assertTrue(saved.startsWith("Capture saved id=7 "))
+        assertTrue(saved.startsWith("Capture saved id=7 capture=${d.id} "))
         assertFalse(saved.contains("name="))
         val cancelled = d.outcomeLine("cancelled", null, null, null, null, null)
-        assertTrue(cancelled.startsWith("Capture cancelled mode="))
+        assertTrue(cancelled.startsWith("Capture cancelled capture=${d.id} mode="))
     }
 
     @Test fun `pause and resume are logged once each`() {
-        val d = CaptureDiagnostics(policy, "EXTERNAL")
+        val d = CaptureDiagnostics(policy, "EXTERNAL", id = "cap3")
         val lines = mutableListOf<String>()
         val cap = ObservationSession.State.Capturing(Instant.EPOCH, 1, 1, "fix", 0.01, 0.02)
         listOf(cap, ObservationSession.State.Paused("stream stale"), ObservationSession.State.Paused("stream stale"), cap, cap)
             .forEach { d.onState(it) { l, m -> lines += "$l $m" } }
-        assertEquals(listOf("W Capture paused: stream stale", "I Capture resumed"), lines)
+        assertEquals(listOf("W Capture paused: stream stale capture=cap3", "I Capture resumed capture=cap3"), lines)
+    }
+
+    @Test fun `one capture id on every line of a capture, a new one per capture`() {
+        val a = CaptureDiagnostics(policy, "EXTERNAL")
+        val b = CaptureDiagnostics(policy, "EXTERNAL")
+        assertTrue(a.id != b.id && a.id.startsWith("cap"))
+        val lines = mutableListOf(a.startLine(), a.rejectedSummary(0), a.outcomeLine("completed", 0, 0, null, null, null))
+        a.onState(ObservationSession.State.Paused("stream stale")) { _, m -> lines += m }
+        assertTrue(lines.all { it.contains("capture=${a.id} ") || it.endsWith("capture=${a.id}") })
+    }
+
+    @Test fun `antenna height problems are flagged once per capture, good settings are not`() {
+        val s = app.surrealar.gnss.settings.GnssReceiverSettings()
+        val d = CaptureDiagnostics(policy, "EXTERNAL", id = "cap5")
+        assertEquals(null, d.antennaHeightLine(s, external = true))
+        assertEquals(null, d.antennaHeightLine(s, external = false))
+        fun reason(line: String?) = line?.let { DiagEvents.parse(it)!!.second.let { f -> f["reason"] + "/" + f["detail"] } }
+        assertEquals("MISSING/settingsUnreadable", reason(d.antennaHeightLine(null, external = true)))
+        assertEquals("MISSING/poleHeightZero", reason(d.antennaHeightLine(s.copy(poleHeightM = 0.0), external = true)))
+        assertEquals("INCONSISTENT/poleHeightOldMeaning", reason(d.antennaHeightLine(s.copy(poleHeightNeedsCheck = true), external = true)))
+        assertEquals("INCONSISTENT/poleHeightRange", reason(d.antennaHeightLine(s.copy(poleHeightM = 180.0), external = true)))
+        assertEquals("INCONSISTENT/phaseCenterOffsetRange", reason(d.antennaHeightLine(s.copy(phaseCenterOffsetOverrideM = -1.0), external = true)))
+        assertEquals("INCONSISTENT/internalHeightRange", reason(d.antennaHeightLine(s.copy(internalAntennaHeightM = -2.0), external = false)))
+        assertEquals("internal handheld (0 m) is normal", null, d.antennaHeightLine(s.copy(poleHeightM = 0.0), external = false))
+        assertEquals("ANTENNA_HEIGHT reason=MISSING detail=poleHeightZero mode=EXTERNAL capture=cap5 (Capture antenna height setting looks wrong)",
+            d.antennaHeightLine(s.copy(poleHeightM = 0.0), external = true))
     }
 
     @Test fun `captures log is appended and rotated at 1 MB`() {

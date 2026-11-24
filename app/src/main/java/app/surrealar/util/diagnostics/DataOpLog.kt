@@ -6,27 +6,32 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import app.surrealar.util.DiagnosticsLogger
 import kotlin.coroutines.cancellation.CancellationException
 
-/** DATA lines for imports/exports: start, done (rows, duration) or failed (reason). */
+/**
+ * DATA lines for imports/exports: start, done (rows, duration) or failed (reason). One `op=` id
+ * (`op=op4`) is minted per run and carried on all three lines.
+ */
 object DataOpLog {
 
-    fun doneLine(op: String, format: String, rows: Int?, ms: Long) =
-        "$op completed format=$format rows=${rows ?: "unknown"} durationMs=$ms"
+    fun startLine(op: String, format: String, id: String) = "$op started op=$id format=$format"
+    fun doneLine(op: String, format: String, rows: Int?, ms: Long, id: String? = null) =
+        "$op completed" + (id?.let { " op=$it" } ?: "") + " format=$format rows=${rows ?: "unknown"} durationMs=$ms"
     /** The exception is attached to the E line, so its type and message aren't repeated here. */
     @Suppress("UNUSED_PARAMETER")
-    fun failLine(op: String, format: String, ms: Long, e: Throwable) =
-        "$op failed format=$format durationMs=$ms"
+    fun failLine(op: String, format: String, ms: Long, e: Throwable, id: String? = null) =
+        "$op failed" + (id?.let { " op=$it" } ?: "") + " format=$format durationMs=$ms"
 
     inline fun <T> run(op: String, format: String, rows: (T) -> Int?, block: () -> T): T {
         val t0 = System.nanoTime()
-        DiagnosticsLogger.i(DiagTags.DATA, "$op started format=$format")
+        val id = DiagIds.next(DiagIds.OP)
+        DiagnosticsLogger.i(DiagTags.DATA, startLine(op, format, id))
         try {
             val r = block()
-            DiagnosticsLogger.i(DiagTags.DATA, doneLine(op, format, rows(r), (System.nanoTime() - t0) / 1_000_000))
+            DiagnosticsLogger.i(DiagTags.DATA, doneLine(op, format, rows(r), (System.nanoTime() - t0) / 1_000_000, id))
             return r
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            DiagnosticsLogger.e(DiagTags.DATA, failLine(op, format, (System.nanoTime() - t0) / 1_000_000, e), e)
+            DiagnosticsLogger.e(DiagTags.DATA, failLine(op, format, (System.nanoTime() - t0) / 1_000_000, e, id), e)
             throw e
         }
     }
