@@ -105,9 +105,17 @@ data class Coordinate(
     // resolve unknown to today's behaviour. Tokens in CoordinateProvenance.kt.
     /** Frame of [latitude]/[longitude]/[altitude]: a geokit `ReferenceFrame` id ([FrameTokens]). */
     val sourceFrame: String? = null,
-    /** Frame the receiver/network delivered before the feed normalised it ([FrameTokens.ITRF2014] / [FrameTokens.NAD83_2011]). */
+    /**
+     * Frame the receiver/network delivered before the feed normalised it ([FrameTokens.ITRF2014] /
+     * [FrameTokens.NAD83_2011]). Provenance only: taken from the settings snapshot at capture start (the
+     * External receiver datum setting), so a datum change during an averaging capture records the old
+     * frame. The stored numbers are unaffected (the feed normalised every fix as it arrived).
+     */
     val receiverFrame: String? = null,
-    /** Decimal year the coordinates refer to; distinct from [timestamp] and from a frame's reference epoch. */
+    /**
+     * Decimal year the coordinates refer to; distinct from [timestamp] and from a frame's reference epoch.
+     * Only finite values in 1980..2100 are meaningful ([validCoordinateEpochOrNull]); others read as unknown.
+     */
     val coordinateEpoch: Double? = null,
     /** Provenance of [altitudeMsl]/[geoidSeparationM] ([OrthometricHeightSource]). */
     val orthometricHeightSource: String? = null,

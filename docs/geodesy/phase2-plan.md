@@ -65,3 +65,33 @@ Then: independent review, full sequential verification, consolidated Phase 1+2 t
 - Zone picker: `CrsRegistry.search` over the operational SPCS83 catalog; "SPCS2022: not yet available."
 - `CoordinateConverterGoldenTest` now iterates the pre-Phase-2 enum values explicitly (same order); the
   golden resource is unchanged.
+
+## Review fixes (survey/phase2-fixes)
+
+- EGM lookups never load on the main thread: `AppGeoidModels.model()` returns a `NonBlockingGeoidModel`.
+  On the UI thread, before the packs are loaded, the height reads "EGM2008 data is loading" (geokit
+  `GeoidUnavailableReason.DATA_LOADING`) and one background load starts on Dispatchers.IO; off the main
+  thread lookups load synchronously (exports, tests). Same idea as the GEOID18 grid, which reads as
+  unavailable until its background load finishes.
+- A failed geoid load is retried after a 30 s back-off (geokit `LazyLoad`); the app's warm-up marks a
+  model opened only when its data loaded.
+- Points exactly on the outer south/west edge of a missing EGM tile (CONUS 50 °N, Alaska 72 °N, the
+  east-edge longitudes) are read from the bundled neighbour that stores the same edge node.
+- Stored `coordinateEpoch` must be a finite decimal year in 1980..2100: backup import stores anything else
+  as unknown, and conversions fall back to the capture time.
+- Points stored in ITRF2020 (`crsEpsg` 9989/9990, imports only — captures never store it) are converted
+  from ITRF2020 through the verified registry at their coordinate epoch, never read as WGS84. Maps/AR
+  plot them as they are, like WGS84 (ITRF2020 − ITRF2014 is a few millimetres).
+
+## Known limitations
+
+- `receiverFrame` (provenance) comes from the settings snapshot taken at capture start. Changing the
+  External receiver datum during an averaging capture records the old frame. Provenance only: the
+  numbers are unaffected, because the feed normalises every fix as it arrives.
+- Device-GNSS (internal) captures use the legacy `wgs84-as-itrf2014` convention: the device's WGS84
+  output is treated as ITRF2014. Its accuracy is metre level, far beyond any WGS84/ITRF difference.
+- EGM2008 is interpolated bilinearly on the 2.5′ grid (as PROJ `vgridshift`). NGA's reference software
+  uses spline interpolation; the difference is about 1–2 cm in steep terrain, well below 1 cm elsewhere.
+- American Samoa is not in the bundled EGM2008 tiles (US regions bundled: CONUS, Alaska, Hawaii, PR/USVI,
+  Guam/CNMI); its heights read "outside EGM2008 coverage bundled in this app" (EGM96 remains selectable
+  as the labelled fallback).
