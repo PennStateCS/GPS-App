@@ -293,6 +293,8 @@
     <string name="diag_export_explanation">Contains technical information to help diagnose problems. No coordinates or passwords.</string>
     <string name="diag_export_share_chooser">Share diagnostic report</string>
     <string name="diag_export_ready">Diagnostic report ready.</string>
+    <string name="diag_export_ready_partial">Diagnostic report ready. Some sections could not be collected; details in export-health.txt.</string>
+    <string name="diag_export_failed_validation">The report file did not check out and was discarded. Try again.</string>
     <string name="diag_export_failed_storage_full">Couldn\'t create the report: the device storage is full. Free some space and try again.</string>
     <string name="diag_export_failed_write">Couldn\'t write the report file. Try again.</string>
     <string name="diag_export_failed_cancelled">Report export was cancelled.</string>

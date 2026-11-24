@@ -882,14 +882,12 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 btnExport.setText(R.string.diag_export_button_busy)
                 categoryScope.launch {
                     val ctx = requireContext()
-                    // buildReport logs its own failure and returns null.
-                    val report = app.surrealar.util.DiagnosticReportExporter.buildReport(ctx)
+                    // ExportOutcome → share, or a friendly message per failure reason (never exception text).
+                    val message = DiagnosticExportUi.exportAndShare(ctx)
                     btnExport.isEnabled = true
                     btnExport.setText(R.string.diag_export_button)
-                    val failure = if (report == null) DiagnosticExportUi.noReportFailure(ctx)
-                        else DiagnosticExportUi.share(ctx, report.file, report.reportId)
-                    showSettingsMessage(getString(failure?.messageRes ?: R.string.diag_export_ready),
-                        if (failure == null) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG)
+                    showSettingsMessage(getString(message),
+                        if (message == R.string.diag_export_ready) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG)
                 }
             }
 

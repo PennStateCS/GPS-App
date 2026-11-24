@@ -137,6 +137,15 @@ object DiagnosticReportExporter {
         private val prep: List<SectionStatus>,
     ) : app.surrealar.util.diagnostics.report.ReportSources {
         override fun preparationStatuses() = prep
+        override fun incidents() = app.surrealar.util.diagnostics.incident.IncidentStore.shared.recent()
+        override fun reportInfo() = app.surrealar.util.diagnostics.report.ReportInfo(
+            appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) ${if (BuildConfig.DEBUG) "debug" else "release"}",
+            gitCommit = BuildInfo.gitHashWithDirty.takeUnless { BuildInfo.gitHash == "unknown" || BuildInfo.gitHash.isBlank() },
+            device = "${Build.MANUFACTURER} ${Build.MODEL}",
+            android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            sessionId = DiagnosticsLogger.sessionId,
+            missingModelLinks = missingModelLinks(data),
+        )
         override suspend fun summary() = buildSummary(context, warnings, reportId)
         override suspend fun settingsSnapshot() = app.surrealar.util.diagnostics.SettingsSnapshotCollector.collect(context)
         override suspend fun permissions() = buildPermissionsStatus(context)
@@ -292,14 +301,19 @@ object DiagnosticReportExporter {
             add("GNSS: external receiver selected but no host/port configured")
         }
         // Coordinates link a model whose file is missing on disk.
-        val modelById = d.models.associateBy { it.id }
-        val missing = d.coordinates.count { c ->
-            val mid = c.modelId
-            mid != null && (modelById[mid]?.filePath?.let { !File(it).exists() } ?: true)
-        }
+        val missing = missingModelLinks(d)
         if (missing > 0) add("MODEL: $missing coordinate(s) link a model whose file is missing or unresolved — models will not render")
         // Pointers for AR/model issues that can only be reconstructed from the event/error logs.
         add("Note: AR session, Earth-tracking, anchor and model-load outcomes are in app-log-*.txt (tags AR / MODEL); crashes are in app-errors-*.txt.")
+    }
+
+    /** Coordinates that link a model whose record or file is missing. */
+    private fun missingModelLinks(d: DiagData): Int {
+        val modelById = d.models.associateBy { it.id }
+        return d.coordinates.count { c ->
+            val mid = c.modelId
+            mid != null && (modelById[mid]?.filePath?.let { !File(it).exists() } ?: true)
+        }
     }
 
     // ── section builders ───────────────────────────────────────────────────────

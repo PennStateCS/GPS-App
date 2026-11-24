@@ -3,6 +3,7 @@ package app.surrealar.ui.settings
 import android.app.Application
 import android.content.ActivityNotFoundException
 import app.surrealar.ui.settings.DiagnosticExportUi.ExportFailure
+import app.surrealar.util.diagnostics.report.ExportFailure as ReportFailure
 import app.surrealar.util.diagnostics.incident.IncidentContext
 import app.surrealar.util.diagnostics.incident.IncidentMarker
 import kotlinx.coroutines.CancellationException
@@ -59,6 +60,38 @@ class DiagnosticExportUiTest {
         val old = DiagnosticExportUi.shareText("R", marker(now - 2 * DiagnosticExportUi.RECENT_INCIDENT_MS, "old"), now, zone)
         assertFalse(old.contains("Problem marked"))
         assertEquals(DiagnosticExportUi.shareText("R", null, now, zone), old)
+    }
+
+    @Test fun `export outcomes map to friendly messages, never exception text`() {
+        assertEquals(ExportFailure.STORAGE_FULL, DiagnosticExportUi.failureFor(ReportFailure.NO_SPACE))
+        assertEquals(ExportFailure.WRITE_FAILED, DiagnosticExportUi.failureFor(ReportFailure.WRITE_FAILED))
+        assertEquals(ExportFailure.VALIDATION_FAILED, DiagnosticExportUi.failureFor(ReportFailure.VALIDATION_FAILED))
+        assertEquals(ExportFailure.CANCELLED, DiagnosticExportUi.failureFor(ReportFailure.CANCELLED))
+        assertEquals(ExportFailure.UNKNOWN, DiagnosticExportUi.failureFor(ReportFailure.UNKNOWN))
+        // Every reason has its own message resource.
+        assertEquals(ReportFailure.values().size, ReportFailure.values().map { DiagnosticExportUi.failureFor(it).messageRes }.toSet().size)
+
+        val result = app.surrealar.util.diagnostics.report.ReportResult(emptyList(),
+            app.surrealar.util.diagnostics.report.ExportHealth(emptyList(), app.surrealar.util.diagnostics.report.FlushStatus(
+                app.surrealar.util.diagnostics.report.FlushStatus.State.FLUSHED)))
+        val ok = app.surrealar.util.diagnostics.report.ExportOutcome.Success(java.io.File("r.zip"), "R", partial = false, result = result)
+        val partial = ok.copy(partial = true)
+        val failed = app.surrealar.util.diagnostics.report.ExportOutcome.Failure(ReportFailure.NO_SPACE, "IOException: ENOSPC at /data/x")
+        assertEquals(app.surrealar.R.string.diag_export_ready, DiagnosticExportUi.resultMessage(ok, null))
+        assertEquals(app.surrealar.R.string.diag_export_ready_partial, DiagnosticExportUi.resultMessage(partial, null))
+        assertEquals(app.surrealar.R.string.diag_export_failed_storage_full, DiagnosticExportUi.resultMessage(failed, null))
+        assertEquals(app.surrealar.R.string.diag_export_failed_no_share_app, DiagnosticExportUi.resultMessage(ok, ExportFailure.NO_SHARE_APP))
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
+        val text = ctx.getString(DiagnosticExportUi.resultMessage(failed, null))
+        assertFalse(text, text.contains("IOException") || text.contains("/data"))
+        assertTrue(ctx.getString(app.surrealar.R.string.diag_export_ready_partial).contains("export-health.txt"))
+    }
+
+    @Test fun `partial report share text says some sections are missing`() {
+        val now = 1_764_000_000_000L
+        val text = DiagnosticExportUi.shareText("R", null, now, zone, partial = true)
+        assertTrue(text, text.contains("some sections could not be collected; details in export-health.txt"))
+        assertFalse(DiagnosticExportUi.shareText("R", null, now, zone).contains("export-health.txt"))
     }
 
     @Test fun `mark time is HH-mm in the given zone`() {
