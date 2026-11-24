@@ -930,7 +930,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bearing"
+                        android:text="Azimuth"
                         android:textAppearance="?attr/textAppearanceLabelSmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -957,6 +957,15 @@
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:fontFamily="monospace"
+                android:gravity="center" />
+
+            <!-- What ΔN / ΔE mean (survey terminology caption for the line above) -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ΔN / ΔE: offsets north / east to the target (true north)"
+                android:textAppearance="?attr/textAppearanceLabelSmall"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:gravity="center" />
 
             <!-- Live state line: Waiting… / Move <direction> / Within tolerance -->

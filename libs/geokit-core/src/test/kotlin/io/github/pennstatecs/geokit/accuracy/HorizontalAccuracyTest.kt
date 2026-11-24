@@ -25,4 +25,21 @@ class HorizontalAccuracyTest {
         assertEquals(2.68, HorizontalAccuracy.r68FromHorizontalRms(1.0 * 2.5), 0.005)   // Emlid first fix
         assertEquals(5.14, HorizontalAccuracy.r68FromHorizontalRms(1.2 * 4.0), 0.005)   // SM-X940
     }
+
+    @Test fun `radial RMSE is sqrt of the summed lat lon variances (review sample)`() {
+        assertEquals(0.0100, HorizontalAccuracy.radialRmse(0.008, 0.006), 1e-12)
+    }
+
+    @Test fun `review sample 68 percent radius stays 0_0107`() {
+        assertEquals(0.0107, HorizontalAccuracy.r68(0.008, 0.006), 0.00005)
+        // The 68 % radius is the radial RMSE times 1.515 / sqrt(2).
+        assertEquals(HorizontalAccuracy.r68(0.008, 0.006),
+            HorizontalAccuracy.r68FromHorizontalRms(HorizontalAccuracy.radialRmse(0.008, 0.006)), 1e-12)
+    }
+
+    @Test fun `radial RMSE edge cases`() {
+        assertEquals(0.0, HorizontalAccuracy.radialRmse(0.0, 0.0), 0.0)
+        assertEquals(0.02, HorizontalAccuracy.radialRmse(0.02, 0.0), 1e-15)
+        assertEquals(0.05, HorizontalAccuracy.radialRmse(-0.03, 0.04), 1e-15)
+    }
 }

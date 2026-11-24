@@ -406,9 +406,9 @@ internal class StakeoutController(
             val bearing = calculateBearing(currentPos, target)
             // Distance in the units chosen under Settings → Coordinates.
             txtStakeoutDistance?.text = coordinateSystemService.distanceText(distance)
-            // Bearing shown with an 8-point compass label, e.g. "NE 42°".
-            txtStakeoutBearing?.text =
-                String.format(Locale.getDefault(), "%s %.0f°", compassPoint(bearing), bearing)
+            // Azimuth (0–360° from true north, under the "Azimuth" caption), e.g. "42°". Not called a
+            // bearing: in survey use a bearing is the quadrant form (N 42° E).
+            txtStakeoutBearing?.text = app.surrealar.util.AzimuthFormat.azimuthText(bearing)
             val tol = settings.toleranceMeters
             val color = when {
                 distance < tol                         -> 0xFF4CAF50.toInt()

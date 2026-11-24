@@ -296,7 +296,7 @@
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
                             android:alpha="0.7"
-                            android:text="NAVD88 uses the bundled GEOID18 model (lower 48 states; PRVD02/VIVD09 in Puerto Rico and the Virgin Islands; not Alaska or Hawaii). Receiver MSL is the height the receiver reports."
+                            android:text="h = ellipsoidal height, H = orthometric height, N = geoid undulation; H = h − N. NAVD88 H uses the bundled GEOID18 model (lower 48 states; PRVD02/VIVD09 in Puerto Rico and the Virgin Islands; not Alaska or Hawaii). Receiver geoid H is the orthometric height the receiver reports; the receiver does not say which geoid model it used, so the model is unknown. Live heights are at the antenna phase centre; saved points are at the ground mark."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
                     </LinearLayout>
 

@@ -29,7 +29,7 @@ object CoordinateListFormatter {
 
     /**
      * Height part of the position line: the chosen reference, or — when that is unavailable (e.g. no
-     * receiver MSL) — the ellipsoidal height from [ellipsoidal], e.g. "397.000 m Ellip". "—" only when
+     * receiver orthometric height) — the ellipsoidal height from [ellipsoidal], e.g. "397.000 m h". "—" only when
      * neither exists.
      */
     fun rowHeightText(

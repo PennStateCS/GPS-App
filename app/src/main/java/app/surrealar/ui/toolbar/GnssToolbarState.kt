@@ -26,7 +26,7 @@ data class GnssToolbarState(
     val isWaiting: Boolean,            // no current-provider fix yet (acquiring/reconnecting)
     val isStale: Boolean,
     val coordLabel: String = "LL",     // "LL" for lat/lon, "NE" for grid coordinates
-    val altitudeLabel: String = "ALT", // "ALT", or the height reference ("NAVD88", "ELLIP", "MSL")
+    val altitudeLabel: String = "ALT", // "ALT", or the height reference ("NAVD88", "h", "H rcvr")
     val coordToggleAvailable: Boolean = false, // a grid system is configured: tapping LL/NE switches the display
     val isReplay: Boolean = false,      // an NMEA log is replaying: source shows "REPLAY" with the replay icon
     val accuracyCompactText: String? = null, // H only; used instead of [accuracyText] when the strip is too narrow

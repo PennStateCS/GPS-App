@@ -790,10 +790,10 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             "Datum",
             "Latitude",
             "Longitude",
-            "Mean Sea Level Altitude",
-            "Ellipsoidal Altitude",
-            "Geoid Separation",
-            "Horizontal Accuracy (1σ)",
+            "Orthometric Height H (receiver geoid, model unknown)",
+            "Ellipsoidal Height h",
+            "Geoid Separation N (receiver geoid)",
+            "Horizontal Accuracy (68% radius)",
             "Vertical Accuracy (1σ)",
             "East Precision (σE)",
             "North Precision (σN)",
@@ -995,10 +995,10 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             posSection.values["Latitude"]?.text = fmtDeg(fix.latDeg)
             posSection.values["Longitude"]?.text = fmtDeg(fix.lonDeg)
             val m3: (Double) -> String = { "%.3f m".format(it) }
-            posSection.values["Mean Sea Level Altitude"]?.text = field("msl", fix.altMslM, m3)
-            posSection.values["Ellipsoidal Altitude"]?.text = field("ellH", fix.altEllipsoidalM, m3)
-            posSection.values["Geoid Separation"]?.text = field("sep", fix.geoidSeparationM, m3)
-            posSection.values["Horizontal Accuracy (1σ)"]?.text = field("hAcc", fix.hAccM, m3)
+            posSection.values["Orthometric Height H (receiver geoid, model unknown)"]?.text = field("msl", fix.altMslM, m3)
+            posSection.values["Ellipsoidal Height h"]?.text = field("ellH", fix.altEllipsoidalM, m3)
+            posSection.values["Geoid Separation N (receiver geoid)"]?.text = field("sep", fix.geoidSeparationM, m3)
+            posSection.values["Horizontal Accuracy (68% radius)"]?.text = field("hAcc", fix.hAccM, m3)
             posSection.values["Vertical Accuracy (1σ)"]?.text = field("vAcc", fix.vAccM, m3)
             posSection.values["East Precision (σE)"]?.text = field("sdE", fix.stdDevEastM, m3)
             posSection.values["North Precision (σN)"]?.text = field("sdN", fix.stdDevNorthM, m3)

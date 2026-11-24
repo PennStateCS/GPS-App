@@ -139,10 +139,10 @@ internal class SelectedCoordinateController(
             val dist = calculateDistance(live, target)
             val bearing = calculateBearing(live, target)
             txtSelectedDistance?.text = "Distance: " + coordinateSystemService.distanceText(dist)
-            txtSelectedBearing?.text = String.format(
-                Locale.getDefault(), "Bearing: %s %.0f°",
-                io.github.pennstatecs.geokit.heading.Compass.point8(bearing), bearing
-            )
+            // Azimuth (0–360° from true north) plus the surveyor's quadrant bearing, e.g.
+            // "Azimuth: 45.3° (N 45°18′ E)".
+            txtSelectedBearing?.text = "Azimuth: " + app.surrealar.util.AzimuthFormat.azimuthText(bearing, 1) +
+                " (" + app.surrealar.util.AzimuthFormat.quadrantBearing(bearing) + ")"
             layoutSelectedLive?.visibility = View.VISIBLE
         } else {
             layoutSelectedLive?.visibility = View.GONE

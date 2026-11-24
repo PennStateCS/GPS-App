@@ -24,7 +24,13 @@ public data class AntennaGeometry(
     val antennaAboveCameraM: Double get() = cameraBelowArpM + phaseCenterOffsetM
 
     public companion object {
-        /** Largest plausible phase-centre offset, metres; anything above is almost certainly a typo. */
+        /**
+         * Largest plausible phase-centre offset (ARP → APC), metres. This is a plausibility guard, not
+         * a physical limit: real ARP-to-APC offsets for survey antennas are a few centimetres up to
+         * about 0.15 m (Reach RS2/RS2+ 0.134 m, RS4 0.095 m), so a value above 0.5 m almost always
+         * means a pole height was typed into the phase-centre field. Antennas with a genuinely larger
+         * offset would need this raised deliberately.
+         */
         public const val MAX_PHASE_CENTER_OFFSET_M: Double = 0.5
     }
 }
