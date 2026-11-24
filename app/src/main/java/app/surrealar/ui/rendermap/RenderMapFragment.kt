@@ -96,18 +96,6 @@ class RenderMapFragment : Fragment() {
         // Guidance falls back to the "waiting" state if no live fix arrives within this window.
         private const val STAKEOUT_STALE_FIX_MS = 5000L
         private const val STAKEOUT_STALE_TICK_MS = 1500L
-        // Point-label safeguards: cap labelled points, hide at low zoom, throttle distance refreshes.
-        private const val LABEL_MAX_COUNT = 60
-        private const val LABEL_MIN_ZOOM = 14f
-        private const val LABEL_DISTANCE_THROTTLE_MS = 2000L
-
-        /**
-         * Logs a failed map step with its exception. Many steps run per fix, per frame or per marker,
-         * so each step writes at most one line a minute; a one-off failure is still logged in full.
-         */
-        private fun logFail(step: String, e: Throwable, level: Char = 'W') {
-            DiagnosticsLogger.every(DiagTags.MAP, "rendermap.$step", 60_000L, level, e) { "Map step failed step=\"$step\"" }
-        }
     }
 
     @Inject
@@ -193,9 +181,32 @@ class RenderMapFragment : Fragment() {
     // Coordinate list
     private var toggleRecycler: RecyclerView? = null
     private lateinit var toggleAdapter: CoordinateToggleAdapter
-    private val markerMap = mutableMapOf<String, Marker>()
-    private val visibilityMap = mutableMapOf<String, Boolean>()
-    private val coordinateMap = mutableMapOf<String, Coordinate>()
+
+    // Saved-coordinate markers: the one owner of the loaded coordinates, markers and visibility.
+    // Created lazily (after Hilt injection); one per fragment instance so visibility survives the view.
+    private val markers by lazy {
+        CoordinateMarkerLayer(
+            map = { googleMap },
+            context = { context },
+            scope = { viewLifecycleOwner.lifecycleScope },
+            modelRepository = modelRepository,
+        )
+    }
+
+    // Meter grid, point labels and boundary lines (+ their Map Tools rows).
+    private val overlays by lazy {
+        MapOverlayController(
+            map = { googleMap },
+            context = { context },
+            markers = markers,
+            liveLatLng = { lastFixLatLng },
+            coordinateSystemService = coordinateSystemService,
+            coordSystemSettings = { coordSystemSettings },
+            mapUiVm = mapUiVm,
+            logMapEvent = ::logMapEvent,
+            showSnackbar = ::showSnackbar,
+        )
+    }
 
     // Visibility menu button in panel header
     private var visibilityMenuBtn: ImageButton? = null
@@ -205,23 +216,6 @@ class RenderMapFragment : Fragment() {
     private var mapToolsPanel: View? = null
     private var mapToolsVisible = false
 
-    // Grid / boundary (internal logic unchanged)
-    // Survey meter grid: cycles Off → Auto → Fine → Coarse. Fragment-only state (not persisted).
-    private var gridMode = MapGridMode.OFF
-    private var currentGridSpacingM: Double? = null
-    private var mapGridRow: View? = null
-    private var txtMapGrid: TextView? = null
-    private val gridLines = mutableListOf<Polyline>()
-
-    // Point labels (separate marker layer; glyph markers/clicks untouched). Session-only via MapUiState.
-    private var pointLabelMode = PointLabelMode.OFF
-    private var mapLabelsRow: View? = null
-    private var txtMapLabels: TextView? = null
-    private val labelMarkers = mutableMapOf<String, Marker>()
-    private val labelDescriptorCache = mutableMapOf<String, BitmapDescriptor>()
-    private var lastDistanceLabelMs = 0L
-    private val boundaryLines = mutableListOf<Polyline>()
-    private var showBoundaries = false
 
     // Live tracking
     private var currentMarker: Marker? = null
@@ -238,9 +232,6 @@ class RenderMapFragment : Fragment() {
     private var currentFix: Fix? = null
     private var lastCurrentMarkerHue: Float? = null
     private var lastStakeoutMarkerHue: Float? = null
-
-    // Marker descriptor cache — keyed by "icon:$name:$color" or "model:$id:$path"
-    private val markerDescriptorCache = mutableMapOf<String, BitmapDescriptor>()
 
     // Stakeout
     private var isStakeoutMode = false
@@ -358,8 +349,7 @@ class RenderMapFragment : Fragment() {
         // type/grid/camera are applied in onMapReady; the Map Tools panel is restored once laid out.
         mapUiVm.state.let { s ->
             currentMapType = s.mapType
-            gridMode = s.gridMode
-            pointLabelMode = s.pointLabelMode
+            overlays.restoreModes(s.gridMode, s.pointLabelMode)
             showCurrentLocationOnMap = s.showCurrentLocation
             mapToolsVisible = s.isMapToolsOpen
             panelCollapsed = s.isLeftPanelCollapsed
@@ -399,10 +389,9 @@ class RenderMapFragment : Fragment() {
         toggleAdapter = CoordinateToggleAdapter(
             modelRepository = modelRepository,
             onToggle = { id, checked ->
-                visibilityMap[id] = checked
-                markerMap[id]?.isVisible = checked
+                markers.setVisible(id, checked)
                 updateVisibleCount()
-                applyPointLabels()   // hide/show this point's label with its marker
+                overlays.applyPointLabels()   // hide/show this point's label with its marker
                 if (!checked) showSnackbar("Coordinate hidden")
             },
             onRowClick = { id -> selectCoordinate(id) }
@@ -439,7 +428,7 @@ class RenderMapFragment : Fragment() {
 
             map.setOnMarkerClickListener { marker ->
                 val id = marker.tag as? String
-                if (id != null && coordinateMap.containsKey(id)) {
+                if (id != null && markers.coordinates.containsKey(id)) {
                     selectCoordinate(id)
                 } else {
                     marker.showInfoWindow()
@@ -456,10 +445,9 @@ class RenderMapFragment : Fragment() {
             // Idle fires only after movement stops (not continuously), so this stays cheap.
             map.setOnCameraIdleListener {
                 saveCameraState()
-                if (gridMode != MapGridMode.OFF) redrawGrid()
-                if (pointLabelMode != PointLabelMode.OFF) applyPointLabels()   // zoom-gate + reconcile
+                overlays.onCameraIdle()
             }
-            redrawGrid()   // restore the grid if a mode was active before view recreation
+            overlays.redrawGrid()   // restore the grid if a mode was active before view recreation
             bindData()
             startFixCollection()
             setupMapClickListener()
@@ -479,14 +467,7 @@ class RenderMapFragment : Fragment() {
         txtMapType = root.findViewById(R.id.txt_map_type)
         mapTypeRow?.setOnClickListener { cycleMapType() }
         updateMapTypeButton()
-        mapGridRow = root.findViewById(R.id.btnMapGrid)
-        txtMapGrid = root.findViewById(R.id.txt_map_grid)
-        mapGridRow?.setOnClickListener { cycleGrid() }
-        updateGridButton()
-        mapLabelsRow = root.findViewById(R.id.btnMapLabels)
-        txtMapLabels = root.findViewById(R.id.txt_map_labels)
-        mapLabelsRow?.setOnClickListener { cycleLabels() }
-        updateLabelsButton()
+        overlays.bindViews(root)   // Grid + Labels rows
         root.findViewById<View>(R.id.btnMapZoomIn)?.setOnClickListener {
             googleMap?.animateCamera(CameraUpdateFactory.zoomIn())
         }
@@ -502,7 +483,7 @@ class RenderMapFragment : Fragment() {
         btnSelectedClose?.setOnClickListener { dismissSelectedCoordinate() }
         btnSelectedCenter?.setOnClickListener {
             selectedCoordinateId?.let { id ->
-                coordinateMap[id]?.let { c ->
+                markers.coordinate(id)?.let { c ->
                     googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(
                         LatLng(c.latitude, c.longitude),
                         (googleMap?.cameraPosition?.zoom ?: 18f).coerceAtLeast(16f)
@@ -580,7 +561,7 @@ class RenderMapFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 coordinateSettingsRepo.coordinateSystemSettings.collect {
                     coordSystemSettings = it
-                    if (pointLabelMode == PointLabelMode.ELEVATION) runCatching { applyPointLabels() }
+                    overlays.onCoordinateSettingsChanged()
                 }
             }
         }
@@ -616,26 +597,26 @@ class RenderMapFragment : Fragment() {
             stopGuidance()   // release tone, clear keep-screen-on
             fragmentResumed = false
             unregisterCompass()   // make sure the shared sensor is released with the view
-            clearLiveTrail(); clearAccuracyCircle(); clearGrid(); removeAllPointLabels()
-            labelDescriptorCache.clear()
+            clearLiveTrail(); clearAccuracyCircle()
+            overlays.onDestroyView()   // grid lines, label markers + label cache, Grid/Labels rows
             currentMarker?.remove(); currentMarker = null
             headingMarker?.remove(); headingMarker = null; lastAppliedHeadingDeg = null
             stakeoutLine?.remove(); stakeoutLine = null
         } catch (e: Exception) { logFail("onDestroyView cleanup", e) }
-        markerDescriptorCache.clear()
         lastCurrentMarkerHue = null
         lastStakeoutMarkerHue = null
         // The map + its markers are destroyed with the view. Drop the stale marker references and the
         // observe-guard so that when this fragment's view is recreated (e.g. returning from the point
         // Details screen), bindData() re-attaches the coordinate observer and rebuilds markers on the
-        // fresh GoogleMap instead of leaving the panel stuck on "Loading…". visibilityMap (the user's
-        // show/hide choices, keyed by id) is intentionally preserved across recreation.
-        markerMap.clear()
-        coordinateMap.clear()
+        // fresh GoogleMap instead of leaving the panel stuck on "Loading…". The marker layer keeps the
+        // user's show/hide choices (keyed by id) across recreation.
+        markers.onDestroyView()
         lastLatLngs = emptyList()
         dataObserved = false
         try { mapView?.onDestroy() } catch (e: Exception) { logFail("mapView.onDestroy", e) }
-        mapView = null; placeholder = null
+        // Drop the destroyed map too (it used to be retained until the next onMapReady), so nothing
+        // can draw on it between view destruction and recreation.
+        mapView = null; googleMap = null; placeholder = null
         super.onDestroyView()
     }
 
@@ -722,13 +703,7 @@ class RenderMapFragment : Fragment() {
             }
             try { updateStakeoutCalculations(pos) } catch (e: Exception) { logFail("live.updateStakeoutCalculations", e) }
             // Distance labels follow the live position, throttled to avoid heavy marker rebuilds.
-            if (pointLabelMode == PointLabelMode.DISTANCE) {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastDistanceLabelMs >= LABEL_DISTANCE_THROTTLE_MS) {
-                    lastDistanceLabelMs = now
-                    try { applyPointLabels() } catch (e: Exception) { logFail("live.applyPointLabels", e) }
-                }
-            }
+            overlays.refreshDistanceLabelsIfDue()
         } catch (e: Exception) {
             logFail("live.updateLiveTracking", e, 'E')
         }
@@ -1197,9 +1172,7 @@ class RenderMapFragment : Fragment() {
             val points = stored.map(app.surrealar.coords.StoredDatum::toWgs84)
             try {
                 if (points.isEmpty()) {
-                    markerMap.values.forEach { it.remove() }
-                    markerMap.clear()
-                    coordinateMap.clear()
+                    markers.clear()
                     allToggleItems = emptyList()
                     pointSearchLayout?.visibility = View.GONE
                     showEmptyState(searching = false)
@@ -1216,8 +1189,7 @@ class RenderMapFragment : Fragment() {
 
                 // Remove markers for coordinates that were deleted
                 val newIds = points.map { it.id }.toHashSet()
-                val removedIds = markerMap.keys.filter { it !in newIds }
-                removedIds.forEach { id -> markerMap.remove(id)?.remove(); coordinateMap.remove(id) }
+                val removedIds = markers.removeMissing(newIds)
                 // If the active stakeout target was the deleted coordinate, end stakeout cleanly.
                 if (isStakeoutMode && stakeoutTargetId != null && stakeoutTargetId in removedIds) {
                     showSnackbar("Stakeout target was removed"); stopStakeout()
@@ -1227,41 +1199,9 @@ class RenderMapFragment : Fragment() {
                 val toggleItems = mutableListOf<CoordinateToggleItem>()
 
                 points.forEach { p ->
-                    val ll = LatLng(p.latitude, p.longitude)
-                    val visible = visibilityMap.getOrPut(p.id) { true }
-                    val prev = coordinateMap[p.id]
-                    val existingMarker = markerMap[p.id]
-
-                    if (existingMarker != null) {
-                        // Update position/title only when changed
-                        if (prev == null || prev.latitude != p.latitude || prev.longitude != p.longitude) {
-                            try { existingMarker.position = ll } catch (_: Exception) {}
-                        }
-                        if (prev == null || prev.name != p.name) {
-                            try { existingMarker.title = p.name } catch (_: Exception) {}
-                        }
-                        // Rebuild icon only when icon or color changed
-                        if (prev == null || prev.icon != p.icon || prev.color != p.color) {
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                val descriptor = buildMarkerDescriptor(p.linkedModelId, p.displayIconKey, p.color)
-                                if (descriptor != null) existingMarker.setIcon(descriptor)
-                            }
-                        }
-                    } else {
-                        val marker = (googleMap ?: return@forEach).addMarker(MarkerOptions().position(ll).title(p.name))
-                        if (marker != null) {
-                            marker.isVisible = visible
-                            marker.tag = p.id
-                            markerMap[p.id] = marker
-                            viewLifecycleOwner.lifecycleScope.launch {
-                                val descriptor = buildMarkerDescriptor(p.linkedModelId, p.displayIconKey, p.color)
-                                if (descriptor != null) marker.setIcon(descriptor)
-                            }
-                        }
-                    }
-
-                    coordinateMap[p.id] = p
-                    if (visible) latLngsVisible.add(ll)
+                    // Adds/updates the glyph marker; null = the map went away (skip, as before).
+                    val visible = markers.upsert(p) ?: return@forEach
+                    if (visible) latLngsVisible.add(LatLng(p.latitude, p.longitude))
                     toggleItems += CoordinateToggleItem(
                         id = p.id, name = p.name, checked = visible,
                         icon = p.displayIconKey ?: "", modelId = p.linkedModelId, color = p.color,
@@ -1280,7 +1220,7 @@ class RenderMapFragment : Fragment() {
                 // Re-show the selected-point card once coordinates are loaded (e.g. after returning
                 // from details). Clears the selection if that coordinate no longer exists.
                 restoreSelectedCard()
-                applyPointLabels()
+                overlays.applyPointLabels()
                 // Every DB emission lands here; log only when the counts change.
                 val total = points.size
                 val visibleCount = latLngsVisible.size
@@ -1293,62 +1233,6 @@ class RenderMapFragment : Fragment() {
                 logFail("coordinate observer", e, 'E')
             }
         }
-    }
-
-    // ── Marker icon building ───────────────────────────────────────────────────
-
-    private suspend fun buildMarkerDescriptor(modelId: String?, iconKey: String?, colorInt: Int): BitmapDescriptor? {
-        val ctx = context ?: return null
-        if (modelId != null) {
-            return withContext(Dispatchers.IO) {
-                try {
-                    val model = modelRepository.getModelById(modelId) ?: return@withContext null
-                    val thumbPath = model.thumbnailFilePath ?: return@withContext null
-                    val cacheKey = "model:$modelId:$thumbPath"
-                    markerDescriptorCache[cacheKey]?.let { return@withContext it }
-                    val thumbBmp = BitmapFactory.decodeFile(thumbPath) ?: return@withContext null
-                    val descriptor = withContext(Dispatchers.Main) { buildModelMarkerBitmap(thumbBmp) }
-                    markerDescriptorCache[cacheKey] = descriptor
-                    descriptor
-                } catch (e: Exception) { logFail("marker model thumbnail load", e); null }
-            }
-        }
-        if (iconKey.isNullOrBlank()) return null
-        val cacheKey = "icon:$iconKey:$colorInt"
-        markerDescriptorCache[cacheKey]?.let { return it }
-        @Suppress("DiscouragedApi")
-        val resId = ctx.resources.getIdentifier(iconKey, "drawable", ctx.packageName)
-        if (resId == 0) return null
-        val d = ContextCompat.getDrawable(ctx, resId) ?: return null
-        val size = dpToPx(32f)
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        d.setBounds(0, 0, size, size)
-        try { @Suppress("DEPRECATION") d.mutate().setColorFilter(colorInt, PorterDuff.Mode.SRC_ATOP) } catch (_: Exception) {}
-        d.draw(canvas)
-        val descriptor = BitmapDescriptorFactory.fromBitmap(bmp)
-        markerDescriptorCache[cacheKey] = descriptor
-        return descriptor
-    }
-
-    private fun buildModelMarkerBitmap(thumb: Bitmap): BitmapDescriptor {
-        val ctx = requireContext()
-        val density = ctx.resources.displayMetrics.density
-        val markerPx = (56 * density).toInt()
-        val borderPx = (2 * density)
-        val radiusPx = (6 * density)
-        val out = Bitmap.createBitmap(markerPx, markerPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE }
-        canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, bgPaint)
-        canvas.drawBitmap(thumb, null, RectF(borderPx, borderPx, markerPx - borderPx, markerPx - borderPx),
-            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE; color = 0x55000000; strokeWidth = borderPx
-        }
-        canvas.drawRoundRect(RectF(0f, 0f, markerPx.toFloat(), markerPx.toFloat()), radiusPx, radiusPx, strokePaint)
-        thumb.recycle()
-        return BitmapDescriptorFactory.fromBitmap(out)
     }
 
     // ── Camera ─────────────────────────────────────────────────────────────────
@@ -1378,16 +1262,16 @@ class RenderMapFragment : Fragment() {
     /** Pushes the current map UI state into the diagnostic-report snapshot. No coordinates. */
     private fun refreshMapDiag() {
         try {
-            val total = coordinateMap.size
-            val visible = visibilityMap.count { it.value }
+            val total = markers.coordinates.size
+            val visible = markers.visibility.visibleCount
             app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
                 it.copy(
                     mapReady = googleMap != null,
                     mapType = mapTypeLabel(currentMapType),
                     mapToolsOpen = mapToolsVisible,
-                    gridMode = gridMode.label,
-                    gridSpacing = currentGridSpacingM?.let { m -> MapGrid.formatSpacing(m) },
-                    pointLabelMode = pointLabelMode.label,
+                    gridMode = overlays.gridMode.label,
+                    gridSpacing = overlays.currentGridSpacingM?.let { m -> MapGrid.formatSpacing(m) },
+                    pointLabelMode = overlays.pointLabelMode.label,
                     currentLocationVisible = showCurrentLocationOnMap,
                     headingAvailable = headingMarker != null,
                     accuracyCircleVisible = accuracyCircle != null,
@@ -1419,9 +1303,7 @@ class RenderMapFragment : Fragment() {
             map.animateCamera(CameraUpdateFactory.newLatLngZoom(live, 20f))
             return
         }
-        val visiblePositions = markerMap.entries
-            .filter { (id, _) -> visibilityMap[id] == true }
-            .map { it.value.position }
+        val visiblePositions = markers.visibleMarkerPositions()
         if (visiblePositions.isNotEmpty()) {
             updateCamera(visiblePositions)
         } else {
@@ -1534,9 +1416,7 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun fitVisibleCoordinates() {
-        val visiblePositions = markerMap.entries
-            .filter { (id, _) -> visibilityMap[id] == true }
-            .map { it.value.position }
+        val visiblePositions = markers.visibleMarkerPositions()
         if (visiblePositions.isEmpty()) {
             showSnackbar("No visible coordinates")
             return
@@ -1592,7 +1472,7 @@ class RenderMapFragment : Fragment() {
     /** Overflow ("More") menu. Show all / Hide all are now explicit buttons; this keeps the
      *  contextual "Show selected only" and is the home for future point-display options. */
     private fun showVisibilityMenu(anchor: View) {
-        if (coordinateMap.isEmpty()) return
+        if (markers.coordinates.isEmpty()) return
         val popup = android.widget.PopupMenu(requireContext(), anchor)
         popup.menu.add(0, 1, 0, "Show all")
         popup.menu.add(0, 2, 1, "Hide all")
@@ -1611,48 +1491,38 @@ class RenderMapFragment : Fragment() {
     private fun showSelectedOnly() {
         val selId = selectedCoordinateId ?: return
         try {
-            coordinateMap.keys.forEach { id ->
-                val visible = id == selId
-                visibilityMap[id] = visible
-                try { markerMap[id]?.isVisible = visible } catch (_: Exception) {}
-            }
+            markers.setAllVisible { id -> id == selId }
             refreshToggleList()
             updateVisibleCount()
-            applyPointLabels()
+            overlays.applyPointLabels()
         } catch (e: Exception) { logFail("showSelectedOnly", e) }
     }
 
     private fun showAllCoordinates() {
         try {
-            coordinateMap.keys.forEach { id ->
-                visibilityMap[id] = true
-                try { markerMap[id]?.isVisible = true } catch (_: Exception) {}
-            }
+            markers.setAllVisible { true }
             refreshToggleList()
             updateVisibleCount()
-            applyPointLabels()
+            overlays.applyPointLabels()
         } catch (e: Exception) { logFail("showAllCoordinates", e) }
     }
 
     private fun hideAllCoordinates() {
         try {
-            coordinateMap.keys.forEach { id ->
-                visibilityMap[id] = false
-                try { markerMap[id]?.isVisible = false } catch (_: Exception) {}
-            }
+            markers.setAllVisible { false }
             refreshToggleList()
             updateVisibleCount()
-            applyPointLabels()
+            overlays.applyPointLabels()
             showSnackbar("All coordinates hidden")
         } catch (e: Exception) { logFail("hideAllCoordinates", e) }
     }
 
     private fun refreshToggleList() {
         try {
-            allToggleItems = coordinateMap.values.map { c ->
+            allToggleItems = markers.coordinates.values.map { c ->
                 CoordinateToggleItem(
                     id = c.id, name = c.name,
-                    checked = visibilityMap[c.id] ?: true,
+                    checked = markers.visibility[c.id] ?: true,
                     icon = c.displayIconKey ?: "", modelId = c.linkedModelId, color = c.color,
                     lat = c.latitude, lon = c.longitude,
                     meta = buildRowMeta(c)
@@ -1688,8 +1558,8 @@ class RenderMapFragment : Fragment() {
     }
 
     private fun updateVisibleCount() {
-        val visible = visibilityMap.values.count { it }
-        val total = coordinateMap.size
+        val visible = markers.visibility.visibleCount
+        val total = markers.coordinates.size
         // Map-workspace style count, e.g. "12 shown / 18 total".
         leftPanelSubtitle?.text = if (total == 0) "No points yet" else "$visible shown / $total total"
         visibleCountText?.text = "Visible $visible / $total"
@@ -1699,7 +1569,7 @@ class RenderMapFragment : Fragment() {
     // ── Selected coordinate ────────────────────────────────────────────────────
 
     private fun selectCoordinate(id: String) {
-        val coord = coordinateMap[id] ?: return
+        val coord = markers.coordinate(id) ?: return
         selectedCoordinateId = id
         mapUiVm.update { it.copy(selectedCoordinateId = id) }
         toggleAdapter.setSelectedId(id)
@@ -1716,7 +1586,7 @@ class RenderMapFragment : Fragment() {
      *  restored separately). Clears the selection if the coordinate no longer exists. */
     private fun restoreSelectedCard() {
         val id = selectedCoordinateId ?: return
-        val coord = coordinateMap[id]
+        val coord = markers.coordinate(id)
         if (coord == null) {
             dismissSelectedCoordinate()
             return
@@ -1865,7 +1735,7 @@ class RenderMapFragment : Fragment() {
 
     private fun startStakeoutForSelectedCoordinate() {
         val id = selectedCoordinateId ?: run { showSnackbar("Select a coordinate first"); return }
-        val coord = coordinateMap[id] ?: return
+        val coord = markers.coordinate(id) ?: return
         val latLng = LatLng(coord.latitude, coord.longitude)
 
         // Start stakeout mode if not already active
@@ -2035,250 +1905,12 @@ class RenderMapFragment : Fragment() {
         }
     }
 
-    // ── Grid / Boundary (unchanged internal logic) ─────────────────────────────
-
-    /** Advances Off → Auto → Fine → Coarse → Off and redraws. */
-    private fun cycleGrid() {
-        gridMode = gridMode.next()
-        mapUiVm.update { it.copy(gridMode = gridMode) }
-        redrawGrid()
-        logMapEvent("MAP", "Map grid mode changed mode=${gridMode.prefKey}")
-        showSnackbar("Grid: ${MapGrid.buttonLabel(gridMode, currentGridSpacingM)}")
-    }
-
-    private fun clearGrid() {
-        gridLines.forEach { try { it.remove() } catch (_: Exception) {} }
-        gridLines.clear()
-    }
-
-    /**
-     * Map scale at the camera centre in metres per **dp** — Google Web-Mercator formula. Android map
-     * tiles are 256 dp at zoom 0, so 156543.03392·cos(lat)/2^zoom is per dp, not per physical pixel.
-     */
-    private fun metersPerDp(): Double {
-        val cam = googleMap?.cameraPosition ?: return Double.NaN
-        return 156543.03392 * cos(Math.toRadians(cam.target.latitude)) / 2.0.pow(cam.zoom.toDouble())
-    }
-
-    /**
-     * Resolves the spacing for the current mode, redraws the meter grid, and refreshes the button.
-     * Called on grid cycle and on camera-idle (so Auto spacing adapts to zoom).
-     */
-    private fun redrawGrid() {
-        clearGrid()
-        if (gridMode == MapGridMode.OFF) {
-            currentGridSpacingM = null
-            updateGridButton()
-            return
-        }
-        val auto = MapGrid.autoSpacingMeters(metersPerDp())
-        val spacing = MapGrid.spacingForMode(gridMode, auto)
-        currentGridSpacingM = spacing
-        if (spacing != null) drawMeterGrid(spacing)
-        updateGridButton()
-        // Update the diagnostic snapshot summary (no per-redraw log — camera-idle is frequent).
-        val zoom = googleMap?.cameraPosition?.zoom ?: 0f
-        MapRuntimeDiagnostics.update {
-            it.copy(lastGridSummary = MapRuntimeDiagnostics.gridSummary(
-                gridMode.label, currentGridSpacingM?.let { m -> MapGrid.formatSpacing(m) }, gridLines.size, zoom))
-        }
-    }
-
-    /**
-     * Draws a UTM-aligned metre grid: vertical lines on round easting multiples, horizontal lines on
-     * round northing multiples of [spacingMeters], using geokit-core's [Utm] (forward +
-     * inverse). Lines are capped per axis for performance/readability. Straight polylines between the
-     * converted endpoints are an acceptable approximation at survey zoom levels (single UTM zone).
-     */
-    private fun drawMeterGrid(spacingMeters: Double) {
-        val map = googleMap ?: return
-        try {
-            val bounds = map.projection.visibleRegion.latLngBounds
-            val sw = Utm.forward(bounds.southwest.latitude, bounds.southwest.longitude)
-            val ne = Utm.forward(bounds.northeast.latitude, bounds.northeast.longitude)
-            // Use the centre zone/hemisphere so all lines convert consistently within one zone.
-            val centre = Utm.forward(
-                (bounds.southwest.latitude + bounds.northeast.latitude) / 2.0,
-                (bounds.southwest.longitude + bounds.northeast.longitude) / 2.0,
-            )
-            val minE = minOf(sw.eastingM, ne.eastingM); val maxE = maxOf(sw.eastingM, ne.eastingM)
-            val minN = minOf(sw.northingM, ne.northingM); val maxN = maxOf(sw.northingM, ne.northingM)
-
-            val color = ContextCompat.getColor(requireContext(), R.color.map_grid_line)
-            fun line(a: LatLng, b: LatLng) {
-                try { gridLines.add(map.addPolyline(PolylineOptions().add(a, b).color(color).width(1.5f).zIndex(0f))) } catch (_: Exception) {}
-            }
-
-            // Vertical lines (constant easting).
-            var e = Math.ceil(minE / spacingMeters) * spacingMeters
-            var n = 0
-            while (e <= maxE && n < MapGrid.MAX_LINES_PER_AXIS) {
-                val (lat1, lon1) = Utm.inverse(e, minN, centre.zone, centre.hemisphere)
-                val (lat2, lon2) = Utm.inverse(e, maxN, centre.zone, centre.hemisphere)
-                line(LatLng(lat1, lon1), LatLng(lat2, lon2))
-                e += spacingMeters; n++
-            }
-            // Horizontal lines (constant northing).
-            var north = Math.ceil(minN / spacingMeters) * spacingMeters
-            n = 0
-            while (north <= maxN && n < MapGrid.MAX_LINES_PER_AXIS) {
-                val (lat1, lon1) = Utm.inverse(minE, north, centre.zone, centre.hemisphere)
-                val (lat2, lon2) = Utm.inverse(maxE, north, centre.zone, centre.hemisphere)
-                line(LatLng(lat1, lon1), LatLng(lat2, lon2))
-                north += spacingMeters; n++
-            }
-        } catch (e: Exception) { logFail("drawMeterGrid", e) }
-    }
-
-    /** Updates the Grid toolbar row label (e.g. "Auto 10 m"), active state, and content description. */
-    private fun updateGridButton() {
-        txtMapGrid?.text = MapGrid.buttonLabel(gridMode, currentGridSpacingM)
-        mapGridRow?.contentDescription = MapGrid.contentDescription(gridMode, currentGridSpacingM)
-        mapGridRow?.isActivated = gridMode != MapGridMode.OFF
-    }
-
-    // ── Point labels (separate marker layer) ────────────────────────────────────
-
-    /** Advances Off → Name → Elevation → Distance → Off. */
-    private fun cycleLabels() {
-        pointLabelMode = pointLabelMode.next()
-        mapUiVm.update { it.copy(pointLabelMode = pointLabelMode) }
-        labelDescriptorCache.clear()
-        updateLabelsButton()
-        applyPointLabels()
-        logMapEvent("MAP", "Map point labels changed mode=${pointLabelMode.prefKey}")
-        showSnackbar("Labels: ${pointLabelMode.label}")
-    }
-
-    private fun updateLabelsButton() {
-        txtMapLabels?.text = PointLabel.buttonLabel(pointLabelMode)
-        mapLabelsRow?.contentDescription = PointLabel.contentDescription(pointLabelMode)
-        mapLabelsRow?.isActivated = pointLabelMode != PointLabelMode.OFF
-    }
-
-    private fun removeAllPointLabels() {
-        labelMarkers.values.forEach { try { it.remove() } catch (_: Exception) {} }
-        labelMarkers.clear()
-    }
-
-    /**
-     * Reconciles the label-marker layer with the current mode + visible coordinates. Safeguards:
-     * only visible points, capped at [LABEL_MAX_COUNT], hidden below [LABEL_MIN_ZOOM]. Label markers
-     * carry the same coordinate-id tag as their glyph, so a tap still opens the selected-point card.
-     * Glyph/selected/stakeout/current-location markers are never touched here.
-     */
-    private fun applyPointLabels() {
-        val map = googleMap ?: return
-        if (pointLabelMode == PointLabelMode.OFF) {
-            removeAllPointLabels()
-            MapRuntimeDiagnostics.update { it.copy(lastLabelsSummary = MapRuntimeDiagnostics.labelsSummary("Off", 0, 0, null)) }
-            return
-        }
-        if ((map.cameraPosition?.zoom ?: 0f) < LABEL_MIN_ZOOM) {
-            removeAllPointLabels()
-            MapRuntimeDiagnostics.update { it.copy(lastLabelsSummary = MapRuntimeDiagnostics.labelsSummary(pointLabelMode.label, 0, 0, "lowZoom")) }
-            return
-        }
-
-        val live = lastFixLatLng
-        val distanceMode = pointLabelMode == PointLabelMode.DISTANCE
-        val labelled = HashSet<String>()
-        var count = 0
-        for ((id, coord) in coordinateMap) {
-            if (count >= LABEL_MAX_COUNT) break
-            if (visibilityMap[id] != true) continue
-            val dist = if (distanceMode && live != null)
-                calculateDistance(live, LatLng(coord.latitude, coord.longitude)) else null
-            // Elevation in the configured height reference and units (Settings → Coordinates).
-            val elevText = if (pointLabelMode == PointLabelMode.ELEVATION) runCatching {
-                coordinateSystemService.convertCoordinate(coord, coordSystemSettings)
-                    .let { p -> p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } }
-            }.getOrNull() else null
-            val text = PointLabel.labelText(pointLabelMode, coord.name, coord.altitude, dist, elevText,
-                distanceText = dist?.let { coordinateSystemService.distanceText(it) }) ?: continue
-            val descriptor = buildLabelDescriptor(text, cache = !distanceMode) ?: continue
-            val pos = LatLng(coord.latitude, coord.longitude)
-            val existing = labelMarkers[id]
-            if (existing == null) {
-                map.addMarker(
-                    MarkerOptions().position(pos).icon(descriptor)
-                        .anchor(0.5f, 0f)   // label hangs just below the point/glyph tip
-                        .zIndex(0.2f)
-                )?.let { it.tag = id; labelMarkers[id] = it }
-            } else {
-                try { existing.position = pos; existing.setIcon(descriptor) } catch (_: Exception) {}
-            }
-            labelled.add(id)
-            count++
-        }
-        // Drop labels for points no longer labelled (hidden/deleted/over cap/zoomed out).
-        labelMarkers.keys.filter { it !in labelled }.forEach { labelMarkers.remove(it)?.remove() }
-        val visibleCount = visibilityMap.count { it.value }
-        val reason = if (distanceMode && live == null) "noLiveFix" else if (visibleCount > labelled.size) "cap/visibility" else null
-        MapRuntimeDiagnostics.update {
-            it.copy(lastLabelsSummary = MapRuntimeDiagnostics.labelsSummary(
-                pointLabelMode.label, labelled.size, (visibleCount - labelled.size).coerceAtLeast(0), reason))
-        }
-    }
-
-    /** Renders label text (1–2 lines) into a small bitmap with a translucent halo for readability. */
-    private fun buildLabelDescriptor(text: String, cache: Boolean): BitmapDescriptor? {
-        if (cache) labelDescriptorCache[text]?.let { return it }
-        return try {
-            val density = resources.displayMetrics.density
-            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.WHITE
-                textSize = 12f * density
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-                textAlign = Paint.Align.CENTER
-            }
-            val lines = text.split("\n")
-            val pad = 6f * density
-            val fm = textPaint.fontMetrics
-            val lineH = fm.descent - fm.ascent
-            val width = (lines.maxOf { textPaint.measureText(it) } + pad * 2).toInt().coerceAtLeast(1)
-            val height = (lineH * lines.size + pad * 2).toInt().coerceAtLeast(1)
-            val bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bmp)
-            val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB3000000.toInt() }
-            canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), 6f * density, 6f * density, bgPaint)
-            var y = pad - fm.ascent
-            for (line in lines) { canvas.drawText(line, width / 2f, y, textPaint); y += lineH }
-            BitmapDescriptorFactory.fromBitmap(bmp).also { if (cache) labelDescriptorCache[text] = it }
-        } catch (e: Exception) { logFail("buildLabelDescriptor", e); null }
-    }
-
-    private fun toggleBoundaryLines() {
-        showBoundaries = !showBoundaries
-        if (showBoundaries) drawBoundaryLines()
-        else { boundaryLines.forEach { it.remove() }; boundaryLines.clear() }
-    }
-
-    private fun drawBoundaryLines() {
-        try {
-            val coords = coordinateMap.values.filter { visibilityMap[it.id] == true }.sortedBy { it.timestamp }
-            if (coords.size < 2) return
-            for (i in 0 until coords.size - 1) {
-                val s = LatLng(coords[i].latitude, coords[i].longitude)
-                val e = LatLng(coords[i + 1].latitude, coords[i + 1].longitude)
-                try { googleMap?.addPolyline(PolylineOptions().add(s, e).color(0xFF2196F3.toInt()).width(3f).geodesic(true))
-                    ?.let { boundaryLines.add(it) } } catch (_: Exception) {}
-            }
-            if (coords.size >= 3) {
-                val s = LatLng(coords.last().latitude, coords.last().longitude)
-                val e = LatLng(coords.first().latitude, coords.first().longitude)
-                try { googleMap?.addPolyline(PolylineOptions().add(s, e).color(0xFF2196F3.toInt()).width(3f).geodesic(true)
-                    .pattern(listOf(Dash(20f), Gap(10f))))?.let { boundaryLines.add(it) } } catch (_: Exception) {}
-            }
-        } catch (e: Exception) { logFail("drawBoundaryLines", e) }
-    }
-
     // ── Info window ────────────────────────────────────────────────────────────
 
     private fun createInfoWindowView(marker: Marker): View? {
         return try {
             val coordinateId = marker.tag as? String
-            val coordinate = coordinateId?.let { coordinateMap[it] }
+            val coordinate = coordinateId?.let { markers.coordinate(it) }
             @Suppress("InflateParams")
             val view = layoutInflater.inflate(R.layout.custom_info_window, null)
             // Non-point markers without a title are the live position dot.
@@ -2312,19 +1944,6 @@ class RenderMapFragment : Fragment() {
     private fun showSnackbar(message: String) {
         view?.let { Snackbar.make(it, message, Snackbar.LENGTH_SHORT).show() }
     }
-
-    // ── Math helpers ───────────────────────────────────────────────────────────
-
-    // WGS84 geodesic (geokit-core) — a 6,371 km sphere was 0.13–0.26 % off at 41° N.
-    private fun calculateDistance(pos1: LatLng, pos2: LatLng): Double =
-        io.github.pennstatecs.geokit.ellipsoid.Geodesic.distanceM(pos1.latitude, pos1.longitude, pos2.latitude, pos2.longitude)
-
-    private fun calculateHeadingChange(h1: Double, h2: Double): Double {
-        val diff = abs(h2 - h1); return min(diff, 360.0 - diff)
-    }
-
-    private fun calculateBearing(from: LatLng, to: LatLng): Double =
-        io.github.pennstatecs.geokit.ellipsoid.Geodesic.initialBearingDeg(from.latitude, from.longitude, to.latitude, to.longitude)
 
     private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
 
