@@ -60,12 +60,12 @@ class CoordinateSettingsMappingTest {
         val conv = CoordinateConverter { _, _ -> null }
         val src = SourcePosition(41.3477, -76.0226, 390.0, null, isNad83 = false, epochYear = 2026.886)
         val msl = conv.convert(src, CoordinateSystemSettings())
-        assertEquals("MSL", msl.verticalLabel)
+        assertEquals("H rcvr", msl.verticalLabel)
         assertEquals(HeightUnavailableReason.NO_RECEIVER_MSL.description, msl.heightUnavailableReason)
-        assertEquals("receiver reported no MSL height", msl.heightUnavailableReason)
+        assertEquals("receiver reported no orthometric height", msl.heightUnavailableReason)
         assertNull(msl.height)
         val ell = conv.convert(src, CoordinateSystemSettings(vertical = VerticalReference.ELLIPSOIDAL))
-        assertEquals("Ellip", ell.verticalLabel)
+        assertEquals("h", ell.verticalLabel)
         val geoid = conv.convert(src, CoordinateSystemSettings(vertical = VerticalReference.NAVD88_GEOID18))
         assertEquals("NAVD88", geoid.verticalLabel)     // named even without a geoid value
         assertEquals("outside GEOID18 coverage", geoid.heightUnavailableReason)

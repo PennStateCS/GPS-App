@@ -162,9 +162,37 @@ object CoordinateDetailFormatter {
     /** "Lat / Lon · WGS84 (ITRF2014)" — a dot separator, so labels never nest brackets. */
     fun qualifiedLabel(name: String, reference: String): String = "$name · $reference"
 
-    /** The separate "Receiver MSL height" row is redundant when the Height row already shows it. */
+    /** The separate receiver-orthometric-height row is redundant when the Height row already shows it. */
     fun showReceiverMslRow(vertical: app.surrealar.settings.model.VerticalReference): Boolean =
         vertical != app.surrealar.settings.model.VerticalReference.RECEIVER_MSL
+
+    /** A saved point's heights are reduced to the ground mark at capture (pole + phase-centre offset). */
+    const val HEIGHT_AT_MARK = "Height at mark"
+    /** The receiver's orthometric height (NMEA "MSL"); NMEA does not say which geoid model it used. */
+    const val RECEIVER_ORTHOMETRIC_HEIGHT = "H at mark (receiver geoid, model unknown)"
+    /** The receiver's geoid undulation N (h = H + N), from the same unknown model. */
+    const val RECEIVER_GEOID_SEPARATION = "N (receiver geoid, model unknown)"
+
+    // ── Survey precision (averaging card) ──────────────────────────────────────────────
+
+    /**
+     * Radial RMSE (1σ radial horizontal error) = sqrt(σlat² + σlon²), e.g. "0.010 m". Null unless both
+     * σ values are known.
+     */
+    fun radialRmseText(stdLatM: Double?, stdLonM: Double?): String? {
+        if (stdLatM == null || stdLonM == null) return null
+        return fmtM3(io.github.pennstatecs.geokit.accuracy.HorizontalAccuracy.radialRmse(stdLatM, stdLonM))
+    }
+
+    /** Vertical RMSE (1σ), e.g. "0.012 m". Null when unknown. */
+    fun verticalRmseText(stdAltM: Double?): String? = stdAltM?.let { fmtM3(it) }
+
+    const val RADIAL_RMSE_LABEL = "Radial RMSE (1σ)"
+    const val VERTICAL_RMSE_LABEL = "Vertical RMSE (1σ)"
+    const val ACCURACY_NOTE_LABEL = "About these values"
+    const val ACCURACY_NOTE =
+        "Radial RMSE = √(σlat² + σlon²). The ± horizontal accuracy shown elsewhere is a 68% radius " +
+            "(Android convention), about 7% larger."
 
     // ── Compact values for the Survey/GNSS stat tiles ──────────────────────────────────
 

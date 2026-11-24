@@ -82,7 +82,7 @@ data class ConvertedPosition(
     val heightUnavailableReason: String? = null,
     /** State Plane only: the position lies outside the selected zone's area of use (wrong zone?). */
     val outsideZone: Boolean = false,
-    /** Short height-datum label: "NAVD88" (or PRVD02/VIVD09 from GEOID18 in PR/VI), "Ellip", "MSL". */
+    /** Short height-datum label: "NAVD88" (or PRVD02/VIVD09 from GEOID18 in PR/VI), "h", "H rcvr". */
     val verticalLabel: String = vertical.shortLabel,
 )
 

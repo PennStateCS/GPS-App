@@ -145,8 +145,8 @@ public enum class HeightUnavailableReason(public val description: String) {
     /** The geoid lookup returned no value (outside GEOID18 coverage, or no geoid model available). */
     OUTSIDE_GEOID18_COVERAGE("outside GEOID18 coverage"),
 
-    /** The receiver reported no MSL height. */
-    NO_RECEIVER_MSL("receiver reported no MSL height"),
+    /** The receiver reported no orthometric (geoid-based, NMEA "MSL") height. */
+    NO_RECEIVER_MSL("receiver reported no orthometric height"),
 }
 
 /**

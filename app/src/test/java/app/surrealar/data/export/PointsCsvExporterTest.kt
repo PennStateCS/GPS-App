@@ -27,7 +27,8 @@ class PointsCsvExporterTest {
         val s = CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, unit = LinearUnit.US_SURVEY_FEET,
             vertical = VerticalReference.NAVD88_GEOID18)
         val lines = PointsCsvExporter.build(listOf(point("CP1", "iron pin, found")), convert(s)).trim().lines()
-        assertEquals("Point,Northing (ftUS),Easting (ftUS),Elevation (ftUS NAVD88),Description,System", lines[0])
+        assertEquals("Point,Northing (ftUS),Easting (ftUS),Elevation (ftUS H GEOID18),Description,System", lines[0])
+        assertTrue("row names its vertical datum", lines[1].endsWith("NAVD88"))
         val f = lines[1].split(",")
         assertEquals("CP1", f[0])
         assertEquals(435_037.47, f[1].toDouble(), 0.01)       // NCAT reference
@@ -66,5 +67,27 @@ class PointsCsvExporterTest {
     @Test fun `geographic output uses latitude and longitude columns`() {
         val csv = PointsCsvExporter.build(listOf(point("P1")), convert(CoordinateSystemSettings()))
         assertTrue(csv.startsWith("Point,Latitude,Longitude,"))
+    }
+
+    @Test fun `GEOID18 header does not claim NAVD88 when rows are PRVD02`() {
+        // Puerto Rico first, so the old first-point/NAVD88 header would have been wrong for every row.
+        val pr = point("PR1").copy(latitude = 18.4655, longitude = -66.1057)
+        val s = CoordinateSystemSettings(vertical = VerticalReference.NAVD88_GEOID18)
+        val lines = PointsCsvExporter.build(listOf(pr, point("PA1")), convert(s)).trim().lines()
+        assertEquals("Point,Latitude,Longitude,Elevation (m H GEOID18),Description,System", lines[0])
+        assertTrue(lines[1], lines[1].endsWith("PRVD02"))
+        assertTrue(lines[2], lines[2].endsWith("NAVD88"))
+        // Column count is unchanged: 6 header fields, 6 fields per row.
+        assertEquals(6, lines[0].split(",").size)
+        assertEquals(6, lines[2].split(",").size)
+    }
+
+    @Test fun `ellipsoidal and receiver height headers use h and H`() {
+        val h = PointsCsvExporter.build(listOf(point("P1")),
+            convert(CoordinateSystemSettings(vertical = VerticalReference.ELLIPSOIDAL))).lines()[0]
+        assertEquals("Point,Latitude,Longitude,Elevation (m h),Description,System", h)
+        val rcvr = PointsCsvExporter.build(listOf(point("P1")),
+            convert(CoordinateSystemSettings(vertical = VerticalReference.RECEIVER_MSL))).lines()[0]
+        assertEquals("Point,Latitude,Longitude,Elevation (m H rcvr),Description,System", rcvr)
     }
 }

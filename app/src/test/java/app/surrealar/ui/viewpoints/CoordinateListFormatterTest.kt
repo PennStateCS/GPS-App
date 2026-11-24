@@ -55,12 +55,12 @@ class CoordinateListFormatterTest {
     )
 
     @Test fun rowHeight_usesChosenReferenceWhenAvailable() {
-        assertEquals("365.120 m MSL",
+        assertEquals("365.120 m H rcvr",
             CoordinateListFormatter.rowHeightText(pos(VerticalReference.RECEIVER_MSL, 365.12)) { error("not needed") })
     }
 
     @Test fun rowHeight_fallsBackToEllipsoidal() {
-        assertEquals("397.000 m Ellip",
+        assertEquals("397.000 m h",
             CoordinateListFormatter.rowHeightText(pos(VerticalReference.RECEIVER_MSL, null)) {
                 pos(VerticalReference.ELLIPSOIDAL, 397.0)
             })

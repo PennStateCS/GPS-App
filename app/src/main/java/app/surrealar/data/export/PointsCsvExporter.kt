@@ -12,6 +12,10 @@ import java.util.Locale
  * geographic output uses Point, Latitude, Longitude, Elevation, Description. Lengths are in the
  * configured unit, the elevation in the configured height reference (blank when unavailable, e.g.
  * outside GEOID18 coverage). The header row names the system so the file is self-describing.
+ * Elevations are at the ground mark (saved points are reduced by the pole height and phase-centre
+ * offset at capture). The Elevation header names the height type and geoid model only ("h",
+ * "H GEOID18", "H rcvr") — never a vertical datum — because GEOID18 rows can be NAVD88, PRVD02 or
+ * VIVD09 depending on the point; each row's System column names that row's vertical datum.
  *
  * This is an interchange export; the JSON backup remains the lossless format (raw measurements).
  */

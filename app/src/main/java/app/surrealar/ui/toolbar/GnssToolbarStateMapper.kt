@@ -328,7 +328,8 @@ object GnssToolbarStateMapper {
                 // Lat/lon from the converted position (also when a grid exists and the user toggled to LL).
                 String.format(Locale.US, "%.6f, %.6f", coords.latDeg, coords.lonDeg)
             }
-            altitudeLabel = coords.verticalLabel.uppercase(Locale.US)
+            // Not upper-cased: "h" (ellipsoidal) and "H" (orthometric) are different heights.
+            altitudeLabel = coords.verticalLabel
             altitudeText = coords.height?.let {
                 String.format(Locale.US, "%,.2f %s", it, coords.unit.suffix)
             } ?: "--"

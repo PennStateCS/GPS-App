@@ -607,7 +607,8 @@ class CoordinateDetailFragment : Fragment() {
                 rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel("Lat / Lon", p.datum.label),
                     app.surrealar.coords.CoordinateFormat.horizontal(p))
             }
-            rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel("Height", p.vertical.label),
+            // Saved points are reduced to the ground mark at capture (pole + phase-centre offset).
+            rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel(CoordinateDetailFormatter.HEIGHT_AT_MARK, p.vertical.label),
                 p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } ?: (p.heightUnavailableReason ?: naText))
             renderPlainFieldRow(container, rows)
         }
@@ -621,12 +622,12 @@ class CoordinateDetailFragment : Fragment() {
 
         // Altitude details are supporting values (in the chosen units). Only shown when present.
         val altRows = mutableListOf<DetailRow>()
-        // Skipped when the Height row above already shows receiver MSL (same value twice otherwise).
+        // Skipped when the Height row above already shows the receiver's H (same value twice otherwise).
         if (CoordinateDetailFormatter.showReceiverMslRow(coordSystemSettings.vertical)) {
-            c.altitudeMsl?.let { altRows += DetailRow("Receiver MSL height",
+            c.altitudeMsl?.let { altRows += DetailRow(CoordinateDetailFormatter.RECEIVER_ORTHOMETRIC_HEIGHT,
                 app.surrealar.coords.CoordinateFormat.length(it, unit)) }
         }
-        c.geoidSeparationM?.let { altRows += DetailRow("Receiver geoid separation", len(it, 3)) }
+        c.geoidSeparationM?.let { altRows += DetailRow(CoordinateDetailFormatter.RECEIVER_GEOID_SEPARATION, len(it, 3)) }
         // Antenna/pole offset applied at capture — shown so the user can see what it was set to.
         c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", len(it, 3)) }
         if (altRows.isNotEmpty()) {
@@ -794,7 +795,7 @@ class CoordinateDetailFragment : Fragment() {
             // Same precision as the rows below: 8-decimal degrees, mm-level heights (0.01 in feet).
             DetailRow("Latitude ($stored)", "${CoordinateDetailFormatter.fmt8(c.latitude)}°"),
             DetailRow("Longitude ($stored)", "${CoordinateDetailFormatter.fmt8(c.longitude)}°"),
-            DetailRow("Ellipsoidal height ($stored)",
+            DetailRow("Ellipsoidal height h ($stored)",
                 app.surrealar.coords.CoordinateFormat.length(c.altitude, coordSystemSettings.unit)),
         )
         tiles.forEach { t ->
@@ -882,6 +883,14 @@ class CoordinateDetailFragment : Fragment() {
         c.stdLatM?.let { rows += DetailRow("Std dev (lat)", fmtM3(it)) }
         c.stdLonM?.let { rows += DetailRow("Std dev (lon)", fmtM3(it)) }
         c.stdAltM?.let { rows += DetailRow("Std dev (alt)", fmtM3(it)) }
+        // Survey-style summary of the same σ values: 1σ radial and vertical RMSE (no 68% scaling).
+        val radial = CoordinateDetailFormatter.radialRmseText(c.stdLatM, c.stdLonM)
+        val vertical = CoordinateDetailFormatter.verticalRmseText(c.stdAltM)
+        radial?.let { rows += DetailRow(CoordinateDetailFormatter.RADIAL_RMSE_LABEL, it) }
+        vertical?.let { rows += DetailRow(CoordinateDetailFormatter.VERTICAL_RMSE_LABEL, it) }
+        if (radial != null || vertical != null) {
+            rows += DetailRow(CoordinateDetailFormatter.ACCURACY_NOTE_LABEL, CoordinateDetailFormatter.ACCURACY_NOTE)
+        }
         renderDetailRows(cardAveragingRows, rows)
         cardAveraging?.visibility = View.VISIBLE
     }

@@ -270,8 +270,35 @@ class CoordinateDetailFormatterTest {
     fun locationLabels_useDotSeparator_noNestedBrackets() {
         assertEquals("Lat / Lon · WGS84 (ITRF2014)",
             CoordinateDetailFormatter.qualifiedLabel("Lat / Lon", "WGS84 (ITRF2014)"))
-        assertEquals("Height · MSL (receiver geoid), at ground",
-            CoordinateDetailFormatter.qualifiedLabel("Height", VerticalReference.RECEIVER_MSL.label))
+        assertEquals("Height at mark · Orthometric height H (receiver geoid, model unknown)",
+            CoordinateDetailFormatter.qualifiedLabel(CoordinateDetailFormatter.HEIGHT_AT_MARK, VerticalReference.RECEIVER_MSL.label))
+    }
+
+    @Test
+    fun heightLabels_useSurveyTerminology_noMslNoAtGroundClaim() {
+        assertEquals("Ellipsoidal height (h)", VerticalReference.ELLIPSOIDAL.label)
+        assertEquals("h", VerticalReference.ELLIPSOIDAL.shortLabel)
+        assertEquals("Orthometric height H (NAVD88, GEOID18)", VerticalReference.NAVD88_GEOID18.label)
+        assertEquals("H GEOID18", VerticalReference.NAVD88_GEOID18.shortLabel)
+        assertEquals("Orthometric height H (receiver geoid, model unknown)", VerticalReference.RECEIVER_MSL.label)
+        for (v in VerticalReference.entries) {
+            assertFalse(v.label, v.label.contains("MSL"))
+            assertFalse(v.label, v.label.contains("at ground"))
+        }
+    }
+
+    @Test
+    fun radialRmse_isRootSumSquare_reviewSample() {
+        // Review sample: σlat 0.008, σlon 0.006 → 0.0100 m (not the 0.0107 m 68% radius).
+        assertEquals("0.010 m", CoordinateDetailFormatter.radialRmseText(0.008, 0.006))
+        assertEquals("0.050 m", CoordinateDetailFormatter.radialRmseText(0.03, 0.04))
+        assertNull(CoordinateDetailFormatter.radialRmseText(null, 0.006))
+        assertNull(CoordinateDetailFormatter.radialRmseText(0.008, null))
+        assertEquals("0.012 m", CoordinateDetailFormatter.verticalRmseText(0.012))
+        assertNull(CoordinateDetailFormatter.verticalRmseText(null))
+        assertEquals("Radial RMSE (1σ)", CoordinateDetailFormatter.RADIAL_RMSE_LABEL)
+        assertEquals("Vertical RMSE (1σ)", CoordinateDetailFormatter.VERTICAL_RMSE_LABEL)
+        assertTrue(CoordinateDetailFormatter.ACCURACY_NOTE.contains("68% radius"))
     }
 
     @Test
@@ -284,6 +311,6 @@ class CoordinateDetailFormatterTest {
     @Test
     fun receiverMslReference_keepsPrefKeyAndShortLabel() {
         assertEquals("receiver_msl", VerticalReference.RECEIVER_MSL.prefKey)
-        assertEquals("MSL", VerticalReference.RECEIVER_MSL.shortLabel)
+        assertEquals("H rcvr", VerticalReference.RECEIVER_MSL.shortLabel)
     }
 }

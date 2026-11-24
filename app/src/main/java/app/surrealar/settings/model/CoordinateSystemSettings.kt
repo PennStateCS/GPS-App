@@ -76,10 +76,17 @@ enum class LinearUnit(val prefKey: String, val label: String, val metersPerUnit:
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: METERS }
 }
 
+/**
+ * Which height to show. Terminology follows survey practice: h = ellipsoidal height, H = orthometric
+ * height, N = geoid undulation, H = h − N, and an orthometric height names its geoid model. The
+ * receiver reports H with its own geoid model, which NMEA does not identify, so [RECEIVER_MSL] is
+ * labelled "model unknown" (the constant name and prefKey keep the historical "MSL" wording because
+ * they are persisted). Live heights are at the antenna phase centre; saved points are at the mark.
+ */
 enum class VerticalReference(val prefKey: String, val label: String, val shortLabel: String) {
-    ELLIPSOIDAL("ellipsoidal", "Ellipsoidal height", "Ellip"),
-    NAVD88_GEOID18("navd88_geoid18", "NAVD88 (GEOID18)", "NAVD88"),
-    RECEIVER_MSL("receiver_msl", "MSL (receiver geoid), at ground", "MSL");
+    ELLIPSOIDAL("ellipsoidal", "Ellipsoidal height (h)", "h"),
+    NAVD88_GEOID18("navd88_geoid18", "Orthometric height H (NAVD88, GEOID18)", "H GEOID18"),
+    RECEIVER_MSL("receiver_msl", "Orthometric height H (receiver geoid, model unknown)", "H rcvr");
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: RECEIVER_MSL }
 }
