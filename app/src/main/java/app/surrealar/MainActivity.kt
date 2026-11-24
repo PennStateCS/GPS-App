@@ -796,9 +796,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** SOL / SATS: the sky + satellite view (Developer Tools) when enabled, else Settings › Receiver status. */
-    private fun openToolbarGnssStatus() {
-        if (lastDevToolsEnabled == true) navigateFromToolbar(R.id.nav_development) else openReceiverDetails()
-    }
+    /** Solution / satellites tap: Settings › Receiver. (It opened the Developer page when developer tools were on; removed for now.) */
+    private fun openToolbarGnssStatus() = openReceiverDetails()
 
     /** Battery: Settings › Receiver (status, battery, device info). */
     private fun openReceiverDetails() = navigateFromToolbar(
