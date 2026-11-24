@@ -16,7 +16,7 @@ Package root `io.github.pennstatecs.geokit`:
 | `.ellipsoid` | `Ellipsoid` (`WGS84`, `GRS80`: `toEcef`, `fromEcef`, meridian / prime-vertical radii), `GeodeticPosition`, `EcefPosition`, `Geodesic` (`distanceM`, `initialBearingDeg`, `northEastDeltaM` on WGS84, via GeographicLib) |
 | `.datum` | `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`) |
 | `.projection` | `Tm` (Krüger series, forward + inverse), `Lcc2`, `HomA`, `Utm`, `SpcsZone` / `SpcsZones` (all 118 SPCS83 zones on NAD83(2011)), `SpcsZoneLocator` / `SpcsZoneSet` / `SpcsZoneSuggestion` (zone suggestion from county-defined zone extents) |
-| `.geoid` | `Geoid18Grid` (`fromClasspath()` loads the GEOID18 grid bundled in this jar; or from a `ByteArray` / `InputStream` of a packed SRGT grid) |
+| `.geoid` | `Geoid18Grid` (`fromClasspath()` loads the GEOID18 grid bundled in this jar; or from a `ByteArray` / `InputStream` of a packed SRGT grid); the geoid-model layer `GeoidModel` / `GeoidResult` / `GeoidModelInfo` / `GeoidModelId` with `Geoid18Model`, `GlobalGeoidModels` (`egm2008()`, `egm96()`, `geoid18()`), `TiledGeoidModel`, `GeoidTileSource` / `GeoidTilePack` / `CompositeGeoidTileSource`, `GeoidTileCacheLimits` (see [Geoid models](#geoid-models)) |
 | `.local` | `LocalEnu` (east/north/up about an origin, for short-range local work: `toEnu`, and its exact inverse `toGeodetic`) |
 | `.accuracy` | `HorizontalAccuracy` (horizontal accuracy is a **68 % radius**; vertical is **1σ**) |
 | `.heading` | `HeadingMath` (true heading, display-rotation remap, upright detection), `Compass.point8` |
@@ -116,6 +116,7 @@ row live in `libs/geokit-core/src/test` unless noted.
 | UTM forward / inverse / round trip | 1.8 × 10⁻⁷ / 5.0 × 10⁻⁸ / 1.6 × 10⁻⁷ m (< 1 mm required) | `UtmProjTest`: 1 134 PROJ vectors, 9 zones, both hemispheres, zone edges (`tools/utm/gen_utm_vectors.py`) |
 | ITRF2014 → NAD83(2011) Helmert | worst 1.9 × 10⁻⁹ m vs PROJ at 5 US sites (PA, CA, WA, FL, AK), epochs 2020–2030 | `convert/ReferencePointsTest` (PROJ point + round trip) |
 | GEOID18 | worst 0.46 mm on the 600 grid vectors (`geoid18_vectors.csv`, 1 mm tolerance); within 1.3 mm of the 4 NGS geoid-service points; 11 NGS points across CONUS, PR and VI within 5 mm | `Geoid18GridTest` |
+| EGM2008 2.5′ / EGM96 15′ | worst 0.50 mm (EGM2008, 267 points with a tile) and 0.49 mm (EGM96, 309 points) vs PROJ `vgridshift` on the PROJ-data grids — the 0.5 mm integer-mm storage rounding; 1 mm tolerance. Points include tile corners/edges/nodes, the antimeridian, ±90°, AK, Aleutians, HI, PR/VI, Guam | `geoid/GlobalGeoidModelTest` (`global_geoid_vectors.csv`, `tools/geoid/geoid_reference_vectors.py`) |
 | ECEF (GRS80 / WGS84) | NCAT XYZ to 1 mm (NCAT's rounding); merged code within 7.2 × 10⁻⁷ m of the previous implementations | `convert/ReferencePointsTest`, `LegacyEllipsoidComparisonTest` |
 | Conversion engine | SPCS (all PROJ vectors) and UTM vectors to 1 µm through the engine; PROJ datum shift to 2 × 10⁻⁹ °; NCAT PA North / UTM 18N to 1–2 mm; NGS GEOID18 heights to 1 cm | `convert/CoordinateConverterTest` |
 | Geodesic distance / bearing | GeographicLib (Karney): nanometre-level; stakeout ENU agreement 0.5 mm at 5 km | `GeodesicTest` |
@@ -160,6 +161,35 @@ loads it from the classpath and fails, rather than skipping, if it is missing.
 
 Data generators (SPCS table, GEOID18 packing, test vectors) are in `tools/` with their own
 README; they need Python 3 with pyproj.
+
+## Geoid models
+
+`GeoidModel` is the common interface: `undulation(lat, lon)` returns `GeoidResult.Value` (N in metres, the
+model that produced it, the vertical datum name) or `GeoidResult.Unavailable` with a reason
+(`INVALID_POSITION`, `OUTSIDE_COVERAGE`, `TILE_NOT_AVAILABLE`, `LOAD_FAILED`). H = h − N. A model never
+substitutes another one: falling back from EGM2008 to EGM96 is the caller's explicit choice, and the height is
+then labelled with the model that produced it.
+
+| Model | `GeoidModelId.token` / label | Horizontal frame | Vertical datum | Data |
+|---|---|---|---|---|
+| `Geoid18Model` (`GlobalGeoidModels.geoid18()`) | `GEOID18` | NAD83(2011) | NAVD88 / PRVD02 / VIVD09 (by location) | the existing `geoid18.srgt`; numbers identical to `Geoid18Grid` |
+| `GlobalGeoidModels.egm2008()` | `EGM2008` | WGS84 | EGM2008 (EPSG:3855) | 2.5′, 1° tiles; bundled US packs (CONUS, Alaska incl. Aleutians across 180°, Hawaii main islands, PR/USVI, Guam/CNMI), ≈ 1.7 MB; other tiles `TILE_NOT_AVAILABLE` unless supplied via `extraSources` |
+| `GlobalGeoidModels.egm96()` | `EGM96` (`isFallback = true`) | WGS84 | EGM96 (EPSG:5773) | 15′, whole globe in 5° tiles, ≈ 1.7 MB |
+
+```kotlin
+val egm2008 = GlobalGeoidModels.egm2008()                  // one per process; first lookup loads (off the UI thread)
+when (val r = egm2008.undulation(40.79, -77.86)) {
+    is GeoidResult.Value -> r.orthometricHeightM(h)          // label "H (${egm2008.info.label})"
+    is GeoidResult.Unavailable -> r.reason                    // e.g. TILE_NOT_AVAILABLE
+}
+```
+
+Tiles are decoded lazily into a bounded, thread-safe LRU (`GeoidTileCacheLimits`, default 128 tiles / 1 MiB).
+Installed tiles: write SRGP packs (same generator) to app storage with a `sha256sum`-style manifest and pass
+`GeoidTilePack.fromManifest(dir, manifest)` as `extraSources`; packs are SHA-256 verified before use and tile
+data is validated as untrusted. No network code lives here. Bundled resources are pinned by SHA-256
+(`GlobalGeoidModels.EGM2008_BUNDLED_PACKS`, `EGM96_SHA256`). Sources, format and generators:
+`tools/geoid/README.md`.
 
 ## Dependencies and licence
 
