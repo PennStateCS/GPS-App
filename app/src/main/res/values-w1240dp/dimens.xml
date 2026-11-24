@@ -2,4 +2,6 @@
     <dimen name="fab_margin">200dp</dimen>
     <dimen name="settings_content_padding_h">96dp</dimen>
     <dimen name="page_content_padding">32dp</dimen>
+    <!-- Settings / Developer category pane on wide windows (Material 3 list-detail default). -->
+    <dimen name="twopane_list_width">360dp</dimen>
 </resources>

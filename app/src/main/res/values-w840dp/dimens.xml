@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings / Developer category pane for 840–1239dp wide windows (e.g. a large tablet in portrait). -->
+    <dimen name="twopane_list_width">320dp</dimen>
+</resources>

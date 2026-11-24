@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Wide two-pane: sw>=600dp AND available width>=700dp (tablets in landscape + 10"+ portrait).
-     Rail is fixed 220dp so labels like "Developer Tools" and "Coordinates" never truncate. -->
+     The category pane width steps with the window width (@dimen/twopane_list_width: 260 / 320 / 360dp
+     in values / values-w840dp / values-w1240dp), so it suits small and large tablets, rotation and
+     split-screen; the content pane takes the rest. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal">
 
-    <!-- Left pane: fixed 220dp prevents label truncation -->
+    <!-- Left pane: fixed per width band (never narrower than 260dp, so labels don't truncate) -->
     <LinearLayout
-        android:layout_width="220dp"
+        android:layout_width="@dimen/twopane_list_width"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:background="?attr/colorSurfaceVariant">
