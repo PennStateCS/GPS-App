@@ -66,12 +66,13 @@ import kotlin.math.min
  * Moved verbatim from SettingsFragment. The fragment keeps ONE instance for its lifetime, so the
  * connection state below (selected device, the single auto-reconnect, the connect attempt id and job)
  * survives a category switch exactly as it did as fragment fields. Scopes are unchanged:
- * - category-bound collectors and the 1 s status refresh run on `categoryScope` (stop when the
- *   category is left);
+ * - category-bound collectors, the 1 s status refresh, and the stored-settings load / prefill (which
+ *   bind this view) run on `categoryScope` (stop when the category is left);
  * - the connect attempt ([tcpConnectJob]) runs on the fragment's viewLifecycleOwner scope, and the
- *   stored-settings load / diagnostic probe on the fragment's lifecycleScope, so they continue after
- *   a category switch (as before);
- * - writes run on [saveScope].
+ *   diagnostic probe (name lookup only) on the fragment's lifecycleScope, so they continue after a
+ *   category switch (as before). Their UI updates go to the CURRENT Receiver view ([contentView]),
+ *   never to a view captured when they started;
+ * - writes run on [saveScope]; UI touched after a write checks that its view is still shown ([isShown]).
  * Source changes go through [gnssSourceCoordinator] in the same order as before.
  */
 internal class ReceiverSettingsController(
@@ -84,6 +85,11 @@ internal class ReceiverSettingsController(
     private val saveScope: CoroutineScope,
     /** The host's category list refresh when the source changes (SettingsFragment.refreshCategoriesForSource). */
     private val refreshCategoriesForSource: (LocationSourceType) -> Unit,
+    /**
+     * Test seam for the connect probe (TCP NMEA read + HTTP reachability, run in parallel); null = the
+     * real probes. Lets tests hold an attempt "in flight" deterministically.
+     */
+    private val connectProbeOverride: (suspend (host: String, port: Int) -> Pair<TcpTestResult, Boolean>)? = null,
 ) : SettingsCategoryController {
 
     companion object {
@@ -125,7 +131,7 @@ internal class ReceiverSettingsController(
         deviceStatusJob = null
     }
 
-    private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
+    internal enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
 
     // UI status for external connection
     private enum class ConnectionUiStatus { CONNECTING, REACHABLE, STREAMING, STALE, DISCONNECTED }
@@ -140,6 +146,9 @@ internal class ReceiverSettingsController(
     private fun clearAntennaHeightError(field: View) {
         inputLayoutOf(field)?.error = null
     }
+
+    /** True while [view] is the Receiver view on screen (async work started for an older view skips its UI). */
+    private fun isShown(view: View): Boolean = contentView === view
 
     /** Clears all external-receiver transient state. Call when switching to internal or disconnecting. */
     private fun resetExternalReceiverStatus() {
@@ -241,7 +250,7 @@ internal class ReceiverSettingsController(
                     if (persisted != profile) {
                         runCatching { settingsRepo.setExternalReceiverProfile(profile) }
                             .onFailure { settingsError("Settings save failed section=receiverProfile", it) }
-                        if (fragment.view == null) return@launch
+                        if (!isShown(view)) return@launch
                         // Conservative: only apply the new profile's default port if the current
                         // port is missing/invalid or wasn't user-customized (a custom port is kept).
                         val currentPort = editPort?.text?.toString()?.trim()?.toIntOrNull()
@@ -419,7 +428,8 @@ internal class ReceiverSettingsController(
         // Prefill inline inputs with last used values. The host is left blank on first use (no
         // hardcoded device address); with no saved port, use the selected receiver profile's default
         // (Reach = 9001). Nothing is persisted here — settings are only saved when the user connects.
-        fragment.lifecycleScope.launch {
+        // categoryScope: it fills THIS view, so it must not land on it after the category was left.
+        categoryScope.launch {
             val lastHost = settingsRepo.externalTcpHost.first()
             val lastPort = settingsRepo.externalTcpPort.first()
             val profilePort = runCatching { settingsRepo.externalReceiverProfile.first().defaultPort }
@@ -456,9 +466,13 @@ internal class ReceiverSettingsController(
                     }
                     // Attempt auto-reconnect once if external TCP was last selected
                     if (!autoReconnectAttempted) {
+                        // Disconnect / selecting device GNSS advance the attempt id; if either happens
+                        // while the stored source is being read, don't start a new External attempt.
+                        val attemptBefore = tcpConnectAttemptId
                         launch {
                             val locSrc = settingsRepo.locationSource.first()
                             val connType = settingsRepo.externalConnType.firstOrNull()
+                            if (autoReconnectAttempted || attemptBefore != tcpConnectAttemptId) return@launch
                             if (locSrc == LocationSourceType.EXTERNAL && connType == ExternalConnectionType.TCP) {
                                 autoReconnectAttempted = true
                                 connectViaTcpFlow(host, port)
@@ -829,7 +843,7 @@ internal class ReceiverSettingsController(
                         val current = settingsRepo.gnssReceiverSettings.first()
                         val meters = AntennaHeightInput.parseMeters(typed)
                         if (meters == null) {
-                            if (fragment.view == null) return@launch
+                            if (!isShown(view)) return@launch
                             // Bad input: keep the stored value, say so, and restore the field.
                             showAntennaHeightError(this@apply)
                             setText(AntennaHeightInput.format(current.poleHeightM))
@@ -839,7 +853,7 @@ internal class ReceiverSettingsController(
                                 poleHeightM = meters,
                                 poleHeightNeedsCheck = current.poleHeightNeedsCheck && meters == current.poleHeightM,
                             ))
-                            if (fragment.view != null) clearAntennaHeightError(this@apply)
+                            if (isShown(view)) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
                         settingsError("Settings save failed section=poleHeight", e)
@@ -868,12 +882,12 @@ internal class ReceiverSettingsController(
                         val current = settingsRepo.gnssReceiverSettings.first()
                         val meters = AntennaHeightInput.parseCameraBelowMeters(typed)
                         if (meters == null) {
-                            if (fragment.view == null) return@launch
+                            if (!isShown(view)) return@launch
                             inputLayoutOf(this@apply)?.error = "Enter −3 to 3 m. Previous value kept."
                             setText(AntennaHeightInput.format(current.cameraBelowReceiverM))
                         } else {
                             settingsRepo.setGnssReceiverSettings(current.copy(cameraBelowReceiverM = meters))
-                            if (fragment.view != null) clearAntennaHeightError(this@apply)
+                            if (isShown(view)) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
                         settingsError("Settings save failed section=cameraDistance", e)
@@ -895,7 +909,7 @@ internal class ReceiverSettingsController(
                         val profile = settingsRepo.externalReceiverProfile.first()
                         val meters = AntennaHeightInput.parsePhaseCenterOffsetMeters(typed)
                         if (meters == null) {
-                            if (fragment.view == null) return@launch
+                            if (!isShown(view)) return@launch
                             inputLayoutOf(this@apply)?.error = "Enter 0 to ${AntennaHeightInput.format(app.surrealar.settings.model.AntennaSetup.MAX_PHASE_CENTER_OFFSET_M)} m. Previous value kept."
                             setText(AntennaHeightInput.format(app.surrealar.settings.model.AntennaSetup.resolve(current, profile).phaseCenterOffsetM))
                         } else {
@@ -903,7 +917,7 @@ internal class ReceiverSettingsController(
                             val override = if (profile.phaseCenterOffsetM != null &&
                                 kotlin.math.abs(meters - profile.phaseCenterOffsetM) < 0.0005) null else meters
                             settingsRepo.setGnssReceiverSettings(current.copy(phaseCenterOffsetOverrideM = override))
-                            if (fragment.view != null) clearAntennaHeightError(this@apply)
+                            if (isShown(view)) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
                         settingsError("Settings save failed section=phaseCentreOffset", e)
@@ -931,12 +945,12 @@ internal class ReceiverSettingsController(
                         val current = settingsRepo.gnssReceiverSettings.first()
                         val meters = AntennaHeightInput.parseMeters(typed)
                         if (meters == null) {
-                            if (fragment.view == null) return@launch
+                            if (!isShown(view)) return@launch
                             showAntennaHeightError(this@apply)
                             setText(AntennaHeightInput.format(current.internalAntennaHeightM))
                         } else {
                             settingsRepo.setGnssReceiverSettings(current.copy(internalAntennaHeightM = meters))
-                            if (fragment.view != null) clearAntennaHeightError(this@apply)
+                            if (isShown(view)) clearAntennaHeightError(this@apply)
                         }
                     } catch (e: Exception) {
                         settingsError("Settings save failed section=internalAntennaHeight", e)
@@ -965,7 +979,7 @@ internal class ReceiverSettingsController(
             saveScope.launch {
                 try {
                     settingsRepo.setMockLocationEnabled(checked)
-                    if (!checked && fragment.view != null) errorBanner?.visibility = View.GONE
+                    if (!checked && isShown(view)) errorBanner?.visibility = View.GONE
                 } catch (e: Exception) {
                     settingsError("Settings save failed section=mockLocation", e)
                 }
@@ -1009,7 +1023,12 @@ internal class ReceiverSettingsController(
         }
 
         var initializing = true
-        fragment.lifecycleScope.launch {
+        // categoryScope (it binds THIS view): on the fragment's lifecycleScope it ran on after the
+        // category or the fragment view was gone, and its auto-reconnect then called
+        // connectViaTcpFlow -> fragment.viewLifecycleOwner, which throws once the fragment view is
+        // destroyed. Left before it finished, it runs again (incl. the one auto-reconnect) on the
+        // next visit; the attempt itself, once started, still survives a category switch.
+        categoryScope.launch {
             // Early load stored host/port so UI can show device immediately after reopen
             val storedHost = settingsRepo.externalTcpHost.first()
             val storedPort = settingsRepo.externalTcpPort.first()
@@ -1064,8 +1083,12 @@ internal class ReceiverSettingsController(
             initializing = false
         }
 
-        radioGroup?.setOnCheckedChangeListener { _, checkedId ->
+        radioGroup?.setOnCheckedChangeListener { group, checkedId ->
             if (initializing) return@setOnCheckedChangeListener
+            // RadioGroup.check() (used by Disconnect) also reports the button it is UNchecking, before
+            // the new one: that callback ran the External branch (persisted source EXTERNAL, re-enabled
+            // mock, could start a connect attempt) just before the Internal branch undid it. Ignore it.
+            if (group.findViewById<RadioButton>(checkedId)?.isChecked == false) return@setOnCheckedChangeListener
             when (checkedId) {
                 R.id.radio_internal -> {
                     DiagnosticsLogger.i(
@@ -1182,15 +1205,15 @@ internal class ReceiverSettingsController(
         tcpConnectJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
             try {
                 provisionalConnectedUntil = System.currentTimeMillis() + 8000L
-                fragment.view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
+                contentView?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                     tv.visibility = View.VISIBLE
                     tv.text = "Connecting…"
                     tv.setTextColor(ContextCompat.getColor(fragment.requireContext(), android.R.color.holo_orange_dark))
                 }
-                fragment.view?.findViewById<TextView>(R.id.text_device_status_sub)?.visibility = View.GONE
+                contentView?.findViewById<TextView>(R.id.text_device_status_sub)?.visibility = View.GONE
 
                 // Run TCP/NMEA and HTTP probes in parallel.
-                val (tcpResult, httpReachable) = coroutineScope {
+                val (tcpResult, httpReachable) = connectProbeOverride?.invoke(host, port) ?: coroutineScope {
                     val tcp  = async { connectAndReadTcpNmea(host, port) }
                     val http = async { probeHttpReachable(host) }
                     tcp.await() to http.await()
@@ -1248,12 +1271,12 @@ internal class ReceiverSettingsController(
                             // TCP failed but HTTP succeeded — receiver is present but NMEA port unavailable.
                             Triple("Receiver reachable", "NMEA stream unavailable", android.R.color.holo_orange_light)
                     }
-                    fragment.view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
+                    contentView?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
                         tv.text = statusText
                         tv.setTextColor(ContextCompat.getColor(fragment.requireContext(), statusColor))
                     }
-                    fragment.view?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
+                    contentView?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
                         tv.text = statusSubText
                         tv.visibility = View.VISIBLE
                     }
@@ -1279,12 +1302,12 @@ internal class ReceiverSettingsController(
                     // Both TCP and HTTP failed — receiver unreachable.
                     DiagnosticsLogger.w(DiagTags.RECEIVER,
                         "External receiver unavailable: connect probe failed tcp=$tcpResult http=$httpReachable port=$port attempt=$attemptId")
-                    fragment.view?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
+                    contentView?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
                         tv.visibility = View.VISIBLE
                         tv.text = "Receiver unavailable"
                         tv.setTextColor(ContextCompat.getColor(fragment.requireContext(), android.R.color.holo_red_dark))
                     }
-                    fragment.view?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
+                    contentView?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
                         tv.text = "Check IP or Wi-Fi"
                         tv.visibility = View.VISIBLE
                     }
