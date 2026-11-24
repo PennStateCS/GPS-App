@@ -141,6 +141,13 @@ internal class CoordinatesSettingsController(
                 .onFailure { settingsError("SPCS zone suggestion failed", it) }
                 .getOrNull()
 
+        // Is the live fix in [zone]? Same zone limits as the suggestion (geokit SpcsZoneLocator.check).
+        fun checkZone(zone: io.github.pennstatecs.geokit.projection.SpcsZone,
+                      fix: io.github.pennstatecs.geokit.gnss.model.Fix): io.github.pennstatecs.geokit.projection.SpcsZoneCheck? =
+            runCatching { io.github.pennstatecs.geokit.projection.SpcsZoneLocator.SPCS83.check(zone, fix.latDeg, fix.lonDeg) }
+                .onFailure { settingsError("SPCS zone check failed", it) }
+                .getOrNull()
+
         val hs = app.surrealar.settings.model.HorizontalSystem.entries
         val ds = app.surrealar.settings.model.OutputDatum.entries
         val us = app.surrealar.settings.model.LinearUnit.entries
@@ -181,7 +188,7 @@ internal class CoordinatesSettingsController(
             zoneHint?.text = when {
                 zone != null && suggestedZoneEpsg == zone.epsg -> SpcsZoneHints.suggestionHint(suggestion)
                 zone != null && fix != null && s.horizontal.isStatePlane ->
-                    SpcsZoneHints.mismatchHint(zone, locateZone(fix), zone.contains(fix.latDeg, fix.lonDeg))
+                    SpcsZoneHints.mismatchHint(zone, checkZone(zone, fix), locateZone(fix))
                         ?: defaultZoneHint
                 else -> defaultZoneHint
             }
@@ -203,12 +210,13 @@ internal class CoordinatesSettingsController(
         spinnerH.setOnItemClickListener { _, _, pos, _ ->
             val h = hs.getOrNull(pos) ?: return@setOnItemClickListener
             var next = current.copy(horizontal = h)
-            // Switching to State Plane: if the saved zone doesn't match the live position, suggest one
-            // (county-defined zone limits where they exist, else area-of-use boxes). The user can still pick.
+            // Switching to State Plane: if the saved zone certainly doesn't fit the live position, suggest
+            // one (county-defined zone limits where they exist, else area-of-use boxes). The user can still pick.
             val fix = fixSwitchboard.currentFix.value
             if (h.isStatePlane && fix != null) {
                 val found = locateZone(fix)
-                SpcsZoneHints.proposal(io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg), found)?.let {
+                val saved = io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)
+                SpcsZoneHints.proposal(saved, saved?.let { checkZone(it, fix) }, found)?.let {
                     next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg; suggestion = found
                 }
             }

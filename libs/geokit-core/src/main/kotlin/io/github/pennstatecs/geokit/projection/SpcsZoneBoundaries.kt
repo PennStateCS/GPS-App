@@ -43,6 +43,38 @@ internal class SpcsZoneBoundaries private constructor(
     /** Zone keys that have polygons. */
     val keys: Set<Int> get() = rings.keys
 
+    /**
+     * True when the point is within [marginM] metres of an edge of zone [key]'s extent. Distances use
+     * GRS80 metres per degree at the point's latitude (a local plane: fine at the sub-kilometre margins
+     * used). False for an unknown key.
+     */
+    fun isNearEdge(key: Int, latDeg: Double, lonDeg: Double, marginM: Double): Boolean {
+        val zoneRings = rings[key] ?: return false
+        val kx = io.github.pennstatecs.geokit.ellipsoid.Ellipsoid.GRS80.metersPerDegLon(latDeg) / scale
+        val ky = io.github.pennstatecs.geokit.ellipsoid.Ellipsoid.GRS80.metersPerDegLat(latDeg) / scale
+        val px = lonDeg * scale; val py = latDeg * scale
+        val padX = marginM / kx; val padY = marginM / ky
+        val m2 = marginM * marginM
+        for (r in zoneRings) {
+            if (px < r.minX - padX || px > r.maxX + padX || py < r.minY - padY || py > r.maxY + padY) continue
+            val xy = r.xy
+            val n = xy.size / 2
+            var j = n - 1
+            for (i in 0 until n) {
+                // Segment (j -> i) in metres relative to the point.
+                val ax = (xy[2 * j] - px) * kx; val ay = (xy[2 * j + 1] - py) * ky
+                val bx = (xy[2 * i] - px) * kx; val by = (xy[2 * i + 1] - py) * ky
+                val dx = bx - ax; val dy = by - ay
+                val len2 = dx * dx + dy * dy
+                val t = if (len2 == 0.0) 0.0 else (-(ax * dx + ay * dy) / len2).coerceIn(0.0, 1.0)
+                val cx = ax + t * dx; val cy = ay + t * dy
+                if (cx * cx + cy * cy <= m2) return true
+                j = i
+            }
+        }
+        return false
+    }
+
     /** True if the point (degrees) lies inside the polygons of zone [key]. */
     fun contains(key: Int, latDeg: Double, lonDeg: Double): Boolean {
         val zoneRings = rings[key] ?: return false

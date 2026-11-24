@@ -182,8 +182,10 @@ public data class OutputSystem(
  * @property utmZone UTM zone number (1..60) for [TargetSystem.UtmAuto], else null.
  * @property utmHemisphere 'N' or 'S' for [TargetSystem.UtmAuto], else null.
  * @property spcsZone the State Plane zone for [TargetSystem.StatePlane], else null.
- * @property outsideZone State Plane only: the NAD83(2011) position lies outside the zone's EPSG area
- *   of use (probably the wrong zone). Always false for other systems.
+ * @property outsideZone State Plane only: the NAD83(2011) position is certainly outside the zone
+ *   ([io.github.pennstatecs.geokit.projection.SpcsZoneLocator.check] = OUTSIDE: outside its area-of-use
+ *   box, or clearly inside another zone's county-defined extent). False near a zone line, offshore, and
+ *   where only the box is known (no claim). Always false for other systems.
  * @property heightM height for [OutputSystem.vertical], metres; null when unavailable (see
  *   [heightUnavailableReason]). Never a substituted 0.
  * @property heightUnavailableReason why [heightM] is null; null when a height is present.

@@ -4,8 +4,8 @@ package io.github.pennstatecs.geokit.projection
 public enum class SpcsZoneBasis {
     /**
      * The point lies inside the zone's legal extent, built from the counties that define it (Census
-     * 1:20,000,000 cartographic county lines). Reliable away from county lines; within a few hundred
-     * metres of a zone boundary the generalised lines can put a point on the wrong side.
+     * 1:500,000 cartographic county lines, simplified to ~50 m). Within [SpcsZoneLocator.BOUNDARY_MARGIN_M]
+     * of a zone line the result is reported as near the boundary (ambiguous / uncertain).
      */
     COUNTY_BOUNDARY,
 
@@ -32,10 +32,33 @@ public data class SpcsZoneSuggestion(
     public val suggested: SpcsZone?,
     public val candidates: List<SpcsZone>,
     public val basis: SpcsZoneBasis,
+    /** The point is within [SpcsZoneLocator.BOUNDARY_MARGIN_M] of a zone line: confirm the zone. */
+    public val nearBoundary: Boolean = false,
 ) {
-    /** True when more than one zone matches the point. */
-    public val isAmbiguous: Boolean get() = candidates.size > 1
+    /** True when more than one zone matches the point or it lies near a zone line. */
+    public val isAmbiguous: Boolean get() = candidates.size > 1 || nearBoundary
 }
+
+/** Whether a position lies in a given zone, as far as the bundled zone limits can tell. */
+public enum class SpcsZoneFit {
+    /** Inside the zone's county-defined extent, clear of its edges. */
+    INSIDE,
+
+    /**
+     * Outside the zone: outside its area-of-use box (which contains the whole zone), or inside another
+     * zone's county-defined extent clear of both zones' edges.
+     */
+    OUTSIDE,
+
+    /**
+     * Cannot be decided: near a zone line, offshore / outside the modelled coast, or the zone has no
+     * county-defined extent (Alaska) and only its area-of-use box is known. Never a claim either way.
+     */
+    UNCERTAIN,
+}
+
+/** Result of [SpcsZoneLocator.check]: the [fit] and what it is based on. */
+public data class SpcsZoneCheck(public val fit: SpcsZoneFit, public val basis: SpcsZoneBasis)
 
 /**
  * A family of State Plane zones together with the polygons of their legal extents.
@@ -59,15 +82,16 @@ public class SpcsZoneSet internal constructor(
     public val zones: List<SpcsZone>,
     boundaryResource: String?,
 ) {
+    /** Zone polygons, or null (boxes only) if there are none or the resource cannot be read. */
     internal val boundaries: SpcsZoneBoundaries? by lazy {
-        boundaryResource?.let { SpcsZoneBoundaries.fromClasspath(it) }
+        boundaryResource?.let { runCatching { SpcsZoneBoundaries.fromClasspath(it) }.getOrNull() }
     }
 
     /** True if [zone] is located by its county-defined extent (else by its area-of-use box). */
     public fun hasBoundary(zone: SpcsZone): Boolean = boundaries?.keys?.contains(zone.epsg) == true
 
     public companion object {
-        /** Classpath location of the SPCS83 zone polygons bundled in geokit-core's jar (~60 kB). */
+        /** Classpath location of the SPCS83 zone polygons bundled in geokit-core's jar (~360 kB). */
         public const val SPCS83_BOUNDARY_RESOURCE: String = "spcs/spcs83_zones.bin"
 
         /** The official SPCS83 zones on NAD83(2011) ([SpcsZones.all]). */
@@ -85,12 +109,12 @@ public class SpcsZoneSet internal constructor(
  * South before Kentucky Single Zone); all matches are returned as candidates.
  *
  * Input is latitude/longitude in degrees. The extents are NAD83, but WGS84 (a GNSS fix) may be passed:
- * the ~1-2 m datum difference is far below the generalisation of the county lines. Points within a few
- * hundred metres of a zone boundary may be assigned to the neighbouring zone; the result is a suggestion
- * for the user to confirm, never a substitute for choosing the zone of the project.
+ * the ~1-2 m datum difference is far below the accuracy of the county lines. Points within
+ * [BOUNDARY_MARGIN_M] of a zone line are flagged ([SpcsZoneSuggestion.nearBoundary]); the result is a
+ * suggestion for the user to confirm, never a substitute for choosing the zone of the project.
  *
- * The polygons load lazily on first use (about 60 kB from the classpath); [IllegalStateException] if the
- * resource is missing.
+ * The polygons load lazily on first use (about 360 kB from the classpath, a few tens of ms). If the
+ * resource is missing or unreadable the locator falls back to area-of-use boxes (never throws).
  */
 public class SpcsZoneLocator(public val zoneSet: SpcsZoneSet = SpcsZoneSet.SPCS83) {
 
@@ -100,14 +124,51 @@ public class SpcsZoneLocator(public val zoneSet: SpcsZoneSet = SpcsZoneSet.SPCS8
         val b = zoneSet.boundaries
         if (b != null) {
             val hits = zoneSet.zones.filter { b.contains(it.epsg, latDeg, lonDeg) }.sortedBy { it.areaDeg2 }
-            if (hits.isNotEmpty()) return SpcsZoneSuggestion(hits.first(), hits, SpcsZoneBasis.COUNTY_BOUNDARY)
+            if (hits.isNotEmpty()) {
+                // Near a zone line: the neighbouring zone(s) are candidates too, listed after the hits.
+                val near = zoneSet.zones.filter { it !in hits && b.isNearEdge(it.epsg, latDeg, lonDeg, BOUNDARY_MARGIN_M) }
+                val nearLine = near.isNotEmpty() || hits.any { b.isNearEdge(it.epsg, latDeg, lonDeg, BOUNDARY_MARGIN_M) }
+                return SpcsZoneSuggestion(hits.first(), hits + near, SpcsZoneBasis.COUNTY_BOUNDARY, nearLine)
+            }
         }
         val boxes = zoneSet.zones.filter { it.contains(latDeg, lonDeg) }.sortedBy { it.areaDeg2 }
         return if (boxes.isEmpty()) SpcsZoneSuggestion(null, emptyList(), SpcsZoneBasis.NONE)
         else SpcsZoneSuggestion(boxes.first(), boxes, SpcsZoneBasis.AREA_OF_USE_BOX)
     }
 
+    /**
+     * Whether ([latDeg], [lonDeg]) lies in [zone] (degrees; WGS84 input is fine, see the class doc).
+     * Conservative: [SpcsZoneFit.OUTSIDE] only when certain from the zone limits, [SpcsZoneFit.UNCERTAIN]
+     * near zone lines, offshore, or where only the area-of-use box is known (Alaska). Cheap enough per
+     * GNSS fix: box test, then one pass over the zone's own edges (~a few thousand points).
+     */
+    public fun check(zone: SpcsZone, latDeg: Double, lonDeg: Double): SpcsZoneCheck {
+        if (!latDeg.isFinite() || !lonDeg.isFinite()) return SpcsZoneCheck(SpcsZoneFit.UNCERTAIN, SpcsZoneBasis.NONE)
+        // The area-of-use box contains the whole zone, so outside it is outside the zone.
+        if (!zone.contains(latDeg, lonDeg)) return SpcsZoneCheck(SpcsZoneFit.OUTSIDE, SpcsZoneBasis.AREA_OF_USE_BOX)
+        val b = zoneSet.boundaries
+        if (b == null || zone.epsg !in b.keys) return SpcsZoneCheck(SpcsZoneFit.UNCERTAIN, SpcsZoneBasis.AREA_OF_USE_BOX)
+        if (b.isNearEdge(zone.epsg, latDeg, lonDeg, BOUNDARY_MARGIN_M)) {
+            return SpcsZoneCheck(SpcsZoneFit.UNCERTAIN, SpcsZoneBasis.COUNTY_BOUNDARY)
+        }
+        if (b.contains(zone.epsg, latDeg, lonDeg)) return SpcsZoneCheck(SpcsZoneFit.INSIDE, SpcsZoneBasis.COUNTY_BOUNDARY)
+        // Outside this zone's extent: certain only if the point is clearly inside another zone (on land);
+        // offshore or beyond the modelled coast the legal extent is not modelled.
+        val elsewhere = zoneSet.zones.any {
+            it.epsg != zone.epsg && it.epsg in b.keys && b.contains(it.epsg, latDeg, lonDeg) &&
+                !b.isNearEdge(it.epsg, latDeg, lonDeg, BOUNDARY_MARGIN_M)
+        }
+        return if (elsewhere) SpcsZoneCheck(SpcsZoneFit.OUTSIDE, SpcsZoneBasis.COUNTY_BOUNDARY)
+        else SpcsZoneCheck(SpcsZoneFit.UNCERTAIN, SpcsZoneBasis.AREA_OF_USE_BOX)
+    }
+
     public companion object {
+        /**
+         * Distance from a zone line inside which a position is not assigned with confidence: covers the
+         * ~50 m simplification, the accuracy of the 1:500k Census lines and the WGS84/NAD83 difference.
+         */
+        public const val BOUNDARY_MARGIN_M: Double = 250.0
+
         /** Locator over [SpcsZoneSet.SPCS83]. */
         public val SPCS83: SpcsZoneLocator by lazy { SpcsZoneLocator(SpcsZoneSet.SPCS83) }
     }

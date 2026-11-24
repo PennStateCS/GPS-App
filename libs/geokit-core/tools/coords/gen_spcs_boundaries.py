@@ -7,19 +7,24 @@ Pennsylvania - counties of Bradford; Cameron; ...". This script maps every count
 cartographic boundary file to its zone from those descriptions, dissolves the county polygons per
 zone and writes them as a compact binary resource.
 
-usage: gen_spcs_boundaries.py <cb_2023_us_county_20m.zip> <out spcs83_zones.bin> <out county csv>
+usage: gen_spcs_boundaries.py <cb_2023_us_county_500k.zip> <out spcs83_zones.bin> <out county csv>
 
 Inputs (both public, pinned):
   * PROJ 9.8.1 EPSG database via pyproj 3.8.0 (same as gen_spcs.py).
-  * US Census Bureau cartographic boundary file, counties, 1:20,000,000, 2023:
-    https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_county_20m.zip
-    (public domain; sha256 479956f6e3cb1573705c1ceb35d17ca7cd1b5179f3947ee6adbaa274b7e931e4).
+  * US Census Bureau cartographic boundary file, counties, 1:500,000, 2023 (public domain):
+    https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_county_500k.zip
+    (sha256 99d6597b1fc7767deef62e01d28d8b5dcbd578e151855f7dc0d173cbf5bf0868).
+    Each dissolved zone is simplified with a 0.0005 deg (~50 m) tolerance (SIMPLIFY_DEG), so a zone line
+    is within ~50 m of the 1:500k line. The 1:20M file (sha256 479956f6...e931e4) is still accepted
+    unsimplified for comparison, but it departs from the 1:500k lines by up to several km along coasts
+    and rivers (measured 2026-11-24: per-zone 95th percentile up to 3.4 km), so it is not used.
 Tooling only: shapely 2.2.0 (polygon dissolve / clip). The shapefile and dBase readers are below.
 
 Zones that are NOT written (the library falls back to the EPSG area-of-use box for them):
   * Alaska zones 1-10: defined by meridians/parallels and the Aleutians, not by boroughs.
-States without an NAD83(2011) SPCS zone in EPSG (Hawaii) and the District of Columbia (not named in any
-EPSG description) are not written either.
+States without an NAD83(2011) SPCS zone in EPSG (Hawaii) are not written either. The District of Columbia
+is not named in any EPSG description; by NGS convention (NOAA Manual NOS NGS 5) it uses the Maryland zone,
+so it is added to Maryland (DC_ZONE).
 
 Special cases (asserted below):
   * Single-zone states, Kentucky Single Zone and Puerto Rico: every county-equivalent of the state.
@@ -55,8 +60,12 @@ import shapely
 from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.ops import unary_union
 
-CENSUS_SHA256 = "479956f6e3cb1573705c1ceb35d17ca7cd1b5179f3947ee6adbaa274b7e931e4"
-SCALE = 10000  # 1e-4 degree (~11 m): far below the 1:20M generalisation of the county lines.
+# sha256 -> (member stem in the zip, simplification tolerance in degrees or None)
+CENSUS_FILES = {
+    "99d6597b1fc7767deef62e01d28d8b5dcbd578e151855f7dc0d173cbf5bf0868": ("cb_2023_us_county_500k", 0.0005),
+    "479956f6e3cb1573705c1ceb35d17ca7cd1b5179f3947ee6adbaa274b7e931e4": ("cb_2023_us_county_20m", None),
+}
+SCALE = 10000  # 1e-4 degree (~11 m): below the ~50 m simplification of the 1:500k county lines.
 
 ALIASES = {  # (state FIPS, normalised EPSG spelling) -> normalised Census name
     ("12", "dade"): "miamidade",
@@ -68,6 +77,7 @@ ADDITIONS = {("08", "Broomfield"): "Colorado North"}   # City and County of Broo
 VA_NORTH_CITIES = {"Alexandria", "Fairfax", "Falls Church", "Fredericksburg", "Harrisonburg",
                    "Manassas", "Manassas Park", "Staunton", "Waynesboro", "Winchester"}
 WA_GRANT_SPLIT_LAT = 47.5
+DC_GEOID, DC_ZONE = "11001", "Maryland"   # NGS: DC uses the Maryland SPCS83 zone
 
 
 def norm(name):
@@ -150,11 +160,12 @@ def county_list(desc):
 def main():
     census_zip, out_bin, out_csv = sys.argv[1:4]
     digest = hashlib.sha256(open(census_zip, "rb").read()).hexdigest()
-    if digest != CENSUS_SHA256:
-        raise SystemExit(f"unexpected county file (sha256 {digest}); update CENSUS_SHA256 only on purpose")
+    if digest not in CENSUS_FILES:
+        raise SystemExit(f"unexpected county file (sha256 {digest}); update CENSUS_FILES only on purpose")
+    stem, simplify_deg = CENSUS_FILES[digest]
     z = zipfile.ZipFile(census_zip)
-    rows = read_dbf(z.read("cb_2023_us_county_20m.dbf"))
-    geoms = read_shp_polygons(z.read("cb_2023_us_county_20m.shp"))
+    rows = read_dbf(z.read(f"{stem}.dbf"))
+    geoms = read_shp_polygons(z.read(f"{stem}.shp"))
     assert len(rows) == len(geoms)
     counties = [dict(r, geom=g) for r, g in zip(rows, geoms)]
     state_names = {r["STATE_NAME"]: r["STATEFP"] for r in rows}
@@ -237,13 +248,19 @@ def main():
             ok = len(zl) == 1 or (st == "21" and len(zl) == 2) or notes[c["GEOID"]].startswith("split")
             assert ok, f"{c['NAMELSAD']}, {c['STATE_NAME']}: zones {zl}"
 
+    # District of Columbia: no EPSG description names it; NGS assigns it to the Maryland zone.
+    dc = next((c for c in counties if c["GEOID"] == DC_GEOID), None)
+    assert dc is not None and DC_GEOID not in assign
+    assign[DC_GEOID] = [(next(e for e, n, _ in zones if n == DC_ZONE), None)]
+    notes[DC_GEOID] = "not in EPSG list: NGS uses the Maryland zone"
+
     # Dissolve per zone.
     parts = {}
     csv = ["geoid,state,county,zone_epsg,basis"]
     for c in sorted(counties, key=lambda c: c["GEOID"]):
         for epsg, part in assign.get(c["GEOID"], []):
             parts.setdefault(epsg, []).append(part if part is not None else c["geom"])
-            csv.append(f'{c["GEOID"]},{c["STUSPS"]},"{c["NAMELSAD"]}",{epsg},{notes[c["GEOID"]]}')
+            csv.append(f'{c["GEOID"]},{c["STUSPS"]},"{c["NAMELSAD"]}",{epsg},"{notes[c["GEOID"]]}"')
 
     out = io.BytesIO()
     out.write(b"SPZB")
@@ -251,6 +268,10 @@ def main():
     total_pts = 0
     for epsg in sorted(parts):
         g = unary_union(parts[epsg])
+        if simplify_deg:
+            g = g.simplify(simplify_deg, preserve_topology=True)
+            if not g.is_valid:
+                g = shapely.make_valid(g)
         polys = list(g.geoms) if hasattr(g, "geoms") else [g]
         rings = []
         for p in polys:

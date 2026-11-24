@@ -63,7 +63,10 @@ public class CoordinateConverter(private val geoid: GeoidLookup) {
                 val (e, n) = z.projection.forward(nad.latDeg, nad.lonDeg)
                 eastingM = e; northingM = n
                 zoneLabel = "SPCS ${z.zoneCode}"
-                outsideZone = !z.contains(nad.latDeg, nad.lonDeg)
+                // Same zone limits as the zone suggestion: true only when certainly outside (outside the
+                // area-of-use box, or clearly inside another zone); near a zone line or offshore → false.
+                outsideZone = io.github.pennstatecs.geokit.projection.SpcsZoneLocator.SPCS83
+                    .check(z, nad.latDeg, nad.lonDeg).fit == io.github.pennstatecs.geokit.projection.SpcsZoneFit.OUTSIDE
             }
         }
 
