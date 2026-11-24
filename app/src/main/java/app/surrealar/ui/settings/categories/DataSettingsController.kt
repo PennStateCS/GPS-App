@@ -46,6 +46,19 @@ import java.nio.charset.StandardCharsets
  * [onImportResult]). Exports and the import run on [saveScope], so leaving the category or Settings
  * does not cancel a write the user started; the import job is kept here so Cancel works from a later
  * visit to this category.
+ *
+ * Lifecycle expectations:
+ * - Long-running file work uses the application context captured when it starts, never the fragment.
+ * - UI from that work goes only to the CURRENT Data view ([root]; progress is re-shown when the
+ *   category is opened again during an import) or to the fragment's view for snackbars
+ *   ([showSettingsMessage] skips them when the fragment has no view).
+ * - A launcher result is delivered to the fragment instance that is current at that moment (the
+ *   Activity Result registry re-delivers to a recreated fragment's launcher), so the new fragment's
+ *   controller handles it; a null uri (picker cancelled) does nothing.
+ * - Partial-replace confirmation (a Replace whose backup has invalid rows) is asked whenever the
+ *   fragment is still added, even if the user switched to another category (the dialog belongs to the
+ *   activity). If the fragment is gone when it is needed, or is destroyed while the dialog is open
+ *   (e.g. rotation), the answer is CANCEL: nothing is deleted and the existing points are kept.
  */
 internal class DataSettingsController(
     private val fragment: Fragment,
@@ -59,13 +72,18 @@ internal class DataSettingsController(
     private val exportBackupLauncher: ActivityResultLauncher<String>,
     private val exportPointsCsvLauncher: ActivityResultLauncher<String>,
     private val importBackupLauncher: ActivityResultLauncher<Array<String>>,
+    /** The import use case call; a parameter so tests can drive the partial-replace confirmation. */
+    private val runImport: suspend (raw: String, replace: Boolean,
+                                    confirm: suspend (app.surrealar.data.backup.BackupImportPlan, Int) -> PartialReplaceDecision,
+    ) -> app.surrealar.data.backup.BackupImportPlan = { raw, replace, confirm -> importBackup(raw, replace, confirm) },
 ) : SettingsCategoryController {
 
     // Coordinate backup import state (survives category switches, like the fragment fields it replaces)
     private var pendingImportUri: Uri? = null
     private var coordinatesImportJob: Job? = null
-    private var importProcessed: Int = 0
-    private var importTotal: Int = 0
+    /** Last progress shown for the running import, re-shown when the Data view is built again. */
+    private var importProgressPercent: Int = 0
+    private var importProgressStatus: String = ""
 
     /** This category's view while it is shown (progress updates go to it); null otherwise. */
     private var root: View? = null
@@ -95,6 +113,8 @@ internal class DataSettingsController(
             settingsError("Settings section setup failed section=data", e)
         }
         root = view
+        // An import still running from an earlier visit: show its progress (and the Cancel button) again.
+        if (coordinatesImportJob?.isActive == true) showImportProgress(true, importProgressPercent, importProgressStatus)
         return view
     }
 
@@ -192,23 +212,43 @@ internal class DataSettingsController(
     // --- Import pipeline (full JSON backup; basic JSON arrays are still auto-detected) ---
     private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri) {
         val existing = withContext(Dispatchers.IO) { repository.getAllCoordinatesList().size }
-        if (existing == 0) { launchImportCoordinates(uri, replace = false); return }
+        // Captured now (still attached: this runs on the fragment's lifecycleScope): the import and the
+        // dialog's buttons may run after the fragment has gone.
+        val appContext = fragment.requireContext().applicationContext
+        if (existing == 0) { launchImportCoordinates(appContext, uri, replace = false); return }
         pendingImportUri = uri
         if (!fragment.isAdded) return
         // Duplicate-ID policy: merge overwrites matching IDs (and reports the count); replace clears
         // first. The user must confirm before any existing data is overwritten.
-        AlertDialog.Builder(fragment.requireContext())
+        val dialog = AlertDialog.Builder(fragment.requireContext())
             .setTitle(fragment.getString(R.string.import_select_file_title))
             .setMessage(fragment.getString(R.string.import_merge_replace_message))
-            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false) } }
-            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true) } }
+            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(appContext, it, false) } }
+            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(appContext, it, true) } }
             .setNegativeButton(R.string.import_cancel, null)
             .show()
+        dismissWhenFragmentDestroyed(dialog)
+    }
+
+    /**
+     * Dismisses [dialog] when the fragment is destroyed while it is open (e.g. rotation), so it does
+     * not outlive its activity, and runs [onDismiss] on every dismissal (buttons included).
+     */
+    private fun dismissWhenFragmentDestroyed(dialog: android.app.Dialog, onDismiss: () -> Unit = {}) {
+        val lifecycle = fragment.lifecycle
+        val observer = object : androidx.lifecycle.DefaultLifecycleObserver {
+            override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) { dialog.dismiss() }
+        }
+        dialog.setOnDismissListener {
+            lifecycle.removeObserver(observer)
+            onDismiss()
+        }
+        lifecycle.addObserver(observer)
     }
 
     /**
      * Second confirmation for a Replace whose backup has invalid rows, now that the counts are known.
-     * Cancel (or a dismissed dialog / gone screen) keeps the existing points.
+     * Cancel (or a dismissed dialog / gone or destroyed fragment) keeps the existing points.
      */
     private suspend fun confirmPartialReplace(
         plan: app.surrealar.data.backup.BackupImportPlan, existingCount: Int,
@@ -231,22 +271,24 @@ internal class DataSettingsController(
                     .setNegativeButton(R.string.import_cancel) { _, _ -> answer(PartialReplaceDecision.CANCEL) }
                     .setOnCancelListener { answer(PartialReplaceDecision.CANCEL) }
                     .show()
+                // Destroyed with the dialog open (rotation): answer CANCEL instead of waiting forever
+                // (the import job would hang and hold the old fragment). Any other dismissal also
+                // answers CANCEL; a button answer comes first, so this is then a no-op.
+                dismissWhenFragmentDestroyed(dialog) { answer(PartialReplaceDecision.CANCEL) }
                 cont.invokeOnCancellation { dialog.dismiss() }
             }
         }.also { DiagnosticsLogger.i(DiagTags.DATA, "Backup replace confirmation answered decision=$it") }
     }
 
-    private fun launchImportCoordinates(uri: Uri, replace: Boolean) {
+    private fun launchImportCoordinates(appContext: Context, uri: Uri, replace: Boolean) {
         if (coordinatesImportJob?.isActive == true) return
         // Save scope: leaving Settings must not cancel the import mid-write. Cancel still works
         // through the job reference.
-        val appContext = fragment.requireContext().applicationContext
         coordinatesImportJob = saveScope.launch { importCoordinates(appContext, uri, replace) }
     }
 
     private suspend fun importCoordinates(appContext: Context, uri: Uri, replace: Boolean) {
         showImportProgress(true, 0, "Scanning…")
-        importProcessed = 0; importTotal = 0
         runCatching {
             // Fragment owns the URI read; the use case parses, plans (duplicates/missing models),
             // and writes via the repositories.
@@ -262,7 +304,7 @@ internal class DataSettingsController(
                 throw e
             }
             showImportProgress(true, 70, "Writing…")
-            importBackup(raw, replace) { plan, existingCount -> confirmPartialReplace(plan, existingCount) }
+            runImport(raw, replace) { plan, existingCount -> confirmPartialReplace(plan, existingCount) }
         }.onSuccess { plan ->
             showImportProgress(false, 100, when {
                 plan.cancelled -> "Canceled"
@@ -286,8 +328,12 @@ internal class DataSettingsController(
     }
 
     private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
+        importProgressPercent = percent
+        importProgressStatus = status
         try {
-            root?.findViewById<LinearLayout>(R.id.import_progress_container)?.let { c ->
+            // A MaterialCardView: looking it up as LinearLayout threw ClassCastException (caught below),
+            // so the progress card - and its Cancel button - never appeared.
+            root?.findViewById<View>(R.id.import_progress_container)?.let { c ->
                 c.visibility = if (visible) View.VISIBLE else View.GONE
                 if (visible) {
                     c.findViewById<ProgressBar>(R.id.progress_import)?.progress = percent.coerceIn(0, 100)
