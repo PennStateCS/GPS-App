@@ -23,6 +23,15 @@ import kotlin.math.tanh
 public sealed interface SpcsProjection {
     /** NAD83(2011) latitude/longitude (degrees) → (easting, northing) metres. */
     public fun forward(latDeg: Double, lonDeg: Double): Pair<Double, Double>
+
+    /** The projection method (EPSG method code and parameter keys). */
+    public val method: ProjectionMethod
+
+    /**
+     * The defining parameters, keyed by [ProjectionMethod.parameterNames] in that order (degrees,
+     * metres), exactly as passed to the constructor. Metadata only: the maths uses its own fields.
+     */
+    public val parameters: Map<String, Double>
 }
 
 /** [lonDeg] shifted by ±360° to lie within 180° of [originDeg] (Alaska zone 10 spans the antimeridian). */
@@ -42,6 +51,10 @@ internal fun lonNear(lonDeg: Double, originDeg: Double): Double {
  */
 public class Lcc2(latOrigin: Double, private val lonOrigin: Double, lat1: Double, lat2: Double, fe: Double, fn: Double) : SpcsProjection {
     private val lcc = LambertConformalConic(latOrigin, lonOrigin, lat1, lat2, fe, fn)
+    override val method: ProjectionMethod get() = ProjectionMethod.LAMBERT_CONIC_CONFORMAL_2SP
+    override val parameters: Map<String, Double> = linkedMapOf(
+        "lat_0" to latOrigin, "lon_0" to lonOrigin, "lat_1" to lat1, "lat_2" to lat2, "x_0" to fe, "y_0" to fn,
+    )
     override fun forward(latDeg: Double, lonDeg: Double): Pair<Double, Double> = lcc.forward(latDeg, lonNear(lonDeg, lonOrigin))
 
     /** Inverse: (easting, northing) metres → (latitude, longitude) degrees. */
@@ -58,6 +71,10 @@ public class Lcc2(latOrigin: Double, private val lonOrigin: Double, lat1: Double
 public class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0: Double,
          private val fe: Double, private val fn: Double,
          private val ellipsoid: Ellipsoid = Ellipsoid.GRS80) : SpcsProjection {
+    override val method: ProjectionMethod get() = ProjectionMethod.TRANSVERSE_MERCATOR
+    override val parameters: Map<String, Double> = linkedMapOf(
+        "lat_0" to latOrigin, "lon_0" to lonOrigin, "k_0" to k0, "x_0" to fe, "y_0" to fn,
+    )
     private val e = sqrt(ellipsoid.eccentricitySquared)
     private val n = ellipsoid.thirdFlattening
     private val b = ellipsoid.semiMajorAxisM / (1 + n) * (1 + n * n / 4 + n.pow(4) / 64)
@@ -140,6 +157,11 @@ public class Tm(latOrigin: Double, private val lonOrigin: Double, private val k0
  */
 public class HomA(latCentre: Double, lonCentre: Double, azimuthDeg: Double, rectifiedToSkewDeg: Double,
            kc: Double, private val fe: Double, private val fn: Double) : SpcsProjection {
+    override val method: ProjectionMethod get() = ProjectionMethod.HOTINE_OBLIQUE_MERCATOR_A
+    override val parameters: Map<String, Double> = linkedMapOf(
+        "lat_0" to latCentre, "lonc" to lonCentre, "alpha" to azimuthDeg, "gamma" to rectifiedToSkewDeg,
+        "k_0" to kc, "x_0" to fe, "y_0" to fn,
+    )
     private val e = sqrt(Ellipsoid.GRS80.eccentricitySquared)
     private val bb: Double
     private val aa: Double
