@@ -98,7 +98,7 @@ class ReportPrivacyTest {
 
     private suspend fun buildZip(): Map<String, String> {
         val zip = File(tmp.root, "report.zip")
-        ReportAssembler.write(zip, SecretSources(tmp.newFolder("src")), flush = {})
+        ReportAssembler.write(zip, SecretSources(tmp.newFolder("src")), flush = { true })
         return ZipFile(zip).use { z ->
             z.entries().toList().associate { it.name to z.getInputStream(it).readBytes().toString(Charsets.UTF_8) }
         }
