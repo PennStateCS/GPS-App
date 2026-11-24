@@ -40,6 +40,8 @@ object ArSessionDiagnostics {
         @Volatile var reason: String? = null,
     )
 
+    /** `ar=` correlation id of the current AR screen session (`a3`), minted in [startSession]; null before the first. */
+    @Volatile var sessionId: String? = null;  private set
     @Volatile var openedAtMs = 0L;  private set
     @Volatile var closedAtMs = 0L;  private set
     @Volatile var coordinateCount = 0
@@ -80,6 +82,7 @@ object ArSessionDiagnostics {
     @Synchronized
     fun startSession() {
         models.clear()
+        sessionId = app.surrealar.util.diagnostics.DiagIds.next(app.surrealar.util.diagnostics.DiagIds.AR)
         openedAtMs = System.currentTimeMillis(); closedAtMs = 0L
         coordinateCount = 0; linkedModelCount = 0; coordinatesVisible = 0; labelsShown = 0
         anchorsAttempted = 0; anchorsCreated = 0; anchorFailures = 0

@@ -1,6 +1,10 @@
 package app.surrealar.ui.openinar
 
 import app.surrealar.util.diagnostics.LogPrivacy
+import app.surrealar.util.diagnostics.DiagEvents
+import app.surrealar.util.diagnostics.DiagIds
+import app.surrealar.util.diagnostics.DiagLine
+import app.surrealar.util.diagnostics.DiagTags
 import android.opengl.Matrix
 import android.os.Handler
 import android.os.Looper
@@ -509,6 +513,9 @@ class ArFilamentRenderer {
         loadingPaths[key] = filePath
         val testKey = isTestKey(key)
         val fileName = File(filePath).name
+        // One op= id per real model load, on its start and outcome lines (diagnostics only).
+        val op = if (testKey) null else DiagIds.next(DiagIds.OP)
+        val ar = ArSessionDiagnostics.sessionId
         if (testKey) {
             synchronized(testBatchLock) { testPreloadPending++ }
             // Per test pin: logcat only (the batch summary goes to the file).
@@ -517,7 +524,7 @@ class ArFilamentRenderer {
             // No file stat here (main thread); OpenInARFragment's "preload dispatch" line has the file facts.
             loadStartMs[key] = SystemClock.elapsedRealtime()
             stuckLogged.remove(key)
-            DiagnosticsLogger.i(DIAG, "Model preload started key=$key file=${LogPrivacy.file(fileName)}")
+            DiagnosticsLogger.i(DIAG, "Model preload started key=$key op=$op ar=${ar ?: "unknown"} file=${LogPrivacy.file(fileName)}")
         }
         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.LOADING)
         scope.launch {
@@ -542,7 +549,7 @@ class ArFilamentRenderer {
                         if (!initialized) {
                             // Lifecycle cancellation: the user left AR before the GLB finished loading.
                             if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload aborted key=$key reason=\"renderer destroyed while loading\"" }
-                            else DiagnosticsLogger.w(DIAG, "Model preload aborted: renderer destroyed while loading key=$key")
+                            else DiagnosticsLogger.w(DIAG, "Model preload aborted: renderer destroyed while loading key=$key op=$op")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "lifecycle_cancelled")
                             loadingKeys.remove(key)
                             settlePreload(key, ok = false, ticket)
@@ -552,7 +559,7 @@ class ArFilamentRenderer {
                             // Deleted, unlinked or relinked while the file was being read: the asset is
                             // never created (nothing to destroy mid-upload); a newer request is re-issued
                             // by settlePreload. Checked and published with no suspension in between.
-                            DiagnosticsLogger.i(DIAG, "Model load discarded: request superseded key=$key file=${LogPrivacy.file(fileName)}")
+                            DiagnosticsLogger.i(DIAG, "Model load discarded: request superseded key=$key op=$op file=${LogPrivacy.file(fileName)}")
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.SKIPPED, "superseded")
                             loadingKeys.remove(key)
                             fileReadMutex.withLock { fileBytesCache.remove(filePath) }
@@ -563,8 +570,10 @@ class ArFilamentRenderer {
                         // createAsset parses the GLB/GLTF; null means parse / asset creation failed.
                         val asset = assetLoader.createAsset(buffer)
                         if (asset == null) {
-                            DiagnosticsLogger.e(DIAG, "Model preload failed: GLB parse or asset creation failed key=$key " +
-                                "file=${LogPrivacy.file(fileName)} ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}")
+                            DiagnosticsLogger.e(DiagTags.MODEL, DiagLine.of(DiagEvents.MODEL_LOAD, "result" to "FAILED",
+                                "reason" to "filament_asset_failed", DiagEvents.K_OP to op, DiagEvents.K_AR to ar,
+                                extra = "key=$key file=${LogPrivacy.file(fileName)} ext=${fileName.substringAfterLast('.', "").lowercase()} sizeBytes=${bytes.size}",
+                                text = "Model preload failed: GLB parse or asset creation failed"))
                             ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "filament_asset_failed")
                             loadingKeys.remove(key)
                             settlePreload(key, ok = false, ticket)
@@ -582,7 +591,9 @@ class ArFilamentRenderer {
                         // the same path simply re-reads it from disk.
                         fileReadMutex.withLock { fileBytesCache.remove(filePath) }
                         if (testKey) app.surrealar.util.DevLog.d(TAG) { "preload success key=$key entities=${asset.entities.size}" }
-                        else DiagnosticsLogger.i(DIAG, "Model preload succeeded key=$key entities=${asset.entities.size}")
+                        else DiagnosticsLogger.i(DiagTags.MODEL, DiagLine.of(DiagEvents.MODEL_LOAD, "result" to "OK",
+                            DiagEvents.K_OP to op, DiagEvents.K_AR to ar, extra = "key=$key entities=${asset.entities.size}",
+                            text = "Model preload succeeded"))
                         ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.READY)
                         settlePreload(key, ok = true, ticket)
                     }
@@ -595,7 +606,10 @@ class ArFilamentRenderer {
                 throw e
             } catch (e: Exception) {
                 loadingKeys.remove(key)
-                DiagnosticsLogger.e(DIAG, "Model preload failed key=$key file=${LogPrivacy.file(fileName)}", e)
+                if (testKey) DiagnosticsLogger.e(DIAG, "Model preload failed key=$key file=${LogPrivacy.file(fileName)}", e)
+                else DiagnosticsLogger.e(DiagTags.MODEL, DiagLine.of(DiagEvents.MODEL_LOAD, "result" to "FAILED",
+                    "reason" to LogPrivacy.errorType(e), DiagEvents.K_OP to op, DiagEvents.K_AR to ar,
+                    extra = "key=$key file=${LogPrivacy.file(fileName)}", text = "Model preload failed"), e)
                 ArSessionDiagnostics.setStatus(key, ArSessionDiagnostics.ModelStatus.FAILED, "parse_failed")
                 settlePreload(key, ok = false, ticket)
             }
