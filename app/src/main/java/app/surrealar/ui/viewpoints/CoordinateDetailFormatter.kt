@@ -258,7 +258,7 @@ object CoordinateDetailFormatter {
             "Latitude: ${fmt6(c.latitude)}°",
             "Longitude: ${fmt6(c.longitude)}°",
         )
-        if (c.altitude.isFinite()) lines += "Altitude: ${fmtM2(c.altitude)}"
+        if (c.altitude.isFinite()) lines += "Ellipsoidal height h: ${fmtM2(c.altitude)}"
         val e = c.easting; val n = c.northing; val zone = c.utmZone
         if (e != null && n != null && !zone.isNullOrBlank()) {
             lines += "UTM: $zone ${String.format(Locale.US, "%.3f", e)} E, ${String.format(Locale.US, "%.3f", n)} N"

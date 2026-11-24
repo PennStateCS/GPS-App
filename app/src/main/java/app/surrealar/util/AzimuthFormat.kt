@@ -1,7 +1,6 @@
 package app.surrealar.util
 
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /**
@@ -14,6 +13,8 @@ import kotlin.math.roundToLong
 object AzimuthFormat {
 
     private const val FULL_CIRCLE_MIN = 360L * 60L
+    /** Shown for a non-finite direction (never thrown on the UI thread). */
+    const val NO_VALUE = "--"
 
     /** Normalises any angle into [0, 360). */
     fun normalize(deg: Double): Double {
@@ -27,6 +28,7 @@ object AzimuthFormat {
      */
     fun azimuthText(deg: Double, decimals: Int = 0): String {
         require(decimals in 0..6) { "decimals out of range: $decimals" }
+        if (!deg.isFinite()) return NO_VALUE
         val scale = Math.pow(10.0, decimals.toDouble())
         var rounded = (normalize(deg) * scale).roundToLong() / scale
         if (rounded >= 360.0) rounded -= 360.0
@@ -38,6 +40,7 @@ object AzimuthFormat {
      * a cardinal point is just its letter ("N", "E", "S", "W").
      */
     fun quadrantBearing(azimuthDeg: Double): String {
+        if (!azimuthDeg.isFinite()) return NO_VALUE
         val m = Math.floorMod((normalize(azimuthDeg) * 60.0).roundToLong(), FULL_CIRCLE_MIN)
         val quarter = FULL_CIRCLE_MIN / 4
         return when {
@@ -53,7 +56,7 @@ object AzimuthFormat {
     }
 
     private fun quadrant(from: String, minutes: Long, to: String): String {
-        val q = abs(minutes)
+        val q = minutes
         return String.format(Locale.US, "%s %d°%02d′ %s", from, q / 60, q % 60, to)
     }
 }

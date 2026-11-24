@@ -51,4 +51,11 @@ class AzimuthFormatTest {
         assertEquals(0.0, AzimuthFormat.normalize(360.0), 1e-12)
         assertEquals(10.0, AzimuthFormat.normalize(370.0), 1e-12)
     }
+
+    @Test fun `non-finite directions show a placeholder instead of throwing`() {
+        for (v in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            org.junit.Assert.assertEquals("--", AzimuthFormat.azimuthText(v))
+            org.junit.Assert.assertEquals("--", AzimuthFormat.quadrantBearing(v))
+        }
+    }
 }

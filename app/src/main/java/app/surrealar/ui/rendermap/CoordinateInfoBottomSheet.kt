@@ -81,7 +81,7 @@ class CoordinateInfoBottomSheet : BottomSheetDialogFragment() {
 
             titleView.text = name
             coordsView.text = String.format(Locale.US, "%.6f, %.6f", lat, lon)
-            altView.text = String.format(Locale.US, "Altitude: %.2f m", alt)
+            altView.text = String.format(Locale.US, "Ellipsoidal height h: %.2f m", alt)
 
             try {
                 @Suppress("DiscouragedApi")

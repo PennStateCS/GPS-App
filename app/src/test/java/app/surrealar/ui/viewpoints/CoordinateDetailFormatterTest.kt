@@ -153,7 +153,7 @@ class CoordinateDetailFormatterTest {
         )
         val s = CoordinateDetailFormatter.locationSummary(full)
         assertEquals(
-            "Latitude: 41.347822°\nLongitude: -76.022615°\nAltitude: 399.10 m\n" +
+            "Latitude: 41.347822°\nLongitude: -76.022615°\nEllipsoidal height h: 399.10 m\n" +
                 "UTM: 18T 414449.639 E, 4577874.159 N",
             s
         )
@@ -165,7 +165,7 @@ class CoordinateDetailFormatterTest {
             id = "c", name = "P", latitude = 41.0, longitude = -76.0, altitude = 100.0,
             timestamp = 0L, icon = "ic_pin", color = 0,
         )
-        assertEquals("Latitude: 41.000000°\nLongitude: -76.000000°\nAltitude: 100.00 m",
+        assertEquals("Latitude: 41.000000°\nLongitude: -76.000000°\nEllipsoidal height h: 100.00 m",
             CoordinateDetailFormatter.locationSummary(noUtm))
     }
 
