@@ -11,6 +11,7 @@ import app.surrealar.domain.model.LocationSourceType
 import app.surrealar.gnss.source.SourceRoutingDecisions
 import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.util.diagnostics.DiagTags
+import app.surrealar.util.diagnostics.LogPrivacy
 import app.surrealar.util.diagnostics.report.ExportOutcome
 import app.surrealar.util.diagnostics.report.ReportAssembler
 import app.surrealar.util.diagnostics.report.ReportFailures
@@ -253,7 +254,7 @@ object DiagnosticReportExporter {
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
             sb.appendLine("GPS provider enabled     : ${lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)}")
             sb.appendLine("Network provider enabled : ${lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)}")
-        }.onFailure { sb.appendLine("Location services        : (unavailable: ${it.message})") }
+        }.onFailure { sb.appendLine("Location services        : (unavailable: ${LogPrivacy.errorType(it)})") }
         return sb.toString()
     }
 
@@ -392,7 +393,7 @@ object DiagnosticReportExporter {
                 sb.appendLine("Last provider switch   : " +
                     if (switchAt == 0L) "none this session"
                     else SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(switchAt)))
-            }.onFailure { sb.appendLine("Active provider        : (unavailable: ${it.message})") }
+            }.onFailure { sb.appendLine("Active provider        : (unavailable: ${LogPrivacy.errorType(it)})") }
 
             val host = ReportFailures.catching { repo.externalTcpHost.first() }.getOrNull()
             val port = ReportFailures.catching { repo.externalTcpPort.first() }.getOrNull()
@@ -403,7 +404,7 @@ object DiagnosticReportExporter {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            sb.appendLine("(settings read error: ${e.message})")
+            sb.appendLine("(settings read error: ${LogPrivacy.errorType(e)})")
         }
         sb.appendLine()
         sb.appendLine("--- Maps ---")
@@ -431,7 +432,7 @@ object DiagnosticReportExporter {
                 sb.appendLine("WARNING: internet=true but validated=false — device may be on receiver WiFi; map tiles may not load")
             }
         } catch (e: Exception) {
-            sb.appendLine("(network state unavailable: ${e.message})")
+            sb.appendLine("(network state unavailable: ${LogPrivacy.errorType(e)})")
         }
         return sb.toString()
     }
@@ -467,7 +468,7 @@ object DiagnosticReportExporter {
                     !File(model.filePath).exists() -> "file_missing"
                     else -> "ok(${File(model.filePath).length()}B)"
                 }
-                sb.appendLine("id=${c.id} name=\"${c.name}\" modelId=${c.modelId} " +
+                sb.appendLine("id=${c.id} nameRef=${LogPrivacy.ref(c.name)} modelId=${c.modelId} " +
                     "renderEnabled=${c.renderEnabled} altitude=${if (c.altitude.isFinite()) "yes" else "missing"} file=$fileState")
             }
         }
@@ -504,7 +505,7 @@ object DiagnosticReportExporter {
                 }
                 val arReason = arEntry?.reason?.let { " reason=$it" } ?: ""
                 // Show only the file name, not the full internal path.
-                sb.appendLine("id=${m.id} name=\"${m.name}\" file=\"${f.name}\" type=${m.fileType} " +
+                sb.appendLine("id=${m.id} nameRef=${LogPrivacy.ref(m.name)} file=${LogPrivacy.file(f.name)} type=${m.fileType} " +
                     "exists=$exists sizeBytes=${if (exists) f.length() else -1L} storedSize=${m.fileSize} " +
                     "linkedCoordinates=${linkCounts[m.id] ?: 0} lastArStatus=$arStatus$arReason")
             }
