@@ -208,6 +208,21 @@ coordinate records that link to a model.
 The settings UI: `SettingsFragment` plus its category list (`SettingsCategory`,
 `SettingsCategoryAdapter`) and the developer `SelfTestDisplay`. It edits values through the settings
 repositories (DataStore-backed) only — it holds no settings state of its own and writes nothing to Room.
+`SettingsFragment` is the host (category list, selection, two-pane layout, document launchers); each
+category's UI is a controller in `app.surrealar.ui.settings.categories`.
+
+# Package app.surrealar.ui.settings.categories
+
+One `SettingsCategoryController` per Settings category (Appearance, AR Display, Capture, Coordinates,
+Data, Developer Tools, Map, Receiver, About). The fragment keeps one instance per category for its
+lifetime, calls `createView` when the category is shown and `onDestroyView` when it is replaced.
+Loads and collectors run on the category scope; writes, exports and imports on the longer-lived save
+scope.
+
+# Package app.surrealar.ui.settings.common
+
+Small helpers shared by the Settings host and its controllers (`inputLayoutOf`, `dpToPx`,
+`showSettingsMessage`, `settingsError` / `settingsWarn`).
 
 # Package app.surrealar.ui.viewpoints
 

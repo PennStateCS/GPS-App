@@ -5,7 +5,7 @@ import app.surrealar.domain.model.TestStatus
 
 /**
  * Pure display mapping for receiver self-test results shown in the device-info panel of
- * [SettingsFragment].
+ * [app.surrealar.ui.settings.categories.ReceiverSettingsController].
  *
  * Extracted so the status icons, summary text, and color choices are unit-testable in one place.
  * Returns framework color **resource ids** (`android.R.color.*`) — no `Context`/views here; the

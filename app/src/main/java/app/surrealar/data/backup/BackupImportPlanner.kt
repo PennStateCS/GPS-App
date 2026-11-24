@@ -12,7 +12,7 @@ enum class ImportMode { MERGE, REPLACE }
 
 /**
  * The decision/summary for a coordinate backup import, derived purely from the parsed coordinates
- * and the current local state. UI-free so it can be unit tested; [app.surrealar.ui.settings.SettingsFragment]
+ * and the current local state. UI-free so it can be unit tested; [app.surrealar.ui.settings.categories.DataSettingsController]
  * uses it to drive the write and the final message.
  */
 data class BackupImportPlan(
