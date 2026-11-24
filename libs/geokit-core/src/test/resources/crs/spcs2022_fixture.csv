@@ -1,0 +1,12 @@
+# TEST FIXTURE ONLY: fictional SPCS2022-like zones for CrsCatalogCsvTest / CrsRegistryTest.
+# Not real SPCS2022 definitions. Parameters copy SPCS83 Pennsylvania North / South for convenience.
+zone_code,epsg,name,frame,method,parameters,unit,west,south,east,north,dataset,verified_by
+FX01,,Fixture Verified TM,natrf2022,tm,lat_0=39.0;lon_0=-77.75;k_0=0.99995;x_0=600000;y_0=0,metre,-80.53,39.71,-74.68,42.27,fixture v0,test/fixture_vectors.csv
+FX02,,Fixture Unverified LCC,natrf2022,lcc2sp,lat_0=40.1666666667;lon_0=-77.75;lat_1=41.95;lat_2=40.8833333333;x_0=600000;y_0=0,metre,-80.53,40.6,-74.7,42.53,fixture v0,
+FX03,99999,"Fixture, quoted name",natrf2022,9802,lat_0=39.3333333333;lon_0=-77.75;lat_1=40.9666666667;lat_2=39.9333333333;x_0=600000;y_0=0,metre,-80.53,39.71,-74.72,41.18,fixture v0,
+FX04,,Fixture missing parameter,natrf2022,tm,lat_0=39.0;lon_0=-77.75;x_0=600000;y_0=0,metre,-80.0,39.0,-75.0,42.0,fixture v0,test/fixture_vectors.csv
+FX05,,Fixture unknown method,natrf2022,polyconic,lat_0=39.0,metre,-80.0,39.0,-75.0,42.0,fixture v0,test/fixture_vectors.csv
+FX06,,Fixture unknown frame,natrf2099,tm,lat_0=39.0;lon_0=-77.75;k_0=1;x_0=0;y_0=0,metre,-80.0,39.0,-75.0,42.0,fixture v0,test/fixture_vectors.csv
+FX07,,Fixture too few columns,natrf2022,tm
+FX01,,Fixture duplicate,natrf2022,tm,lat_0=39.0;lon_0=-77.75;k_0=0.99995;x_0=600000;y_0=0,metre,-80.53,39.71,-74.68,42.27,fixture v0,
+FX08,6562,Fixture clashing with SPCS83 EPSG,natrf2022,tm,lat_0=39.0;lon_0=-77.75;k_0=0.99995;x_0=600000;y_0=0,metre,-80.53,39.71,-74.68,42.27,fixture v0,test/fixture_vectors.csv
