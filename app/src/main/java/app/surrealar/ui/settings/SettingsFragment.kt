@@ -51,6 +51,14 @@ import androidx.appcompat.app.AppCompatDelegate
 import app.surrealar.settings.model.AppThemeMode
 import app.surrealar.settings.model.AppearanceSettings
 import app.surrealar.ui.common.BaseTwoPaneFragment
+import app.surrealar.ui.settings.categories.ActiveSettingsCategory
+import app.surrealar.ui.settings.categories.AppearanceSettingsController
+import app.surrealar.ui.settings.categories.SettingsCategoryController
+import app.surrealar.ui.settings.common.dpToPx
+import app.surrealar.ui.settings.common.inputLayoutOf
+import app.surrealar.ui.settings.common.settingsError
+import app.surrealar.ui.settings.common.settingsWarn
+import app.surrealar.ui.settings.common.showSettingsMessage
 import app.surrealar.util.ReachNameResolver
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.combine
@@ -155,16 +163,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     private enum class ConnectionUiStatus { CONNECTING, REACHABLE, STREAMING, STALE, DISCONNECTED }
 
     /** Clears all external-receiver transient state. Call when switching to internal or disconnecting. */
-    /** Nearest TextInputLayout wrapping [field] (TextInputEditText sits inside a FrameLayout in it). */
-    private fun inputLayoutOf(field: View): com.google.android.material.textfield.TextInputLayout? {
-        var p = field.parent
-        while (p != null) {
-            if (p is com.google.android.material.textfield.TextInputLayout) return p
-            p = p.parent
-        }
-        return null
-    }
-
     private fun showAntennaHeightError(field: View) {
         val msg = "Enter a height in metres (0 – ${AntennaHeightInput.MAX_M.toInt()}). Previous value kept."
         val layout = inputLayoutOf(field)
@@ -219,21 +217,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
         }
     }
 
-    /**
-     * Logs a Settings failure at E with its exception. A cancelled coroutine (category switched, screen
-     * closed) is rethrown instead of logged, so callers can use it in any catch / onFailure.
-     */
-    private fun settingsError(message: String, e: Throwable, tag: String = DiagTags.SETTINGS) {
-        if (e is CancellationException) throw e
-        DiagnosticsLogger.e(tag, message, e)
-    }
-
-    /** [settingsError] at W, for handled problems (a UI refresh skipped, a best-effort lookup failed). */
-    private fun settingsWarn(message: String, e: Throwable, tag: String = DiagTags.SETTINGS) {
-        if (e is CancellationException) throw e
-        DiagnosticsLogger.w(tag, message, e)
-    }
-
     companion object {
         // Category IDs (internal)
         private const val CAT_ID_LOCATION           = 1
@@ -283,9 +266,26 @@ private const val CAT_ID_DEV                = 7
         updateCategoriesDynamic(baseCategories())
     }
 
+    // One controller per category for this fragment's lifetime (see SettingsCategoryController).
+    private val activeCategory = ActiveSettingsCategory()
+    private val appearanceController by lazy { AppearanceSettingsController(this, settingsRepo, saveScope) }
+
+    private fun controllerFor(categoryId: Int): SettingsCategoryController? = when (categoryId) {
+        CAT_ID_APPEARANCE -> appearanceController
+        else -> null
+    }
+
+    override fun onDestroyView() {
+        activeCategory.replace(null)
+        super.onDestroyView()
+    }
+
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
         try {
-            when (category.id) {
+            val controller = controllerFor(category.id)
+            activeCategory.replace(controller)
+            if (controller != null) controller.createView(inflater, contentContainer, categoryScope)
+            else when (category.id) {
                 CAT_ID_LOCATION           -> setupLocationContent(inflater)
                 CAT_ID_GNSS_CAPTURE       -> setupGnssCaptureContent(inflater)
                 CAT_ID_AR_DISPLAY         -> setupARDisplayContent(inflater)
@@ -294,7 +294,6 @@ private const val CAT_ID_DEV                = 7
                 CAT_ID_DATA               -> setupDataContent(inflater)
 CAT_ID_DEV                -> setupDeveloperContent(inflater)
                 CAT_ID_ABOUT              -> setupAboutContent(inflater)
-                CAT_ID_APPEARANCE         -> setupAppearanceContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -304,95 +303,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
 
 
     // ───────────────────────────── Category builders ───────────────────────────
-
-    private fun setupAppearanceContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.content_settings_appearance, contentContainer, false)
-        try {
-            val spinner           = view.findViewById<AutoCompleteTextView>(R.id.spinner_theme_mode)
-            val switchGnssBar     = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_gnss_status_bar)
-            val switchKeepAwake   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_keep_screen_awake)
-            val switchMaxBright   = view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_max_brightness)
-
-            val options = listOf(
-                "System Default" to AppThemeMode.SYSTEM,
-                "Light"          to AppThemeMode.LIGHT,
-                "Dark"           to AppThemeMode.DARK
-            )
-
-            spinner?.setAdapter(
-                ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, options.map { it.first })
-            )
-
-            categoryScope.launch {
-                try {
-                    val current = settingsRepo.appearanceSettings.first()
-                    val label = options.firstOrNull { it.second == current.themeMode }?.first ?: options.first().first
-                    spinner?.setText(label, false)
-                    switchGnssBar?.isChecked   = current.showLiveGnssStatusBar
-                    switchKeepAwake?.isChecked = current.keepScreenAwake
-                    switchMaxBright?.isChecked = current.maxBrightnessWhileOpen
-                } catch (e: Exception) {
-                    settingsError("Settings load failed section=appearance", e)
-                }
-            }
-
-            spinner?.setOnItemClickListener { _, _, position, _ ->
-                val selected = options.getOrNull(position) ?: return@setOnItemClickListener
-                saveScope.launch {
-                    try {
-                        val current = settingsRepo.appearanceSettings.first()
-                        settingsRepo.setAppearanceSettings(current.copy(themeMode = selected.second))
-                        AppCompatDelegate.setDefaultNightMode(
-                            when (selected.second) {
-                                AppThemeMode.LIGHT  -> AppCompatDelegate.MODE_NIGHT_NO
-                                AppThemeMode.DARK   -> AppCompatDelegate.MODE_NIGHT_YES
-                                AppThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-                            }
-                        )
-                    } catch (e: Exception) {
-                        settingsError("Settings save failed section=appearance", e)
-                        showSettingsMessage("Failed to save theme.")
-                    }
-                }
-            }
-
-            switchGnssBar?.setOnCheckedChangeListener { _, isChecked ->
-                saveScope.launch {
-                    try {
-                        val current = settingsRepo.appearanceSettings.first()
-                        settingsRepo.setAppearanceSettings(current.copy(showLiveGnssStatusBar = isChecked))
-                    } catch (e: Exception) {
-                        settingsError("Settings save failed section=gnssStatusBar", e)
-                    }
-                }
-            }
-
-            switchKeepAwake?.setOnCheckedChangeListener { _, isChecked ->
-                saveScope.launch {
-                    try {
-                        val current = settingsRepo.appearanceSettings.first()
-                        settingsRepo.setAppearanceSettings(current.copy(keepScreenAwake = isChecked))
-                    } catch (e: Exception) {
-                        settingsError("Settings save failed section=keepScreenAwake", e)
-                    }
-                }
-            }
-
-            switchMaxBright?.setOnCheckedChangeListener { _, isChecked ->
-                saveScope.launch {
-                    try {
-                        val current = settingsRepo.appearanceSettings.first()
-                        settingsRepo.setAppearanceSettings(current.copy(maxBrightnessWhileOpen = isChecked))
-                    } catch (e: Exception) {
-                        settingsError("Settings save failed section=maxBrightness", e)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            settingsError("Settings section setup failed section=appearance", e)
-        }
-        return view
-    }
 
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
@@ -2367,11 +2277,6 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
     }
 
-    private fun showSettingsMessage(message: String, duration: Int = Snackbar.LENGTH_SHORT) {
-        val v = view ?: return
-        Snackbar.make(v, message, duration).show()
-    }
-
     private fun cancelActiveImport() {
         try {
             coordinatesImportJob?.takeIf { it.isActive }?.cancel()?.also {
@@ -2650,10 +2555,7 @@ CAT_ID_DEV                -> setupDeveloperContent(inflater)
         }
     }
 
-    private fun dpToPx(dp: Int): Int {
-        val density = requireContext().resources.displayMetrics.density
-        return (dp * density).toInt()
-    }
+    private fun dpToPx(dp: Int): Int = dpToPx(requireContext(), dp)
 
     // ───────────────────────────── Model Conversion Helper ─────────────────────────────
     private fun convertToEmlidDeviceInfo(reachInfo: io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo): EmlidDeviceInfo {
