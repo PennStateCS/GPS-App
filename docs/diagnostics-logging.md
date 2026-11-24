@@ -1,5 +1,11 @@
 # Diagnostics logging & export — developer note
 
+**Field workflow.** When something goes wrong, the tester (1) optionally taps Settings → About →
+**Mark Problem** and adds a short note, (2) taps **Export Diagnostic Report**, and (3) shares the ZIP
+from the Android share sheet. The report stays on the device until shared; nothing is uploaded. The
+note and the incident are inside the ZIP, so they are not lost if the ZIP is sent another way. The
+developer opens `diagnostic-summary.txt` first (see §5 for a reading guide).
+
 This note describes how app diagnostics are captured, what the exported diagnostic ZIP contains,
 and where to add new diagnostic events. It complements the KDoc on `DiagnosticsLogger`,
 `DiagnosticReportExporter`, and `LogZip`.
@@ -107,9 +113,11 @@ Raw NMEA must never be passed to `DiagnosticsLogger` (privacy + volume). Keep it
 
 ### Retention policy rationale
 The event log is sized (5 MB × 5 files) so a full field session of **state-change** events survives
-until the user exports. The export bundles the *whole* set of files (not a last-N-lines tail), so the
-AR failure sequence is never truncated. Crashes live in their own smaller, longer-lived files so the
-latest crash — even from a previous app launch — is always in the export.
+until the user exports. Below the 20 MB log budget the export bundles the whole set of files; above it,
+`LogBudget` keeps crashes, incident windows and recent errors first (see §2), so an important event is
+not dropped just because it is old. Crashes live in their own smaller, longer-lived files so the latest
+crash — even from a previous app launch — is always in the export. Storage stays bounded: rotated log
+files, 20 incidents, and the ZIP's log budget.
 
 ## 2. Exported ZIP contents
 
@@ -121,9 +129,34 @@ what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes 
 - Each collector (`report/*Collector`) is a pure renderer with a golden test over fake inputs
   (`FakeReportSources`); a failing section is replaced by one "Section failed…" line and recorded in
   export-health.txt (see *Export reliability*) instead of breaking the export.
-- `diagnostic-summary.txt` starts with the **First look** block (report ID, time span, sessions,
-  last session clean, crashes/ANRs in 24 h, source/RTK, link, correction age, storage, top warnings).
-- Logs over 20 MB → only the last 24 h of each log file; README and manifest say so.
+- **Reading order** (also in README.txt): `diagnostic-summary.txt` → `incidents.txt` → `timeline.txt`
+  → `export-health.txt` → the detail files.
+- `diagnostic-summary.txt` (`report/SummaryCollector`) is rendered **last**, after every collector, so
+  it can state completeness. Sections, in order:
+  1. **Report information** — report ID, app version + git commit, device, Android, generation time
+     (UTC and local), session ID.
+  2. **Reported problem** — the latest marked incident: ID, current or earlier session, time, screen,
+     the tester's note; or "No problem was marked".
+  3. **Important findings** — at most 8 rule-based findings (see §3c), ranked, each with evidence lines
+     (time, file, message) and a next step.
+  4. **Subsystem status** — one line each: GNSS, receiver connection, RTK corrections, AR tracking,
+     models, database & storage, permissions, network.
+  5. **Where to investigate** — the file and timestamp behind each finding, then incidents/timeline/health.
+  6. **Export completeness** — verdict, failed or timed-out sections, unavailable sources, reduced logs.
+  The older **First look** block and the app's own summary follow unchanged, so no detail is lost.
+- `incidents.txt` (`report/IncidentsCollector`): every recent incident with its context snapshot and a
+  timeline from **5 min before to 2 min after** it (W/E lines, DiagEvents codes and key tags first when
+  over the per-incident cap); the incident line is marked.
+- `timeline.txt`: the last 2 h of W/E lines plus the LIFECYCLE, NAV, RECEIVER, CORRECTIONS, CAPTURE, AR,
+  MODEL, GNSS, DATA, ERROR and DIAG tags and every DiagEvents code; lines inside an incident window are
+  prefixed `>>` (chronology is kept).
+- **Log budget** (`report/LogBudget`, replaces the old "last 24 h" cut): when the logs exceed the budget
+  (`MAX_LOG_BYTES`, 20 MB, planned at 95 % to leave room for redaction), lines are kept in this order
+  until the budget is full: crash/ANR lines with their stack traces; every incident window; errors from
+  the last 7 days (at most a quarter of the budget); then the newest remaining lines. Gaps are marked in
+  the copied log as `… [N lines omitted <from> → <to>] …`, and export-health.txt records each file's
+  original and included bytes, time spans and omitted spans. The budget is enforced in bytes, not by a
+  time filter; the old 24 h filter is only a fallback if planning fails.
 - Everything written passes through `ReportRedactor`, the last line of defence (its KDoc lists every
   rule): raw NMEA; API keys, Authorization/Bearer values, JWTs, URL user info (`ntrip://user:pass@`),
   password/token/user-name/credential values and long tokens after key-like labels; e-mail
@@ -148,9 +181,8 @@ what each one is lives in one place: `report/ReadmeCollector.FILES` (it becomes 
   run to the end. `CancellationException` is always rethrown (`ReportFailures.catching`, never
   `runCatching` around suspend calls). The flush result (`FLUSHED` / `NOT_CONFIRMED` / `FAILED`) is kept.
 - **Order:** text sections are collected into memory first, then the ZIP is streamed (logs line by line,
-  never held in memory), then `export-health.txt`, then `manifest.txt`. So a summary can be rendered
-  after the collectors; `ReportResult.completenessSummary()` is the short block meant for it (for now
-  README.txt points to export-health.txt).
+  never held in memory), then `diagnostic-summary.txt` (so it can include completeness), then
+  `export-health.txt`, then `manifest.txt`.
 - **export-health.txt:** every status and time, the flush, files omitted (unreadable, unsafe or duplicate
   name) or truncated (original → included bytes; the 24 h log filter is expected, a read error is not),
   and the verdict `COMPLETE` / `PARTIAL`.
@@ -194,6 +226,53 @@ while an AR session is open), free storage and permissions. No coordinates, poin
   The note is free text: it stays in the incident file (and the share text the tester sees), never in the log.
 - `IncidentMarker.render()` is the plain-text block for reports (note excluded unless asked for).
 - The share text adds the latest incident (last 24 h) and its note under the three prompts.
+- Incidents persist across restarts; the report labels each one "current session" or
+  "earlier session (session=…)". A mark made from Settings normally shows AR as inactive (AR state is
+  only live while the AR screen is open).
+
+## 3b. Structured state-change events and correlation IDs
+
+`util/diagnostics/DiagEvents` defines codes for state **changes** the report reasons about. A coded line
+is `CODE key=value … (old human sentence)`, built with `DiagLine.of(...)`; the old sentence stays in
+parentheses so people and rules written for older builds still recognise it. Strip the trailing
+`(…)` before `DiagEvents.parse`.
+
+| Area | Codes |
+|---|---|
+| Receiver / GNSS | `RECEIVER_LINK` (CONNECTING, CONNECTED, NO_DATA = TCP up but no NMEA, DISCONNECTED, UNREACHABLE), `RECEIVER_RECONNECTS`, `GNSS_FEED` (LIVE, NO_FIX = NMEA but no usable position, STALE), `RTK_CHANGE`, `CORRECTIONS_STATE`, `SOURCE_MISMATCH`, `ANTENNA_HEIGHT` |
+| AR | `AR_UNAVAILABLE`, `AR_STATE` (camera/Earth tracking), `AR_GEO_ACCURACY`, `AR_ANCHOR` (OK/FAILED/DELAYED), `AR_MODEL_HIDDEN` (DISTANCE, VISIBILITY, OFFSCREEN, TRACKING), `AR_ALIGNMENT_JUMP` |
+| Models | `MODEL_LOAD`, `MODEL_MISSING_FILE` |
+
+Correlation IDs (`DiagIds`, minted once per operation and reused on all its lines, never per line):
+`conn=c…` receiver connection attempt (`ReceiverLinkTracker`), `capture=cap…` capture session
+(`CaptureDiagnostics`, also in captures.log), `ar=a…` AR screen session (`ArSessionDiagnostics`),
+`op=op…` model import/load and backup/import operations (`DataOpLog`, `ModelsFragment`, renderer).
+With `session=` they let you follow one connection, capture or AR session through the timeline.
+
+Rules: log on transitions only (debounce with `logOnChange(stableMs = …)`), short enum values, no
+coordinates, names, file names (use `LogPrivacy`) or free text. `DiagEventsContractTest` drives the real
+trackers and checks the report recognises every line they write — extend it when you add a code.
+
+## 3c. Findings (summary "Important findings")
+
+`report/ReportSignals.classify` maps a log line (code first, then the legacy sentence) to a signal;
+`report/ReportFindings.evaluate` applies fixed rules over the signals, crashes, live state, device
+health and data health. The rules look at the 15 min before to 2 min after the latest incident (or
+the current session without one). Every finding says how sure it is:
+
+- **OBSERVED** — the logs or the state at export show it happened.
+- **POSSIBLE_CAUSE** — consistent with the evidence, not shown directly. A finding that happened up to
+  5 min before the mark gets a relation line "POSSIBLE_CAUSE of the reported problem … (timing only,
+  not proof)". The report never claims a root cause from timing.
+- **UNKNOWN** — the information needed is missing (e.g. integrity check could not run, network unknown).
+
+Rules: crash/ANR (current or previous process), main thread blocked, receiver down/unreachable, TCP up
+but no NMEA, repeated reconnects, NMEA but no usable fix, stale fix, RTK FIX lost, corrections stale,
+location/camera permission denied, ARCore unavailable, AR tracking lost, geospatial poor or no network,
+AR anchors failed/delayed, models hidden (with reason), AR/GNSS alignment jump, point without altitude
+(placed on terrain), source mismatch, antenna height problem, model load failed, model file missing,
+database integrity/reset/errors, low storage (< 500 MB or < 5 %), network offline/unvalidated/unknown.
+`ReportFindingsTest` has a test per rule with both the coded and the legacy line.
 
 ## 4. Where to add future diagnostic events
 
@@ -212,7 +291,47 @@ while an AR session is open), free storage and permissions. No coordinates, poin
   (tag `GNSS`). Summarize high-frequency fixes; log provider/state changes only.
 - **Coordinate save flow** → the add/edit coordinate dialogs + `CoordinateRepository` callers
   (tag `COORD`). Do not log personal notes.
-- **Export** → add a collector in `util/diagnostics/report`, a line in `ReportAssembler`, an entry in
-  `ReadmeCollector.FILES`, and a warning in `DiagnosticReportExporter.computeWarnings()` if needed.
+- **A new state change worth diagnosing** → add a code to `DiagEvents` (with its fields in the KDoc),
+  log it with `DiagLine.of` at the place that already knows the state (on change only), reuse the
+  operation's correlation ID, then teach `ReportSignals.classify` (keep the legacy sentence) and, if it
+  deserves a summary line, add a rule in `ReportFindings` with tests for both line forms.
+- **Export** → add a collector in `util/diagnostics/report`, a section in `ReportAssembler` (it gets a
+  status and timeout automatically), and an entry in `ReadmeCollector.FILES`.
 
-To add a warning to the summary, append a line in `DiagnosticReportExporter.computeWarnings()`.
+## 5. Troubleshooting guide: a tester sent a diagnostic ZIP
+
+1. **Open `diagnostic-summary.txt`.** Read *Reported problem* (what and when; current or earlier
+   session), then *Important findings* (OBSERVED first) and *Export completeness* — if a section failed
+   or logs were reduced, keep in mind that evidence may be missing.
+2. **Open `incidents.txt`** and read the 5 min before the mark (`>>` lines in `timeline.txt` show the
+   same window in context).
+3. **Follow the evidence** — each finding names a file and a time; search that file for the time or the
+   correlation ID (`conn=`, `ar=`, `capture=`, `op=`).
+
+Examples:
+
+- **Receiver problem** ("no position", "RTK keeps dropping"): findings *receiver down*, *TCP up but no
+  NMEA* (wrong port or receiver output off), *repeated reconnects* (Wi-Fi/hotspot), *RTK FIX lost* with
+  *corrections stale* before it (caster/NTRIP or cell coverage). Check `RECEIVER_LINK` lines with one
+  `conn=`, `gnss-stats.txt` (reconnects, correction age), `nmea-stream-diagnostics.txt` (sentence
+  counts), `settings-snapshot.txt` (receiver and correction settings, credentials hidden) and *source mismatch*.
+- **AR tracking problem** ("models drift or vanish"): *AR tracking lost*, *geospatial poor* (no network,
+  poor coverage), *anchors delayed/failed*, *alignment jump*, *models hidden* (DISTANCE/VISIBILITY are
+  display settings; OFFSCREEN means outside the camera view). Use `ar-session-summary.txt` and the `ar=`
+  lines; compare with `RTK_CHANGE` just before an alignment jump.
+- **Model failure** ("model doesn't appear"): *model load failed*, *model file missing*, *point without
+  altitude* (placed on terrain, not at the surveyed height). `model-integrity.txt` lists each model's
+  file state (names hashed) and last AR status; `op=` follows one import or load.
+- **Crash / ANR**: *crash* finding (current or previous process). `exits.txt` and `exits/` hold the
+  saved traces, `app-errors-*.txt` the stack trace; `sessions.txt` shows whether the session before the
+  report ended cleanly.
+
+## 6. Privacy rules (summary)
+
+- Fix leaks where they are logged: ids, counts, `LogPrivacy.ref/file/errorType`, never names, notes,
+  coordinates, raw NMEA, credentials or user paths. The tester's incident note stays in the incident
+  file, never in the event log.
+- `ReportRedactor` is the last line of defence for everything written to the ZIP (§2).
+- The ordinary report never includes raw NMEA; that is a separate, optional export (`LogZip`).
+- Tests: `ReportPrivacyTest` and `DiagnosticExportEndToEndTest` scan every entry of a complete ZIP for
+  synthetic secrets.
