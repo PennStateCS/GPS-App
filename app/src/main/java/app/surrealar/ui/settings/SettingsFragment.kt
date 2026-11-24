@@ -59,6 +59,7 @@ import app.surrealar.ui.settings.categories.CaptureSettingsController
 import app.surrealar.ui.settings.categories.CoordinatesSettingsController
 import app.surrealar.ui.settings.categories.DeveloperSettingsController
 import app.surrealar.ui.settings.categories.AboutSettingsController
+import app.surrealar.ui.settings.categories.DataSettingsController
 import app.surrealar.ui.settings.categories.SettingsCategoryController
 import app.surrealar.ui.settings.common.dpToPx
 import app.surrealar.ui.settings.common.inputLayoutOf
@@ -130,11 +131,6 @@ class SettingsFragment : BaseTwoPaneFragment() {
     // Emlid device information
     private var currentDeviceInfo: EmlidDeviceInfo? = null
 
-    // Coordinate backup import/export state
-    private var pendingImportUri: Uri? = null
-    private var coordinatesImportJob: Job? = null
-    private var importProcessed: Int = 0
-    private var importTotal: Int = 0
     private var deviceStatusJob: Job? = null
     private var tcpConnectJob: Job? = null
     private var tcpConnectAttemptId = 0
@@ -147,21 +143,22 @@ class SettingsFragment : BaseTwoPaneFragment() {
     /** Epoch ms of last raw NMEA sentence from the external adapter; 0 means none. */
     @Volatile private var lastExternalRawNmeaTimeMs: Long = 0L
 
-    // Coordinate backup export: system "create document" save dialog. A null uri means the
-    // user cancelled — do nothing (no error).
+    // Document launchers for Settings → Data. Registered here, at construction, as the Activity Result
+    // API requires; the results go to the Data controller (a null uri = cancelled, ignored there).
+    // Coordinate backup export: system "create document" save dialog.
     private val exportBackupLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> if (uri != null) writeBackupTo(uri) }
+    ) { uri -> dataController.onExportBackupResult(uri) }
 
-    // Survey points CSV export (configured coordinate system). A null uri means cancelled.
+    // Survey points CSV export (configured coordinate system).
     private val exportPointsCsvLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri -> if (uri != null) writePointsCsvTo(uri) }
+    ) { uri -> dataController.onExportPointsCsvResult(uri) }
 
-    // Coordinate backup import: system "open document" picker. A null uri means cancelled.
+    // Coordinate backup import: system "open document" picker.
     private val importBackupLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) onImportDocumentPicked(uri) }
+    ) { uri -> dataController.onImportResult(uri) }
 
     private enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
 
@@ -281,6 +278,10 @@ private const val CAT_ID_DEV                = 7
     private val coordinatesController by lazy { CoordinatesSettingsController(this, settingsRepo, fixSwitchboard, coordinateSystemService, saveScope) }
     private val developerController by lazy { DeveloperSettingsController(this, settingsRepo, saveScope) }
     private val aboutController by lazy { AboutSettingsController(this) }
+    private val dataController: DataSettingsController by lazy {
+        DataSettingsController(this, repository, settingsRepo, coordinateSystemService, exportBackup, importBackup, saveScope,
+            exportBackupLauncher, exportPointsCsvLauncher, importBackupLauncher)
+    }
 
     private fun controllerFor(categoryId: Int): SettingsCategoryController? = when (categoryId) {
         CAT_ID_APPEARANCE -> appearanceController
@@ -290,6 +291,7 @@ private const val CAT_ID_DEV                = 7
         CAT_ID_COORDINATE_DISPLAY -> coordinatesController
         CAT_ID_DEV -> developerController
         CAT_ID_ABOUT -> aboutController
+        CAT_ID_DATA -> dataController
         else -> null
     }
 
@@ -305,7 +307,6 @@ private const val CAT_ID_DEV                = 7
             if (controller != null) controller.createView(inflater, contentContainer, categoryScope)
             else when (category.id) {
                 CAT_ID_LOCATION           -> setupLocationContent(inflater)
-                CAT_ID_DATA               -> setupDataContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -319,33 +320,6 @@ private const val CAT_ID_DEV                = 7
     private fun setupLocationContent(inflater: LayoutInflater): View {
         val view = inflater.inflate(R.layout.content_settings_location, contentContainer, false)
         try { setupLocationSourceUi(view) } catch (e: Exception) { settingsError("Settings section setup failed section=locationSource", e) }
-        return view
-    }
-
-    private fun setupDataContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.content_settings_data, contentContainer, false)
-        try {
-            view.findViewById<Button>(R.id.btn_export_coordinates)?.setOnClickListener {
-                try {
-                    exportBackupLauncher.launch("coordinates_backup_${System.currentTimeMillis()}.json")
-                } catch (e: Exception) { settingsError("Backup export launch failed", e) }
-            }
-            view.findViewById<Button>(R.id.btn_export_points_csv)?.setOnClickListener {
-                try {
-                    exportPointsCsvLauncher.launch("survey_points_${System.currentTimeMillis()}.csv")
-                } catch (e: Exception) { settingsError("CSV export launch failed", e) }
-            }
-            view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener {
-                try {
-                    // Most providers label .json as application/json; the broader types are a
-                    // fallback for providers that mislabel it (the parser still validates content).
-                    importBackupLauncher.launch(arrayOf("application/json", "text/json", "text/plain", "application/octet-stream"))
-                } catch (e: Exception) { settingsError("Import launch failed", e) }
-            }
-            view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { settingsError("Import cancel failed", e) } }
-        } catch (e: Exception) {
-            settingsError("Settings section setup failed section=data", e)
-        }
         return view
     }
 
@@ -1464,205 +1438,6 @@ private const val CAT_ID_DEV                = 7
             }
         } catch (e: Exception) {
             false
-        }
-    }
-
-    // ───────────────────────────── Import / Export ─────────────────────────────
-    /** Writes the official full JSON backup to the document the user chose in the save dialog. */
-    private fun writeBackupTo(uri: Uri) {
-        // Captured now: the save scope outlives the fragment, so requireContext() may fail later.
-        val appContext = requireContext().applicationContext
-        saveScope.launch {
-            runCatching {
-                val appVersion = runCatching {
-                    appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
-                }.getOrNull()
-                // Use case loads the data and builds the JSON (and logs its own failure); the
-                // fragment owns the URI write, logged here.
-                val result = exportBackup(appVersion)
-                try {
-                    withContext(Dispatchers.IO) {
-                        // "wt" truncates: overwriting a longer existing file must not leave its tail behind.
-                        appContext.contentResolver.openOutputStream(uri, "wt")?.use {
-                            it.write(result.json.toByteArray(StandardCharsets.UTF_8))
-                        } ?: error("Unable to open output stream")
-                    }
-                } catch (e: Exception) {
-                    settingsError("Backup export write failed rows=${result.coordinateCount} dest=SAF", e, DiagTags.EXPORT)
-                    throw e
-                }
-                result.coordinateCount
-            }.onSuccess { n ->
-                showSettingsMessage("JSON backup exported: $n coordinates", Snackbar.LENGTH_LONG)
-            }.onFailure { e ->
-                if (e is CancellationException) throw e
-                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
-            }
-        }
-    }
-
-    /** Writes all points as CSV in the configured coordinate system, units and height reference. */
-    private fun writePointsCsvTo(uri: Uri) {
-        val appContext = requireContext().applicationContext
-        saveScope.launch {
-            runCatching {
-                // DataOpLog: start / done rows=n / failed (E, with the exception) lines.
-                app.surrealar.util.diagnostics.DataOpLog.run("CSV export", "csv", { n: Int -> n }) {
-                    val coordSettings = settingsRepo.coordinateSystemSettings.first()
-                    val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
-                    // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
-                    val csv = withContext(Dispatchers.Default) {
-                        app.surrealar.data.export.PointsCsvExporter.build(points) {
-                            coordinateSystemService.convertCoordinate(it, coordSettings)
-                        }
-                    }
-                    withContext(Dispatchers.IO) {
-                        appContext.contentResolver.openOutputStream(uri, "wt")?.use {
-                            it.write(csv.toByteArray(StandardCharsets.UTF_8))
-                        } ?: error("Unable to open output stream")
-                    }
-                    points.size
-                }
-            }.onSuccess { n ->
-                showSettingsMessage("Points CSV exported: $n points", Snackbar.LENGTH_LONG)
-            }.onFailure { e ->
-                if (e is CancellationException) throw e
-                showSettingsMessage("Export failed: ${e.message}", Snackbar.LENGTH_LONG)
-            }
-        }
-    }
-
-    /** Routes a picked backup document into the import confirmation/merge flow. */
-    private fun onImportDocumentPicked(uri: Uri) {
-        lifecycleScope.launch {
-            try {
-                prepareImportCoordinatesWithConfirmation(uri)
-            } catch (e: Exception) {
-                settingsError("Backup import failed stage=prepare", e, DiagTags.DATA)
-                showSettingsMessage("Import failed: ${e.message}", Snackbar.LENGTH_LONG)
-            }
-        }
-    }
-
-    // --- Import pipeline (full JSON backup; basic JSON arrays are still auto-detected) ---
-    private suspend fun prepareImportCoordinatesWithConfirmation(uri: Uri) {
-        val existing = withContext(Dispatchers.IO) { repository.getAllCoordinatesList().size }
-        if (existing == 0) { launchImportCoordinates(uri, replace = false); return }
-        pendingImportUri = uri
-        if (!isAdded) return
-        // Duplicate-ID policy: merge overwrites matching IDs (and reports the count); replace clears
-        // first. The user must confirm before any existing data is overwritten.
-        AlertDialog.Builder(requireContext())
-            .setTitle(getString(R.string.import_select_file_title))
-            .setMessage(getString(R.string.import_merge_replace_message))
-            .setPositiveButton(R.string.import_merge) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, false) } }
-            .setNeutralButton(R.string.import_replace) { _, _ -> pendingImportUri?.let { launchImportCoordinates(it, true) } }
-            .setNegativeButton(R.string.import_cancel, null)
-            .show()
-    }
-
-    /**
-     * Second confirmation for a Replace whose backup has invalid rows, now that the counts are known.
-     * Cancel (or a dismissed dialog / gone screen) keeps the existing points.
-     */
-    private suspend fun confirmPartialReplace(
-        plan: app.surrealar.data.backup.BackupImportPlan, existingCount: Int,
-    ): PartialReplaceDecision {
-        DiagnosticsLogger.w(DiagTags.DATA, "Backup replace needs confirmation valid=${plan.insertCount} " +
-            "skipped=${plan.skippedCount} existing=$existingCount")
-        return withContext(Dispatchers.Main) {
-            if (!isAdded) return@withContext PartialReplaceDecision.CANCEL
-            kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-                fun answer(d: PartialReplaceDecision) {
-                    if (cont.isActive) cont.resumeWith(Result.success(d))
-                }
-                val dialog = AlertDialog.Builder(requireContext())
-                    .setTitle("Backup has invalid entries")
-                    .setMessage("Only ${plan.insertCount} of ${plan.insertCount + plan.skippedCount} entries in this backup " +
-                        "are valid (${plan.skippedCount} would be skipped).\n\nReplace deletes all $existingCount " +
-                        "coordinates on this device and keeps only the ${plan.insertCount} valid ones. This cannot be undone.")
-                    .setPositiveButton("Merge instead") { _, _ -> answer(PartialReplaceDecision.MERGE_INSTEAD) }
-                    .setNeutralButton("Replace anyway") { _, _ -> answer(PartialReplaceDecision.REPLACE) }
-                    .setNegativeButton(R.string.import_cancel) { _, _ -> answer(PartialReplaceDecision.CANCEL) }
-                    .setOnCancelListener { answer(PartialReplaceDecision.CANCEL) }
-                    .show()
-                cont.invokeOnCancellation { dialog.dismiss() }
-            }
-        }.also { DiagnosticsLogger.i(DiagTags.DATA, "Backup replace confirmation answered decision=$it") }
-    }
-
-    private fun launchImportCoordinates(uri: Uri, replace: Boolean) {
-        if (coordinatesImportJob?.isActive == true) return
-        // Save scope: leaving Settings must not cancel the import mid-write. Cancel still works
-        // through the job reference.
-        val appContext = requireContext().applicationContext
-        coordinatesImportJob = saveScope.launch { importCoordinates(appContext, uri, replace) }
-    }
-
-    private suspend fun importCoordinates(appContext: Context, uri: Uri, replace: Boolean) {
-        showImportProgress(true, 0, "Scanning…")
-        importProcessed = 0; importTotal = 0
-        runCatching {
-            // Fragment owns the URI read; the use case parses, plans (duplicates/missing models),
-            // and writes via the repositories.
-            val raw = try {
-                withContext(Dispatchers.IO) {
-                    appContext.contentResolver.openInputStream(uri)?.use { inp ->
-                        BufferedReader(InputStreamReader(inp, StandardCharsets.UTF_8)).readText()
-                    } ?: error("Unable to open input stream")
-                }
-            } catch (e: Exception) {
-                // The use case logs parse/write failures itself (DataOpLog); the file read is logged here.
-                settingsError("Backup import failed stage=readFile", e, DiagTags.DATA)
-                throw e
-            }
-            showImportProgress(true, 70, "Writing…")
-            importBackup(raw, replace) { plan, existingCount -> confirmPartialReplace(plan, existingCount) }
-        }.onSuccess { plan ->
-            showImportProgress(false, 100, when {
-                plan.cancelled -> "Canceled"
-                plan.isNoOp -> "Nothing to import"
-                else -> "Completed"
-            })
-            // Counts only: the lists hold point names.
-            if (plan.skippedInvalid.isNotEmpty() || plan.missingModelRefs.isNotEmpty()) {
-                DiagnosticsLogger.w(DiagTags.DATA, "Import skipped invalid rows skipped=${plan.skippedInvalid.size} missingModels=${plan.missingModelRefs.size}")
-            }
-            showSettingsMessage(plan.summaryMessage(), Snackbar.LENGTH_LONG)
-        }.onFailure { e ->
-            if (e is CancellationException) {
-                showImportProgress(false, 0, "Canceled")
-            } else {
-                showImportProgress(false, 0, "Error")
-                showSettingsMessage("Import failed: ${e.message}", Snackbar.LENGTH_LONG)
-            }
-        }
-        coordinatesImportJob = null
-    }
-
-
-
-    private fun showImportProgress(visible: Boolean, percent: Int, status: String) {
-        try {
-            currentContentView?.findViewById<LinearLayout>(R.id.import_progress_container)?.let { c ->
-                c.visibility = if (visible) View.VISIBLE else View.GONE
-                if (visible) {
-                    c.findViewById<ProgressBar>(R.id.progress_import)?.progress = percent.coerceIn(0, 100)
-                    c.findViewById<TextView>(R.id.text_import_progress)?.text = status
-                }
-            }
-        } catch (e: Exception) {
-            settingsWarn("Import progress display failed", e)
-        }
-    }
-
-    private fun cancelActiveImport() {
-        try {
-            coordinatesImportJob?.takeIf { it.isActive }?.cancel()?.also {
-                showSettingsMessage(getString(R.string.import_cancel))
-            }
-        } catch (e: Exception) {
-            settingsWarn("Import cancel failed", e)
         }
     }
 
