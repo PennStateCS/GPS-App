@@ -67,7 +67,9 @@ class IncidentStore(
         }
         log("INCIDENT_MARKED id=${marker.id} screen=${IncidentContext.safeText(marker.screen) ?: "unknown"}" +
             " session=${IncidentContext.safeText(marker.sessionId) ?: "unknown"}" +
-            " description=${marker.description != null}")
+            // hasNote, not description=: the report redactor hides any description= value (user text),
+            // which turned this yes/no into "(redacted)" in real reports.
+            " hasNote=${marker.description != null}")
         marker
     }
 

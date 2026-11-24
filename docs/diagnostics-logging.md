@@ -222,7 +222,8 @@ existing state: source, receiver profile, link (`ReceiverLinkTracker`), RTK / fi
 correction age (`GnssFeedTracker.latest`), AR tracking + model counts (`ArSessionDiagnostics`, only
 while an AR session is open), free storage and permissions. No coordinates, point names or NMEA.
 
-- The event log gets only `I DIAG INCIDENT_MARKED id=… screen=… session=… description=true|false`.
+- The event log gets only `I DIAG INCIDENT_MARKED id=… screen=… session=… hasNote=true|false`.
+  (Don't name a non-user field `description=`, `note=` or `comment=`: the report redactor hides those values.)
   The note is free text: it stays in the incident file (and the share text the tester sees), never in the log.
 - `IncidentMarker.render()` is the plain-text block for reports (note excluded unless asked for).
 - The share text adds the latest incident (last 24 h) and its note under the three prompts.

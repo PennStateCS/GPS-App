@@ -47,7 +47,9 @@ class ExitReasonRecorder(
             val bad = e.reason == REASON_ANR || e.reason == REASON_CRASH || e.reason == REASON_CRASH_NATIVE
             log(bad, "Previous process exit: reason=$name status=${e.status} importance=${e.importance}" +
                 " pssKb=${e.pssKb} rssKb=${e.rssKb} at=${stamp(e.timestampMs)}" +
-                " description=${e.description?.take(200)?.let { "\"${it.replace('"', '\'')}\"" } ?: "none"}")
+                // exitDescription, not description=: Android writes this text (e.g. the ANR reason); the report
+                // redactor hides any description= value as user text, which removed this crash evidence.
+                " exitDescription=${e.description?.take(200)?.let { "\"${it.replace('"', '\'')}\"" } ?: "none"}")
             if (e.reason == REASON_ANR || e.reason == REASON_CRASH_NATIVE) saveTrace(e, name)
         }
         prefs.edit().putLong(KEY_LAST_EXIT_TS, fresh.last().timestampMs).apply()

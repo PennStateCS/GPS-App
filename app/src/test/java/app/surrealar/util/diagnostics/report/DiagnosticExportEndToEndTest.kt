@@ -46,7 +46,7 @@ class DiagnosticExportEndToEndTest {
         line("14:53:30", 'W', "GNSS", "CORRECTIONS_STATE state=STALE ageS=12.0 thresholdS=5 via=nmea (Corrections age over threshold)"),
         line("14:54:10", 'W', "GNSS", "RTK_CHANGE from=FIX to=FLOAT hAccM=0.410 conn=c4 (RTK status FIX → FLOAT)"),
         line("14:54:40", 'W', "RECEIVER", "RECEIVER_LINK state=NO_DATA conn=c4 afterS=10 (External receiver TCP connected but sent no NMEA)"),
-        line("14:55:00", 'I', "DIAG", "INCIDENT_MARKED id=INC00001 screen=nav_open_in_ar session=sess-1 description=true"),
+        line("14:55:00", 'I', "DIAG", "INCIDENT_MARKED id=INC00001 screen=nav_open_in_ar session=sess-1 hasNote=true"),
         // Secrets that must never reach the ZIP.
         line("14:56:00", 'W', "RECEIVER", "NTRIP connect url=ntrip://alice:S3cr3t@caster.example.com:2101/MOUNT password=Hunter2!"),
         line("14:56:10", 'I', "COORD", "Point saved name=\"Smith Residence Backyard\" lat=41.2468135 lon=-75.8811223 hAcc=0.0123456"),

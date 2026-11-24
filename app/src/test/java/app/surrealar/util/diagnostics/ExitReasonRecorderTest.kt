@@ -36,6 +36,16 @@ class ExitReasonRecorderTest {
         assertEquals(1, rec.record(exits + exit(3_000, ExitReasonRecorder.REASON_CRASH)))
     }
 
+    @Test fun `the system exit description survives the report redactor`() {
+        val lines = mutableListOf<String>()
+        val rec = ExitReasonRecorder(tmp.newFolder("exits"), prefs) { _, m -> lines += m }
+        rec.record(listOf(ExitReasonRecorder.Exit(1_000, ExitReasonRecorder.REASON_ANR, 0, 100, 1000, 2000,
+            description = "Input dispatching timed out", trace = { null })))
+        val scrubbed = app.surrealar.util.diagnostics.report.ReportRedactor.scrub(lines.single())
+        // A description= value is hidden as user text; this is Android's text and is crash evidence.
+        assertTrue(scrubbed, scrubbed.contains("exitDescription=\"Input dispatching timed out\""))
+    }
+
     @Test fun `ANR and native traces are saved and only the newest 5 kept`() {
         val dir = tmp.newFolder("exits")
         val rec = ExitReasonRecorder(dir, prefs) { _, _ -> }

@@ -109,7 +109,9 @@ class IncidentStoreTest {
         assertTrue(line, line.contains(" DIAG "))
         assertTrue(line, line.contains("screen=openInARFragment"))
         assertTrue(line, line.contains("session=sess-L"))
-        assertTrue(line, line.contains("description=true"))
+        assertTrue(line, line.contains("hasNote=true"))
+        // The yes/no must survive the report redactor (a description= value would be hidden as user text).
+        assertTrue(line, app.surrealar.util.diagnostics.report.ReportRedactor.scrub(line).contains("hasNote=true"))
         assertFalse(text.contains("SECRET-NOTE"))
         assertFalse(text.contains("hunter2"))
         // ...but it is in the incident file.
@@ -119,7 +121,7 @@ class IncidentStoreTest {
 
     @Test fun `log line carries id, screen and session but no note`() = runBlocking {
         store(session = "s1", screen = null).mark("private words", ctx)
-        assertEquals(listOf("INCIDENT_MARKED id=ID000001 screen=unknown session=s1 description=true"), logged)
+        assertEquals(listOf("INCIDENT_MARKED id=ID000001 screen=unknown session=s1 hasNote=true"), logged)
     }
 
     @Test fun `incidents from different sessions keep their session ids`() = runBlocking {
