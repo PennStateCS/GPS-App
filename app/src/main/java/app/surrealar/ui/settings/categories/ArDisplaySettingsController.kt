@@ -11,6 +11,7 @@ import androidx.fragment.app.Fragment
 import app.surrealar.R
 import app.surrealar.domain.repository.ArDisplaySettingsRepository
 import app.surrealar.settings.model.ArDisplaySettings
+import app.surrealar.ui.openinar.OpenInARViewModel
 import app.surrealar.ui.settings.common.settingsError
 import app.surrealar.ui.settings.saveWhileTyping
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -40,11 +41,10 @@ internal class ArDisplaySettingsController(
             view.findViewById<Button>(R.id.btn_save_ar_display)?.visibility = View.GONE
 
             val altitudeModes   = listOf("Automatic (recommended)" to "AUTO", "Stored Altitude" to "STORED", "Terrain Altitude" to "TERRAIN")
-            val distanceOptions = listOf("All distances" to -1, "50 m" to 0, "100 m" to 1, "500 m" to 2)
             val tilScale = editScale?.parent?.parent as? TextInputLayout
 
             spinnerAltitude?.setAdapter(ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, altitudeModes.map { it.first }))
-            spinnerFilter?.setAdapter(ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, distanceOptions.map { it.first }))
+            spinnerFilter?.setAdapter(ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, ArDistanceFilterOptions.labels))
 
             // Last valid model scale. An invalid scale entry must not block saving the OTHER AR
             // settings (it used to return early, silently dropping switch/spinner changes).
@@ -61,7 +61,7 @@ internal class ArDisplaySettingsController(
                 }
                 val settings = ArDisplaySettings(
                     altitudeMode        = altitudeMode ?: (altitudeModes.firstOrNull { it.first == spinnerAltitude?.text?.toString() }?.second ?: "AUTO"),
-                    distanceFilterIndex = distanceIdx ?: distanceOptions.indexOfFirst { it.first == spinnerFilter?.text?.toString() }.coerceAtLeast(0),
+                    distanceFilterIndex = distanceIdx ?: ArDistanceFilterOptions.indexOfLabel(spinnerFilter?.text?.toString()),
                     showDebugOverlay    = switchDebug?.isChecked ?: false,
                     showLabels          = switchLabels?.isChecked ?: true,
                     showOffscreenArrows = switchArrows?.isChecked ?: true,
@@ -83,7 +83,7 @@ internal class ArDisplaySettingsController(
                     val s = settingsRepo.arDisplaySettings.first()
                     isBinding = true
                     spinnerAltitude?.setText(altitudeModes.getOrElse(altitudeModes.indexOfFirst { it.second == s.altitudeMode }.coerceAtLeast(0)) { altitudeModes.first() }.first, false)
-                    spinnerFilter?.setText(distanceOptions.getOrElse(s.distanceFilterIndex.coerceIn(0, distanceOptions.lastIndex)) { distanceOptions.first() }.first, false)
+                    spinnerFilter?.setText(ArDistanceFilterOptions.labelFor(s.distanceFilterIndex), false)
                     switchLabels?.isChecked = s.showLabels
                     switchArrows?.isChecked = s.showOffscreenArrows
                     switchDebug?.isChecked      = s.showDebugOverlay
@@ -101,7 +101,8 @@ internal class ArDisplaySettingsController(
                 saveAll(altitudeMode = altitudeModes.getOrNull(pos)?.second)
             }
             spinnerFilter?.setOnItemClickListener { _, _, pos, _ ->
-                saveAll(distanceIdx = pos)
+                // The dropdown lists ArDistanceFilterOptions.labels, so its position IS the step index.
+                saveAll(distanceIdx = pos.coerceIn(0, ArDistanceFilterOptions.labels.lastIndex))
             }
             switchLabels?.setOnCheckedChangeListener  { _, _ -> if (!isBinding) saveAll() }
             switchArrows?.setOnCheckedChangeListener  { _, _ -> if (!isBinding) saveAll() }
@@ -118,4 +119,23 @@ internal class ArDisplaySettingsController(
         }
         return view
     }
+}
+
+/**
+ * The AR distance-filter dropdown. The stored `distanceFilterIndex` is a POSITION in
+ * [OpenInARViewModel.DISTANCE_FILTER_STEPS] (null = all, then metres), which the AR screen reads and
+ * its range chips also use; the labels are derived from that list so the dropdown order cannot drift
+ * from it. Out-of-range stored values show as the nearest end (as the repository clamps them).
+ */
+internal object ArDistanceFilterOptions {
+    val steps: List<Double?> get() = OpenInARViewModel.DISTANCE_FILTER_STEPS
+
+    /** One label per step, same order: "All distances", "50 m", "100 m", "500 m". */
+    val labels: List<String> = OpenInARViewModel.DISTANCE_FILTER_STEPS.map { m -> if (m == null) "All distances" else "${m.toInt()} m" }
+
+    /** Label shown for a stored step index (clamped to the list). */
+    fun labelFor(storedIndex: Int): String = labels[storedIndex.coerceIn(0, labels.lastIndex)]
+
+    /** Step index for a shown label; unknown text = 0 (all distances), as before. */
+    fun indexOfLabel(label: String?): Int = labels.indexOf(label).coerceAtLeast(0)
 }

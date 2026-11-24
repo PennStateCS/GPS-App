@@ -8,6 +8,7 @@ import android.widget.EditText
 import app.surrealar.R
 import app.surrealar.domain.repository.ArDisplaySettingsRepository
 import app.surrealar.settings.model.ArDisplaySettings
+import app.surrealar.ui.openinar.OpenInARViewModel
 import app.surrealar.ui.settings.common.inputLayoutOf
 import com.google.android.material.materialswitch.MaterialSwitch
 import kotlinx.coroutines.Dispatchers
@@ -86,5 +87,61 @@ class ArDisplaySettingsControllerTest {
         scale.onEditorAction(EditorInfo.IME_ACTION_DONE)
         assertNull(inputLayoutOf(scale)?.error)
         assertEquals(stored.copy(modelScale = 0.5f), repo.saved.last())
+    }
+
+    private fun selectDistance(view: View, position: Int) {
+        val dropdown = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter)
+        dropdown.setText(dropdown.adapter.getItem(position).toString(), false)
+        dropdown.onItemClickListener.onItemClick(null, dropdown, position, position.toLong())
+    }
+
+    @Test fun `selecting each distance option persists its step index 0 to 3`() {
+        val repo = FakeRepo(stored)
+        val view = show(repo)
+        val dropdown = view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter)
+        assertEquals(4, dropdown.adapter.count)
+
+        for (position in 0..3) {
+            selectDistance(view, position)
+            assertEquals("option $position", position, repo.saved.last().distanceFilterIndex)
+        }
+        assertEquals(listOf(0, 1, 2, 3), repo.saved.map { it.distanceFilterIndex })
+    }
+
+    @Test fun `a later non-dropdown save keeps the shown distance step`() {
+        val repo = FakeRepo(stored)
+        val view = show(repo)
+        selectDistance(view, 3)
+
+        view.findViewById<MaterialSwitch>(R.id.switch_ar_show_labels).isChecked = true
+
+        assertEquals(3, repo.saved.last().distanceFilterIndex)
+    }
+
+    @Test fun `each stored step index shows its label when the view is recreated`() {
+        val expected = listOf("All distances", "50 m", "100 m", "500 m")
+        for (index in 0..3) {
+            val view = show(FakeRepo(stored.copy(distanceFilterIndex = index)))
+            assertEquals("index $index", expected[index],
+                view.findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter).text.toString())
+        }
+    }
+
+    @Test fun `out-of-range stored indexes show the nearest end`() {
+        assertEquals("All distances", show(FakeRepo(stored.copy(distanceFilterIndex = -1)))
+            .findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter).text.toString())
+        assertEquals("500 m", show(FakeRepo(stored.copy(distanceFilterIndex = 9)))
+            .findViewById<AutoCompleteTextView>(R.id.spinner_distance_filter).text.toString())
+    }
+
+    @Test fun `the persisted index maps to the AR distance filter in metres`() {
+        val repo = FakeRepo(stored)
+        val view = show(repo)
+        val metres = (0..3).map { position ->
+            selectDistance(view, position)
+            OpenInARViewModel.DISTANCE_FILTER_STEPS[repo.saved.last().distanceFilterIndex]
+        }
+        assertEquals(listOf(null, 50.0, 100.0, 500.0), metres)
+        assertEquals(OpenInARViewModel.DISTANCE_FILTER_STEPS.size, ArDistanceFilterOptions.labels.size)
     }
 }
