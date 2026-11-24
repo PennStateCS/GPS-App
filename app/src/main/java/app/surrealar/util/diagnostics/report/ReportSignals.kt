@@ -118,9 +118,12 @@ object ReportSignals {
             "LIVE" -> SignalKind.GNSS_LIVE
             else -> null
         }
+        // Same mapping as the legacy "RTK status A → B" sentence (incl. → NONE = no usable fix), so a coded
+        // line and an older build's line mean the same thing. Pinned by DiagEventsContractTest.
         DiagEvents.RTK_CHANGE -> when {
             f["from"] == "FIX" && f["to"] != "FIX" -> SignalKind.RTK_LOST
             f["to"] == "FIX" -> SignalKind.RTK_FIX
+            f["to"] == "NONE" -> SignalKind.GNSS_NO_FIX
             else -> null
         }
         DiagEvents.CORRECTIONS_STATE -> when (f["state"]) {
