@@ -20,10 +20,10 @@ Response to the technical-method review of the SurReal AR survey calculations by
 | Q01 | Mixed geoid models for "MSL" | GEOID18 fine for US; move to GEOID2022; EGM2008 (EGM96 fallback) for UTM; say "H (model)", never MSL | Phase 1 + Deferred | Phase 1: drop "MSL" wording, label H with its model. Deferred: GEOID2022, EGM2008/EGM96 |
 | Q02 | WGS84 = ITRF2014 | Use ITRF2020 | Deferred | ITRF2020 hub frame, roadmap Phase 2a |
 | Q03 | Grid/combined scale factor | Not needed now (no distance work) | Correct | No change |
-| Q04 | Accuracy definition | Radial and vertical error; RMSE fine | Phase 1 + Question | Accuracy metric planned in Phase 1; see question (a) |
+| Q04 | Accuracy definition | Radial and vertical error; RMSE fine. **Clarified:** keep the 68 % radius, r68 = 1.071·√(σlat²+σlon²) | Already correct | Existing r68 = 1.515·√((σlat²+σlon²)/2) is the same expression (1.515/√2 = 1.0713); equivalence now pinned by tests. No separate radial metric added |
 | Q05 | Accuracy stored with a point | Use the spread, not s/√n | Correct | Spread is already the reported statistic |
 | Q06 | Spread targets / occupation times | Suggests 1 / 5 / 30 / 180 s; user should control it | Question | Custom preset already sets time; see question (f) |
-| Q07 | Antenna reduction | Equations correct; no tilt; tell RS4 Pro users to turn IMU tilt off | Phase 1 | Receiver guidance planned in Phase 1 |
+| Q07 | Antenna reduction | Equations correct; no tilt. **Clarified:** unsure whether the interface returns tilt-corrected positions | Phase 1 (conditional warning) | Conditional RS4 Pro warning in Receiver settings; findings and open points in [rs4-pro-tilt.md](rs4-pro-tilt.md) |
 | Q08 | Averaging frame | Keep averaging in WGS84, then convert | Correct | Unchanged |
 | Q09 | Model georeferencing datum | Models likely in SPCS/NAD83; 2022 frames close to WGS84 | Deferred + Question | SPCS/NAD83 model input after frame metadata exists; see question (e) |
 | Q10 | SPCS zone suggestion | Use zone limits; new zones coming | Phase 1 + Deferred | Phase 1: boundary-based suggestion for SPCS83. Deferred: SPCS2022 zones |
@@ -46,15 +46,15 @@ Response to the technical-method review of the SurReal AR survey calculations by
 | 12 | LCC | Correct; SPCS2022 zones coming | Correct + Deferred | |
 | 13 | Hotine Oblique Mercator | Is it implemented? | Correct | Yes, **forward only** (lat/lon → grid) for Alaska zone 1 (`HomA` in `libs/geokit-core/.../projection/SpcsZones.kt`), checked against PROJ vectors. No inverse (grid → lat/lon) yet |
 | 14 | SPCS83 zone table / suggestion | Changes with SPCS2022 | Phase 1 + Deferred | See Q10 |
-| 15 | Ellipsoidal height from GGA | Unit gives h directly; use H = h − N only for display, name the model; don't assume a model without metadata | Question | GGA carries H and N, not h; see question (b) |
+| 15 | Ellipsoidal height from GGA | **Clarified:** if NMEA gives H and N, h = H + N with the NMEA geoid value is correct | Already correct | `NmeaFuser` reconstruction unchanged (same GGA sentence supplies H and N); receiver H/N now labelled "receiver geoid, model unknown" |
 | 16 | GEOID18 | Correct; use GEOID2022 (covers territories); EGM2008/EGM96 outside US | Correct + Deferred | |
 | 17 | Display height chain | Correct; with 2022 frames apply NAPGD2022 to WGS84 directly | Correct + Deferred | |
 | 18 | Antenna geometry | Why cap ARP→APC at 0.5 m? | Correct | The cap is an input typo guard on the editable phase-centre offset in Receiver settings (`AntennaGeometry.MAX_PHASE_CENTER_OFFSET_M`, `ui/settings/AntennaHeightInput.kt`): entries outside 0–0.5 m are rejected and the previous value kept. Built-in Reach offsets are 0.095–0.134 m (`EmlidReachModel`). Willing to remove or raise it if preferred |
 | 19 | Mark height at save | — | Correct | See question (d) for live display |
 | 20 | Camera height for AR | — | Correct | |
 | 21 | NMEA lat/lon | — | Correct | |
-| 22 | 68 % horizontal radius | Report radial error √(σlat² + σlon²) as 1σ; no ellipse | Phase 1 + Question | Accuracy metric planned in Phase 1; see question (a) |
-| 23 | DOP × UERE fallback | Questions the 1.515/√2 factor | Phase 1 + Question | Follows the decision on question (a) |
+| 22 | 68 % horizontal radius | **Clarified:** keep 68 %, r68 = 1.071·√(σlat²+σlon²) | Already correct | Same statistic as the code; sample σ 0.008/0.006 → 0.0107 m both ways (tests) |
+| 23 | DOP × UERE fallback | Questions the 1.515/√2 factor | Already correct | HDOP×UERE is a radial (DRMS) value, so ×1.0713 gives the same 68 % radius as the GST path (test). UERE values remain configuration defaults, not calibrated |
 | 24 | Running mean / variance | — | Correct | |
 | 25 | Occupation averaging | Fine | Correct | |
 | 26 | Acceptance rules / presets | Offer 1-second shots | Question | See question (f) |
@@ -65,6 +65,18 @@ Response to the technical-method review of the SurReal AR survey calculations by
 | 31 | Expected AR placement error | — | Correct | |
 | 32 | Georeferenced 3D model | Margin comment: "I don't expect Metashape to export the height in the Y component" (see also Q09) | Question | See question (e) |
 | 33 | Model frame conventions | — | Correct | |
+
+## Clarifications received (2026-11-24)
+
+| Topic | Dr. Bolkas's answer | Effect on Phase 1 |
+|---|---|---|
+| GGA heights (q. b) | h = H + N using the NMEA geoid value is correct | NMEA height reconstruction preserved unchanged |
+| Horizontal accuracy (q. a) | Keep the 68 % radius; r68 = 1.071·√(σlat²+σlon²) | Formula already equivalent; a separate radial-RMSE metric drafted in Phase 1 was removed; equivalence tests added |
+| AlphaRTK | Probably switches when the 2022 frames become official (perhaps ~May 2027, uncertain); implement new systems early but keep NAD83(2011) | Roadmap updated: nothing activated; incoming frame must be explicit and verified |
+| Global geoid | Prefer EGM2008 (typ. 5–10 cm, location-dependent) over EGM96 (typ. 20–30 cm) | Roadmap: EGM2008 preferred, EGM96 only as a named fallback; deployment assessment added |
+| RS4 Pro tilt | Unsure whether the interface returns tilt-corrected coordinates | Investigated; conditional warning; see [rs4-pro-tilt.md](rs4-pro-tilt.md) |
+
+Questions (a) and (b) below are answered; (c)–(g) remain open.
 
 ## Questions for Dr. Bolkas
 

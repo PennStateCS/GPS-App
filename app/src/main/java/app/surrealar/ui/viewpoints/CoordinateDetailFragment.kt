@@ -883,14 +883,6 @@ class CoordinateDetailFragment : Fragment() {
         c.stdLatM?.let { rows += DetailRow("Std dev (lat)", fmtM3(it)) }
         c.stdLonM?.let { rows += DetailRow("Std dev (lon)", fmtM3(it)) }
         c.stdAltM?.let { rows += DetailRow("Std dev (alt)", fmtM3(it)) }
-        // Survey-style summary of the same σ values: 1σ radial and vertical RMSE (no 68% scaling).
-        val radial = CoordinateDetailFormatter.radialRmseText(c.stdLatM, c.stdLonM)
-        val vertical = CoordinateDetailFormatter.verticalRmseText(c.stdAltM)
-        radial?.let { rows += DetailRow(CoordinateDetailFormatter.RADIAL_RMSE_LABEL, it) }
-        vertical?.let { rows += DetailRow(CoordinateDetailFormatter.VERTICAL_RMSE_LABEL, it) }
-        if (radial != null || vertical != null) {
-            rows += DetailRow(CoordinateDetailFormatter.ACCURACY_NOTE_LABEL, CoordinateDetailFormatter.ACCURACY_NOTE)
-        }
         renderDetailRows(cardAveragingRows, rows)
         cardAveraging?.visibility = View.VISIBLE
     }

@@ -173,27 +173,6 @@ object CoordinateDetailFormatter {
     /** The receiver's geoid undulation N (h = H + N), from the same unknown model. */
     const val RECEIVER_GEOID_SEPARATION = "N (receiver geoid, model unknown)"
 
-    // ── Survey precision (averaging card) ──────────────────────────────────────────────
-
-    /**
-     * Radial RMSE (1σ radial horizontal error) = sqrt(σlat² + σlon²), e.g. "0.010 m". Null unless both
-     * σ values are known.
-     */
-    fun radialRmseText(stdLatM: Double?, stdLonM: Double?): String? {
-        if (stdLatM == null || stdLonM == null) return null
-        return fmtM3(io.github.pennstatecs.geokit.accuracy.HorizontalAccuracy.radialRmse(stdLatM, stdLonM))
-    }
-
-    /** Vertical RMSE (1σ), e.g. "0.012 m". Null when unknown. */
-    fun verticalRmseText(stdAltM: Double?): String? = stdAltM?.let { fmtM3(it) }
-
-    const val RADIAL_RMSE_LABEL = "Radial RMSE (1σ)"
-    const val VERTICAL_RMSE_LABEL = "Vertical RMSE (1σ)"
-    const val ACCURACY_NOTE_LABEL = "About these values"
-    const val ACCURACY_NOTE =
-        "Radial RMSE = √(σlat² + σlon²). The ± horizontal accuracy shown elsewhere is a 68% radius " +
-            "(Android convention), about 7% larger."
-
     // ── Compact values for the Survey/GNSS stat tiles ──────────────────────────────────
 
     /** Short fix-status label for a stat tile: "Fix", "Float", "DGPS", "Single", … Null when absent. */

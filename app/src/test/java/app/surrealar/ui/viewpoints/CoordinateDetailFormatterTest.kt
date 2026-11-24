@@ -288,20 +288,6 @@ class CoordinateDetailFormatterTest {
     }
 
     @Test
-    fun radialRmse_isRootSumSquare_reviewSample() {
-        // Review sample: σlat 0.008, σlon 0.006 → 0.0100 m (not the 0.0107 m 68% radius).
-        assertEquals("0.010 m", CoordinateDetailFormatter.radialRmseText(0.008, 0.006))
-        assertEquals("0.050 m", CoordinateDetailFormatter.radialRmseText(0.03, 0.04))
-        assertNull(CoordinateDetailFormatter.radialRmseText(null, 0.006))
-        assertNull(CoordinateDetailFormatter.radialRmseText(0.008, null))
-        assertEquals("0.012 m", CoordinateDetailFormatter.verticalRmseText(0.012))
-        assertNull(CoordinateDetailFormatter.verticalRmseText(null))
-        assertEquals("Radial RMSE (1σ)", CoordinateDetailFormatter.RADIAL_RMSE_LABEL)
-        assertEquals("Vertical RMSE (1σ)", CoordinateDetailFormatter.VERTICAL_RMSE_LABEL)
-        assertTrue(CoordinateDetailFormatter.ACCURACY_NOTE.contains("68% radius"))
-    }
-
-    @Test
     fun receiverMslRow_hiddenOnlyWhenHeightAlreadyShowsIt() {
         assertFalse(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.RECEIVER_MSL))
         assertTrue(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.ELLIPSOIDAL))

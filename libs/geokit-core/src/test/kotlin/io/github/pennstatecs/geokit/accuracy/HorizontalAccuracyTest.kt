@@ -26,20 +26,31 @@ class HorizontalAccuracyTest {
         assertEquals(5.14, HorizontalAccuracy.r68FromHorizontalRms(1.2 * 4.0), 0.005)   // SM-X940
     }
 
-    @Test fun `radial RMSE is sqrt of the summed lat lon variances (review sample)`() {
-        assertEquals(0.0100, HorizontalAccuracy.radialRmse(0.008, 0.006), 1e-12)
-    }
+    /** Dr. Bolkas's form, r68 = 1.071 × sqrt(σlat² + σlon²), with the exact factor 1.515/√2. */
+    private fun bolkasR68(sigmaLat: Double, sigmaLon: Double) =
+        HorizontalAccuracy.R68_PER_HORIZONTAL_RMS * sqrt(sigmaLat * sigmaLat + sigmaLon * sigmaLon)
 
-    @Test fun `review sample 68 percent radius stays 0_0107`() {
+    @Test fun `review sample 68 percent radius is 0_0107 in both forms`() {
         assertEquals(0.0107, HorizontalAccuracy.r68(0.008, 0.006), 0.00005)
-        // The 68 % radius is the radial RMSE times 1.515 / sqrt(2).
-        assertEquals(HorizontalAccuracy.r68(0.008, 0.006),
-            HorizontalAccuracy.r68FromHorizontalRms(HorizontalAccuracy.radialRmse(0.008, 0.006)), 1e-12)
+        assertEquals(0.0107, bolkasR68(0.008, 0.006), 0.00005)
+        // With the review's rounded 1.071 the result agrees to well under a tenth of a millimetre.
+        assertEquals(HorizontalAccuracy.r68(0.008, 0.006), 1.071 * sqrt(0.008 * 0.008 + 0.006 * 0.006), 1e-5)
     }
 
-    @Test fun `radial RMSE edge cases`() {
-        assertEquals(0.0, HorizontalAccuracy.radialRmse(0.0, 0.0), 0.0)
-        assertEquals(0.02, HorizontalAccuracy.radialRmse(0.02, 0.0), 1e-15)
-        assertEquals(0.05, HorizontalAccuracy.radialRmse(-0.03, 0.04), 1e-15)
+    @Test fun `RMS form and 1_071 times radial form are the same statistic`() {
+        val cases = listOf(0.008 to 0.006, 0.010 to 0.010, 0.002 to 0.030, 0.0 to 0.015, 1.5 to 0.4, 0.0 to 0.0)
+        for ((lat, lon) in cases) {
+            assertEquals("σ=($lat,$lon)", HorizontalAccuracy.r68(lat, lon), bolkasR68(lat, lon), 1e-12)
+            // Argument order does not matter (σlat/σlon or ellipse semi-axes).
+            assertEquals(HorizontalAccuracy.r68(lat, lon), HorizontalAccuracy.r68(lon, lat), 0.0)
+        }
+    }
+
+    @Test fun `DOP fallback quotes the same 68 percent statistic as GST`() {
+        // A circular GST error with σ = 0.01 m per axis has radial RMS sqrt(2)·0.01; feeding that radial
+        // value to the fallback path must give the GST path's radius.
+        val sigma = 0.01
+        assertEquals(HorizontalAccuracy.r68(sigma, sigma),
+            HorizontalAccuracy.r68FromHorizontalRms(sqrt(2.0) * sigma), 1e-12)
     }
 }

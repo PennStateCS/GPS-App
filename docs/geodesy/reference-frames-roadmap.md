@@ -55,6 +55,16 @@ used for survey work.
   entries ("RTK network (NATRF2022)"). Internal averaging stays in the global frame (WGS84 ≈ ITRF2020),
   as recommended (Q08).
 - The NAD83 option stays for networks that have not switched.
+- **Explicit source frame (reviewer clarification, 2026-11-24).** AlphaRTK will probably switch to the 2022
+  frames when they become official (perhaps around May 2027; timing uncertain). The incoming frame is
+  therefore always the user's explicit receiver/network datum setting — never inferred from the receiver
+  model, the use of RTK corrections, or the date. New output systems (e.g. SPCS2022) may ship before the
+  network switches, but only for incoming frames whose transformation to the output frame is defined and
+  verified against NGS tools (e.g. ITRF2014/2020 → NATRF2022 via the NGS-published parameters). Until then the
+  existing ITRF2014 ⇄ NAD83(2011) 14-parameter Helmert stays the only active datum transformation.
+- WGS84, ITRF2020 and NATRF2022 are distinct frames: WGS84 ≈ ITRF2020 only at the ~cm level, and NATRF2022
+  differs from ITRF2020 by plate motion (metres over decades), so no code path may treat them as equal at
+  survey precision.
 
 ### 3.3 Heights
 
@@ -66,6 +76,32 @@ used for survey work.
   ("EGM2008 not downloaded — using EGM96").
 - One geoid per computation: an H is never compared or averaged with an H from another model; the
   stored metadata decides which model an H belongs to.
+- The receiver's own H/N (GGA) is kept as reported and used for h = H + N (confirmed correct by the
+  reviewer); it is labelled "receiver geoid, model unknown" and never relabelled as GEOID18/EGM.
+- Never apply two geoid corrections to one height: a displayed H is h − N(model) from exactly one model,
+  computed from h, never from a receiver H.
+
+### 3.3a EGM2008 deployment assessment
+
+The reviewer prefers EGM2008 (typically 5–10 cm vs EGM96's 20–30 cm — his estimates, location-dependent,
+not guaranteed figures). Size is the constraint:
+
+| Grid | Nodes (global) | Raw size | Notes |
+|---|---|---|---|
+| EGM2008 1′ | ≈ 233 M | ≈ 470 MB as int16 cm; ≈ 930 MB float32 | Not viable on a tablet |
+| EGM2008 2.5′ (PROJ `us_nga_egm08_25.tif`) | ≈ 37 M | ≈ 75 MB int16 cm; PROJ file 76.9 MB | Viable only as on-demand regional tiles |
+| EGM2008 5′ | ≈ 9.3 M | ≈ 19 MB int16 cm (less compressed) | Could be bundled globally; adds interpolation error in rugged terrain (verify against 2.5′) |
+| EGM96 15′ (PROJ `us_nga_egm96_15.tif`) | ≈ 1 M | 2.6 MB | Small enough to bundle as the named fallback |
+
+N ranges about −107 m to +86 m, so int16 at 1 cm resolution (±327 m) or int32 mm is enough; the GEOID18
+pack already stores integer millimetres in compressed 1° tiles, and the same tile format and bilinear
+reader would serve EGM2008. A 1° tile at 2.5′ is 25 × 25 nodes (≈ 1.3 KB raw), so a 100 km work area is a
+few KB to tens of KB. Recommended approach: **(1)** bundle EGM96 15′ only as the explicitly labelled
+fallback ("H (EGM96)"); **(2)** download EGM2008 2.5′ tiles for the user's region on demand (while
+online, before going to the field), cached for offline use; **(3)** a tile loads lazily on first use
+(memory stays small); **(4)** the height label and export always name the model actually used, and a
+point never mixes models. Verify interpolation against NGA/PROJ reference values before enabling. Phase 1
+downloads and bundles nothing.
 
 ### 3.4 Grids
 

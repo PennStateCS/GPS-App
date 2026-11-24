@@ -689,14 +689,16 @@
                     android:text="Measure both heights to the bottom of the receiver. The app adds the antenna's phase-centre offset."
                     android:textAppearance="?attr/textAppearanceBodyMedium" />
 
-                <!-- Surveyor review: no tilt model; the RS4 Pro's IMU tilt compensation must be off. -->
+                <!-- Surveyor review: the app has no tilt model. Emlid can stream a tilt-compensated pole-tip position
+                     (antenna height set in Emlid Flow); this app then subtracting its own pole height would
+                     double-correct. Not yet verified on an RS4 Pro: see docs/geodesy/rs4-pro-tilt.md. -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingHorizontal="20dp"
                     android:paddingTop="4dp"
                     android:alpha="0.7"
-                    android:text="Level the pole: the app assumes a vertical pole and applies no tilt correction. Reach RS4 Pro: turn IMU tilt compensation off in Emlid Flow."
+                    android:text="Level the pole: the app assumes a vertical pole and applies no tilt correction. Reach RS4 Pro: if tilt compensation or compensated-position streaming is on in Emlid Flow, the receiver may already report the pole tip, and the pole height entered here would be subtracted twice. Until this is verified, turn tilt compensation off and level the pole."
                     android:textAppearance="?attr/textAppearanceBodyMedium" />
 
                 <!-- Shown once for installs that stored a pole height under the old meaning
