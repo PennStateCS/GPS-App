@@ -727,23 +727,30 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
         val density = resources.displayMetrics.density
         fun dp(v: Float) = (v * density + 0.5f).toInt()
 
+        // Same page frame as the XML dev pages (dev_page_*.xml): 24dp top/bottom, responsive side padding.
+        val sidePadding = resources.getDimensionPixelSize(R.dimen.settings_content_padding_h)
         val root = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24f), dp(24f), dp(24f), dp(24f))
+            setPaddingRelative(sidePadding, dp(24f), sidePadding, dp(24f))
+        }
+        fun themeTextAppearance(attr: Int): Int {
+            val tv = android.util.TypedValue()
+            ctx.theme.resolveAttribute(attr, tv, true)
+            return tv.resourceId
         }
 
-        // Page title + subtitle
+        // Page title + subtitle (textAppearanceHeadlineSmall / BodyMedium, as in the XML pages)
         root.addView(TextView(ctx).apply {
             text = getString(R.string.dev_page_title_gnss)
-            textSize = 24f
-            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnBackground))
+            androidx.core.widget.TextViewCompat.setTextAppearance(this,
+                themeTextAppearance(com.google.android.material.R.attr.textAppearanceHeadlineSmall))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         })
         root.addView(TextView(ctx).apply {
             text = getString(R.string.dev_page_subtitle_gnss)
-            textSize = 14f
+            androidx.core.widget.TextViewCompat.setTextAppearance(this,
+                themeTextAppearance(com.google.android.material.R.attr.textAppearanceBodyMedium))
             alpha = 0.7f
-            setTextColor(resolveAttrColor(ctx, com.google.android.material.R.attr.colorOnSurfaceVariant))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(4f)
                 bottomMargin = dp(20f)
