@@ -208,15 +208,21 @@ public class SpcsZone(public val epsg: Int, public val ngsZone: Int, public val 
         return if (e >= w) lonDeg in w..e else lonDeg >= w || lonDeg <= e   // antimeridian
     }
 
-    private val areaDeg2: Double get() {
+    /** Area of the area-of-use box in square degrees (ranking only). */
+    internal val areaDeg2: Double get() {
         val (w, s, e, n) = areaOfUse.toList()
         return (n - s) * (if (e >= w) e - w else e - w + 360)
     }
 
     public companion object {
-        /** Smallest-area zone whose area of use contains the point (state-border overlaps → the more specific). */
+        /**
+         * Suggested SPCS83 zone for the point (degrees), or null: the [SpcsZoneSuggestion.suggested] of
+         * [SpcsZoneLocator.SPCS83]. County-defined zone extents first, area-of-use boxes only where no
+         * extent contains the point (Alaska, offshore). Use [SpcsZoneLocator] to also get the basis and
+         * the alternative zones.
+         */
         public fun suggestFor(latDeg: Double, lonDeg: Double): SpcsZone? =
-            SpcsZones.all.filter { it.contains(latDeg, lonDeg) }.minByOrNull { it.areaDeg2 }
+            SpcsZoneLocator.SPCS83.locate(latDeg, lonDeg).suggested
     }
 }
 

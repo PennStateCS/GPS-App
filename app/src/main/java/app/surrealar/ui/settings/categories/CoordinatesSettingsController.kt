@@ -132,6 +132,14 @@ internal class CoordinatesSettingsController(
         val zoneByLabel = zones.associateBy { it.label }
         val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter."
         var suggestedZoneEpsg: Int? = null
+        var suggestion: io.github.pennstatecs.geokit.projection.SpcsZoneSuggestion? = null
+
+        // Zone suggestion for the live fix. The fix is WGS84; the zone limits are NAD83 county lines, and
+        // the ~1-2 m difference is far below their generalisation. Failure (e.g. missing resource) = no hint.
+        fun locateZone(fix: io.github.pennstatecs.geokit.gnss.model.Fix): io.github.pennstatecs.geokit.projection.SpcsZoneSuggestion? =
+            runCatching { io.github.pennstatecs.geokit.projection.SpcsZoneLocator.SPCS83.locate(fix.latDeg, fix.lonDeg) }
+                .onFailure { settingsError("SPCS zone suggestion failed", it) }
+                .getOrNull()
 
         val hs = app.surrealar.settings.model.HorizontalSystem.entries
         val ds = app.surrealar.settings.model.OutputDatum.entries
@@ -171,10 +179,10 @@ internal class CoordinatesSettingsController(
             // Hint: suggestion notice, or a warning when the live position is outside the chosen zone.
             val fix = fixSwitchboard.currentFix.value
             zoneHint?.text = when {
-                zone != null && suggestedZoneEpsg == zone.epsg ->
-                    "Suggested from your position. Check it: zone areas overlap near state lines."
-                zone != null && fix != null && !zone.contains(fix.latDeg, fix.lonDeg) ->
-                    "Your current position is outside this zone."
+                zone != null && suggestedZoneEpsg == zone.epsg -> SpcsZoneHints.suggestionHint(suggestion)
+                zone != null && fix != null && s.horizontal.isStatePlane ->
+                    SpcsZoneHints.mismatchHint(zone, locateZone(fix), zone.contains(fix.latDeg, fix.lonDeg))
+                        ?: defaultZoneHint
                 else -> defaultZoneHint
             }
             // State Plane is defined on NAD83(2011): the datum choice does not apply.
@@ -195,13 +203,13 @@ internal class CoordinatesSettingsController(
         spinnerH.setOnItemClickListener { _, _, pos, _ ->
             val h = hs.getOrNull(pos) ?: return@setOnItemClickListener
             var next = current.copy(horizontal = h)
-            // Switching to State Plane: if the saved zone doesn't cover the live position, suggest one.
+            // Switching to State Plane: if the saved zone doesn't match the live position, suggest one
+            // (county-defined zone limits where they exist, else area-of-use boxes). The user can still pick.
             val fix = fixSwitchboard.currentFix.value
-            if (h.isStatePlane && fix != null &&
-                io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.contains(fix.latDeg, fix.lonDeg) != true
-            ) {
-                io.github.pennstatecs.geokit.projection.SpcsZone.suggestFor(fix.latDeg, fix.lonDeg)?.let {
-                    next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg
+            if (h.isStatePlane && fix != null) {
+                val found = locateZone(fix)
+                SpcsZoneHints.proposal(io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg), found)?.let {
+                    next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg; suggestion = found
                 }
             }
             save(next)
