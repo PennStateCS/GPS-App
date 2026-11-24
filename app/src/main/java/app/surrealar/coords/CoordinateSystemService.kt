@@ -62,20 +62,23 @@ class CoordinateSystemService @Inject constructor(
         }
     }
 
-    /** Global geoid models already opened (each at most once per process). */
-    private val warmedUp = java.util.Collections.synchronizedSet(HashSet<io.github.pennstatecs.geokit.geoid.GeoidModelId>())
+    /** Global geoid models opened successfully (each at most once per process; failures are retried). */
+    private val warmUps = GeoidWarmUpTracker(AppGeoidModels::warmUp)
 
     init {
         // EGM2008 / EGM96 heights: open the chosen model's data off the main thread as soon as it is
-        // selected (at start-up if already saved). Lookups before this finishes still work (they load
-        // synchronously once); each model is opened at most once per process (AppGeoidModels).
+        // selected (at start-up if already saved). Main-thread lookups before this finishes read "data is
+        // loading" (they never load on the UI thread); background lookups load synchronously. A model is
+        // marked opened only when its data loaded, so a failed open is tried again on the next selection.
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             settingsFlow.map { it.vertical.globalGeoidModel() }.distinctUntilChanged().collect { id ->
-                if (id == null || !warmedUp.add(id)) return@collect
+                if (id == null) return@collect
                 val t0 = System.nanoTime()
-                runCatching { AppGeoidModels.warmUp(id) }
-                    .onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "${id.token} geoid opened availability=$it durationMs=${(System.nanoTime() - t0) / 1_000_000}") }
-                    .onFailure { DiagnosticsLogger.e(DiagTags.DATA, "${id.token} geoid open failed: ${id.token} heights unavailable", it) }
+                val r = warmUps.warmUp(id) ?: return@collect
+                r.onSuccess {
+                    if (warmUps.isWarm(id)) DiagnosticsLogger.i(DiagTags.DATA, "${id.token} geoid opened availability=$it durationMs=${(System.nanoTime() - t0) / 1_000_000}")
+                    else DiagnosticsLogger.w(DiagTags.DATA, "${id.token} geoid open failed availability=$it: ${id.token} heights unavailable (will retry)")
+                }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "${id.token} geoid open failed: ${id.token} heights unavailable", it) }
             }
         }
     }
