@@ -25,7 +25,10 @@
             app:titleTextAppearance="?attr/textAppearanceTitleMedium"
             app:navigationIconTint="@color/app_on_top_app_bar"
             app:popupTheme="@style/Theme.SurveyingApp.PopupOverlay"
+            app:buttonGravity="center_vertical"
             app:title="Model Viewer" />
+        <!-- buttonGravity: the back button is sized from ?attr/actionBarSize (64dp in Material 3) and
+             top-aligned by default, so in this 56dp bar it sat below the title's centre line. -->
 
     </com.google.android.material.appbar.AppBarLayout>
 
