@@ -58,6 +58,7 @@ import app.surrealar.ui.settings.categories.MapSettingsController
 import app.surrealar.ui.settings.categories.CaptureSettingsController
 import app.surrealar.ui.settings.categories.CoordinatesSettingsController
 import app.surrealar.ui.settings.categories.DeveloperSettingsController
+import app.surrealar.ui.settings.categories.AboutSettingsController
 import app.surrealar.ui.settings.categories.SettingsCategoryController
 import app.surrealar.ui.settings.common.dpToPx
 import app.surrealar.ui.settings.common.inputLayoutOf
@@ -279,6 +280,7 @@ private const val CAT_ID_DEV                = 7
     private val captureController by lazy { CaptureSettingsController(this, settingsRepo, saveScope) }
     private val coordinatesController by lazy { CoordinatesSettingsController(this, settingsRepo, fixSwitchboard, coordinateSystemService, saveScope) }
     private val developerController by lazy { DeveloperSettingsController(this, settingsRepo, saveScope) }
+    private val aboutController by lazy { AboutSettingsController(this) }
 
     private fun controllerFor(categoryId: Int): SettingsCategoryController? = when (categoryId) {
         CAT_ID_APPEARANCE -> appearanceController
@@ -287,6 +289,7 @@ private const val CAT_ID_DEV                = 7
         CAT_ID_GNSS_CAPTURE -> captureController
         CAT_ID_COORDINATE_DISPLAY -> coordinatesController
         CAT_ID_DEV -> developerController
+        CAT_ID_ABOUT -> aboutController
         else -> null
     }
 
@@ -303,7 +306,6 @@ private const val CAT_ID_DEV                = 7
             else when (category.id) {
                 CAT_ID_LOCATION           -> setupLocationContent(inflater)
                 CAT_ID_DATA               -> setupDataContent(inflater)
-                CAT_ID_ABOUT              -> setupAboutContent(inflater)
                 else -> null
             }
         } catch (e: Exception) {
@@ -343,62 +345,6 @@ private const val CAT_ID_DEV                = 7
             view.findViewById<Button>(R.id.btn_cancel_import)?.setOnClickListener { try { cancelActiveImport() } catch (e: Exception) { settingsError("Import cancel failed", e) } }
         } catch (e: Exception) {
             settingsError("Settings section setup failed section=data", e)
-        }
-        return view
-    }
-
-    private fun setupAboutContent(inflater: LayoutInflater): View {
-        val view = inflater.inflate(R.layout.content_settings_about, contentContainer, false)
-        try {
-            val hash  = BuildInfo.gitHash
-            val dirty = BuildInfo.gitDirty
-
-            view.findViewById<TextView>(R.id.text_about_version)?.text =
-                BuildConfig.VERSION_NAME
-            view.findViewById<TextView>(R.id.text_about_build_number)?.text =
-                BuildInfo.buildNumber.toString()
-            view.findViewById<TextView>(R.id.text_about_commit)?.text =
-                if (dirty) "$hash-dirty" else hash
-            view.findViewById<TextView>(R.id.text_about_branch)?.text =
-                BuildInfo.gitBranch
-            view.findViewById<TextView>(R.id.text_about_dirty)?.text =
-                if (dirty) "Yes" else "No"
-            view.findViewById<TextView>(R.id.text_about_built)?.text =
-                BuildInfo.buildTime
-
-            val btnExport = view.findViewById<com.google.android.material.button.MaterialButton>(
-                R.id.btn_export_diagnostic
-            )
-            btnExport?.setOnClickListener {
-                btnExport.isEnabled = false
-                btnExport.setText(R.string.diag_export_button_busy)
-                categoryScope.launch {
-                    val ctx = requireContext()
-                    // ExportOutcome → share, or a friendly message per failure reason (never exception text).
-                    val message = DiagnosticExportUi.exportAndShare(ctx)
-                    btnExport.isEnabled = true
-                    btnExport.setText(R.string.diag_export_button)
-                    showSettingsMessage(getString(message),
-                        if (message == R.string.diag_export_ready) Snackbar.LENGTH_SHORT else Snackbar.LENGTH_LONG)
-                }
-            }
-
-            view.findViewById<View>(R.id.btn_mark_problem)?.setOnClickListener {
-                val appContext = requireContext().applicationContext
-                DiagnosticExportUi.showMarkProblemDialog(requireContext()) { note ->
-                    categoryScope.launch {
-                        val marker = DiagnosticExportUi.markProblem(appContext, note)
-                        if (!isAdded) return@launch
-                        showSettingsMessage(
-                            if (marker == null) getString(R.string.diag_mark_failed)
-                            else getString(R.string.diag_mark_done, DiagnosticExportUi.markTime(marker.epochMs)),
-                            Snackbar.LENGTH_LONG,
-                        )
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            settingsError("Settings section setup failed section=about", e)
         }
         return view
     }
