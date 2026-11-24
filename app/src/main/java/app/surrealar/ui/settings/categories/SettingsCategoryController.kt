@@ -34,4 +34,13 @@ internal class ActiveSettingsCategory {
         current?.onDestroyView()
         current = next
     }
+
+    /**
+     * SettingsFragment.buildCategoryContent: makes [next] current (destroying the previous view) and
+     * builds its view with [categoryScope] (the host has already cancelled the previous category's).
+     */
+    fun show(next: SettingsCategoryController?, inflater: LayoutInflater, container: ViewGroup, categoryScope: CoroutineScope): View? {
+        replace(next)
+        return next?.createView(inflater, container, categoryScope)
+    }
 }

@@ -170,9 +170,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     /** Called by [BaseTwoPaneFragment] after it cancelled the previous category's scope and removed its view. */
     override fun buildCategoryContent(category: SettingsCategory, inflater: LayoutInflater): View? =
         try {
-            val controller = controllerFor(category.id)
-            activeCategory.replace(controller)
-            controller?.createView(inflater, contentContainer, categoryScope)
+            activeCategory.show(controllerFor(category.id), inflater, contentContainer, categoryScope)
         } catch (e: Exception) {
             settingsError("Settings category build failed id=${category.id}", e)
             null

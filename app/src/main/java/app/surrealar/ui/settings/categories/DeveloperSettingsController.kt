@@ -4,7 +4,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
 import app.surrealar.R
 import app.surrealar.domain.repository.DeveloperSettingsRepository
 import app.surrealar.settings.model.DeveloperSettings
@@ -27,8 +26,9 @@ internal class DeveloperSettingsController(
         try {
             val switchDevTools = view.findViewById<MaterialSwitch>(R.id.switch_dev_tools)
             if (switchDevTools != null) {
-                // The fragment's lifecycleScope (as before this category had its own class), not categoryScope.
-                fragment.lifecycleScope.launch {
+                // categoryScope: binds this view only while it is shown (on the fragment's lifecycleScope
+                // the load could land on the switch after the category was left).
+                categoryScope.launch {
                     try {
                         switchDevTools.isChecked = settingsRepo.developerSettings.first().developerToolsEnabled
                     } catch (e: Exception) {
