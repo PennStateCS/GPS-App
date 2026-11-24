@@ -134,57 +134,19 @@ class RenderMapFragment : Fragment() {
      */
     private val mapUiVm: MapUiStateViewModel by activityViewModels()
 
-    // Map
+    // Map: the fragment is the one owner of the MapView and GoogleMap; components read the map
+    // through `{ googleMap }` and never keep it.
     private var mapView: MapView? = null
     private var googleMap: GoogleMap? = null
-    private var placeholder: View? = null
-    private var lastLatLngs: List<LatLng> = emptyList()
-    private var isSatellite = false
-    private var currentMapType = GoogleMap.MAP_TYPE_NORMAL
-    private var mapTypeRow: View? = null
-    private var txtMapType: TextView? = null
-    // Cycle order (no MAP_TYPE_NONE): Normal → Satellite → Hybrid → Terrain → Normal.
-    private val mapTypeCycle = intArrayOf(
-        GoogleMap.MAP_TYPE_NORMAL,
-        GoogleMap.MAP_TYPE_SATELLITE,
-        GoogleMap.MAP_TYPE_HYBRID,
-        GoogleMap.MAP_TYPE_TERRAIN,
-    )
     private var dataObserved = false
-    private var cameraInitialized = false
 
-    // Panel
-    private var leftPanel: View? = null
-    private var collapseBtn: View? = null   // ImageButton in new layout, typed as View
-    private var expandBtn: View? = null     // collapsed rail (LinearLayout), typed as View
-    private var collapsedCount: TextView? = null   // point count badge on the collapsed rail
-    private var leftPanelSubtitle: TextView? = null
-    private var visibleCountText: TextView? = null
-    private var pointSearchLayout: View? = null
-    private var pointSearchEdit: android.widget.EditText? = null
-    private var emptyTitle: TextView? = null
-    private var emptySubtitle: TextView? = null
-    // Drawer list filtering (display-only: filters the list, never marker visibility).
-    private var allToggleItems: List<CoordinateToggleItem> = emptyList()
-    private var pointSearchQuery: String = ""
-    private var panelHandle: View? = null   // GONE compat stub
-    private var panelWidthPx: Int = 0
-    private var panelCollapsed = false
-    private val minPanelDp = 160f
-    private val maxPanelDp = 480f
-    private var panelSwipeDownX: Float = 0f
-    private var panelSwipeDownTime: Long = 0L
-    private var lastDragX: Float = 0f
-    private var startDragWidth: Int = 0
-    private var dragStartTime: Long = 0L
-
-    // Coordinate list
-    private var toggleRecycler: RecyclerView? = null
-    private lateinit var toggleAdapter: CoordinateToggleAdapter
+    // ── Map components ─────────────────────────────────────────────────────────
+    // Created lazily (after Hilt injection), one per fragment instance: their session state survives
+    // view recreation, and each drops its views / map objects in its onDestroyView().
 
     // Saved-coordinate markers: the one owner of the loaded coordinates, markers and visibility.
     // Created lazily (after Hilt injection); one per fragment instance so visibility survives the view.
-    private val markers by lazy {
+    private val markers: CoordinateMarkerLayer by lazy {
         CoordinateMarkerLayer(
             map = { googleMap },
             context = { context },
@@ -194,7 +156,7 @@ class RenderMapFragment : Fragment() {
     }
 
     // Meter grid, point labels and boundary lines (+ their Map Tools rows).
-    private val overlays by lazy {
+    private val overlays: MapOverlayController by lazy {
         MapOverlayController(
             map = { googleMap },
             context = { context },
@@ -208,14 +170,60 @@ class RenderMapFragment : Fragment() {
         )
     }
 
-    // Visibility menu button in panel header
-    private var visibilityMenuBtn: ImageButton? = null
+    // Camera restore / auto-fit / recenter / fit / save.
+    private val camera: MapCameraController by lazy {
+        MapCameraController(
+            map = { googleMap },
+            mapView = { mapView },
+            mapUiVm = mapUiVm,
+            markers = markers,
+            liveLatLng = { lastFixLatLng },
+            showSnackbar = ::showSnackbar,
+        )
+    }
 
-    // Map Tools overlay (collapsible toolbar modeled on the AR floating toolbar)
-    private var mapToolsToggle: View? = null
-    private var mapToolsPanel: View? = null
-    private var mapToolsVisible = false
+    // Map Tools overlay: open state, map type, My Location row.
+    private val tools: MapToolsController by lazy {
+        MapToolsController(
+            map = { googleMap },
+            context = { context },
+            mapUiVm = mapUiVm,
+            logMapEvent = ::logMapEvent,
+            showSnackbar = ::showSnackbar,
+        )
+    }
 
+    // Left drawer: point list, search, counts, visibility menu, collapse/expand.
+    private val drawer: MapDrawerController by lazy {
+        MapDrawerController(
+            context = { context },
+            markers = markers,
+            modelRepository = modelRepository,
+            coordinateSystemService = coordinateSystemService,
+            mapUiVm = mapUiVm,
+            selectedId = { selection.selectedCoordinateId },
+            onRowClick = { id -> selection.selectCoordinate(id) },
+            onVisibilityChanged = { overlays.applyPointLabels() },
+            showSnackbar = ::showSnackbar,
+        )
+    }
+
+    // Selected point (owner of the selected id) and its card.
+    private val selection: SelectedCoordinateController by lazy {
+        SelectedCoordinateController(
+            context = { context },
+            scope = { viewLifecycleOwner.lifecycleScope },
+            markers = markers,
+            camera = camera,
+            mapUiVm = mapUiVm,
+            coordinateSystemService = coordinateSystemService,
+            modelRepository = modelRepository,
+            liveLatLng = { lastFixLatLng },
+            onSelectionChanged = { id -> drawer.setSelectedId(id) },
+            logMapEvent = ::logMapEvent,
+            refreshMapDiag = ::refreshMapDiag,
+        )
+    }
 
     // Live tracking
     private var currentMarker: Marker? = null
@@ -223,7 +231,6 @@ class RenderMapFragment : Fragment() {
     // recenter, or stakeout — those use the latest fix (lastFixLatLng / currentFix) directly.
     // TODO: persist via a future map-display settings model; fragment-only state for now.
     private var showCurrentLocationOnMap = true
-    private var myLocationRow: View? = null
     private var lastFixLatLng: LatLng? = null
     private var accuracyCircle: Circle? = null
     private var liveTrail: Polyline? = null
@@ -308,24 +315,6 @@ class RenderMapFragment : Fragment() {
             app.surrealar.util.diagnostics.HeadingDiagnostics.describe((st as? Enum<*>)?.name, decl.name, mag))
     }
 
-    // Selected coordinate card
-    private var selectedCoordinateId: String? = null
-    private var selectedCoordinateCard: View? = null
-    private var imgSelectedIcon: ImageView? = null
-    private var txtSelectedName: TextView? = null
-    private var txtSelectedCoords: TextView? = null
-    private var txtSelectedElevation: TextView? = null
-    private var layoutSelectedLive: View? = null
-    private var txtSelectedDistance: TextView? = null
-    private var txtSelectedBearing: TextView? = null
-    private var layoutSelectedCapture: View? = null
-    private var txtSelectedSource: TextView? = null
-    private var txtSelectedAccuracy: TextView? = null
-    private var btnSelectedClose: View? = null
-    private var btnSelectedCenter: View? = null
-    private var btnSelectedStakeout: View? = null
-    private var btnSelectedAr: View? = null
-    private var btnSelectedDetails: View? = null
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -348,76 +337,28 @@ class RenderMapFragment : Fragment() {
         // toolbar labels, map type, grid, and My Location come back as the user left them. The map
         // type/grid/camera are applied in onMapReady; the Map Tools panel is restored once laid out.
         mapUiVm.state.let { s ->
-            currentMapType = s.mapType
+            tools.restoreState(s.mapType, s.isMapToolsOpen)
             overlays.restoreModes(s.gridMode, s.pointLabelMode)
             showCurrentLocationOnMap = s.showCurrentLocation
-            mapToolsVisible = s.isMapToolsOpen
-            panelCollapsed = s.isLeftPanelCollapsed
-            selectedCoordinateId = s.selectedCoordinateId
+            drawer.restoreState(s.isLeftPanelCollapsed)
+            selection.restoreState(s.selectedCoordinateId)
         }
 
         mapView = root.findViewById(R.id.mapView)
-        // Empty state now lives inside the left panel ("No saved points to show") rather than a
-        // confusing centered "No render available" overlay on top of a perfectly good map.
-        placeholder = root.findViewById(R.id.left_panel_empty)
-        toggleRecycler = root.findViewById(R.id.coordinate_toggle_list)
-        visibilityMenuBtn = root.findViewById(R.id.btn_visibility_menu)
-        leftPanelSubtitle = root.findViewById(R.id.left_panel_subtitle)
-
-        // Selected coord card
-        selectedCoordinateCard = root.findViewById(R.id.card_selected_coordinate)
-        imgSelectedIcon = root.findViewById(R.id.img_selected_icon)
-        txtSelectedName = root.findViewById(R.id.txt_selected_name)
-        txtSelectedCoords = root.findViewById(R.id.txt_selected_coords)
-        txtSelectedElevation = root.findViewById(R.id.txt_selected_elevation)
-        layoutSelectedLive = root.findViewById(R.id.layout_selected_live)
-        txtSelectedDistance = root.findViewById(R.id.txt_selected_distance)
-        txtSelectedBearing = root.findViewById(R.id.txt_selected_bearing)
-        layoutSelectedCapture = root.findViewById(R.id.layout_selected_capture)
-        txtSelectedSource = root.findViewById(R.id.txt_selected_source)
-        txtSelectedAccuracy = root.findViewById(R.id.txt_selected_accuracy)
-        btnSelectedClose = root.findViewById(R.id.btn_selected_close)
-        btnSelectedCenter = root.findViewById(R.id.btn_selected_center)
-        btnSelectedStakeout = root.findViewById(R.id.btn_selected_stakeout)
-        btnSelectedAr = root.findViewById(R.id.btn_selected_ar)
-        btnSelectedDetails = root.findViewById(R.id.btn_selected_details)
-
-        // Map Tools collapsible overlay (toggle + panel)
-        mapToolsToggle = root.findViewById(R.id.btnMapToolsToggle)
-        mapToolsPanel = root.findViewById(R.id.layoutMapTools)
-
-        toggleAdapter = CoordinateToggleAdapter(
-            modelRepository = modelRepository,
-            onToggle = { id, checked ->
-                markers.setVisible(id, checked)
-                updateVisibleCount()
-                overlays.applyPointLabels()   // hide/show this point's label with its marker
-                if (!checked) showSnackbar("Coordinate hidden")
-            },
-            onRowClick = { id -> selectCoordinate(id) }
+        drawer.bindListViews(root)   // list + adapter, empty state, header, visibility menu
+        selection.bindViews(
+            root,
+            onStakeout = { startStakeoutForSelectedCoordinate() },
+            onOpenAr = { openSelectedInAr() },
+            onOpenDetails = { openSelectedDetails() },
         )
-        toggleRecycler?.layoutManager = LinearLayoutManager(requireContext())
-        toggleRecycler?.adapter = toggleAdapter
 
         mapView?.onCreate(savedInstanceState)
         mapView?.getMapAsync { map ->
-            DevLog.d(TAG) { "onMapReady: map ready, mapType=$currentMapType" }
+            DevLog.d(TAG) { "onMapReady: map ready, mapType=${tools.currentMapType}" }
             googleMap = map
-            map.mapType = currentMapType
-            MapThemeHelper.applyTheme(requireContext(), map, currentMapType)
-            // Restore the saved camera if returning to the map; else the default view (the saved-coord
-            // auto-fit in onMapLoaded only runs when no camera was restored, via cameraInitialized).
-            val savedCam = mapUiVm.state.camera
-            if (savedCam != null) {
-                map.moveCamera(CameraUpdateFactory.newCameraPosition(
-                    CameraPosition.Builder()
-                        .target(LatLng(savedCam.lat, savedCam.lng))
-                        .zoom(savedCam.zoom).bearing(savedCam.bearing).tilt(savedCam.tilt).build()
-                ))
-                cameraInitialized = true
-            } else {
-                map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(40.7963, -77.8570), 15f))
-            }
+            tools.applyToMap(map)
+            val cameraRestored = camera.restoreOrDefault(map)
             map.setMaxZoomPreference(22f)
             map.setMinZoomPreference(2f)
 
@@ -429,7 +370,7 @@ class RenderMapFragment : Fragment() {
             map.setOnMarkerClickListener { marker ->
                 val id = marker.tag as? String
                 if (id != null && markers.coordinates.containsKey(id)) {
-                    selectCoordinate(id)
+                    selection.selectCoordinate(id)
                 } else {
                     marker.showInfoWindow()
                 }
@@ -437,14 +378,14 @@ class RenderMapFragment : Fragment() {
             }
 
             map.setOnMapLoadedCallback {
-                if (!cameraInitialized && lastLatLngs.isNotEmpty()) updateCamera(lastLatLngs)
+                camera.onMapLoaded()
                 app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update { it.copy(mapLoaded = true) }
                 logMapEvent("MAP", "Map tiles loaded")
             }
             // Redraw the meter grid when the camera settles so Auto spacing adapts to zoom/pan.
             // Idle fires only after movement stops (not continuously), so this stays cheap.
             map.setOnCameraIdleListener {
-                saveCameraState()
+                camera.saveCameraState()
                 overlays.onCameraIdle()
             }
             overlays.redrawGrid()   // restore the grid if a mode was active before view recreation
@@ -452,78 +393,27 @@ class RenderMapFragment : Fragment() {
             startFixCollection()
             setupMapClickListener()
             app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
-                it.copy(cameraRestored = savedCam != null)
+                it.copy(cameraRestored = cameraRestored)
             }
-            logMapEvent("MAP", "Map ready type=${mapTypeLabel(currentMapType)} cameraRestored=${savedCam != null}")
+            logMapEvent("MAP", "Map ready type=${MapTypes.label(tools.currentMapType)} cameraRestored=$cameraRestored")
         }
 
         // Map Tools overlay wiring. The toggle slides the panel in/out (AR pattern); each row
         // delegates to the SAME existing map action handlers — only the presentation changed.
-        mapToolsToggle?.setOnClickListener { toggleMapTools() }
-        restoreMapToolsState()   // re-open/close just as the user left it before navigating away
-        root.findViewById<View>(R.id.btnMapCenter)?.setOnClickListener { recenterMap() }
-        visibilityMenuBtn?.setOnClickListener { showVisibilityMenu(it) }
-        mapTypeRow = root.findViewById(R.id.btnMapType)
-        txtMapType = root.findViewById(R.id.txt_map_type)
-        mapTypeRow?.setOnClickListener { cycleMapType() }
-        updateMapTypeButton()
+        tools.bindViews(root, showCurrentLocationOnMap, onMyLocationClick = { toggleMyLocationVisibility() })
+        root.findViewById<View>(R.id.btnMapCenter)?.setOnClickListener { camera.recenterMap() }
         overlays.bindViews(root)   // Grid + Labels rows
-        root.findViewById<View>(R.id.btnMapZoomIn)?.setOnClickListener {
-            googleMap?.animateCamera(CameraUpdateFactory.zoomIn())
-        }
-        root.findViewById<View>(R.id.btnMapZoomOut)?.setOnClickListener {
-            googleMap?.animateCamera(CameraUpdateFactory.zoomOut())
-        }
-        root.findViewById<View>(R.id.btnMapFit)?.setOnClickListener { fitVisibleCoordinates() }
-        myLocationRow = root.findViewById(R.id.btnMapMyLocation)
-        myLocationRow?.setOnClickListener { toggleMyLocationVisibility() }
-        updateMyLocationRowState()
+        root.findViewById<View>(R.id.btnMapZoomIn)?.setOnClickListener { camera.zoomIn() }
+        root.findViewById<View>(R.id.btnMapZoomOut)?.setOnClickListener { camera.zoomOut() }
+        root.findViewById<View>(R.id.btnMapFit)?.setOnClickListener { camera.fitVisibleCoordinates() }
 
-        // Selected coord card buttons
-        btnSelectedClose?.setOnClickListener { dismissSelectedCoordinate() }
-        btnSelectedCenter?.setOnClickListener {
-            selectedCoordinateId?.let { id ->
-                markers.coordinate(id)?.let { c ->
-                    googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(
-                        LatLng(c.latitude, c.longitude),
-                        (googleMap?.cameraPosition?.zoom ?: 18f).coerceAtLeast(16f)
-                    ))
-                }
-            }
-        }
-        btnSelectedStakeout?.setOnClickListener { startStakeoutForSelectedCoordinate() }
-        btnSelectedAr?.setOnClickListener { openSelectedInAr() }
-        btnSelectedDetails?.setOnClickListener { openSelectedDetails() }
-
-        if (savedInstanceState != null) {
-            panelWidthPx = savedInstanceState.getInt("panelWidthPx", 0)
-            panelCollapsed = savedInstanceState.getBoolean("panelCollapsed", false)
-        }
+        drawer.restoreFromBundle(savedInstanceState)
         return root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        leftPanel = view.findViewById(R.id.left_panel)
-        panelHandle = view.findViewById(R.id.panel_handle)  // GONE stub
-        collapseBtn = view.findViewById(R.id.btn_collapse_panel)
-        expandBtn = view.findViewById(R.id.btn_expand_panel)
-        collapsedCount = view.findViewById(R.id.text_collapsed_count)
-        visibleCountText = view.findViewById(R.id.text_visible_count)
-        pointSearchLayout = view.findViewById(R.id.layout_point_search)
-        pointSearchEdit = view.findViewById(R.id.edit_point_search)
-        emptyTitle = view.findViewById(R.id.left_panel_placeholder)
-        emptySubtitle = view.findViewById(R.id.left_panel_placeholder_sub)
-        view.findViewById<View>(R.id.btn_show_all)?.setOnClickListener { showAllCoordinates() }
-        view.findViewById<View>(R.id.btn_hide_all)?.setOnClickListener { hideAllCoordinates() }
-        pointSearchEdit?.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
-                pointSearchQuery = s?.toString()?.trim().orEmpty()
-                applyDrawerFilter()
-            }
-            override fun afterTextChanged(s: android.text.Editable?) {}
-        })
+        drawer.bindPanelViews(view)   // panel, counts, search, Show all / Hide all
 
         stakeoutPanel = view.findViewById(R.id.stakeout_panel)
         btnToggleStakeout = view.findViewById(R.id.btn_toggle_stakeout)  // GONE stub
@@ -566,9 +456,7 @@ class RenderMapFragment : Fragment() {
             }
         }
 
-        if (panelWidthPx == 0) panelWidthPx = dpToPx(288f)
-        applyPanelState()
-        setupPanelInteractions()
+        drawer.initPanel()
         startProviderObservation()
     }
 
@@ -582,7 +470,7 @@ class RenderMapFragment : Fragment() {
         catch (e: Exception) { logFail("onResume", e) }
     }
     override fun onPause() {
-        try { saveCameraState(); mapView?.onPause(); fragmentResumed = false; pauseGuidanceFeedback(); syncCompass() }
+        try { camera.saveCameraState(); mapView?.onPause(); fragmentResumed = false; pauseGuidanceFeedback(); syncCompass() }
         catch (e: Exception) { logFail("onPause", e) }
         super.onPause()
     }
@@ -611,12 +499,17 @@ class RenderMapFragment : Fragment() {
         // fresh GoogleMap instead of leaving the panel stuck on "Loading…". The marker layer keeps the
         // user's show/hide choices (keyed by id) across recreation.
         markers.onDestroyView()
-        lastLatLngs = emptyList()
+        camera.onDestroyView()
         dataObserved = false
+        // View-only components drop their view references (state such as the selection, drawer
+        // search/collapse and map tools open state is kept for the recreated view).
+        drawer.onDestroyView()
+        selection.onDestroyView()
+        tools.onDestroyView()
         try { mapView?.onDestroy() } catch (e: Exception) { logFail("mapView.onDestroy", e) }
         // Drop the destroyed map too (it used to be retained until the next onMapReady), so nothing
         // can draw on it between view destruction and recreation.
-        mapView = null; googleMap = null; placeholder = null
+        mapView = null; googleMap = null
         super.onDestroyView()
     }
 
@@ -707,53 +600,6 @@ class RenderMapFragment : Fragment() {
         } catch (e: Exception) {
             logFail("live.updateLiveTracking", e, 'E')
         }
-    }
-
-    // ── Map Tools overlay (collapsible, AR-style) ──────────────────────────────
-
-    /** Slides the Map Tools panel in/out, mirroring the AR floating-toolbar toggle. */
-    private fun toggleMapTools() {
-        setMapToolsOpen(!mapToolsVisible, animate = true)
-    }
-
-    /** Applies the open/closed state to the panel + toggle, persisting it to the session ViewModel. */
-    private fun setMapToolsOpen(open: Boolean, animate: Boolean) {
-        val panel = mapToolsPanel ?: return
-        mapToolsVisible = open
-        mapUiVm.update { it.copy(isMapToolsOpen = open) }
-        if (animate) logMapEvent("MAP", "Map tools ${if (open) "opened" else "closed"}")
-        if (open) {
-            mapToolsToggle?.contentDescription = "Hide map tools"
-            if (animate) {
-                panel.translationX = panel.width.toFloat().coerceAtLeast(200f)
-                panel.alpha = 0f
-                panel.visibility = View.VISIBLE
-                panel.animate().translationX(0f).alpha(1f).setDuration(200)
-                    .setInterpolator(android.view.animation.DecelerateInterpolator()).start()
-                mapToolsToggle?.animate()?.rotation(90f)?.setDuration(200)?.start()
-            } else {
-                panel.translationX = 0f; panel.alpha = 1f; panel.visibility = View.VISIBLE
-                mapToolsToggle?.rotation = 90f
-            }
-        } else {
-            mapToolsToggle?.contentDescription = "Show map tools"
-            if (animate) {
-                panel.animate().translationX(panel.width.toFloat().coerceAtLeast(200f)).alpha(0f)
-                    .setDuration(160).setInterpolator(android.view.animation.AccelerateInterpolator())
-                    .withEndAction { panel.visibility = View.GONE }.start()
-                mapToolsToggle?.animate()?.rotation(0f)?.setDuration(160)?.start()
-            } else {
-                panel.visibility = View.GONE
-                mapToolsToggle?.rotation = 0f
-            }
-        }
-    }
-
-    /** Re-applies the saved Map Tools open/closed state to the freshly created views (no animation). */
-    private fun restoreMapToolsState() {
-        val panel = mapToolsPanel ?: return
-        // Defer until the panel has been measured so a "closed" state lays out correctly.
-        panel.post { setMapToolsOpen(mapToolsVisible, animate = false) }
     }
 
     // ── Stakeout calculations ──────────────────────────────────────────────────
@@ -1173,19 +1019,15 @@ class RenderMapFragment : Fragment() {
             try {
                 if (points.isEmpty()) {
                     markers.clear()
-                    allToggleItems = emptyList()
-                    pointSearchLayout?.visibility = View.GONE
-                    showEmptyState(searching = false)
-                    lastLatLngs = emptyList()
-                    toggleAdapter.submit(emptyList())
-                    updateVisibleCount()
+                    camera.clearCoordinates()
+                    drawer.showNoPoints()
                     // A coordinate-backed stakeout target no longer exists — end stakeout cleanly.
                     if (isStakeoutMode && stakeoutTargetId != null) {
                         showSnackbar("Stakeout target was removed"); stopStakeout()
                     }
                     return@observe
                 }
-                placeholder?.visibility = View.GONE
+                drawer.hidePlaceholder()
 
                 // Remove markers for coordinates that were deleted
                 val newIds = points.map { it.id }.toHashSet()
@@ -1202,24 +1044,14 @@ class RenderMapFragment : Fragment() {
                     // Adds/updates the glyph marker; null = the map went away (skip, as before).
                     val visible = markers.upsert(p) ?: return@forEach
                     if (visible) latLngsVisible.add(LatLng(p.latitude, p.longitude))
-                    toggleItems += CoordinateToggleItem(
-                        id = p.id, name = p.name, checked = visible,
-                        icon = p.displayIconKey ?: "", modelId = p.linkedModelId, color = p.color,
-                        lat = p.latitude, lon = p.longitude,
-                        meta = buildRowMeta(p)
-                    )
+                    toggleItems += drawer.toggleItem(p, visible)
                 }
 
-                lastLatLngs = latLngsVisible
-                allToggleItems = toggleItems
-                // Show search once the list gets long enough to warrant filtering.
-                pointSearchLayout?.visibility = if (toggleItems.size > 8) View.VISIBLE else View.GONE
-                applyDrawerFilter()
-                updateVisibleCount()
-                updateCamera(latLngsVisible)
+                drawer.showItems(toggleItems)
+                camera.onCoordinatesLoaded(latLngsVisible)
                 // Re-show the selected-point card once coordinates are loaded (e.g. after returning
                 // from details). Clears the selection if that coordinate no longer exists.
-                restoreSelectedCard()
+                selection.restoreSelectedCard()
                 overlays.applyPointLabels()
                 // Every DB emission lands here; log only when the counts change.
                 val total = points.size
@@ -1233,22 +1065,6 @@ class RenderMapFragment : Fragment() {
                 logFail("coordinate observer", e, 'E')
             }
         }
-    }
-
-    // ── Camera ─────────────────────────────────────────────────────────────────
-
-    private fun updateCamera(latLngs: List<LatLng>) {
-        val map = googleMap ?: return
-        if (latLngs.isEmpty()) return
-        try {
-            if (latLngs.size == 1) {
-                map.animateCamera(CameraUpdateFactory.newLatLngZoom(latLngs.first(), 20f))
-            } else if (!cameraInitialized) {
-                val bounds = LatLngBounds.builder().also { b -> latLngs.forEach { b.include(it) } }.build()
-                mapView?.post { try { map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100)) } catch (_: Exception) {} }
-            }
-            cameraInitialized = true
-        } catch (e: Exception) { logFail("camera update", e) }
     }
 
     // ── Map diagnostics (privacy-safe: counts/modes/booleans only, never coordinates) ──────────
@@ -1267,8 +1083,8 @@ class RenderMapFragment : Fragment() {
             app.surrealar.util.diagnostics.MapRuntimeDiagnostics.update {
                 it.copy(
                     mapReady = googleMap != null,
-                    mapType = mapTypeLabel(currentMapType),
-                    mapToolsOpen = mapToolsVisible,
+                    mapType = MapTypes.label(tools.currentMapType),
+                    mapToolsOpen = tools.mapToolsVisible,
                     gridMode = overlays.gridMode.label,
                     gridSpacing = overlays.currentGridSpacingM?.let { m -> MapGrid.formatSpacing(m) },
                     pointLabelMode = overlays.pointLabelMode.label,
@@ -1277,7 +1093,7 @@ class RenderMapFragment : Fragment() {
                     accuracyCircleVisible = accuracyCircle != null,
                     markersTotal = total,
                     markersVisible = visible,
-                    selectedActive = selectedCoordinateId != null,
+                    selectedActive = selection.selectedCoordinateId != null,
                     stakeoutActive = isStakeoutMode,
                     guidanceActive = isGuidanceActive,
                 )
@@ -1285,50 +1101,16 @@ class RenderMapFragment : Fragment() {
         } catch (e: Exception) { logFail("diagnostic snapshot refresh", e) }
     }
 
-    /** Saves the current camera into the session ViewModel so it can be restored on return. */
-    private fun saveCameraState() {
-        val cam = googleMap?.cameraPosition ?: return
-        mapUiVm.update {
-            it.copy(camera = MapCameraState(
-                lat = cam.target.latitude, lng = cam.target.longitude,
-                zoom = cam.zoom, bearing = cam.bearing, tilt = cam.tilt,
-            ))
-        }
-    }
-
-    private fun recenterMap() {
-        val map = googleMap ?: return
-        val live = lastFixLatLng
-        if (live != null) {
-            map.animateCamera(CameraUpdateFactory.newLatLngZoom(live, 20f))
-            return
-        }
-        val visiblePositions = markers.visibleMarkerPositions()
-        if (visiblePositions.isNotEmpty()) {
-            updateCamera(visiblePositions)
-        } else {
-            showSnackbar("Current location unavailable")
-        }
-    }
-
     // ── My Location display toggle (map display only) ──────────────────────────
 
     private fun toggleMyLocationVisibility() {
         showCurrentLocationOnMap = !showCurrentLocationOnMap
         mapUiVm.update { it.copy(showCurrentLocation = showCurrentLocationOnMap) }
-        updateMyLocationRowState()
+        tools.updateMyLocationRowState(showCurrentLocationOnMap)
         applyCurrentLocationVisibility()
         syncCompass()   // My Location heading shares the one compass listener
         logMapEvent("MAP", "Map location overlay ${if (showCurrentLocationOnMap) "on" else "off"}")
         showSnackbar(if (showCurrentLocationOnMap) "Showing my location" else "Hiding my location")
-    }
-
-    /** Reflects the toggle state on the toolbar row (dimmed = off) and swaps its content description. */
-    private fun updateMyLocationRowState() {
-        myLocationRow?.alpha = if (showCurrentLocationOnMap) 1.0f else 0.4f
-        myLocationRow?.contentDescription =
-            if (showCurrentLocationOnMap) "Hide my location and direction on map"
-            else "Show my location and direction on map"
     }
 
     /**
@@ -1406,279 +1188,13 @@ class RenderMapFragment : Fragment() {
         headingDescriptor?.let { return it }
         return try {
             val d = ContextCompat.getDrawable(requireContext(), R.drawable.ic_location_heading) ?: return null
-            val size = dpToPx(36f)
+            val size = requireContext().dpToPx(36f)
             val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bmp)
             d.setBounds(0, 0, size, size)
             d.draw(canvas)
             BitmapDescriptorFactory.fromBitmap(bmp).also { headingDescriptor = it }
         } catch (e: Exception) { logFail("headingArrowDescriptor", e); null }
-    }
-
-    private fun fitVisibleCoordinates() {
-        val visiblePositions = markers.visibleMarkerPositions()
-        if (visiblePositions.isEmpty()) {
-            showSnackbar("No visible coordinates")
-            return
-        }
-        if (visiblePositions.size == 1) {
-            googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(visiblePositions.first(), 18f))
-            return
-        }
-        val bounds = LatLngBounds.builder().also { b -> visiblePositions.forEach { b.include(it) } }.build()
-        mapView?.post {
-            try { googleMap?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 80)) }
-            catch (_: Exception) { googleMap?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 0)) }
-        }
-    }
-
-    // ── Map layers ─────────────────────────────────────────────────────────────
-
-    /** Advances the map type one step through [mapTypeCycle] and applies it. */
-    private fun cycleMapType() {
-        val idx = mapTypeCycle.indexOf(currentMapType).coerceAtLeast(0)
-        applyMapType(mapTypeCycle[(idx + 1) % mapTypeCycle.size])
-        showSnackbar("Map type: ${mapTypeLabel(currentMapType)}")
-    }
-
-    private fun applyMapType(type: Int) {
-        currentMapType = type
-        mapUiVm.update { it.copy(mapType = type) }
-        googleMap?.mapType = type
-        googleMap?.let { MapThemeHelper.applyTheme(requireContext(), it, type) }
-        isSatellite = type == GoogleMap.MAP_TYPE_HYBRID || type == GoogleMap.MAP_TYPE_SATELLITE
-        updateMapTypeButton()
-        logMapEvent("MAP", "Map type changed type=${mapTypeLabel(type)}")
-    }
-
-    /** Shows the current map type on the toolbar row and announces the next one for accessibility. */
-    private fun updateMapTypeButton() {
-        val idx = mapTypeCycle.indexOf(currentMapType).coerceAtLeast(0)
-        val current = mapTypeLabel(currentMapType)
-        val next = mapTypeLabel(mapTypeCycle[(idx + 1) % mapTypeCycle.size])
-        txtMapType?.text = current
-        mapTypeRow?.contentDescription = "Map type: $current. Tap to switch to $next."
-    }
-
-    private fun mapTypeLabel(type: Int): String = when (type) {
-        GoogleMap.MAP_TYPE_SATELLITE -> "Satellite"
-        GoogleMap.MAP_TYPE_HYBRID    -> "Hybrid"
-        GoogleMap.MAP_TYPE_TERRAIN   -> "Terrain"
-        else                         -> "Normal"
-    }
-
-    // ── Coordinate visibility ──────────────────────────────────────────────────
-
-    /** Overflow ("More") menu. Show all / Hide all are now explicit buttons; this keeps the
-     *  contextual "Show selected only" and is the home for future point-display options. */
-    private fun showVisibilityMenu(anchor: View) {
-        if (markers.coordinates.isEmpty()) return
-        val popup = android.widget.PopupMenu(requireContext(), anchor)
-        popup.menu.add(0, 1, 0, "Show all")
-        popup.menu.add(0, 2, 1, "Hide all")
-        selectedCoordinateId?.let { popup.menu.add(0, 3, 2, "Show selected only") }
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> showAllCoordinates()
-                2 -> hideAllCoordinates()
-                3 -> showSelectedOnly()
-            }
-            true
-        }
-        popup.show()
-    }
-
-    private fun showSelectedOnly() {
-        val selId = selectedCoordinateId ?: return
-        try {
-            markers.setAllVisible { id -> id == selId }
-            refreshToggleList()
-            updateVisibleCount()
-            overlays.applyPointLabels()
-        } catch (e: Exception) { logFail("showSelectedOnly", e) }
-    }
-
-    private fun showAllCoordinates() {
-        try {
-            markers.setAllVisible { true }
-            refreshToggleList()
-            updateVisibleCount()
-            overlays.applyPointLabels()
-        } catch (e: Exception) { logFail("showAllCoordinates", e) }
-    }
-
-    private fun hideAllCoordinates() {
-        try {
-            markers.setAllVisible { false }
-            refreshToggleList()
-            updateVisibleCount()
-            overlays.applyPointLabels()
-            showSnackbar("All coordinates hidden")
-        } catch (e: Exception) { logFail("hideAllCoordinates", e) }
-    }
-
-    private fun refreshToggleList() {
-        try {
-            allToggleItems = markers.coordinates.values.map { c ->
-                CoordinateToggleItem(
-                    id = c.id, name = c.name,
-                    checked = markers.visibility[c.id] ?: true,
-                    icon = c.displayIconKey ?: "", modelId = c.linkedModelId, color = c.color,
-                    lat = c.latitude, lon = c.longitude,
-                    meta = buildRowMeta(c)
-                )
-            }
-            applyDrawerFilter()
-        } catch (e: Exception) { logFail("refreshToggleList", e) }
-    }
-
-    /** Submits the drawer list filtered by the search query (display-only — never changes marker
-     *  visibility) and manages the empty/no-match state. */
-    private fun applyDrawerFilter() {
-        val q = pointSearchQuery
-        val filtered = if (q.isBlank()) allToggleItems
-            else allToggleItems.filter { it.name.contains(q, ignoreCase = true) }
-        toggleAdapter.submit(filtered)
-        when {
-            allToggleItems.isEmpty() -> showEmptyState(searching = false)
-            filtered.isEmpty() -> showEmptyState(searching = true)
-            else -> placeholder?.visibility = View.GONE
-        }
-    }
-
-    private fun showEmptyState(searching: Boolean) {
-        placeholder?.visibility = View.VISIBLE
-        if (searching) {
-            emptyTitle?.text = "No matching points"
-            emptySubtitle?.text = "Try a different search."
-        } else {
-            emptyTitle?.text = "No map points"
-            emptySubtitle?.text = "Capture or import coordinates to show them here."
-        }
-    }
-
-    private fun updateVisibleCount() {
-        val visible = markers.visibility.visibleCount
-        val total = markers.coordinates.size
-        // Map-workspace style count, e.g. "12 shown / 18 total".
-        leftPanelSubtitle?.text = if (total == 0) "No points yet" else "$visible shown / $total total"
-        visibleCountText?.text = "Visible $visible / $total"
-        collapsedCount?.text = total.toString()
-    }
-
-    // ── Selected coordinate ────────────────────────────────────────────────────
-
-    private fun selectCoordinate(id: String) {
-        val coord = markers.coordinate(id) ?: return
-        selectedCoordinateId = id
-        mapUiVm.update { it.copy(selectedCoordinateId = id) }
-        toggleAdapter.setSelectedId(id)
-        showSelectedCoordinateCard(coord)
-        logMapEvent("MAP", "Map selected point opened")
-        // Center map on selection, keeping zoom at least 16
-        googleMap?.animateCamera(CameraUpdateFactory.newLatLngZoom(
-            LatLng(coord.latitude, coord.longitude),
-            (googleMap?.cameraPosition?.zoom ?: 18f).coerceAtLeast(16f)
-        ))
-    }
-
-    /** Re-shows the selected-point card on view recreation WITHOUT moving the camera (camera is
-     *  restored separately). Clears the selection if the coordinate no longer exists. */
-    private fun restoreSelectedCard() {
-        val id = selectedCoordinateId ?: return
-        val coord = markers.coordinate(id)
-        if (coord == null) {
-            dismissSelectedCoordinate()
-            return
-        }
-        toggleAdapter.setSelectedId(id)
-        showSelectedCoordinateCard(coord)
-    }
-
-    private fun showSelectedCoordinateCard(coord: Coordinate) {
-        selectedCoordinateCard?.visibility = View.VISIBLE
-        txtSelectedName?.text = coord.name.ifBlank { "—" }
-        // Position and height in the system chosen under Settings → Coordinates.
-        txtSelectedCoords?.text = coordinateSystemService.positionText(coord, latLonDecimals = 7)
-        txtSelectedElevation?.text = "Elev: " + coordinateSystemService.heightText(coord)
-        loadCoordinateIconIntoView(coord, imgSelectedIcon)
-
-        // Live relationship (distance + bearing from the current position) — uses the existing map
-        // math; hidden when there is no live fix. Does not affect stakeout.
-        val live = lastFixLatLng
-        if (live != null) {
-            val target = LatLng(coord.latitude, coord.longitude)
-            val dist = calculateDistance(live, target)
-            val bearing = calculateBearing(live, target)
-            txtSelectedDistance?.text = "Distance: " + formatDistanceMeters(dist)
-            txtSelectedBearing?.text = String.format(
-                Locale.getDefault(), "Bearing: %s %.0f°",
-                io.github.pennstatecs.geokit.heading.Compass.point8(bearing), bearing
-            )
-            layoutSelectedLive?.visibility = View.VISIBLE
-        } else {
-            layoutSelectedLive?.visibility = View.GONE
-        }
-
-        // Capture-quality summary from the SAVED point metadata (not live receiver status).
-        val sourceText = buildCaptureSourceText(coord)
-        val accText = coord.horizontalAccuracyM?.let {
-            String.format(Locale.getDefault(), "Accuracy: ±%.2f m", it)
-        }
-        txtSelectedSource?.text = sourceText.orEmpty()
-        txtSelectedSource?.visibility = if (sourceText != null) View.VISIBLE else View.INVISIBLE
-        txtSelectedAccuracy?.text = accText.orEmpty()
-        txtSelectedAccuracy?.visibility = if (accText != null) View.VISIBLE else View.INVISIBLE
-        layoutSelectedCapture?.visibility =
-            if (sourceText != null || accText != null) View.VISIBLE else View.GONE
-    }
-
-    private fun formatDistanceMeters(d: Double): String = coordinateSystemService.distanceText(d)
-
-    @Suppress("unused")
-    private fun formatDistanceMetersLegacy(d: Double): String = when {
-        d < 1.0  -> String.format(Locale.getDefault(), "%.2f m", d)
-        d < 10.0 -> String.format(Locale.getDefault(), "%.1f m", d)
-        else     -> String.format(Locale.getDefault(), "%.0f m", d)
-    }
-
-    /** "Source: RS2+ Float"-style summary from saved capture metadata; null when nothing useful. */
-    private fun buildCaptureSourceText(coord: Coordinate): String? {
-        val device = friendlySource(coord.provider, coord.sourceDevice)
-        val fix = coord.rtkStatus?.takeIf { it.isNotBlank() }?.let { friendlyFix(it) }
-        val parts = listOfNotNull(device, fix)
-        return if (parts.isEmpty()) null else "Source: " + parts.joinToString(" ")
-    }
-
-    private fun friendlySource(provider: String?, sourceDevice: String?): String? = when {
-        provider == null -> null
-        // External receiver: the profile's short label ("RS2+", "RS4", …) when known.
-        app.surrealar.data.local.db.ProviderTokens.isExternal(provider) ->
-            app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(sourceDevice)?.shortLabel ?: "External"
-        provider.contains("internal", ignoreCase = true) -> "Internal"
-        else -> null   // "fused"/unknown: don't claim a source we can't verify
-    }
-
-    private fun friendlyFix(rtk: String): String = when (rtk.uppercase(Locale.US)) {
-        "FIX" -> "Fix"
-        "FLOAT" -> "Float"
-        "DGPS" -> "DGPS"
-        "SINGLE" -> "Single"
-        "NONE", "INVALID" -> "No fix"
-        else -> rtk
-    }
-
-    /**
-     * Compact, surveyor-focused metadata line for a drawer row: "Elev 432.7 m · Float · RS2+ · Model".
-     * Uses only the saved point metadata; omits parts that aren't available. Empty → adapter shows lat/lon.
-     */
-    private fun buildRowMeta(p: Coordinate): String {
-        val parts = mutableListOf<String>()
-        parts += "Elev " + coordinateSystemService.heightText(p)
-        p.rtkStatus?.takeIf { it.isNotBlank() }?.let { parts += friendlyFix(it) }
-        friendlySource(p.provider, p.sourceDevice)?.let { parts += it }
-        if (p.hasLinkedModel) parts += "Model"
-        return parts.joinToString(" · ")
     }
 
     /** Opens the global AR scene (all saved points, including the selected one). */
@@ -1689,52 +1205,17 @@ class RenderMapFragment : Fragment() {
 
     /** Opens the existing rich coordinate-detail screen for the selected point. */
     private fun openSelectedDetails() {
-        val id = selectedCoordinateId ?: return
+        val id = selection.selectedCoordinateId ?: return
         try {
             val args = android.os.Bundle().apply { putString("arg_id", id) }
             findNavController().navigate(R.id.nav_coordinate_detail, args)
         } catch (e: Exception) { DiagnosticsLogger.w(DiagTags.NAV, "Map point details open failed", e) }
     }
 
-    private fun dismissSelectedCoordinate() {
-        selectedCoordinateId = null
-        mapUiVm.update { it.copy(selectedCoordinateId = null) }
-        selectedCoordinateCard?.visibility = View.GONE
-        toggleAdapter.setSelectedId(null)
-        refreshMapDiag()   // keep the diagnostic snapshot's selected-active flag accurate (no log)
-    }
-
-    private fun loadCoordinateIconIntoView(coord: Coordinate, iv: ImageView?) {
-        iv ?: return
-        val modelId = coord.linkedModelId
-        if (modelId != null) {
-            iv.setImageResource(R.drawable.ic_pin)
-            viewLifecycleOwner.lifecycleScope.launch {
-                val bmp = withContext(Dispatchers.IO) {
-                    try {
-                        val path = modelRepository.getModelById(modelId)?.thumbnailFilePath ?: return@withContext null
-                        BitmapFactory.decodeFile(path)
-                    } catch (_: Exception) { null }
-                }
-                if (bmp != null) { iv.clearColorFilter(); iv.setImageBitmap(bmp) }
-            }
-        } else {
-            val iconName = coord.displayIconKey ?: ""
-            @Suppress("DiscouragedApi")
-            val resId = if (iconName.isNotBlank()) {
-                requireContext().resources.getIdentifier(iconName, "drawable", requireContext().packageName)
-            } else 0
-            val drawable = (if (resId != 0) ContextCompat.getDrawable(requireContext(), resId)
-                            else ContextCompat.getDrawable(requireContext(), R.drawable.ic_pin))?.mutate()
-            try { drawable?.setColorFilter(coord.color, PorterDuff.Mode.SRC_IN) } catch (_: Exception) {}
-            iv.setImageDrawable(drawable)
-        }
-    }
-
     // ── Stakeout ───────────────────────────────────────────────────────────────
 
     private fun startStakeoutForSelectedCoordinate() {
-        val id = selectedCoordinateId ?: run { showSnackbar("Select a coordinate first"); return }
+        val id = selection.selectedCoordinateId ?: run { showSnackbar("Select a coordinate first"); return }
         val coord = markers.coordinate(id) ?: return
         val latLng = LatLng(coord.latitude, coord.longitude)
 
@@ -1764,7 +1245,7 @@ class RenderMapFragment : Fragment() {
         refreshStakeout()
         logMapEvent("STAKEOUT", "Stakeout started targetId=${coord.id}")   // id only: no point names in logs
         showSnackbar("Stakeout started: ${coord.name}")
-        dismissSelectedCoordinate()
+        selection.dismissSelectedCoordinate()
     }
 
     private fun stopStakeout() {
@@ -1814,94 +1295,8 @@ class RenderMapFragment : Fragment() {
                     refreshStakeout()
                 } catch (e: Exception) { logFail("map click stakeout", e) }
             } else {
-                dismissSelectedCoordinate()
+                selection.dismissSelectedCoordinate()
             }
-        }
-    }
-
-    // ── Panel interactions ─────────────────────────────────────────────────────
-
-    private fun setupPanelInteractions() {
-        collapseBtn?.setOnClickListener { collapsePanel() }
-        expandBtn?.setOnClickListener { expandPanel() }
-
-        // Swipe-to-collapse on the panel itself
-        leftPanel?.setOnTouchListener { v, ev ->
-            if (panelCollapsed) return@setOnTouchListener false
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    panelSwipeDownX = ev.rawX; panelSwipeDownTime = System.currentTimeMillis(); false
-                }
-                MotionEvent.ACTION_UP -> {
-                    val dx = ev.rawX - panelSwipeDownX
-                    val dt = (System.currentTimeMillis() - panelSwipeDownTime).coerceAtLeast(1)
-                    val vel = dx / dt.toFloat()
-                    if (dx < -dpToPx(100f) || vel < -0.7f) { collapsePanel(); true }
-                    else { if (abs(dx) < dpToPx(8f)) v.performClick(); false }
-                }
-                else -> false
-            }
-        }
-    }
-
-    /** Distance to slide the panel fully off-screen-left: its width + start margin + shadow. */
-    private fun panelSlideDistance(): Float {
-        val panel = leftPanel
-        val w = if (panel != null && panel.width > 0) panel.width else panelWidthPx
-        return (w + dpToPx(20f)).toFloat()
-    }
-
-    private fun collapsePanel() {
-        if (panelCollapsed) return
-        val panel = leftPanel ?: return
-        panelCollapsed = true
-        mapUiVm.update { it.copy(isLeftPanelCollapsed = true) }
-        panel.animate().cancel()
-        panel.animate()
-            .translationX(-panelSlideDistance())
-            .alpha(0f)
-            .setDuration(220)
-            .setInterpolator(AccelerateDecelerateInterpolator())
-            .withEndAction {
-                panel.visibility = View.GONE
-                expandBtn?.apply {
-                    alpha = 0f
-                    visibility = View.VISIBLE
-                    animate().alpha(1f).setDuration(150).start()
-                }
-            }
-            .start()
-    }
-
-    private fun expandPanel() {
-        if (!panelCollapsed) return
-        val panel = leftPanel ?: return
-        panelCollapsed = false
-        mapUiVm.update { it.copy(isLeftPanelCollapsed = false) }
-        expandBtn?.visibility = View.GONE
-        panel.animate().cancel()
-        // Pre-position off-screen, then slide in — content stays laid out at full width.
-        panel.translationX = -panelSlideDistance()
-        panel.alpha = 0f
-        panel.visibility = View.VISIBLE
-        panel.animate()
-            .translationX(0f)
-            .alpha(1f)
-            .setDuration(220)
-            .setInterpolator(AccelerateDecelerateInterpolator())
-            .start()
-    }
-
-    private fun applyPanelState() {
-        val panel = leftPanel
-        if (panelCollapsed) {
-            panel?.visibility = View.GONE
-            expandBtn?.visibility = View.VISIBLE
-        } else {
-            panel?.translationX = 0f
-            panel?.alpha = 1f
-            panel?.visibility = View.VISIBLE
-            expandBtn?.visibility = View.GONE
         }
     }
 
@@ -1944,9 +1339,4 @@ class RenderMapFragment : Fragment() {
     private fun showSnackbar(message: String) {
         view?.let { Snackbar.make(it, message, Snackbar.LENGTH_SHORT).show() }
     }
-
-    private fun dpToPx(dp: Float): Int = (dp * resources.displayMetrics.density + 0.5f).toInt()
-
-    @Suppress("unused")
-    private fun getCurrentCoordinateFormat(): String = "decimal"
 }
