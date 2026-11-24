@@ -166,6 +166,13 @@ class CaptureViewModel @Inject constructor(
         captureDiag = diag
         DiagnosticsLogger.i(DiagTags.CAPTURE, diag.startLine())
         captureDiagJob = viewModelScope.launch { modeFixes.collect { diag.onFix(it) } }
+        // Diagnostics only: flag an antenna height setting that will make the saved height wrong.
+        val snapshotAtStart = startSnapshot
+        viewModelScope.launch {
+            val snap = try { snapshotAtStart?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+            if (snap?.locationSource == LocationSourceType.SIMULATOR) return@launch
+            diag.antennaHeightLine(snap?.receiver, external = !internal)?.let { DiagnosticsLogger.w(DiagTags.GNSS, it) }
+        }
         sessionForwardJob = viewModelScope.launch {
             s.state.collect { st ->
                 _state.value = st
@@ -246,7 +253,8 @@ class CaptureViewModel @Inject constructor(
         // Defense-in-depth: never persist a timed-out, under-sampled capture. The UI disables
         // Save in that case; this guards the data path too.
         if (!completed.requirementsMet) {
-            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: requirements not met, capture timed out")
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: requirements not met, capture timed out" +
+                (captureDiag?.let { " capture=${it.id}" } ?: ""))
             return
         }
         _saveError.value = null
@@ -293,7 +301,8 @@ class CaptureViewModel @Inject constructor(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DiagTags.CAPTURE, "Capture save blocked: antenna offset unavailable source=${src.name}", e)
+            DiagnosticsLogger.e(DiagTags.CAPTURE, "Capture save blocked: antenna offset unavailable source=${src.name}" +
+                (captureDiag?.let { " capture=${it.id}" } ?: ""), e)
             _saveError.value = ANTENNA_OFFSET_ERROR
             return
         }
@@ -314,7 +323,8 @@ class CaptureViewModel @Inject constructor(
         )
 
         // Id only: point names stay out of the event log.
-        DiagnosticsLogger.i(DiagTags.CAPTURE, "Coordinate saved id=${saved.id} source=${provider.name} " +
+        DiagnosticsLogger.i(DiagTags.CAPTURE, "Coordinate saved id=${saved.id}" +
+            (captureDiag?.let { " capture=${it.id}" } ?: "") + " source=${provider.name} " +
             "samples=${finished.samples} hAccM=${finished.hAccM?.let { "%.3f".format(java.util.Locale.US, it) } ?: "unknown"} status=${finished.rtkStatus}")
         captureDiag?.let { d ->
             app.surrealar.util.diagnostics.CaptureLog.append(d.outcomeLine("saved", finished.samples,

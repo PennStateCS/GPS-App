@@ -13,7 +13,12 @@ import java.util.Locale
  * start policy, pauses and resumes, a rejected-fix summary by reason, and the outcome. Fix reasons
  * are classified with the policy's public gates (the session keeps its own count); no coordinates.
  */
-class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: String) {
+class CaptureDiagnostics(
+    private val policy: AveragingPolicy,
+    private val mode: String,
+    /** `capture=` on every line of this capture (start, pause/resume, summary, outcome, save). */
+    val id: String = DiagIds.next(DiagIds.CAPTURE),
+) {
 
     private val rejected = sortedMapOf<String, Int>()
     var received = 0
@@ -21,7 +26,7 @@ class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: 
     private var pausedReason: String? = null
 
     fun startLine(): String =
-        "Capture started mode=$mode minDurationS=${policy.minDurationSec} maxDurationS=${policy.maxDurationSec} minFixes=${policy.minSamples}" +
+        "Capture started capture=$id mode=$mode minDurationS=${policy.minDurationSec} maxDurationS=${policy.maxDurationSec} minFixes=${policy.minSamples}" +
             " requiredRtk=${policy.requiredMinStatus} maxCorrAgeS=${policy.maxDiffAgeSec}" +
             (policy.horizontalPrecisionTargetM?.let { " precisionTargetM=$it" } ?: "")
 
@@ -42,14 +47,37 @@ class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: 
     fun onState(state: ObservationSession.State, log: (Char, String) -> Unit = ::write) {
         val reason = (state as? ObservationSession.State.Paused)?.reason
         when {
-            reason != null && reason != pausedReason -> log('W', "Capture paused: $reason")
-            reason == null && pausedReason != null && state is ObservationSession.State.Capturing -> log('I', "Capture resumed")
+            reason != null && reason != pausedReason -> log('W', "Capture paused: $reason capture=$id")
+            reason == null && pausedReason != null && state is ObservationSession.State.Capturing -> log('I', "Capture resumed capture=$id")
         }
         if (reason != null || state is ObservationSession.State.Capturing) pausedReason = reason
     }
 
+    /**
+     * ANTENNA_HEIGHT line for the antenna settings this capture started with, or null when they look
+     * right. MISSING: the settings couldn't be read, or an external pole height is 0 / not a number.
+     * INCONSISTENT: a pole height still stored under its old meaning, a height outside 0–[MAX_HEIGHT_M],
+     * or a phase-centre override outside 0–max. [external] = an external-receiver capture.
+     */
+    fun antennaHeightLine(settings: app.surrealar.gnss.settings.GnssReceiverSettings?, external: Boolean): String? {
+        val (reason, detail) = when {
+            settings == null -> "MISSING" to "settingsUnreadable"
+            external && (!settings.poleHeightM.isFinite() || settings.poleHeightM <= 0.0) -> "MISSING" to "poleHeightZero"
+            external && settings.poleHeightNeedsCheck -> "INCONSISTENT" to "poleHeightOldMeaning"
+            external && settings.poleHeightM > MAX_HEIGHT_M -> "INCONSISTENT" to "poleHeightRange"
+            external && settings.phaseCenterOffsetOverrideM?.let {
+                !it.isFinite() || it < 0.0 || it > app.surrealar.settings.model.AntennaSetup.MAX_PHASE_CENTER_OFFSET_M
+            } == true -> "INCONSISTENT" to "phaseCenterOffsetRange"
+            !external && (!settings.internalAntennaHeightM.isFinite() || settings.internalAntennaHeightM < 0.0 ||
+                settings.internalAntennaHeightM > MAX_HEIGHT_M) -> "INCONSISTENT" to "internalHeightRange"
+            else -> return null
+        }
+        return DiagLine.of(DiagEvents.ANTENNA_HEIGHT, "reason" to reason, "detail" to detail, "mode" to mode,
+            DiagEvents.K_CAPTURE to id, text = "Capture antenna height setting looks wrong")
+    }
+
     fun rejectedSummary(accepted: Int?): String =
-        "Capture fix summary received=$received accepted=${accepted ?: "unknown"} rejected=${rejected.values.sum()}" +
+        "Capture fix summary capture=$id received=$received accepted=${accepted ?: "unknown"} rejected=${rejected.values.sum()}" +
             if (rejected.isEmpty()) "" else ": " + rejected.entries.joinToString(", ") { "${it.key}=${it.value}" }
 
     /**
@@ -58,11 +86,16 @@ class CaptureDiagnostics(private val policy: AveragingPolicy, private val mode: 
      */
     fun outcomeLine(outcome: String, samples: Int?, durationS: Long?, rtk: RtkStatus?, hAccM: Double?, vAccM: Double?, pointId: Any? = null): String =
         "Capture $outcome" + (pointId?.let { " id=$it" } ?: "") +
-            " mode=$mode samples=${samples ?: 0} duration=${durationS ?: 0}s rtk=${rtk?.name ?: "none"}" +
+            " capture=$id mode=$mode samples=${samples ?: 0} duration=${durationS ?: 0}s rtk=${rtk?.name ?: "none"}" +
             " hAcc=${GnssFeedTracker.hAccBucket(hAccM)} vAcc=${GnssFeedTracker.hAccBucket(vAccM)}" +
             " rejected=${rejected.values.sum()}/$received"
 
     private fun write(level: Char, msg: String) = GnssFeedLogger.log(level, DiagTags.CAPTURE, msg)
+
+    companion object {
+        /** Taller antenna/pole heights are almost certainly typos (cm entered as m). */
+        const val MAX_HEIGHT_M = 10.0
+    }
 }
 
 /** diagnostics/captures.log: one line per capture outcome (no coordinates), rotated at 1 MB. */

@@ -18,6 +18,10 @@ import app.surrealar.util.DevLog
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.ArTrackLog
 import app.surrealar.util.diagnostics.ArTrackRow
+import app.surrealar.util.diagnostics.ArDiag
+import app.surrealar.util.diagnostics.DiagEvents
+import app.surrealar.util.diagnostics.DiagLine
+import app.surrealar.util.diagnostics.DiagTags
 import app.surrealar.util.argbIntToRgba
 import io.github.pennstatecs.geokit.ar.accuracy.ArPlacementError
 import io.github.pennstatecs.geokit.ar.gesture.ArMoveMath
@@ -265,7 +269,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     ArSessionDiagnostics.setStatus(c.id, ArSessionDiagnostics.ModelStatus.FAILED, "terrain_anchor_failed")
                 val stateName = state?.name ?: "UNKNOWN"
                 terrainFailedStates[stateName] = (terrainFailedStates[stateName] ?: 0) + 1
-                DiagnosticsLogger.w(DIAG, "Terrain anchor resolve failed coordinateId=${c.id} state=$stateName")
+                DiagnosticsLogger.w(DIAG, DiagLine.of(DiagEvents.AR_ANCHOR, "result" to "FAILED", "kind" to "TERRAIN",
+                    "reason" to stateName, DiagEvents.K_AR to arId, extra = "coordinateId=${c.id}",
+                    text = "Terrain anchor resolve failed"))
             }
         }
         // One summary per rebuild, once every resolve of the batch has settled.
@@ -738,7 +744,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         qualityLogHysteresis.reset()
         debugUiPostGate.reset()
         DiagnosticsLogger.resetThrottles(LOG_KEY_PREFIX)   // each AR screen logs its first states afresh
-        DiagnosticsLogger.i(DIAG, "AR screen opened")
+        hiddenByVisibility.reset(); hiddenByTracking.reset(); hiddenOffscreen.reset()
+        alignmentJump.reset(); lastGeoAccuracyLevel = null
+        DiagnosticsLogger.i(DIAG, "AR screen opened ar=${arId ?: "unknown"}")
         setupGlSurface()
         binding.textArStatus.text = getString(R.string.checking_ar_availability)
         return binding.root
@@ -1180,11 +1188,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         cameraRecovery.reset()   // returning to AR gets a fresh camera-recovery budget
 
         if (!checkAndRequestCameraPermission()) {
-            DiagnosticsLogger.w(DIAG, "AR session start blocked: camera permission not granted")
+            DiagnosticsLogger.w(DIAG, arUnavailable("CAMERA_PERMISSION", "AR session start blocked: camera permission not granted"))
             return
         }
         if (!checkAndRequestLocationPermission()) {
-            DiagnosticsLogger.w(DIAG, "AR session start blocked: location permission not granted")
+            DiagnosticsLogger.w(DIAG, arUnavailable("LOCATION_PERMISSION", "AR session start blocked: location permission not granted"))
             return
         }
 
@@ -1199,11 +1207,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
         if (!locationEnabled && !hasWarnedLocationOff) {
             hasWarnedLocationOff = true
-            DiagnosticsLogger.w(DIAG, "Geospatial unavailable: location services disabled")
+            DiagnosticsLogger.w(DIAG, arUnavailable("LOCATION_SERVICES_OFF", "Geospatial unavailable: location services disabled"))
         }
         if (!networkAvailable && !hasWarnedNoNetwork) {
             hasWarnedNoNetwork = true
-            DiagnosticsLogger.w(DIAG, "Geospatial cannot localize: no network connection")
+            DiagnosticsLogger.w(DIAG, arUnavailable("NO_NETWORK", "Geospatial cannot localize: no network connection"))
         }
 
         // Resume AR session and related components
@@ -1238,7 +1246,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             DevLog.d(TAG) { "Screen brightness set to maximum, wake lock enabled" }
         } catch (e: CameraNotAvailableException) {
-            DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
+            DiagnosticsLogger.e(DIAG, arUnavailable("CAMERA_UNAVAILABLE", "AR session resume failed: camera unavailable"), e)
             binding.textArStatus.text = getString(R.string.camera_unavailable)
             // Pause + bounded retry once the fragment is RESUMED (it is not yet, inside onResume).
             if (cameraRecoveryActive.compareAndSet(false, true)) {
@@ -1287,8 +1295,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
             CameraRecoveryPolicy.Decision.GiveUp -> {
                 // Stays active: no frames run and nothing re-posts until onResume resets the budget.
-                DiagnosticsLogger.e(DIAG, "Camera unavailable: AR recovery gave up " +
-                    "attempts=${cameraRecovery.maxAttempts} source=$source")
+                DiagnosticsLogger.e(DIAG, DiagLine.of(DiagEvents.AR_UNAVAILABLE, "reason" to "CAMERA_UNAVAILABLE",
+                    DiagEvents.K_AR to arId, extra = "attempts=${cameraRecovery.maxAttempts} source=$source",
+                    text = "Camera unavailable: AR recovery gave up"))
                 setArStatus("${getString(R.string.camera_unavailable)}: close other camera apps, then reopen AR")
             }
         }
@@ -1380,7 +1389,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         moveFrame = null
         sessionMoves.clear()
         testCube = null; testCubeRequested = false
-        DiagnosticsLogger.i(DIAG, "AR screen closed " +
+        DiagnosticsLogger.i(DIAG, "AR screen closed ar=${arId ?: "unknown"} " +
             "anchors=${geoAnchors.size} modelPoses=${arRenderSnapshot?.modelPoses?.size ?: 0} items=${geoItems.size}")
         writeArSessionSummary()
         choreographerInstance?.removeFrameCallback(filamentFrameCallback)
@@ -1505,11 +1514,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             configureSession()
             resumeLateSession(ses)
         } catch (e: CameraNotAvailableException) {
-            DiagnosticsLogger.e(DIAG, "AR session create failed: camera unavailable", e)
+            DiagnosticsLogger.e(DIAG, arUnavailable("CAMERA_UNAVAILABLE", "AR session create failed: camera unavailable"), e)
             setArStatus(getString(R.string.camera_unavailable))
             discardSession(created)
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DIAG, "AR session create failed", e)
+            DiagnosticsLogger.e(DIAG, arUnavailable(ArDiag.sessionErrorReason(e), "AR session create failed"), e)
             setArStatus("Session error: ${e.message ?: "Unknown"}")
             discardSession(created)
         }
@@ -1541,7 +1550,7 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             DiagnosticsLogger.i(DIAG, "AR session resumed after late creation: camera active")
             setArStatus("AR camera active")
         } catch (e: CameraNotAvailableException) {
-            DiagnosticsLogger.e(DIAG, "AR session resume failed: camera unavailable", e)
+            DiagnosticsLogger.e(DIAG, arUnavailable("CAMERA_UNAVAILABLE", "AR session resume failed: camera unavailable"), e)
             setArStatus(getString(R.string.camera_unavailable))
             // RESUMED here (checked above): pause + bounded retry, as for a camera lost mid-session.
             if (cameraRecoveryActive.compareAndSet(false, true)) recoverCamera("late_resume")
@@ -1609,12 +1618,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                     geoEnabled = true
                     DiagnosticsLogger.i(DIAG, "Geospatial mode enabled")
                 } catch (e: Exception) {
-                    DiagnosticsLogger.e(DIAG, "Geospatial mode enable failed: " +
-                        "coordinates cannot be anchored in AR", e)
+                    DiagnosticsLogger.e(DIAG, arUnavailable("GEOSPATIAL_ENABLE_FAILED", "Geospatial mode enable failed: " +
+                        "coordinates cannot be anchored in AR"), e)
                 }
             } else {
-                DiagnosticsLogger.w(DIAG, "Geospatial mode not supported on this device: " +
-                    "coordinates cannot be anchored in AR")
+                DiagnosticsLogger.w(DIAG, arUnavailable("GEOSPATIAL_UNSUPPORTED", "Geospatial mode not supported on this device: " +
+                    "coordinates cannot be anchored in AR"))
             }
             // Configure other AR features
             planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
@@ -1675,10 +1684,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 ArCoreApk.InstallStatus.INSTALLED -> tryCreateSession()
             }
         } catch (_: UnavailableUserDeclinedInstallationException) {
-            DiagnosticsLogger.w(DIAG, "ARCore install declined by user: AR unavailable")
+            DiagnosticsLogger.w(DIAG, arUnavailable("INSTALL_DECLINED", "ARCore install declined by user: AR unavailable"))
             setArStatus("ARCore install declined")
         } catch (e: Exception) {
-            DiagnosticsLogger.e(DIAG, "ARCore install check failed", e)
+            DiagnosticsLogger.e(DIAG, arUnavailable(ArDiag.sessionErrorReason(e), "ARCore install check failed"), e)
             setArStatus("Install check failed: ${e.message ?: "Unknown"}")
         }
     }
@@ -1712,7 +1721,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             }
 
             else -> {
-                DiagnosticsLogger.w(DIAG, "ARCore unavailable: AR cannot start availability=$availability")
+                DiagnosticsLogger.w(DIAG, DiagLine.of(DiagEvents.AR_UNAVAILABLE, "reason" to ArDiag.availabilityReason(availability.name),
+                    DiagEvents.K_AR to arId, "availability" to availability.name, text = "ARCore unavailable: AR cannot start"))
                 setArStatus(when (availability) {
                     ArCoreApk.Availability.UNSUPPORTED_DEVICE_NOT_CAPABLE -> "Device not compatible"
                     else -> "AR not supported"
@@ -1751,15 +1761,15 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         if (!ArGnssGate.hasSolution(gnssFix.rtkStatus)) {
             loggedAccuracyGate = true
             DiagnosticsLogger.logOnChange(DIAG, ANCHOR_WAIT_LOG_KEY, "gnss_no_solution", stableMs = 3_000L) {
-                "Anchors waiting reason=gnss_no_solution rtk=${gnssFix.rtkStatus} items=${geoItems.size}"
+                anchorDelayed("gnss_no_solution", "rtk=${gnssFix.rtkStatus} items=${geoItems.size}")
             }
             return
         }
         if (accuracyM != null && accuracyM > MAX_GNSS_ACCURACY_M) {
             loggedAccuracyGate = true
             DiagnosticsLogger.logOnChange(DIAG, ANCHOR_WAIT_LOG_KEY, "gnss_accuracy", stableMs = 3_000L) {
-                "Anchors waiting reason=gnss_accuracy " +
-                    "accuracyM=${"%.1f".format(accuracyM)} maxM=$MAX_GNSS_ACCURACY_M items=${geoItems.size}"
+                anchorDelayed("gnss_accuracy",
+                    "accuracyM=${"%.1f".format(accuracyM)} maxM=$MAX_GNSS_ACCURACY_M items=${geoItems.size}")
             }
             return
         }
@@ -1795,10 +1805,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             awaitingLocalization = true
             loggedLocalizationWait = true
             DiagnosticsLogger.logOnChange(DIAG, ANCHOR_WAIT_LOG_KEY, "ar_localizing", stableMs = 3_000L) {
-                "Anchors waiting reason=ar_localizing profile=$profile " +
+                anchorDelayed("ar_localizing", "profile=$profile " +
                     "arHAccM=${"%.1f".format(arHAcc)} maxHAccM=${profile.maxHorizontalM} " +
                     "arYawDeg=${"%.1f".format(arYawAcc)} maxYawDeg=${profile.maxYawDeg} " +
-                    "elapsedMs=$trackingElapsed timeoutMs=${profile.timeoutMs} items=${geoItems.size}"
+                    "elapsedMs=$trackingElapsed timeoutMs=${profile.timeoutMs} items=${geoItems.size}")
             }
             return
         }
@@ -1932,18 +1942,24 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 failed++
                 if (item.coordWithModel.modelFilePath != null)
                     ArSessionDiagnostics.setStatus(c.id, ArSessionDiagnostics.ModelStatus.FAILED, "anchor_failed")
-                DiagnosticsLogger.w(DIAG, "Anchor creation failed coordinateId=${c.id} mode=$mode " +
-                    "choice=$choice", e)
+                DiagnosticsLogger.w(DIAG, DiagLine.of(DiagEvents.AR_ANCHOR, "result" to "FAILED",
+                    "kind" to if (storedHeight == null) "TERRAIN" else "WGS84", "reason" to app.surrealar.util.diagnostics.LogPrivacy.errorType(e),
+                    DiagEvents.K_AR to arId, extra = "coordinateId=${c.id} mode=$mode choice=$choice",
+                    text = "Anchor creation failed"), e)
             }
         }
-        DiagnosticsLogger.i(DIAG, "Anchors created count=${geoAnchors.size + pendingTerrainAnchors.size} " +
+        val anchoredCount = geoAnchors.size + pendingTerrainAnchors.size
+        DiagnosticsLogger.i(DIAG, DiagLine.of(DiagEvents.AR_ANCHOR,
+            "result" to if (anchoredCount == 0 && failed > 0) "FAILED" else "OK", "kind" to ArDiag.anchorKind(stored, terrain),
+            "afterS" to ArDiag.afterS(ArSessionDiagnostics.openedAtMs), DiagEvents.K_AR to arId,
+            extra = "count=$anchoredCount " +
             "resolving=${pendingTerrainAnchors.size} failed=$failed mode=$mode " +
             "stored=$stored terrain=$terrain transformSource=anchor-driven replacedPrevious=$replacedPrevious " +
             "placedVia=$placedVia trackingState=${earth.trackingState} earthState=$earthStateName " +
             "gnssAccM=${accuracyM?.let { "%.1f".format(it) } ?: "unknown"} " +
             "arHAccM=${arHAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"} " +
             "arYawDeg=${arYawAcc.takeIf { it.isFinite() }?.let { "%.1f".format(it) } ?: "unknown"}" +
-            (if (terrain > 0) " terrainPending=true" else ""))
+            (if (terrain > 0) " terrainPending=true" else ""), text = "Anchors created"))
         recordAnchorOutcome(items.size, geoAnchors.size + pendingTerrainAnchors.size, failed)
 
         lastPlacedVia = placedVia
@@ -1956,6 +1972,28 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
 
     /** Points already logged as having no usable anchor height (GL thread; once per point). */
     private val noHeightLoggedIds = HashSet<String>()
+
+    // ── DiagEvents (logging only) ──
+    /** `ar=` of this AR screen session (ArSessionDiagnostics.startSession mints it). */
+    private val arId: String? get() = ArSessionDiagnostics.sessionId
+    /** AR_MODEL_HIDDEN gates fed with per-frame counts (a few int compares; GL thread). */
+    private val hiddenByVisibility = app.surrealar.util.diagnostics.HiddenModelGate("VISIBILITY")
+    private val hiddenByTracking = app.surrealar.util.diagnostics.HiddenModelGate("TRACKING")
+    private val hiddenOffscreen = app.surrealar.util.diagnostics.HiddenModelGate("OFFSCREEN", holdMs = 5_000L)
+    /** AR_ALIGNMENT_JUMP from the sampled AR_VS_GNSS offset (every 5 s, GL thread). */
+    private val alignmentJump = app.surrealar.util.diagnostics.AlignmentJumpDetector()
+    /** Last AR_GEO_ACCURACY level written, so only a band change is logged. */
+    private var lastGeoAccuracyLevel: String? = null
+
+    /** "Anchors waiting reason=…" as AR_ANCHOR result=DELAYED (afterS = since the AR screen opened). */
+    private fun anchorDelayed(reason: String, extra: String): String =
+        DiagLine.of(DiagEvents.AR_ANCHOR, "result" to "DELAYED", "reason" to ArDiag.waitReason(reason),
+            "afterS" to ArDiag.afterS(ArSessionDiagnostics.openedAtMs), DiagEvents.K_AR to arId,
+            extra = extra, text = "Anchors waiting")
+
+    /** An AR_UNAVAILABLE line, the older sentence kept in parentheses. */
+    private fun arUnavailable(reason: String, text: String): String =
+        DiagLine.of(DiagEvents.AR_UNAVAILABLE, "reason" to reason, DiagEvents.K_AR to arId, text = text)
 
     /**
      * GL thread, once per new coordinate snapshot: drops the anchors of deleted points at once, and gives
@@ -2198,7 +2236,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             // The log line waits until the state holds 2 s (tracking flickers when the view is covered).
             DiagnosticsLogger.logOnChange(DIAG, "ar.frag.cameraState", camTracking, stableMs = 2_000L) {
                 val reasonName = runCatching { camera.trackingFailureReason?.name }.getOrNull()
-                "Camera tracking changed trackingState=$camTracking" + (reasonName?.let { " failureReason=$it" } ?: "")
+                DiagLine.of(DiagEvents.AR_STATE, "camera" to camTracking,
+                    "earth" to (ArSessionDiagnostics.lastEarthTrackingState ?: "unknown"),
+                    "reason" to reasonName?.takeIf { it != "NONE" }, DiagEvents.K_AR to arId,
+                    text = "Camera tracking changed")
             }
 
             // 1) Camera background
@@ -2348,8 +2389,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val earthMissing = earth == null
             DiagnosticsLogger.logOnChange(DIAG, "ar.frag.earthMissing", earthMissing,
                 level = if (earthMissing) 'W' else 'I', stableMs = 3_000L) {
-                if (earthMissing) "Geospatial Earth unavailable: anchors cannot be placed"
-                else "Geospatial Earth available"
+                if (earthMissing) DiagLine.of(DiagEvents.AR_STATE, "camera" to (lastCameraTrackingLogged ?: "unknown"),
+                    "earth" to "STOPPED", "reason" to "EARTH_UNAVAILABLE", DiagEvents.K_AR to arId,
+                    text = "Geospatial Earth unavailable: anchors cannot be placed")
+                else "Geospatial Earth available ar=${arId ?: "unknown"}"
             }
         }
         if (earth == null) return if (geospatialAvailable) "Geo: N/A" else "Geo: unavailable on this device"
@@ -2359,7 +2402,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val earthTracking = earth.trackingState.name
         DiagnosticsLogger.logOnChange(DIAG, "ar.frag.earthState", earthTracking, stableMs = 3_000L) {
             val earthStateName = runCatching { earth.earthState?.name }.getOrNull() ?: "unknown"
-            "Earth tracking changed trackingState=$earthTracking earthState=$earthStateName"
+            DiagLine.of(DiagEvents.AR_STATE, "camera" to (lastCameraTrackingLogged ?: "unknown"), "earth" to earthTracking,
+                "reason" to earthStateName.takeIf { it != "ENABLED" }, DiagEvents.K_AR to arId,
+                "earthState" to earthStateName, text = "Earth tracking changed")
         }
         if (earthTracking != lastEarthTrackingLogged) {
             lastEarthTrackingLogged = earthTracking
@@ -2478,6 +2523,11 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val mode = arVisibilityModeMirror
         val visibleIds = arVisibleIdsMirror
         val visibleKeys = HashSet<String>()
+        // AR_MODEL_HIDDEN counts (models only; plain int counters, logged by the gates on a held change).
+        var hiddenVisibility = 0
+        var hiddenTracking = 0
+        var shownOnScreen = 0
+        var shownOffScreen = 0
 
         for (entry in geoAnchors) {
             val coord = entry.coordWithModel.coordinate
@@ -2492,8 +2542,12 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 ArVisibilityLogic.renderable(mode, inRange, coord.id in visibleIds || coord.id == TEST_CUBE_ID)
             if (modelVisible) visibleKeys += coord.id
             if (!inRange) distanceSkipped += coord.id
+            if (entryModelFilePath != null && inRange && !modelVisible) hiddenVisibility++
 
-            if (entry.anchor.trackingState != TrackingState.TRACKING) continue
+            if (entry.anchor.trackingState != TrackingState.TRACKING) {
+                if (modelVisible) hiddenTracking++
+                continue
+            }
             // Hidden model coords render nothing (no model/pin/label); out-of-range pins are skipped.
             if (entryModelFilePath != null) {
                 if (!modelVisible) continue
@@ -2530,7 +2584,9 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val subtext = "${coordinateSystemService.distanceText(distM)} ${Compass.point8(bearing)}"   // units per Settings → Coordinates
 
             val pinWorldPos = floatArrayOf(model[12], model[13] + 0.6f, model[14], 1f)
-            val screenProj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight) ?: continue
+            val screenProj = projectToScreen(pinWorldPos, vp, surfaceWidth, surfaceHeight)
+            if (entryModelFilePath != null) { if (screenProj?.onScreen == true) shownOnScreen++ else shownOffScreen++ }
+            if (screenProj == null) continue
             if (screenProj.onScreen) {
                 pinPositions  += PinScreenEntry(screenProj.sx, screenProj.sy, entry.coordWithModel)
                 if (arShowLabels) {
@@ -2577,10 +2633,22 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         val hiddenCount = distanceSkipped.size
         if (filterM != null) {
             DiagnosticsLogger.logOnChange(DIAG, "ar.frag.distanceSkip", hiddenCount, stableMs = 3_000L) {
-                "Models hidden by distance filter maxDistanceM=$filterM hidden=$hiddenCount"
+                if (hiddenCount > 0) DiagLine.of(DiagEvents.AR_MODEL_HIDDEN, "reason" to "DISTANCE", "count" to hiddenCount,
+                    DiagEvents.K_AR to arId, extra = "maxDistanceM=$filterM hidden=$hiddenCount",
+                    text = "Models hidden by distance filter")
+                else "Models hidden by distance filter maxDistanceM=$filterM hidden=0 ar=${arId ?: "unknown"}"
             }
         }
+        // AR_MODEL_HIDDEN for the other reasons: a line only when a count changes and holds.
+        val hiddenNowMs = android.os.SystemClock.elapsedRealtime()
+        val hiddenAr = arId
+        hiddenByVisibility.update(hiddenVisibility, hiddenNowMs, hiddenAr)?.let { (lvl, msg) -> logArLine(lvl, msg) }
+        hiddenByTracking.update(hiddenTracking, hiddenNowMs, hiddenAr)?.let { (lvl, msg) -> logArLine(lvl, msg) }
+        // Off screen only when every shown model is outside the camera view (panning away from one is normal).
+        hiddenOffscreen.update(if (shownOnScreen == 0) shownOffScreen else 0, hiddenNowMs, hiddenAr)?.let { (lvl, msg) -> logArLine(lvl, msg) }
     }
+
+    private fun logArLine(level: Char, msg: String) = if (level == 'W') DiagnosticsLogger.w(DIAG, msg) else DiagnosticsLogger.i(DIAG, msg)
 
     /** Posts label and arrow overlay updates to the main thread, skipping unchanged frames. */
     private fun postOverlayUpdates(
@@ -2671,6 +2739,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                 "earthTracking=${earth?.trackingState ?: "unknown"} cameraTracking=${lastCameraTrackingLogged ?: "unknown"} " +
                 "placement=$placement modelsRendered=${quality.modelsRenderable} " +
                 "placedByTimeout=${placement == ArViewQuality.Placement.PLACED_BY_TIMEOUT}")
+            // The geospatial accuracy band alone (AR_QUALITY also folds in tracking and placement).
+            val geoLevel = ArDiag.geoLevel(qualityChange.to.name)
+            if (geoLevel != null && geoLevel != lastGeoAccuracyLevel) {
+                lastGeoAccuracyLevel = geoLevel
+                val line = DiagLine.of(DiagEvents.AR_GEO_ACCURACY, "level" to geoLevel,
+                    "hAccM" to qHAcc?.takeIf { it.isFinite() }?.let { "%.1f".format(java.util.Locale.US, it) },
+                    "yawDeg" to qYaw?.takeIf { it.isFinite() }?.let { "%.1f".format(java.util.Locale.US, it) },
+                    DiagEvents.K_AR to arId, text = "AR geospatial accuracy changed")
+                if (geoLevel == "POOR") DiagnosticsLogger.w(DIAG, line) else DiagnosticsLogger.i(DIAG, line)
+            }
         }
 
         // Extract per-anchor states on the GL thread (anchor.trackingState is an ARCore call).
@@ -2748,6 +2826,16 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
             val gradeLogged = DiagnosticsLogger.logOnChange(DIAG, "ar.frag.arVsGnssGrade", arVsGnss.grade,
                 stableMs = AR_VS_GNSS_LOG_INTERVAL_MS - 1_000L) { summary }   // = same grade on 2 samples
             if (!gradeLogged) DiagnosticsLogger.every(DIAG, "ar.frag.arVsGnssHeartbeat", 60_000L) { summary }
+            // AR_ALIGNMENT_JUMP: the AR-minus-GNSS offset moved between two samples (re-localisation,
+            // re-anchor, receiver jump). Sampled every 5 s; at most one line per 30 s.
+            alignmentJump.update(arVsGnss.horizontalM, arVsGnss.bearingDeg, arVsGnss.verticalM)?.let { jump ->
+                DiagnosticsLogger.every(DIAG, "ar.frag.alignmentJump", 30_000L, 'W') {
+                    DiagLine.of(DiagEvents.AR_ALIGNMENT_JUMP, "deltaM" to "%.2f".format(java.util.Locale.US, jump.deltaM),
+                        "deltaVertM" to jump.deltaVertM?.let { "%+.2f".format(java.util.Locale.US, it) },
+                        "horizM" to "%.2f".format(java.util.Locale.US, arVsGnss.horizontalM), "grade" to arVsGnss.grade,
+                        "rtk" to feedFix?.rtkStatus, DiagEvents.K_AR to arId, text = "AR and GNSS alignment jumped")
+                }
+            }
             DiagnosticsLogger.d(DIAG) { "AR_VS_GNSS kind=detail grade=${arVsGnss.grade} horizM=${"%.2f".format(arVsGnss.horizontalM)} " +
                 "bearingDeg=${"%.0f".format(arVsGnss.bearingDeg)} vertM=${arVsGnss.verticalM?.let { "%+.2f".format(it) } ?: "unknown"} " +
                 "arHAccM=${arVsGnss.arHAccM?.let { "%.2f".format(it) } ?: "unknown"} " +
@@ -3622,8 +3710,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
                         filamentRenderer?.forgetModel(coord.id)
                         ArSessionDiagnostics.recordModel(coord.id, coord.name, item.modelId, basename,
                             exists, sizeBytes, ArSessionDiagnostics.ModelStatus.SKIPPED, "missing_file")
-                        DiagnosticsLogger.w(DIAG,
-                            "Model skipped: file missing coordinateId=${coord.id} modelId=${item.modelId} file=${LogPrivacy.file(basename)}")
+                        DiagnosticsLogger.w(DiagTags.MODEL, DiagLine.of(DiagEvents.MODEL_MISSING_FILE,
+                            "ref" to LogPrivacy.file(basename), DiagEvents.K_AR to arId,
+                            extra = "coordinateId=${coord.id} modelId=${item.modelId} file=${LogPrivacy.file(basename)}",
+                            text = "Model skipped: file missing"))
                     }
                     else -> {
                         // Preload every model that exists on disk regardless of visibility — the AR

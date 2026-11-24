@@ -503,7 +503,9 @@ class ModelViewerActivity : AppCompatActivity(), ReadinessHost {
             }
             true
         } catch (e: Throwable) {
-            DiagnosticsLogger.e("MODEL", "Model viewer load failed file=${LogPrivacy.file(modelFile.name)}", e)
+            DiagnosticsLogger.e("MODEL", app.surrealar.util.diagnostics.DiagLine.of(
+                app.surrealar.util.diagnostics.DiagEvents.MODEL_LOAD, "result" to "FAILED", "reason" to LogPrivacy.errorType(e),
+                "where" to "viewer", "file" to LogPrivacy.file(modelFile.name), text = "Model viewer load failed"), e)
             false
         }
     }
