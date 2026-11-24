@@ -14,8 +14,10 @@ import java.util.Locale
  * outside GEOID18 coverage). The header row names the system so the file is self-describing.
  * Elevations are at the ground mark (saved points are reduced by the pole height and phase-centre
  * offset at capture). The Elevation header names the height type and geoid model only ("h",
- * "H GEOID18", "H rcvr") — never a vertical datum — because GEOID18 rows can be NAVD88, PRVD02 or
- * VIVD09 depending on the point; each row's System column names that row's vertical datum.
+ * "H GEOID18", "H EGM2008", "H EGM96", "H rcvr") — never a vertical datum — because GEOID18 rows can be
+ * NAVD88, PRVD02 or VIVD09 depending on the point; each row's System column names that row's frame
+ * (with its coordinate epoch for ITRF2020, e.g. "ITRF2020 epoch 2026.886") and vertical datum
+ * ("NAVD88", "EGM2008", "EGM96"). The column count and order never change.
  *
  * This is an interchange export; the JSON backup remains the lossless format (raw measurements).
  */
