@@ -183,6 +183,11 @@ fun CoordinateEntity.toDomain(): Coordinate = Coordinate(
     modelMoveEastM = modelMoveEastM,
     modelMoveNorthM = modelMoveNorthM,
     modelMoveUpM = modelMoveUpM,
+    sourceFrame = sourceFrame,
+    receiverFrame = receiverFrame,
+    coordinateEpoch = coordinateEpoch,
+    orthometricHeightSource = orthometricHeightSource,
+    orthometricModel = orthometricModel,
 )
 
 /**
@@ -263,4 +268,9 @@ fun Coordinate.toEntity(): CoordinateEntity =
         modelMoveEastM = modelMoveEastM,
         modelMoveNorthM = modelMoveNorthM,
         modelMoveUpM = modelMoveUpM,
+        sourceFrame = sourceFrame,
+        receiverFrame = receiverFrame,
+        coordinateEpoch = coordinateEpoch,
+        orthometricHeightSource = orthometricHeightSource,
+        orthometricModel = orthometricModel,
     )

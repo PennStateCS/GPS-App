@@ -34,7 +34,7 @@ class MigrationsRobolectricTest {
     /** Same chain, same order as AppDatabase.getDatabase. */
     private val allMigrations: Array<Migration> = arrayOf(
         MIGRATION_2_3, MIGRATION_3_4, Migration4To5(), MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
     )
 
     @Before fun clean() { ctx.databaseList().forEach { ctx.deleteDatabase(it) } }
@@ -92,7 +92,7 @@ class MigrationsRobolectricTest {
 
     @Test
     fun everyExportedVersion_migratesToCurrent_andKeepsItsRows() = runBlocking {
-        for (v in 3..12) {
+        for (v in 3..13) {
             val name = "from-$v.db"
             createAt(name, v) { db ->
                 db.insertBasicCoordinate("c$v", "ic_pin", 1_000L + v)
@@ -107,7 +107,7 @@ class MigrationsRobolectricTest {
             val m = room.modelDao().getModelById("m$v") ?: error("model lost migrating from v$v")
             assertEquals(4_000_000_000L, m.fileSize)
             assertEquals("/models/m$v.glb", m.filePath)
-            assertEquals(13, room.openHelper.readableDatabase.version)
+            assertEquals(14, room.openHelper.readableDatabase.version)
             room.close()
         }
     }
@@ -170,6 +170,12 @@ class MigrationsRobolectricTest {
         assertEquals(null, s.modelPlacementOrigin)
         assertEquals(null, s.modelMoveEastM)
         assertEquals(null, s.modelMoveUpM)
+        // v14 provenance: unknown for every legacy row
+        assertEquals(null, s.sourceFrame)
+        assertEquals(null, s.receiverFrame)
+        assertEquals(null, s.coordinateEpoch)
+        assertEquals(null, s.orthometricHeightSource)
+        assertEquals(null, s.orthometricModel)
 
         val pin = room.coordinateDao().getById("pin")!!
         assertEquals(Provider.EXTERNAL_TCP, pin.provider)
@@ -214,16 +220,157 @@ class MigrationsRobolectricTest {
     fun migratedDatabase_carriesTheCurrentIdentityHash() {
         createAt("hash.db", 9) { it.insertBasicCoordinate("h", "ic_pin", 1L) }
         val room = openMigrated("hash.db")
-        val expected = schemaJson(13).getJSONObject("database").getString("identityHash")
+        val expected = schemaJson(14).getJSONObject("database").getString("identityHash")
         room.openHelper.readableDatabase.query("SELECT identity_hash FROM room_master_table WHERE id = 42").use {
             assertTrue(it.moveToFirst())
             assertEquals(expected, it.getString(0))
         }
     }
 
+    // ── v13 -> v14: provenance columns, ADD COLUMN only ──────────────────────────────────────────────
+
+    /** Column names of [table] in the exported schema [version], in schema order. */
+    private fun schemaColumns(version: Int, table: String): List<String> {
+        val entities = schemaJson(version).getJSONObject("database").getJSONArray("entities")
+        for (i in 0 until entities.length()) {
+            val e = entities.getJSONObject(i)
+            if (e.getString("tableName") != table) continue
+            val fields = e.getJSONArray("fields")
+            return (0 until fields.length()).map { fields.getJSONObject(it).getString("columnName") }
+        }
+        error("table $table not in schema $version")
+    }
+
+    /**
+     * Every cell of [columns] as its SQLite storage class plus exact value (REAL as raw IEEE bits),
+     * row by row in id order — equal snapshots mean byte-identical stored values.
+     */
+    private fun snapshot(query: (String) -> android.database.Cursor, table: String, columns: List<String>): List<String> =
+        query("SELECT ${columns.joinToString(",")} FROM $table ORDER BY id").use { c ->
+            val rows = mutableListOf<String>()
+            while (c.moveToNext()) {
+                rows += columns.indices.joinToString(" | ") { i ->
+                    when (c.getType(i)) {
+                        android.database.Cursor.FIELD_TYPE_NULL -> "${columns[i]}=NULL"
+                        android.database.Cursor.FIELD_TYPE_INTEGER -> "${columns[i]}=I:${c.getLong(i)}"
+                        android.database.Cursor.FIELD_TYPE_FLOAT ->
+                            "${columns[i]}=R:${java.lang.Double.doubleToRawLongBits(c.getDouble(i))}"
+                        android.database.Cursor.FIELD_TYPE_STRING -> "${columns[i]}=S:${c.getString(i)}"
+                        else -> "${columns[i]}=B:${c.getBlob(i).joinToString("") { "%02x".format(it) }}"
+                    }
+                }
+            }
+            rows
+        }
+
+    private val v14ProvenanceColumns =
+        listOf("sourceFrame", "receiverFrame", "coordinateEpoch", "orthometricHeightSource", "orthometricModel")
+
+    /** One v13 row with every column set to a distinctive value (awkward doubles on purpose). */
+    private fun SQLiteDatabase.insertFullV13Coordinate(id: String) {
+        val cols = schemaColumns(13, "coordinates")
+        val special = mapOf<String, Any>(
+            "id" to id, "provider" to "EXTERNAL_TCP", "rtkStatus" to "FIX", "correctionSource" to "NTRIP",
+            "timestampSource" to "NMEA_ZDA", "renderEnabled" to 0L, "modelPlacementOrigin" to "CUSTOM",
+            "latitude" to 41.246813579246813, "longitude" to -75.88112233445566, "altitude" to 0.1 + 0.2,
+            "altitudeMsl" to Math.nextUp(219.4567), "geoidSeparationM" to -33.000000000000007,
+            "timestamp" to 1_763_900_000_123L, "crsEpsg" to 6319L, "color" to 0x80FF00AA.toInt().toLong(),
+            "averageDurationMs" to 5_000_000_000L,
+        )
+        val types = schemaJson(13).getJSONObject("database").getJSONArray("entities").let { arr ->
+            val e = (0 until arr.length()).map { arr.getJSONObject(it) }.first { it.getString("tableName") == "coordinates" }
+            val f = e.getJSONArray("fields")
+            (0 until f.length()).associate { f.getJSONObject(it).getString("columnName") to f.getJSONObject(it).getString("affinity") }
+        }
+        val values = cols.mapIndexed { i, col ->
+            special[col] ?: when (types.getValue(col)) {
+                "REAL" -> 1.0 / (i + 3)                    // e.g. 0.333…, never exactly representable
+                "INTEGER" -> 1_000_000_007L * (i + 1)
+                else -> "v13 $col ° ✓, \"q\""
+            }
+        }
+        execSQL(
+            "INSERT INTO coordinates (${cols.joinToString(",")}) VALUES (${cols.joinToString(",") { "?" }})",
+            values.toTypedArray(),
+        )
+    }
+
+    @Test
+    fun fromVersion13_keepsEveryStoredValueByteIdentical_andProvenanceIsNull() = runBlocking {
+        val coordCols = schemaColumns(13, "coordinates")
+        val modelCols = schemaColumns(13, "models")
+        var coordsBefore = emptyList<String>()
+        var modelsBefore = emptyList<String>()
+        createAt("from-13.db", 13) { db ->
+            db.insertFullV13Coordinate("a-full")
+            db.insertBasicCoordinate("b-nulls", "ic_pin", 7L)               // every optional column NULL
+            db.insertBasicCoordinate("c-legacy", "model:m13", 8L, provider = "rs2-external")
+            db.execSQL(
+                "INSERT INTO coordinates (id,name,latitude,longitude,altitude,timestamp,icon,color,provider,crsEpsg) " +
+                    "VALUES ('d-crs-null','No CRS',40.0,-77.0,-0.0,9,'',0,'INTERNAL',NULL)"
+            )
+            db.insertBasicModel("m13")
+            coordsBefore = snapshot({ db.rawQuery(it, null) }, "coordinates", coordCols)
+            modelsBefore = snapshot({ db.rawQuery(it, null) }, "models", modelCols)
+        }
+        assertEquals(4, coordsBefore.size)
+
+        val room = openMigrated("from-13.db")
+        val sql = room.openHelper.readableDatabase
+        assertEquals(14, sql.version)
+        assertEquals(coordsBefore, snapshot({ sql.query(it) }, "coordinates", coordCols))
+        assertEquals(modelsBefore, snapshot({ sql.query(it) }, "models", modelCols))
+
+        // New columns: NULL on every row (no back-fill), nullable, no default.
+        sql.query("SELECT ${v14ProvenanceColumns.joinToString(",")} FROM coordinates").use { c ->
+            var rows = 0
+            while (c.moveToNext()) {
+                rows++
+                for (i in v14ProvenanceColumns.indices) assertTrue("${v14ProvenanceColumns[i]} not NULL", c.isNull(i))
+            }
+            assertEquals(4, rows)
+        }
+        sql.query("PRAGMA table_info(coordinates)").use { c ->
+            val seen = mutableMapOf<String, Pair<Int, String?>>()
+            while (c.moveToNext()) {
+                seen[c.getString(c.getColumnIndexOrThrow("name"))] =
+                    c.getInt(c.getColumnIndexOrThrow("notnull")) to c.getString(c.getColumnIndexOrThrow("dflt_value"))
+            }
+            for (col in v14ProvenanceColumns) assertEquals("$col nullable, no default", 0 to null, seen[col])
+            assertEquals(coordCols.size + v14ProvenanceColumns.size, seen.size)
+        }
+
+        // Room maps the migrated rows (schema validated) and unknown stays unknown.
+        val full = room.coordinateDao().getById("a-full")!!
+        assertEquals(java.lang.Double.doubleToRawLongBits(0.1 + 0.2), java.lang.Double.doubleToRawLongBits(full.altitude))
+        assertEquals(6319, full.crsEpsg)
+        assertEquals(null, full.sourceFrame)
+        assertEquals(null, full.receiverFrame)
+        assertEquals(null, full.coordinateEpoch)
+        assertEquals(null, full.orthometricHeightSource)
+        assertEquals(null, full.orthometricModel)
+        assertEquals(Provider.EXTERNAL_TCP, room.coordinateDao().getById("c-legacy")!!.provider)
+        assertEquals(null, room.coordinateDao().getById("d-crs-null")!!.crsEpsg)
+    }
+
+    @Test
+    fun afterMigrationTo14_provenanceIsWrittenAndReadBack() = runBlocking {
+        createAt("w-13.db", 13) { it.insertBasicCoordinate("old", "ic_pin", 1L) }
+        val room = openMigrated("w-13.db")
+        val dao = room.coordinateDao()
+        val old = dao.getById("old")!!
+        val captured = old.copy(
+            id = "new", sourceFrame = "wgs84-as-itrf2014", receiverFrame = "nad83-2011",
+            coordinateEpoch = 2026.8986301369863, orthometricHeightSource = "RECEIVER_GGA", orthometricModel = null,
+        )
+        dao.insert(captured)
+        assertEquals(captured, dao.getById("new"))
+        assertEquals(old, dao.getById("old"))   // the legacy row is untouched
+    }
+
     @Test
     fun migrations_declareAContiguousChain() {
         val steps = allMigrations.map { it.startVersion to it.endVersion }
-        assertEquals((2 until 13).map { it to it + 1 }, steps)
+        assertEquals((2 until 14).map { it to it + 1 }, steps)
     }
 }

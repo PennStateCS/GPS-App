@@ -158,6 +158,23 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
 }
 
 /**
+ * Migration 13 -> 14: coordinates gain provenance metadata — `sourceFrame` (frame of the stored
+ * lat/lon/h), `receiverFrame` (frame the receiver delivered before feed normalisation),
+ * `coordinateEpoch` (decimal year), `orthometricHeightSource` and `orthometricModel` (provenance of
+ * altitudeMsl). ADD COLUMN only, all nullable, no UPDATE: existing rows read NULL = unknown/legacy
+ * and keep every stored value unchanged.
+ */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN sourceFrame TEXT")
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN receiverFrame TEXT")
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN coordinateEpoch REAL")
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN orthometricHeightSource TEXT")
+        db.execSQL("ALTER TABLE coordinates ADD COLUMN orthometricModel TEXT")
+    }
+}
+
+/**
  * Migration 6 -> 7: no-op.
  *
  * The exported schemas (schemas/.../6.json and 7.json) are byte-identical for both the
