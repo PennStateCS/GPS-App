@@ -92,6 +92,12 @@ object ReportFindings {
             geospatial(ctx)?.let(::add)
             modelFailed(ctx)?.let(::add)
             modelMissing(ctx)?.let(::add)
+            sourceMismatch(ctx)?.let(::add)
+            antennaHeight(ctx)?.let(::add)
+            arAnchor(ctx)?.let(::add)
+            modelHidden(ctx)?.let(::add)
+            alignmentJump(ctx)?.let(::add)
+            noAltitude(ctx)?.let(::add)
             addAll(database(ctx))
             storage(ctx)?.let(::add)
             network(ctx)?.let(::add)
@@ -371,6 +377,76 @@ object ReportFindings {
             "Points link a model whose file is missing", pick(ctx, list) + extra,
             "Re-import the model or relink the points; coordinates.txt (file=file_missing) and model-integrity.txt (exists=false) list them.",
             relate(ctx, list.map { it.entry.epochMs }, "a linked model file was missing"))
+    }
+
+    /** Fields of a coded line (`CODE k=v … (old sentence)`), empty for a legacy line. */
+    private fun fields(s: Signal): Map<String, String> =
+        app.surrealar.util.diagnostics.DiagEvents.parse(s.entry.message.substringBefore(" (").trimEnd())?.second ?: emptyMap()
+
+    private fun sourceMismatch(ctx: Ctx): Finding? {
+        val list = ctx.of(SignalKind.SOURCE_MISMATCH)
+        if (list.isEmpty()) return null
+        val f = fields(list.last())
+        return Finding("source_mismatch", Finding.Severity.MEDIUM, Finding.Certainty.OBSERVED,
+            "Selected GNSS source differs from the active one (selected=${f["selected"] ?: "?"}, active=${f["active"] ?: "?"})",
+            pick(ctx, list),
+            "settings-snapshot.txt shows the chosen source and receiver; the reason field says why the app fell back (e.g. receiver not configured).",
+            relate(ctx, list.map { it.entry.epochMs }, "the app was not using the selected GNSS source"))
+    }
+
+    private fun antennaHeight(ctx: Ctx): Finding? {
+        val list = ctx.of(SignalKind.ANTENNA_HEIGHT)
+        if (list.isEmpty()) return null
+        val reasons = list.mapNotNull { fields(it)["reason"] }.distinct().joinToString()
+        return Finding("antenna_height", Finding.Severity.MEDIUM, Finding.Certainty.OBSERVED,
+            "Antenna height setting missing or inconsistent at capture start" + if (reasons.isNotEmpty()) " ($reasons)" else "",
+            pick(ctx, list),
+            "Heights of points captured then may be off by the pole height; check the antenna/pole height in settings-snapshot.txt and captures.txt.",
+            relate(ctx, list.map { it.entry.epochMs }, "a capture started with an antenna height problem"))
+    }
+
+    private fun arAnchor(ctx: Ctx): Finding? {
+        val failed = ctx.of(SignalKind.AR_ANCHOR_FAILED)
+        val delayed = ctx.of(SignalKind.AR_ANCHOR_DELAYED)
+        if (failed.isEmpty() && delayed.isEmpty()) return null
+        val list = (failed + delayed).sortedBy { it.entry.epochMs }
+        val reasons = list.mapNotNull { fields(it)["reason"] }.distinct().take(3).joinToString()
+        return Finding("ar_anchor", if (failed.isNotEmpty()) Finding.Severity.MEDIUM else Finding.Severity.LOW, Finding.Certainty.OBSERVED,
+            (if (failed.isNotEmpty()) "AR anchors failed (${failed.size}x)" else "AR anchors delayed (${delayed.size}x)") +
+                if (reasons.isNotEmpty()) " — $reasons" else "",
+            pick(ctx, list),
+            "Anchors wait for geospatial localization; AR_ANCHOR and AR_GEO_ACCURACY lines with the same ar= id show what they waited for.",
+            relate(ctx, list.map { it.entry.epochMs }, "AR anchors " + if (failed.isNotEmpty()) "failed" else "were delayed"))
+    }
+
+    private fun modelHidden(ctx: Ctx): Finding? {
+        val list = ctx.of(SignalKind.AR_MODEL_HIDDEN)
+        if (list.isEmpty()) return null
+        val reasons = list.map { fields(it)["reason"] ?: "DISTANCE" }.distinct().joinToString()
+        return Finding("ar_model_hidden", Finding.Severity.LOW, Finding.Certainty.OBSERVED,
+            "Models were not shown in AR ($reasons)", pick(ctx, list),
+            "DISTANCE/VISIBILITY come from AR display settings (settings-snapshot.txt); OFFSCREEN means the models were outside the camera view; TRACKING means tracking was lost.",
+            relate(ctx, list.map { it.entry.epochMs }, "models were hidden"))
+    }
+
+    private fun alignmentJump(ctx: Ctx): Finding? {
+        val list = ctx.of(SignalKind.AR_ALIGNMENT_JUMP)
+        if (list.isEmpty()) return null
+        val maxM = list.mapNotNull { fields(it)["deltaM"]?.toDoubleOrNull() }.maxOrNull()
+        return Finding("ar_alignment_jump", Finding.Severity.MEDIUM, Finding.Certainty.OBSERVED,
+            "AR/GNSS alignment jumped (${list.size}x" + (maxM?.let { String.format(Locale.US, ", up to %.1f m", it) } ?: "") + ")",
+            pick(ctx, list),
+            "A jump moves placed models; compare with RTK_CHANGE and AR_GEO_ACCURACY lines just before it (ar-track.csv in debug builds).",
+            relate(ctx, list.map { it.entry.epochMs }, "the AR/GNSS alignment jumped"))
+    }
+
+    private fun noAltitude(ctx: Ctx): Finding? {
+        val list = ctx.of(SignalKind.AR_NO_ALTITUDE)
+        if (list.isEmpty()) return null
+        return Finding("ar_no_altitude", Finding.Severity.LOW, Finding.Certainty.OBSERVED,
+            "Points without a usable stored altitude were placed on the terrain (${list.size}x)", pick(ctx, list),
+            "These models sit on the terrain surface, not at the surveyed height; coordinates.txt shows which points lack an altitude.",
+            relate(ctx, list.map { it.entry.epochMs }, "a point had no usable altitude"))
     }
 
     private fun database(ctx: Ctx): List<Finding> {

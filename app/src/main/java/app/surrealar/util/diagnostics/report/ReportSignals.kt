@@ -14,6 +14,8 @@ enum class SignalKind {
     DB_RESET, DB_FAILED,
     STORAGE_LOW, NETWORK_LOST, NETWORK_OK,
     MAIN_THREAD_BLOCKED,
+    SOURCE_MISMATCH, ANTENNA_HEIGHT,
+    AR_ANCHOR_FAILED, AR_ANCHOR_DELAYED, AR_MODEL_HIDDEN, AR_ALIGNMENT_JUMP, AR_NO_ALTITUDE,
 }
 
 /** A log entry the findings rules recognised. */
@@ -32,6 +34,7 @@ object ReportSignals {
     private val EARTH_TRACKING = Regex("""^Earth tracking changed trackingState=(\S+)""")
     private val AR_QUALITY = Regex("""^AR_QUALITY \S+ → (\S+)""")
     private val NOT_TRACKING = setOf("PAUSED", "STOPPED")
+    private val HIDDEN_COUNT = Regex("""\bhidden=(\d+)""")
 
     private val RECEIVER_DOWN_LEGACY = listOf(
         "External receiver link down", "External receiver still unreachable", "External receiver connect failed",
@@ -100,6 +103,11 @@ object ReportSignals {
             m.startsWith("Network lost") || m.startsWith("Network connected without internet") -> SignalKind.NETWORK_LOST
             m.startsWith("Network connected") && m.contains("validated=true") -> SignalKind.NETWORK_OK
             m.startsWith("Main thread blocked") || m.startsWith("Main thread still blocked") -> SignalKind.MAIN_THREAD_BLOCKED
+            m.startsWith("Anchor height unavailable") -> SignalKind.AR_NO_ALTITUDE
+            warnOrError && (m.startsWith("Anchor creation failed") || m.startsWith("Terrain anchor resolve failed")) -> SignalKind.AR_ANCHOR_FAILED
+            // The same sentence is written with hidden=0 when the filter stops hiding anything.
+            m.startsWith("Models hidden by distance filter") &&
+                (HIDDEN_COUNT.find(m)?.groupValues?.get(1)?.toIntOrNull() ?: 1) > 0 -> SignalKind.AR_MODEL_HIDDEN
             else -> null
         }
     }
@@ -149,6 +157,15 @@ object ReportSignals {
             else -> null
         }
         DiagEvents.MODEL_MISSING_FILE -> SignalKind.MODEL_MISSING_FILE
+        DiagEvents.SOURCE_MISMATCH -> SignalKind.SOURCE_MISMATCH
+        DiagEvents.ANTENNA_HEIGHT -> SignalKind.ANTENNA_HEIGHT
+        DiagEvents.AR_ANCHOR -> when (f["result"]) {
+            "FAILED" -> SignalKind.AR_ANCHOR_FAILED
+            "DELAYED" -> SignalKind.AR_ANCHOR_DELAYED
+            else -> null
+        }
+        DiagEvents.AR_MODEL_HIDDEN -> SignalKind.AR_MODEL_HIDDEN
+        DiagEvents.AR_ALIGNMENT_JUMP -> SignalKind.AR_ALIGNMENT_JUMP
         else -> null
     }
 }

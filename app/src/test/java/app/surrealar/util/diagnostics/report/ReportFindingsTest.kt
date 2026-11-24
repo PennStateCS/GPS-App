@@ -320,4 +320,61 @@ class ReportFindingsTest {
         assertEquals("W GNSS RTK_CHANGE from=FIX to=FLOAT", e.text)
         assertNotNull(LogLineFormat.timestamp(e.epochMs!!))
     }
+
+    // ── AR placement and GNSS configuration (codes added by the logging call sites) ──
+
+    @Test fun `source mismatch names the selected and active source`() {
+        val f = find(input(line("14:50:00", 'W', "GNSS", "SOURCE_MISMATCH selected=EXTERNAL active=INTERNAL reason=external_not_configured")),
+            "source_mismatch")
+        assertNotNull(f)
+        assertTrue(f!!.title, f.title.contains("selected=EXTERNAL") && f.title.contains("active=INTERNAL"))
+        assertEquals(Finding.Certainty.OBSERVED, f.certainty)
+    }
+
+    @Test fun `antenna height problem lists its reasons`() {
+        val f = find(input(line("14:50:00", 'W', "GNSS", "ANTENNA_HEIGHT reason=MISSING detail=poleHeightZero mode=EXTERNAL capture=cap5")),
+            "antenna_height")
+        assertTrue(f!!.title, f.title.contains("MISSING"))
+    }
+
+    @Test fun `anchor failures outrank delays, coded and legacy lines both count`() {
+        val delayedOnly = find(input(line("14:50:00", 'I', "AR", "AR_ANCHOR result=DELAYED reason=AR_LOCALIZING afterS=14 ar=a2 (Anchors waiting)")), "ar_anchor")
+        assertEquals(Finding.Severity.LOW, delayedOnly!!.severity)
+        assertTrue(delayedOnly.title, delayedOnly.title.startsWith("AR anchors delayed") && delayedOnly.title.contains("AR_LOCALIZING"))
+        val failed = find(input(
+            line("14:50:00", 'I', "AR", "AR_ANCHOR result=DELAYED reason=AR_LOCALIZING ar=a2"),
+            line("14:51:00", 'W', "AR", "Anchor creation failed"),          // legacy sentence (older build)
+        ), "ar_anchor")
+        assertEquals(Finding.Severity.MEDIUM, failed!!.severity)
+        assertTrue(failed.title, failed.title.startsWith("AR anchors failed (1x)"))
+        // An "I" line with the legacy sentence is not a failure (warnings/errors only).
+        assertNull(find(input(line("14:51:00", 'I', "AR", "Anchor creation failed: retrying")), "ar_anchor"))
+    }
+
+    @Test fun `hidden models report their reasons, and hidden=0 is not a hidden model`() {
+        val coded = find(input(
+            line("14:50:00", 'I', "AR", "AR_MODEL_HIDDEN reason=OFFSCREEN count=2 ar=a2"),
+            line("14:52:00", 'I', "AR", "AR_MODEL_HIDDEN reason=DISTANCE count=1 ar=a2 maxDistanceM=200 hidden=1 (Models hidden by distance filter)"),
+        ), "ar_model_hidden")
+        assertTrue(coded!!.title, coded.title.contains("OFFSCREEN") && coded.title.contains("DISTANCE"))
+        // Older builds: the sentence with a count; with hidden=0 the filter stopped hiding anything.
+        assertNotNull(find(input(line("14:50:00", 'I', "AR", "Models hidden by distance filter maxDistanceM=200 hidden=3 ar=a1")), "ar_model_hidden"))
+        assertNull(find(input(line("14:50:00", 'I', "AR", "Models hidden by distance filter maxDistanceM=200 hidden=0 ar=a1")), "ar_model_hidden"))
+    }
+
+    @Test fun `alignment jumps report the largest jump`() {
+        val f = find(input(
+            line("14:50:00", 'W', "AR", "AR_ALIGNMENT_JUMP deltaM=2.40 deltaVertM=+0.10 horizM=2.30 rtk=FIX ar=a2"),
+            line("14:53:00", 'W', "AR", "AR_ALIGNMENT_JUMP deltaM=5.31 deltaVertM=+1.00 horizM=4.00 rtk=FLOAT ar=a2"),
+            incident = incident(),
+        ), "ar_alignment_jump")
+        assertTrue(f!!.title, f.title.contains("2x") && f.title.contains("up to 5.3 m"))
+        assertTrue("timing relation, not a root cause: ${f.incidentRelation}", f.incidentRelation!!.contains("timing only"))
+    }
+
+    @Test fun `points without altitude are reported as placed on terrain`() {
+        val f = find(input(line("14:50:00", 'W', "AR", "Anchor height unavailable: no stored height and no fix height, using terrain")), "ar_no_altitude")
+        assertTrue(f!!.title, f.title.contains("placed on the terrain"))
+        assertEquals(Finding.Severity.LOW, f.severity)
+    }
 }
