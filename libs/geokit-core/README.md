@@ -2,8 +2,8 @@
 
 `io.github.pennstatecs.geokit:geokit-core` · version `GEOKIT_VERSION` (0.1.0-SNAPSHOT) · package `io.github.pennstatecs.geokit` · Gradle project `:geokit-core` in `libs/geokit-core`. Part of the [geokit](../README.md) libraries.
 
-Android-free geodesy for SurReal AR: ellipsoids and geocentric conversions, the ITRF2014 ⇄ NAD83(2011)
-Helmert transform, State Plane / UTM / transverse Mercator projections, the GEOID18 grid, local ENU
+Android-free geodesy for SurReal AR: ellipsoids and geocentric conversions, reference frames with a
+registry of verified transformations (ITRF2014 ⇄ NAD83(2011), ITRF2014 ⇄ ITRF2020), State Plane / UTM / transverse Mercator projections, the GEOID18 grid, local ENU
 frames, WGS84 geodesics (distance and bearing), the 68 % horizontal-accuracy convention, compass
 heading math, running statistics, stakeout guidance, a lat/lon plausibility check and a coordinate
 conversion engine that combines them (datum, grid system, unit and height reference in one call). Plain Kotlin/JVM (no Android, ARCore, Room or Hilt), so it can
@@ -14,7 +14,7 @@ Package root `io.github.pennstatecs.geokit`:
 | Package | Contents |
 |---|---|
 | `.ellipsoid` | `Ellipsoid` (`WGS84`, `GRS80`: `toEcef`, `fromEcef`, meridian / prime-vertical radii), `GeodeticPosition`, `EcefPosition`, `Geodesic` (`distanceM`, `initialBearingDeg`, `northEastDeltaM` on WGS84, via GeographicLib) |
-| `.datum` | `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`) |
+| `.datum` | `ReferenceFrame` (stable persistable ids, EPSG codes, reference epoch, global / plate-fixed), `CoordinateEpoch`, `FrameTransformationRegistry` (`find(source, target, epoch)` → `Available` chain of verified `FrameEdge`s or `Unavailable(UNKNOWN_FRAME / NOT_DEFINED / NOT_VERIFIED)`), `Itrf2014ToNad83` (14-parameter time-dependent Helmert, `forward` / `inverse` at a decimal-year epoch, `decimalYear(epochMillis)`), `Itrf2014ToItrf2020` |
 | `.projection` | `Tm` (Krüger series, forward + inverse), `Lcc2`, `HomA`, `Utm`, `SpcsZone` / `SpcsZones` (all 118 SPCS83 zones on NAD83(2011)), `SpcsZoneLocator` / `SpcsZoneSet` / `SpcsZoneSuggestion` (zone suggestion from county-defined zone extents) |
 | `.geoid` | `Geoid18Grid` (`fromClasspath()` loads the GEOID18 grid bundled in this jar; or from a `ByteArray` / `InputStream` of a packed SRGT grid) |
 | `.local` | `LocalEnu` (east/north/up about an origin, for short-range local work: `toEnu`, and its exact inverse `toGeodetic`) |
@@ -50,9 +50,9 @@ out.verticalDatumName                          // "NAVD88"
 
 | Input | Options |
 |---|---|
-| Source datum (`GeodeticDatum`) | `WGS84_ITRF2014` (EPSG 4979/4326) or `NAD83_2011` (6319/6318), plus the observation epoch as a decimal year |
+| Source datum (`GeodeticDatum`) | `WGS84_ITRF2014` (EPSG 4979/4326), `NAD83_2011` (6319/6318) or `ITRF2020` (9989/9990), plus the observation epoch as a decimal year |
 | Horizontal (`TargetSystem`) | `Geographic`, `UtmAuto` (zone from longitude), `StatePlane(zoneEpsg)` (any of the 118 SPCS83 zones; unknown EPSG throws) |
-| Output datum | `WGS84_ITRF2014` or `NAD83_2011` for geographic and UTM; State Plane is always NAD83(2011) (`OutputSystem.effectiveDatum`) |
+| Output datum | `WGS84_ITRF2014`, `NAD83_2011` or `ITRF2020` for geographic and UTM; State Plane is always NAD83(2011) (`OutputSystem.effectiveDatum`) |
 | Unit (`LengthUnit`) | `METRE`, `US_SURVEY_FOOT` (1200/3937 m), `INTERNATIONAL_FOOT` (0.3048 m) |
 | Height (`VerticalReference`) | `ELLIPSOIDAL` (output datum), `GEOID18_ORTHOMETRIC` (NAD83(2011) h − N; NAVD88 / PRVD02 / VIVD09), `RECEIVER_MSL` (passed through) |
 
@@ -115,6 +115,8 @@ row live in `libs/geokit-core/src/test` unless noted.
 | SPCS83, all 118 zones (LCC 2SP, TM, HOM A) | worst 1.5 × 10⁻⁷ m (< 1 µm) | `SpcsZonesTest`: 9 points per zone vs PROJ (`spcs83_vectors.csv`) |
 | UTM forward / inverse / round trip | 1.8 × 10⁻⁷ / 5.0 × 10⁻⁸ / 1.6 × 10⁻⁷ m (< 1 mm required) | `UtmProjTest`: 1 134 PROJ vectors, 9 zones, both hemispheres, zone edges (`tools/utm/gen_utm_vectors.py`) |
 | ITRF2014 → NAD83(2011) Helmert | worst 1.9 × 10⁻⁹ m vs PROJ at 5 US sites (PA, CA, WA, FL, AK), epochs 2020–2030 | `convert/ReferencePointsTest` (PROJ point + round trip) |
+| ITRF2014 ⇄ ITRF2020 Helmert; ITRF2020 → NAD83(2011) chain | worst 8.7 × 10⁻⁸ m horizontal / 4.9 × 10⁻⁷ m vertical vs PROJ (EPSG:7912 ⇄ 9989, 19 points incl. AK/HI/PR, poles, antimeridian × epochs 2010–2026.9); the chain via ITRF2014 within 1.0 × 10⁻⁷ m of PROJ's direct EPSG "ITRF2020 to NAD83(2011) (1)" | `datum/FrameTransformationRegistryTest` (`itrf2020_vectors.csv`, `tools/coords/gen_itrf2020_vectors.py`) |
+| Registry routing in the converter | legacy WGS84 (ITRF2014) / NAD83(2011) results bit-identical to the pre-registry converter (> 50 000 combinations) | `convert/LegacyConverterIdentityTest` |
 | GEOID18 | worst 0.46 mm on the 600 grid vectors (`geoid18_vectors.csv`, 1 mm tolerance); within 1.3 mm of the 4 NGS geoid-service points; 11 NGS points across CONUS, PR and VI within 5 mm | `Geoid18GridTest` |
 | ECEF (GRS80 / WGS84) | NCAT XYZ to 1 mm (NCAT's rounding); merged code within 7.2 × 10⁻⁷ m of the previous implementations | `convert/ReferencePointsTest`, `LegacyEllipsoidComparisonTest` |
 | Conversion engine | SPCS (all PROJ vectors) and UTM vectors to 1 µm through the engine; PROJ datum shift to 2 × 10⁻⁹ °; NCAT PA North / UTM 18N to 1–2 mm; NGS GEOID18 heights to 1 cm | `convert/CoordinateConverterTest` |

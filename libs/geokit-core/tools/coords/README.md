@@ -8,6 +8,7 @@ These scripts produce checked-in data for :geokit-core (`io.github.pennstatecs.g
 | `libs/geokit-core/src/main/kotlin/io/github/pennstatecs/geokit/projection/SpcsZoneTable.kt` and `libs/geokit-core/src/test/resources/coords/spcs83_vectors.csv` | `python libs/geokit-core/tools/coords/gen_spcs.py libs/geokit-core/src/main/kotlin/io/github/pennstatecs/geokit/projection/SpcsZoneTable.kt libs/geokit-core/src/test/resources/coords/spcs83_vectors.csv` |
 | `libs/geokit-core/src/main/resources/spcs/spcs83_zones.bin` and `libs/geokit-core/tools/coords/spcs83_county_zones.csv` (zone suggestion; also needs shapely 2.2.0) | `python -I libs/geokit-core/tools/coords/gen_spcs_boundaries.py cb_2023_us_county_500k.zip libs/geokit-core/src/main/resources/spcs/spcs83_zones.bin libs/geokit-core/tools/coords/spcs83_county_zones.csv` |
 | `libs/geokit-core/src/main/resources/geoid/geoid18.srgt` | `python libs/geokit-core/tools/coords/pack_geoid.py libs/geokit-core/src/main/resources/geoid/geoid18.srgt g2018u0.bin g2018p0.bin` |
+| `libs/geokit-core/src/test/resources/coords/itrf2020_vectors.csv` (ITRF2014 ⇄ ITRF2020, ITRF2020 → NAD83(2011); refuses ballpark operations) | `python -I libs/geokit-core/tools/coords/gen_itrf2020_vectors.py libs/geokit-core/src/test/resources/coords/itrf2020_vectors.csv` |
 | `libs/geokit-core/src/test/resources/geoid/geoid18_vectors.csv` | `python libs/geokit-core/tools/coords/geoid_vectors.py libs/geokit-core/src/test/resources/geoid/geoid18_vectors.csv g2018u0.bin:500 g2018p0.bin:100` |
 
 The GEOID18 grids are NGS's big-endian files:
