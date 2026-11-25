@@ -54,8 +54,12 @@ class CaptureViewModelTest {
     private val fixes = MutableSharedFlow<Fix>(extraBufferCapacity = 64)
     private val currentFix = MutableStateFlow<Fix?>(null)
 
-    /** Mirrors the switchboard: every fix lands on both the fixes stream and currentFix. */
-    private suspend fun push(f: Fix) { currentFix.value = f; fixes.emit(f) }
+    /** The feed's receiver datum; [push] normalises through it like the switchboard does. */
+    private val feedDatum = app.surrealar.gnss.source.ReceiverFeedDatum(
+        MutableStateFlow(app.surrealar.settings.model.ReceiverDatum.ITRF2014))
+
+    /** Mirrors the switchboard: every fix is normalised, then lands on both the fixes stream and currentFix. */
+    private suspend fun push(f: Fix) { val out = feedDatum.normalise(f); currentFix.value = out; fixes.emit(out) }
     private val providerFlow = MutableStateFlow(ProviderChoice.EXTERNAL_TCP)
     private val sourceSettings = SourceSettings(providerFlow, MutableStateFlow(emptyList()), MutableStateFlow(null))
     private val repo = FakeCoordinateRepository()
@@ -89,6 +93,7 @@ class CaptureViewModelTest {
             captureCoordinate = CaptureCoordinateUseCase(repo, ValidateCoordinateForSaveUseCase()),
             sourceSettings = sourceSettings,
             settingsRepository = settingsRepo,
+            feedDatum = feedDatum,
         )
     }
 

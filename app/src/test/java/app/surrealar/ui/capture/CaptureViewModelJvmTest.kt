@@ -58,6 +58,10 @@ class CaptureViewModelJvmTest {
     private val sourceSettings = SourceSettings(providerFlow, MutableStateFlow(emptyList()), MutableStateFlow(null))
     private val repo = FakeCoordinateRepository()
 
+    /** The feed's receiver datum; [push] normalises through it like the switchboard does. */
+    private val feedDatumFlow = MutableStateFlow(app.surrealar.settings.model.ReceiverDatum.ITRF2014)
+    private val feedDatum = app.surrealar.gnss.source.ReceiverFeedDatum(feedDatumFlow)
+
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() = Dispatchers.resetMain()
 
@@ -88,6 +92,7 @@ class CaptureViewModelJvmTest {
         captureCoordinate = CaptureCoordinateUseCase(repo, ValidateCoordinateForSaveUseCase()),
         sourceSettings = sourceSettings,
         settingsRepository = settingsRepo,
+        feedDatum = feedDatum,
     )
 
     private fun fix(provider: Provider = Provider.EXTERNAL_TCP, rtk: RtkStatus = RtkStatus.FIX, alt: Double = 100.0) = Fix(
@@ -103,7 +108,8 @@ class CaptureViewModelJvmTest {
         requiredMinStatus = minStatus, maxFixAgeSec = 30, maxDiffAgeSec = 30
     )
 
-    private suspend fun push(f: Fix) = fixes.emit(f)
+    /** Publishes [f] as the switchboard does: normalised (and datum-tagged) by the feed first. */
+    private suspend fun push(f: Fix) = fixes.emit(feedDatum.normalise(f))
 
     private suspend fun complete(vm: CaptureViewModel, internal: Boolean = false, alt: Double = 100.0) {
         val p = if (internal) Provider.INTERNAL else Provider.EXTERNAL_TCP
@@ -292,6 +298,8 @@ class CaptureViewModelJvmTest {
         externalReceiverDatum = app.surrealar.settings.model.ReceiverDatum.NAD83_2011))
 
     @Test fun save_external_recordsReceiverFrameFromSetting_andFrameAndEpoch() = runBlocking {
+        // The feed applies the same datum as the setting (as in the app), so the fixes are NAD83-normalised.
+        feedDatumFlow.value = app.surrealar.settings.model.ReceiverDatum.NAD83_2011
         val vm = vm(settings(coordinateSystem = nad83Setting()))
         complete(vm)
         vm.save("P", null, 0, "ic_pin")
@@ -301,7 +309,9 @@ class CaptureViewModelJvmTest {
         assertEquals(app.surrealar.domain.model.coordinateEpochOf(c.timestamp), c.coordinateEpoch!!, 0.0)
         assertNull("the test fixes carry no MSL height", c.orthometricHeightSource)
         assertNull(c.orthometricModel)
-        assertEquals(98.066, c.altitude, 1e-9)   // values unchanged by provenance
+        // Values unchanged by provenance: the NAD83→WGS84-normalised fix height minus the RS2+ offset.
+        val normalisedAlt = io.github.pennstatecs.geokit.gnss.datum.FixDatumNormalizer.nad83ToWgs84(fix()).altEllipsoidalM!!
+        assertEquals(normalisedAlt - 1.934, c.altitude, 1e-6)
     }
 
     @Test fun save_external_unreadableDatumSetting_leavesReceiverFrameUnknown() = runBlocking {

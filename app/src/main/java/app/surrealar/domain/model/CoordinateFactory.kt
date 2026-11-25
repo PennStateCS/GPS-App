@@ -108,8 +108,9 @@ object CoordinateFactory {
      *
      * @param provider The GNSS source active during capture.
      * @param receiverFrame Frame the receiver delivered before the feed normalised it to WGS84
-     *   ([FrameTokens.ITRF2014] / [FrameTokens.NAD83_2011], from the External receiver datum setting
-     *   at capture start); null when unknown or not an external receiver capture.
+     *   ([FrameTokens.ITRF2014] / [FrameTokens.NAD83_2011]: the External receiver datum that normalised
+     *   every averaged fix, see CaptureViewModel.occupationReceiverDatum); null when unknown or not an
+     *   external receiver capture.
      *
      * Provenance (v14) is filled from what the capture already knows, without changing any value:
      * `sourceFrame` from [crsEpsg], `coordinateEpoch` = decimal year of the stored `timestamp` (the

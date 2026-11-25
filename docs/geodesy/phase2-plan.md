@@ -83,11 +83,30 @@ Then: independent review, full sequential verification, consolidated Phase 1+2 t
   from ITRF2020 through the verified registry at their coordinate epoch, never read as WGS84. Maps/AR
   plot them as they are, like WGS84 (ITRF2020 − ITRF2014 is a few millimetres).
 
+## Receiver frame provenance (survey/phase2-rxframe, review LOW-4)
+
+- How a datum change propagates: the switchboard's fix transform reads the External receiver datum per
+  fix from a `stateIn` of the settings DataStore, so the feed switches a moment after the setting, and
+  fixes already normalised (up to the switchboard's 64-fix buffer) keep the old normalisation. A Fix has
+  no datum field.
+- `gnss/source/ReceiverFeedDatum` is now that transform: the same `FixDatumNormalizer.toWgs84` call
+  (maths unchanged) plus a bounded per-instance record of the datum that normalised each published fix.
+- An external capture (`CaptureViewModel`) is bound at start to one datum: the setting in the start
+  snapshot (else, setting unreadable, the datum the feed applies). Only fixes the feed normalised under
+  it are averaged. Before the first accepted fix, fixes normalised under another datum are discarded
+  (fixes in flight after a change made just before the capture started); fixes with no record are never
+  averaged.
+- A datum change while the occupation runs (setting emits another datum, or an accepted occupation sees
+  a fix normalised under another datum) stops the capture: nothing can be saved, and the dialog shows
+  "Capture stopped: the receiver datum changed during the occupation. Start the capture again." A GNSS
+  source switch already cancelled the capture; it now shows the same kind of message. A change after the
+  capture completed leaves the result (all its fixes used the bound datum); a change while idle has no
+  effect.
+- The saved `receiverFrame` is the bound datum (null when the setting couldn't be read at start, as
+  before), in both save paths (`CaptureViewModel.save`, the Add Coordinate dialog).
+
 ## Known limitations
 
-- `receiverFrame` (provenance) comes from the settings snapshot taken at capture start. Changing the
-  External receiver datum during an averaging capture records the old frame. Provenance only: the
-  numbers are unaffected, because the feed normalises every fix as it arrives.
 - Device-GNSS (internal) captures use the legacy `wgs84-as-itrf2014` convention: the device's WGS84
   output is treated as ITRF2014. Its accuracy is metre level, far beyond any WGS84/ITRF difference.
 - EGM2008 is interpolated bilinearly on the 2.5′ grid (as PROJ `vgridshift`). NGA's reference software
