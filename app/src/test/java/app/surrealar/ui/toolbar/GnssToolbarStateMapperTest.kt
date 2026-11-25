@@ -136,6 +136,13 @@ class GnssToolbarStateMapperTest {
         assertEquals("Accuracy plus or minus 1.5 centimetres, vertical plus or minus 3.1 centimetres", s.accuracyDescription)
     }
 
+    @Test fun `an invalid vertical accuracy marker (999 m) is not shown as an accuracy`() {
+        val s = render(GnssToolbarStateMapper.map(LocationSourceType.EXTERNAL,
+            fix(Provider.EXTERNAL_TCP, RtkStatus.FIX, hAccM = 0.015, vAccM = 999.0), SkySnapshot()))
+        assertEquals("±0.02 m", s.accuracyText)
+        assertTrue(s.accuracyDescription!!.contains("vertical").not())
+    }
+
     @Test fun `internal GNSS never shows vertical accuracy`() {
         val s = render(GnssToolbarStateMapper.map(LocationSourceType.INTERNAL,
             fix(Provider.INTERNAL, RtkStatus.SINGLE, hAccM = 3.2, vAccM = 5.0), SkySnapshot()))

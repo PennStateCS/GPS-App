@@ -164,6 +164,14 @@ class CaptureViewModel @Inject constructor(
      */
     val positionReference: StateFlow<app.surrealar.receiver.tilt.EpochReference?> = _positionReference.asStateFlow()
 
+    private val _heightInvalidNow = MutableStateFlow(false)
+    /** True while the latest epoch's vertical accuracy is an invalid marker (e.g. 999 m): epochs are not averaged. */
+    val heightInvalidNow: StateFlow<Boolean> = _heightInvalidNow.asStateFlow()
+
+    private val _heightExcludedEpochs = MutableStateFlow(0)
+    /** Epochs of the current occupation excluded because their vertical accuracy was invalid ([CaptureHeightGate]). */
+    val heightExcludedEpochs: StateFlow<Int> = _heightExcludedEpochs.asStateFlow()
+
     /**
      * The position reference of the completed (or running) external occupation: POLE_TIP when the receiver
      * delivered tilt-compensated pole-tip positions, ANTENNA otherwise; null when not an RS4 / RS4 Pro capture.
@@ -313,11 +321,20 @@ class CaptureViewModel @Inject constructor(
         // NMEA replay fixes (Provider.REPLAY) are never averaged into a saved point.
         // Height quality (CaptureHeightGate): epochs with an invalid vertical accuracy (e.g. 999 m) are not averaged.
         val heightGate = CaptureHeightGate { DiagnosticsLogger.w(DiagTags.CAPTURE, it) }
+        _heightInvalidNow.value = false
+        _heightExcludedEpochs.value = 0
         val modeFixes = fixSwitchboard.fixes.filter {
             it !== replayedBeforeStart &&
                 it.provider != io.github.pennstatecs.geokit.gnss.model.Provider.REPLAY &&
-                (it.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) == internal &&
-                heightGate.admit(it)
+                (it.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) == internal
+        }
+        // The height gate runs once per epoch, on the session chain only (the diagnostics collector below reads
+        // modeFixes separately and must not count epochs twice).
+        val heightGatedFixes = modeFixes.filter {
+            val ok = heightGate.admit(it)
+            _heightInvalidNow.value = heightGate.invalidNow
+            _heightExcludedEpochs.value = heightGate.excludedEpochs
+            ok
         }
         // External: bind the occupation to one receiver datum (see occupationDatum / admitExternalFix).
         val snapForDatum = startSnapshot
@@ -348,8 +365,8 @@ class CaptureViewModel @Inject constructor(
                 "; antenna epochs use today's reduction")
         }
         var sessionRef: ObservationSession? = null
-        val sessionFixes = if (datum == null) modeFixes
-            else modeFixes
+        val sessionFixes = if (datum == null) heightGatedFixes
+            else heightGatedFixes
                 .filter { admitExternalFix(it, datum.await().datum, sessionRef) }
                 .filter { admitSetup(it, sessionRef) }
                 .filter { admitReference(it, gate!!, snapForDatum, sessionRef) }

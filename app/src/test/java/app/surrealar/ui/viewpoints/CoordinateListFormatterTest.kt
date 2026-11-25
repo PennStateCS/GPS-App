@@ -37,6 +37,15 @@ class CoordinateListFormatterTest {
         assertEquals("External GNSS · Float · H ±0.12 m", CoordinateListFormatter.summaryLine(c, null))
     }
 
+    @Test fun unconfirmedReference_isFlaggedInTheList() {
+        val c = coord(provider = "external-tcp", rtkStatus = "FIX", hAcc = 0.03, sourceDevice = "Emlid Reach RS4",
+            captureMethod = "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED")
+        assertEquals("Emlid Reach RS4 · reference unconfirmed · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(c, null))
+        val pole = coord(provider = "external-tcp", rtkStatus = "FIX", hAcc = 0.03, sourceDevice = "Emlid Reach RS4",
+            captureMethod = "EXTERNAL_GNSS_POLE_TIP")
+        assertEquals("Emlid Reach RS4 · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(pole, null))
+    }
+
     @Test fun modelLinked_usesModelNameOrFallback() {
         val c = coord(modelId = "m1", rtkStatus = "FIX", hAcc = 0.03)
         assertEquals("Barn · Fix · H ±0.03 m", CoordinateListFormatter.summaryLine(c, "Barn"))

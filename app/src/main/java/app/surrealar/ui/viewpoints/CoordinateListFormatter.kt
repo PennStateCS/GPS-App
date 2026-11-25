@@ -52,7 +52,9 @@ object CoordinateListFormatter {
     private fun captureSourceLabel(c: Coordinate): String? {
         val method = c.captureMethod?.lowercase(Locale.US)
         if (app.surrealar.data.local.db.ProviderTokens.isExternal(c.provider) || method == "external_gnss" || method == "rtk_receiver") {
-            return c.sourceDevice?.takeIf { it.isNotBlank() } ?: "External GNSS"
+            val device = c.sourceDevice?.takeIf { it.isNotBlank() } ?: "External GNSS"
+            // An unconfirmed position reference stays visible in the list too (height may be reduced twice).
+            return if (method == "external_gnss_reference_unconfirmed") "$device · reference unconfirmed" else device
         }
         return when (method) {
             "internal_gps"   -> "Internal GPS"

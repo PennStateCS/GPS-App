@@ -119,3 +119,11 @@ checklist covers the same on the device.
 - Stakeout with non-compensated output compares the mark with the APC: keep the pole plumb.
 - What the RS4 Pro's TCP output really contains with compensation on (and during alignment) still needs a receiver
   test on a known mark — see the tablet checklist section 11.
+
+## CSV "Position reference" column — open decision
+
+The points CSV gains a last column "Position reference" only when the file contains an external capture; files
+without one are byte-identical to before. A survey package that imports by column position with a saved template
+could therefore see 6 columns in one file and 7 in another from the same app. Alternatives: always write the column
+(blank when not applicable; changes every export), or make it an export option. Left unchanged pending the
+product owner's choice. The unconfirmed state is also shown in the point list ("… · reference unconfirmed").

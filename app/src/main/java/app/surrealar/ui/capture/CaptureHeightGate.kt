@@ -29,6 +29,12 @@ class CaptureHeightGate(private val log: (String) -> Unit = {}) {
 
     private var zeroSeparationLogged = false
 
+    companion object {
+        /** Capture-dialog status while epochs are excluded for an invalid vertical accuracy. */
+        const val INVALID_STATUS: String = "Receiver height invalid (vertical accuracy marker, e.g. 999 m): " +
+            "epochs are not averaged until it recovers"
+    }
+
     /** True when [fix] may be averaged. */
     fun admit(fix: Fix): Boolean {
         val a = ReceiverHeights.assess(fix)
@@ -43,7 +49,7 @@ class CaptureHeightGate(private val log: (String) -> Unit = {}) {
         invalidNow = false
         if (a.ellipsoidalStatus == EllipsoidalHeightStatus.SEPARATION_ZERO_AMBIGUOUS && !zeroSeparationLogged) {
             zeroSeparationLogged = true
-            log("Capture height uncertain: GGA geoid separation is 0 with H=${fix.altMslM} m; " +
+            log("Capture height uncertain: GGA geoid separation is 0; " +
                 "h = H + 0 is only right if the receiver streams ellipsoidal heights in GGA")
         }
         return true

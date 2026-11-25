@@ -110,3 +110,16 @@ enough for this package:
 2. With it on, force-close Emlid Flow for > 10 s: which field shows 999 m, what does field 9 hold, how fast does it
    recover after Emlid Flow returns?
 3. Check whether the TCP output follows the Bluetooth setting.
+
+## Review follow-ups (Phase 4 stabilization)
+
+- **On screen:** while epochs are excluded for an invalid vertical accuracy, the capture dialog shows
+  "⚠ Receiver height invalid (vertical accuracy marker, e.g. 999 m): epochs are not averaged until it recovers";
+  a timeout names how many epochs were excluded for that reason. The toolbar no longer shows such a value as a
+  vertical accuracy (horizontal only).
+- **Counting:** the height gate runs once per epoch on the capture chain only (the diagnostics collector no longer
+  re-runs it), so "valid again after N epochs" is exact.
+- **Internal GNSS:** the 500 m rule applies to tablet GNSS captures as well. Android reports a vertical accuracy
+  ≥ 500 m only for unusable fixes (cold start, indoors); those epochs are not averaged, and a capture that never
+  gets a usable fix times out with the reason above.
+- **Logs:** the "ellipsoidal height uncertain" line no longer includes the height value.

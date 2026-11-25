@@ -331,9 +331,10 @@ class AddCoordinateDialogFragment(
         // no dismiss: it stays for the whole occupation and the completed result.
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                kotlinx.coroutines.flow.combine(captureVm.positionReference, captureVm.referenceWarning) { ref, warning ->
+                kotlinx.coroutines.flow.combine(captureVm.positionReference, captureVm.referenceWarning, captureVm.heightInvalidNow) { ref, warning, heightInvalid ->
                     listOfNotNull(
                         warning?.let { "⚠ $it" },
+                        if (heightInvalid) "⚠ ${app.surrealar.ui.capture.CaptureHeightGate.INVALID_STATUS}" else null,
                         ref?.let {
                             "Position: ${app.surrealar.receiver.tilt.TiltStatusText.referenceLabel(it)}. " +
                                 app.surrealar.receiver.tilt.TiltStatusText.referenceExplanation(it, null)
@@ -538,14 +539,14 @@ class AddCoordinateDialogFragment(
                         "Timed out · spread ±${spread?.let { formatMeters(it) } ?: "—"} (spread target ±${formatMeters(target!!)})" +
                             " · try again or choose another preset"
                     else
-                        "Timed out · ${result.samples}/${policy.minSamples} fixes · try again or adjust settings"
+                        "Timed out · ${result.samples}/${policy.minSamples} fixes" + heightExcludedSuffix() + " · try again or adjust settings"
                     btnSave?.isEnabled = false
                 }
             }
             is ObservationSession.State.Paused -> {
                 tvSamplingStatus?.text =
                     if (state.reason == ObservationSession.TIMEOUT_NO_ACCEPTED_FIXES)
-                        "Timed out · no fixes met the rules (quality / corrections) · try again or choose another preset"
+                        "Timed out · no fixes met the rules (quality / corrections)" + heightExcludedSuffix() + " · try again or choose another preset"
                     else
                         "Receiver error — check connection and try again."
                 btnSave?.isEnabled = false
@@ -701,6 +702,15 @@ class AddCoordinateDialogFragment(
 
     // ── Save ──────────────────────────────────────────────────────────────────
 
+    /** True while the unconfirmed-reference acknowledgment dialog is open (one at a time). */
+    private var referenceAckDialogShowing = false
+
+    /** Timeout suffix naming epochs excluded for an invalid receiver vertical accuracy (e.g. 999 m), if any. */
+    private fun heightExcludedSuffix(): String {
+        val n = captureVm.heightExcludedEpochs.value
+        return if (n > 0) " · $n epoch(s) excluded: receiver height invalid (vertical accuracy marker, e.g. 999 m)" else ""
+    }
+
     private fun handleSave() {
         val name = nameEdit?.text?.toString()?.ifBlank { "Unnamed Coordinate" } ?: "Unnamed Coordinate"
         val note = noteEdit?.text?.toString()?.trim()?.ifBlank { null }
@@ -848,9 +858,11 @@ class AddCoordinateDialogFragment(
      * "Cancel" keeps the dialog and the completed result.
      */
     private fun showUnconfirmedReferenceDialog(warning: String) {
-        if (!isAdded) return
+        if (!isAdded || referenceAckDialogShowing) return   // a double tap on Save must not open two dialogs / save twice
+        referenceAckDialogShowing = true
         DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture save needs acknowledgment: position reference unconfirmed")
         MaterialAlertDialogBuilder(requireContext())
+            .setOnDismissListener { referenceAckDialogShowing = false }
             .setTitle(CaptureViewModel.REFERENCE_ACK_TITLE)
             .setMessage(CaptureViewModel.referenceAckMessage(warning))
             .setPositiveButton(R.string.capture_reference_save_unconfirmed) { _, _ ->

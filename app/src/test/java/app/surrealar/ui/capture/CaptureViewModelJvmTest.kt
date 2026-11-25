@@ -136,6 +136,19 @@ class CaptureViewModelJvmTest {
         assertEquals(2, (vm.state.value as ObservationSession.State.Complete).result.samples)
     }
 
+    @Test fun invalidVerticalAccuracy_epochsExcludedOnce_statusShownThenCleared() = runBlocking {
+        val vm = vm()
+        vm.start(policy(minSamples = 2))
+        repeat(3) { push(fix().copy(vAccM = 999.0)) }
+        assertFalse(vm.state.value is ObservationSession.State.Complete)
+        assertTrue("status shown while the receiver height is invalid", vm.heightInvalidNow.value)
+        assertEquals("each epoch counted once (diagnostics collector does not re-run the gate)", 3, vm.heightExcludedEpochs.value)
+        push(fix()); push(fix())
+        assertFalse("cleared once corrections resume", vm.heightInvalidNow.value)
+        assertEquals(2, (vm.state.value as ObservationSession.State.Complete).result.samples)
+        assertEquals(3, vm.heightExcludedEpochs.value)
+    }
+
     @Test fun fixReplayedFromBeforeStart_isSkipped() = runBlocking {
         val vm = vm()
         push(fix())                     // already in the replay cache when the capture starts

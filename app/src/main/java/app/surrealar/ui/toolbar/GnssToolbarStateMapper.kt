@@ -319,7 +319,10 @@ object GnssToolbarStateMapper {
         val estimated = reportedH == null
         // Vertical (1σ) alongside it for an external receiver that reports it, like the Home card;
         // never estimated, and never for internal GNSS (Android's vertical accuracy is unreliable).
-        val vAcc = fix.vAccM?.takeIf { !isInternal && !estimated && it in 0.0..9999.0 }
+        // An invalid vertical-accuracy marker (e.g. Emlid's 999 m when receiver-side height corrections are
+        // interrupted) is not an accuracy: no vertical value is shown then.
+        val vAcc = fix.vAccM?.takeIf { !isInternal && !estimated && it in 0.0..9999.0 &&
+            !io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyValidity.isInvalid(fix) }
         val accuracyText: String?
         val accuracyCompactText: String?
         val accuracyLevel: GnssStatusLevel
