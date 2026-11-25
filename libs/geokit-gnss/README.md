@@ -38,7 +38,8 @@ Conventions: units in names (`latDeg`, `altMslM`, `diffAgeS`), `null` means unkn
 | `io.github.pennstatecs.geokit.gnss.receiver` | `ReceiverDevice`, `ReceiverDiscovery`, `DiscoveredReceiver`, neutral status models, `AccuracyClass`, `ReceiverCapabilities`, `AntennaGeometry` (pole / camera heights + phase-centre offset) |
 | `io.github.pennstatecs.geokit.gnss.model` | `Fix`, `RtkStatus`, `Provider`, `TimestampSource`, `SkySnapshot`, `SatInfo`, `SkyGeometry`, `Constellation`, `FixSnapshot` |
 | `io.github.pennstatecs.geokit.gnss.satellites` | `SatelliteInventory` (smoothed SNR, used flags, stale eviction → `SkySnapshot`) |
-| `io.github.pennstatecs.geokit.gnss.accuracy` | `AccuracyEstimator`, `UereTable` |
+| `io.github.pennstatecs.geokit.gnss.accuracy` | `AccuracyEstimator`, `UereTable`, `VerticalAccuracyValidity` (invalid markers such as Emlid's 999 m) |
+| `io.github.pennstatecs.geokit.gnss.height` | `ReceiverHeights` (receiver H with model unknown, N, h = H + N trust status; see docs/geodesy/rs4-nmea-heights.md) |
 | `io.github.pennstatecs.geokit.gnss.datum` | `FixDatum` (`ITRF2014`, `NAD83_2011`), `FixDatumNormalizer` (receiver output → WGS84 / ITRF2014) |
 | `io.github.pennstatecs.geokit.gnss.capture` | `ObservationSession` (averaging), `AveragingPolicy`, `CapturePreset`, `CaptureResult`, `FixFreshnessGate`, `GnssCaptureSettings` |
 | `io.github.pennstatecs.geokit.gnss.log` | `GnssLog`, `GnssLogger`, `NmeaDebugSampler` (periodic raw-sentence samples in debug traces) |

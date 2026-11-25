@@ -275,10 +275,13 @@ class CaptureViewModel @Inject constructor(
         // last value to new subscribers) — only fixes that arrive during the session are averaged.
         val replayedBeforeStart = fixSwitchboard.fixes.replayCache.lastOrNull()
         // NMEA replay fixes (Provider.REPLAY) are never averaged into a saved point.
+        // Height quality (CaptureHeightGate): epochs with an invalid vertical accuracy (e.g. 999 m) are not averaged.
+        val heightGate = CaptureHeightGate { DiagnosticsLogger.w(DiagTags.CAPTURE, it) }
         val modeFixes = fixSwitchboard.fixes.filter {
             it !== replayedBeforeStart &&
                 it.provider != io.github.pennstatecs.geokit.gnss.model.Provider.REPLAY &&
-                (it.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) == internal
+                (it.provider == io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) == internal &&
+                heightGate.admit(it)
         }
         // External: bind the occupation to one receiver datum (see occupationDatum / admitExternalFix).
         val snapForDatum = startSnapshot
