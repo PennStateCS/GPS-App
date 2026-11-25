@@ -423,4 +423,39 @@ class ReceiverConnectionControllerTest {
 
     private fun CoroutineScope.launchCollect(c: ReceiverConnectionController, into: MutableList<ReceiverSelectionEvent>) =
         launch(start = CoroutineStart.UNDISPATCHED) { c.events.collect { into += it } }
+
+    // ── test(): probe only, no switch (manual dialog "Test connection") ──────────
+
+    @Test fun `test reports NMEA without saving, switching or changing the attempt state`() = runTest {
+        workingExternal()
+        val c = controller()
+        val r = c.test(ConnectRequest("192.168.42.7", 9002, profile = ExternalReceiverProfile.REACH_RS4))
+        assertEquals(ReceiverTestResult.Reachable(ReceiverTarget("192.168.42.7", 9002), httpReachable = false), r)
+        assertEquals("the Emlid profile asked HTTP once", 1, probe.httpCalls)
+        assertEquals(ConnectionAttempt.Idle, c.state.value.attempt)
+        assertWorkingExternalUnchanged()
+        assertEquals(0, settings.recentWrites)
+    }
+
+    @Test fun `test failures are classified like connect and change nothing`() = runTest {
+        workingExternal()
+        probe.httpAnswer = true
+        val c = controller()
+        probe.next().complete(TcpProbeResult.CONNECT_FAILED)
+        val r = c.test(ConnectRequest("192.168.42.7", 9002, profile = ExternalReceiverProfile.REACH_RS2_PLUS))
+        assertEquals(ReceiverTestResult.Failed(ReceiverTarget("192.168.42.7", 9002), ConnectError.HttpOnly(9002)), r)
+        assertWorkingExternalUnchanged()
+    }
+
+    @Test fun `test of a Generic NMEA receiver makes no Emlid request and invalid input is rejected`() = runTest {
+        val c = controller()
+        c.test(ConnectRequest("10.0.0.5", 9000, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP))
+        assertEquals(0, probe.httpCalls)
+        assertEquals(1, probe.tcpCalls)
+        assertEquals(ReceiverTestResult.Invalid, c.test(ConnectRequest(" ", 9000)))
+        assertEquals(ReceiverTestResult.Invalid, c.test(ConnectRequest("10.0.0.5", 0)))
+        assertEquals("invalid input never probes", 1, probe.tcpCalls)
+        assertEquals(emptyList<String>(), settings.writes.toList())
+        assertEquals(ProviderChoice.INTERNAL, provider.value)
+    }
 }

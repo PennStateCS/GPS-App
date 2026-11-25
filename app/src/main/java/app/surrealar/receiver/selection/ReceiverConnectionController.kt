@@ -236,6 +236,48 @@ class ReceiverConnectionController(
         }
     }
 
+    /**
+     * [test]'s probe, the same as [runAttempt]'s (kept separate so the attempt code is unchanged): the TCP NMEA sniff, plus the Emlid HTTP API in parallel only when [vendor] is
+     * Emlid (an unreadable profile, null, asks nothing).
+     */
+    private suspend fun runProbe(target: ReceiverTarget, vendor: ReceiverVendor?): Pair<TcpProbeResult, Boolean?> = coroutineScope {
+        val tcp = async { probe.tcp(target.host, target.port) }
+        val http = if (vendor == ReceiverVendor.EMLID) async { probe.http(target.host) } else null
+        tcp.await() to http?.await()
+    }
+
+    /** Null when the sniff received NMEA; otherwise why the receiver can't be used (same mapping as [runAttempt]). */
+    private fun classify(tcp: TcpProbeResult, http: Boolean?, port: Int): ConnectError? = when (tcp) {
+        TcpProbeResult.RECEIVING_NMEA -> null
+        TcpProbeResult.CONNECT_FAILED -> if (http == true) ConnectError.HttpOnly(port) else ConnectError.Unreachable(port)
+        TcpProbeResult.CONNECTED_NO_DATA -> ConnectError.NoData(port)
+        TcpProbeResult.RECEIVING_RTCM_OR_BIN -> ConnectError.NotNmea(port)
+    }
+
+    /**
+     * "Test connection" (manual dialog): runs the same probe as [connect] for [request] and returns what it found,
+     * WITHOUT saving anything, switching the source or touching [state]. Emlid HTTP is asked only when the request's
+     * profile (or, with none, the stored profile) is an Emlid one. Cancelling the caller cancels the test.
+     */
+    suspend fun test(request: ConnectRequest): ReceiverTestResult {
+        val host = request.host.trim()
+        if (host.isEmpty() || request.port !in 1..65535) return ReceiverTestResult.Invalid
+        val target = ReceiverTarget(host, request.port)
+        return try {
+            val storedProfile = if (request.profile == null) read("externalReceiverProfile") { settings.externalReceiverProfile.first() } else null
+            val (tcp, http) = runProbe(target, (request.profile ?: storedProfile)?.vendor)
+            val error = classify(tcp, http, target.port)
+            DiagnosticsLogger.i(DiagTags.RECEIVER,
+                "External receiver connection test (no switch) tcp=$tcp http=${http ?: "not asked"} port=${target.port}")
+            if (error == null) ReceiverTestResult.Reachable(target, http) else ReceiverTestResult.Failed(target, error)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "External receiver connection test failed port=${target.port}", e)
+            ReceiverTestResult.Failed(target, ConnectError.Unexpected(e.javaClass.simpleName))
+        }
+    }
+
     /** Saves [target] and activates it, unless the attempt was superseded before it got here. */
     private suspend fun commit(id: Int, target: ReceiverTarget, request: ConnectRequest, storedProfile: ExternalReceiverProfile?, http: Boolean?) {
         switchLock.withLock {

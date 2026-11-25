@@ -65,6 +65,15 @@ sealed class ConnectError(val message: String) {
     data class Unexpected(val detail: String) : ConnectError("Couldn't connect: $detail")
 }
 
+/** [ReceiverConnectionController.test] outcome: what the probe found. Nothing was saved or switched. */
+sealed interface ReceiverTestResult {
+    /** The port streams NMEA. [httpReachable] = the Emlid HTTP API answered (null: not asked, Generic NMEA). */
+    data class Reachable(val target: ReceiverTarget, val httpReachable: Boolean?) : ReceiverTestResult
+    data class Failed(val target: ReceiverTarget, val error: ConnectError) : ReceiverTestResult
+    /** Blank host or a port outside 1..65535. */
+    data object Invalid : ReceiverTestResult
+}
+
 /** The connection-test lifecycle (test-before-switch). */
 sealed interface ConnectionAttempt {
     data object Idle : ConnectionAttempt
