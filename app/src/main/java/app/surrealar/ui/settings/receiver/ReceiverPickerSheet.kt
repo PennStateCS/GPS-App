@@ -165,8 +165,9 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
             DateUtils.getRelativeTimeSpanString(r.lastConnectedMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)) else null
         val subtitle = listOfNotNull("${r.host}:${r.port}", model, last).joinToString("\n")
         val v = row(inflater, parent, title, subtitle, item.status, R.drawable.ic_satellite_24) {
-            // Reconnect with the profile it was connected with (null: keep the stored profile).
-            connect(ConnectRequest(r.host, r.port, item.profile, r.name.orEmpty()))
+            // M6: no profile (keep the stored profile and its origin). Passing the recent entry's profile would save
+            // it as the user's choice; identification sets the right one once the receiver reports its model.
+            connect(ConnectRequest(r.host, r.port, profile = null, name = r.name.orEmpty()))
         }
         v.findViewById<MaterialButton>(R.id.btn_picker_row_forget).apply {
             isVisible = true
@@ -225,7 +226,7 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
             ReceiverUi.ensureLocationService(requireContext().applicationContext)
         }
         if (s.captureActive && s.selectedSource == LocationSourceType.EXTERNAL) {
-            ReceiverUi.confirmCaptureStop(this, R.string.receiver_switch_tablet_confirm_message) { go() }
+            ReceiverConfirmDialog.show(this, ReceiverConfirmDialog.Action.SELECT_TABLET, R.string.receiver_switch_tablet_confirm_message)
         } else go()
     }
 
@@ -233,8 +234,9 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
         startConnect(this, deps, request)
     }
 
+    /** M5: one manual dialog only (tag check + showNow, so a double tap finds the first one). */
     private fun openManual() {
-        ManualReceiverDialog().show(parentFragmentManager, ManualReceiverDialog.TAG)
+        showOnce(parentFragmentManager, ManualReceiverDialog.TAG) { ManualReceiverDialog() }
     }
 
     companion object {
@@ -245,21 +247,19 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
 
         /**
          * Starts a test-before-switch connect and handles the synchronous answer: a running capture is confirmed
-         * first ("Switching receivers stops the current capture"), then retried with confirmCaptureStop. Returns
-         * the first answer.
+         * first ([ReceiverConfirmDialog]: "Switching receivers stops the current capture"), which then connects with
+         * confirmCaptureStop (and, with [dismissAfterConfirm], closes [fragment]). Returns the first answer.
          */
         internal fun startConnect(
             fragment: androidx.fragment.app.Fragment, deps: ReceiverUiDeps, request: ConnectRequest,
+            dismissAfterConfirm: Boolean = false,
             onStarted: () -> Unit = {},
         ): ConnectStart {
             val connection = deps.connection
             val start = connection.connect(request)
             when (start) {
-                ConnectStart.NEEDS_CAPTURE_CONFIRMATION -> ReceiverUi.confirmCaptureStop(fragment) {
-                    connection.connect(request, confirmCaptureStop = true)
-                    fragment.context?.let { ReceiverUi.ensureLocationService(it.applicationContext) }
-                    onStarted()
-                }
+                ConnectStart.NEEDS_CAPTURE_CONFIRMATION -> ReceiverConfirmDialog.show(fragment,
+                    ReceiverConfirmDialog.Action.CONNECT, request = request, dismissParent = dismissAfterConfirm)
                 ConnectStart.STARTED -> {
                     ReceiverUi.ensureLocationService(fragment.requireContext().applicationContext)
                     onStarted()
@@ -268,6 +268,19 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
                 ConnectStart.INVALID, ConnectStart.NOTHING_SAVED -> Unit
             }
             return start
+        }
+
+        /**
+         * M5: shows the dialog / sheet made by [create] under [tag] unless one is already there (or the state is
+         * saved). showNow commits synchronously, so a second tap in the same frame finds the first. True = showing.
+         */
+        internal fun showOnce(
+            fm: androidx.fragment.app.FragmentManager, tag: String, create: () -> androidx.fragment.app.DialogFragment,
+        ): Boolean {
+            if (fm.findFragmentByTag(tag) != null) return true
+            if (fm.isStateSaved) return false
+            create().showNow(fm, tag)
+            return true
         }
     }
 }

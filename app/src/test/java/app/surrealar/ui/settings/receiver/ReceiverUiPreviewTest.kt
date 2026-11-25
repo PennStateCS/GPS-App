@@ -118,8 +118,12 @@ class ReceiverUiPreviewTest {
             "tablet" to ReceiverCardPresenter.present(ReceiverUiFixtures.internal,
                 ReceiverUiFixtures.fix(io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL, io.github.pennstatecs.geokit.gnss.model.RtkStatus.SINGLE),
                 ReceiverUiFixtures.sky(9, 22), null, ReceiverCapabilities.NONE),
-            "testing" to ReceiverCardPresenter.present(ReceiverUiFixtures.connected().copy(
-                attempt = ConnectionAttempt.Testing(1, ReceiverTarget("192.168.42.7", 9001), null)), null, null, null, caps),
+            "testing" to ReceiverCardPresenter.present(verified.copy(
+                attempt = ConnectionAttempt.Testing(1, ReceiverTarget("192.168.42.7", 9001), null)),
+                ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), ReceiverBattery(82, false), caps),
+            "switch_failed" to ReceiverCardPresenter.present(verified.copy(
+                attempt = ConnectionAttempt.Failed(3, ReceiverTarget("192.168.42.7", 9001), ConnectError.Unreachable(9001))),
+                ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), ReceiverBattery(82, false), caps),
             "connected" to ReceiverCardPresenter.present(verified, ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), ReceiverBattery(82, false), caps),
             "failed" to ReceiverCardPresenter.present(ReceiverUiFixtures.connected().copy(activeProvider = ProviderChoice.INTERNAL,
                 attempt = ConnectionAttempt.Failed(2, ReceiverUiFixtures.TARGET, ConnectError.NoData(9001))), null, null, null, caps),

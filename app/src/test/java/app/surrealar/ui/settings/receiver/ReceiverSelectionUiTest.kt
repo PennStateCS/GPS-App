@@ -122,7 +122,8 @@ class ReceiverSelectionUiTest {
         assertEquals(View.GONE, c.modelGroup.visibility)
         assertEquals("Connection state: Active", c.stateChip.contentDescription)
 
-        val testing = ReceiverUiFixtures.connected().copy(attempt = ConnectionAttempt.Testing(1, ReceiverUiFixtures.TARGET, null))
+        val testing = ReceiverUiFixtures.connected().copy(activeProvider = ProviderChoice.INTERNAL, link = ConnectionState.DISCONNECTED,
+            attempt = ConnectionAttempt.Testing(1, ReceiverUiFixtures.TARGET, null))
         c.bind(ReceiverCardPresenter.present(testing, null, null, null, io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities.ALL))
         assertEquals("Testing…", c.stateChip.text.toString())
 
@@ -314,7 +315,7 @@ class ReceiverSelectionUiTest {
         assertTrue(row("Compensated NMEA output (tilt)").contains(
             "Firmware alone does not show whether tilt compensation or compensated NMEA output is turned on. Set it to match Emlid Flow."))
         assertEquals("Unknown", row("Compensated NMEA output (tilt)")[1])
-        assertEquals("Unknown", row("Compensated NMEA output (tilt)").last())
+        assertEquals("the default value is labelled Default (L9)", "Default", row("Compensated NMEA output (tilt)").last())
         assertEquals("Unknown", row("Receiver orthometric height model").last())
         assertEquals("5.0 lines/s", row("NMEA rate")[1])
 
@@ -323,5 +324,198 @@ class ReceiverSelectionUiTest {
         assertTrue(clip.contains("Model: Reach RS4 Pro [Reported by receiver]"))
         assertFalse("no address in the summary", clip.contains("192.168.42.1"))
         assertFalse("no receiver name in the summary", clip.contains(": Base"))
+    }
+
+    // ── Phase 5 UI review fixes ───────────────────────────────────────────────
+
+    private fun showDetails(): ReceiverDetailsSheet = ReceiverDetailsSheet().also {
+        it.show(host.fragment.childFragmentManager, ReceiverDetailsSheet.TAG)
+        host.fragment.childFragmentManager.executePendingTransactions()
+        idleMain()
+    }
+
+    private fun detailRows(sheet: ReceiverDetailsSheet) = sheet.requireView().findViewById<android.widget.LinearLayout>(R.id.details_rows)
+
+    private fun detailRow(sheet: ReceiverDetailsSheet, label: String): List<String>? {
+        val rows = detailRows(sheet)
+        for (i in 0 until rows.childCount) {
+            val t = texts(rows.getChildAt(i))
+            if (t.firstOrNull() == label) return t
+        }
+        return null
+    }
+
+    @Test fun `M3 card - A connected while B is tested shows A on the chips and the test as a line`() {
+        val spoken = mutableListOf<String>()
+        val ctx = ContextThemeWrapper(host.activity, R.style.Theme_SurveyingApp)
+        val v = LayoutInflater.from(ctx).inflate(R.layout.view_receiver_card, FrameLayout(ctx), false)
+        val c = ReceiverCardBinder(v) { spoken += it }
+        val caps = io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities.ALL
+        val a = ReceiverUiFixtures.connected(ExternalReceiverProfile.REACH_RS4_PRO, ProfileOrigin.RECEIVER, ReceiverUiFixtures.rs4ProIdentity())
+        val b = app.surrealar.receiver.selection.ReceiverTarget("192.168.42.7", 9001)
+        c.bind(ReceiverCardPresenter.present(a, ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), null, caps))
+        c.bind(ReceiverCardPresenter.present(a.copy(attempt = ConnectionAttempt.Testing(2, b, null)),
+            ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), null, caps))
+        assertEquals("Connected", c.stateChip.text.toString())
+        assertEquals("RTK Fix", c.fixChip.text.toString())
+        assertEquals("18/24 sats", c.satsChip.text.toString())
+        assertEquals(View.VISIBLE, c.attempt.visibility)
+        assertEquals("Testing 192.168.42.7:9001\u2026", c.attempt.text.toString())
+
+        c.bind(ReceiverCardPresenter.present(a.copy(attempt = ConnectionAttempt.Failed(2, b, app.surrealar.receiver.selection.ConnectError.CaptureStarted)),
+            ReceiverUiFixtures.fix(), ReceiverUiFixtures.sky(18, 24), null, caps))
+        assertEquals("Connected", c.stateChip.text.toString())
+        assertEquals(View.GONE, c.attempt.visibility)
+        assertEquals("Couldn't switch to 192.168.42.7:9001: capture running. Still using Reach RS4 Pro base.", c.failure.text.toString())
+        assertEquals("no announcement: the chip never left Connected", emptyList<String>(), spoken)
+
+        // A failed test of the saved receiver while nothing streams shows the full CaptureStarted message.
+        c.bind(ReceiverCardPresenter.present(a.copy(activeProvider = ProviderChoice.INTERNAL, link = ConnectionState.DISCONNECTED,
+            attempt = ConnectionAttempt.Failed(3, ReceiverUiFixtures.TARGET, app.surrealar.receiver.selection.ConnectError.CaptureStarted)),
+            null, null, null, caps))
+        assertEquals("Failed: capture running", c.stateChip.text.toString())
+        assertEquals(app.surrealar.receiver.selection.ConnectError.CaptureStarted.message, c.failure.text.toString())
+        assertEquals(listOf("Receiver Failed: capture running"), spoken)
+    }
+
+    @Test fun `L8 card - Reconnecting flaps are not announced, end states once`() {
+        val spoken = mutableListOf<String>()
+        val ctx = ContextThemeWrapper(host.activity, R.style.Theme_SurveyingApp)
+        val c = ReceiverCardBinder(LayoutInflater.from(ctx).inflate(R.layout.view_receiver_card, FrameLayout(ctx), false)) { spoken += it }
+        val caps = io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities.ALL
+        val s = ReceiverUiFixtures.connected()
+        repeat(3) {
+            c.bind(ReceiverCardPresenter.present(s, null, null, null, caps))
+            c.bind(ReceiverCardPresenter.present(s.copy(link = ConnectionState.RECONNECTING), null, null, null, caps))
+        }
+        c.bind(ReceiverCardPresenter.present(s.copy(link = ConnectionState.ERROR), null, null, null, caps))
+        c.bind(ReceiverCardPresenter.present(s, null, null, null, caps))
+        assertEquals(listOf("Receiver Unavailable", "Receiver Connected"), spoken)
+    }
+
+    @Test fun `H2 Disconnect asks first and clears the saved receiver only after confirming`() {
+        workingExternal()
+        val sheet = showDetails()
+        sheet.requireView().findViewById<View>(R.id.btn_details_disconnect).performClick()
+        idleMain()
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        assertTrue(dialog.isShowing)
+        val shown = texts(dialog.window!!.decorView)
+        assertTrue(shown.toString(), shown.contains("Disconnect receiver?"))
+        assertTrue(shown.toString(), shown.any { it.contains("saved receiver address and port are removed") })
+        assertEquals("nothing changed before confirming", emptyList<String>(), fake.writes.toList())
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+
+        dialog.getButton(DialogInterface.BUTTON_NEGATIVE).performClick()
+        idleMain()
+        assertEquals("Cancel changes nothing", emptyList<String>(), fake.writes.toList())
+
+        sheet.requireView().findViewById<View>(R.id.btn_details_disconnect).performClick()
+        idleMain()
+        (ShadowDialog.getLatestDialog() as AlertDialog).getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        idleMain()
+        assertEquals(ProviderChoice.INTERNAL, provider.value)
+        assertTrue(fake.writes.toString(), fake.writes.containsAll(listOf("mock=false", "source=INTERNAL", "clearTcp")))
+    }
+
+    @Test fun `H2 Disconnect during a capture says it stops the capture`() {
+        workingExternal()
+        capture.value = true
+        idleMain()
+        val sheet = showDetails()
+        sheet.requireView().findViewById<View>(R.id.btn_details_disconnect).performClick()
+        sheet.requireView().findViewById<View>(R.id.btn_details_disconnect).performClick()
+        idleMain()
+        assertEquals("one confirmation for a double tap", 1,
+            sheet.childFragmentManager.fragments.count { it is ReceiverConfirmDialog })
+        val dialog = ShadowDialog.getLatestDialog() as AlertDialog
+        val shown = texts(dialog.window!!.decorView)
+        assertTrue(shown.toString(), shown.contains("Stop the current capture?"))
+        assertTrue(shown.toString(), shown.any { it.startsWith("Disconnecting stops the current capture.") })
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick()
+        idleMain()
+        assertEquals(ProviderChoice.INTERNAL, provider.value)
+        assertTrue(fake.writes.contains("clearTcp"))
+    }
+
+    @Test fun `M5 a double tap on Connect manually opens one dialog`() {
+        val sheet = showPicker()
+        val row = rowTitled(sheet.requireView(), "Connect manually\u2026")
+        row.performClick()
+        row.performClick()
+        idleMain()
+        assertEquals(1, host.fragment.childFragmentManager.fragments.count { it is ManualReceiverDialog })
+    }
+
+    @Test fun `M6 a recent receiver connects with the stored profile and origin unchanged`() {
+        workingExternal(ExternalReceiverProfile.REACH_RS2_PLUS)
+        fake.origin.value = ProfileOrigin.DEFAULT
+        fake.recent.value = listOf(RecentReceiver("192.168.42.7", 9001, "reach_rs4", "Rover"))
+        idleMain()
+        fake.writes.clear()
+        val sheet = showPicker()
+        rowTitled(sheet.requireView(), "Rover").performClick()
+        idleMain()
+        assertEquals("192.168.42.7", fake.host.value)
+        assertFalse("no profile written: ${fake.writes}", fake.writes.any { it.startsWith("profile=") })
+        assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, fake.profile.value)
+        assertEquals(ProfileOrigin.DEFAULT, fake.origin.value)
+    }
+
+    @Test fun `L9 details - tilt row only for RS4 profiles and an RTK fix quality row for every receiver`() {
+        workingExternal(ExternalReceiverProfile.GENERIC_NMEA_TCP)
+        deps.fix.value = ReceiverUiFixtures.fix(rtk = io.github.pennstatecs.geokit.gnss.model.RtkStatus.FLOAT, diffAge = 2.5)
+        idleMain()
+        val sheet = showDetails()
+        assertNull("no tilt row for Generic NMEA", detailRow(sheet, "Compensated NMEA output (tilt)"))
+        assertEquals(listOf("Fix quality", "RTK Float, corrections 2.5 s old", "Reported by receiver"), detailRow(sheet, "Fix quality"))
+        sheet.dismiss(); idleMain()
+
+        fake.profile.value = ExternalReceiverProfile.REACH_RS4
+        settings.compensated.value = app.surrealar.settings.model.CompensatedOutputSetting.ENABLED
+        idleMain()
+        val rs4 = showDetails()
+        val tilt = detailRow(rs4, "Compensated NMEA output (tilt)")!!
+        assertEquals("Enabled", tilt[1])
+        assertEquals("Set by you", tilt.last())
+    }
+
+    @Test fun `M4 details - receiver-reported vendor details are collapsed until expanded`() {
+        workingExternal(ExternalReceiverProfile.REACH_RS2_PLUS)
+        deviceInfo.value = ReceiverDeviceInfo(host = "192.168.42.1", name = "Base", model = "Reach RS2+", firmware = "33.4",
+            uptimeS = 2L * 86400 + 3 * 3600 + 4 * 60,
+            details = mapOf("GNSS Receiver FW" to "2.3.1", "Raw response" to "{\"secret\":1}"))
+        deps.battery.value = io.github.pennstatecs.geokit.gnss.receiver.ReceiverBattery(70, false, voltageV = 7.9, temperatureC = 31.5)
+        idleMain()
+        val sheet = showDetails()
+        val all = texts(detailRows(sheet))
+        val header = all.first { it.startsWith("Receiver-reported details") }
+        assertNull("collapsed", detailRow(sheet, "Uptime"))
+        val rows = detailRows(sheet)
+        val headerView = (0 until rows.childCount).map { rows.getChildAt(it) }.first { (it as? TextView)?.text?.toString() == header }
+        headerView.performClick()
+        idleMain()
+        assertEquals(listOf("Uptime", "2d 3h 4m", "Reported by receiver"), detailRow(sheet, "Uptime"))
+        assertEquals("31.5 \u00b0C", detailRow(sheet, "Temperature")!![1])
+        assertEquals("2.3.1", detailRow(sheet, "GNSS Receiver FW")!![1])
+        assertNull("the raw HTTP response is never shown", detailRow(sheet, "Raw response"))
+
+        sheet.requireView().findViewById<View>(R.id.btn_details_copy_summary).performClick()
+        val clip = host.activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
+        assertTrue(clip, clip.contains("Uptime: 2d 3h 4m [Reported by receiver]"))
+        assertFalse(clip.contains("192.168.42.1"))
+    }
+
+    @Test fun `manual dialog type field is an outlined Material exposed dropdown on a surface box`() {
+        val d = showManual()
+        val type = d.view(R.id.dropdown_manual_type)
+        assertTrue(type.javaClass.name, type is com.google.android.material.textfield.MaterialAutoCompleteTextView)
+        val surface = com.google.android.material.color.MaterialColors.getColor(type, com.google.android.material.R.attr.colorSurface)
+        for (id in listOf(R.id.input_manual_host, R.id.input_manual_type, R.id.input_manual_port)) {
+            val layout = d.view(id) as TextInputLayout
+            assertEquals(TextInputLayout.BOX_BACKGROUND_OUTLINE, layout.boxBackgroundMode)
+            assertEquals("box background = colorSurface", surface, layout.boxBackgroundColor)
+        }
     }
 }

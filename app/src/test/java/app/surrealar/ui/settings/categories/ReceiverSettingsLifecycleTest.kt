@@ -18,6 +18,7 @@ import app.surrealar.receiver.selection.ReceiverProbe
 import app.surrealar.receiver.selection.TcpProbeResult
 import app.surrealar.settings.model.ExternalReceiverProfile
 import app.surrealar.settings.model.RecentReceiver
+import app.surrealar.ui.settings.receiver.ReceiverConfirmDialog
 import app.surrealar.ui.settings.receiver.ReceiverDetailsSheet
 import app.surrealar.ui.settings.receiver.ReceiverPickerSheet
 import app.surrealar.ui.settings.receiver.ReceiverUiDeps
@@ -103,18 +104,21 @@ class ReceiverSettingsLifecycleTest {
     }
     private val receiverFound = TcpProbeResult.RECEIVING_NMEA
 
-    private fun settings(storedHost: Flow<String?> = flowOf(null), storedPort: Int? = null): SettingsRepository =
+    private fun settings(
+        storedHost: Flow<String?> = flowOf(null), storedPort: Int? = null,
+        source: Flow<LocationSourceType> = flowOf(LocationSourceType.EXTERNAL), mock: Flow<Boolean> = flowOf(false),
+    ): SettingsRepository =
         Mockito.mock(SettingsRepository::class.java).also {
             Mockito.`when`(it.externalReceiverProfile).thenReturn(flowOf(ExternalReceiverProfile.DEFAULT))
             Mockito.`when`(it.externalTcpHost).thenReturn(storedHost)
             Mockito.`when`(it.externalTcpPort).thenReturn(flowOf(storedPort))
             Mockito.`when`(it.externalTcpName).thenReturn(flowOf(null))
             // Always EXTERNAL: only the controller's own attempt guards can stop an activation.
-            Mockito.`when`(it.locationSource).thenReturn(flowOf(LocationSourceType.EXTERNAL))
+            Mockito.`when`(it.locationSource).thenReturn(source)
             Mockito.`when`(it.externalConnType).thenReturn(flowOf(ExternalConnectionType.TCP))
             Mockito.`when`(it.externalRecentReceivers).thenReturn(flowOf(listOf(RecentReceiver("127.0.0.1", deadPort, null, "Rover"))))
             Mockito.`when`(it.gnssReceiverSettings).thenReturn(flowOf(GnssReceiverSettings()))
-            Mockito.`when`(it.mockLocationEnabled).thenReturn(flowOf(false))
+            Mockito.`when`(it.mockLocationEnabled).thenReturn(mock)
         }
 
     private fun switchboard(): FixSwitchboard = Mockito.mock(FixSwitchboard::class.java).also {
@@ -235,6 +239,9 @@ class ReceiverSettingsLifecycleTest {
         host.fragment.childFragmentManager.executePendingTransactions()
         val details = host.fragment.childFragmentManager.findFragmentByTag(ReceiverDetailsSheet.TAG) as ReceiverDetailsSheet
         details.requireView().findViewById<View>(R.id.btn_details_disconnect).performClick()
+        // H2: Disconnect is confirmed (it removes the saved receiver); nothing happens before that.
+        Mockito.verify(coordinator, Mockito.never()).activateInternalProvider("receiver-details")
+        confirm(details)
         Mockito.verify(coordinator, Mockito.atLeastOnce()).activateInternalProvider("receiver-details")
         probeResult.complete(receiverFound)
         idle()
@@ -339,5 +346,71 @@ class ReceiverSettingsLifecycleTest {
         assertEquals("old view untouched", "Testing…", stateChip(first.view))
         assertEquals("the new view shows the outcome", "Connected", stateChip(second.view))
         assertTrue(second.view.parent != null)
+    }
+
+    /** Presses the positive button of the receiver confirmation shown by [owner]. */
+    private fun confirm(owner: androidx.fragment.app.Fragment) {
+        val d = owner.childFragmentManager.findFragmentByTag(ReceiverConfirmDialog.TAG) as ReceiverConfirmDialog
+        (d.dialog as androidx.appcompat.app.AlertDialog).getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+        idle()
+    }
+
+    private fun mockWrites(repo: SettingsRepository) = Mockito.mockingDetails(repo).invocations
+        .filter { it.method.name == "setMockLocationEnabled" }.map { it.arguments[0] }
+
+    @Test fun `M5 a double tap opens one picker and one details sheet`() {
+        val v = visit(controller())
+        repeat(2) { v.view.findViewById<View>(R.id.btn_change_receiver).performClick() }
+        idle()
+        assertEquals(1, host.fragment.childFragmentManager.fragments.count { it is ReceiverPickerSheet })
+        picker().dismiss()
+        idle()
+        repeat(2) { v.view.findViewById<View>(R.id.btn_receiver_details).performClick() }
+        idle()
+        assertEquals(1, host.fragment.childFragmentManager.fragments.count { it is ReceiverDetailsSheet })
+    }
+
+    @Test fun `L10 Retry starts the location service like the automatic reconnect`() {
+        val application = org.robolectric.RuntimeEnvironment.getApplication()
+        shadowOf(application).grantPermissions(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        probeResult.complete(TcpProbeResult.CONNECT_FAILED)
+        val v = visit(controller(settings(storedHost = flowOf("127.0.0.1"), storedPort = deadPort)))
+        assertEquals("the automatic reconnect ran", 1, probeCalls)
+        val retry = v.view.findViewById<View>(R.id.btn_retry_receiver)
+        assertEquals(View.VISIBLE, retry.visibility)
+        while (shadowOf(application).nextStartedService != null) Unit   // the automatic reconnect's start
+
+        retry.performClick()
+        idle()
+
+        assertEquals("Retry tested the saved receiver again", 2, probeCalls)
+        val started = shadowOf(application).nextStartedService
+        assertEquals(app.surrealar.service.LocationService::class.java.name, started?.component?.className)
+    }
+
+    @Test fun `L11 the mock switch never saves from the selection state's not-yet-loaded defaults`() {
+        val gate = CompletableDeferred<LocationSourceType>()
+        val repo = settings(source = flow { emit(gate.await()) }, mock = flowOf(true))
+        val v = visit(controller(repo))
+        val sw = v.view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
+        assertEquals("nothing saved while the source is loading", emptyList<Any>(), mockWrites(repo))
+
+        gate.complete(LocationSourceType.EXTERNAL)
+        idle()
+
+        assertEquals("the stored setting is shown", true, sw.isChecked)
+        assertEquals(true, sw.isEnabled)
+        assertEquals("no write from a programmatic update", emptyList<Any>(), mockWrites(repo))
+        sw.performClick()
+        idle()
+        assertEquals("a real user change saves", listOf<Any>(false), mockWrites(repo))
+    }
+
+    @Test fun `L11 a loaded tablet source with mock publishing on saves it off, as before`() {
+        val repo = settings(source = flowOf(LocationSourceType.INTERNAL), mock = flowOf(true))
+        val v = visit(controller(repo))
+        val sw = v.view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
+        assertEquals(false, sw.isEnabled)
+        assertEquals(listOf<Any>(false), mockWrites(repo))
     }
 }

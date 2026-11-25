@@ -2,7 +2,6 @@ package app.surrealar.ui.settings.receiver
 
 import android.content.Context
 import androidx.annotation.VisibleForTesting
-import androidx.fragment.app.Fragment
 import app.surrealar.R
 import app.surrealar.SurRealApplicationEntryPoint
 import app.surrealar.domain.repository.SettingsRepository
@@ -13,7 +12,6 @@ import app.surrealar.receiver.selection.ReceiverConnectionController
 import app.surrealar.service.LocationService
 import app.surrealar.util.DiagnosticsLogger
 import app.surrealar.util.diagnostics.DiagTags
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -54,18 +52,6 @@ private class HiltReceiverUiDeps(context: Context) : ReceiverUiDeps {
 
 /** Shared bits of the receiver UI. */
 internal object ReceiverUi {
-
-    /** "Switching receivers stops the current capture. Switch?" — [onConfirm] runs on Switch. */
-    fun confirmCaptureStop(fragment: Fragment, message: Int = R.string.receiver_capture_confirm_message,
-                           positive: Int = R.string.receiver_capture_confirm_switch, onConfirm: () -> Unit) {
-        if (!fragment.isAdded) return
-        MaterialAlertDialogBuilder(fragment.requireContext())
-            .setTitle(R.string.receiver_capture_confirm_title)
-            .setMessage(message)
-            .setPositiveButton(positive) { _, _ -> onConfirm() }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
 
     /** The receiver path needs the location service (as the old source radio did); a failure is only logged. */
     fun ensureLocationService(context: Context) {

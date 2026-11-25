@@ -35,17 +35,27 @@ import kotlinx.coroutines.launch
  * Receiver details (Phase 5), opened from the receiver card: model, serial, firmware, battery, RTK corrections,
  * coordinate-frame and height settings, antenna and tilt settings, troubleshooting. Each row says where its value
  * comes from (Reported by receiver / Set by you / Default / Unknown). Copy summary never includes the receiver's
- * address; "Copy address" copies it only on the user's explicit tap.
+ * address; "Copy address" copies it only on the user's explicit tap. The receiver-reported vendor details (uptime,
+ * temperature, power, storage) are a collapsed section. "Disconnect receiver" is always confirmed: it removes the
+ * saved address/port and, during a capture, stops it.
  */
 class ReceiverDetailsSheet : BottomSheetDialogFragment() {
 
     private lateinit var deps: ReceiverUiDeps
     private var rows: LinearLayout? = null
     private var lastSections: List<DetailSection> = emptyList()
+    /** Titles of the collapsible sections the user expanded (kept across rotation). */
+    private val expanded = mutableSetOf<Int>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         deps = ReceiverUiDeps.from(requireContext())
+        savedInstanceState?.getIntArray(KEY_EXPANDED)?.let { expanded += it.toList() }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putIntArray(KEY_EXPANDED, expanded.toIntArray())
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View =
@@ -56,9 +66,7 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
         view.findViewById<View>(R.id.btn_details_copy_summary).setOnClickListener { copySummary() }
         view.findViewById<View>(R.id.btn_details_copy_address).setOnClickListener { copyAddress() }
         view.findViewById<View>(R.id.btn_details_diagnostics).setOnClickListener { openDiagnostics() }
-        view.findViewById<View>(R.id.btn_details_disconnect).setOnClickListener {
-            deps.connection.disconnect("receiver-details")
-        }
+        view.findViewById<View>(R.id.btn_details_disconnect).setOnClickListener { confirmDisconnect() }
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 inputs().collect { render(it) }
@@ -126,16 +134,33 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
         view?.findViewById<View>(R.id.btn_details_disconnect)?.isVisible = i.state.selectedSource == LocationSourceType.EXTERNAL
         if (sections == lastSections && container.childCount > 0) return
         lastSections = sections
+        rebuild(container, sections)
+    }
+
+    private fun rebuild(container: LinearLayout, sections: List<DetailSection>) {
+        val ctx = container.context
         container.removeAllViews()
         val inflater = LayoutInflater.from(ctx)
         for (sec in sections) {
+            val open = !sec.collapsible || sec.title in expanded
             (inflater.inflate(R.layout.item_receiver_picker_header, container, false) as TextView).also {
-                it.setText(sec.title)
+                val title = ctx.getString(sec.title)
+                if (sec.collapsible) {
+                    it.text = "$title ${if (open) "\u25BE" else "\u25B8"}"
+                    it.minHeight = (48 * ctx.resources.displayMetrics.density).toInt()
+                    it.contentDescription = ctx.getString(
+                        if (open) R.string.details_section_collapse_cd else R.string.details_section_expand_cd, title)
+                    it.setOnClickListener {
+                        if (!expanded.remove(sec.title)) expanded += sec.title
+                        rebuild(container, lastSections)
+                    }
+                } else it.text = title
                 container.addView(it)
             }
+            if (!open) continue
             for (r in sec.rows) {
                 val v = inflater.inflate(R.layout.item_receiver_detail_row, container, false)
-                val label = ctx.getString(r.label)
+                val label = r.labelOf(ctx)
                 v.findViewById<TextView>(R.id.text_detail_label).text = label
                 v.findViewById<TextView>(R.id.text_detail_value).text = r.value
                 v.findViewById<TextView>(R.id.text_detail_note).apply { text = r.note; isVisible = !r.note.isNullOrEmpty() }
@@ -145,6 +170,15 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
                 container.addView(v)
             }
         }
+    }
+
+    /** H2: always confirmed (the saved address/port are removed); during a capture, says it stops the capture. */
+    private fun confirmDisconnect() {
+        val capture = deps.connection.state.value.captureActive
+        ReceiverConfirmDialog.show(this, ReceiverConfirmDialog.Action.DISCONNECT,
+            message = if (capture) R.string.details_disconnect_confirm_capture_message else R.string.details_disconnect_confirm_message,
+            positive = R.string.details_disconnect_confirm,
+            title = if (capture) R.string.receiver_capture_confirm_title else R.string.details_disconnect_confirm_title)
     }
 
     private fun copySummary() {
@@ -172,5 +206,6 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
 
     companion object {
         const val TAG = "ReceiverDetailsSheet"
+        private const val KEY_EXPANDED = "expanded_sections"
     }
 }

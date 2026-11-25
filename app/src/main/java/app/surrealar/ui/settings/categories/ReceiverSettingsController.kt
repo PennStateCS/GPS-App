@@ -30,6 +30,7 @@ import app.surrealar.ui.settings.common.settingsWarn
 import app.surrealar.ui.settings.common.showSettingsMessage
 import app.surrealar.ui.settings.receiver.ReceiverCardBinder
 import app.surrealar.ui.settings.receiver.ReceiverCardPresenter
+import app.surrealar.ui.settings.receiver.ReceiverConfirmDialog
 import app.surrealar.ui.settings.receiver.ReceiverDetailsSheet
 import app.surrealar.ui.settings.receiver.ReceiverPickerSheet
 import app.surrealar.ui.settings.receiver.ReceiverUi
@@ -127,15 +128,16 @@ internal class ReceiverSettingsController(
     // ───────────────────────────── Receiver card ─────────────────────────────
     private fun setupReceiverCard(view: View, categoryScope: CoroutineScope) {
         val card = ReceiverCardBinder(view.findViewById(R.id.receiver_card))
-        card.change.setOnClickListener { userActed = true; openSheet(ReceiverPickerSheet(), ReceiverPickerSheet.TAG) }
-        card.details.setOnClickListener { openSheet(ReceiverDetailsSheet(), ReceiverDetailsSheet.TAG) }
+        card.change.setOnClickListener { userActed = true; openSheet({ ReceiverPickerSheet() }, ReceiverPickerSheet.TAG) }
+        card.details.setOnClickListener { openSheet({ ReceiverDetailsSheet() }, ReceiverDetailsSheet.TAG) }
         card.retry.setOnClickListener {
             userActed = true
             fragment.lifecycleScope.launch {
                 when (connection.reconnectSaved()) {
-                    ConnectStart.NEEDS_CAPTURE_CONFIRMATION -> ReceiverUi.confirmCaptureStop(fragment) {
-                        fragment.lifecycleScope.launch { connection.reconnectSaved(confirmCaptureStop = true) }
-                    }
+                    ConnectStart.NEEDS_CAPTURE_CONFIRMATION ->
+                        ReceiverConfirmDialog.show(fragment, ReceiverConfirmDialog.Action.RECONNECT_SAVED)
+                    // L10: like the automatic reconnect, the receiver path needs the location service.
+                    ConnectStart.STARTED -> ReceiverUi.ensureLocationService(fragment.requireContext().applicationContext)
                     else -> Unit
                 }
             }
@@ -143,9 +145,8 @@ internal class ReceiverSettingsController(
         card.mismatchKeep.setOnClickListener { connection.keepCurrentProfile() }
         card.mismatchUse.setOnClickListener {
             if (connection.applyReportedProfile() == ApplyProfileResult.NEEDS_CAPTURE_CONFIRMATION) {
-                ReceiverUi.confirmCaptureStop(fragment, R.string.receiver_profile_confirm_message, R.string.receiver_profile_confirm_change) {
-                    connection.applyReportedProfile(confirmCaptureStop = true)
-                }
+                ReceiverConfirmDialog.show(fragment, ReceiverConfirmDialog.Action.APPLY_PROFILE,
+                    R.string.receiver_profile_confirm_message, R.string.receiver_profile_confirm_change)
             }
         }
         categoryScope.launch {
@@ -177,11 +178,10 @@ internal class ReceiverSettingsController(
         }
     }
 
-    private fun openSheet(sheet: androidx.fragment.app.DialogFragment, tag: String) {
+    /** M5: one sheet per tag; showNow commits synchronously, so a double tap finds the first sheet. */
+    private fun openSheet(create: () -> androidx.fragment.app.DialogFragment, tag: String) {
         if (!fragment.isAdded) return
-        val fm = fragment.childFragmentManager
-        if (fm.isStateSaved || fm.findFragmentByTag(tag) != null) return
-        sheet.show(fm, tag)
+        ReceiverPickerSheet.showOnce(fragment.childFragmentManager, tag, create)
     }
 
     /** Shows the sections for the selected source (external: tilt + antenna; tablet: tablet antenna height). */
@@ -192,11 +192,8 @@ internal class ReceiverSettingsController(
         // Tilt (compensated output + status) only for receivers with an IMU (RS4 / RS4 Pro).
         view.findViewById<View>(R.id.group_receiver_tilt)?.isVisible =
             tiltMonitor != null && app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(s.profile)
-        view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)?.let { sw ->
-            // Mock publishing is only usable with an external receiver (switching to tablet GNSS saves it off).
-            sw.isEnabled = external
-            if (!external && sw.isChecked) sw.isChecked = false
-        }
+        // The mock-location switch follows the STORED source and setting (L11), not this state, whose defaults
+        // (tablet GNSS) show before the selection core has loaded: see setupLocationSourceUi.
         if (lastSource != s.selectedSource) {
             lastSource = s.selectedSource
             refreshCategoriesForSource(s.selectedSource)
@@ -437,15 +434,35 @@ internal class ReceiverSettingsController(
         val errorBanner  = view.findViewById<LinearLayout>(R.id.layout_mock_location_error)
         val btnDevOpts   = view.findViewById<Button>(R.id.btn_open_developer_options)
 
+        // L11: the switch shows the stored setting and is usable only while the STORED source is External. It reacts
+        // to loaded values only (never to the selection state's not-yet-loaded defaults); programmatic updates do not
+        // write back. A stored "on" with tablet GNSS is saved off, as before (mock publishing needs a receiver).
+        var updatingMock = false
         categoryScope.launch {
             try {
-                switchMock?.isChecked = settingsRepo.mockLocationEnabled.first()
+                combine(settingsRepo.locationSource, settingsRepo.mockLocationEnabled) { source, enabled -> source to enabled }
+                    .collect { (source, enabled) ->
+                        val external = source == LocationSourceType.EXTERNAL
+                        switchMock?.isEnabled = external
+                        if (switchMock != null && switchMock.isChecked != enabled) {
+                            updatingMock = true
+                            try { switchMock.isChecked = enabled } finally { updatingMock = false }
+                        }
+                        if (!external && enabled) saveScope.launch {
+                            try { settingsRepo.setMockLocationEnabled(false) } catch (e: Exception) {
+                                settingsError("Settings save failed section=mockLocation", e)
+                            }
+                        }
+                    }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 settingsError("Settings load failed section=mockLocation", e)
             }
         }
 
         switchMock?.setOnCheckedChangeListener { _, checked ->
+            if (updatingMock) return@setOnCheckedChangeListener
             saveScope.launch {
                 try {
                     settingsRepo.setMockLocationEnabled(checked)
