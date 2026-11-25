@@ -260,6 +260,20 @@ enum class VerticalReference(
     /** True for an NGS beta option (shown only with the beta preview ON). */
     val isBeta: Boolean get() = status == ProductStatus.VERIFIED_BETA
 
+    /**
+     * Compact name for the Settings → Coordinates height dropdown, where [label] (up to ~52 characters) did not fit
+     * the field. Same meaning, same model / datum named; [label] stays the full name everywhere else (Details,
+     * exports, help text). "H" = orthometric height, as the setting's description explains.
+     */
+    val menuLabel: String get() = when (this) {
+        ELLIPSOIDAL -> "Ellipsoidal height (h)"
+        NAVD88_GEOID18 -> "H · NAVD88 (GEOID18)"
+        RECEIVER_MSL -> "H · receiver (model unknown)"
+        EGM2008 -> "H · EGM2008"
+        EGM96 -> "H · EGM96 (fallback)"
+        GEOID2022 -> "H · NAPGD2022 (GEOID2022 β)"
+    }
+
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: RECEIVER_MSL }
 }
 

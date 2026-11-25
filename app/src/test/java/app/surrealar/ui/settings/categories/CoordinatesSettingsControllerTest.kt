@@ -229,14 +229,14 @@ class CoordinatesSettingsControllerTest {
         val view = show(repo)
         val sw = view.findViewById<MaterialSwitch>(R.id.switch_coord_nsrs2022_preview)
         val height = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_vertical)
-        assertEquals(VerticalReference.GEOID2022.label, height.text.toString())
+        assertEquals(VerticalReference.GEOID2022.menuLabel, height.text.toString())
         sw.isChecked = false
         assertEquals(stored.copy(nsrs2022Preview = false), repo.savedSystem.last())
         assertEquals("saved choice kept", VerticalReference.GEOID2022, repo.savedSystem.last().vertical)
-        assertEquals("default shown while off", VerticalReference.RECEIVER_MSL.label, height.text.toString())
+        assertEquals("default shown while off", VerticalReference.RECEIVER_MSL.menuLabel, height.text.toString())
         sw.isChecked = true
         assertEquals(stored, repo.savedSystem.last())
-        assertEquals(VerticalReference.GEOID2022.label, height.text.toString())
+        assertEquals(VerticalReference.GEOID2022.menuLabel, height.text.toString())
     }
 
     @Test fun `preview ON - verified and Verified NGS beta groups (frames, SPCS2022 from the beta registry), OFF - hidden`() {

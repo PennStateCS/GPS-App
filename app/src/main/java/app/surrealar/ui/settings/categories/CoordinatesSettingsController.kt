@@ -199,7 +199,7 @@ internal class CoordinatesSettingsController(
         spinnerH.setAdapter(adapter(hs.map { it.label }))
         spinnerD?.setAdapter(adapter(ds.map { it.label }))
         spinnerU?.setAdapter(adapter(us.map { it.label }))
-        spinnerV?.setAdapter(adapter(vs.map { it.label }))
+        spinnerV?.setAdapter(adapter(vs.map { it.menuLabel }))
         spinnerR?.setAdapter(adapter(rs.map { it.label }))
 
         var current = app.surrealar.settings.model.CoordinateSystemSettings()
@@ -297,10 +297,10 @@ internal class CoordinatesSettingsController(
             val selectable = s.selectableVerticals
             if (selectable != vs) {
                 vs = selectable
-                spinnerV?.setAdapter(adapter(vs.map { it.label }))
+                spinnerV?.setAdapter(adapter(vs.map { it.menuLabel }))
             }
             // A beta height saved while the preview is off shows the default it is replaced by (stored value kept).
-            spinnerV?.setText(s.effectiveVertical.label, false)
+            spinnerV?.setText(s.effectiveVertical.menuLabel, false)
             val note = app.surrealar.coords.Nsrs2022Capabilities.verticalNote(s)
             verticalNote?.text = note.orEmpty()
             verticalNote?.visibility = if (note == null) View.GONE else View.VISIBLE

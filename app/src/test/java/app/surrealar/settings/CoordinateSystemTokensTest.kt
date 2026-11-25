@@ -157,4 +157,14 @@ class CoordinateSystemTokensTest {
         assertEquals("State Plane (SPCS2022, beta)", app.surrealar.settings.model.HorizontalSystem.SPCS2022.label)
         assertEquals("NATRF2022 (beta)", OutputDatum.NATRF2022.label)
     }
+
+    @Test fun `height dropdown names are short, distinct and keep the model or datum`() {
+        val names = VerticalReference.entries.map { it.menuLabel }
+        assertEquals(names.size, names.toSet().size)
+        names.forEach { assertTrue(it, it.length <= 28) }
+        assertTrue(VerticalReference.NAVD88_GEOID18.menuLabel.contains("NAVD88") && VerticalReference.NAVD88_GEOID18.menuLabel.contains("GEOID18"))
+        assertTrue(VerticalReference.RECEIVER_MSL.menuLabel.contains("model unknown"))
+        assertTrue(VerticalReference.EGM96.menuLabel.contains("fallback"))
+        assertTrue(VerticalReference.GEOID2022.menuLabel.contains("NAPGD2022") && VerticalReference.GEOID2022.menuLabel.contains("β"))
+    }
 }
