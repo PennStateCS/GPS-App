@@ -50,7 +50,35 @@ attempt never saves or activates: it is checked under a lock when it would commi
 only if device GNSS was not selected after it. Settings writes are serialised by a mutex. `selectInternal()` /
 `disconnect()` cancel the attempt and make device GNSS active synchronously (mock publishing off).
 
+### Review fixes (survey/phase5-fix)
+
+- **Live checks.** `connect()` decides from live values (`ActiveCaptureTracker.active.value`,
+  `SourceSettings.activeProvider.value`, the coordinator's `activeExternalTarget`, the adapter's link state), not
+  from `state` copies that start at defaults. The capture check is repeated under the commit lock: a capture that
+  started during the probe ends the attempt in `Failed(CaptureStarted)` with nothing saved or activated until the
+  user connects again and confirms.
+- **One transaction.** The commit writes connection type, host/port/name, the picked profile + origin and the
+  selected source in one DataStore edit (`SettingsRepository.saveExternalTcpReceiver`); a failed write leaves the
+  previous receiver saved and active.
+- **Saved name.** A request without a name keeps the stored name when host:port is unchanged (reconnect, scan row
+  without a hostname) and clears it for another receiver. A fresh, verified receiver report fills a blank saved name;
+  a stored name (user-entered) is never overwritten. Scan rows pass the discovered hostname as the name.
+- **Repeat taps.** After `Succeeded`, a connect to the same target while the adapter is still `CONNECTING` returns
+  `ALREADY_ACTIVE` (no second probe).
+- **Reconnect.** `reconnectSaved()` for the receiver that is already the active target (link down) makes the
+  adapter reconnect after a successful test (`GnssSourceCoordinator.reconnectExternalTcpProvider`); a plain
+  `connect()` to it still keeps the stream.
+- **Scan.** `scanNetwork()` runs Emlid discovery only for an Emlid profile or with `emlidScan = true` (the "Scan for
+  Emlid receivers" button); it returns false otherwise.
+- **Probe cancellation.** Cancelling the TCP probe closes its socket at once (a receiver that accepts and never
+  answers is not held for the 5 s window).
+
 ## Identity rules
+
+- **Same-address units.** Several receivers can share an address (every Reach hotspot is 192.168.42.1). After a
+  switch (commit) or a link reconnect, the device info on hand is fenced off: it identifies nothing and never
+  auto-applies a profile until a report arrives afterwards. `ReceiverDeviceManager.restartDevice()` is called at the
+  fence, so the device clears its info and polls again at once.
 
 - A model is verified only when the active receiver at the saved host explicitly reports it
   (`ReceiverDeviceInfo.model`, mapped with `EmlidReachModel.fromReportedModel`: RS4 Pro before RS4, RS2+). Discovery
@@ -74,7 +102,8 @@ New keys only; existing keys, values and defaults are unchanged.
   an origin (the old profile selector, `setExternalReceiverSettings` with a changed profile) is recorded as `user`.
 - `external_recent_receivers`: JSON list, newest first, at most 8 (`host`, `port`, `profileKey`, `name`, `model`,
   `serial`, `firmware`, `lastConnectedMs`). One entry per receiver: by serial when reported, else host:port (a
-  reported serial also replaces the serial-less entry at that host:port). Unknown fields are ignored, invalid
+  reported serial also replaces the serial-less entry at that host:port; a serial-less entry replaces only the newest
+  entry at its host:port, so entries of different serials at one address are never merged). Unknown fields are ignored, invalid
   entries dropped, corrupt JSON reads as empty. Added on every successful connect; model/serial/firmware only from
   the receiver's own report. Not shown in the diagnostic settings snapshot (it holds other receivers' hosts).
 
