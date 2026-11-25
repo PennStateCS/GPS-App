@@ -35,7 +35,11 @@ class DevelopmentViewModel @Inject constructor(
     private val diagnosticsService: DiagnosticsService,
     private val receiverDevices: ReceiverDeviceManager,
     coordinateSystemService: app.surrealar.coords.CoordinateSystemService,
+    tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor,
 ) : ViewModel() {
+
+    /** RS4 / RS4 Pro tilt status and position-reference interpretation (Phase 4 WP C; status only). */
+    val tiltStatus: StateFlow<app.surrealar.receiver.tilt.TiltStatus> = tiltMonitor.status
 
     /**
      * External receiver datum (Settings → Coordinates). When NAD83(2011), external fixes are

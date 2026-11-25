@@ -41,6 +41,14 @@ interface ExternalReceiverSettingsRepository {
     val externalReceiverSettings: Flow<ExternalReceiverSettings>
 
     suspend fun setExternalReceiverProfile(profile: ExternalReceiverProfile)
+
+    /**
+     * Settings → Receiver → "Compensated NMEA output (Emlid Flow)" (RS4 / RS4 Pro). Defaults keep test fakes
+     * and older implementations compiling: UNKNOWN, and a no-op setter.
+     */
+    val compensatedNmeaOutput: Flow<app.surrealar.settings.model.CompensatedOutputSetting>
+        get() = kotlinx.coroutines.flow.flowOf(app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT)
+    suspend fun setCompensatedNmeaOutput(value: app.surrealar.settings.model.CompensatedOutputSetting) {}
     suspend fun setExternalReceiverSettings(settings: ExternalReceiverSettings)
     suspend fun setExternalConnType(v: ExternalConnectionType)
     suspend fun setExternalTcp(host: String, port: Int, name: String = "")

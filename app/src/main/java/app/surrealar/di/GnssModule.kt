@@ -93,7 +93,8 @@ object GnssModule {
         appScope: CoroutineScope,
         settingsRepository: ExternalReceiverSettingsRepository,
         registry: NmeaRegistry,
-        diagnosticsService: DiagnosticsService
+        diagnosticsService: DiagnosticsService,
+        tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor,
     ): NmeaSource = TcpNmeaSource(
         scope    = appScope,
         // Saved host/port, read once per connection attempt; null when either is missing.
@@ -103,7 +104,8 @@ object GnssModule {
             if (host.isNullOrBlank() || port == null) null else host to port
         },
         registry = registry,
-        onLine   = diagnosticsService::recordLine,   // the live NMEA rate/diagnostics counters
+        // The live NMEA rate/diagnostics counters, and the RS4 tilt status (ETC lines only; status, never a fix).
+        onLine   = { line -> diagnosticsService.recordLine(line); tiltMonitor.onLine(line) },
         linkLog  = DiagnosticsLinkLog,               // shared with ExternalAdapter (same throttle keys)
     )
 
@@ -235,6 +237,7 @@ object GnssModule {
         externalAdapter: ExternalAdapter,
         replayAdapter: ReplayAdapter,
         feedDatum: app.surrealar.gnss.source.ReceiverFeedDatum,
+        tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor,
     ): FixSwitchboard {
         return FixSwitchboard(
             scope          = appScope,
@@ -247,7 +250,12 @@ object GnssModule {
             // Non-internal fixes: FixDatumNormalizer.toWgs84 with the current receiver datum (unchanged
             // maths), recording the datum used per fix.
             fixTransform   = feedDatum::normalise,
-        ).also { it.start() }
+        ).also {
+            it.start()
+            // Tilt status: interpret each external fix; forget ETC state when the link reconnects.
+            tiltMonitor.observe(it.fixes)
+            tiltMonitor.resetOn(externalAdapter.connectionState)
+        }
     }
 
     /**
