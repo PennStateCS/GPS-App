@@ -14,14 +14,15 @@ import io.github.pennstatecs.geokit.gnss.nmea.sentence.NmeaSentence
  * val emlid = EmlidNmeaDiagnostics.from(fuser.extraSentenceStats)
  * ```
  *
- * The sentences are diagnostics only: they never change a fix.
+ * The sentences never change a fix. ETC's documented fields are in [ETC.decoded]; per-fix tilt state
+ * and the position-reference rules are in the `tilt` package (`EmlidTiltTracker`, `EmlidPositionReference`).
  */
 public object EmlidNmea {
     /** Base position sentence tag ([EBP]). */
     public const val TAG_EBP: String = "EBP"
-    /** Timestamp / orientation sentence tag ([ETC]). */
+    /** Tilt compensation data sentence tag ([ETC]). */
     public const val TAG_ETC: String = "ETC"
-    /** [ETC] flag: the sentence carried an orientation/IMU-style payload. */
+    /** [ETC] flag: the sentence carried data beyond the time (tilt compensation on in some state). */
     public const val FLAG_ORIENTATION: String = "orientation"
 
     /** EBP and ETC parsers keyed by tag (stateless; safe to share between registries). */
@@ -34,8 +35,8 @@ public object EmlidNmea {
  *
  * @property ebpCount EBP sentences received.
  * @property etcCount ETC sentences received.
- * @property imuOrientationSeen true if any ETC carried orientation/IMU-style data (undocumented —
- *   never used for AR).
+ * @property imuOrientationSeen true if any ETC carried data beyond its time (tilt compensation was on in
+ *   some state) — never used for AR.
  * @property latestEtc the most recent ETC, or null.
  */
 public data class EmlidNmeaDiagnostics(

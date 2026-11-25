@@ -27,17 +27,23 @@ public data class EBP(
 }
 
 /**
- * Emlid-specific `$..ETC` sentence (Reach RS4 / RS4 Pro).
+ * Emlid-specific `$..ETC` sentence (Reach RS4 / RS4 Pro) — **tilt compensation data** (Emlid "NMEA
+ * Message: ETC", message rev. 1, document rev. 3; https://docs.emlid.com/reachrs4/specifications/nmea-format/).
  *
- * The field semantics are **not documented** by Emlid in this build. In captures the message ranges
- * from timestamp-only (`$GNETC,hhmmss.ss,,,,,,,,`) to an orientation/IMU-style payload
- * (`$GNETC,hhmmss.ss,30,00,268.660,116.146,17.651,6.280,6.280,6.991`). Because the layout is
- * unverified we deliberately do **not** map specific fields to heading/tilt/roll/pitch — guessing
- * would risk feeding wrong orientation into AR later. The raw data fields are carried for diagnostics
- * only. ETC never modifies the live fix, coordinates, or AR orientation in this build.
+ * Layout: `$GNETC,<UTC time-of-fix>,<State>,<Notification>,<Heading>,<Tilt Direction>,<Tilt Value>,
+ * <n-acc>,<e-acc>,<u-acc>`. The constructor keeps the raw fields exactly as before (diagnostics and the
+ * pipeline goldens print them); [decoded] is the documented field-by-field view ([EtcFields], never
+ * throws; malformed sentences carry [EtcFields.malformedReason]). Captures range from timestamp-only
+ * (`$GNETC,hhmmss.ss,,,,,,,,` = tilt off) to compensating (`$GNETC,hhmmss.ss,30,00,268.660,116.146,
+ * 17.651,6.280,6.280,6.991`).
  *
- * @param timeRaw    UTC time (field 1), if present.
- * @param dataFields raw fields after the timestamp, unparsed (semantics undocumented).
+ * ETC never modifies the live fix, coordinates, or AR orientation. Whether the GGA position is the
+ * antenna or the compensated pole tip is NOT stated by this sentence — see
+ * [io.github.pennstatecs.geokit.receiver.emlid.tilt.EmlidPositionReference].
+ *
+ * @param timeRaw    UTC time-of-fix (field 1), if present.
+ * @param dataFields raw fields after the time (state, notification, heading, tilt direction, tilt value,
+ *   n/e/u accuracy coefficients), trimmed.
  */
 public data class ETC(
     override val talker: String,
@@ -46,7 +52,10 @@ public data class ETC(
 ) : FlaggedNmeaSentence {
     override val tag: String = EmlidNmea.TAG_ETC
 
-    /** True when ETC carries any non-blank data beyond the timestamp (orientation/IMU-style output). */
+    /** The documented fields, decoded once (not part of equals/toString). */
+    public val decoded: EtcFields = EtcFields.decode(timeRaw, dataFields)
+
+    /** True when ETC carries any non-blank data beyond the timestamp (tilt is on in some state). */
     public val hasOrientationData: Boolean get() = dataFields.any { it.isNotBlank() }
 
     /** [EmlidNmea.FLAG_ORIENTATION] when [hasOrientationData]; the fuser remembers it was ever seen. */
