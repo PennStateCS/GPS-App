@@ -17,6 +17,8 @@ object SettingsRedaction {
     val ALLOWLIST: Set<String> = setOf(
         "location_source", "external_connection_type", "external_tcp_host", "external_tcp_port",
         "external_tcp_name", "external_receiver_profile", "external_compensated_nmea_output", "settings_schema_version",
+        // Phase 5 (external_recent_receivers stays "(not included)": hosts and serials of other receivers).
+        "external_receiver_profile_origin",
         "default_coordinate_name_prefix", "auto_increment_coordinate_names", "show_accuracy_indicators",
         "gnss_capture_rtk_status", "gnss_capture_min_duration_sec", "gnss_capture_max_duration_sec",
         "gnss_capture_min_samples", "gnss_capture_max_fix_age_sec", "gnss_capture_max_diff_age_sec",

@@ -18,7 +18,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
@@ -67,7 +67,7 @@ class ReceiverConnectionControllerTest {
         settings = settings, coordinator = coordinator, scope = backgroundScope, probe = probe,
         activeProvider = sourceSettings.activeProvider, externalLink = link, deviceInfo = deviceInfo,
         captureActive = capture, clockMs = { 1_000L },
-    ).also { advanceUntilIdle() }
+    ).also { runCurrent() }
 
     /** A working receiver P (192.168.42.1:9001) saved and active. */
     private fun TestScope.workingExternal() {
@@ -77,7 +77,7 @@ class ReceiverConnectionControllerTest {
         settings.port.value = 9001
         coordinator.activateExternalTcpProvider("192.168.42.1", 9001, "test setup")
         link.value = ConnectionState.CONNECTED
-        advanceUntilIdle()
+        runCurrent()
     }
 
     private fun assertWorkingExternalUnchanged() {
@@ -98,7 +98,7 @@ class ReceiverConnectionControllerTest {
         assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001)))
         assertTrue(c.state.value.attempt is ConnectionAttempt.Testing)
         r.complete(TcpProbeResult.CONNECT_FAILED)
-        advanceUntilIdle()
+        runCurrent()
 
         val a = c.state.value.attempt as ConnectionAttempt.Failed
         assertEquals(ConnectError.Unreachable(9001), a.error)
@@ -112,7 +112,7 @@ class ReceiverConnectionControllerTest {
         val c = controller()
         probe.next().complete(TcpProbeResult.CONNECT_FAILED)
         c.connect(ConnectRequest("192.168.42.7", 9001))
-        advanceUntilIdle()
+        runCurrent()
 
         val a = c.state.value.attempt as ConnectionAttempt.Failed
         assertEquals(ConnectError.HttpOnly(9001), a.error)
@@ -125,12 +125,12 @@ class ReceiverConnectionControllerTest {
         val c = controller()
         probe.next().complete(TcpProbeResult.CONNECTED_NO_DATA)
         c.connect(ConnectRequest("192.168.42.7", 9001))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ConnectError.NoData(9001), (c.state.value.attempt as ConnectionAttempt.Failed).error)
 
         probe.next().complete(TcpProbeResult.RECEIVING_RTCM_OR_BIN)
         c.connect(ConnectRequest("192.168.42.7", 9002))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ConnectError.NotNmea(9002), (c.state.value.attempt as ConnectionAttempt.Failed).error)
         assertWorkingExternalUnchanged()
     }
@@ -140,7 +140,7 @@ class ReceiverConnectionControllerTest {
         val providerAtWrite = mutableListOf<ProviderChoice>()
         settings.onWrite = { providerAtWrite += provider.value }
         assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001, name = "Base")))
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(listOf("connType=TCP", "tcp=192.168.42.7:9001", "source=EXTERNAL"), settings.writes.toList())
         assertEquals("every write happened before activation", List(3) { ProviderChoice.INTERNAL }, providerAtWrite)
@@ -159,7 +159,7 @@ class ReceiverConnectionControllerTest {
     @Test fun `a profile picked for the connection is saved as the user's before the source`() = runTest {
         val c = controller()
         c.connect(ConnectRequest("10.0.0.5", 9000, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(listOf("connType=TCP", "tcp=10.0.0.5:9000", "profile=generic_nmea_tcp/user", "source=EXTERNAL"),
             settings.writes.toList())
         assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
@@ -169,7 +169,7 @@ class ReceiverConnectionControllerTest {
         workingExternal()
         val c = controller()
         c.connect(ConnectRequest("192.168.42.7", 9001))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(listOf("receiver changed to 192.168.42.7:9001"), reconnects)
         assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
     }
@@ -182,9 +182,9 @@ class ReceiverConnectionControllerTest {
         assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001)))
         assertEquals(ConnectStart.DUPLICATE_IGNORED, c.connect(ConnectRequest(" 192.168.42.7 ", 9001)))
         assertEquals(ConnectStart.DUPLICATE_IGNORED, c.connect(ConnectRequest("192.168.42.7", 9001)))
-        advanceUntilIdle()
+        runCurrent()
         r.complete(TcpProbeResult.RECEIVING_NMEA)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(1, probe.tcpCalls)
         assertEquals(1, settings.writes.count { it == "source=EXTERNAL" })
     }
@@ -195,16 +195,16 @@ class ReceiverConnectionControllerTest {
         val first = probe.next()
         val second = probe.next()
         c.connect(ConnectRequest("192.168.42.7", 9001))
-        advanceUntilIdle()
+        runCurrent()
         c.connect(ConnectRequest("192.168.42.8", 9001))      // supersedes the first
-        advanceUntilIdle()
+        runCurrent()
         first.complete(TcpProbeResult.RECEIVING_NMEA)         // the old probe still delivers NMEA
-        advanceUntilIdle()
+        runCurrent()
         assertEquals("nothing saved for the superseded attempt", emptyList<String>(), settings.writes.toList())
         assertEquals(ProviderChoice.INTERNAL, provider.value)
 
         second.complete(TcpProbeResult.CONNECT_FAILED)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(emptyList<String>(), settings.writes.toList())
         assertEquals(ProviderChoice.INTERNAL, provider.value)
         assertTrue(c.state.value.attempt is ConnectionAttempt.Failed)
@@ -216,11 +216,11 @@ class ReceiverConnectionControllerTest {
         val c = controller()
         val r = probe.next()
         c.connect(ConnectRequest("192.168.42.7", 9001))
-        advanceUntilIdle()
+        runCurrent()
         c.selectInternal("settings")
         assertEquals("device GNSS active at once", ProviderChoice.INTERNAL, provider.value)
         r.complete(TcpProbeResult.RECEIVING_NMEA)
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(ProviderChoice.INTERNAL, provider.value)
         assertEquals(listOf("mock=false", "source=INTERNAL"), settings.writes.toList())
@@ -232,7 +232,7 @@ class ReceiverConnectionControllerTest {
         val c = controller()
         c.disconnect()
         assertEquals(ProviderChoice.INTERNAL, provider.value)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(listOf("mock=false", "source=INTERNAL", "clearTcp"), settings.writes.toList())
         assertNull(settings.host.value)
     }
@@ -241,13 +241,13 @@ class ReceiverConnectionControllerTest {
         workingExternal()
         val c = controller()
         c.selectInternal()
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ProviderChoice.INTERNAL, provider.value)
         assertEquals(LocationSourceType.INTERNAL, settings.source.value)
         assertEquals("device GNSS selected: nothing saved to reconnect", ConnectStart.NOTHING_SAVED, c.reconnectSaved())
 
         assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.1", 9001)))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
         assertEquals(LocationSourceType.EXTERNAL, settings.source.value)
         assertTrue(c.state.value.attempt is ConnectionAttempt.Succeeded)
@@ -260,15 +260,15 @@ class ReceiverConnectionControllerTest {
         settings.source.value = LocationSourceType.EXTERNAL
         settings.host.value = "192.168.42.1"
         settings.port.value = 9001
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ConnectStart.STARTED, c.reconnectSaved())
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
         assertEquals(1, probe.tcpCalls)
 
         // Streaming from that receiver now: nothing to test or switch.
         link.value = ConnectionState.CONNECTED
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ConnectStart.ALREADY_ACTIVE, c.reconnectSaved())
         assertEquals(1, probe.tcpCalls)
     }
@@ -280,14 +280,14 @@ class ReceiverConnectionControllerTest {
         val c = controller()
         probe.next().complete(TcpProbeResult.CONNECT_FAILED)
         c.connect(ConnectRequest("10.0.0.5", 9000))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(0, probe.httpCalls)
         assertEquals(ConnectError.Unreachable(9000), (c.state.value.attempt as ConnectionAttempt.Failed).error)
 
         // Also when Generic is picked for the connection while an Emlid profile is stored.
         settings.profile.value = ExternalReceiverProfile.REACH_RS4
         c.connect(ConnectRequest("10.0.0.6", 9000, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(0, probe.httpCalls)
     }
 
@@ -295,7 +295,7 @@ class ReceiverConnectionControllerTest {
         settings.profile.value = ExternalReceiverProfile.REACH_RS4
         val c = controller()
         c.connect(ConnectRequest("192.168.42.7", 9001))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(1, probe.httpCalls)
     }
 
@@ -312,7 +312,7 @@ class ReceiverConnectionControllerTest {
             c.connect(ConnectRequest("192.168.42.1", 9001)))
 
         assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001), confirmCaptureStop = true))
-        advanceUntilIdle()
+        runCurrent()
         assertEquals("tcp=192.168.42.7:9001", settings.writes[1])
     }
 
@@ -328,7 +328,7 @@ class ReceiverConnectionControllerTest {
         val events = mutableListOf<ReceiverSelectionEvent>()
         backgroundScope.launchCollect(c, events)
         deviceInfo.value = info("Reach RS4")
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(ExternalReceiverProfile.REACH_RS4, settings.profile.value)
         assertEquals(ProfileOrigin.RECEIVER, settings.origin.value)
@@ -347,12 +347,12 @@ class ReceiverConnectionControllerTest {
         assertEquals("34.10", recent.firmware)
     }
 
-    @Test fun `a user-chosen profile is never replaced: a mismatch is shown instead`() = runTest {
+    @Test fun `a user-chosen profile is never replaced and a mismatch is shown instead`() = runTest {
         workingExternal()
         settings.origin.value = ProfileOrigin.USER
         val c = controller()
         deviceInfo.value = info("Reach RS4 Pro")
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
         assertTrue(settings.writes.none { it.startsWith("profile=") })
@@ -362,7 +362,7 @@ class ReceiverConnectionControllerTest {
 
         // "Keep": the profile stays, marked as the user's; the banner goes.
         c.keepCurrentProfile()
-        advanceUntilIdle()
+        runCurrent()
         assertNull(c.state.value.mismatch)
         assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
     }
@@ -372,9 +372,9 @@ class ReceiverConnectionControllerTest {
         settings.origin.value = ProfileOrigin.USER
         val c = controller()
         deviceInfo.value = info("Reach RS4 Pro")
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ApplyProfileResult.APPLIED, c.applyReportedProfile())
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ExternalReceiverProfile.REACH_RS4_PRO, settings.profile.value)
         assertEquals(ProfileOrigin.RECEIVER, settings.origin.value)
         assertNull(c.state.value.mismatch)
@@ -386,17 +386,17 @@ class ReceiverConnectionControllerTest {
         capture.value = true
         val c = controller()
         deviceInfo.value = info("Reach RS4")
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
         assertEquals(MismatchReason.CAPTURE_ACTIVE, c.state.value.mismatch!!.reason)
         assertEquals(ApplyProfileResult.NEEDS_CAPTURE_CONFIRMATION, c.applyReportedProfile())
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
 
         // Capture over: the default profile is now replaced.
         capture.value = false
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ExternalReceiverProfile.REACH_RS4, settings.profile.value)
     }
 
@@ -406,7 +406,7 @@ class ReceiverConnectionControllerTest {
         val c = controller()
         for (i in listOf(info("Reach RS2"), info("Reach RS3"), info(null), info("Reach RS4", host = "192.168.42.99"))) {
             deviceInfo.value = i
-            advanceUntilIdle()
+            runCurrent()
             assertNull(c.state.value.mismatch)
         }
         assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
@@ -416,7 +416,7 @@ class ReceiverConnectionControllerTest {
         // Device GNSS active: a report (left over) identifies nothing.
         provider.value = ProviderChoice.INTERNAL
         deviceInfo.value = info("Reach RS4")
-        advanceUntilIdle()
+        runCurrent()
         assertNull(c.state.value.identity)
         assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
     }
