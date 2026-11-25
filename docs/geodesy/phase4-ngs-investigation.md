@@ -190,6 +190,8 @@ closed-form inverse, checked against NGS's input. NGS offers no inverse service.
 - IFDM2022: not implemented. EPP2022 changes the frame and not the epoch (TR 62 §9: "EPP2022 changes a
   coordinate's frame / IFVM2022 changes a coordinate's epoch"). No IFDM validation data were collected.
 
+**Update (Phase 4 WP X):** the follow-up below is done; see section E.
+
 What NGS should still publish: the promised developer test dataset (GitHub), documentation of the
 `api_m` services or ITRF2020 support in NCAT, and a corrected beta frames page that matches TR 62 eq. 60.
 
@@ -208,3 +210,70 @@ What NGS should still publish: the promised developer test dataset (GitHub), doc
   modernized NSRS becomes official "sometime around March 2027". OPUS sample reports name "GEOID2022v1.0.0",
   and a third-party PROJ repository has a file named `sgeoid2022_na_v1a`. No such NGS download exists, so
   **`beta_v0a` remains current and nothing changes.**
+
+## E. Activation in the app (Phase 4 WP X)
+
+Branch `survey/phase4-x` from `survey/phase4` (e2395bd). No new NGS data was fetched; the activation rests on the
+156 NGS station-page vectors of section B.
+
+### geokit-core
+
+- `ReferenceFrame` gains `PATRF2022`, `CATRF2022`, `MATRF2022` (ids `patrf2022` / `catrf2022` / `matrf2022`, appended
+  after `NATRF2022`; plate-fixed on GRS80; reference epoch 2020.0; `plate` Pacific / Caribbean / Mariana). EPSG v12.029
+  has no CRS for them, so all EPSG codes are null. `PlateFrame2022.referenceFrame` now points at them.
+- `FrameTransformationRegistry.ITRF2020_TO_PATRF2022` / `_CATRF2022` / `_MATRF2022`: the EPP2022 rotations as
+  `VERIFIED_BETA` edges with `PlateFrame2022.DATASET_VERSION` and `PlateFrame2022.VERIFICATION`, like the NATRF2022 edge.
+  `NSRS2022_BETA` = `DEFAULT` edges + `NSRS2022_BETA_EDGES` (all four), no 2022 frame blocked.
+- **`DEFAULT` is unchanged**: the same two legacy edges. The three new frames are in `DEFAULT_UNAVAILABLE` with the
+  reason `find(id)` already gave for their reserved ids (`NOT_VERIFIED`).
+- `CrsRegistry`: areas of use for the three new geographic CRSs (GeoKit boxes, EPSG has none); `frameRegistry` is now
+  readable. With `NSRS2022_BETA` all 953 SPCS2022 zones (incl. Hawaii, American Samoa, PRVI, Guam/CNMI) are operational
+  `VERIFIED_BETA`; `CrsRegistry.DEFAULT` still has none.
+- Tests: the Phase 2 frame-list test is extended (append-only order pinned); a new test checks PATRF/CATRF/MATRF
+  against the 39 NGS rows each through the registry (forward and inverse, 1e-11° / 1 µm), the chains from the app's
+  stored frame, 2022 → 2022 via ITRF2020, and `DEFAULT` refusing them. Assertions that pinned the three frames as "not
+  a GeoKit frame yet" now pin the new state.
+
+### App (preview ON only; preview OFF is byte-identical)
+
+- Registries: `coords/Nsrs2022Registries` — preview OFF: `FrameTransformationRegistry.DEFAULT` / `CrsRegistry.DEFAULT`
+  exactly as before; preview ON: `NSRS2022_BETA` and a `CrsRegistry` built on it (conversions, capability status, zone
+  picker). `CoordinateConverter` picks per conversion from `CoordinateSystemSettings.nsrs2022Preview`.
+- Capabilities: the four frames and SPCS2022 are "Verified NGS beta" (selectable) with dataset version, area note
+  and the caveat ("Verified against NGS beta Geodetic Station Page coordinates; the NGS endpoints are undocumented;
+  not authoritative"). The stale "unavailable — awaiting NGS verification" wording is replaced by "unavailable"
+  (only seen with geokit's default registry).
+- Output datums (appended, persisted values): `natrf2022_beta`, `patrf2022_beta`, `catrf2022_beta`,
+  `matrf2022_beta`, labels "NATRF2022 (beta)" … Offered only with the preview ON and System = Latitude / Longitude.
+  The position is the stored source transformed through `NSRS2022_BETA` at the coordinate epoch (stored
+  `coordinateEpoch`, else the capture time; live fix time), shown as "NATRF2022 (beta) epoch 2026.886"; the
+  ellipsoidal height is the 2022 frame's; orthometric heights are those of the vertical choice (unchanged).
+  All four are offered everywhere with an area note (each frame is meant for its plate).
+- **No UTM on a 2022 frame**: no authority defines one (no EPSG / NGS CRS), so with System = UTM a saved 2022 datum is
+  not used (WGS84 (ITRF2014) UTM, with a note).
+- SPCS2022: `HorizontalSystem.SPCS2022` (persisted `spcs2022_beta`, label "State Plane (SPCS2022, beta)") and a
+  new DataStore key `coord_spcs2022_zone` holding the registry id `spcs2022:<zone code>` (default absent/null). The zone
+  picker lists the SPCS83 zones and, with the preview ON, all 953 SPCS2022 zones (zone, frame, frame epoch, projection,
+  unit, β beta); picking an SPCS2022 entry selects SPCS2022 with that zone, picking an SPCS83 entry returns to SPCS83.
+  Conversion: source → the zone's own frame (NATRF/PATRF/CATRF/MATRF2022, never NAD83) at the coordinate epoch via
+  `NSRS2022_BETA` → `CrsDefinition.forward` (metres, the NGS defining unit). Display: metres or international feet;
+  US survey feet are shown as international feet (NGS does not support the US survey foot for SPCS2022). Summary / CSV
+  System: "SPCS2022 421001 (beta) · NATRF2022 epoch 2026.886 · m · H rcvr · EPP2022 beta 2025-06-16 · NGS beta zones
+  2026-05-14". Zone suggestion: `CrsRegistry.locateSpcs2022` candidates with near-boundary / envelope wording; the app
+  never picks a zone. The catalog is parsed off the main thread (`CoordinateSystemService` warm-up; a main-thread
+  conversion before that shows the labelled default with "SPCS2022 zone data is loading").
+- Fallbacks (stored values kept, never rewritten): preview OFF with a 2022 datum → WGS84 (ITRF2014); with SPCS2022 →
+  Latitude / Longitude; SPCS2022 without a zone → Latitude / Longitude with "Choose an SPCS2022 zone"; an unknown zone
+  id → the default with "SPCS2022 zone … is not available". Unknown persisted values fall back to the existing defaults.
+- Untouched: GNSS feed, capture, receiver provenance, database schema, AR / Maps / stakeout (WGS84 path), CSV column
+  layout, the JSON backup format.
+
+### Risks and limits
+
+- Everything 2022 is NGS beta: the EPPs, the SPCS2022 zone designs and the station-page service. NGS may revise
+  them before the modernized NSRS becomes official (around March 2027); the hash pins fail if the EPP table changes.
+- No IFDM2022: coordinates are given at the coordinate epoch, not propagated to 2020.0 (NGS's published NATRF2022
+  coordinates are at 2020.0, so they differ from the app's by intra-frame motion, a few mm/yr in stable areas).
+- The verification is against NGS's computed coordinates for 13 CORS; NGS has not published an API or developer
+  dataset, and beta NCAT still cannot isolate the EPP rotation.
+- SPCS2022 zone choice is the user's: layered zones overlap legally; polygons are generalised (±~150 m).

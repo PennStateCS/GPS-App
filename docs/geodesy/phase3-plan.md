@@ -82,3 +82,8 @@ Sources and dataset versions are recorded in docs/geodesy/nsrs2022-sources.md (e
 - Elevation detail (`coords/ElevationDetail`, `CoordinateConverter.elevation`): h / H / N / model + version /
   vertical reference / epoch / beta for Details and the Settings preview; `convert()` output unchanged.
 - Toolbar height label for GEOID2022: "NAPGD2022β" (≤ 10 characters like "EGM2008"); "loading" while a model loads.
+
+## Phase 4 WP X (2022 frames and SPCS2022 output, beta)
+
+Activation of the WP N frame verification in the app; see `phase4-ngs-investigation.md` section E for the details.
+`SPCS2022_OUTPUT_SUPPORTED` is now true; the WP U "Not selectable" limitation above no longer applies.

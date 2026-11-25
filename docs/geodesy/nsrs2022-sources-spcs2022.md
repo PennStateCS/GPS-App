@@ -99,3 +99,10 @@ Re-checked: the change log still ends at 6/1/2026, and `zoneDefinitions.json`, `
 nothing to regenerate. With `CrsRegistry(frameRegistry = FrameTransformationRegistry.NSRS2022_BETA)` the 949
 NATRF2022 zones become operational `VERIFIED_BETA`. The default registry still has none (see
 `phase4-ngs-investigation.md`).
+
+## Update (Phase 4 WP X)
+
+PATRF2022, CATRF2022 and MATRF2022 are `ReferenceFrame`s with beta edges in `NSRS2022_BETA`, so the four zones on them
+(150001, 600001, 720001, 660001) parse like the others and, with `NSRS2022_BETA`, all **953** zones are operational
+`VERIFIED_BETA`. `CrsCatalogCsv.PENDING_FRAME_IDS` no longer affects parsing. The app offers SPCS2022 output with the
+NSRS 2022 beta preview ON (`phase4-ngs-investigation.md` section E); the default registry still has 0 zones.
