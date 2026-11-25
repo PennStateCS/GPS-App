@@ -256,6 +256,38 @@ Build: `survey/phase4` (stabilization). Same **Needs** codes as section 11; **B*
 | 12.20 | Compare the results with independent known-control coordinates (same frame and epoch) | Differences within the tolerance agreed with Dr. Bolkas | K + B |
 | 12.21 | Save a diagnostic report only by explicit user action (Developer → export). A raw NMEA sample is not part of the export yet ([rs4-nmea-heights.md](rs4-nmea-heights.md)); if one is needed, record it separately with the user's consent | Export contains no credentials or host; kept with the field log | H |
 
+## 13. Phase 5 — receiver selection UI (card, picker, manual dialog, details)
+
+Build: `survey/phase5` (after WP P2). Same **Needs** codes as section 11 (**H** = RS4 / RS4 Pro hardware); **R** =
+the RS2+ receiver; **W** = a second Wi-Fi network or hotspot. Nothing in this section has been performed yet. Design
+and flow: [../receiver-selection.md](../receiver-selection.md).
+
+| # | Check | Expected | Needs |
+|---|---|---|---|
+| 13.1 | Update from the Phase 4 build with the RS2+ saved and External selected; open Settings → Receiver | Receiver card at the top: "External receiver", saved name or IP, `IP:port`, "Emlid Reach RS2+ · Set by you", state chip goes Testing… → Connected; antenna/tilt, pole height and mock-location settings unchanged below the card | R |
+| 13.2 | Same, but with tablet GNSS saved | Card shows "Tablet GNSS · Active", fix + satellites; tablet antenna height shown; mock-location switch disabled | — |
+| 13.3 | Toolbar battery / SOL tap, and the capture dialog's "Open receiver settings" | Lands on Settings → Receiver with the card (battery chip only for Emlid profiles); "Receiver details" opens the details sheet | R |
+| 13.4 | "Change receiver" on the phone-sized layout and on the SM-X940 in portrait and landscape | Sheet half-expanded on narrow screens, fully expanded and at most ~640 dp wide (centred) on the tablet; drag handle works; rotating keeps the sheet | — |
+| 13.5 | Picker with an Emlid profile | "On this network" scans on open (progress, then "Last scanned …"); found receivers say "Emlid Reach (model confirmed after connecting)", never a model | R |
+| 13.6 | Picker with the Generic NMEA profile | No scan on open; "Scan for Emlid receivers" starts one only when tapped | — |
+| 13.7 | Tap a previously connected receiver that is off | Row shows Testing…, then "Failed: not reachable"; the card keeps the current receiver running and shows "Couldn't switch to …  Nothing was changed." | R |
+| 13.8 | Tap the working receiver's row while it streams | Nothing restarts (already active) | R |
+| 13.9 | Start a switch, then swipe the sheet away before it finishes | The test continues; the card shows the outcome; nothing disconnected | R |
+| 13.10 | During a running capture, choose another receiver or Tablet GNSS | "Switching receivers stops the current capture. Switch?"; Cancel keeps the capture; Switch stops it and switches | R |
+| 13.11 | "Connect manually…": bad IP (e.g. `192.168.42`) and port `70000` | Field errors, nothing tested | — |
+| 13.12 | Manual: type a custom port (e.g. 9100), change the receiver type | The custom port stays; with a default port (9000/9001) the port follows the type | — |
+| 13.13 | Manual: "Test connection" against the RS2+ | "NMEA received on port 9001. Nothing switched yet…" inline; the active source and saved receiver unchanged | R |
+| 13.14 | Manual: "Save & connect" with Generic NMEA against the RS2+ | Connects; no Emlid HTTP requests in the diagnostic log (no battery / device info); card "Generic NMEA TCP · Set by you" | R |
+| 13.15 | RS4 / RS4 Pro with the RS2+ profile chosen by you | Mismatch banner "Receiver reports Reach RS4 Pro; profile is Emlid Reach RS2+." [Keep] [Use RS4 Pro]; Keep hides it (until restart); Use changes the profile; during a capture Use asks first | H |
+| 13.16 | RS4 / RS4 Pro on a fresh install (default profile) | Profile changes automatically; a snackbar "Profile set to Emlid Reach RS4 Pro (reported by receiver)." appears on whichever screen is open | H |
+| 13.17 | Receiver details with the RS4 / RS4 Pro connected | Model, serial, firmware, battery, corrections, age, baseline tagged "Reported by receiver"; datum/height/pole/compensated output "Set by you" or "Default"; receiver H model "Unknown"; the firmware-vs-tilt sentence shown | H |
+| 13.18 | Details → Copy summary, paste into a note | No IP address, port or receiver name in the text; "Copy address" copies `IP:port` only when tapped | R |
+| 13.19 | Details → Open diagnostics; Details → Disconnect receiver | Developer page opens; Disconnect switches to tablet GNSS and forgets the saved address (recent list keeps it) | R |
+| 13.20 | Previously connected → Forget | Entry removed; the active receiver unaffected | R |
+| 13.21 | Change Wi-Fi (W) and rescan | Old receivers marked "Not found in last scan"; scan finds receivers on the new network | R + W |
+| 13.22 | TalkBack on: card, chips, picker rows, details rows | Chips read "Connection state: Connected", "Fix quality: RTK Fix", satellites in words; state changes are announced ("Receiver Connected"); all buttons ≥ 48 dp | — |
+| 13.23 | Dark theme (Settings → Appearance) | Card, banner, sheet, dialog and details legible; no hard-coded colours | — |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
 offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;
@@ -264,4 +296,5 @@ heights against local knowledge. Phase 4 WP X: the new notes' layout, the SPCS20
 tablet (toolbar briefly "SPCS2022 zone data is loading" in the system summary), plausibility of SPCS2022 values
 against a project control point or NGS beta tools. Phase 4 WP C: the RS4 Pro stream and every tilt
 transition (section 11, H), pole-tip interpretation on a known mark (11.12–11.15, H + K + E), the capture dialog's
-Restart button and messages on the tablet.
+Restart button and messages on the tablet. Phase 5 UI: sheet sizes on the tablet, mDNS / scan on the SM-X940,
+TalkBack, real Emlid model strings and the mismatch banner (section 13).
