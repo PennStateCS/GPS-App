@@ -3,6 +3,9 @@
 Nothing here is automatic. Run each step yourself, in order, only after approval. Never uninstall the app and
 never clear its data: either deletes the field data.
 
+**Shell:** run the `adb exec-out … > file` and `adb exec-in … < file` commands in **cmd.exe or Git Bash**, never
+in Windows PowerShell 5.1 — PowerShell re-encodes binary redirection as text and silently corrupts the tar.
+
 ## 1. Facts
 
 | Item | Value |
@@ -21,7 +24,8 @@ never clear its data: either deletes the field data.
 Pick a new folder, e.g. `D=C:\Users\jdc308\Desktop\SurveyingApp-tablet-backups\<date>-before-phase2`.
 
 1. Fresh data backup of the **current** v13 state (keep it; it is the rollback point):
-   `adb -s <serial> exec-out run-as app.surrealar tar cf - databases files shared_prefs no_backup app_ > "$D\app.surrealar-data.tar"`
+   `adb -s <serial> exec-out run-as app.surrealar tar cf - databases files shared_prefs no_backup > "$D\app.surrealar-data.tar"`
+   (if `tar` reports a missing directory, drop it from the list; check the archive is non-empty)
 2. Save the **currently installed** APK (it matches the v13 database):
    `adb -s <serial> shell pm path app.surrealar` → `adb -s <serial> pull <path>/base.apk "$D\installed-v13-base.apk"`
 3. Check the backup is readable: extract it, open `databases/surveying_app.db` with SQLite (copy the `-wal`/`-shm`
@@ -58,13 +62,17 @@ A rollback therefore restores the matching pre-upgrade data **and** the old APK,
 2. Reinstall the saved v13 APK in place: `adb -s <serial> install -r "$D\installed-v13-base.apk"`
    (same versionCode and certificate, so no downgrade flag is needed; if Android ever reports a downgrade, use
    `install -r -d`, still never uninstall).
-3. Restore the step-1 data into the app's private directory (debuggable build only):
-   `adb -s <serial> push "$D\app.surrealar-data.tar" /data/local/tmp/surrealar-restore.tar`
-   `adb -s <serial> shell run-as app.surrealar tar xf /data/local/tmp/surrealar-restore.tar`
-   (this overwrites `databases/`, `files/`, `shared_prefs/` with the v13 copies; make sure the app is stopped)
-   `adb -s <serial> shell rm /data/local/tmp/surrealar-restore.tar`
-4. Open the app and check the 5 coordinates and 2 models (checklist §1.2–1.3).
-5. Data captured **after** the upgrade is not in the restored copy: export it first (JSON backup from the new
+3. Remove the v14 data first, so no v14 file survives beside the restored copy — in particular the SQLite
+   `surveying_app.db-wal` / `-shm`, which SQLite would otherwise replay onto the restored v13 database.
+   Only after confirming the step-1 backup is complete and readable (this deletes the app's current data):
+   `adb -s <serial> shell run-as app.surrealar rm -rf databases files shared_prefs no_backup`
+4. Restore the step-1 data (debuggable build only), streaming the archive in (avoids SELinux denials when the
+   app's `run-as` process reads `/data/local/tmp`):
+   `adb -s <serial> exec-in run-as app.surrealar tar xf - < "$D\app.surrealar-data.tar"`
+   Fallback if `exec-in` is unavailable: `adb push` the tar to `/data/local/tmp/`,
+   `adb shell run-as app.surrealar tar xf /data/local/tmp/<file>`, then delete it from `/data/local/tmp`.
+5. Open the app and check the 5 coordinates and 2 models (checklist §1.2–1.3).
+6. Data captured **after** the upgrade is not in the restored copy: export it first (JSON backup from the new
    build, if it still runs) and re-import it after the rollback (old builds ignore the new provenance keys).
 
 If anything is unclear at any step, stop: the backup folder still holds a complete copy and nothing has been lost.

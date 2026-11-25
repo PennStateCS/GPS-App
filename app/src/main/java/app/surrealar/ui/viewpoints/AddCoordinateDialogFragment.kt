@@ -910,6 +910,7 @@ class AddCoordinateDialogFragment(
                 // session, show the chosen location, and allow Save.
                 if (!isExternalMode) {
                     captureVm.cancel()
+                    captureVm.clearInterruption()   // a stale "capture stopped" note no longer applies
                     sectionInternal?.visibility = View.VISIBLE
                     tvSamplingStatus?.text = "Using the model's embedded location"
                     btnSave?.isEnabled = true

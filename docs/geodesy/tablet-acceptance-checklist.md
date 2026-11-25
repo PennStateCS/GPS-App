@@ -45,9 +45,10 @@ receiver on TCP; optionally an old JSON backup made before the update (for impor
 | # | Check | Expected result |
 |---|---|---|
 | 4.1 | Capture a throwaway point with the RS2+ (receiver datum ITRF2014) | Saved; Details → Provenance: source frame WGS84 (ITRF2014), a coordinate epoch, receiver frame ITRF2014, height source "External receiver (NMEA GGA)", model unknown |
-| 4.2 | Start a capture, then change Settings → Receiver datum before it finishes | Capture stops with a clear message; nothing is saved |
-| 4.3 | Start a capture, then switch receiver source | Capture stops (or behaves as documented); nothing mixed is saved |
-| 4.4 | Delete the throwaway point | Only that point removed; the original 5 remain |
+| 4.2 | Start an External capture in Add Coordinate, then leave the dialog (e.g. to change Settings → Coordinates → External receiver datum) | The capture is cancelled with the dialog; nothing is saved. (The in-dialog "receiver datum changed" stop is covered by unit tests only: the dialog cannot stay open while Settings is changed.) |
+| 4.3 | Open Add Coordinate in External mode while the RS2+ is still connecting | The capture keeps running when the receiver connects (no "source changed" message) and completes normally |
+| 4.4 | During an External capture with samples accepted, disconnect the receiver / switch the source | Capture stops with "Capture stopped: the GNSS source changed during the occupation…"; nothing is saved |
+| 4.5 | Delete the throwaway point | Only that point removed; the original 5 remain |
 
 ## 5. Map, Details, AR, stakeout
 | # | Check | Expected result |

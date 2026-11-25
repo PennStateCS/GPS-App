@@ -224,6 +224,30 @@ class CaptureViewModelJvmTest {
         assertEquals(ObservationSession.State.Idle, vm.state.value)
     }
 
+    @Test fun providerSwitch_beforeFirstAcceptedFix_keepsCapture_noMessage() = runBlocking {
+        // e.g. the dialog started an external capture while the receiver was still connecting: the
+        // Internal -> External flip on connect must not stop it (nothing has been averaged yet).
+        providerFlow.value = ProviderChoice.INTERNAL
+        val vm = vm()
+        vm.start(policy(minSamples = 10))
+        providerFlow.value = ProviderChoice.EXTERNAL_TCP
+        assertNull(vm.interruption.value)
+        push(fix())
+        val st = vm.state.value
+        assertTrue("still capturing: $st", st is ObservationSession.State.Capturing)
+        assertEquals(1, (st as ObservationSession.State.Capturing).samples)
+    }
+
+    @Test fun providerSwitch_afterCompletion_keepsResult_andItCanBeSaved() = runBlocking {
+        val vm = vm()
+        complete(vm)
+        providerFlow.value = ProviderChoice.INTERNAL
+        assertTrue(vm.state.value is ObservationSession.State.Complete)
+        assertNull(vm.interruption.value)
+        vm.save("Pt", null, 0, "ic_pin")
+        assertEquals(1, repo.store.size)
+    }
+
     @Test fun cancel_withoutSession_isHarmless() {
         val vm = vm()
         vm.cancel()

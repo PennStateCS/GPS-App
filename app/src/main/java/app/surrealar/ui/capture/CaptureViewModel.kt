@@ -124,13 +124,19 @@ class CaptureViewModel @Inject constructor(
         readOrNull("occupationDatum") { occupationDatum?.await()?.takeIf { it.fromSetting }?.datum }
 
     init {
-        // Cancel any in-progress averaging session when the provider switches.
-        // A session collecting RS2+ fixes must not continue under Internal GPS and vice versa.
+        // Cancel an in-progress averaging session when the provider switches after it has accepted fixes.
+        // A session collecting RS2+ fixes must not continue under Internal GPS and vice versa. Before the
+        // first accepted fix nothing can be mixed (the session only ever sees its own mode's provider,
+        // see start()), so e.g. the Internal → External flip when the receiver finishes connecting just
+        // after the dialog started an external capture must not stop it; a Complete result is kept,
+        // as for a receiver-datum change after completion.
         viewModelScope.launch {
             var previousProvider: app.surrealar.gnss.source.SourceSettings.ProviderChoice? = null
             sourceSettings.activeProvider.collect { provider ->
                 if (previousProvider != null && previousProvider != provider) {
-                    if (session != null) {
+                    val st = _state.value
+                    val acceptedFixes = (st as? ObservationSession.State.Capturing)?.samples ?: 0
+                    if (session != null && acceptedFixes > 0) {
                         // cancel() writes the outcome line; the source switch itself is logged by GNSS.
                         DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture cancelled: provider switched $previousProvider → $provider" }
                         cancel()
@@ -340,6 +346,9 @@ class CaptureViewModel @Inject constructor(
         captureDiagJob?.cancel(); captureDiagJob = null
         captureDiag = null; captureOutcomeLogged = false; completedNotSavedLine = null
     }
+
+    /** Clears a shown interruption message (e.g. the user switched to another way of saving). */
+    fun clearInterruption() { _interruption.value = null }
 
     fun cancel() {
         // A running session with diagnostics gets its "Capture cancelled" outcome line from captureCancelled().
