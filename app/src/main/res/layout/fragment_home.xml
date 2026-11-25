@@ -307,6 +307,84 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Coordinate Settings Card — how coordinates are shown and exported (HomeCoordinateSettingsFormatter). -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_coordinate_settings"
+            style="@style/Widget.App.Card.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <ImageView
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:src="@drawable/ic_list_coordinates"
+                        android:layout_marginEnd="8dp"
+                        android:contentDescription="@null"
+                        app:tint="?attr/colorPrimary" />
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:accessibilityHeading="true"
+                        android:text="@string/home_coordinate_settings_title"
+                        android:textAppearance="?attr/textAppearanceLabelLarge"
+                        android:textColor="?attr/colorPrimary" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_coordinate_settings_change"
+                        style="@style/Widget.App.Button.Text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="0dp"
+                        android:minHeight="36dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="8dp"
+                        android:text="@string/home_coordinate_settings_change"
+                        android:contentDescription="@string/home_coordinate_settings_change_desc"
+                        app:icon="@drawable/ic_chevron_right"
+                        app:iconGravity="end"
+                        app:iconSize="18dp"
+                        app:iconPadding="2dp" />
+                </LinearLayout>
+
+                <!-- label / value rows, filled by HomeFragment -->
+                <TableLayout
+                    android:id="@+id/table_coordinate_settings"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="28dp"
+                    android:shrinkColumns="1"
+                    android:stretchColumns="1" />
+
+                <TextView
+                    android:id="@+id/text_coordinate_settings_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="28dp"
+                    android:layout_marginTop="6dp"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?attr/colorError"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Quick Actions Card -->
         <com.google.android.material.card.MaterialCardView
             style="@style/Widget.App.Card.Outlined"

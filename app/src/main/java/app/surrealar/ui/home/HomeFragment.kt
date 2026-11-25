@@ -54,6 +54,7 @@ import com.google.android.gms.maps.model.LatLng
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.conflate
@@ -153,6 +154,7 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         setupLocationStatusObservers()
         setupFixBadgeObservers()
         setupFieldStatusObserver()
+        setupCoordinateSettingsCard()
         setupMapUiControls()
         collectStatisticsFlows()
 
@@ -337,6 +339,63 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
      */
     /** Current header-action destination for the Field Status card (updated on each render). */
     private var currentFieldStatusAction = HomeFieldStatusMapper.Action.OPEN_MAP
+
+    /** Home "Coordinate Settings" card: the effective display/export settings; "Change" opens Settings → Coordinates. */
+    private fun setupCoordinateSettingsCard() {
+        binding.btnCoordinateSettingsChange.setOnClickListener {
+            try {
+                val nav = findNavController()
+                nav.navigate(R.id.nav_settings,
+                    androidx.core.os.bundleOf(app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
+                        app.surrealar.ui.settings.SettingsFragment.CATEGORY_COORDINATES),
+                    topLevelNavOptions(nav.graph.startDestinationId))
+            } catch (e: Exception) { logNavFailure("coordinate settings", e) }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                try {
+                    settingsRepo.coordinateSystemSettings
+                        .map { HomeCoordinateSettingsFormatter.summary(it) }
+                        .distinctUntilChanged()
+                        .collectLatest { summary ->
+                            val b = _binding ?: return@collectLatest
+                            renderCoordinateSettings(b, summary)
+                        }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    DiagnosticsLogger.e(DiagTags.COORD, "Home coordinate settings collector failed", e)
+                }
+            }
+        }
+    }
+
+    private fun renderCoordinateSettings(b: FragmentHomeBinding, s: HomeCoordinateSettingsFormatter.Summary) {
+        val table = b.tableCoordinateSettings
+        table.removeAllViews()
+        val ctx = table.context
+        val pad = (12 * ctx.resources.displayMetrics.density).toInt()
+        for (r in s.rows) {
+            val row = android.widget.TableRow(ctx)
+            row.addView(android.widget.TextView(ctx).apply {
+                text = r.label
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(this,
+                    com.google.android.material.R.attr.colorOnSurfaceVariant))
+                setPadding(0, 2, pad, 2)
+            })
+            row.addView(android.widget.TextView(ctx).apply {
+                text = r.value
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(this,
+                    com.google.android.material.R.attr.colorOnSurface))
+                setPadding(0, 2, 0, 2)
+            })
+            row.contentDescription = "${r.label}: ${r.value}"
+            table.addView(row)
+        }
+        b.textCoordinateSettingsNote.text = s.note.orEmpty()
+        b.textCoordinateSettingsNote.visibility = if (s.note != null) android.view.View.VISIBLE else android.view.View.GONE
+    }
 
     private fun setupFieldStatusObserver() {
         binding.btnFieldStatusAction.setOnClickListener {

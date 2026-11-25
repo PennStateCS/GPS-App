@@ -103,6 +103,8 @@ class SettingsFragment : BaseTwoPaneFragment() {
         const val ARG_INITIAL_CATEGORY_ID = "initialCategoryId"
         /** The Receiver category (receiver status, battery, device info). */
         const val CATEGORY_RECEIVER = CAT_ID_LOCATION
+        /** Settings → Coordinates (the Home "Coordinate settings" card). */
+        const val CATEGORY_COORDINATES = CAT_ID_COORDINATE_DISPLAY
     }
 
     // ───────────────────────────── Lifecycle hooks ─────────────────────────────

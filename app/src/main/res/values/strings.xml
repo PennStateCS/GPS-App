@@ -166,6 +166,10 @@
     <string name="hint_port">Port</string>
     <string name="connect">Connect</string>
     <string name="host_required">Host is required</string>
+    <!-- Home: coordinate settings card -->
+    <string name="home_coordinate_settings_title">Coordinate Settings</string>
+    <string name="home_coordinate_settings_change">Change</string>
+    <string name="home_coordinate_settings_change_desc">Change coordinate settings</string>
     <!-- Points CSV export option (default off: the original six-column file). -->
     <string name="export_csv_position_reference_option">Include a \"Position reference\" column (antenna / receiver pole tip / unconfirmed) in every CSV export</string>
     <!-- Unconfirmed position reference: acknowledgment dialog buttons. -->
