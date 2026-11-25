@@ -1,4 +1,4 @@
-# Phases 1, 2, 3 + 4 (WP U, WP X, WP C) — consolidated tablet acceptance checklist
+# Phases 1, 2, 3 + 4 (WP U, WP X, WP C, stabilization) — consolidated tablet acceptance checklist
 
 Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK for sections 1–7;
 the Phase 3 build (`survey/phase3`, incl. WP W) for section 8 (sections 1–7 must still pass on it). Do the installation
@@ -210,6 +210,36 @@ unit tests (named), D = device check.
 | 11.27 | RS2+ capture with NTRIP where the GGA station id briefly reads empty / 0000 or flickers to another id for 1–2 epochs | Capture continues (flicker epochs not averaged, logged as transient); switching the mount to another base still stops it after ≈ 3 epochs / 1 s | — (RTK base/NTRIP) | A (`rs2Plus_…StationId…`, `rs2Plus_realBaseChange_stillStops`) + D |
 | 11.28 | RS4 / RS4 Pro profile, "Compensated NMEA output" Unknown: start a capture | Dialog shows "⚠ RS4: set 'Compensated NMEA output' in Settings → Receiver — if Emlid Flow streams compensated positions, heights would be reduced twice." for the whole occupation (no dismiss); saving still allowed (antenna reduction); captures.log has "Capture saved with unconfirmed position reference id=…". Not shown for RS2+ / Generic or with Enabled / Disabled | — (RS4 profile, any receiver) | A (`outputUnknownWarning_onlyForRs4AndRs4Pro…`) + D |
 | 11.29 | Mock location / AR with tilt active and output Enabled | Injected location has neither altitude nor vertical accuracy | H | A (`omitted altitude also omits the vertical accuracy`) + D |
+
+## 12. Phase 4 stabilization — settings persistence and RS4 Pro field procedure
+
+Build: `survey/phase4` (stabilization). Same **Needs** codes as section 11; **B** = Dr. Bolkas's assistance
+(test design, tolerances, interpretation). Nothing in this section has been performed yet.
+
+**State Plane zones**
+
+| # | Check | Expected | Needs | Covered |
+|---|---|---|---|---|
+| 12.1 | Settings → Coordinates: State Plane (SPCS83), pick PA South; switch to Latitude / Longitude, then UTM, then back to State Plane | PA South is still selected (no reset to PA North) | — | A (`SettingsRepositoryRoundTripTest` SPCS zones) + D |
+| 12.2 | Preview ON: pick an SPCS2022 zone; switch to State Plane (SPCS83), then back to SPCS2022 | Each system shows its own last zone | — | A + D |
+| 12.3 | Turn the preview OFF, then ON again | SPCS2022 zone still remembered; while OFF the display falls back to Latitude / Longitude with the note; the SPCS83 zone is unchanged | — | A + D |
+
+**RS4 Pro field procedure** (one session on a known mark; record every value in the field log)
+
+| # | Step | Record / expected | Needs |
+|---|---|---|---|
+| 12.10 | Confirm receiver model, firmware, Emlid Flow version and streaming transport (TCP; note if Bluetooth is also tried) | Settings → Receiver shows the same firmware; RS4 Pro profile selected | H |
+| 12.11 | Record the receiver datum setting in the app and the RTK correction network / mount point and its frame | Matches the network's published frame | H |
+| 12.12 | Record antenna and pole height in Emlid Flow and in the app; record "Compensated NMEA output" | Values written in the log; no pole height entered twice | H |
+| 12.13 | Compensation OFF, pole levelled on the mark: 30 s capture | Saved as antenna reference; app subtracts pole height + phase-centre offset | H + K |
+| 12.14 | Compensation ON (output Enabled), pole levelled: 30 s capture | Saved as receiver pole tip, no pole height subtracted by the app | H + K |
+| 12.15 | Compensation ON, several tilted-pole captures on the same mark (e.g. 15° / 30° in four directions) | Spread of horizontal/vertical positions recorded | H + K + B |
+| 12.16 | Compare 12.13–12.15 horizontally and vertically | ΔN/ΔE/ΔU and radial differences tabulated | H + K + B |
+| 12.17 | Turn compensation off and on during a capture | Capture stops with the specific reference/tilt message and Restart; no mixed result saved | H |
+| 12.18 | Compare GGA, RMC, GST and ETC observations (Developer page / diagnostics) | Rates near 5/1/1/5 Hz; ETC times match GGA; RMC not assumed per GGA | H |
+| 12.19 | If firmware 34.10 + Emlid Flow 15.16 are available: repeat 12.13–12.14 with receiver-side orthometric heights enabled and disabled | GGA altitude / geoid separation recorded both ways; receiver H stays labelled "receiver H (model unknown)"; app GEOID18 / GEOID2022 heights stay separate | H + B |
+| 12.20 | Compare the results with independent known-control coordinates (same frame and epoch) | Differences within the tolerance agreed with Dr. Bolkas | K + B |
+| 12.21 | Save a short diagnostic / NMEA sample only by explicit user action (Developer → export) | Export contains no credentials or host; kept with the field log | H |
 
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;

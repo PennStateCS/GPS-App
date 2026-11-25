@@ -286,3 +286,23 @@ Branch `survey/phase4-x` from `survey/phase4` (e2395bd). No new NGS data was fet
 - The verification is against NGS's computed coordinates for 13 CORS; NGS has not published an API or developer
   dataset, and beta NCAT still cannot isolate the EPP rotation.
 - SPCS2022 zone choice is the user's: layered zones overlap legally; polygons are generalised (±~150 m).
+
+## F. Validation scope and provenance (Phase 4 stabilization, 2026-11-25)
+
+What each 2022 result rests on. All 2022 products stay **beta**, appear only with the opt-in
+"Modernized NSRS 2022 (beta preview)" setting (default OFF), and are never production defaults.
+
+| Product | Verified how | Scope of the claim |
+|---|---|---|
+| ITRF2020 ⇄ NATRF2022 / PATRF2022 / CATRF2022 / MATRF2022 (each edge on its own) | 156 NGS pairs (13 CORS × epochs 2014.5 / 2020.0 / 2026.9 × 4 frames) from the beta Geodetic Station Pages back end, reproduced to < 1 µm; sign from TR NOS NGS 62 (2021) eq. 58/60 | The single Euler-pole rotation at the **same** epoch. Beta: the NGS service is undocumented and the EPP2022 parameters are preliminary. |
+| SPCS2022 projections (953 zones) | One NGS example point per zone (`crs/spcs2022/ngs_example_coordinates.csv`, from NGS `coordinates.json`, sha256 recorded) plus PROJ vectors (`proj_vectors.csv`) | The projection from the zone's own frame to grid. Not a frame transformation. |
+| NAD83(2011) → NATRF2022 (and other chains through ITRF2014 → ITRF2020) | **Not independently validated end to end.** Built from three verified edges; one spot check at 40° N 80° W agreed with NCAT to ~5 mm | NGS's own path uses NADCON 6 + IFDM2022 and outputs epoch 2020.00; ours keeps the input epoch. Regional NADCON distortion is not reproduced. Labelled beta-derived. |
+| Propagating a coordinate from one epoch to another | **Unsupported.** IFDM2022 (the NGS intra-frame deformation model) is not implemented | Every 2022 output is at the position's own coordinate epoch; no velocity / deformation is applied. |
+
+**Reproducibility.** The tests never contact NGS. The 78 raw station-page responses are committed in
+`libs/geokit-core/src/test/resources/nsrs/ngs-gsp/` with `PROVENANCE.csv` (file, retrieval time, bytes,
+SHA-256, URL), and `PlateFrame2022NgsVectorsTest` fails if any file is missing or its bytes or hash differ.
+`tools/nsrs/fetch_epp2022_gsp.py` only re-fetches for a deliberate refresh. If the undocumented endpoint
+disappears, the pinned values still verify the implementation; the SPCS2022 examples and GEOID2022 test values
+are pinned the same way (`nsrs2022-sources-spcs2022.md`, `nsrs2022-sources-geoid2022.md`). No reference value or
+manifest changed in this phase.
