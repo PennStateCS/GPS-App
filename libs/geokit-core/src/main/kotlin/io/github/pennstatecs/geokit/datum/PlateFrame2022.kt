@@ -20,12 +20,12 @@ public enum class TectonicPlate(public val displayName: String, public val areaN
  * identical to ITRF2020 at [referenceEpoch] 2020.0 (beta.ngs.noaa.gov/NATRF2022, EPP CSV Last-Modified
  * 2025-06-16, retrieved 2026-11-25; sources and convention: docs/geodesy/nsrs2022-sources-frames.md).
  *
- * [status] is [ProductStatus.UNAVAILABLE] for all four (2026-11-25): NGS has published no reference
- * coordinates to verify an implementation against — beta NCAT does not offer ITRF2020 as input or
- * output, NGS's developer test dataset is announced but not released, and EPSG/PROJ 9.8.1 have only a
- * ballpark no-op for NATRF2022 — and the beta page's equations are sign-ambiguous (see
- * [EulerPoleRotation]). [rotation] is provided for analysis and tests only; the default
- * [FrameTransformationRegistry] has no edge to any of these frames.
+ * [rotation] is verified for all four frames against NGS-computed ITRF2020 → frame coordinates
+ * (2026-11-25, [VERIFICATION]; docs/geodesy/phase4-ngs-investigation.md): it reproduces NGS's numbers to
+ * 1e-9 m, and the sign is the one NOAA TR NOS NGS 62 (2021) eq. 60 defines. [status] still reports the
+ * frame's status in the *default* [FrameTransformationRegistry], which has no 2022-frame edge
+ * ([ProductStatus.UNAVAILABLE]); NATRF2022 is available as [ProductStatus.VERIFIED_BETA] through the
+ * opt-in [FrameTransformationRegistry.NSRS2022_BETA].
  *
  * [id] values are reserved stable tokens (same rules as [ReferenceFrame.id]). Only NATRF2022 is a
  * [ReferenceFrame] entry so far ([referenceFrame]); the others become entries when they become usable.
@@ -53,10 +53,10 @@ public enum class PlateFrame2022(
     /** NGS reference epoch at which the frame equals ITRF2020 (decimal year). */
     public val referenceEpoch: Double get() = REFERENCE_EPOCH
 
-    /** ITRF2020 → this frame at a common coordinate epoch (unverified; see the class documentation). */
+    /** ITRF2020 → this frame at a common coordinate epoch (verified against NGS, see [VERIFICATION]). */
     public val rotation: EulerPoleRotation by lazy { EulerPoleRotation(epp, REFERENCE_EPOCH) }
 
-    /** Verification status of the ITRF2020 ⇄ frame transformation in GeoKit. */
+    /** Status of the ITRF2020 ⇄ frame transformation in GeoKit's default registry (none is registered there). */
     public val status: ProductStatus get() = ProductStatus.UNAVAILABLE
 
     /** Why [status] is not verified, for logs and diagnostics. */
@@ -70,12 +70,21 @@ public enum class PlateFrame2022(
         public const val DATASET_VERSION: String =
             "EPP2022 beta (beta.ngs.noaa.gov/NATRF2022/epp2022-beta-values.csv, Last-Modified 2025-06-16, retrieved 2026-11-25)"
 
-        /** Common reason none of the frames is verified (2026-11-25). */
+        /**
+         * How [rotation] was verified (2026-11-25): NGS-computed pairs from the NGS beta Geodetic Station
+         * Pages service, test resources nsrs/ngs-gsp/ (tools/nsrs/fetch_epp2022_gsp.py).
+         */
+        public const val VERIFICATION: String =
+            "NGS beta Geodetic Station Pages service (beta.ngs.noaa.gov/api_m/gsp/coords, retrieved 2026-11-25): " +
+                "13 CORS on the four plates x epochs 2014.5/2020.0/2026.9, ITRF2020 -> NATRF/PATRF/CATRF/MATRF2022, " +
+                "max |dXYZ| 1e-9 m (nsrs/ngs-gsp/epp2022_gsp_vectors.csv, PlateFrame2022NgsVectorsTest)"
+
+        /** Why the default registry has no edge to the frames (2026-11-25). */
         public const val UNAVAILABLE_REASON: String =
-            "the NGS beta EPP2022 transformation from ITRF2020 is known, but no NGS reference coordinates exist " +
-                "to verify it (beta NCAT has no ITRF2020 option, the NGS developer test dataset is not yet " +
-                "released) and the published beta equations are sign-ambiguous; PROJ 9.8.1 offers only ballpark " +
-                "no-op operations, which are not used."
+            "the NGS beta EPP2022 transformation from ITRF2020 is verified against NGS-computed coordinates, " +
+                "but it is a beta product and is not enabled in GeoKit's default registry (opt in with " +
+                "FrameTransformationRegistry.NSRS2022_BETA; only NATRF2022 is a GeoKit frame so far); PROJ 9.8.1 " +
+                "offers only ballpark no-op operations, which are not used."
 
         /** The frame with this stable [id], or null. */
         public fun fromId(id: String?): PlateFrame2022? = entries.firstOrNull { it.id == id }
