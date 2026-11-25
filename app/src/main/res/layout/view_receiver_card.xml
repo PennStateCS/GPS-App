@@ -141,6 +141,17 @@
                 android:visibility="gone" />
         </com.google.android.material.chip.ChipGroup>
 
+        <!-- A test / switch of another receiver while the chips keep showing the active one (no live region:
+             only end states are announced) -->
+        <TextView
+            android:id="@+id/text_receiver_attempt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:visibility="gone" />
+
         <!-- A failed switch to another receiver (the current one keeps running) -->
         <TextView
             android:id="@+id/text_receiver_failure"

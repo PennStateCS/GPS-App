@@ -45,6 +45,23 @@ sealed interface CardConnection {
     data class Failed(val error: ConnectError) : CardConnection
 }
 
+/**
+ * A test / switch shown as its own line under the chips (M3): the chip keeps showing the active link (and the fix and
+ * satellite chips the live receiver) while another receiver is tested.
+ */
+sealed interface CardAttempt {
+    val target: ReceiverTarget
+    /** "Testing 192.168.…" */
+    data class Testing(override val target: ReceiverTarget) : CardAttempt
+    /** "Connecting to 192.168.…" (the test passed; saving and activating). */
+    data class Connecting(override val target: ReceiverTarget) : CardAttempt
+    /**
+     * The test of [target] failed. [keepsCurrent] = the active source keeps streaming ("still using …"); false = the
+     * current source is not streaming either.
+     */
+    data class Failed(override val target: ReceiverTarget, val error: ConnectError, val keepsCurrent: Boolean) : CardAttempt
+}
+
 /** Fix quality shown on the card. */
 enum class CardFix { NO_FIX, SINGLE, DGPS, FLOAT, FIX, DEAD_RECKONING }
 
@@ -70,12 +87,15 @@ data class ReceiverCardModel(
     val batteryPercent: Int?,
     val batteryCharging: Boolean,
     val mismatch: ProfileMismatch?,
-    /** A failed switch to ANOTHER receiver (the current one keeps running): shown as an inline note. */
-    val failedSwitch: ConnectionAttempt.Failed?,
+    /** A test, switch or failed switch of a receiver that is not the chip's state (null: none). */
+    val attemptLine: CardAttempt?,
     /** Retry is offered when the saved receiver is not streaming. */
     val canRetry: Boolean,
     val busy: Boolean,
-)
+) {
+    /** A failed switch to ANOTHER receiver (the chip shows the current source): shown as an inline note. */
+    val failedSwitch: CardAttempt.Failed? get() = attemptLine as? CardAttempt.Failed
+}
 
 /** Builds [ReceiverCardModel] (pure, unit-tested). */
 object ReceiverCardPresenter {
@@ -110,7 +130,6 @@ object ReceiverCardPresenter {
         }
         val name = if (!external) null else
             identity?.name?.takeIf { it.isNotBlank() } ?: s.savedName ?: s.savedTarget?.host
-        val failed = s.attempt as? ConnectionAttempt.Failed
         val showBattery = external && capabilities.hasBattery && battery != null &&
             s.activeProvider == ProviderChoice.EXTERNAL_TCP
         return ReceiverCardModel(
@@ -126,19 +145,32 @@ object ReceiverCardPresenter {
             batteryPercent = if (showBattery) battery!!.percent else null,
             batteryCharging = showBattery && battery!!.isCharging,
             mismatch = if (external) s.mismatch else null,
-            failedSwitch = failed?.takeIf { connection !is CardConnection.Failed },
+            attemptLine = attemptLine(s, external, connection, streaming),
             canRetry = external && s.savedTarget != null && !s.busy &&
                 (connection == CardConnection.Unavailable || connection is CardConnection.Failed),
             busy = s.busy,
         )
     }
 
+    /**
+     * The chip state: the ACTIVE link (device GNSS, or the external link). A test / switch is the chip state only
+     * when it is for the saved receiver (or none is saved) and that receiver is not streaming (Retry, the automatic
+     * reconnect, a first connect); a test of ANOTHER receiver is shown by [attemptLine] instead.
+     */
     fun connection(s: ReceiverSelectionState, external: Boolean = s.selectedSource == LocationSourceType.EXTERNAL): CardConnection {
-        when (s.attempt) {
-            is ConnectionAttempt.Testing -> return CardConnection.Testing
-            is ConnectionAttempt.Switching -> return CardConnection.Connecting
-            else -> Unit
+        val active = activeLink(s, external)
+        if (external && attemptOwnsChip(s, active)) {
+            when (s.attempt) {
+                is ConnectionAttempt.Testing -> return CardConnection.Testing
+                is ConnectionAttempt.Switching -> return CardConnection.Connecting
+                else -> Unit
+            }
         }
+        return active
+    }
+
+    /** What is actually streaming (or why not), ignoring a test in progress. */
+    fun activeLink(s: ReceiverSelectionState, external: Boolean = s.selectedSource == LocationSourceType.EXTERNAL): CardConnection {
         if (!external) return CardConnection.DeviceGnss
         val failed = s.attempt as? ConnectionAttempt.Failed
         if (s.activeProvider != ProviderChoice.EXTERNAL_TCP) {
@@ -150,6 +182,32 @@ object ReceiverCardPresenter {
             ConnectionState.CONNECTING -> CardConnection.Connecting
             ConnectionState.RECONNECTING -> CardConnection.Reconnecting
             else -> CardConnection.Unavailable
+        }
+    }
+
+    private fun attemptTarget(a: ConnectionAttempt): ReceiverTarget? = when (a) {
+        is ConnectionAttempt.Testing -> a.target
+        is ConnectionAttempt.Switching -> a.target
+        else -> null
+    }
+
+    private fun isStreaming(c: CardConnection) =
+        c == CardConnection.DeviceGnss || c == CardConnection.Connected || c == CardConnection.Reconnecting
+
+    private fun attemptOwnsChip(s: ReceiverSelectionState, active: CardConnection): Boolean {
+        val target = attemptTarget(s.attempt) ?: return false
+        return !isStreaming(active) && (s.savedTarget == null || target == s.savedTarget)
+    }
+
+    /** The separate attempt line (M3), or null when the attempt is the chip state or there is none. */
+    private fun attemptLine(s: ReceiverSelectionState, external: Boolean, connection: CardConnection, streaming: Boolean): CardAttempt? {
+        val ownsChip = external && attemptOwnsChip(s, activeLink(s, external))
+        return when (val a = s.attempt) {
+            is ConnectionAttempt.Testing -> if (ownsChip) null else CardAttempt.Testing(a.target)
+            is ConnectionAttempt.Switching -> if (ownsChip) null else CardAttempt.Connecting(a.target)
+            is ConnectionAttempt.Failed ->
+                if (connection is CardConnection.Failed) null else CardAttempt.Failed(a.target, a.error, keepsCurrent = streaming)
+            else -> null
         }
     }
 

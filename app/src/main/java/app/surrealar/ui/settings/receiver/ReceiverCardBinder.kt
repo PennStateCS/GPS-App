@@ -10,10 +10,15 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
 
 /**
- * Binds a [ReceiverCardModel] to `view_receiver_card.xml`. Colours come from theme roles only (light/dark); the
- * connection state is announced for accessibility when it changes (not on the first bind).
+ * Binds a [ReceiverCardModel] to `view_receiver_card.xml`. Colours come from theme roles only (light/dark). Only end
+ * states (Connected / Active / Failed / Unavailable) are announced for accessibility, once each: never the first bind,
+ * Testing / Connecting / Reconnecting, nor a Reconnecting -> Connected flap back to the state last announced.
  */
-class ReceiverCardBinder(private val root: View) {
+class ReceiverCardBinder(
+    private val root: View,
+    /** Test seam: speaks an announcement (default: View.announceForAccessibility). */
+    private val announce: (String) -> Unit = { root.announceForAccessibility(it) },
+) {
     private val ctx = root.context
     val source: TextView = root.findViewById(R.id.text_receiver_source)
     val name: TextView = root.findViewById(R.id.text_receiver_name)
@@ -25,6 +30,7 @@ class ReceiverCardBinder(private val root: View) {
     val fixChip: Chip = root.findViewById(R.id.chip_receiver_fix)
     val satsChip: Chip = root.findViewById(R.id.chip_receiver_sats)
     val batteryChip: Chip = root.findViewById(R.id.chip_receiver_battery)
+    val attempt: TextView = root.findViewById(R.id.text_receiver_attempt)
     val failure: TextView = root.findViewById(R.id.text_receiver_failure)
     val mismatchGroup: View = root.findViewById(R.id.group_receiver_mismatch)
     val mismatchText: TextView = root.findViewById(R.id.text_receiver_mismatch)
@@ -34,7 +40,9 @@ class ReceiverCardBinder(private val root: View) {
     val details: MaterialButton = root.findViewById(R.id.btn_receiver_details)
     val retry: MaterialButton = root.findViewById(R.id.btn_retry_receiver)
 
-    private var lastStateText: String? = null
+    private var bound = false
+    /** The end state last announced (or shown on the first bind). */
+    private var lastEndState: CardConnection? = null
 
     fun bind(m: ReceiverCardModel) {
         source.setText(if (m.external) R.string.receiver_source_external else R.string.receiver_source_tablet)
@@ -71,10 +79,11 @@ class ReceiverCardBinder(private val root: View) {
                 com.google.android.material.R.attr.colorErrorContainer to com.google.android.material.R.attr.colorOnErrorContainer
         }
         tint(stateChip, bg, fg)
-        if (lastStateText != null && lastStateText != stateText) {
-            root.announceForAccessibility(ctx.getString(R.string.receiver_announce, stateText))
+        if (isEndState(m.connection)) {
+            if (bound && shouldAnnounce(lastEndState, m.connection)) announce(ctx.getString(R.string.receiver_announce, stateText))
+            lastEndState = m.connection
         }
-        lastStateText = stateText
+        bound = true
 
         // Fix + satellites.
         val fixText = m.fix?.let { fixLabel(it) } ?: ctx.getString(R.string.receiver_fix_waiting)
@@ -104,10 +113,20 @@ class ReceiverCardBinder(private val root: View) {
                 if (low) com.google.android.material.R.attr.colorOnErrorContainer else com.google.android.material.R.attr.colorOnSurfaceVariant)
         }
 
-        // A failed switch to another receiver: inline note (the current receiver keeps running).
+        // A test / switch of another receiver: its own line (the chips keep showing the active source).
+        val line = m.attemptLine
+        attempt.isVisible = line is CardAttempt.Testing || line is CardAttempt.Connecting
+        when (line) {
+            is CardAttempt.Testing -> attempt.text = ctx.getString(R.string.receiver_attempt_testing, line.target.toString())
+            is CardAttempt.Connecting -> attempt.text = ctx.getString(R.string.receiver_attempt_connecting, line.target.toString())
+            else -> Unit
+        }
+        // A failed switch to another receiver: inline note (the current source keeps running).
         val f = m.failedSwitch
         failure.isVisible = f != null
-        if (f != null) failure.text = ctx.getString(R.string.receiver_switch_failed, f.target.toString(), f.error.message)
+        if (f != null) failure.text = if (f.keepsCurrent) ctx.getString(R.string.receiver_switch_failed_still_using,
+            f.target.toString(), ReceiverUi.shortReason(ctx, f.error), currentSourceName(m))
+        else ctx.getString(R.string.receiver_switch_failed, f.target.toString(), f.error.message)
         if (m.connection is CardConnection.Failed) {
             failure.isVisible = true
             failure.text = m.connection.error.message
@@ -126,6 +145,14 @@ class ReceiverCardBinder(private val root: View) {
     }
 
     fun stateText(c: CardConnection): String = stateTextOf(ctx, c)
+
+    /** "Still using ...": the receiver's name (or host:port), or tablet GNSS. */
+    private fun currentSourceName(m: ReceiverCardModel): String = when {
+        !m.external -> ctx.getString(R.string.receiver_source_tablet)
+        m.receiverName != null && m.target != null && m.receiverName == m.target.host -> m.target.toString()
+        m.receiverName != null -> m.receiverName
+        else -> ctx.getString(R.string.receiver_source_external)
+    }
 
     fun originLabel(o: ValueOrigin): String = ctx.getString(when (o) {
         ValueOrigin.REPORTED -> R.string.receiver_origin_reported
@@ -150,6 +177,16 @@ class ReceiverCardBinder(private val root: View) {
     }
 
     companion object {
+        /** States the user waits for (announced); Testing / Connecting / Reconnecting are transient. */
+        fun isEndState(c: CardConnection): Boolean = when (c) {
+            CardConnection.Connected, CardConnection.DeviceGnss, CardConnection.Unavailable, is CardConnection.Failed -> true
+            CardConnection.Testing, CardConnection.Connecting, CardConnection.Reconnecting -> false
+        }
+
+        /** Announce [current] only when it is an end state other than the one last announced. */
+        fun shouldAnnounce(lastEnd: CardConnection?, current: CardConnection): Boolean =
+            isEndState(current) && current != lastEnd
+
         fun stateTextOf(ctx: android.content.Context, c: CardConnection): String = when (c) {
             CardConnection.DeviceGnss -> ctx.getString(R.string.receiver_state_device)
             CardConnection.Testing -> ctx.getString(R.string.receiver_state_testing)

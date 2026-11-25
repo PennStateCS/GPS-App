@@ -364,6 +364,9 @@
     <string name="receiver_details">Receiver details</string>
     <string name="receiver_retry">Retry</string>
     <string name="receiver_switch_failed">Couldn\'t switch to %1$s. %2$s Nothing was changed.</string>
+    <string name="receiver_switch_failed_still_using">Couldn\'t switch to %1$s: %2$s. Still using %3$s.</string>
+    <string name="receiver_attempt_testing">Testing %1$s…</string>
+    <string name="receiver_attempt_connecting">Connecting to %1$s…</string>
     <string name="receiver_capture_confirm_title">Stop the current capture?</string>
     <string name="receiver_capture_confirm_message">Switching receivers stops the current capture. Switch?</string>
     <string name="receiver_capture_confirm_switch">Switch</string>
@@ -456,5 +459,25 @@
     <string name="details_copied">Summary copied (no addresses included).</string>
     <string name="details_address_copied">Receiver address copied.</string>
     <string name="details_diagnostics_unavailable">Diagnostics page is not available.</string>
+    <string name="details_fix_quality">Fix quality</string>
+    <string name="details_fix_quality_age">%1$s, corrections %2$.1f s old</string>
+    <string name="details_section_vendor">Receiver-reported details</string>
+    <string name="details_section_expand_cd">%1$s, collapsed. Double-tap to show.</string>
+    <string name="details_section_collapse_cd">%1$s, expanded. Double-tap to hide.</string>
+    <string name="details_uptime">Uptime</string>
+    <string name="details_temperature">Temperature</string>
+    <string name="details_temperature_value">%1$.1f °C</string>
+    <string name="details_voltage">Battery voltage</string>
+    <string name="details_voltage_value">%1$.2f V</string>
+    <string name="details_current">Battery current</string>
+    <string name="details_current_value">%1$.2f A</string>
+    <string name="details_charger">Charger</string>
+    <string name="details_storage">Storage</string>
+    <string name="details_storage_value">%1$d of %2$d MB used (%3$d MB free)</string>
+    <string name="details_vendor_none">Device details</string>
+    <string name="details_disconnect_confirm_title">Disconnect receiver?</string>
+    <string name="details_disconnect_confirm_message">Tablet GNSS becomes the location source and the saved receiver address and port are removed. The receiver stays under Previously connected.</string>
+    <string name="details_disconnect_confirm_capture_message">Disconnecting stops the current capture. Tablet GNSS becomes the location source and the saved receiver address and port are removed. The receiver stays under Previously connected.</string>
+    <string name="details_disconnect_confirm">Disconnect</string>
     <string name="details_tilt_setting_hint">Change it below the receiver card (Tilt and antenna setup).</string>
 </resources>
