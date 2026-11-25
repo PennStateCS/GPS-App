@@ -133,8 +133,14 @@ class CoordinateSystemService @Inject constructor(
     /** The saved SPCS2022 zone: never parses the catalog on the main thread (loads synchronously elsewhere). */
     private fun lookupSpcs2022Zone(id: String): Spcs2022ZoneLookup {
         if (!spcs2022Ready && android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return Spcs2022ZoneLookup.Loading
-        spcs2022Ready = true
-        return Nsrs2022Registries.spcs2022Zone(id)?.let { Spcs2022ZoneLookup.Found(it) } ?: Spcs2022ZoneLookup.Unknown
+        // Look up (this parses the catalog the first time) BEFORE marking ready, and announce it, so a main-thread
+        // call during the parse still gets Loading and screens showing "loading" refresh (review M1).
+        val result = Nsrs2022Registries.spcs2022Zone(id)?.let { Spcs2022ZoneLookup.Found(it) } ?: Spcs2022ZoneLookup.Unknown
+        if (!spcs2022Ready) {
+            spcs2022Ready = true
+            spcs2022Events.value = spcs2022Events.value + 1
+        }
+        return result
     }
 
     // Preview OFF: geokit's default frame registry exactly as before; preview ON: the NSRS 2022 beta registry.

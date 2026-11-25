@@ -386,7 +386,7 @@ class CoordinateConverter(
      */
     fun elevation(src: SourcePosition, settings: CoordinateSystemSettings, p: ConvertedPosition = convert(src, settings)): ElevationDetail {
         val s = settings.forConversion()
-        val unit = s.unit
+        val unit = p.unit   // the output unit (SPCS2022 shows US survey feet as international feet), not the setting
         fun u(m: Double?) = m?.let { unit.fromMeters(it) }
         val geoSrc = src.toGeoSource()
         val common = ElevationDetail(

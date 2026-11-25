@@ -222,6 +222,9 @@ class Nsrs2022OutputTest {
         // The height follows the same unit (receiver H in ift, from the legacy ftUS value).
         assertEquals(m.height!! / 0.3048, us.height!!, 1e-9)
         assertTrue(Nsrs2022OutputNotes.horizontalNote(spcs("421003", LinearUnit.US_SURVEY_FEET), zone("421003"))!!.contains("US survey foot"))
+        // The Elevation block uses the OUTPUT unit too (review M2: it was labelled ftUS while showing ift).
+        val e = converter.elevation(s, spcs("421003", LinearUnit.US_SURVEY_FEET))
+        assertEquals(LinearUnit.INTERNATIONAL_FEET, e.unit)
     }
 
     @Test fun `SPCS2022 summary names the zone, frame and epoch, beta datasets, and heights stay separate`() {

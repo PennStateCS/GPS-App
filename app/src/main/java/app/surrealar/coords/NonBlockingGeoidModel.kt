@@ -66,12 +66,16 @@ internal class NonBlockingGeoidModel(
     fun requestLoad() {
         if (!loading.compareAndSet(false, true)) return
         try {
+            val before = delegate.availability
             loadInBackground(Runnable {
                 try {
                     delegate.undulation(warmUpLat, warmUpLon)
                 } finally {
                     loading.set(false)
-                    onLoadFinished()
+                    // Notify only when the attempt changed something (e.g. NOT_LOADED → AVAILABLE, or → FAILED
+                    // once). A retry that fails again must not re-render screens, which would look up on the
+                    // main thread, request another load, and loop (review H1).
+                    if (delegate.availability != before) onLoadFinished()
                 }
             })
         } catch (e: RuntimeException) {

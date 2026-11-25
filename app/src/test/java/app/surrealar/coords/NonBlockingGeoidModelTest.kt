@@ -129,6 +129,24 @@ class NonBlockingGeoidModelTest {
         assertTrue(signalled.undulation(41.3477, -76.0226) is GeoidResult.Value)
     }
 
+    @Test fun `a load that keeps failing signals once, never on every retry (no refresh loop)`() {
+        // Review H1: each failed retry used to signal, re-rendering screens that then requested another load.
+        failLoad = true
+        var finished = 0
+        val signalled = NonBlockingGeoidModel(raw, isMainThread = { onMain }, loadInBackground = { queued += it },
+            onLoadFinished = { finished++ })
+        signalled.undulation(40.0, -77.0)          // NOT_LOADED -> background attempt
+        onMain = false; runQueued(); onMain = true
+        assertEquals(GeoidAvailability.FAILED, signalled.availability)
+        assertEquals("NOT_LOADED -> FAILED is a change: one signal", 1, finished)
+        repeat(5) {
+            // A re-render on the main thread sees FAILED and requests a retry; the retry fails again.
+            assertTrue(signalled.undulation(40.0, -77.0) is GeoidResult.Unavailable)
+            onMain = false; runQueued(); onMain = true
+        }
+        assertEquals("FAILED -> FAILED retries stay quiet", 1, finished)
+    }
+
     @Test fun `AppGeoidModels loadEvents advances when a model is warmed up`() {
         val before = AppGeoidModels.loadEvents.value
         AppGeoidModels.warmUp(GeoidModelId.EGM96)
