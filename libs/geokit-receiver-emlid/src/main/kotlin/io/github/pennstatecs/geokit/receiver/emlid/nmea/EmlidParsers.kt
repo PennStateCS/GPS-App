@@ -29,9 +29,11 @@ public class EbpParser : SentenceParser<EBP> {
 }
 
 /**
- * Parses Emlid-specific `$..ETC` sentences. Tolerant by design: it captures the UTC time and the raw
- * data fields WITHOUT interpreting their semantics (the layout is undocumented — see [ETC]). ETC is
- * diagnostics-only and never modifies coordinates, the live fix, or AR orientation.
+ * Parses Emlid-specific `$..ETC` (tilt compensation data) sentences. The checksum is checked by the
+ * registry like any sentence. The parser keeps the time and the raw data fields and decodes them per the
+ * documented layout into [ETC.decoded]; it never throws and never rejects a sentence for its content
+ * (a malformed ETC is still counted for diagnostics and reads as unknown). ETC never modifies
+ * coordinates, the live fix, or AR orientation.
  */
 public class EtcParser : SentenceParser<ETC> {
     override val tag: String = EmlidNmea.TAG_ETC
