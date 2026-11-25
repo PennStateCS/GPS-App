@@ -19,6 +19,8 @@ interface ReportSources {
     fun arSession(): String
     suspend fun mapDiagnostics(): String
     suspend fun nmeaStream(): String
+    /** survey-context.txt (Phase 4 WP C): receiver, frames, tilt, antenna, interruptions, coordinate systems. */
+    suspend fun surveyContext(): String = "=== Survey context ===\n(not collected)\n"
 
     fun liveState(): LiveState
     /** Saved ANR / native-crash traces (diagnostics/exits). */

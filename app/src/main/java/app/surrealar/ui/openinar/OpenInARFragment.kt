@@ -81,6 +81,8 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
     @Inject lateinit var coordinateSystemService: app.surrealar.coords.CoordinateSystemService
     /** Process-lifetime scope (Hilt singleton); used to close the ARCore session off the main thread. */
     @Inject lateinit var appScope: kotlinx.coroutines.CoroutineScope
+    /** RS4 / RS4 Pro tilt status: pole-tip heights must not feed the antenna-to-camera comparison (Phase 4 WP C). */
+    @Inject lateinit var tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor
 
     /** Read-only access to the selected GNSS source and mock-location setting for AR diagnostics. */
     @Inject
@@ -2810,7 +2812,10 @@ class OpenInARFragment : Fragment(), GLSurfaceView.Renderer {
         }
         val arVsGnss = if (needArVsGnss && camGeo != null && feedFix != null) ArVsGnss.compute(
             arLat = camGeo.latitude, arLon = camGeo.longitude, arAlt = camGeo.altitude,
-            gnssLat = feedFix.latDeg, gnssLon = feedFix.lonDeg, gnssEllipsoidalM = fixEllipsoidalAltM(feedFix),
+            gnssLat = feedFix.latDeg, gnssLon = feedFix.lonDeg,
+            // A receiver-compensated pole-tip height is not the antenna's: no vertical comparison then.
+            gnssEllipsoidalM = if (feedFix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL &&
+                tiltMonitor.heightsMayBePoleTip()) null else fixEllipsoidalAltM(feedFix),
             // The antenna offset is the external receiver's; an internal-GNSS fix is the tablet itself.
             antennaAboveCameraM = if (feedFix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL) arAntennaAboveCameraM else 0.0,
             arHAccM = qHAcc, arYawAccDeg = qYaw, farthestModelM = farthestModelM, speedMps = feedFix.speedMps,

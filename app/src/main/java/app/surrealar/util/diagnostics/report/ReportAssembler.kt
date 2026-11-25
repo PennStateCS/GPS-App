@@ -131,6 +131,7 @@ object ReportAssembler {
             run.textEntry("ar-session-summary.txt") { src.arSession() },
             run.textEntry("map-diagnostics.txt") { src.mapDiagnostics() },
             run.textEntry("nmea-stream-diagnostics.txt") { src.nmeaStream() },
+            run.textEntry("survey-context.txt") { src.surveyContext() },
         )
         val firstLook = live.fold(
             onSuccess = { l -> ReportFailures.catching { FirstLookCollector.render(src.reportId, idx, l) } },

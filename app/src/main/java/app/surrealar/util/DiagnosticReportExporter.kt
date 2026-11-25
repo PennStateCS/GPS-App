@@ -173,6 +173,7 @@ object DiagnosticReportExporter {
             ?: "No AR session has been recorded yet.\n"
         override suspend fun mapDiagnostics() = app.surrealar.util.diagnostics.MapDiagnosticCollector.collect(context)
         override suspend fun nmeaStream() = app.surrealar.util.diagnostics.NmeaStreamDiagnosticsCollector.collect(context)
+        override suspend fun surveyContext() = app.surrealar.util.diagnostics.SurveyContextGatherer.collect(context)
         override fun liveState(): app.surrealar.util.diagnostics.report.LiveState {
             val g = app.surrealar.util.diagnostics.GnssFeedLogger.instance
             return app.surrealar.util.diagnostics.report.LiveState(

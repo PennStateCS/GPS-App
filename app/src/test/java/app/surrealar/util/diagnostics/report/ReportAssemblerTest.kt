@@ -25,7 +25,7 @@ class ReportAssemblerTest {
             "exits/20261121-133000-ANR.txt", "device-health.txt", "captures.txt", "gnss-stats.txt", "data-health.txt",
             "settings-snapshot.txt", "permissions-status.txt", "app-state-summary.txt",
             "coordinates.txt", "model-integrity.txt", "ar-session-summary.txt", "map-diagnostics.txt",
-            "nmea-stream-diagnostics.txt", "app-log-current.txt", "app-errors-current.txt",
+            "nmea-stream-diagnostics.txt", "survey-context.txt", "app-log-current.txt", "app-errors-current.txt",
             "diagnostic-summary.txt", "export-health.txt", "manifest.txt",
         )
         assertEquals(expected, names(zip))
@@ -65,6 +65,6 @@ class ReportAssemblerTest {
         ReportAssembler.write(zip, src, flush = { true })
         val text = ZipFile(zip).use { z -> z.getInputStream(z.getEntry("model-integrity.txt")).reader().readText() }
         assertEquals("Section failed to generate: IllegalStateException: db closed\n", text)
-        assertEquals(23, names(zip).size)
+        assertEquals(24, names(zip).size)   // + survey-context.txt (Phase 4 WP C)
     }
 }

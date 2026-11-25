@@ -25,6 +25,7 @@ object ReadmeCollector {
         "ar-session-summary.txt" to "the most recent AR session's tallies",
         "map-diagnostics.txt" to "map renderer, key and tile status",
         "nmea-stream-diagnostics.txt" to "NMEA timing and sentence counts (no raw NMEA)",
+        "survey-context.txt" to "receiver, frame and tilt settings, latest fix quality, position reference, capture interruptions, coordinate systems and geoid status (no coordinates)",
         "app-log-*.txt" to "the event log (current, then rotated 1..4)",
         "app-errors-*.txt" to "errors and crashes only (kept longer than the event log)",
         "ar-track*.csv" to "debug builds: ARCore camera pose next to each GNSS fix while AR is open (metres from each session's first fix; no coordinates)",
