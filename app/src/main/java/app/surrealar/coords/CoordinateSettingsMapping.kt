@@ -34,21 +34,31 @@ fun OutputDatum.toGeodeticDatum(): GeodeticDatum = when (this) {
  * The geokit vertical reference the engine computes. For the global-model heights ([globalGeoidModel]
  * non-null) the engine is not asked for a height at all: [CoordinateConverter] computes
  * H = h − N(model) itself from the WGS84 (ITRF2014) ellipsoidal height, so this returns ELLIPSOIDAL only
- * as a placeholder that is always replaced (never a second geoid correction).
+ * as a placeholder that is always replaced (never a second geoid correction). The same holds for GEOID2022
+ * (beta): H = h(ITRF2020) − N(GEOID2022), computed by the adapter.
  */
 fun VerticalReference.toGeoVerticalReference(): GeoVerticalReference = when (this) {
     VerticalReference.ELLIPSOIDAL -> GeoVerticalReference.ELLIPSOIDAL
     VerticalReference.NAVD88_GEOID18 -> GeoVerticalReference.GEOID18_ORTHOMETRIC
     VerticalReference.RECEIVER_MSL -> GeoVerticalReference.RECEIVER_MSL
-    VerticalReference.EGM2008, VerticalReference.EGM96 -> GeoVerticalReference.ELLIPSOIDAL
+    VerticalReference.EGM2008, VerticalReference.EGM96, VerticalReference.GEOID2022 -> GeoVerticalReference.ELLIPSOIDAL
 }
 
 /** The global geoid model of an orthometric-height choice (EGM2008 / EGM96), null for the others. */
 fun VerticalReference.globalGeoidModel(): GeoidModelId? = when (this) {
     VerticalReference.EGM2008 -> GeoidModelId.EGM2008
     VerticalReference.EGM96 -> GeoidModelId.EGM96
-    VerticalReference.ELLIPSOIDAL, VerticalReference.NAVD88_GEOID18, VerticalReference.RECEIVER_MSL -> null
+    VerticalReference.ELLIPSOIDAL, VerticalReference.NAVD88_GEOID18, VerticalReference.RECEIVER_MSL,
+    VerticalReference.GEOID2022 -> null
 }
+
+/**
+ * The app-held geoid model whose data a height choice needs opened in the background: EGM2008 / EGM96
+ * ([globalGeoidModel]) or GEOID2022 (beta, time-dependent; computed by [CoordinateConverter] in ITRF2020);
+ * null for the others (GEOID18 is loaded by [CoordinateSystemService] itself).
+ */
+fun VerticalReference.appGeoidModel(): GeoidModelId? =
+    globalGeoidModel() ?: if (this == VerticalReference.GEOID2022) GeoidModelId.GEOID2022 else null
 
 /**
  * The horizontal system to convert into. State Plane uses the saved zone, or Pennsylvania North

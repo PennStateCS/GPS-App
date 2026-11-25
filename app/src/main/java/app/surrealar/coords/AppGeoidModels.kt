@@ -1,5 +1,6 @@
 package app.surrealar.coords
 
+import io.github.pennstatecs.geokit.geoid.Geoid2022Model
 import io.github.pennstatecs.geokit.geoid.GeoidAvailability
 import io.github.pennstatecs.geokit.geoid.GeoidModel
 import io.github.pennstatecs.geokit.geoid.GeoidModelId
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
  * process (each has its own tile cache), created lazily so nothing is read unless an EGM height is chosen.
  *
  * GEOID18 is not here: [CoordinateSystemService] keeps loading the GEOID18 grid itself, unchanged.
+ * GEOID2022 (NGS beta, Phase 3 preview) is here as [geoid2022] (time-dependent, ITRF2020-based).
  *
  * Data loads on the first lookup (blocking I/O: the bundled packs are read and SHA-256-verified). The
  * service calls [warmUp] on a background dispatcher when an EGM height is selected (at app start or
@@ -56,8 +58,22 @@ object AppGeoidModels {
     private val egm96NonBlocking: GeoidModel by lazy { nonBlocking(GeoidModelId.EGM96, egm96) }
 
     /**
+     * GEOID2022 (NGS beta beta_v0a, bundled US-region packs), used only for the beta-preview height
+     * "H (NAPGD2022, GEOID2022 beta)". Created on first use, so nothing is read unless that height is chosen.
+     */
+    val geoid2022Model: Geoid2022Model by lazy { Geoid2022Model.bundled() }
+    private val geoid2022NonBlocking: NonBlockingGeoidModel by lazy { nonBlocking(GeoidModelId.GEOID2022, geoid2022Model) }
+
+    /**
+     * GEOID2022 as a time-dependent lookup for any thread: like [model], it never loads on the main thread
+     * (DATA_LOADING there until the background load finished).
+     */
+    val geoid2022: TimeDependentGeoid by lazy { Geoid2022TimeDependent(geoid2022Model) { geoid2022NonBlocking.guarded(it) } }
+
+    /**
      * The shared instance of a global model for lookups from any thread (never loads on the main thread,
-     * see [NonBlockingGeoidModel]); null for GEOID18 (handled by the conversion engine).
+     * see [NonBlockingGeoidModel]); null for GEOID18 (handled by the conversion engine) and GEOID2022
+     * (time-dependent and ITRF2020-based: only through [geoid2022], never as a static global model).
      */
     fun model(id: GeoidModelId): GeoidModel? = when (id) {
         GeoidModelId.EGM2008 -> egm2008NonBlocking
@@ -69,7 +85,8 @@ object AppGeoidModels {
     private fun rawModel(id: GeoidModelId): GeoidModel? = when (id) {
         GeoidModelId.EGM2008 -> egm2008
         GeoidModelId.EGM96 -> egm96
-        GeoidModelId.GEOID18, GeoidModelId.GEOID2022 -> null
+        GeoidModelId.GEOID2022 -> geoid2022Model
+        GeoidModelId.GEOID18 -> null
     }
 
     /** A position inside the bundled EGM2008 CONUS tiles (and EGM96's global grid) used to open the data. */
@@ -91,9 +108,12 @@ object AppGeoidModels {
      * screen, preview, logs). EGM2008 is bundled for US regions only, so a missing tile says so.
      */
     fun unavailableText(id: GeoidModelId, reason: GeoidUnavailableReason): String = when (reason) {
-        GeoidUnavailableReason.TILE_NOT_AVAILABLE ->
-            if (id == GeoidModelId.EGM2008) "outside EGM2008 coverage bundled in this app (US regions)"
-            else "outside ${id.token} coverage bundled in this app"
+        GeoidUnavailableReason.TILE_NOT_AVAILABLE -> when (id) {
+            GeoidModelId.EGM2008 -> "outside EGM2008 coverage bundled in this app (US regions)"
+            GeoidModelId.GEOID2022 -> "outside GEOID2022 (beta) data bundled in this app " +
+                "(lower 48, Alaska, Hawaii, Puerto Rico / Virgin Islands, Guam / CNMI, American Samoa)"
+            else -> "outside ${id.token} coverage bundled in this app"
+        }
         GeoidUnavailableReason.OUTSIDE_COVERAGE -> "outside ${id.token} coverage"
         GeoidUnavailableReason.LOAD_FAILED -> "${id.token} data could not be loaded"
         GeoidUnavailableReason.INVALID_POSITION -> "invalid position for ${id.token}"

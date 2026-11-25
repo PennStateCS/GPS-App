@@ -37,10 +37,17 @@ internal class NonBlockingGeoidModel(
     /** True while a background load is queued or running (at most one at a time). */
     private val loading = AtomicBoolean(false)
 
-    override fun undulation(latDeg: Double, lonDeg: Double): GeoidResult {
-        if (!isMainThread()) return delegate.undulation(latDeg, lonDeg)
+    override fun undulation(latDeg: Double, lonDeg: Double): GeoidResult = guarded { delegate.undulation(latDeg, lonDeg) }
+
+    /**
+     * Runs [lookup] (a lookup on [delegate], e.g. GEOID2022's time-dependent `undulationAt`) under the same
+     * rule as [undulation]: straight through off the main thread or once the data is loaded; on the main
+     * thread before that, DATA_LOADING / LOAD_FAILED at once plus a background load.
+     */
+    fun guarded(lookup: () -> GeoidResult): GeoidResult {
+        if (!isMainThread()) return lookup()
         return when (delegate.availability) {
-            GeoidAvailability.AVAILABLE, GeoidAvailability.PARTIAL -> delegate.undulation(latDeg, lonDeg)
+            GeoidAvailability.AVAILABLE, GeoidAvailability.PARTIAL -> lookup()
             GeoidAvailability.NOT_LOADED -> {
                 requestLoad()
                 GeoidResult.Unavailable(GeoidUnavailableReason.DATA_LOADING, info.id, "${info.label} data is loading")

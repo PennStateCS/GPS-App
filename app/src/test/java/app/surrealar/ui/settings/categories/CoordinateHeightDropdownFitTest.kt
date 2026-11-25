@@ -39,6 +39,8 @@ class CoordinateHeightDropdownFitTest {
         val widthPx = (1480 * ctx.resources.displayMetrics.density).toInt()
         // Phase 2 labels are part of the sweep (entries), named here so dropping one fails loudly.
         assertTrue(VerticalReference.entries.containsAll(listOf(VerticalReference.EGM2008, VerticalReference.EGM96)))
+        // Phase 3 beta label (shown only with the NSRS 2022 preview on) is part of the sweep too.
+        assertTrue(VerticalReference.entries.contains(VerticalReference.GEOID2022))
         for (v in VerticalReference.entries) {
             field.setText(v.label, false)
             root.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),

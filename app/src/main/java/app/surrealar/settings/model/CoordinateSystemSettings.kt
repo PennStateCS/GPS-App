@@ -1,5 +1,7 @@
 package app.surrealar.settings.model
 
+import io.github.pennstatecs.geokit.status.ProductStatus
+
 /**
  * How coordinates are EXPRESSED (display and export). Stored coordinates are never changed: points
  * keep the receiver's latitude/longitude/ellipsoidal height plus the datum they were measured in
@@ -25,7 +27,33 @@ data class CoordinateSystemSettings(
      * Internal device GNSS is always WGS84/ITRF.
      */
     val externalReceiverDatum: ReceiverDatum = ReceiverDatum.ITRF2014,
+    /**
+     * "Modernized NSRS 2022 (beta preview)" (Phase 3), default OFF. When ON, the beta options appear
+     * (today: [VerticalReference.GEOID2022]); when OFF the app behaves exactly as before. NGS beta
+     * products are preliminary and never authoritative, so nothing beta is ever a default.
+     */
+    val nsrs2022Preview: Boolean = false,
 ) {
+    /**
+     * The height reference actually used for display and export. A beta choice saved while the preview
+     * is OFF is not used (the stored value is kept, never rewritten): the existing default
+     * ([VerticalReference.RECEIVER_MSL]) is shown instead, with a note ([betaVerticalSuspended]).
+     */
+    val effectiveVertical: VerticalReference
+        get() = if (vertical.isBeta && !nsrs2022Preview) VerticalReference.RECEIVER_MSL else vertical
+
+    /** True when the saved height reference is a beta option that is not used because the preview is OFF. */
+    val betaVerticalSuspended: Boolean
+        get() = vertical.isBeta && !nsrs2022Preview
+
+    /** These settings as used for conversions: [vertical] replaced by [effectiveVertical]. */
+    fun forConversion(): CoordinateSystemSettings =
+        if (betaVerticalSuspended) copy(vertical = effectiveVertical) else this
+
+    /** Height references offered in the dropdown: beta ones only with the preview ON. */
+    val selectableVerticals: List<VerticalReference>
+        get() = VerticalReference.entries.filter { nsrs2022Preview || !it.isBeta }
+
     /** Datum the horizontal output is expressed in (State Plane forces NAD83(2011)). */
     val effectiveDatum: OutputDatum
         get() = if (horizontal.isStatePlane) OutputDatum.NAD83_2011 else datum
@@ -91,7 +119,17 @@ enum class LinearUnit(val prefKey: String, val label: String, val metersPerUnit:
  * labelled "model unknown" (the constant name and prefKey keep the historical "MSL" wording because
  * they are persisted). Live heights are at the antenna phase centre; saved points are at the mark.
  */
-enum class VerticalReference(val prefKey: String, val label: String, val shortLabel: String) {
+enum class VerticalReference(
+    val prefKey: String,
+    val label: String,
+    val shortLabel: String,
+    /**
+     * How far the option can be trusted (geokit [ProductStatus]): [ProductStatus.VERIFIED_BETA] options are
+     * offered only with the NSRS 2022 beta preview ON and are always labelled beta. Nothing
+     * [ProductStatus.UNAVAILABLE] is ever an entry here.
+     */
+    val status: ProductStatus = ProductStatus.VERIFIED_LEGACY,
+) {
     ELLIPSOIDAL("ellipsoidal", "Ellipsoidal height (h)", "h"),
     NAVD88_GEOID18("navd88_geoid18", "Orthometric height H (NAVD88, GEOID18)", "H GEOID18"),
     RECEIVER_MSL("receiver_msl", "Orthometric height H (receiver geoid, model unknown)", "H rcvr"),
@@ -103,7 +141,20 @@ enum class VerticalReference(val prefKey: String, val label: String, val shortLa
     EGM2008("egm2008", "Orthometric height H (EGM2008)", "H EGM2008"),
 
     /** H = h − N(EGM96): the coarse global model, offered only as an explicitly labelled fallback. */
-    EGM96("egm96", "Orthometric height H (EGM96, fallback)", "H EGM96");
+    EGM96("egm96", "Orthometric height H (EGM96, fallback)", "H EGM96"),
+
+    /**
+     * BETA (Phase 3, NSRS 2022 preview only): H = h(ITRF2020) − N(GEOID2022), NAPGD2022. The position and
+     * ellipsoidal height are first transformed to ITRF2020 at the coordinate epoch through geokit's verified
+     * frame registry; N is NGS's time-dependent GEOID2022 (SGEOID2022 + DGEOID2022·Δt) at that same epoch.
+     * NGS dataset beta_v0a: preliminary, never a default, not for authoritative survey results. Outside
+     * the bundled GEOID2022 data the height is unavailable (never another model).
+     */
+    GEOID2022("geoid2022_beta", "Orthometric height H (NAPGD2022, GEOID2022 beta)", "H GEOID2022 beta",
+        ProductStatus.VERIFIED_BETA);
+
+    /** True for an NGS beta option (shown only with the beta preview ON). */
+    val isBeta: Boolean get() = status == ProductStatus.VERIFIED_BETA
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: RECEIVER_MSL }
 }

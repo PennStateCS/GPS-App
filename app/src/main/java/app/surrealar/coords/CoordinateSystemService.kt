@@ -71,7 +71,8 @@ class CoordinateSystemService @Inject constructor(
         // loading" (they never load on the UI thread); background lookups load synchronously. A model is
         // marked opened only when its data loaded, so a failed open is tried again on the next selection.
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            settingsFlow.map { it.vertical.globalGeoidModel() }.distinctUntilChanged().collect { id ->
+            // GEOID2022 (beta) only when the preview is ON (effectiveVertical): nothing beta loads otherwise.
+            settingsFlow.map { it.effectiveVertical.appGeoidModel() }.distinctUntilChanged().collect { id ->
                 if (id == null) return@collect
                 val t0 = System.nanoTime()
                 val r = warmUps.warmUp(id) ?: return@collect
@@ -122,7 +123,7 @@ class CoordinateSystemService @Inject constructor(
     private fun track(src: SourcePosition, s: CoordinateSystemSettings, live: Boolean = false): ConvertedPosition =
         try {
             // geoidLoaded concerns the background GEOID18 grid only; EGM models load on demand.
-            converter.convert(src, s).also { CoordDiagnostics.onResult(it, live, geoidLoaded || s.vertical.globalGeoidModel() != null) }
+            converter.convert(src, s).also { CoordDiagnostics.onResult(it, live, geoidLoaded || s.effectiveVertical.appGeoidModel() != null) }
         } catch (e: Exception) {
             CoordDiagnostics.onFailure(s, e); throw e
         }
@@ -176,9 +177,11 @@ class CoordinateSystemService @Inject constructor(
  * other conversion keeps the capture time exactly as before, so existing outputs are unchanged (for
  * points captured since v14 the two are the same number anyway). A recorded epoch that is not a finite
  * decimal year in 1980..2100 ([validCoordinateEpochOrNull]) counts as unknown: the capture time is used.
+ * GEOID2022 (beta) heights use the coordinate epoch the same way (ITRF2020 position and N at that epoch).
  */
 internal fun storedEpochYear(c: Coordinate, s: CoordinateSystemSettings): Double =
-    (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020 || StoredDatum.isItrf2020(c.crsEpsg))
+    (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020 || StoredDatum.isItrf2020(c.crsEpsg) ||
+        s.effectiveVertical == app.surrealar.settings.model.VerticalReference.GEOID2022)
         app.surrealar.domain.model.validCoordinateEpochOrNull(c.coordinateEpoch) else null)
         ?: Itrf2014ToNad83.decimalYear(c.timestamp)
 

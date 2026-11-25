@@ -10,7 +10,11 @@ import io.github.pennstatecs.geokit.convert.TargetSystem
 import io.github.pennstatecs.geokit.geoid.GeoidModel
 import io.github.pennstatecs.geokit.geoid.GeoidModelId
 import io.github.pennstatecs.geokit.geoid.GeoidResult
+import io.github.pennstatecs.geokit.datum.CoordinateEpoch
+import io.github.pennstatecs.geokit.datum.FrameTransformationLookup
+import io.github.pennstatecs.geokit.datum.FrameTransformationRegistry
 import io.github.pennstatecs.geokit.datum.Itrf2014ToNad83
+import io.github.pennstatecs.geokit.datum.ReferenceFrame
 import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
 
 import app.surrealar.settings.model.CoordinateSystemSettings
@@ -131,6 +135,12 @@ data class ConvertedPosition(
      * position is only meaningful with it. Null for the other datums (their labels are unchanged).
      */
     val epochYear: Double? = null,
+    /**
+     * Provenance of a beta model height, null otherwise (legacy outputs unchanged). GEOID2022:
+     * "GEOID2022 (beta beta_v0a) epoch 2026.886" (model, NGS dataset version, epoch of N and of the ITRF2020
+     * position); shown after [verticalLabel] in the system summary, details and the CSV System column.
+     */
+    val heightModelNote: String? = null,
 )
 
 /**
@@ -149,13 +159,34 @@ data class ConvertedPosition(
  * The height is that one subtraction, whatever the output frame (one geoid correction per height). A
  * model without data at the point gives no height with a reason, never a value from another model.
  *
+ * GEOID2022 heights (BETA, only with the NSRS 2022 preview ON: [VerticalReference.GEOID2022]) are computed
+ * here as well, never by the engine: the source position and ellipsoidal height are transformed to ITRF2020
+ * at the source's coordinate epoch through the verified [frames] registry (identity for an ITRF2020 source),
+ * N is GEOID2022's time-dependent undulation at that ITRF2020 position and epoch (NGS: SGEOID2022 at 2020.0
+ * + DGEOID2022 * dt), and H = h(ITRF2020) - N: one subtraction. No GEOID2022 data at the point gives no
+ * height with a reason, never EGM or GEOID18. A beta height saved while the preview is OFF is not used
+ * ([CoordinateSystemSettings.forConversion]: the default receiver height is shown instead).
+ *
  * @param geoidN GEOID18 undulation at a NAD83(2011) position (unchanged path).
  * @param globalGeoid the shared EGM2008/EGM96 instances (default [AppGeoidModels]); tests inject models.
+ * @param geoid2022 the GEOID2022 (beta) lookup, resolved on first use (default [AppGeoidModels.geoid2022]).
+ * @param frames verified frame transformations for the ITRF2020 step of GEOID2022 heights.
  */
 class CoordinateConverter(
     geoidN: (latDeg: Double, lonDeg: Double) -> Double?,
     private val globalGeoid: (GeoidModelId) -> GeoidModel?,
+    geoid2022: () -> TimeDependentGeoid?,
+    private val frames: FrameTransformationRegistry,
 ) {
+    private val geoid2022Lookup: TimeDependentGeoid? by lazy(geoid2022)
+
+    /**
+     * GEOID18 lookup, injected EGM models, the shared GEOID2022 lookup and the default frame registry
+     * (the Phase 2 signature, so `CoordinateConverter(geoidN) { id -> … }` keeps compiling).
+     */
+    constructor(geoidN: (latDeg: Double, lonDeg: Double) -> Double?, globalGeoid: (GeoidModelId) -> GeoidModel?) :
+        this(geoidN, globalGeoid, { AppGeoidModels.geoid2022 }, FrameTransformationRegistry.DEFAULT)
+
 
     /**
      * GEOID18 lookup plus the shared [AppGeoidModels]. Kept as its own constructor so the existing
@@ -165,7 +196,9 @@ class CoordinateConverter(
 
     private val engine = GeoConverter(GeoidLookup { lat, lon -> geoidN(lat, lon) })
 
-    fun convert(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition {
+    fun convert(src: SourcePosition, settings: CoordinateSystemSettings): ConvertedPosition {
+        // A beta height saved while the preview is OFF is not used (identity for every other setting).
+        val s = settings.forConversion()
         val geoSrc = src.toGeoSource()
         val r = engine.convert(geoSrc, s.toOutputSystem())
         val unit = s.unit
@@ -180,6 +213,16 @@ class CoordinateConverter(
             verticalLabel = r.verticalDatumName ?: s.vertical.shortLabel,
         )
         val epoch = if (s.effectiveDatum == OutputDatum.ITRF2020) src.epochYear else null
+        if (s.vertical == VerticalReference.GEOID2022) {
+            val g = geoid2022Height(src)
+            return base.copy(
+                height = g.heightM?.let { unit.fromMeters(it) },
+                heightUnavailableReason = g.reason,
+                verticalLabel = Geoid2022Labels.VERTICAL_LABEL,
+                epochYear = epoch,
+                heightModelNote = Geoid2022Labels.note(src.epochYear),
+            )
+        }
         val model = s.vertical.globalGeoidModel()
             ?: return if (epoch == null) base else base.copy(epochYear = epoch)
         val g = globalHeight(geoSrc, model)
@@ -208,6 +251,30 @@ class CoordinateConverter(
                 GlobalHeight(n.orthometricHeightM(h), null, n.verticalDatum)
             }
             is GeoidResult.Unavailable -> GlobalHeight(null, AppGeoidModels.unavailableText(id, n.reason), label)
+        }
+    }
+
+    /**
+     * GEOID2022 (beta): H = h(ITRF2020) - N(GEOID2022) with the position and N both at the source's
+     * coordinate epoch, or the reason it is unavailable.
+     */
+    private fun geoid2022Height(src: SourcePosition): GlobalHeight {
+        val label = Geoid2022Labels.VERTICAL_LABEL
+        val h = src.ellipsoidalHeightM
+            ?: return GlobalHeight(null, HeightUnavailableReason.NO_ELLIPSOIDAL_HEIGHT.description, label)
+        val model = geoid2022Lookup ?: return GlobalHeight(null, "GEOID2022 (beta) not available in this app", label)
+        val epoch = CoordinateEpoch(src.epochYear)
+        val itrf2020 = when (val t = frames.find(src.datum.frame, ReferenceFrame.ITRF2020, epoch)) {
+            is FrameTransformationLookup.Available -> t.apply(GeodeticPosition(src.latDeg, src.lonDeg, h))
+            is FrameTransformationLookup.Unavailable ->
+                return GlobalHeight(null, "no verified transformation to ITRF2020 (${t.explanation})", label)
+        }
+        return when (val n = model.undulationAt(itrf2020.latDeg, itrf2020.lonDeg, src.epochYear)) {
+            is GeoidResult.Value -> {
+                check(n.model == GeoidModelId.GEOID2022) { "asked GEOID2022, got ${n.model.token}" }   // no substitution
+                GlobalHeight(itrf2020.heightM - n.undulationM, null, label)
+            }
+            is GeoidResult.Unavailable -> GlobalHeight(null, AppGeoidModels.unavailableText(GeoidModelId.GEOID2022, n.reason), label)
         }
     }
 
@@ -259,9 +326,13 @@ object CoordinateFormat {
         else p.datum.label
     }
 
-    /** Short system description: "NAD83(2011) · SPCS 3701 · ftUS · NAVD88" (+ an outside-zone warning). */
+    /**
+     * Short system description: "NAD83(2011) · SPCS 3701 · ftUS · NAVD88" (+ an outside-zone warning). A beta
+     * height adds its provenance after the vertical label:
+     * "WGS84 (ITRF2014) · m · NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886".
+     */
     fun systemSummary(p: ConvertedPosition): String =
-        listOfNotNull(datumLabel(p), p.zoneLabel, p.unit.suffix, p.verticalLabel,
+        listOfNotNull(datumLabel(p), p.zoneLabel, p.unit.suffix, p.verticalLabel, p.heightModelNote,
             if (p.outsideZone) "outside zone" else null).joinToString(" · ")
 
     /** Copyable text: "N 435037.47, E 2442754.19 ftUS (NAD83(2011) SPCS 3701)" or "lat, lon". No grouping commas. */

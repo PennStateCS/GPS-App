@@ -298,6 +298,16 @@
                             android:alpha="0.7"
                             android:text="h = ellipsoidal height, H = orthometric height, N = geoid undulation; H = h − N. NAVD88 H uses the bundled GEOID18 model (lower 48 states; PRVD02/VIVD09 in Puerto Rico and the Virgin Islands; not Alaska or Hawaii). Receiver geoid H is the orthometric height the receiver reports; the receiver does not say which geoid model it used, so the model is unknown. EGM2008 H uses the NGA model bundled for US regions (lower 48, Alaska, Hawaii, Puerto Rico / Virgin Islands, Guam / CNMI); EGM96 H is a coarse worldwide fallback. EGM heights are global-model heights, not NAVD88. Live heights are at the antenna phase centre; saved points are at the ground mark."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                        <!-- Phase 3: beta height in use, or a beta height saved while the preview is off. -->
+                        <TextView
+                            android:id="@+id/text_coord_vertical_note"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="?attr/colorError"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:visibility="gone" />
                     </LinearLayout>
 
                     <!-- Height labels name the geoid model (up to ~52 characters): wrap to two lines in the
@@ -371,6 +381,62 @@
                             android:popupBackground="@drawable/bg_dropdown_menu" />
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginStart="20dp"
+                    android:background="?attr/colorOutlineVariant" />
+
+                <!-- Phase 3: opt-in to NGS beta (modernized NSRS 2022) products. Default OFF. -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:minHeight="64dp"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp"
+                    android:paddingVertical="@dimen/settings_content_row_padding_v">
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:orientation="vertical"
+                        android:paddingEnd="16dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Modernized NSRS 2022 (beta preview)"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:alpha="0.7"
+                            android:text="Preliminary NGS beta products, not for authoritative survey results. When on, verified beta options (GEOID2022 heights) appear, always labelled beta. Off: nothing changes."
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    </LinearLayout>
+
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_coord_nsrs2022_preview"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="Modernized NSRS 2022 beta preview" />
+                </LinearLayout>
+
+                <!-- Status of each NSRS 2022 product (beta / unavailable with the registry's reason); preview on only. -->
+                <TextView
+                    android:id="@+id/text_coord_nsrs2022_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
+                    android:alpha="0.8"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:visibility="gone" />
 
                 <TextView
                     android:id="@+id/text_coord_preview"

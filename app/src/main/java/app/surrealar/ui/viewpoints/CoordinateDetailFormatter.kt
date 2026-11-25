@@ -166,6 +166,18 @@ object CoordinateDetailFormatter {
     fun showReceiverMslRow(vertical: app.surrealar.settings.model.VerticalReference): Boolean =
         vertical != app.surrealar.settings.model.VerticalReference.RECEIVER_MSL
 
+    /**
+     * "Height model" row for a beta height (GEOID2022), null for every other height: model, NGS dataset
+     * version, epoch, vertical datum, the ITRF2020 basis and the beta caution.
+     */
+    fun betaHeightModelText(p: app.surrealar.coords.ConvertedPosition): String? {
+        val note = p.heightModelNote ?: return null
+        return "$note · NAPGD2022 · H = h(ITRF2020) − N at that epoch. ${app.surrealar.coords.Geoid2022Labels.CAUTION}"
+    }
+
+    /** Label of the beta height-model row. */
+    const val BETA_HEIGHT_MODEL = "Height model (beta)"
+
     /** A saved point's heights are reduced to the ground mark at capture (pole + phase-centre offset). */
     const val HEIGHT_AT_MARK = "Height at mark"
     /** The receiver's orthometric height (NMEA "MSL"); NMEA does not say which geoid model it used. */
