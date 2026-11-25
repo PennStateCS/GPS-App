@@ -165,7 +165,9 @@ class CrsRegistryTest {
         assertTrue(registry.search("natrf2022").isEmpty())  // non-operational only
         assertEquals(listOf("geographic:natrf2022"),
             registry.search("natrf2022", CrsCatalogId.GEOGRAPHIC, includeNonOperational = true).map { it.id })
-        assertTrue(registry.search("", CrsCatalogId.SPCS2022, includeNonOperational = true).isEmpty())
+        // Phase 3 WP S: the 953 NGS beta zones are listed (non-operational), never in a default search.
+        assertEquals(953, registry.search("", CrsCatalogId.SPCS2022, includeNonOperational = true, limit = 2000).size)
+        assertTrue(registry.search("", CrsCatalogId.SPCS2022, includeBeta = true).isEmpty())
     }
 
     @Test fun `filter by position uses the SPCS83 locator, the UTM zone and areas of use`() {
@@ -190,8 +192,10 @@ class CrsRegistryTest {
     // ---- SPCS2022 ----
 
     @Test fun `shipped SPCS2022 catalog has no operational entries and every lookup is unsupported`() {
+        // Phase 3 WP S: the catalog now lists the 953 NGS beta zones (CrsSpcs2022Test), but none is
+        // operational while no 2022 frame has a verified transformation.
         val c = registry.catalog(CrsCatalogId.SPCS2022)
-        assertTrue(c.entries.isEmpty())
+        assertEquals(953, c.entries.size)
         assertTrue(c.operational.isEmpty())
         assertTrue("problems ${c.problems}", c.problems.isEmpty())   // resource found and parsed
         assertEquals(CrsCatalogStatus.UNSUPPORTED, c.status)
