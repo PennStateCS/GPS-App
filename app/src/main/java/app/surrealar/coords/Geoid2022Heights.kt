@@ -69,6 +69,13 @@ object Geoid2022Labels {
     /** Height provenance in system summaries / CSV: "GEOID2022 (beta beta_v0a) epoch 2026.886". */
     fun note(epochYear: Double): String = String.format(Locale.US, "%s epoch %.3f", MODEL, epochYear)
 
+    /**
+     * Toolbar height label (≤ 10 characters, like "NAVD88", "EGM2008", "H rcvr"): "NAPGD2022β". The datum
+     * name with a beta mark, never NAVD88 / MSL; model, version and epoch are on Details and in the long-press
+     * help.
+     */
+    const val TOOLBAR_LABEL: String = "${Geoid2022Model.VERTICAL_DATUM}β"
+
     /** Short caution shown with beta results. */
     const val CAUTION: String = "Preliminary NGS beta product, not for authoritative survey results."
 }

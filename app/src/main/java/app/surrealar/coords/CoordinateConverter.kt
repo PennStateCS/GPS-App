@@ -141,6 +141,12 @@ data class ConvertedPosition(
      * position); shown after [verticalLabel] in the system summary, details and the CSV System column.
      */
     val heightModelNote: String? = null,
+    /**
+     * True when [height] is null only because the height model's data is still loading (GEOID2022 / EGM packs
+     * on the main thread, or the GEOID18 grid at start-up): screens show a loading state, never a stale or
+     * substituted value, and refresh when [CoordinateSystemService.heightDataVersion] changes.
+     */
+    val heightLoading: Boolean = false,
 )
 
 /**
@@ -221,6 +227,7 @@ class CoordinateConverter(
                 verticalLabel = Geoid2022Labels.VERTICAL_LABEL,
                 epochYear = epoch,
                 heightModelNote = Geoid2022Labels.note(src.epochYear),
+                heightLoading = g.loading,
             )
         }
         val model = s.vertical.globalGeoidModel()
@@ -231,10 +238,23 @@ class CoordinateConverter(
             heightUnavailableReason = g.reason,
             verticalLabel = g.label,
             epochYear = epoch,
+            heightLoading = g.loading,
         )
     }
 
-    private class GlobalHeight(val heightM: Double?, val reason: String?, val label: String)
+    /**
+     * A model height and its parts: H ([heightM]), the ellipsoidal height h it was computed from
+     * ([ellipsoidalM], in the model's frame) and N ([undulationM]); [loading] = unavailable only because
+     * the model's data is still loading.
+     */
+    private class GlobalHeight(
+        val heightM: Double?, val reason: String?, val label: String,
+        val ellipsoidalM: Double? = null, val undulationM: Double? = null, val loading: Boolean = false,
+    )
+
+    private fun unavailable(id: GeoidModelId, r: GeoidResult.Unavailable, label: String, ellipsoidalM: Double?) =
+        GlobalHeight(null, AppGeoidModels.unavailableText(id, r.reason), label, ellipsoidalM,
+            loading = r.reason == io.github.pennstatecs.geokit.geoid.GeoidUnavailableReason.DATA_LOADING)
 
     /** H = h - N([id]) at the WGS84 (ITRF2014) position, or the reason it is unavailable. */
     private fun globalHeight(geoSrc: GeoSourcePosition, id: GeoidModelId): GlobalHeight {
@@ -248,9 +268,9 @@ class CoordinateConverter(
         return when (val n = model.undulation(w.latDeg, w.lonDeg)) {
             is GeoidResult.Value -> {
                 check(n.model == id) { "asked ${id.token}, got ${n.model.token}" }   // no silent substitution
-                GlobalHeight(n.orthometricHeightM(h), null, n.verticalDatum)
+                GlobalHeight(n.orthometricHeightM(h), null, n.verticalDatum, h, n.undulationM)
             }
-            is GeoidResult.Unavailable -> GlobalHeight(null, AppGeoidModels.unavailableText(id, n.reason), label)
+            is GeoidResult.Unavailable -> unavailable(id, n, label, h)
         }
     }
 
@@ -272,9 +292,72 @@ class CoordinateConverter(
         return when (val n = model.undulationAt(itrf2020.latDeg, itrf2020.lonDeg, src.epochYear)) {
             is GeoidResult.Value -> {
                 check(n.model == GeoidModelId.GEOID2022) { "asked GEOID2022, got ${n.model.token}" }   // no substitution
-                GlobalHeight(itrf2020.heightM - n.undulationM, null, label)
+                GlobalHeight(itrf2020.heightM - n.undulationM, null, label, itrf2020.heightM, n.undulationM)
             }
-            is GeoidResult.Unavailable -> GlobalHeight(null, AppGeoidModels.unavailableText(GeoidModelId.GEOID2022, n.reason), label)
+            is GeoidResult.Unavailable -> unavailable(GeoidModelId.GEOID2022, n, label, itrf2020.heightM)
+        }
+    }
+
+    /**
+     * The parts of the height in [p] (= [convert] of [src] in [settings]) for the detail screens: h (in the
+     * frame the height model uses), H, N (when the model gives one), the geoid model and data version, the
+     * vertical reference, the coordinate epoch and the beta status. Display only: [convert] (and so every
+     * stored, exported or golden-tested output) is unchanged. H is [p]'s height itself; h and N are computed
+     * on the same path as H (GEOID18: h in NAD83(2011), N = h − H; EGM: h in WGS84 (ITRF2014) and N from the
+     * model; GEOID2022 beta: h in ITRF2020 at the epoch and N(epoch)). Receiver heights have no N here: the
+     * receiver's model is unknown.
+     */
+    fun elevation(src: SourcePosition, settings: CoordinateSystemSettings, p: ConvertedPosition = convert(src, settings)): ElevationDetail {
+        val s = settings.forConversion()
+        val unit = s.unit
+        fun u(m: Double?) = m?.let { unit.fromMeters(it) }
+        val geoSrc = src.toGeoSource()
+        val common = ElevationDetail(
+            unit = unit, vertical = s.vertical, ellipsoidalHeight = null, ellipsoidalFrame = null,
+            orthometricHeight = p.height, undulation = null, geoidModel = null, geoidVersion = null,
+            verticalReference = p.verticalLabel, epochYear = p.epochYear, beta = s.vertical.isBeta,
+            loading = p.heightLoading, unavailableReason = p.heightUnavailableReason,
+        )
+        return when (s.vertical) {
+            VerticalReference.ELLIPSOIDAL -> common.copy(
+                ellipsoidalHeight = p.height, ellipsoidalFrame = CoordinateFormat.datumLabel(p), orthometricHeight = null,
+                verticalReference = ElevationDetail.ELLIPSOID,
+            )
+            VerticalReference.RECEIVER_MSL -> common.copy(
+                ellipsoidalHeight = u(src.ellipsoidalHeightM), ellipsoidalFrame = src.datum.frame.displayName,
+                geoidModel = ElevationDetail.RECEIVER_MODEL, verticalReference = ElevationDetail.RECEIVER_MODEL,
+            )
+            VerticalReference.NAVD88_GEOID18 -> {
+                val info = io.github.pennstatecs.geokit.geoid.Geoid18Model.INFO
+                val hM = src.ellipsoidalHeightM?.let { engine.convert(geoSrc, NAD83_ELLIPSOIDAL).heightM }
+                val bigH = p.height?.let { it * unit.metersPerUnit }
+                common.copy(
+                    ellipsoidalHeight = u(hM), ellipsoidalFrame = info.horizontalFrame,
+                    undulation = if (hM != null && bigH != null) u(hM - bigH) else null,
+                    geoidModel = info.label, geoidVersion = ElevationDetail.shortVersion(info),
+                )
+            }
+            VerticalReference.EGM2008, VerticalReference.EGM96 -> {
+                val id = checkNotNull(s.vertical.globalGeoidModel())
+                val g = if (geoSrc.ellipsoidalHeightM == null) null else globalHeight(geoSrc, id)
+                val info = if (id == GeoidModelId.EGM2008) io.github.pennstatecs.geokit.geoid.GlobalGeoidModels.EGM2008_INFO
+                    else io.github.pennstatecs.geokit.geoid.GlobalGeoidModels.EGM96_INFO
+                common.copy(
+                    ellipsoidalHeight = u(g?.ellipsoidalM), ellipsoidalFrame = ReferenceFrame.WGS84_AS_ITRF2014.displayName,
+                    undulation = u(g?.undulationM), geoidModel = info.label, geoidVersion = ElevationDetail.shortVersion(info),
+                )
+            }
+            VerticalReference.GEOID2022 -> {
+                val g = geoid2022Height(src)
+                val info = io.github.pennstatecs.geokit.geoid.Geoid2022Model.INFO
+                common.copy(
+                    ellipsoidalHeight = u(g.ellipsoidalM),
+                    ellipsoidalFrame = String.format(Locale.US, "ITRF2020 epoch %.3f", src.epochYear),
+                    undulation = u(g.undulationM), geoidModel = info.label, geoidVersion = ElevationDetail.shortVersion(info),
+                    verticalReference = io.github.pennstatecs.geokit.geoid.Geoid2022Model.VERTICAL_DATUM,
+                    epochYear = src.epochYear,
+                )
+            }
         }
     }
 
@@ -284,6 +367,9 @@ class CoordinateConverter(
             horizontal = TargetSystem.Geographic, datum = GeodeticDatum.WGS84_ITRF2014,
             unit = LengthUnit.METRE, vertical = io.github.pennstatecs.geokit.convert.VerticalReference.ELLIPSOIDAL,
         )
+
+        /** The source as NAD83(2011) lat/lon/ellipsoidal height, metres (the GEOID18 frame). */
+        val NAD83_ELLIPSOIDAL = WGS84_ELLIPSOIDAL.copy(datum = GeodeticDatum.NAD83_2011)
     }
 }
 
@@ -314,6 +400,13 @@ object CoordinateFormat {
     /** "1,286.74 ftUS NAVD88", or "—" with no height. */
     fun height(p: ConvertedPosition): String =
         p.height?.let { "${grouped(it, linearDecimals(p.unit))} ${p.unit.suffix} ${p.verticalLabel}" } ?: "—"
+
+    /**
+     * [height], except that a height whose model data is still loading reads "GEOID2022 data is loading"
+     * (the reason) instead of "—": a clear loading state, never a stale or substituted value.
+     */
+    fun heightOrLoading(p: ConvertedPosition): String =
+        if (p.height == null && p.heightLoading) p.heightUnavailableReason ?: "height data is loading" else height(p)
 
     /**
      * The output frame for display: the datum label ("WGS84 (ITRF2014)", "NAD83(2011)"), or for

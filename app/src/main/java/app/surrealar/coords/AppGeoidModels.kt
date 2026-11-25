@@ -12,6 +12,10 @@ import app.surrealar.util.diagnostics.DiagTags
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -35,6 +39,18 @@ object AppGeoidModels {
     /** EGM96 15′ worldwide: the explicitly labelled fallback. */
     val egm96: GeoidModel by lazy { GlobalGeoidModels.egm96() }
 
+    private val loadEventsState = MutableStateFlow(0L)
+
+    /**
+     * Load-completion signal: incremented each time a model's data load ended (a main-thread lookup's
+     * background load, or [warmUp]). Screens that showed "… data is loading" collect it (through
+     * [CoordinateSystemService.heightDataVersion]) and refresh at once instead of on the next update.
+     */
+    val loadEvents: StateFlow<Long> = loadEventsState.asStateFlow()
+
+    /** Signals [loadEvents] (any thread). */
+    internal fun notifyLoadFinished() = loadEventsState.update { it + 1 }
+
     /** Background loads started from the main thread (one per model at a time). */
     private val loadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -52,6 +68,7 @@ object AppGeoidModels {
             }
         },
         warmUpLat = WARM_UP_LAT, warmUpLon = WARM_UP_LON,
+        onLoadFinished = ::notifyLoadFinished,
     )
 
     private val egm2008NonBlocking: GeoidModel by lazy { nonBlocking(GeoidModelId.EGM2008, egm2008) }
@@ -99,7 +116,11 @@ object AppGeoidModels {
      */
     fun warmUp(id: GeoidModelId): GeoidAvailability? {
         val m = rawModel(id) ?: return null
-        m.undulation(WARM_UP_LAT, WARM_UP_LON)
+        try {
+            m.undulation(WARM_UP_LAT, WARM_UP_LON)
+        } finally {
+            notifyLoadFinished()
+        }
         return m.availability
     }
 

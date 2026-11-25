@@ -56,13 +56,29 @@ Sources and dataset versions are recorded in docs/geodesy/nsrs2022-sources.md (e
   recorded `coordinateEpoch` is used for the whole conversion, including the horizontal NAD83/SPCS step;
   otherwise the capture time is used, as before. For every point the app captures the two are the same
   number; they can differ only for a backup-imported point whose epoch differs from its capture time.
-- The preview flag is written with every Coordinates save; a pick made before the screen's first bind
-  could write the preview OFF (the same pre-existing race as the other Coordinates fields).
-- The SPCS2022 status line parses the 953-row catalog once on the main thread when the preview is first
-  shown (tens of ms).
-- Screens that showed "GEOID2022 data is loading" refresh on the next update, not when loading finishes
-  (as for EGM).
+- ~~The preview flag is written with every Coordinates save; a pick made before the screen's first bind
+  could write the preview OFF.~~ Fixed in Phase 4 WP U: each save applies only the changed field to the latest
+  stored settings (serialised), for the Coordinate System card and the display switches.
+- ~~The SPCS2022 status line parses the 953-row catalog once on the main thread.~~ Fixed in Phase 4 WP U: parsed
+  on Dispatchers.Default when the screen opens; "Loading NSRS 2022 product status…" until ready.
+- ~~Screens that showed "GEOID2022 data is loading" refresh on the next update.~~ Fixed in Phase 4 WP U:
+  `CoordinateSystemService.heightDataVersion` (GEOID18 grid + `AppGeoidModels.loadEvents`) refreshes the Settings
+  preview and Details; the toolbar re-converts on its 1 s tick. A GEOID18 height before the grid loaded now reads
+  "GEOID18 data is loading" instead of "outside GEOID18 coverage".
 - 2022 frames and SPCS2022 stay unavailable until NGS publishes ITRF2020 ⇄ 2022-frame reference values
   (and confirms the Euler-pole sign: the beta page's literal equation would double plate motion; the code
   follows the blueprint and matches ITRF2020-PMM plate velocities).
 
+## Phase 4 WP U (app integration polish)
+
+- Settings → Coordinates (preview ON): products in three groups (`coords/CoordinateSystemGroups`): verified
+  systems, verified NGS beta, unsupported / not yet verified with a concise reason
+  (`Nsrs2022Capabilities.shortReason`, ≤ 60 characters) and the full registry text in an info dialog.
+- SPCS2022 in the zone selector (`ui/settings/categories/ZoneSelectorOptions`): driven by `CrsRegistry` operational
+  status, preview ON only, 2022 frames only; label "SPCS2022 <zone> (<code>) · <frame> epoch <ref> · <projection> ·
+  <unit> · β beta". Shipped registry: 0 operational zones → nothing listed. Not selectable while
+  `SPCS2022_OUTPUT_SUPPORTED = false` (needs a stored value form and a converter output path; no schema or key
+  change was made).
+- Elevation detail (`coords/ElevationDetail`, `CoordinateConverter.elevation`): h / H / N / model + version /
+  vertical reference / epoch / beta for Details and the Settings preview; `convert()` output unchanged.
+- Toolbar height label for GEOID2022: "NAPGD2022β" (≤ 10 characters like "EGM2008"); "loading" while a model loads.

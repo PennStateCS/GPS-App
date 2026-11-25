@@ -331,6 +331,12 @@ class CoordinateDetailFragment : Fragment() {
                 }
             }
         }
+        // A height model finished loading (GEOID18 / EGM / GEOID2022): replace "… data is loading" at once.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                coordinateSystemService.heightDataVersion.collect { lastCoordinate?.let { bindCoordinate(it) } }
+            }
+        }
     }
 
     private var coordSystemSettings = app.surrealar.settings.model.CoordinateSystemSettings()
@@ -634,6 +640,13 @@ class CoordinateDetailFragment : Fragment() {
         c.antennaHeightM?.takeIf { it != 0.0 }?.let { altRows += DetailRow("Antenna height", len(it, 3)) }
         if (altRows.isNotEmpty()) {
             renderStackedColumns(container, altRows)
+        }
+
+        // Elevation: h, H, N, geoid model + version, vertical reference, epoch and beta status of the height
+        // above (display only; a loading model reads "Loading … data…", never a value).
+        runCatching { coordinateSystemService.elevationOfCoordinate(c, coordSystemSettings) }.getOrNull()?.let { e ->
+            addCardSubheading(container, "Elevation")
+            renderStackedColumns(container, app.surrealar.coords.ElevationFormat.rows(e).map { DetailRow(it.label, it.value) })
         }
 
         // Provenance of the stored numbers (frame, epoch, receiver frame, height source/model). Unknown

@@ -113,4 +113,25 @@ class NonBlockingGeoidModelTest {
         assertNull("skipped once warm", tracker.warmUp(GeoidModelId.EGM2008))
         assertEquals(2, calls)
     }
+
+    @Test fun `load-completion signal fires once the background load ended, loaded or failed`() {
+        var finished = 0
+        val signalled = NonBlockingGeoidModel(raw, isMainThread = { onMain }, loadInBackground = { queued += it },
+            onLoadFinished = { finished++ })
+        signalled.undulation(40.0, -77.0)
+        assertEquals("not before the load ran", 0, finished)
+        onMain = false
+        runQueued()
+        onMain = true
+        assertEquals(1, finished)
+        assertEquals(GeoidAvailability.AVAILABLE, signalled.availability)
+        // A screen refreshing on the signal now gets the value on the main thread.
+        assertTrue(signalled.undulation(41.3477, -76.0226) is GeoidResult.Value)
+    }
+
+    @Test fun `AppGeoidModels loadEvents advances when a model is warmed up`() {
+        val before = AppGeoidModels.loadEvents.value
+        AppGeoidModels.warmUp(GeoidModelId.EGM96)
+        assertTrue(AppGeoidModels.loadEvents.value > before)
+    }
 }

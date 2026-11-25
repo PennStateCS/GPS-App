@@ -237,6 +237,26 @@ object GnssToolbarStateMapper {
         return if (r == Math.floor(r)) r.toLong().toString() else String.format(Locale.US, "%.1f", r)
     }
 
+    /** Toolbar height value while the height model's data is loading (never a stale or substituted value). */
+    const val HEIGHT_LOADING = "loading"
+
+    /** Longest toolbar height label allowed (the token is sized for "EGM2008" / "NAPGD2022β"). */
+    const val MAX_HEIGHT_LABEL = 10
+
+    /**
+     * The toolbar's short height label: the converted position's vertical label ("NAVD88", "EGM2008", "h",
+     * "H rcvr"), except GEOID2022 (beta) which is "NAPGD2022β" ([app.surrealar.coords.Geoid2022Labels.TOOLBAR_LABEL])
+     * instead of the longer "NAPGD2022 beta".
+     */
+    fun toolbarHeightLabel(p: app.surrealar.coords.ConvertedPosition): String =
+        if (p.vertical == app.surrealar.settings.model.VerticalReference.GEOID2022) app.surrealar.coords.Geoid2022Labels.TOOLBAR_LABEL
+        else p.verticalLabel
+
+    /** Spoken form of the height label: the beta mark read as "beta". */
+    private fun toolbarHeightSpoken(p: app.surrealar.coords.ConvertedPosition): String =
+        if (p.vertical == app.surrealar.settings.model.VerticalReference.GEOID2022) app.surrealar.coords.Geoid2022Labels.VERTICAL_LABEL
+        else p.verticalLabel
+
     fun map(
         selectedSource: LocationSourceType,
         fix: Fix?,
@@ -329,10 +349,10 @@ object GnssToolbarStateMapper {
                 String.format(Locale.US, "%.6f, %.6f", coords.latDeg, coords.lonDeg)
             }
             // Not upper-cased: "h" (ellipsoidal) and "H" (orthometric) are different heights.
-            altitudeLabel = coords.verticalLabel
+            altitudeLabel = toolbarHeightLabel(coords)
             altitudeText = coords.height?.let {
                 String.format(Locale.US, "%,.2f %s", it, coords.unit.suffix)
-            } ?: "--"
+            } ?: if (coords.heightLoading) HEIGHT_LOADING else "--"
         } else {
             latLonText = "${String.format(Locale.US, "%.6f", fix.latDeg)}, " +
                 String.format(Locale.US, "%.6f", fix.lonDeg)
@@ -381,7 +401,11 @@ object GnssToolbarStateMapper {
                 accuracyDescription = if (accuracyText != null && hAcc != null) accuracyDescription(hAcc, estimated, vAcc) else null,
                 ageDescription = correctionAgeText?.let { ageDescription(fix.diffAgeS!!) },
                 coordDescription = (if (coordLabel == "NE") "Grid position " else "Position ") + latLonText.replace(" · ", ", "),
-                altitudeDescription = if (altitudeText == "--") "Height not available" else "Height $altitudeLabel $altitudeText",
+                altitudeDescription = when {
+                    altitudeText == "--" -> "Height not available"
+                    altitudeText == HEIGHT_LOADING -> "Height ${coords?.let { toolbarHeightSpoken(it) } ?: altitudeLabel}: data is loading"
+                    else -> "Height ${coords?.let { toolbarHeightSpoken(it) } ?: altitudeLabel} $altitudeText"
+                },
             )
         )
     }
