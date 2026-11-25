@@ -317,4 +317,13 @@ class Geoid2022ModelTest {
             "GC" to "dd646a66fd09e8a0dd3aaffed0d11b4294f6f1aac4292b2eaf1c7214d077ad50",
         )
     }
+
+    @Test fun `impossible calendar dates are rejected, not silently computed`() {
+        for ((y, m, d) in listOf(Triple(2026, 2, 30), Triple(2026, 4, 31), Triple(2025, 2, 29), Triple(2026, 13, 1))) {
+            val r = runCatching { Geoid2022Model.modifiedJulianDay(y, m, d) }
+            org.junit.Assert.assertTrue("$y-$m-$d", r.exceptionOrNull() is IllegalArgumentException)
+        }
+        org.junit.Assert.assertEquals(58849, Geoid2022Model.modifiedJulianDay(2020, 1, 1))
+        org.junit.Assert.assertEquals(58908, Geoid2022Model.modifiedJulianDay(2020, 2, 29))   // leap day is valid
+    }
 }

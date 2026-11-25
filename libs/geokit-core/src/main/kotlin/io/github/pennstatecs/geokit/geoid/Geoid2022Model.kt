@@ -55,6 +55,8 @@ public class Geoid2022Model(
         val quantity: String,
         val unitsPerValue: Int,
     ) {
+        /** True when the grid closes in longitude (node nj − 1 is node 0 again, e.g. the global "GL" rate grid). */
+        val wrapsInLongitude: Boolean get() = nj - 1 == 360 * nodesPerDegree
         fun y(lat: Double): Double = (lat - south) * nodesPerDegree
         fun x(lon: Double): Double {
             val d = (lon - west) % 360.0
@@ -220,6 +222,8 @@ public class Geoid2022Model(
     private fun node(l: Loaded, i: Int, j: Int): Double {
         val g = l.grid
         return when {
+            // A grid closing in longitude wraps across its seam instead of extrapolating (0°/360° for GL).
+            g.wrapsInLongitude && (j < 0 || j > g.nj - 1) -> node(l, i, Math.floorMod(j, g.nj - 1))
             j < 0 -> 2 * node(l, i, 0) - node(l, i, 1)
             j > g.nj - 1 -> 2 * node(l, i, g.nj - 1) - node(l, i, g.nj - 2)
             i < 0 -> 2 * node(l, 0, j) - node(l, 1, j)
@@ -344,7 +348,9 @@ public class Geoid2022Model(
          * jdn = day + (153m + 2) / 5 + 365y + y/4 − y/100 + y/400 − 32045, mjd = jdn − 2400001.
          */
         public fun modifiedJulianDay(year: Int, month: Int, day: Int): Int {
-            require(month in 1..12 && day in 1..31 && year in 1..9999) { "bad date $year-$month-$day" }
+            require(year in 1..9999 && runCatching { java.time.LocalDate.of(year, month, day) }.isSuccess) {
+                "bad date $year-$month-$day"
+            }
             val a = (14 - month) / 12
             val y = year + 4800 - a
             val m = month + 12 * a - 3

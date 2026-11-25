@@ -1,0 +1,2 @@
+# Raw NGS file: keep the exact bytes (SHA-256 documented in docs/geodesy/nsrs2022-sources-geoid2022.md).
+NAPGD2022TestCases.beta_v0a.csv -text
