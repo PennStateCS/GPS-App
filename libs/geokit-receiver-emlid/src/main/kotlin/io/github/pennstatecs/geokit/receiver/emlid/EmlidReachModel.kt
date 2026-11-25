@@ -17,5 +17,41 @@ public enum class EmlidReachModel(public val label: String, public val phaseCent
     /** Reach RS4. Emlid RS4 specs: L1 phase-centre offset 95 mm. */
     RS4("Reach RS4", 0.095),
     /** Reach RS4 Pro. Not confirmed separately from the RS4, so unknown. */
-    RS4_PRO("Reach RS4 Pro", null),
+    RS4_PRO("Reach RS4 Pro", null);
+
+    public companion object {
+        private val SEPARATORS = Regex("[\\s_\\-./]+")
+
+        /**
+         * The model a receiver *explicitly reported* (the `model` / `type` field of the Reach `/info` or
+         * `/status` response), or null when it is blank, unknown or ambiguous. Matching is on exact
+         * normalised tokens (case-insensitive; `+` reads as "plus"; whitespace, `_`, `-`, `.` and `/`
+         * separate tokens), never on substrings:
+         *
+         * - "RS4 Pro" / "rs4pro" -> [RS4_PRO] (checked before RS4);
+         * - "RS4" -> [RS4];
+         * - "RS2+" / "RS2 Plus" / "rs2plus" -> [RS2_PLUS];
+         * - a plain "RS2" -> null: the RS2+ is a revision of the RS2 and firmware may report either
+         *   string, so a plain "RS2" cannot tell them apart (the app keeps the user's profile);
+         * - anything else (RS3, RS+, M2, "RS40", blank, null) -> null.
+         *
+         * Only what the receiver reports is identification: a discovery name, an IP or a profile chosen
+         * by the user never is. Identification says nothing about which features are enabled on the
+         * receiver (tilt compensation, compensated NMEA output, orthometric heights).
+         */
+        public fun fromReportedModel(reported: String?): EmlidReachModel? {
+            if (reported.isNullOrBlank()) return null
+            val tokens = reported.lowercase(java.util.Locale.ROOT)
+                .replace("+", " plus ")
+                .split(SEPARATORS)
+                .filter { it.isNotEmpty() }
+            fun hasPair(a: String, b: String) = tokens.zipWithNext().any { (x, y) -> x == a && y == b }
+            return when {
+                "rs4pro" in tokens || hasPair("rs4", "pro") -> RS4_PRO
+                "rs4" in tokens -> RS4
+                "rs2plus" in tokens || hasPair("rs2", "plus") -> RS2_PLUS
+                else -> null
+            }
+        }
+    }
 }

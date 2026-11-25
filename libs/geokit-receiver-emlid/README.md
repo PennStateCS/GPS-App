@@ -63,6 +63,11 @@ bottom of the receiver), for geokit-gnss's `AntennaGeometry`:
 | `RS4` | 0.095 | Emlid RS4 specs (L1) |
 | `RS4_PRO` | null (unknown) | not published separately; the user enters it |
 
+`EmlidReachModel.fromReportedModel(model)` maps the model string a Reach reports in `/info` (the
+`ReceiverDeviceInfo.model` field) to a model on exact normalised tokens: "RS4 Pro" before "RS4", "RS2+"
+/ "RS2 Plus"; a plain "RS2" (cannot be told apart from an RS2+), blank or unknown strings give null.
+It identifies the hardware only; it never says which features (tilt, compensated output) are enabled.
+
 ### Finding a Reach on the network
 
 `ReachNetworkScan` is a JVM `ReceiverDiscovery`: an HTTP sweep of the local subnet (port 80, 250 ms
