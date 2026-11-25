@@ -1,6 +1,7 @@
 package io.github.pennstatecs.geokit.datum
 
 import io.github.pennstatecs.geokit.ellipsoid.GeodeticPosition
+import io.github.pennstatecs.geokit.status.ProductStatus
 
 /**
  * A transformation of positions from [source] to [target], evaluated at a coordinate epoch. Positions
@@ -26,7 +27,26 @@ public interface FrameTransformation {
 
     /** Transforms [position] at [epoch]. */
     public fun transform(position: GeodeticPosition, epoch: CoordinateEpoch): GeodeticPosition
+
+    /**
+     * The weakest [FrameEdge.status] along [steps] (UNAVAILABLE < VERIFIED_BETA < VERIFIED_LEGACY), so a
+     * chain through a beta edge is beta; [ProductStatus.VERIFIED_LEGACY] when there are no steps.
+     */
+    public val status: ProductStatus get() = weakestStatus(steps.map { it.status })
+
+    /** The distinct non-null [FrameEdge.datasetVersion]s along [steps], in order. */
+    public val datasetVersions: List<String> get() = steps.mapNotNull { it.datasetVersion }.distinct()
 }
+
+private fun rank(s: ProductStatus): Int = when (s) {
+    ProductStatus.UNAVAILABLE -> 0
+    ProductStatus.VERIFIED_BETA -> 1
+    ProductStatus.VERIFIED_LEGACY -> 2
+}
+
+/** The weakest of [statuses]; [ProductStatus.VERIFIED_LEGACY] for none. */
+internal fun weakestStatus(statuses: Iterable<ProductStatus>): ProductStatus =
+    statuses.minByOrNull(::rank) ?: ProductStatus.VERIFIED_LEGACY
 
 /**
  * One registered, verified transformation between two frames, usable in both directions.
@@ -36,6 +56,10 @@ public interface FrameTransformation {
  * @property name the authority's name (e.g. EPSG "ITRF2014 to ITRF2020 (1)").
  * @property accuracyM stated accuracy in metres (EPSG), or null if the authority gives none.
  * @property verification what the implementation was verified against (reference vectors).
+ * @property status how far the edge can be trusted: [ProductStatus.VERIFIED_LEGACY] for established
+ *   verified transformations, [ProductStatus.VERIFIED_BETA] for NGS beta definitions verified against NGS
+ *   beta tools. [ProductStatus.UNAVAILABLE] is rejected: an unverified edge is never registered.
+ * @property datasetVersion version of the defining dataset (e.g. the NGS EPP release), null if none.
  */
 public class FrameEdge(
     public val from: ReferenceFrame,
@@ -43,12 +67,26 @@ public class FrameEdge(
     public val name: String,
     public val accuracyM: Double?,
     public val verification: String,
+    public val status: ProductStatus,
+    public val datasetVersion: String?,
     private val forward: (GeodeticPosition, Double) -> GeodeticPosition,
     private val reverse: (GeodeticPosition, Double) -> GeodeticPosition,
 ) {
+    /** A [ProductStatus.VERIFIED_LEGACY] edge with no dataset version (the Phase 2 signature). */
+    public constructor(
+        from: ReferenceFrame,
+        to: ReferenceFrame,
+        name: String,
+        accuracyM: Double?,
+        verification: String,
+        forward: (GeodeticPosition, Double) -> GeodeticPosition,
+        reverse: (GeodeticPosition, Double) -> GeodeticPosition,
+    ) : this(from, to, name, accuracyM, verification, ProductStatus.VERIFIED_LEGACY, null, forward, reverse)
+
     init {
         require(from == from.coordinatesFrame && to == to.coordinatesFrame) { "Register edges between coordinate frames, not aliases" }
         require(from != to) { "An edge needs two different frames" }
+        require(status != ProductStatus.UNAVAILABLE) { "An unverified transformation is never an edge" }
     }
 
     /** [from] → [to] at [epoch] (decimal year). */
@@ -74,8 +112,16 @@ public enum class FrameUnavailableReason {
 
 /** Result of [FrameTransformationRegistry.find]. */
 public sealed interface FrameTransformationLookup {
+    /**
+     * [ProductStatus] of the result: the transformation's weakest edge status when available (callers
+     * must label or refuse [ProductStatus.VERIFIED_BETA]), [ProductStatus.UNAVAILABLE] otherwise.
+     */
+    public val status: ProductStatus
+
     /** A verified transformation, bound to the requested coordinate [epoch]. */
     public data class Available(val transformation: FrameTransformation, val epoch: CoordinateEpoch) : FrameTransformationLookup {
+        override val status: ProductStatus get() = transformation.status
+
         /** Transforms [position] at [epoch]. */
         public fun apply(position: GeodeticPosition): GeodeticPosition = transformation.transform(position, epoch)
     }
@@ -89,7 +135,9 @@ public sealed interface FrameTransformationLookup {
         val target: String,
         val reason: FrameUnavailableReason,
         val explanation: String,
-    ) : FrameTransformationLookup
+    ) : FrameTransformationLookup {
+        override val status: ProductStatus get() = ProductStatus.UNAVAILABLE
+    }
 }
 
 /**
@@ -103,8 +151,12 @@ public sealed interface FrameTransformationLookup {
  * The default registry, [DEFAULT], contains:
  * - ITRF2014 ⇄ NAD83(2011): [Itrf2014ToNad83] unchanged (EPSG "ITRF2014 to NAD83(2011) (1)");
  * - ITRF2014 ⇄ ITRF2020: [Itrf2014ToItrf2020] (EPSG "ITRF2014 to ITRF2020 (1)");
- * so ITRF2020 ⇄ NAD83(2011) is the chain through ITRF2014. NATRF2022, the WGS 84 ensemble and the WGS 84
+ * so ITRF2020 ⇄ NAD83(2011) is the chain through ITRF2014. Both edges are [ProductStatus.VERIFIED_LEGACY].
+ * NATRF2022 (and the other [PlateFrame2022] frames, by id), the WGS 84 ensemble and the WGS 84
  * realisations are [FrameUnavailableReason.NOT_VERIFIED].
+ *
+ * Path search prefers verified-legacy edges: a chain uses a [ProductStatus.VERIFIED_BETA] edge only when
+ * no legacy-only chain exists, and the result then reports [FrameTransformation.status] beta.
  *
  * Immutable and thread-safe.
  */
@@ -130,7 +182,8 @@ public class FrameTransformationRegistry(
             }
         }
         if (from == to) return FrameTransformationLookup.Available(Chain(source, target, emptyList()), epoch)
-        val path = shortestPath(from, to)
+        val path = shortestPath(from, to) { it.status == ProductStatus.VERIFIED_LEGACY }
+            ?: shortestPath(from, to) { true }
             ?: return FrameTransformationLookup.Unavailable(
                 source.id, target.id, FrameUnavailableReason.NOT_DEFINED,
                 "No registered transformation connects ${source.displayName} and ${target.displayName}.",
@@ -138,10 +191,19 @@ public class FrameTransformationRegistry(
         return FrameTransformationLookup.Available(Chain(source, target, path), epoch)
     }
 
-    /** As [find], by stable frame ids; an unknown id gives [FrameUnavailableReason.UNKNOWN_FRAME]. */
+    /**
+     * As [find], by stable frame ids. An unknown id gives [FrameUnavailableReason.UNKNOWN_FRAME]; a
+     * reserved [PlateFrame2022] id that is not yet a [ReferenceFrame] (PATRF2022, CATRF2022, MATRF2022)
+     * gives [FrameUnavailableReason.NOT_VERIFIED] with [PlateFrame2022.unavailableReason].
+     */
     public fun find(sourceId: String, targetId: String, epoch: CoordinateEpoch): FrameTransformationLookup {
         val s = ReferenceFrame.fromId(sourceId)
         val t = ReferenceFrame.fromId(targetId)
+        for ((frame, id) in listOf(s to sourceId, t to targetId)) {
+            if (frame != null) continue
+            val reserved = PlateFrame2022.fromId(id) ?: continue
+            return FrameTransformationLookup.Unavailable(sourceId, targetId, FrameUnavailableReason.NOT_VERIFIED, reserved.unavailableReason)
+        }
         if (s == null || t == null) {
             val unknown = listOfNotNull(sourceId.takeIf { s == null }, targetId.takeIf { t == null }).distinct()
             return FrameTransformationLookup.Unavailable(
@@ -155,7 +217,7 @@ public class FrameTransformationRegistry(
     /** A step along an edge in one direction. */
     private class Step(val edge: FrameEdge, val forward: Boolean)
 
-    private fun shortestPath(from: ReferenceFrame, to: ReferenceFrame): List<Step>? {
+    private fun shortestPath(from: ReferenceFrame, to: ReferenceFrame, usable: (FrameEdge) -> Boolean): List<Step>? {
         val previous = HashMap<ReferenceFrame, Pair<ReferenceFrame, Step>>()
         val queue = ArrayDeque(listOf(from))
         val seen = hashSetOf(from)
@@ -163,6 +225,7 @@ public class FrameTransformationRegistry(
             val f = queue.removeFirst()
             if (f == to) break
             for (e in edges) {
+                if (!usable(e)) continue
                 val (next, step) = when (f) {
                     e.from -> e.to to Step(e, true)
                     e.to -> e.from to Step(e, false)
@@ -225,9 +288,8 @@ public class FrameTransformationRegistry(
 
         /** Why the default registry has no transformation for these frames. */
         public val DEFAULT_UNAVAILABLE: Map<ReferenceFrame, String> = mapOf(
-            ReferenceFrame.NATRF2022 to "NATRF2022 is defined (EPSG 10966-10968), but the NGS transformation " +
-                "from ITRF2020 (plate rotation plus the IFDM2022 deformation model) is not implemented or " +
-                "verified; PROJ 9.8.1 offers only ballpark no-op operations, which are not used.",
+            ReferenceFrame.NATRF2022 to "NATRF2022 is defined (EPSG 10966-10968) as an NGS beta EPP2022 plate " +
+                "rotation of ITRF2020, but ${PlateFrame2022.UNAVAILABLE_REASON}",
             ReferenceFrame.WGS84 to "The WGS 84 ensemble (realisation unspecified) is accurate to 2 m only; " +
                 "choose a realisation, or WGS84 (ITRF2014) for coordinates known to be ITRF2014.",
             ReferenceFrame.WGS84_G1762 to "WGS 84 (G1762) $WGS84_REALISATION",

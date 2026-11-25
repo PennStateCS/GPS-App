@@ -81,8 +81,9 @@ public enum class ReferenceFrame(
     NAD83_2011("nad83-2011", "NAD83(2011)", Ellipsoid.GRS80, 6317, 6319, 6318, 2010.0, FrameKind.PLATE_FIXED),
 
     /**
-     * NATRF2022 (EPSG 10966 / 10967 / 10968), North American plate, epoch 2020.0. Defined, but no
-     * verified transformation exists yet (see [FrameTransformationRegistry]).
+     * NATRF2022 (EPSG 10966 / 10967 / 10968), North American plate, epoch 2020.0. Defined by NGS (beta
+     * EPP2022, see [PlateFrame2022]), but no verified transformation exists yet (see
+     * [FrameTransformationRegistry]).
      */
     NATRF2022("natrf2022", "NATRF2022", Ellipsoid.GRS80, 10966, 10967, 10968, 2020.0, FrameKind.PLATE_FIXED);
 
@@ -92,6 +93,17 @@ public enum class ReferenceFrame(
      */
     public val coordinatesFrame: ReferenceFrame
         get() = if (this == WGS84_AS_ITRF2014) ITRF2014 else this
+
+    /**
+     * The tectonic plate a [FrameKind.PLATE_FIXED] frame follows (null for global frames), so callers can
+     * warn when a point lies off that plate (see [TectonicPlate.areaNote]). Transformations themselves
+     * never refuse a point for its location.
+     */
+    public val plate: TectonicPlate?
+        get() = when (this) {
+            NAD83_2011, NATRF2022 -> TectonicPlate.NORTH_AMERICA
+            else -> null
+        }
 
     public companion object {
         /** The frame with this stable [id], or null for an unknown (or null) id. */
