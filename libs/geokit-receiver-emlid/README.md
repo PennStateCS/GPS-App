@@ -28,13 +28,25 @@ endpoints sit behind `EmlidReachDevice.EmlidApi`, so tests can replace them.
 Package `io.github.pennstatecs.geokit.receiver.emlid.nmea`, plugged into geokit-gnss's extra-parser
 mechanism (see geokit-gnss's README, "Proprietary sentences"):
 
-- `EBP` (base position: lat, lon, altitude; no time field) and `ETC` (time plus raw, undocumented data
-  fields; `hasOrientationData` when any is non-blank, which sets the `orientation` diagnostic flag),
-  parsed by `EbpParser` / `EtcParser`. Neither ever changes a fix, and ETC is never mapped to a heading.
+- `EBP` (base position: lat, lon, altitude; no time field) and `ETC` (tilt compensation data), parsed by
+  `EbpParser` / `EtcParser`. `ETC` keeps the time and raw fields (`hasOrientationData` when any is
+  non-blank, which sets the `orientation` diagnostic flag) and `ETC.decoded` (`EtcFields`) reads Emlid's
+  documented layout: time-of-fix, state, notification, heading, tilt direction, tilt value, n/e/u accuracy
+  coefficients. Malformed sentences carry `malformedReason` and no values; nothing throws. Neither sentence
+  ever changes a fix, and ETC is never applied to a position or to AR.
 - `EmlidNmea.parsers`: both parsers keyed by tag, for `DefaultNmeaRegistry.create(extraParsers = …)`
   and `ReplayAdapter(extraParsers = …)`.
 - `EmlidNmeaDiagnostics.from(fuser.extraSentenceStats)`: `ebpSeen`, `etcSeen`, `ebpCount`, `etcCount`,
   `imuOrientationSeen` (any ETC had a payload) and `latestEtc`.
+
+### Tilt state and position reference (package `.tilt`)
+
+- `EmlidTiltState` (OFF, INITIALIZING, ALIGNING, ACTIVE, UNAVAILABLE, UNKNOWN) and `EmlidTiltReading`.
+- `EmlidTiltTracker`: pairs an ETC with a fix only when the ETC's UTC time-of-fix matches the GGA time
+  (0.05 s) and it was received within 1 s of the fix; otherwise UNKNOWN with a `TiltMatch` reason.
+- `EmlidPositionReference.classify`: ANTENNA, RECEIVER_COMPENSATED_POLE_TIP (only with compensated NMEA
+  output declared on, firmware >= 34.7 and a matched compensating ETC) or UNKNOWN. An ETC alone never means
+  pole tip. Evidence and app rules: `docs/geodesy/rs4-pro-tilt.md`.
 
 The tests replay geokit-gnss's Reach captures (its `src/test/resources` is a test-resource directory
 here, so the fixtures exist once) and check against the pre-move goldens that the fixes are unchanged
