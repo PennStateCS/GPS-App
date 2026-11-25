@@ -62,14 +62,14 @@ object AppGeoidModels {
     fun model(id: GeoidModelId): GeoidModel? = when (id) {
         GeoidModelId.EGM2008 -> egm2008NonBlocking
         GeoidModelId.EGM96 -> egm96NonBlocking
-        GeoidModelId.GEOID18 -> null
+        GeoidModelId.GEOID18, GeoidModelId.GEOID2022 -> null
     }
 
     /** The model itself (loads synchronously on first use, any thread): for [warmUp]. */
     private fun rawModel(id: GeoidModelId): GeoidModel? = when (id) {
         GeoidModelId.EGM2008 -> egm2008
         GeoidModelId.EGM96 -> egm96
-        GeoidModelId.GEOID18 -> null
+        GeoidModelId.GEOID18, GeoidModelId.GEOID2022 -> null
     }
 
     /** A position inside the bundled EGM2008 CONUS tiles (and EGM96's global grid) used to open the data. */
