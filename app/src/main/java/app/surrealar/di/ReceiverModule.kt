@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Singleton
 
 /** Receiver status devices: the vendor implementations behind [ReceiverDeviceManager]. */
@@ -45,6 +46,35 @@ object ReceiverModule {
             discoveryFor = { profile -> if (profile.vendor == ReceiverVendor.EMLID) discovery else null },
             // Same kind of scope the former ReachDeviceRepository owned: IO, survives the UI.
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineModule.LogUncaught),
+        )
+    }
+
+    /**
+     * Phase 4 WP C: receiver tilt status (RS4 / RS4 Pro ETC) for the active external source. Status only: fed
+     * from the TCP stream's line hook (GnssModule), reset on source / profile change (and on connection changes,
+     * bound in GnssModule), firmware from the device manager.
+     */
+    @Provides
+    @Singleton
+    fun provideReceiverTiltMonitor(
+        appScope: CoroutineScope,
+        sourceSettings: SourceSettings,
+        settings: ExternalReceiverSettingsRepository,
+        receiverDevices: ReceiverDeviceManager,
+    ): app.surrealar.receiver.tilt.ReceiverTiltMonitor {
+        val profile = settings.externalReceiverProfile.stateIn(
+            appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT)
+        val output = settings.compensatedNmeaOutput.stateIn(
+            appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT)
+        val firmware = receiverDevices.deviceInfo.map { it?.firmware }.stateIn(
+            appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+        return app.surrealar.receiver.tilt.ReceiverTiltMonitor(
+            scope = appScope,
+            profile = profile,
+            compensatedOutput = output,
+            firmware = firmware,
+            resetSignals = kotlinx.coroutines.flow.combine(sourceSettings.activeProvider, profile) { p, prof -> p to prof },
+            clockMs = { android.os.SystemClock.elapsedRealtime() },
         )
     }
 }

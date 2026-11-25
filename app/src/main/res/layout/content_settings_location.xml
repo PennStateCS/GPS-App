@@ -201,6 +201,54 @@
                         android:textAppearance="?attr/textAppearanceBodySmall"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
+                    <!-- Phase 4 WP C: RS4 / RS4 Pro tilt — Emlid Flow's compensated NMEA output and live tilt status -->
+                    <LinearLayout
+                        android:id="@+id/group_receiver_tilt"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="20dp"
+                            android:layout_marginEnd="20dp"
+                            android:layout_marginTop="8dp"
+                            android:hint="Compensated NMEA output (Emlid Flow)">
+
+                            <AutoCompleteTextView
+                                android:id="@+id/dropdown_compensated_output"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="none"
+                                android:singleLine="true"
+                                android:popupBackground="@drawable/bg_dropdown_menu" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <TextView
+                            android:id="@+id/text_compensated_output_hint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="20dp"
+                            android:layout_marginEnd="20dp"
+                            android:layout_marginTop="4dp"
+                            android:text="Set this to match Emlid Flow's position output. Enabled: the receiver sends the tilt-compensated pole tip with its own pole height, and captures do not subtract the pole height again. Unknown: positions that may be compensated are refused."
+                            android:textAppearance="?attr/textAppearanceBodySmall"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                        <TextView
+                            android:id="@+id/text_receiver_tilt_status"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="20dp"
+                            android:layout_marginEnd="20dp"
+                            android:layout_marginTop="8dp"
+                            android:layout_marginBottom="4dp"
+                            android:textAppearance="?attr/textAppearanceBodyMedium" />
+                    </LinearLayout>
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -698,7 +746,7 @@
                     android:paddingHorizontal="20dp"
                     android:paddingTop="4dp"
                     android:alpha="0.7"
-                    android:text="Level the pole: the app assumes a vertical pole and applies no tilt correction. Reach RS4 Pro: if tilt compensation or compensated-position streaming is on in Emlid Flow, the receiver may already report the pole tip, and the pole height entered here would be subtracted twice. Until this is verified, turn tilt compensation off and level the pole."
+                    android:text="Level the pole: the app applies no tilt correction of its own. Reach RS4 / RS4 Pro: set &quot;Compensated NMEA output&quot; above to match Emlid Flow. When the receiver sends tilt-compensated pole-tip positions, captures do not subtract this pole height (Emlid Flow's is used); positions that may be compensated are refused. Not yet verified on an RS4 Pro: see the tablet checklist."
                     android:textAppearance="?attr/textAppearanceBodyMedium" />
 
                 <!-- Shown once for installs that stored a pole height under the old meaning

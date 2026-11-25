@@ -15,7 +15,8 @@ The position the app captures is the GGA latitude/longitude and H + N (h = H + N
 `$..ETC` (Emlid Tilt Compensation) sentences are detected and counted for diagnostics
 (`EmlidNmeaDiagnostics`, shown by `NmeaStreamDiagnosticsFormatter`). Since Phase 4 WP T geokit-receiver-emlid
 also decodes them per the official layout and offers a per-fix tilt state and a position-reference
-classification (see "Phase 4 WP T" below); the app does not use them yet. No tilt value is applied anywhere.
+classification (see "Phase 4 WP T" below); since Phase 4 WP C the app uses them for status and capture rules (see
+"Phase 4 WP C" below). No tilt value is applied to any position.
 
 ## How the app reduces heights
 
@@ -193,6 +194,27 @@ C = confirmed by the cited source. A = an assumption or something undocumented, 
 5. UNKNOWN → keep today's maths and show "position interpretation uncertain" with the reason.
 6. Never apply ETC tilt values to positions in the app. S2's GGA+ETC method would correct an
    already-compensated stream a second time.
+
+### Phase 4 WP C: what the app does now (2026-11-25)
+
+Items 1–6 above are implemented (app `receiver/tilt/`, `CaptureViewModel`), with one stricter rule than item 5:
+
+1. `ReceiverTiltMonitor` reads ETC lines from the TCP stream's line hook (own checksum-verified ETC parser; geokit-gnss
+   parsing and fusion untouched) into one `EmlidTiltTracker`, reset on source / profile / connection change. Each fix
+   is paired with its own epoch's ETC (waiting up to 1 s for it; never an older ETC).
+2. Settings → Receiver → "Compensated NMEA output (Emlid Flow)": Unknown (default) / Enabled / Disabled, DataStore
+   key `external_compensated_nmea_output`; firmware from the device manager's device info. Shown for RS4 / RS4 Pro only,
+   with the live tilt state (off / initializing / aligning / active / temporarily unavailable), tilt angle + heading,
+   warnings and the position reference with a one-line explanation; same on the Developer page.
+3. Pole-tip occupations are stored with no pole-height / PCO reduction (`captureMethod` `EXTERNAL_GNSS_POLE_TIP`,
+   `antennaHeightM` null).
+4. Antenna epochs: today's maths; `antennaMayBeTilted` explains "keep the pole plumb".
+5. **Stricter than WP T:** an UNKNOWN epoch that *may* be compensated (geokit `mayBeCompensated`, or — app rule — the
+   setting is still Unknown while the ETC shows the tilt engine on) is never reduced and never averaged; if only such
+   epochs arrive the capture stops with "Receiver may be sending tilt-compensated positions; set 'Compensated NMEA
+   output' in Settings → Receiver." UNKNOWN epochs with no sign of the tilt engine keep today's maths ("uncertain").
+6. ETC tilt values are never applied to any position. Mixed references, tilt loss and interpretation-changing setting
+   changes stop the occupation (table in [phase4-position-references.md](phase4-position-references.md)).
 
 ### Needs a receiver test (RS4 / RS4 Pro, firmware ≥ 34.7, on a known mark)
 

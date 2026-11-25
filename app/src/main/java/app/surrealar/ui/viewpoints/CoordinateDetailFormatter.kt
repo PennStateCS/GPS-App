@@ -30,6 +30,7 @@ object CoordinateDetailFormatter {
     fun captureMethodLabel(m: String?): String? = when (m?.lowercase(Locale.US)) {
         "internal_gps"   -> "Internal GPS"
         "external_gnss"  -> "External GNSS"
+        "external_gnss_pole_tip" -> "External GNSS (receiver tilt-compensated pole tip; app pole height not applied)"
         "rtk_receiver"   -> "RTK Receiver"
         "model_embedded" -> "Model embedded location"
         "map_tap"        -> "Map tap"

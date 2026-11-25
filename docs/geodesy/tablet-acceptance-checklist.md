@@ -1,4 +1,4 @@
-# Phases 1, 2, 3 + 4 (WP U, WP X) — consolidated tablet acceptance checklist
+# Phases 1, 2, 3 + 4 (WP U, WP X, WP C) — consolidated tablet acceptance checklist
 
 Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK for sections 1–7;
 the Phase 3 build (`survey/phase3`, incl. WP W) for section 8 (sections 1–7 must still pass on it). Do the installation
@@ -135,10 +135,78 @@ ends "SPCS2022: not yet available."). With the preview ON, 9.1 and 9.3 change as
 | 10.10 | Map, AR, stakeout, capture with SPCS2022 / NATRF2022 chosen | Unchanged (they use the stored WGS84 positions; nothing 2022 is stored); a captured throwaway point stores exactly what 4.1 stores | A (unchanged tests) + D |
 | 10.11 | Hawaii / Puerto Rico / Guam (only if a test point exists there, else skip) | PATRF2022 / CATRF2022 / MATRF2022 (beta) outputs and zones 150001 / 720001 / 660001 work with their own frame; off-plate use is allowed but the area note says where each frame is meant for | A (`Nsrs2022OutputTest`) |
 
+## 11. Phase 4 WP C — RS4 / RS4 Pro tilt awareness, capture rules, survey context
+
+Build: `survey/phase4-c`. Background: [rs4-pro-tilt.md](rs4-pro-tilt.md), [phase4-position-references.md](phase4-position-references.md).
+Column **Needs**: **H** = real Reach RS4 Pro (firmware ≥ 34.7) on TCP, **K** = a known control mark (published or
+project coordinates), **E** = expert (surveyor / geodesist) interpretation, **—** = tablet + RS2+ only. A = covered by
+unit tests (named), D = device check.
+
+**RS2+ capture regression** (must be exactly as in section 4)
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.1 | RS2+ profile: capture a throwaway point with the usual preset | Same rules, timing and Save as before; Details: captureMethod "External GNSS", antenna height = pole + 0.134 m, altitude reduced as before; no "Position:" line in the dialog | — | A (`CaptureTiltRulesJvmTest` rs2Plus…, `CaptureViewModelJvmTest`, `CaptureReceiverDatumJvmTest`) + D |
+| 11.2 | Settings → Receiver with RS2+ (and Generic NMEA) | No "Compensated NMEA output" field and no tilt status; Developer page "Receiver Tilt": "not applicable" | — | D |
+| 11.3 | RS2+ capture, then change the pole height during the occupation | Capture continues; saved point uses the pole height from the start | — | A (`antennaSettingChange_midCapture…`) + D |
+
+**RS4 Pro NMEA / ETC stream**
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.4 | RS4 Pro profile, TCP connected, tilt off in Emlid Flow | Settings → Receiver: "Tilt: off", "Position: receiver antenna"; Developer: ETC rate ≈ GGA rate (5 Hz) | H | A (`ReceiverTiltMonitorTest`) + D |
+| 11.5 | Firmware shown | Settings tilt status / Developer "Firmware" = the receiver's firmware (from device info); with output Enabled and firmware < 34.7 or unknown, a note says compensated output needs 34.7 | H | D |
+| 11.6 | Diagnostic export with the RS4 Pro streaming | survey-context.txt: ETC count / rate, tilt state, freshness "live", position reference + reason | H | A (`SurveyContextCollectorTest`) + D |
+
+**Tilt on / off transitions**
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.7 | Turn tilt on in Emlid Flow; watch Settings → Receiver | initializing → aligning (move the receiver) → active with tilt angle and heading; fast motion shows "Tilt warning: fast motion" | H | A (`TiltStatusText` via `ReceiverTiltMonitorTest`) + D |
+| 11.8 | Output setting Unknown, tilt active, start a capture | No epochs accepted; after ≈ 10 s "Receiver may be sending tilt-compensated positions; set 'Compensated NMEA output' in Settings → Receiver."; Restart capture button shown; nothing saved | H | A (`unknownSetting_withTiltOn…`) + D |
+| 11.9 | Output Enabled, tilt active: capture; then break RTK FIX (cover the antenna) during a second capture | First: completes, "Position: pole tip (receiver tilt-compensated)"; second: "Capture stopped: tilt compensation was lost …" | H | A (`tiltLoss_duringPoleTipOccupation_stops`) + D |
+| 11.10 | Output Enabled, tilt active capture running; turn tilt off in Emlid Flow | "Capture stopped: the receiver's position reference changed …"; Restart capture starts a clean antenna occupation | H | A (`referenceChange…`, `restart_afterAnInterruption…`) + D |
+| 11.11 | Mock location / AR with tilt active and output Enabled | AR still localises; log line "Mock location altitude withheld …"; AR-vs-GNSS panel shows no vertical value | H | A (`status_followsObservedFixes_andFlagsPoleTipHeightsForAr`) + D |
+
+**Pole-height interpretation** (the open question of rs4-pro-tilt.md)
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.12 | On a known mark, output Enabled, tilt active, pole plumb then tilted ≈ 15°: capture both | Both saved points within a few cm of the mark horizontally **and** vertically; Details "External GNSS (receiver tilt-compensated pole tip; app pole height not applied)", no antenna height; values independent of the app's pole height setting | H, K, E | D |
+| 11.13 | Same mark, output Disabled (non-compensated), pole plumb | Point within a few cm of the mark with the app's pole height + PCO; with the pole tilted the horizontal error ≈ pole × sin(tilt) | H, K, E | D |
+| 11.14 | Compare 11.12 against 11.13 heights | Differ by < 3 cm (no double correction ≈ pole height); if not, record GGA + ETC (NMEA log) for the geodesist | H, K, E | D |
+| 11.15 | Output Enabled during alignment / after a FIX loss: what does GGA hold? | The app refuses those epochs; record whether GGA was antenna or pole tip for the rs4-pro-tilt doc | H, K, E | D |
+
+**Datum / profile changes during capture**
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.16 | During an external occupation change the receiver profile | "Capture stopped: the receiver profile changed …"; nothing saved; Restart capture works | — | A (`profileChange_stops…`) + D |
+| 11.17 | During an RS4 occupation change "Compensated NMEA output" | "Capture stopped: 'Compensated NMEA output' changed …" | — (RS4 profile, any receiver) | A + D |
+| 11.18 | During an occupation connect to another receiver (host) | "Capture stopped: the receiver connection changed …" | — | A (`receiverHostChange_stops`) + D |
+| 11.19 | Correction base change during an occupation (switch NTRIP mount / base) | "Capture stopped: the correction base station changed …" (only when the GGA carries station ids) | — (RTK base/NTRIP) | A (`correctionBaseChange…`) + D |
+| 11.20 | Change Settings → External receiver datum right before / during an occupation | As 4.x: buffered old-datum fixes never averaged; mid-occupation change stops | — | A (`CaptureFeedDatumIntegrationTest`, `CaptureReceiverDatumJvmTest`) + D |
+| 11.21 | Wi-Fi off / on during an RS2+ occupation (reconnect) | Occupation continues after the reconnect (status only) | — | D |
+
+**Known-control observations**
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.22 | Capture on 2–3 known marks with RS2+ and (if available) RS4 Pro, output Disabled and Enabled | Residuals vs published values within the receiver's RTK spec + datum handling (record the datum, epoch and geoid used) | K, E (H for RS4) | D |
+
+**Diagnostic export**
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.23 | Export a report after 11.8–11.10 | survey-context.txt lists receiver model / connection type, source and profile, receiver frame, compensated output, firmware, coordinate epoch, fix type, correction age, h/v accuracy, sats/DOP, sentence counts incl. ETC rate, tilt state + freshness, pole height / PCO, position reference, interruption counts + last reason, horizontal / vertical systems + beta flag, geoid model + version + load state, transformation paths, grid failures | — | A (`SurveyContextCollectorTest`, `ReportAssemblerTest`) + D |
+| 11.24 | Search the exported ZIP for the receiver IP, NTRIP user/password, lat/lon of the captured points | None present in survey-context.txt (fix shown by quality only) | — | A (`SurveyContextCollectorTest` redaction) + D |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
 offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;
 Phase 3: the preview row and status list layout, GEOID2022 offline first-load time, plausibility of NAPGD2022
 heights against local knowledge. Phase 4 WP X: the new notes' layout, the SPCS2022 catalog first-load time on the
 tablet (toolbar briefly "SPCS2022 zone data is loading" in the system summary), plausibility of SPCS2022 values
-against a project control point or NGS beta tools.
+against a project control point or NGS beta tools. Phase 4 WP C: the RS4 Pro stream and every tilt
+transition (section 11, H), pole-tip interpretation on a known mark (11.12–11.15, H + K + E), the capture dialog's
+Restart button and messages on the tablet.

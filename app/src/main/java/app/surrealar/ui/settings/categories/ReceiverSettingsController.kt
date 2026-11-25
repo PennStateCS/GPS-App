@@ -90,6 +90,8 @@ internal class ReceiverSettingsController(
      * real probes. Lets tests hold an attempt "in flight" deterministically.
      */
     private val connectProbeOverride: (suspend (host: String, port: Int) -> Pair<TcpTestResult, Boolean>)? = null,
+    /** RS4 / RS4 Pro tilt status (Phase 4 WP C); null = the tilt rows stay hidden (tests that predate it). */
+    private val tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor? = null,
 ) : SettingsCategoryController {
 
     companion object {
@@ -203,6 +205,48 @@ internal class ReceiverSettingsController(
         return view
     }
 
+    // ───────────────────────────── RS4 / RS4 Pro tilt ─────────────────────────
+    /**
+     * "Compensated NMEA output (Emlid Flow)" selector and the live tilt / position-reference status (Phase 4 WP C).
+     * Status only: nothing here changes a position.
+     */
+    private fun setupTiltUi(view: View, categoryScope: CoroutineScope) {
+        val monitor = tiltMonitor ?: return
+        val dropdown = view.findViewById<AutoCompleteTextView>(R.id.dropdown_compensated_output)
+        val statusText = view.findViewById<TextView>(R.id.text_receiver_tilt_status)
+        val options = app.surrealar.settings.model.CompensatedOutputSetting.entries
+        dropdown?.setAdapter(ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, options.map { it.label }))
+        categoryScope.launch {
+            val current = runCatching { settingsRepo.compensatedNmeaOutput.first() }
+                .getOrDefault(app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT)
+            dropdown?.setText(current.label, false)
+        }
+        dropdown?.setOnItemClickListener { _, _, position, _ ->
+            val chosen = options.getOrNull(position) ?: return@setOnItemClickListener
+            saveScope.launch {
+                runCatching { settingsRepo.setCompensatedNmeaOutput(chosen) }
+                    .onSuccess { DiagnosticsLogger.i(DiagTags.RECEIVER, "Compensated NMEA output set value=${chosen.prefKey}") }
+                    .onFailure { settingsError("Settings save failed section=compensatedOutput", it) }
+            }
+        }
+        categoryScope.launch {
+            fragment.viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                monitor.status.collect { st ->
+                    statusText?.text = buildString {
+                        append(app.surrealar.receiver.tilt.TiltStatusText.stateLine(st))
+                        app.surrealar.receiver.tilt.TiltStatusText.warningLine(st)?.let { append("\n").append(it) }
+                        append("\n").append(app.surrealar.receiver.tilt.TiltStatusText.referenceLine(st))
+                        if (st.compensatedOutput == app.surrealar.settings.model.CompensatedOutputSetting.ENABLED &&
+                            !io.github.pennstatecs.geokit.receiver.emlid.tilt.EmlidPositionReference.firmwareAtLeast(
+                                st.firmware, io.github.pennstatecs.geokit.receiver.emlid.tilt.EmlidPositionReference.MIN_COMPENSATED_FIRMWARE)) {
+                            append("\nFirmware: ${st.firmware ?: "not known yet"} (compensated output needs 34.7 or later).")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ───────────────────────────── Location Source UI ─────────────────────────
     private fun setupLocationSourceUi(view: View, categoryScope: CoroutineScope) {
         val radioGroup = view.findViewById<RadioGroup>(R.id.radio_location_source)
@@ -227,10 +271,13 @@ internal class ReceiverSettingsController(
                 ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, profiles.map { it.label })
             )
 
+            val tiltGroup = view.findViewById<View>(R.id.group_receiver_tilt)
             fun applyHint(profile: app.surrealar.settings.model.ExternalReceiverProfile) {
                 val baseHelp = "Choose the receiver model so the app can use the right labels, " +
                     "defaults, and diagnostics. Position data still comes from NMEA over TCP."
                 profileHint?.text = profile.hint?.let { "$baseHelp\n\n$it" } ?: baseHelp
+                // Tilt (compensated output + status) only for receivers with an IMU (RS4 / RS4 Pro).
+                tiltGroup?.isVisible = tiltMonitor != null && app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile)
             }
 
             categoryScope.launch {
@@ -262,6 +309,8 @@ internal class ReceiverSettingsController(
                 }
             }
         }
+
+        setupTiltUi(view, categoryScope)
 
         val btnConnect = view.findViewById<Button>(R.id.btn_connect)
         val btnDisconnect = view.findViewById<Button>(R.id.btn_disconnect_device)

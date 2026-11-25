@@ -81,7 +81,10 @@ class CoordinateSystemService @Inject constructor(
             DiagnosticsLogger.d(DiagTags.DATA) { "GEOID18 grid load started" }
             geoid = runCatching {
                 Geoid18Grid.fromClasspath()   // bundled in geokit-core's jar, packaged into the APK
-            }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded durationMs=${(System.nanoTime() - t0) / 1_000_000}") }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid load failed: NAVD88 heights unavailable", it) }
+            }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded durationMs=${(System.nanoTime() - t0) / 1_000_000}") }.onFailure {
+                DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid load failed: NAVD88 heights unavailable", it)
+                recordGridFailure("GEOID18 grid load failed (${it.javaClass.simpleName})")
+            }
                 .getOrNull()
             geoid18Loading = false
             geoid18Events.value = geoid18Events.value + 1
@@ -104,8 +107,14 @@ class CoordinateSystemService @Inject constructor(
                 val r = warmUps.warmUp(id) ?: return@collect
                 r.onSuccess {
                     if (warmUps.isWarm(id)) DiagnosticsLogger.i(DiagTags.DATA, "${id.token} geoid opened availability=$it durationMs=${(System.nanoTime() - t0) / 1_000_000}")
-                    else DiagnosticsLogger.w(DiagTags.DATA, "${id.token} geoid open failed availability=$it: ${id.token} heights unavailable (will retry)")
-                }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "${id.token} geoid open failed: ${id.token} heights unavailable", it) }
+                    else {
+                        DiagnosticsLogger.w(DiagTags.DATA, "${id.token} geoid open failed availability=$it: ${id.token} heights unavailable (will retry)")
+                        recordGridFailure("${id.token} geoid open failed (availability=$it)")
+                    }
+                }.onFailure {
+                    DiagnosticsLogger.e(DiagTags.DATA, "${id.token} geoid open failed: ${id.token} heights unavailable", it)
+                    recordGridFailure("${id.token} geoid open failed (${it.javaClass.simpleName})")
+                }
             }
         }
     }
@@ -127,7 +136,35 @@ class CoordinateSystemService @Inject constructor(
                 spcs2022Events.value = spcs2022Events.value + 1
                 DiagnosticsLogger.i(DiagTags.DATA, "SPCS2022 beta catalog loaded zones=$it durationMs=${(System.nanoTime() - t0) / 1_000_000}")
             }
-            .onFailure { DiagnosticsLogger.e(DiagTags.DATA, "SPCS2022 beta catalog load failed: SPCS2022 output unavailable", it) }
+            .onFailure {
+                DiagnosticsLogger.e(DiagTags.DATA, "SPCS2022 beta catalog load failed: SPCS2022 output unavailable", it)
+                recordGridFailure("SPCS2022 beta catalog load failed (${it.javaClass.simpleName})")
+            }
+    }
+
+    // ── diagnostics (Phase 4 WP C: survey context in the diagnostic report) ──
+    private val gridFailures = java.util.Collections.synchronizedList(ArrayList<String>())
+
+    private fun recordGridFailure(what: String) {
+        synchronized(gridFailures) { if (gridFailures.size < 20) gridFailures.add(what) }
+    }
+
+    /** Grid / model loading failures this process (model and exception type only; no paths, no positions). */
+    fun gridLoadFailures(): List<String> = synchronized(gridFailures) { gridFailures.toList() }
+
+    /**
+     * Load state of the height model [s] uses, for diagnostics: "loaded", "loading", "failed", or why none is
+     * needed. Never loads anything.
+     */
+    fun heightModelState(s: CoordinateSystemSettings = settings): String {
+        val v = s.effectiveVertical
+        val id = v.appGeoidModel()
+        return when {
+            v == app.surrealar.settings.model.VerticalReference.NAVD88_GEOID18 ->
+                if (geoid != null) "loaded" else if (geoid18Loading) "loading" else "failed"
+            id != null -> if (warmUps.isWarm(id)) "loaded" else "not loaded yet (opens in the background when selected)"
+            else -> "no app geoid model needed for ${v.shortLabel}"
+        }
     }
 
     /** The saved SPCS2022 zone: never parses the catalog on the main thread (loads synchronously elsewhere). */

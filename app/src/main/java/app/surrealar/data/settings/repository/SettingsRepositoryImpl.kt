@@ -61,6 +61,13 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setExternalReceiverProfile(profile.prefKey)
     }
 
+    override val compensatedNmeaOutput: Flow<app.surrealar.settings.model.CompensatedOutputSetting> =
+        local.externalCompensatedNmeaOutputRaw.map { app.surrealar.settings.model.CompensatedOutputSetting.fromPrefKey(it) }
+
+    override suspend fun setCompensatedNmeaOutput(value: app.surrealar.settings.model.CompensatedOutputSetting) {
+        local.setExternalCompensatedNmeaOutput(value.prefKey)
+    }
+
     override suspend fun setExternalReceiverSettings(settings: app.surrealar.settings.model.ExternalReceiverSettings) {
         local.editAll {
             it[K.EXTERNAL_RECEIVER_PROFILE] = settings.profile.prefKey

@@ -16,7 +16,13 @@ enum class CaptureMethod {
     MANUAL,
     IMPORTED,
     MODEL_EMBEDDED,
-    SIMULATOR;
+    SIMULATOR,
+    /**
+     * External receiver capture whose epochs were the receiver's own tilt-compensated pole-tip positions
+     * (Reach RS4 / RS4 Pro with compensated NMEA output, Phase 4 WP C). The receiver applied its pole height
+     * (set in Emlid Flow); the app subtracted no pole height / phase-centre offset (antennaHeightM is null).
+     */
+    EXTERNAL_GNSS_POLE_TIP;
 
     /** User-friendly label for UI/export. */
     val displayName: String
@@ -27,6 +33,7 @@ enum class CaptureMethod {
             IMPORTED       -> "Imported"
             MODEL_EMBEDDED -> "Model location"
             SIMULATOR      -> "Simulator"
+            EXTERNAL_GNSS_POLE_TIP -> "External GNSS (receiver pole tip)"
         }
 
     /** Canonical storage token (enum name). */

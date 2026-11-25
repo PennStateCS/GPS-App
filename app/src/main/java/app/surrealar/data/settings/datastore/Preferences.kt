@@ -40,6 +40,8 @@ object SettingsKeys {
     val EXTERNAL_TCP_PORT = intPreferencesKey("external_tcp_port")
     val EXTERNAL_TCP_NAME = stringPreferencesKey("external_tcp_name")
     val EXTERNAL_RECEIVER_PROFILE = stringPreferencesKey("external_receiver_profile")
+    /** Phase 4 WP C: Emlid Flow "compensated NMEA output" as declared by the user (RS4 / RS4 Pro). */
+    val EXTERNAL_COMPENSATED_NMEA_OUTPUT = stringPreferencesKey("external_compensated_nmea_output")
 
     // Settings storage schema version (for migrations). Absent = pre-versioning install (treated as 0).
     val SETTINGS_SCHEMA_VERSION = intPreferencesKey("settings_schema_version")
@@ -161,6 +163,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val externalTcpPort: Flow<Int?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_PORT] }
     val externalTcpName: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_NAME] }
     val externalReceiverProfileRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] }
+    val externalCompensatedNmeaOutputRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_COMPENSATED_NMEA_OUTPUT] }
     val schemaVersion: Flow<Int?> = dataStore.data.map { it[SettingsKeys.SETTINGS_SCHEMA_VERSION] }
     suspend fun setSchemaVersion(v: Int) { dataStore.edit { it[SettingsKeys.SETTINGS_SCHEMA_VERSION] = v } }
 
@@ -245,6 +248,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
         prefs[SettingsKeys.EXTERNAL_TCP_HOST] = host; prefs[SettingsKeys.EXTERNAL_TCP_PORT] = port } }
     suspend fun setExternalTcpName(name: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_TCP_NAME] = name } }
     suspend fun setExternalReceiverProfile(prefKey: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] = prefKey } }
+    suspend fun setExternalCompensatedNmeaOutput(prefKey: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_COMPENSATED_NMEA_OUTPUT] = prefKey } }
     suspend fun clearExternalTcp() { dataStore.edit { prefs ->
         prefs.remove(SettingsKeys.EXTERNAL_TCP_HOST); prefs.remove(SettingsKeys.EXTERNAL_TCP_PORT); prefs.remove(SettingsKeys.EXTERNAL_TCP_NAME) } }
 

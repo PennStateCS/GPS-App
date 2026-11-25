@@ -855,6 +855,11 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             "Serial", "Uptime", "Storage"
         ))
 
+        // ── RS4 / RS4 Pro tilt (status only) ──────────────────────────────────
+        val tiltSection = buildSection("Receiver Tilt (RS4 / RS4 Pro)", listOf(
+            "Tilt", "Warning", "Position reference", "Interpretation", "Compensated output", "Firmware", "ETC rate",
+        ))
+
         // ── Skyplot ───────────────────────────────────────────────────────────
         val (skyplotCard, skyplotCardRows) = buildInfoCard(ctx, "Satellite Skyplot")
         val skyplotView = SkyplotView(ctx).apply {
@@ -1112,6 +1117,19 @@ class DevelopmentFragment : BaseTwoPaneFragment() {
             launch { viewModel.diagnosticData.collect { data -> applyDiagnostics(data) } }
             launch { viewModel.batteryInfo.collect { b -> applyBattery(b) } }
             launch { viewModel.deviceInfo.collect { d -> applyDevice(d) } }
+            launch {
+                viewModel.tiltStatus.collect { st ->
+                    val t = app.surrealar.receiver.tilt.TiltStatusText
+                    tiltSection.values["Tilt"]?.text = if (st.applicable) t.stateLine(st).removePrefix("Tilt: ") else "not applicable (profile has no IMU)"
+                    tiltSection.values["Warning"]?.text = t.warningLine(st)?.removePrefix("Tilt warning: ") ?: "none"
+                    tiltSection.values["Position reference"]?.text = st.reference?.let { t.referenceLabel(it) } ?: "--"
+                    tiltSection.values["Interpretation"]?.text = (st.reference?.let { t.referenceExplanation(it, st.result) } ?: "--") +
+                        (st.result?.let { " (${it.reason})" } ?: "")
+                    tiltSection.values["Compensated output"]?.text = st.compensatedOutput.label
+                    tiltSection.values["Firmware"]?.text = st.firmware ?: "--"
+                    tiltSection.values["ETC rate"]?.text = "${t.etcRateText(st)} · ${st.etcCount} total"
+                }
+            }
             launch { viewModel.receiverCapabilities.collect { setExternalSectionVisibility(latestProviderLabel) } }
             launch {
                 viewModel.activeProviderLabel.collect { providerLabel ->

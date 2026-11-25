@@ -43,6 +43,8 @@ interface SurRealApplicationEntryPoint {
     fun diagnosticsService(): app.surrealar.gnss.diagnostics.DiagnosticsService
     fun receiverDeviceManager(): app.surrealar.receiver.ReceiverDeviceManager
     fun appDatabase(): app.surrealar.data.local.db.AppDatabase
+    fun receiverTiltMonitor(): app.surrealar.receiver.tilt.ReceiverTiltMonitor
+    fun coordinateSystemService(): app.surrealar.coords.CoordinateSystemService
 }
 
 /**
@@ -256,7 +258,9 @@ class SurRealApplication : Application() {
     private fun startMockLocationPublisher() {
         try {
             val entryPoint = EntryPointAccessors.fromApplication(this, SurRealApplicationEntryPoint::class.java)
-            mockLocationPublisher = AndroidMockLocationPublisher(this, entryPoint.fixSwitchboard(), settingsRepo)
+            val tilt = entryPoint.receiverTiltMonitor()
+            mockLocationPublisher = AndroidMockLocationPublisher(this, entryPoint.fixSwitchboard(), settingsRepo,
+                heightsMayBePoleTip = tilt::heightsMayBePoleTip)
             mockLocationPublisher.start(appScope)
         } catch (e: Exception) {
             DiagnosticsLogger.e(DiagTags.GNSS, "Mock location publisher start failed", e)

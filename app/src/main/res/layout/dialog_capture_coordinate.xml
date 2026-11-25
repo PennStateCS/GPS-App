@@ -121,6 +121,26 @@
                     android:text="Loading capture rules…"
                     android:textAppearance="?attr/textAppearanceBodySmall" />
 
+                <!-- RS4 / RS4 Pro: what the averaged positions are (antenna / receiver pole tip / uncertain) -->
+                <TextView
+                    android:id="@+id/text_position_reference"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:visibility="gone" />
+
+                <!-- Shown after the app stopped a capture (receiver setup / reference changed) -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_restart_capture"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:minHeight="48dp"
+                    android:text="Restart capture"
+                    android:visibility="gone" />
+
                 <!-- Thin progress -->
                 <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/progress_capture"

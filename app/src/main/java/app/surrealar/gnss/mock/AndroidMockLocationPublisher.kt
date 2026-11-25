@@ -58,7 +58,14 @@ import java.time.temporal.ChronoUnit
 class AndroidMockLocationPublisher(
     private val context: Context,
     private val fixSwitchboard: FixSwitchboard,
-    private val settingsRepo: SettingsRepository
+    private val settingsRepo: SettingsRepository,
+    /**
+     * Phase 4 WP C: true while the receiver's positions are (or may be) its tilt-compensated pole tip (RS4 /
+     * RS4 Pro). The injected altitude is the camera's, derived from the ANTENNA height (antennaAboveCameraM); a
+     * pole-tip height would put the camera roughly a pole length too low, so the altitude is left out then
+     * (no new calibration maths). Latitude/longitude are still published.
+     */
+    private val heightsMayBePoleTip: () -> Boolean = { false },
 ) {
 
     private val locationManager =
@@ -151,7 +158,12 @@ class AndroidMockLocationPublisher(
                 }
                 debugCountMock(drop)
                 if (drop != "") return@collect
-                publishLocation(fix, fixToLocation(fix, antennaAboveCameraM))
+                val poleTip = isExternalFix(fix) && heightsMayBePoleTip()
+                DiagnosticsLogger.logOnChange(DIAG, "mock.poleTipAltitude", poleTip) {
+                    if (poleTip) "Mock location altitude withheld: receiver positions are (or may be) the tilt-compensated pole tip"
+                    else "Mock location altitude published: receiver positions are the antenna"
+                }
+                publishLocation(fix, fixToLocation(fix, antennaAboveCameraM, omitAltitude = poleTip))
             }
         }
     }
@@ -239,6 +251,8 @@ class AndroidMockLocationPublisher(
         antennaAboveCameraM: Double = 0.0,
         nowWallMs: Long = System.currentTimeMillis(),
         nowElapsedNanos: Long = SystemClock.elapsedRealtimeNanos(),
+        /** Leave the altitude out (receiver pole-tip positions: the antenna-to-camera offset does not apply). */
+        omitAltitude: Boolean = false,
     ): Location =
         Location(LocationManager.GPS_PROVIDER).apply {
             latitude  = fix.latDeg
@@ -246,7 +260,7 @@ class AndroidMockLocationPublisher(
 
             // Android Location.altitude is WGS84 ellipsoidal (what ARCore expects). The fix is the
             // antenna; ARCore treats the location as the device, so lower it to the camera.
-            fix.altEllipsoidalM?.let { altitude = it - antennaAboveCameraM }
+            if (!omitAltitude) fix.altEllipsoidalM?.let { altitude = it - antennaAboveCameraM }
             fix.speedMps?.let       { speed = it.toFloat() }
             fix.courseDeg?.let      { bearing = it.toFloat() }
 
