@@ -1,6 +1,7 @@
-# Phases 1 + 2 — consolidated tablet acceptance checklist
+# Phases 1, 2 + 3 — consolidated tablet acceptance checklist
 
-Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK. Do the installation
+Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK for sections 1–7;
+the Phase 3 build (`survey/phase3`, incl. WP W) for section 8 (sections 1–7 must still pass on it). Do the installation
 exactly as in [install-and-rollback.md](install-and-rollback.md) (backup first, in-place install, never uninstall).
 Each check lists the **expected result**; tick only what you saw on the device.
 
@@ -72,6 +73,31 @@ receiver on TCP; optionally an old JSON backup made before the update (for impor
 | 7.1 | Receiver → antenna section | "Level the pole…" and the conditional RS4 Pro tilt warning, wrapping cleanly |
 | 7.2 | (RS4 Pro, optional) field test in [rs4-pro-tilt.md](rs4-pro-tilt.md) | Records whether GGA is antenna or pole tip with tilt on/off |
 
+## 8. Phase 3 — Modernized NSRS 2022 (beta preview)
+
+Beta = NGS pre-release data (GEOID2022 `beta_v0a`): never a default, always labelled, not for authoritative
+results. **A** = also covered by automated tests (named), **D** = device only.
+
+| # | Check | Expected result | A/D |
+|---|---|---|---|
+| 8.1 | After installing the Phase 3 build, open Settings → Coordinates | New row "Modernized NSRS 2022 (beta preview)" with the warning "Preliminary NGS beta products, not for authoritative survey results."; switch **off**; all other choices as before | A (`CoordinateSystemTokensTest`, `SettingsLocalDataSourceTest`) + D (look) |
+| 8.2 | Preview off: open the Height list; check Details, preview line, toolbar, CSV of an existing point | No GEOID2022 option; every value and label identical to before the update | A (`Geoid2022HeightTest` preview OFF, `CoordinateConverterGoldenTest`, `PointsCsvExporterPhase2Test`) + D |
+| 8.3 | Turn the preview on | The status list appears: "GEOID2022 heights (NAPGD2022): beta"; NATRF2022, PATRF2022, CATRF2022, MATRF2022 and "SPCS2022 (953 NGS beta zones)": "unavailable — awaiting NGS verification", followed by "Why: …" reasons | A (`Nsrs2022CapabilitiesTest`) + D (layout, light/dark) |
+| 8.4 | Preview on: Datum list, State Plane zone search ("Penn", "420001", "PA_NE") | Datum list unchanged (no NATRF2022/2022 frames); zone search lists only the SPCS83 zones, as before | A (`CoordinateSystemTokensTest`, `SpcsZoneSearchTest`) + D |
+| 8.5 | Preview on: Height list | Extra option "Orthometric height H (NAPGD2022, GEOID2022 beta)", fully readable (≤ 2 lines, light and dark theme) | A (`CoordinateHeightDropdownFitTest`) + D |
+| 8.6 | Choose it (Hazleton or any lower-48 position) | Preview: "… m NAPGD2022 beta" and "… · NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 20xx.xxx"; red note under Height "Beta: GEOID2022 (beta beta_v0a) … not for authoritative survey results."; value differs from the GEOID18 (NAVD88) height (a different vertical datum: NGS expects NAVD88 → NAPGD2022 changes of decimetres to about a metre in the lower 48), never identical to it | A (`Geoid2022HeightTest`: equals h(ITRF2020) − N(GEOID2022, epoch) from geokit) + D (plausibility) |
+| 8.7 | Point Details with GEOID2022 | Coordinate system row ends with "GEOID2022 (beta beta_v0a) epoch …" (the point's coordinate epoch); Height row label "Height at mark · Orthometric height H (NAPGD2022, GEOID2022 beta)"; row "Height model (beta)" with NAPGD2022, ITRF2020 and the caution | A (`CoordinateDetailFormatterTest`) + D |
+| 8.8 | Airplane mode, cold start with GEOID2022 chosen; open the list / preview | Works offline; UI never freezes; at most a brief "GEOID2022 data is loading", then values | A (`Geoid2022HeightTest` main-thread test) + D (timing) |
+| 8.9 | (Replay or a position outside the bundled packs, e.g. Mexico City; optional) | Height "outside GEOID2022 (beta) data bundled in this app (…)" — never an EGM/GEOID18 value | A |
+| 8.10 | Turn the preview **off** with GEOID2022 chosen | Height field shows "Orthometric height H (receiver geoid, model unknown)" with the red note "… is saved, but the NSRS 2022 beta preview is off: showing the default height …"; values are the default receiver heights; turning the preview on again restores GEOID2022 (the saved choice was not changed) | A (`CoordinateSystemTokensTest`, `Geoid2022HeightTest`, `SettingsLocalDataSourceTest`) + D |
+| 8.11 | Force-stop and reopen the app (preview on, GEOID2022) | Preview switch and height choice persisted | A (`SettingsLocalDataSourceTest`) + D |
+| 8.12 | CSV export with GEOID2022 | 6 columns, same order; header "Elevation (m H GEOID2022 beta)"; System column "… · NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch …"; values match Details | A (`PointsCsvExporterPhase2Test`) + D (SAF save) |
+| 8.13 | JSON backup export + import with the preview on | Unchanged format (raw measurements only; GEOID2022 heights are computed for display, never stored); imports as before | D (no change in code; regression check) |
+| 8.14 | Existing points, Map, AR pins/models, stakeout with the preview on and off | Unchanged (map/AR/stakeout use the stored WGS84 positions; GEOID2022 affects only displayed/exported heights) | D |
+| 8.15 | Capture a throwaway point with the preview on; then change the External receiver datum during an External capture (as in 4.2–4.4) | Capture saves the receiver data exactly as in 4.1 (receiver H keeps "model unknown"; nothing GEOID2022 stored); a datum or source change during the occupation still stops the capture | A (capture tests, unchanged) + D |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
-offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX.
+offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;
+Phase 3: the preview row and status list layout, GEOID2022 offline first-load time, plausibility of NAPGD2022
+heights against local knowledge.

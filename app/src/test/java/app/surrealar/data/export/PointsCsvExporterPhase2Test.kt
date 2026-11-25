@@ -61,4 +61,24 @@ class PointsCsvExporterPhase2Test {
         assertEquals("Point,Northing (m),Easting (m),Elevation (m h),Description,System", lines[0])
         assertEquals("ITRF2020 epoch 2026.886 · UTM 18N · m · h", lines[1].substringAfterLast(','))
     }
+
+    @Test fun `GEOID2022 beta - header and System column name beta, dataset version and epoch, columns unchanged`() {
+        val s = CoordinateSystemSettings(vertical = VerticalReference.GEOID2022, nsrs2022Preview = true)
+        val c = CoordinateConverter({ _, _ -> null }, { null },
+            { app.surrealar.coords.Geoid2022TimeDependent(io.github.pennstatecs.geokit.geoid.Geoid2022Model.bundled()) },
+            io.github.pennstatecs.geokit.datum.FrameTransformationRegistry.DEFAULT)
+        val conv = { p: Coordinate ->
+            c.convert(SourcePosition(p.latitude, p.longitude, p.altitude, null, isNad83 = false, epochYear = 2026.886), s)
+        }
+        val lines = PointsCsvExporter.build(listOf(point("PA1"), point("MX1", 19.4326, -99.1332)), conv).trim().lines()
+        assertEquals("Point,Latitude,Longitude,Elevation (m H GEOID2022 beta),Description,System", lines[0])
+        assertEquals("WGS84 (ITRF2014) · m · NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886", lines[1].substringAfterLast(','))
+        assertTrue(lines[1].split(",")[3].isNotEmpty())
+        assertEquals("outside the bundled GEOID2022 data: blank, never another model", "", lines[2].split(",")[3])
+        lines.forEach { assertEquals(it, 6, it.split(",").size) }
+        // Preview off with the same saved choice: the pre-Phase-3 default export (receiver H), no beta label.
+        val off = PointsCsvExporter.build(listOf(point("PA1")), convert(s.copy(nsrs2022Preview = false))).trim().lines()
+        assertEquals(PointsCsvExporter.build(listOf(point("PA1")), convert(CoordinateSystemSettings())).trim().lines(), off)
+        assertTrue(off.none { it.contains("GEOID2022") || it.contains("NAPGD2022") })
+    }
 }

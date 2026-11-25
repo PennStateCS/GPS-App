@@ -17,7 +17,9 @@ import java.util.Locale
  * "H GEOID18", "H EGM2008", "H EGM96", "H rcvr") — never a vertical datum — because GEOID18 rows can be
  * NAVD88, PRVD02 or VIVD09 depending on the point; each row's System column names that row's frame
  * (with its coordinate epoch for ITRF2020, e.g. "ITRF2020 epoch 2026.886") and vertical datum
- * ("NAVD88", "EGM2008", "EGM96"). The column count and order never change.
+ * ("NAVD88", "EGM2008", "EGM96"). GEOID2022 heights (NSRS 2022 beta preview only) read "H GEOID2022 beta"
+ * in the header and "NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886" in the System column (model,
+ * NGS dataset version and the coordinate epoch of N). The column count and order never change.
  *
  * This is an interchange export; the JSON backup remains the lossless format (raw measurements).
  */

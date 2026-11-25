@@ -148,6 +148,16 @@ class SettingsLocalDataSourceTest {
         assertEquals("us_ft", ds.coordLinearUnit.first())
         assertEquals("navd88", ds.coordVerticalReference.first())
         assertEquals("nad83", ds.coordExternalRxDatum.first())
+        // Phase 3 beta preview: absent = OFF; the 5-argument write leaves it alone; it round-trips.
+        assertEquals(false, ds.coordNsrs2022Preview.first())
+        ds.setCoordinateSystem("geographic", "wgs84", "m", "geoid2022_beta", "itrf2014", nsrs2022Preview = true)
+        assertEquals(true, ds.coordNsrs2022Preview.first())
+        assertEquals("geoid2022_beta", ds.coordVerticalReference.first())
+        ds.setCoordinateSystem("geographic", "wgs84", "m", "geoid2022_beta", "itrf2014")
+        assertEquals(true, ds.coordNsrs2022Preview.first())
+        ds.setCoordinateSystem("geographic", "wgs84", "m", "geoid2022_beta", "itrf2014", nsrs2022Preview = false)
+        assertEquals(false, ds.coordNsrs2022Preview.first())
+        assertEquals("geoid2022_beta", ds.coordVerticalReference.first())   // turning the preview off keeps the stored choice
     }
 
     @Test fun `gnss capture setters round trip`() = runBlocking {

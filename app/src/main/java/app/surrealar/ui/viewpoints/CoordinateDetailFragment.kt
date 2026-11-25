@@ -611,6 +611,7 @@ class CoordinateDetailFragment : Fragment() {
             // Saved points are reduced to the ground mark at capture (pole + phase-centre offset).
             rows += DetailRow(CoordinateDetailFormatter.qualifiedLabel(CoordinateDetailFormatter.HEIGHT_AT_MARK, p.vertical.label),
                 p.height?.let { app.surrealar.coords.CoordinateFormat.height(p) } ?: (p.heightUnavailableReason ?: naText))
+            CoordinateDetailFormatter.betaHeightModelText(p)?.let { rows += DetailRow(CoordinateDetailFormatter.BETA_HEIGHT_MODEL, it) }
             renderPlainFieldRow(container, rows)
         }
 
@@ -624,7 +625,7 @@ class CoordinateDetailFragment : Fragment() {
         // Altitude details are supporting values (in the chosen units). Only shown when present.
         val altRows = mutableListOf<DetailRow>()
         // Skipped when the Height row above already shows the receiver's H (same value twice otherwise).
-        if (CoordinateDetailFormatter.showReceiverMslRow(coordSystemSettings.vertical)) {
+        if (CoordinateDetailFormatter.showReceiverMslRow(coordSystemSettings.effectiveVertical)) {
             c.altitudeMsl?.let { altRows += DetailRow(CoordinateDetailFormatter.receiverOrthometricHeightLabel(c.orthometricModel),
                 app.surrealar.coords.CoordinateFormat.length(it, unit)) }
         }

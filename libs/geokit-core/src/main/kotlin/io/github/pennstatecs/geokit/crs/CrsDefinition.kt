@@ -111,7 +111,7 @@ public class CrsDefinition internal constructor(
     public val operational: Boolean,
     public val statusNote: String?,
     public val spcsZone: SpcsZone? = null,
-    projectionFactory: (() -> SpcsProjection)? = null,
+    private val projectionFactory: (() -> SpcsProjection)? = null,
     public val declaredStatus: ProductStatus = ProductStatus.VERIFIED_LEGACY,
     public val aliases: List<String> = emptyList(),
     frameId: String? = null,
@@ -133,6 +133,17 @@ public class CrsDefinition internal constructor(
         operational = false, statusNote = note, spcsZone = spcsZone, projectionFactory = null,
         declaredStatus = declaredStatus, aliases = aliases, frameId = frameId,
     )
+
+    /**
+     * The same operational entry with [declaredStatus] lowered to [status] (e.g. a zone whose source says
+     * legacy but whose frame is reachable only through a beta transformation reports beta).
+     */
+    internal fun withDeclaredStatus(status: ProductStatus): CrsDefinition =
+        if (status == declaredStatus) this else CrsDefinition(
+            id, epsg, name, zoneCode, catalog, kind, frame, method, parameters, unit, areaOfUse, dataset,
+            operational = operational, statusNote = statusNote, spcsZone = spcsZone, projectionFactory = projectionFactory,
+            declaredStatus = status, aliases = aliases, frameId = frameId,
+        )
 
     private val projectionLazy: Lazy<SpcsProjection>? =
         if (operational && projectionFactory != null) lazy(projectionFactory) else null

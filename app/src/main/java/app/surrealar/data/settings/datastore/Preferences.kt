@@ -62,6 +62,8 @@ object SettingsKeys {
     val COORD_LINEAR_UNIT         = stringPreferencesKey("coord_linear_unit")
     val COORD_VERTICAL_REFERENCE  = stringPreferencesKey("coord_vertical_reference")
     val COORD_EXTERNAL_RX_DATUM   = stringPreferencesKey("coord_external_receiver_datum")
+    /** Phase 3: "Modernized NSRS 2022 (beta preview)" opt-in; absent = OFF. */
+    val COORD_NSRS2022_PREVIEW    = booleanPreferencesKey("coord_nsrs2022_beta_preview")
     val GNSS_CAPTURE_PRESET            = stringPreferencesKey("gnss_capture_preset")
     /** Custom precision-based stop target (m); absent or <= 0 = off. */
     val GNSS_CAPTURE_PRECISION_TARGET_M = doublePreferencesKey("gnss_capture_precision_target_m")
@@ -179,6 +181,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val coordLinearUnit:        Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_LINEAR_UNIT] }
     val coordVerticalReference: Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_VERTICAL_REFERENCE] }
     val coordExternalRxDatum:   Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_EXTERNAL_RX_DATUM] }
+    val coordNsrs2022Preview:   Flow<Boolean> = dataStore.data.map { it[SettingsKeys.COORD_NSRS2022_PREVIEW] ?: false }
     val gnssCapturePrecisionTargetM: Flow<Double?> = dataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M]?.takeIf { v -> v > 0.0 } }
 
     // AR Display settings flows (defaults centralized in SettingsDefaults.arDisplay)
@@ -255,13 +258,16 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     suspend fun setGnssCaptureMaxFixAgeSec(v: Int)      { dataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_FIX_AGE_SEC]   = v } }
     suspend fun setGnssCaptureMaxDiffAgeSec(v: Int)     { dataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_DIFF_AGE_SEC]  = v } }
     suspend fun setGnssCapturePreset(v: String)         { dataStore.edit { it[SettingsKeys.GNSS_CAPTURE_PRESET]           = v } }
-    suspend fun setCoordinateSystem(horizontal: String, datum: String, unit: String, vertical: String, externalRxDatum: String) {
+    /** Writes the coordinate system in one edit; [nsrs2022Preview] null leaves the preview key untouched. */
+    suspend fun setCoordinateSystem(horizontal: String, datum: String, unit: String, vertical: String, externalRxDatum: String,
+                                    nsrs2022Preview: Boolean? = null) {
         dataStore.edit {
             it[SettingsKeys.COORD_HORIZONTAL_SYSTEM] = horizontal
             it[SettingsKeys.COORD_OUTPUT_DATUM] = datum
             it[SettingsKeys.COORD_LINEAR_UNIT] = unit
             it[SettingsKeys.COORD_VERTICAL_REFERENCE] = vertical
             it[SettingsKeys.COORD_EXTERNAL_RX_DATUM] = externalRxDatum
+            if (nsrs2022Preview != null) it[SettingsKeys.COORD_NSRS2022_PREVIEW] = nsrs2022Preview
         }
     }
     suspend fun setGnssCapturePrecisionTargetM(v: Double?) { dataStore.edit { prefs -> if (v != null && v > 0.0) { prefs[SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M] = v } else { prefs.remove(SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M) } } }

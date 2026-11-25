@@ -42,7 +42,7 @@ class CoordinateConverterGlobalGeoidTest {
     private val asked = mutableListOf<GeoidModelId>()
     private val converter = CoordinateConverter({ lat, lon -> geoid18.undulation(lat, lon) }) { id ->
         asked += id
-        when (id) { GeoidModelId.EGM2008 -> egm2008; GeoidModelId.EGM96 -> egm96; GeoidModelId.GEOID18 -> null }
+        when (id) { GeoidModelId.EGM2008 -> egm2008; GeoidModelId.EGM96 -> egm96; GeoidModelId.GEOID18, GeoidModelId.GEOID2022 -> null }
     }
 
     private val samples = listOf(

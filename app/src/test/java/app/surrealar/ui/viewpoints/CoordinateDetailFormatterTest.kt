@@ -292,6 +292,25 @@ class CoordinateDetailFormatterTest {
         assertFalse(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.RECEIVER_MSL))
         assertTrue(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.ELLIPSOIDAL))
         assertTrue(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.NAVD88_GEOID18))
+        assertTrue(CoordinateDetailFormatter.showReceiverMslRow(VerticalReference.GEOID2022))
+    }
+
+    @Test
+    fun betaHeightModelRow_onlyForBetaHeights_withVersionEpochAndCaution() {
+        val base = app.surrealar.coords.ConvertedPosition(
+            horizontal = app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC,
+            datum = app.surrealar.settings.model.OutputDatum.WGS84, unit = app.surrealar.settings.model.LinearUnit.METERS,
+            latDeg = 41.0, lonDeg = -76.0, easting = null, northing = null, zoneLabel = null,
+            vertical = VerticalReference.NAVD88_GEOID18, height = 100.0,
+        )
+        assertNull(CoordinateDetailFormatter.betaHeightModelText(base))
+        val beta = base.copy(vertical = VerticalReference.GEOID2022, verticalLabel = "NAPGD2022 beta",
+            heightModelNote = "GEOID2022 (beta beta_v0a) epoch 2026.886")
+        val text = CoordinateDetailFormatter.betaHeightModelText(beta)!!
+        assertTrue(text, text.startsWith("GEOID2022 (beta beta_v0a) epoch 2026.886"))
+        assertTrue(text, text.contains("NAPGD2022"))
+        assertTrue(text, text.contains("ITRF2020"))
+        assertTrue(text, text.contains("not for authoritative survey results"))
     }
 
     @Test

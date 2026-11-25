@@ -23,8 +23,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Settings → Coordinates: the Coordinate System card (system, State Plane zone, datum, units, height,
- * receiver datum, live preview) and the coordinate display preferences (accuracy indicators, name
- * prefix, auto-increment).
+ * receiver datum, the "Modernized NSRS 2022 (beta preview)" opt-in, live preview) and the coordinate
+ * display preferences (accuracy indicators, name prefix, auto-increment).
  */
 internal class CoordinatesSettingsController(
     private val fragment: Fragment,
@@ -128,6 +128,9 @@ internal class CoordinatesSettingsController(
         val zoneRow = view.findViewById<View>(R.id.row_coord_spcs_zone)
         val spinnerZ = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
         val zoneHint = view.findViewById<android.widget.TextView>(R.id.text_coord_zone_hint)
+        val verticalNote = view.findViewById<android.widget.TextView>(R.id.text_coord_vertical_note)
+        val switchPreview = view.findViewById<MaterialSwitch>(R.id.switch_coord_nsrs2022_preview)
+        val previewStatus = view.findViewById<android.widget.TextView>(R.id.text_coord_nsrs2022_status)
         // Zone list from geokit's CRS registry (operational SPCS83 entries; stored values stay EPSG ints).
         val zones = SpcsZoneHints.searchZones("")
         val zoneByLabel = zones.associateBy { it.label }
@@ -153,7 +156,8 @@ internal class CoordinatesSettingsController(
         val hs = app.surrealar.settings.model.HorizontalSystem.entries
         val ds = app.surrealar.settings.model.OutputDatum.entries
         val us = app.surrealar.settings.model.LinearUnit.entries
-        val vs = app.surrealar.settings.model.VerticalReference.entries
+        // Height choices: beta ones (GEOID2022) only while the NSRS 2022 beta preview is on.
+        var vs = app.surrealar.settings.model.CoordinateSystemSettings().selectableVerticals
         val rs = app.surrealar.settings.model.ReceiverDatum.entries
         fun adapter(labels: List<String>) = ArrayAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings, labels)
         spinnerH.setAdapter(adapter(hs.map { it.label }))
@@ -166,6 +170,13 @@ internal class CoordinatesSettingsController(
             zones.map { it.label }) { q -> SpcsZoneHints.searchZones(q).map { it.label } })
 
         var current = app.surrealar.settings.model.CoordinateSystemSettings()
+        var bindingPreview = false
+        // Product status from geokit's registries (beta / unavailable + reason), computed once per screen.
+        val previewStatusText by lazy {
+            runCatching { app.surrealar.coords.Nsrs2022Capabilities.statusText() }
+                .onFailure { settingsError("NSRS 2022 status failed", it) }
+                .getOrDefault("NSRS 2022 product status unavailable.")
+        }
 
         fun showPreview() {
             val fix = fixSwitchboard.currentFix.value
@@ -181,7 +192,21 @@ internal class CoordinatesSettingsController(
             spinnerH.setText(s.horizontal.label, false)
             spinnerD?.setText(s.effectiveDatum.label, false)
             spinnerU?.setText(s.unit.label, false)
-            spinnerV?.setText(s.vertical.label, false)
+            val selectable = s.selectableVerticals
+            if (selectable != vs) {
+                vs = selectable
+                spinnerV?.setAdapter(adapter(vs.map { it.label }))
+            }
+            // A beta height saved while the preview is off shows the default it is replaced by (stored value kept).
+            spinnerV?.setText(s.effectiveVertical.label, false)
+            val note = app.surrealar.coords.Nsrs2022Capabilities.verticalNote(s)
+            verticalNote?.text = note.orEmpty()
+            verticalNote?.visibility = if (note == null) View.GONE else View.VISIBLE
+            bindingPreview = true
+            switchPreview?.isChecked = s.nsrs2022Preview
+            bindingPreview = false
+            previewStatus?.visibility = if (s.nsrs2022Preview) View.VISIBLE else View.GONE
+            if (s.nsrs2022Preview) previewStatus?.text = previewStatusText
             spinnerR?.setText(s.externalReceiverDatum.label, false)
             val zone = io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)
             zoneRow?.visibility = if (s.horizontal.isStatePlane) View.VISIBLE else View.GONE
@@ -240,6 +265,10 @@ internal class CoordinatesSettingsController(
         spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { save(current.copy(unit = it)) } }
         spinnerV?.setOnItemClickListener { _, _, pos, _ -> vs.getOrNull(pos)?.let { save(current.copy(vertical = it)) } }
         spinnerR?.setOnItemClickListener { _, _, pos, _ -> rs.getOrNull(pos)?.let { save(current.copy(externalReceiverDatum = it)) } }
+        // Turning the preview off never rewrites the saved height choice (see CoordinateSystemSettings.effectiveVertical).
+        switchPreview?.setOnCheckedChangeListener { _, on ->
+            if (!bindingPreview && on != current.nsrs2022Preview) save(current.copy(nsrs2022Preview = on))
+        }
 
         categoryScope.launch {
             runCatching { bind(settingsRepo.coordinateSystemSettings.first()) }
