@@ -270,7 +270,7 @@ and flow: [../receiver-selection.md](../receiver-selection.md).
 | 13.4 | "Change receiver" on the phone-sized layout and on the SM-X940 in portrait and landscape | Sheet half-expanded on narrow screens, fully expanded and at most ~640 dp wide (centred) on the tablet; drag handle works; rotating keeps the sheet | — |
 | 13.5 | Picker with an Emlid profile | "On this network" scans on open (progress, then "Last scanned …"); found receivers say "Emlid Reach (model confirmed after connecting)", never a model | R |
 | 13.6 | Picker with the Generic NMEA profile | No scan on open; "Scan for Emlid receivers" starts one only when tapped | — |
-| 13.7 | Tap a previously connected receiver that is off | Row shows Testing…, then "Failed: not reachable"; the card keeps the current receiver running and shows "Couldn't switch to …  Nothing was changed." | R |
+| 13.7 | Tap a previously connected receiver that is off | Row shows Testing…, then "Failed: not reachable"; the card chip stays "Connected" (fix + satellites of the current receiver) with a line "Testing …" then "Couldn't switch to …: not reachable. Still using …" | R |
 | 13.8 | Tap the working receiver's row while it streams | Nothing restarts (already active) | R |
 | 13.9 | Start a switch, then swipe the sheet away before it finishes | The test continues; the card shows the outcome; nothing disconnected | R |
 | 13.10 | During a running capture, choose another receiver or Tablet GNSS | "Switching receivers stops the current capture. Switch?"; Cancel keeps the capture; Switch stops it and switches | R |
@@ -282,11 +282,16 @@ and flow: [../receiver-selection.md](../receiver-selection.md).
 | 13.16 | RS4 / RS4 Pro on a fresh install (default profile) | Profile changes automatically; a snackbar "Profile set to Emlid Reach RS4 Pro (reported by receiver)." appears on whichever screen is open | H |
 | 13.17 | Receiver details with the RS4 / RS4 Pro connected | Model, serial, firmware, battery, corrections, age, baseline tagged "Reported by receiver"; datum/height/pole/compensated output "Set by you" or "Default"; receiver H model "Unknown"; the firmware-vs-tilt sentence shown | H |
 | 13.18 | Details → Copy summary, paste into a note | No IP address, port or receiver name in the text; "Copy address" copies `IP:port` only when tapped | R |
-| 13.19 | Details → Open diagnostics; Details → Disconnect receiver | Developer page opens; Disconnect switches to tablet GNSS and forgets the saved address (recent list keeps it) | R |
+| 13.19 | Details → Open diagnostics; Details → Disconnect receiver | Developer page opens; Disconnect asks "Disconnect receiver?" first (during a capture: "Stop the current capture?"), then switches to tablet GNSS and forgets the saved address (recent list keeps it) | R |
 | 13.20 | Previously connected → Forget | Entry removed; the active receiver unaffected | R |
 | 13.21 | Change Wi-Fi (W) and rescan | Old receivers marked "Not found in last scan"; scan finds receivers on the new network | R + W |
-| 13.22 | TalkBack on: card, chips, picker rows, details rows | Chips read "Connection state: Connected", "Fix quality: RTK Fix", satellites in words; state changes are announced ("Receiver Connected"); all buttons ≥ 48 dp | — |
+| 13.22 | TalkBack on: card, chips, picker rows, details rows | Chips read "Connection state: Connected", "Fix quality: RTK Fix", satellites in words; end states are announced once ("Receiver Connected"), no announcement on Reconnecting ↔ Connected flaps; all buttons ≥ 48 dp | — |
 | 13.23 | Dark theme (Settings → Appearance) | Card, banner, sheet, dialog and details legible; no hard-coded colours | — |
+| 13.24 | Double-tap "Change receiver", "Receiver details", "Connect manually…" and "Disconnect receiver" | One sheet / dialog each | — |
+| 13.25 | Rotate the tablet while a capture-stop or Disconnect confirmation is open | The dialog is still there after rotation and its buttons still work; no crash | R |
+| 13.26 | Details → "Receiver-reported details" with the RS2+ / RS4 connected | Collapsed until tapped; then uptime, temperature, battery voltage, storage, GNSS receiver firmware tagged "Reported by receiver" | R |
+| 13.27 | Details with Generic NMEA and with RS4 / RS4 Pro | Compensated-output row only for RS4 / RS4 Pro ("Default" until changed); "Fix quality" row (e.g. "RTK Fix, corrections 1.0 s old") for both | R + H |
+| 13.28 | Manual dialog in light and dark theme | Host, Receiver type (outlined dropdown) and TCP port fields look like the Settings inputs (white boxes in light theme); bottom of the dialog not clipped | — |
 
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;

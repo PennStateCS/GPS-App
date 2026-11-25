@@ -162,8 +162,8 @@ Settings > Receiver
   `Tablet GNSS` · `On this network` (scan status, "Last scanned …", Scan / Rescan, results labelled
   "Emlid Reach (model confirmed after connecting)") · `Previously connected` (name, host:port, last reported model
   "(reported by receiver)" or the profile "(set by you)", last connected, Forget) · `Connect manually…`.
-  Rows show Active / Testing… / Not found in last scan / Failed: reason. A tap calls `connect()` (recent row: with
-  the profile it was connected with; scan row: profile unchanged) or `selectInternal()`; the sheet stays open and
+  Rows show Active / Testing… / Not found in last scan / Failed: reason. A tap calls `connect()` (recent and scan
+  rows: profile unchanged, so the stored profile and its origin stay; identification corrects it) or `selectInternal()`; the sheet stays open and
   follows the state. During a capture the user is asked "Switching receivers stops the current capture. Switch?"
   (`NEEDS_CAPTURE_CONFIRMATION` → `connect(..., confirmCaptureStop = true)`; Tablet GNSS asks the same before
   `selectInternal`). Duplicate taps are ignored by the core. Dismissing never cancels or disconnects.
@@ -179,7 +179,8 @@ Settings > Receiver
   heights (receiver output datum, height shown, receiver H model "Unknown"), Antenna and tilt (pole height,
   phase-centre offset, compensated NMEA output with "Firmware alone does not show whether tilt compensation or
   compensated NMEA output is turned on. Set it to match Emlid Flow."), Troubleshooting (connection, last error,
-  NMEA rate from `DiagnosticsService.diagnosticData.linesPerSecond`), buttons Copy summary (no host, port, name or
+  NMEA rate from `DiagnosticsService.diagnosticData.linesPerSecond`), Receiver-reported details (collapsed; see
+  the UI review fixes below), buttons Copy summary (no host, port, name or
   credentials), Copy address (explicit), Open diagnostics (Developer page), Disconnect receiver. Every row is tagged
   Reported by receiver / Set by you / Default / From an earlier receiver report / Unknown. Receiver reports are used
   only while that receiver is the active external source.
@@ -188,8 +189,38 @@ Settings > Receiver
 - **Toolbar battery / SOL** and the capture dialog's "Open receiver settings" still open Settings → Receiver; the card
   at the top shows status and battery, and "Receiver details" is one tap away.
 - Accessibility: chips have content descriptions ("Connection state: Connected", "Fix quality: RTK Fix",
-  satellites in words); connection-state changes are announced; buttons and rows are ≥ 48 dp; colours are theme roles
+  satellites in words); connection end states are announced (not transient states or Reconnecting flaps); buttons and rows are ≥ 48 dp; colours are theme roles
   (primary/tertiary/error containers), so light and dark both work.
+
+### UI review fixes (survey/phase5-uifix)
+
+- **Card chip = the active link.** Testing or switching to ANOTHER receiver no longer replaces the chip: the chip,
+  fix and satellite chips keep showing the receiver (or tablet GNSS) that streams, and the attempt is its own line
+  ("Testing 192.168.42.7:9001…", "Connecting to …", "Couldn't switch to …: reason. Still using Base RS4 Pro.").
+  The chip shows Testing… / Connecting… only for the saved receiver while it is not streaming (Retry, the automatic
+  reconnect, a first connect). `ConnectError.CaptureStarted` shows as "capture running" (chip, row, line) and its
+  full message when the saved receiver's test failed.
+- **Confirmations are DialogFragments** (`ReceiverConfirmDialog`): the action (connect / tablet GNSS / retry /
+  profile / disconnect) is in the arguments and runs on the app-scoped core, so the dialog survives rotation and
+  never leaks its window. One per screen (tag check + `showNow`).
+- **Disconnect receiver** (details) is always confirmed ("Disconnect receiver?" — the saved address and port are
+  removed; the receiver stays under Previously connected); during a capture the dialog says it stops the capture.
+- **No duplicates on double tap:** picker, details and the manual dialog open through a tag check + `showNow`.
+- **Details:** a collapsed "Receiver-reported details" section (uptime, temperature, battery voltage / current,
+  charger, storage and the vendor's extra fields such as the GNSS receiver firmware; never the address, host name or
+  raw HTTP response) restores what the removed device-info panel showed. Receivers report no self-test results
+  through `ReceiverDeviceInfo` (the old panel always passed an empty list), so no self-test grid is shown; the
+  unused `SelfTestDisplay` / `EmlidDeviceInfo` classes are left in place. The compensated-output row appears only
+  for RS4 / RS4 Pro and its default value is tagged "Default"; a "Fix quality" row (RTK Fix / Float / DGPS / Single
+  plus correction age, from the live fix) is shown for every external receiver.
+- **Retry** also starts the location service (like the automatic reconnect).
+- **Mock-location switch** follows the stored source and setting (never the core's not-yet-loaded defaults); only a
+  user change writes it. A stored "on" with tablet GNSS is still saved off.
+- **Accessibility:** only end states are announced (Connected / Active / Failed / Unavailable, once each); Reconnecting
+  ↔ Connected flaps are not.
+- **Manual dialog fields** use the app's outlined inputs: the receiver type is an OutlinedBox ExposedDropdownMenu
+  with a `MaterialAutoCompleteTextView`, and all three fields have a `colorSurface` box (white in light theme, like
+  the Settings cards; dark surface in dark theme).
 
 ### Changes to the existing Settings → Receiver page
 
