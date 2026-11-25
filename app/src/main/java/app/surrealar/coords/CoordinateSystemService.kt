@@ -51,6 +51,22 @@ class CoordinateSystemService @Inject constructor(
     /** True once the GEOID18 grid is available. */
     val geoidLoaded: Boolean get() = geoid != null
 
+    /** True while the GEOID18 grid load has not finished (loaded or failed). */
+    @Volatile private var geoid18Loading = true
+
+    /** Incremented when the GEOID18 grid load ends (loaded or failed). */
+    private val geoid18Events = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
+    /**
+     * Height-data load-completion signal: changes whenever a height model's data finished loading (the
+     * GEOID18 grid here, EGM2008 / EGM96 / GEOID2022 packs in [AppGeoidModels.loadEvents]). Screens that may
+     * have shown a "… data is loading" height (Settings preview, point Details) re-render when it changes.
+     * The toolbar needs no signal: it re-converts on its one-second tick.
+     */
+    val heightDataVersion: kotlinx.coroutines.flow.StateFlow<Long> =
+        kotlinx.coroutines.flow.combine(geoid18Events, AppGeoidModels.loadEvents) { a, b -> a + b }
+            .stateIn(appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, 0L)
+
     init {
         appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val t0 = System.nanoTime()
@@ -59,6 +75,8 @@ class CoordinateSystemService @Inject constructor(
                 Geoid18Grid.fromClasspath()   // bundled in geokit-core's jar, packaged into the APK
             }.onSuccess { DiagnosticsLogger.i(DiagTags.DATA, "GEOID18 grid loaded durationMs=${(System.nanoTime() - t0) / 1_000_000}") }.onFailure { DiagnosticsLogger.e(DiagTags.DATA, "GEOID18 grid load failed: NAVD88 heights unavailable", it) }
                 .getOrNull()
+            geoid18Loading = false
+            geoid18Events.value = geoid18Events.value + 1
         }
     }
 
@@ -123,10 +141,27 @@ class CoordinateSystemService @Inject constructor(
     private fun track(src: SourcePosition, s: CoordinateSystemSettings, live: Boolean = false): ConvertedPosition =
         try {
             // geoidLoaded concerns the background GEOID18 grid only; EGM models load on demand.
-            converter.convert(src, s).also { CoordDiagnostics.onResult(it, live, geoidLoaded || s.effectiveVertical.appGeoidModel() != null) }
+            markGeoid18Loading(converter.convert(src, s), s, geoid18Loading && geoid == null)
+                .also { CoordDiagnostics.onResult(it, live, geoidLoaded || s.effectiveVertical.appGeoidModel() != null) }
         } catch (e: Exception) {
             CoordDiagnostics.onFailure(s, e); throw e
         }
+
+    /** Height parts (h, H, N, model, reference, epoch, beta) of a stored point, for the Details screen. */
+    fun elevationOfCoordinate(c: Coordinate, s: CoordinateSystemSettings): ElevationDetail {
+        val src = storedSourcePosition(c, s)
+        return converter.elevation(src, s, track(src, s))
+    }
+
+    /** Height parts of a live fix, for the Settings preview. */
+    fun elevationOfFix(fix: Fix, s: CoordinateSystemSettings): ElevationDetail {
+        val src = SourcePosition(
+            latDeg = fix.latDeg, lonDeg = fix.lonDeg,
+            ellipsoidalHeightM = fix.altEllipsoidalM, receiverMslM = fix.altMslM,
+            isNad83 = false, epochYear = Itrf2014ToNad83.decimalYear(fix.timeUtc.toEpochMilli()),
+        )
+        return converter.elevation(src, s, track(src, s, live = true))
+    }
 
     /** Stored point → current system. */
     fun convert(c: Coordinate): ConvertedPosition = convertCoordinate(c, settings)
@@ -179,6 +214,20 @@ class CoordinateSystemService @Inject constructor(
  * decimal year in 1980..2100 ([validCoordinateEpochOrNull]) counts as unknown: the capture time is used.
  * GEOID2022 (beta) heights use the coordinate epoch the same way (ITRF2020 position and N at that epoch).
  */
+/**
+ * While the GEOID18 grid is still loading ([gridLoading]) a NAVD88 height reads as loading, not as
+ * "outside GEOID18 coverage" (the engine's wording for a missing undulation). Identity in every other case,
+ * so a loaded or failed grid gives exactly the converter's output.
+ */
+internal fun markGeoid18Loading(p: ConvertedPosition, s: CoordinateSystemSettings, gridLoading: Boolean): ConvertedPosition =
+    if (gridLoading && p.height == null && s.effectiveVertical == app.surrealar.settings.model.VerticalReference.NAVD88_GEOID18 &&
+        p.heightUnavailableReason == io.github.pennstatecs.geokit.convert.HeightUnavailableReason.OUTSIDE_GEOID18_COVERAGE.description)
+        p.copy(heightUnavailableReason = GEOID18_LOADING, heightLoading = true)
+    else p
+
+/** Shown in place of a NAVD88 height while the GEOID18 grid loads. */
+internal const val GEOID18_LOADING = "GEOID18 data is loading"
+
 internal fun storedEpochYear(c: Coordinate, s: CoordinateSystemSettings): Double =
     (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020 || StoredDatum.isItrf2020(c.crsEpsg) ||
         s.effectiveVertical == app.surrealar.settings.model.VerticalReference.GEOID2022)

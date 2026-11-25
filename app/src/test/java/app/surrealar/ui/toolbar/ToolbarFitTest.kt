@@ -59,12 +59,12 @@ class ToolbarFitTest {
         coordLabel = "LL", altitudeLabel = "NAVD88",
     )
 
-    private fun layoutAt(s: Strip, widthDp: Int) {
+    private fun layoutAt(s: Strip, widthDp: Int, state: GnssToolbarState = full) {
         val px = (widthDp * ctx.resources.displayMetrics.density).toInt()
         s.root.measure(View.MeasureSpec.makeMeasureSpec(px, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
         s.root.layout(0, 0, px, s.root.measuredHeight)
-        s.renderer.render(full)
+        s.renderer.render(state)
     }
 
     private fun visible(s: Strip) = s.tokens.filterValues { it.root.visibility == View.VISIBLE }.keys
@@ -105,5 +105,19 @@ class ToolbarFitTest {
         assertTrue("coord shrank: $c1 → ${coord.measuredWidth}", coord.measuredWidth >= c1)
         assertTrue("height shrank: $a1 → ${alt.measuredWidth}", alt.measuredWidth >= a1)
         assertTrue("height min width covers a sign and the digits", alt.minWidth > 0)
+    }
+
+    @Test fun `SM-X940 widths still show everything with the longest height label and the loading state`() {
+        // Phase 4 WP U: "NAPGD2022β" (GEOID2022 beta) is the longest toolbar height label (≤ 10 characters).
+        for (state in listOf(full.copy(altitudeLabel = "NAPGD2022β", altitudeText = "-1,234.56 ftUS"),
+                             full.copy(altitudeLabel = "NAPGD2022β", altitudeText = GnssToolbarStateMapper.HEIGHT_LOADING))) {
+            for (w in listOf(924, 1480)) {
+                val s = strip(); layoutAt(s, w, state)
+                val v = visible(s)
+                println("$w dp ${state.altitudeLabel} ${state.altitudeText}: visible = $v")
+                assertEquals("$w dp", setOf("src", "fix", "sats", "acc", "age", "coord", "alt", "batt"), v)
+                assertEquals("NAPGD2022β", s.tokens.getValue("alt").label.text.toString())
+            }
+        }
     }
 }

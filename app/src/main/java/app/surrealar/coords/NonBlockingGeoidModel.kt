@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * @param isMainThread true when called on the UI thread.
  * @param loadInBackground runs a load task off the main thread.
  * @param warmUpLat position used for the background load's lookup (inside the bundled data).
+ * @param onLoadFinished called (on the loading thread) after each background load ended, loaded or not, so
+ *   screens that showed "data is loading" can refresh at once ([AppGeoidModels.loadEvents]).
  */
 internal class NonBlockingGeoidModel(
     private val delegate: GeoidModel,
@@ -32,6 +34,7 @@ internal class NonBlockingGeoidModel(
     private val loadInBackground: (Runnable) -> Unit,
     private val warmUpLat: Double = 40.0,
     private val warmUpLon: Double = -77.0,
+    private val onLoadFinished: () -> Unit = {},
 ) : GeoidModel by delegate {
 
     /** True while a background load is queued or running (at most one at a time). */
@@ -68,6 +71,7 @@ internal class NonBlockingGeoidModel(
                     delegate.undulation(warmUpLat, warmUpLon)
                 } finally {
                     loading.set(false)
+                    onLoadFinished()
                 }
             })
         } catch (e: RuntimeException) {
