@@ -21,7 +21,9 @@ public data class ReachDeviceInfoDto(
     /** First 300 chars of the raw HTTP body – used for diagnostics in dev tools. */
     val rawResponse: String? = null,
     /** Uptime in seconds; null when absent or in a text form that couldn't be parsed. */
-    val uptimeSec: Long? = null
+    val uptimeSec: Long? = null,
+    /** device.self_tests: test name → passed (e.g. "u-blox" → true); empty when not reported. */
+    val selfTests: Map<String, Boolean> = emptyMap(),
 )
 
 private const val TAG = "ReachDeviceService"
@@ -149,6 +151,11 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
         val hostname = deviceObj?.str("local_address")
                     ?: root.str("local_address", "hostname")
 
+        // Self-tests – device.self_tests: { "u-blox": true, "wifi_detected": true, … } (booleans only)
+        val selfTests: Map<String, Boolean> = deviceObj?.optJSONObject("self_tests")?.let { st ->
+            st.keys().asSequence().map { it.toString() }.mapNotNull { k -> (st.opt(k) as? Boolean)?.let { k to it } }.toMap()
+        }.orEmpty()
+
         GnssLog.every("receiver.parsed.$path", "receiver", 60_000L) { "Parsed [$path]: name=$name  model=$model  fw=$firmware  serial=$serial  uptime=$uptime  storage=${storageTotalMb}/${storageFreeMb} MB" }
 
         // If nothing at all was parsed, this endpoint doesn't have device info
@@ -173,7 +180,8 @@ internal class ReachDeviceService(private val client: ReachHttpClient) {
             storageFreeMb        = storageFreeMb,
             hostname             = hostname,
             rawResponse          = text.take(300),
-            uptimeSec            = uptimeSec
+            uptimeSec            = uptimeSec,
+            selfTests            = selfTests,
         )
     }
 

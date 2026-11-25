@@ -64,6 +64,19 @@ class ReachDeviceServiceParseTest {
         assertEquals("RS2", dto.model)
     }
 
+    @Test fun `self-tests are read from device self_tests (booleans only)`() {
+        // Shape as reported by an RS2+ on firmware 33.1 (2026-11-25); values chosen for the test.
+        val dto = parse("""{"device":{"name":"Reach6","type":"ReachRS2+","self_tests":
+            {"u-blox":true,"wifi_detected":false,"mpu":true,"note":"x"}},"firmware":{"version":"33.1"}}""")!!
+        assertEquals(mapOf("u-blox" to true, "wifi_detected" to false, "mpu" to true), dto.selfTests)
+        assertEquals("Failed: wifi_detected (2 of 3 passed)", EmlidMapping.selfTestSummary(dto.selfTests))
+        assertEquals("Failed: wifi_detected (2 of 3 passed)", EmlidMapping.deviceInfo("10.0.0.2", dto, null).details[EmlidMapping.SELF_TESTS])
+        assertEquals("All 2 passed", EmlidMapping.selfTestSummary(mapOf("a" to true, "b" to true)))
+        assertEquals(null, EmlidMapping.selfTestSummary(emptyMap()))
+        assertEquals("not reported: no row", null,
+            EmlidMapping.deviceInfo("10.0.0.2", parse("""{"device":{"name":"R"}}""")!!, null).details[EmlidMapping.SELF_TESTS])
+    }
+
     @Test fun `unexpected extra fields are ignored`() {
         val dto = parse("""{"device":{"name":"Reach6","type":"RS2+"},"junk":{"x":1},"extra":true}""")!!
         assertEquals("Reach6", dto.name)

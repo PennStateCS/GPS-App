@@ -197,6 +197,15 @@ public object EmlidMapping {
     public const val OTG_POWER: String = "OTG Power"
     public const val GNSS_RECEIVER_FW: String = "GNSS Receiver FW"
     public const val RAW_RESPONSE: String = "Raw response"
+    public const val SELF_TESTS: String = "Self-tests"
+
+    /** "All 11 passed" or "Failed: u-blox, wifi_detected (9 of 11 passed)"; null when none reported. */
+    public fun selfTestSummary(tests: Map<String, Boolean>): String? {
+        if (tests.isEmpty()) return null
+        val failed = tests.filterValues { !it }.keys.sorted()
+        return if (failed.isEmpty()) "All ${tests.size} passed"
+        else "Failed: ${failed.joinToString(", ")} (${tests.size - failed.size} of ${tests.size} passed)"
+    }
 
     public fun battery(b: BatteryStatus): ReceiverBattery = ReceiverBattery(
         percent = b.percent,
@@ -231,6 +240,7 @@ public object EmlidMapping {
             storage    = storage,
             details    = buildMap {
                 device?.gnssReceiverFirmware.blankToNull()?.let { put(GNSS_RECEIVER_FW, it) }
+                device?.selfTests?.let { selfTestSummary(it) }?.let { put(SELF_TESTS, it) }
                 (device?.rawResponse ?: errorMessage?.let { "ERROR: $it" })?.let { put(RAW_RESPONSE, it) }
             },
         )

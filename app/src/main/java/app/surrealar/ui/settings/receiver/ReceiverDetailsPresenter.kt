@@ -70,8 +70,15 @@ object ReceiverDetailsPresenter {
             ctx.getString(if (external) R.string.receiver_source_external else R.string.receiver_source_tablet), ValueOrigin.SET_BY_USER)
         if (external) {
             val identity = s.identity
-            val model = if (identity?.modelVerified == true) reported(identity.reportedModel) else reported(null)
-            receiver += DetailRow(R.string.details_model, model.value, model.origin)
+            // Recognised model: the friendly name, with the receiver's own string underneath ("ReachRS2+").
+            val recognized = identity?.recognizedProfile?.takeIf { identity.modelVerified }
+            if (recognized != null) receiver += DetailRow(R.string.details_model, recognized.label, ValueOrigin.REPORTED,
+                note = identity.reportedModel?.takeIf { it.isNotBlank() && it != recognized.label }
+                    ?.let { ctx.getString(R.string.details_model_reported_as, it) })
+            else {
+                val model = if (identity?.modelVerified == true) reported(identity.reportedModel) else reported(null)
+                receiver += DetailRow(R.string.details_model, model.value, model.origin)
+            }
             receiver += DetailRow(R.string.details_profile, s.profile.label, when (s.profileOrigin) {
                 ProfileOrigin.USER -> ValueOrigin.SET_BY_USER
                 ProfileOrigin.DEFAULT -> ValueOrigin.DEFAULT
@@ -195,8 +202,8 @@ object ReceiverDetailsPresenter {
 
     /**
      * Uptime, temperature, power and storage as the receiver reports them (Emlid device info / battery), plus the
-     * vendor's own extra fields. Never the address, host name or the raw HTTP response. Receivers report no
-     * self-test results through [ReceiverDeviceInfo], so none are listed.
+     * vendor's own extra fields, including the receiver's self-test summary (Emlid device.self_tests). Never the
+     * address, host name or the raw HTTP response.
      */
     fun vendorRows(ctx: Context, info: ReceiverDeviceInfo?, battery: ReceiverBattery?): List<DetailRow> {
         val rows = mutableListOf<DetailRow>()

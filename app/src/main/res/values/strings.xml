@@ -422,6 +422,7 @@
     <string name="details_source">Location source</string>
     <string name="details_name">Name</string>
     <string name="details_model">Model</string>
+    <string name="details_model_reported_as">Reported as \"%1$s\"</string>
     <string name="details_profile">Receiver profile</string>
     <string name="details_serial">Serial number</string>
     <string name="details_firmware">Firmware</string>

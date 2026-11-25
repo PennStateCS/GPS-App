@@ -308,7 +308,8 @@ class ReceiverSelectionUiTest {
             }
             error("no row $label in ${texts(rows)}")
         }
-        assertEquals(listOf("Model", "Reach RS4 Pro", "Reported by receiver"), row("Model"))
+        // Recognised model: the friendly name, with the receiver's own string as a note.
+        assertEquals(listOf("Model", "Emlid Reach RS4 Pro", "Reported as \"Reach RS4 Pro\"", "Reported by receiver"), row("Model"))
         assertEquals(listOf("Firmware", "34.7", "Reported by receiver"), row("Firmware"))
         assertEquals(listOf("Pole height", "${app.surrealar.ui.settings.AntennaHeightInput.format(2.0)} m", "Default"), row("Pole height"))
         assertEquals("Set by you", row("Receiver profile").last())
@@ -321,7 +322,7 @@ class ReceiverSelectionUiTest {
 
         sheet.requireView().findViewById<View>(R.id.btn_details_copy_summary).performClick()
         val clip = host.activity.getSystemService(ClipboardManager::class.java).primaryClip!!.getItemAt(0).text.toString()
-        assertTrue(clip.contains("Model: Reach RS4 Pro [Reported by receiver]"))
+        assertTrue(clip.contains("Model: Emlid Reach RS4 Pro [Reported by receiver]"))
         assertFalse("no address in the summary", clip.contains("192.168.42.1"))
         assertFalse("no receiver name in the summary", clip.contains(": Base"))
     }
