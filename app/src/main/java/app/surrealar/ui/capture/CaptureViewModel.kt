@@ -34,6 +34,11 @@ class CaptureViewModel @Inject constructor(
     private val sourceSettings: app.surrealar.gnss.source.SourceSettings,
     private val settingsRepository: SettingsRepository,
     private val feedDatum: app.surrealar.gnss.source.ReceiverFeedDatum,
+    /**
+     * RS4 / RS4 Pro tilt status (Phase 4 WP C): classifies each external epoch's position reference. Null (tests
+     * that predate it) = no reference gating, exactly as before.
+     */
+    private val tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor? = null,
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
@@ -50,6 +55,10 @@ class CaptureViewModel @Inject constructor(
         val externalTcpHost: String?,
         val externalProfileLabel: String?,
         val coordinateSystemSettings: app.surrealar.settings.model.CoordinateSystemSettings?,
+        /** The receiver profile (null when unreadable: the saved point then uses the default profile, as before). */
+        val externalProfile: app.surrealar.settings.model.ExternalReceiverProfile? = null,
+        /** "Compensated NMEA output (Emlid Flow)": read only for RS4 / RS4 Pro profiles; null otherwise or unreadable. */
+        val compensatedOutput: app.surrealar.settings.model.CompensatedOutputSetting? = null,
     )
 
     private var startSnapshot: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>? = null
@@ -64,14 +73,20 @@ class CaptureViewModel @Inject constructor(
         null
     }
 
-    private suspend fun readSnapshot() = CaptureSettingsSnapshot(
-        locationSource = readOrNull("locationSource") { settingsRepository.locationSource.first() },
-        receiver = readOrNull("receiver") { settingsRepository.gnssReceiverSettings.first() },
-        externalTcpName = readOrNull("externalTcpName") { settingsRepository.externalTcpName.first() },
-        externalTcpHost = readOrNull("externalTcpHost") { settingsRepository.externalTcpHost.first() },
-        externalProfileLabel = readOrNull("externalProfile") { settingsRepository.externalReceiverProfile.first().label },
-        coordinateSystemSettings = readOrNull("coordinateSystem") { settingsRepository.coordinateSystemSettings.first() },
-    )
+    private suspend fun readSnapshot(): CaptureSettingsSnapshot {
+        val profile = readOrNull("externalProfile") { settingsRepository.externalReceiverProfile.first() }
+        return CaptureSettingsSnapshot(
+            locationSource = readOrNull("locationSource") { settingsRepository.locationSource.first() },
+            receiver = readOrNull("receiver") { settingsRepository.gnssReceiverSettings.first() },
+            externalTcpName = readOrNull("externalTcpName") { settingsRepository.externalTcpName.first() },
+            externalTcpHost = readOrNull("externalTcpHost") { settingsRepository.externalTcpHost.first() },
+            externalProfileLabel = profile?.label,
+            coordinateSystemSettings = readOrNull("coordinateSystem") { settingsRepository.coordinateSystemSettings.first() },
+            externalProfile = profile,
+            compensatedOutput = if (app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile))
+                readOrNull("compensatedOutput") { settingsRepository.compensatedNmeaOutput.first() } else null,
+        )
+    }
 
     /** The settings snapshot taken when the current capture started (read now if none was taken). */
     suspend fun settingsAtStart(): CaptureSettingsSnapshot? =
@@ -115,6 +130,54 @@ class CaptureViewModel @Inject constructor(
     private var datumWatchJob: Job? = null
 
     /**
+     * Position-reference rules of the current/completed RS4 / RS4 Pro external occupation (null: internal capture
+     * or none). Its [app.surrealar.receiver.tilt.CaptureReferenceGate.bound] is the reference every averaged epoch
+     * had (antenna or receiver-compensated pole tip); saving reads it ([externalAntennaOffsetM]).
+     */
+    private var referenceGate: app.surrealar.receiver.tilt.CaptureReferenceGate? = null
+    /** How long only possibly-compensated epochs may arrive before the occupation stops (tests shorten it). */
+    internal var referenceNoValidEpochsMs: Long = app.surrealar.receiver.tilt.CaptureReferenceGate.DEFAULT_NO_VALID_EPOCHS_MS
+    /** Watches settings that change how an external occupation is interpreted (profile, host, compensated output). */
+    private var setupWatchJob: Job? = null
+    /** First non-null correction base station id of the current external occupation (null: none reported yet). */
+    private var occupationStation: String? = null
+
+    private val _positionReference = MutableStateFlow<app.surrealar.receiver.tilt.EpochReference?>(null)
+    /**
+     * The position reference the running RS4 / RS4 Pro occupation is bound to (null: not bound yet, not an
+     * RS4-class capture, or internal), for the capture dialog.
+     */
+    val positionReference: StateFlow<app.surrealar.receiver.tilt.EpochReference?> = _positionReference.asStateFlow()
+
+    /**
+     * The position reference of the completed (or running) external occupation: POLE_TIP when the receiver
+     * delivered tilt-compensated pole-tip positions, ANTENNA otherwise; null when not an RS4 / RS4 Pro capture.
+     */
+    fun occupationPositionReference(): app.surrealar.receiver.tilt.EpochReference? = referenceGate?.bound
+
+    /**
+     * The height to subtract from an external capture taken with [snap]'s settings. Receiver-compensated
+     * pole-tip occupations: 0 (the receiver already applied its own pole height; the app's pole height and
+     * phase-centre offset are NEVER subtracted a second time). Otherwise today's pole height + phase-centre
+     * offset (unchanged maths). Throws when the receiver settings could not be read.
+     */
+    fun externalAntennaOffsetM(snap: CaptureSettingsSnapshot?): Double {
+        if (occupationPositionReference() == app.surrealar.receiver.tilt.EpochReference.POLE_TIP) return 0.0
+        return app.surrealar.settings.model.AntennaSetup.resolve(
+            snap?.receiver ?: error("receiver settings unavailable"),
+            app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(snap?.externalProfileLabel)
+                ?: app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT,
+        ).captureOffsetM
+    }
+
+    /**
+     * Capture method to store for an external capture: [CAPTURE_METHOD_POLE_TIP] for a receiver-compensated
+     * pole-tip occupation (provenance; no schema change), else [default].
+     */
+    fun externalCaptureMethod(default: String): String =
+        if (occupationPositionReference() == app.surrealar.receiver.tilt.EpochReference.POLE_TIP) CAPTURE_METHOD_POLE_TIP else default
+
+    /**
      * The receiver datum that normalised every fix of the current/completed external capture: the
      * saved `receiverFrame`. Null for internal captures, when no capture ran, or when the datum setting
      * couldn't be read at start (provenance unknown, as before; the fixes were still all normalised
@@ -139,6 +202,7 @@ class CaptureViewModel @Inject constructor(
                     if (session != null && acceptedFixes > 0) {
                         // cancel() writes the outcome line; the source switch itself is logged by GNSS.
                         DiagnosticsLogger.d(DiagTags.CAPTURE) { "Capture cancelled: provider switched $previousProvider → $provider" }
+                        app.surrealar.util.diagnostics.CaptureInterruptions.record(INTERRUPT_SOURCE)
                         cancel()
                         _interruption.value = SOURCE_CHANGED_MESSAGE
                     }
@@ -210,13 +274,22 @@ class CaptureViewModel @Inject constructor(
             else OccupationDatum(feedDatum.datum.value, fromSetting = false)
         }
         occupationDatum = datum
+        // RS4 / RS4 Pro: per-epoch position reference (antenna / receiver pole tip / uncertain), see admitReference.
+        val gate = if (internal) null else app.surrealar.receiver.tilt.CaptureReferenceGate(referenceNoValidEpochsMs)
+        referenceGate = gate
+        occupationStation = null
+        _positionReference.value = null
         var sessionRef: ObservationSession? = null
         val sessionFixes = if (datum == null) modeFixes
-            else modeFixes.filter { admitExternalFix(it, datum.await().datum, sessionRef) }
+            else modeFixes
+                .filter { admitExternalFix(it, datum.await().datum, sessionRef) }
+                .filter { admitSetup(it, sessionRef) }
+                .filter { admitReference(it, gate!!, snapForDatum, sessionRef) }
         val s = ObservationSession(viewModelScope, sessionFixes, policy)
         sessionRef = s
         session = s
         if (datum != null) datumWatchJob = viewModelScope.launch { watchReceiverDatum(datum.await().datum, s) }
+        if (!internal) setupWatchJob = viewModelScope.launch { watchExternalSetup(snapForDatum, s) }
         // Diagnostics only: a separate read-only collector (the session's own flow is untouched).
         resetCaptureDiag()
         val diag = app.surrealar.util.diagnostics.CaptureDiagnostics(policy, if (internal) "INTERNAL" else "EXTERNAL")
@@ -301,9 +374,151 @@ class CaptureViewModel @Inject constructor(
         }
     }
 
+    private var lastReferenceExcludeLogMs = 0L
+
+    /**
+     * Correction base gate for an external occupation: once epochs were averaged, a fix whose differential base
+     * station id differs from the occupation's (both reported) means the RTK solution now refers to another base,
+     * so the occupation is stopped (a different base can shift every coordinate by its own coordinate error).
+     * Fixes without a station id never stop it.
+     */
+    private fun admitSetup(fix: Fix, owner: ObservationSession?): Boolean {
+        val station = fix.correctionStationId?.trim()?.takeIf { it.isNotEmpty() } ?: return true
+        val bound = occupationStation
+        if (bound == null || bound == station) { occupationStation = station; return true }
+        val averaged = (owner?.state?.value as? ObservationSession.State.Capturing)?.samples ?: 0
+        if (averaged == 0 || owner !== session) { occupationStation = station; return true }
+        interrupt(INTERRUPT_CORRECTION_BASE, CORRECTION_BASE_CHANGED_MESSAGE, "correction base station changed")
+        return false
+    }
+
+    /**
+     * RS4 / RS4 Pro position-reference gate ([app.surrealar.receiver.tilt.CaptureReferenceGate]): each epoch is
+     * classified (its own ETC + the profile / compensated-output setting read at start + firmware); only epochs of
+     * the occupation's reference are averaged, possibly-compensated epochs never are, and a reference change or a
+     * loss of tilt compensation stops the occupation. Other profiles (RS2+, generic) pass straight through, with no
+     * wait, exactly as before.
+     */
+    private suspend fun admitReference(
+        fix: Fix,
+        gate: app.surrealar.receiver.tilt.CaptureReferenceGate,
+        snap: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>?,
+        owner: ObservationSession?,
+    ): Boolean {
+        val monitor = tiltMonitor ?: return true
+        val startSettings = try { snap?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+        val profile = startSettings?.externalProfile
+        if (!app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile)) return true
+        val output = startSettings?.compensatedOutput ?: app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT
+        val c = monitor.classify(fix, profile, output)
+        if (owner == null || owner !== session) return false
+        // A finished occupation keeps the reference it was bound to (saving reads it): late epochs never rebind it.
+        val st = owner.state.value
+        if (st is ObservationSession.State.Complete || st is ObservationSession.State.Paused) return false
+        val averaged = (st as? ObservationSession.State.Capturing)?.samples ?: 0
+        return when (val d = gate.decide(c, averaged, System.nanoTime() / 1_000_000L)) {
+            is app.surrealar.receiver.tilt.CaptureReferenceGate.Decision.Accept -> {
+                if (_positionReference.value != gate.bound) {
+                    _positionReference.value = gate.bound
+                    DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture position reference bound reference=${gate.bound} " +
+                        "epoch=${c.reference} reason=${c.result?.reason} profile=${profile?.prefKey} output=${output.prefKey}")
+                }
+                true
+            }
+            is app.surrealar.receiver.tilt.CaptureReferenceGate.Decision.Exclude -> {
+                val now = System.currentTimeMillis()
+                if (now - lastReferenceExcludeLogMs >= 10_000L) {
+                    lastReferenceExcludeLogMs = now
+                    DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture excluded epoch: ${d.why} reason=${c.result?.reason} excluded=${gate.excluded}")
+                }
+                false
+            }
+            is app.surrealar.receiver.tilt.CaptureReferenceGate.Decision.Stop -> {
+                val message = when (d.reason) {
+                    app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.REFERENCE_CHANGED -> REFERENCE_CHANGED_MESSAGE
+                    app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.TILT_LOST -> TILT_LOST_MESSAGE
+                    app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.MAY_BE_COMPENSATED -> MAY_BE_COMPENSATED_MESSAGE
+                }
+                interrupt(d.reason.code, message, d.detail)
+                false
+            }
+        }
+    }
+
+    /**
+     * Stops [owner]'s external occupation (before it completes) when a setting that changes how its epochs are
+     * interpreted changes: the receiver profile (antenna offset, tilt rules), the receiver host (another
+     * receiver), or "Compensated NMEA output". Antenna / pole-height edits do NOT stop it: the reduction is bound
+     * to the start snapshot and the streamed epochs do not change; they are logged only.
+     */
+    private suspend fun watchExternalSetup(snap: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>?, owner: ObservationSession) {
+        val start = try { snap?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null } ?: return
+        fun running() = owner === session && owner.state.value.let {
+            it !is ObservationSession.State.Complete && it !is ObservationSession.State.Paused
+        }
+        coroutineScopeLaunch {
+            start.externalProfile?.let { p0 ->
+                launch {
+                    safeWatch("profile") {
+                        settingsRepository.externalReceiverProfile.distinctUntilChanged().collect { p ->
+                            if (p != p0 && running()) interrupt(INTERRUPT_PROFILE, PROFILE_CHANGED_MESSAGE, "profile ${p0.prefKey} → ${p.prefKey}")
+                        }
+                    }
+                }
+            }
+            start.externalTcpHost?.let { h0 ->
+                launch {
+                    safeWatch("host") {
+                        settingsRepository.externalTcpHost.distinctUntilChanged().collect { h ->
+                            if (h != null && h != h0 && running()) interrupt(INTERRUPT_RECEIVER, RECEIVER_CHANGED_MESSAGE, "receiver host changed")
+                        }
+                    }
+                }
+            }
+            start.compensatedOutput?.let { o0 ->
+                launch {
+                    safeWatch("compensatedOutput") {
+                        settingsRepository.compensatedNmeaOutput.distinctUntilChanged().collect { o ->
+                            if (o != o0 && running()) interrupt(INTERRUPT_OUTPUT_SETTING, OUTPUT_SETTING_CHANGED_MESSAGE, "compensated output ${o0.prefKey} → ${o.prefKey}")
+                        }
+                    }
+                }
+            }
+            start.receiver?.let { r0 ->
+                launch {
+                    safeWatch("antenna") {
+                        settingsRepository.gnssReceiverSettings.distinctUntilChanged().collect { r ->
+                            if (r != r0 && running()) DiagnosticsLogger.i(DiagTags.CAPTURE,
+                                "Capture continues: antenna settings changed mid-occupation; the saved point uses the settings from the start")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun coroutineScopeLaunch(block: kotlinx.coroutines.CoroutineScope.() -> Unit) =
+        kotlinx.coroutines.coroutineScope { block() }
+
+    private suspend inline fun safeWatch(what: String, watch: () -> Unit) {
+        try { watch() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture setup watch unavailable what=$what", e)
+        }
+    }
+
+    /** Stops the current capture with [message] (nothing saved; a completed result is never reached here). */
+    private fun interrupt(code: String, message: String, detail: String) {
+        if (session == null) return
+        DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture stopped: $code ($detail)")
+        app.surrealar.util.diagnostics.CaptureInterruptions.record(code)
+        cancel()
+        _interruption.value = message
+    }
+
     private fun interruptForDatumChange(detail: String) {
         if (session == null) return
         DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture stopped: receiver datum changed during the occupation ($detail)")
+        app.surrealar.util.diagnostics.CaptureInterruptions.record(INTERRUPT_DATUM)
         cancel()
         _interruption.value = DATUM_CHANGED_MESSAGE
     }
@@ -366,6 +581,8 @@ class CaptureViewModel @Inject constructor(
     private fun stopSession() {
         datumWatchJob?.cancel()
         datumWatchJob = null
+        setupWatchJob?.cancel()
+        setupWatchJob = null
         sessionForwardJob?.cancel()
         sessionForwardJob = null
         session?.cancel()
@@ -420,11 +637,8 @@ class CaptureViewModel @Inject constructor(
             when (src) {
                 LocationSourceType.SIMULATOR -> 0.0
                 // Pole height to the bottom of the receiver + the receiver model's phase-centre offset.
-                LocationSourceType.EXTERNAL  -> app.surrealar.settings.model.AntennaSetup.resolve(
-                    snap?.receiver ?: error("receiver settings unavailable"),
-                    app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(snap?.externalProfileLabel)
-                        ?: app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT,
-                ).captureOffsetM
+                // Receiver-compensated pole tip: 0 (never subtracted twice). See externalAntennaOffsetM.
+                LocationSourceType.EXTERNAL  -> externalAntennaOffsetM(snap)
                 LocationSourceType.INTERNAL  -> (snap?.receiver ?: error("receiver settings unavailable")).internalAntennaHeightM
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -451,7 +665,7 @@ class CaptureViewModel @Inject constructor(
             iconId         = iconId,
             provider       = provider,
             result         = finished,
-            captureMethod  = captureMethod,
+            captureMethod  = if (src == LocationSourceType.EXTERNAL) externalCaptureMethod(captureMethod) else captureMethod,
             sourceDevice   = sourceDevice,
             antennaHeightM = antennaHeightM,
             receiverFrame  = receiverFrame,
@@ -478,5 +692,41 @@ class CaptureViewModel @Inject constructor(
 
         /** [interruption] when the GNSS source (provider) switched during a capture. */
         const val SOURCE_CHANGED_MESSAGE = "Capture stopped: the GNSS source changed during the occupation. Start the capture again."
+
+        /** RS4 / RS4 Pro: the position reference changed (antenna ↔ pole tip ↔ uncertain) mid-occupation. */
+        const val REFERENCE_CHANGED_MESSAGE = "Capture stopped: the receiver's position reference changed (antenna / pole tip) during the occupation. Restart the capture."
+
+        /** RS4 / RS4 Pro: tilt compensation lost during a pole-tip occupation. */
+        const val TILT_LOST_MESSAGE = "Capture stopped: tilt compensation was lost during the occupation. Wait for tilt to be active again, then restart the capture."
+
+        /** RS4 / RS4 Pro: only possibly-compensated epochs arrived. */
+        const val MAY_BE_COMPENSATED_MESSAGE = "Receiver may be sending tilt-compensated positions; set 'Compensated NMEA output' in Settings → Receiver."
+
+        /** The receiver profile changed during an external occupation. */
+        const val PROFILE_CHANGED_MESSAGE = "Capture stopped: the receiver profile changed during the occupation. Restart the capture."
+
+        /** The receiver host changed during an external occupation. */
+        const val RECEIVER_CHANGED_MESSAGE = "Capture stopped: the receiver connection changed during the occupation. Restart the capture."
+
+        /** "Compensated NMEA output" changed during an RS4 / RS4 Pro occupation. */
+        const val OUTPUT_SETTING_CHANGED_MESSAGE = "Capture stopped: 'Compensated NMEA output' changed during the occupation. Restart the capture."
+
+        /** The correction base station changed during an external occupation. */
+        const val CORRECTION_BASE_CHANGED_MESSAGE = "Capture stopped: the correction base station changed during the occupation. Restart the capture."
+
+        /**
+         * captureMethod stored for an external capture whose epochs were receiver-compensated pole-tip positions
+         * (Phase 4 WP C). The pole height / phase-centre offset was not subtracted (antennaHeightM stays null).
+         * [app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_POLE_TIP].
+         */
+        val CAPTURE_METHOD_POLE_TIP: String get() = app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_POLE_TIP.storageValue
+
+        // Interruption codes (diagnostics counts).
+        const val INTERRUPT_SOURCE = "source_changed"
+        const val INTERRUPT_DATUM = "receiver_datum_changed"
+        const val INTERRUPT_PROFILE = "receiver_profile_changed"
+        const val INTERRUPT_RECEIVER = "receiver_host_changed"
+        const val INTERRUPT_OUTPUT_SETTING = "compensated_output_changed"
+        const val INTERRUPT_CORRECTION_BASE = "correction_base_changed"
     }
 }

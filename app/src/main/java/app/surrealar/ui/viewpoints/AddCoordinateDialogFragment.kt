@@ -121,6 +121,8 @@ class AddCoordinateDialogFragment(
     private var tvDetails: TextView? = null
     private var btnModel: MaterialButton? = null
     private var btnSave: MaterialButton? = null
+    private var btnRestart: MaterialButton? = null
+    private var tvPositionReference: TextView? = null
 
     // ── State ─────────────────────────────────────────────────────────────────
     private var selectedIconKey: String? = null
@@ -227,6 +229,16 @@ class AddCoordinateDialogFragment(
         tvDetails         = view.findViewById(R.id.text_details)
         btnModel          = view.findViewById(R.id.button_model)
         btnSave           = view.findViewById(R.id.btn_save)
+        btnRestart        = view.findViewById(R.id.btn_restart_capture)
+        tvPositionReference = view.findViewById(R.id.text_position_reference)
+
+        // After the app stopped a capture: start a fresh occupation with the same mode and saved rules.
+        btnRestart?.setOnClickListener {
+            if (!modeResolved) return@setOnClickListener
+            DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture restarted by the user after an interruption")
+            btnRestart?.visibility = View.GONE
+            if (isExternalMode) startExternalAveraging() else startInternalAveraging()
+        }
 
         // Prefill point name from settings
         viewLifecycleOwner.lifecycleScope.launch {
@@ -305,10 +317,23 @@ class AddCoordinateDialogFragment(
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 captureVm.interruption.collect { message ->
+                    btnRestart?.visibility = if (message == null) View.GONE else View.VISIBLE
                     if (message == null) return@collect
                     tvSamplingStatus?.text = message
                     btnSave?.isEnabled = false
                     if (isAdded) Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        // RS4 / RS4 Pro: which point the averaged positions are (antenna or the receiver's compensated pole tip).
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                captureVm.positionReference.collect { ref ->
+                    setOptionalText(tvPositionReference, ref?.let {
+                        "Position: ${app.surrealar.receiver.tilt.TiltStatusText.referenceLabel(it)}. " +
+                            app.surrealar.receiver.tilt.TiltStatusText.referenceExplanation(it, null)
+                    })
                 }
             }
         }
@@ -368,7 +393,7 @@ class AddCoordinateDialogFragment(
         tvSamplingStatus = null; progressCapture = null
         tvElapsed = null; tvSamples = null; tvFixStatus = null; tvAccuracy = null
         tvAccuracyNote = null; tvHdop = null; tvSatsUsed = null; tvDetails = null
-        btnModel = null; btnSave = null
+        btnModel = null; btnSave = null; btnRestart = null; tvPositionReference = null
     }
 
     // ── External GNSS averaging ───────────────────────────────────────────────
@@ -709,12 +734,9 @@ class AddCoordinateDialogFragment(
                 // Settings → antenna (pole) height for the antenna that produced the fixes, subtracted
                 // so the stored altitude is the ground mark, not the antenna.
                 // External: pole height to the bottom of the receiver + the model's phase-centre offset.
-                val antennaHeightM = if (isExternalMode)
-                    app.surrealar.settings.model.AntennaSetup.resolve(
-                        receiver,
-                        app.surrealar.settings.model.ExternalReceiverProfile.fromLabel(snap?.externalProfileLabel)
-                            ?: app.surrealar.settings.model.ExternalReceiverProfile.DEFAULT,
-                    ).captureOffsetM
+                // RS4 / RS4 Pro receiver-compensated pole tip: 0, the receiver already applied its own pole height
+                // (never subtracted twice); otherwise the unchanged pole height + phase-centre offset.
+                val antennaHeightM = if (isExternalMode) captureVm.externalAntennaOffsetM(snap)
                     else receiver.internalAntennaHeightM
                 // Receiver identity: the selected profile's label (e.g. "Emlid Reach RS4"), the same
                 // stable value the Capture screen stores.
@@ -735,7 +757,8 @@ class AddCoordinateDialogFragment(
                     iconId        = legacyIcon,
                     provider      = if (isExternalMode) Provider.EXTERNAL_TCP else Provider.INTERNAL,
                     result        = completedState.result,
-                    captureMethod = (if (isExternalMode) CaptureMethod.EXTERNAL_GNSS else CaptureMethod.INTERNAL_GPS).storageValue,
+                    captureMethod = if (isExternalMode) captureVm.externalCaptureMethod(CaptureMethod.EXTERNAL_GNSS.storageValue)
+                        else CaptureMethod.INTERNAL_GPS.storageValue,
                     sourceDevice  = sourceDevice,
                     modelId       = linkedModelId,
                     iconKey       = builtinIconKey,
