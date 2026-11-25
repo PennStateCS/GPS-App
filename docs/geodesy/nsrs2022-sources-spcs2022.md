@@ -91,3 +91,11 @@ therefore the NGS reference; no NCAT responses are stored.
   Gulf zones 002101–002107 have envelopes only.
 - No EPSG codes yet (column empty, ids `spcs2022:<zone code>`).
 - Feet: only metres are native; display in international feet is the caller's job (never US survey feet).
+
+## Update 2026-11-25 (Phase 4 WP N)
+
+Re-checked: the change log still ends at 6/1/2026, and `zoneDefinitions.json`, `coordinates.json` and
+`zoneBounds.json` are byte-identical to the pinned SHA-256 (Last-Modified 2026-06-01). No newer version,
+nothing to regenerate. With `CrsRegistry(frameRegistry = FrameTransformationRegistry.NSRS2022_BETA)` the 949
+NATRF2022 zones become operational `VERIFIED_BETA`. The default registry still has none (see
+`phase4-ngs-investigation.md`).

@@ -142,3 +142,24 @@ and physical (rigid-plate constancy). Both are tested. They do not replace NGS v
    → NATRF2022 then report beta automatically.
 4. If NGS revises the EPPs, re-run `tools/nsrs/fetch_epp2022.py`. The hash test fails until the
    constants and this document are updated.
+
+## Update 2026-11-25 (Phase 4 WP N)
+
+Superseded in part; details and evidence in `phase4-ngs-investigation.md`.
+
+- The EPP page, CSV and equation images are byte-identical to the pins above (EPP dataset unchanged).
+- **Sign settled by NGS's definition:** NOAA TR NOS NGS 62, revision of 2021-04-20
+  (https://www.ngs.noaa.gov/library/pdfs/NOAA_TR_NOS_NGS_0062.pdf, SHA-256 `b0d25a26…2ae72a`), eqs. 58–60:
+  "Equation 58 will be the official definitional relationship between ITRF2020 and each of the four
+  plate-fixed reference frames". X_N = {I + (t − t0)·[[0, ω̇Z, −ω̇Y], [−ω̇Z, 0, ω̇X], [ω̇Y, −ω̇X, 0]]}·X_I, which
+  is X_N = X_I − Δt·(ω̇ × X_I), the GeoKit form. The beta page's `X_f = X_g − ΔX` is the opposite sign.
+- **NGS reference coordinates now exist:** the beta Geodetic Station Pages service
+  (`https://beta.ngs.noaa.gov/api_m/gsp/coords`) converts ITRF2020(t) to all four frames at t. GeoKit
+  matches 156 pairs (13 CORS, epochs 2014.5/2020.0/2026.9) to 1e-9 m. They are pinned in
+  `libs/geokit-core/src/test/resources/nsrs/ngs-gsp/`.
+- ITRF2020 ⇄ NATRF2022 is `VERIFIED_BETA` in the opt-in `FrameTransformationRegistry.NSRS2022_BETA`.
+  `DEFAULT` is unchanged and still has no 2022-frame edge. PATRF/CATRF/MATRF are verified numerically but are
+  not yet `ReferenceFrame` entries.
+- Beta NCAT (release 20260915) still has no ITRF2020 or plate frames ("Validation Error: Value is not
+  valid" for ITRF2020). The NGS developer test dataset is still unreleased. The beta OPUS shared-solution
+  viewer returns 404.

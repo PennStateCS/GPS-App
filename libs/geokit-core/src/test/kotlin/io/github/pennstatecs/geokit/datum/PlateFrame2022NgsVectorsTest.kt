@@ -25,7 +25,7 @@ import kotlin.math.max
  *
  * Tolerance: NGS returns full double precision and the EPP2022 relation (TR NOS NGS 62 eq. 60) is exact
  * by definition, so we require 1 µm in X/Y/Z and h and 1e-11° (≈ 1 µm) in lat/lon — three orders below
- * the 1 mm surveying tolerance. The literal sign of the beta web page misses by 4 cm … 3 m on these data.
+ * the 1 mm surveying tolerance. The literal sign of the beta web page misses by 8 cm … 4.3 m on these data.
  */
 class PlateFrame2022NgsVectorsTest {
 

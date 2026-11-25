@@ -106,3 +106,10 @@ GL 721 × 1441 (lon 0 and 360 both present). Precision: AS is stored in whole mm
   no NGS test value lies within 1′ of a grid edge.
 - Uncertainty (`Nsigma`) and geoid–quasigeoid separation grids are not bundled.
 - Positions must be ITRF2020 (current epoch is fine for N at the sub-mm level); the app must transform first.
+
+## Update 2026-11-25 (Phase 4 WP N)
+
+Re-checked: the download page lists only `beta_v0a`, and the change log is unchanged (4/27/2026 `beta_v0a`,
+6/16/2025 `beta_v0`). The pinned `.bin` files keep their sizes and Last-Modified 2026-05-11, and a `v1a` URL
+returns 404. OPUS sample reports mention "GEOID2022v1.0.0", but NGS publishes no such file. `beta_v0a`
+stays current and nothing changes.
