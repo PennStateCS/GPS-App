@@ -102,6 +102,11 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var gnssSourceCoordinator: app.surrealar.gnss.source.GnssSourceCoordinator
     @Inject lateinit var diagnosticsService: DiagnosticsService
     @Inject lateinit var sourceSettings: app.surrealar.gnss.source.SourceSettings
+    /**
+     * Phase 5 receiver selection core. Injected here so the singleton (identification, automatic profile changes)
+     * starts with the app, and its one-off notices reach the user on any screen.
+     */
+    @Inject lateinit var receiverConnection: app.surrealar.receiver.selection.ReceiverConnectionController
 
     // Replay controller for NMEA playback
     /** Provider active before replay started, restored when replay stops (null = not replaying). */
@@ -212,6 +217,21 @@ class MainActivity : AppCompatActivity() {
             strip = findViewById(R.id.location_status_bar),
         )
         setupToolbarActions()
+
+        // "Profile set to RS4 Pro (reported by receiver)": shown on whichever screen is open.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                receiverConnection.events.collect { e ->
+                    if (e is app.surrealar.receiver.selection.ReceiverSelectionEvent.ProfileAutoApplied) {
+                        runCatching {
+                            com.google.android.material.snackbar.Snackbar.make(binding.root,
+                                getString(R.string.receiver_profile_auto_applied, e.to.label),
+                                com.google.android.material.snackbar.Snackbar.LENGTH_LONG).show()
+                        }.onFailure { DiagnosticsLogger.w(DiagTags.RECEIVER, "Profile notice not shown", it) }
+                    }
+                }
+            }
+        }
 
         // Battery comes from the active ReceiverDevice (one poller, shared with Settings and the
         // Developer page). Null while the receiver is unreachable or not selected; the token is hidden

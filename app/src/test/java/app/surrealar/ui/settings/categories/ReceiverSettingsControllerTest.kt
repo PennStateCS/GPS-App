@@ -3,8 +3,6 @@ package app.surrealar.ui.settings.categories
 import android.app.Application
 import android.os.Looper
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
 import app.surrealar.R
 import app.surrealar.domain.model.ExternalConnectionType
 import app.surrealar.domain.model.LocationSourceType
@@ -14,6 +12,10 @@ import app.surrealar.gnss.settings.GnssReceiverSettings
 import app.surrealar.gnss.source.GnssSourceCoordinator
 import app.surrealar.receiver.ReceiverDeviceManager
 import app.surrealar.settings.model.ExternalReceiverProfile
+import app.surrealar.settings.model.RecentReceiver
+import app.surrealar.ui.settings.receiver.ReceiverPickerSheet
+import app.surrealar.ui.settings.receiver.ReceiverUiDeps
+import app.surrealar.ui.settings.receiver.rowTitled
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverCapabilities
@@ -40,9 +42,10 @@ import kotlin.concurrent.thread
 
 /**
  * Receiver category connect flow against a local TCP "receiver" (no device): a probe that finds NMEA
- * activates the external provider through the coordinator; a disconnect while the probe is in flight
- * switches to device GNSS and the superseded attempt never activates External. Runs on the real
- * (Robolectric) main looper; the probes use real sockets on 127.0.0.1.
+ * activates the external provider through the coordinator; a switch to device GNSS while the probe is in flight
+ * and the superseded attempt never activates External. Runs on the real (Robolectric) main looper; the probes use
+ * real sockets on 127.0.0.1. Phase 5: driven through the new UI ("Change receiver" → a previously connected
+ * receiver row; "Tablet GNSS" row instead of the removed inline host/port + Connect and Disconnect).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class)
@@ -88,7 +91,10 @@ class ReceiverSettingsControllerTest {
         Mockito.`when`(it.externalConnType).thenReturn(flowOf(ExternalConnectionType.TCP))
         Mockito.`when`(it.gnssReceiverSettings).thenReturn(flowOf(GnssReceiverSettings()))
         Mockito.`when`(it.mockLocationEnabled).thenReturn(flowOf(false))
+        Mockito.`when`(it.externalRecentReceivers).thenReturn(flowOf(listOf(RecentReceiver("127.0.0.1", server.localPort, null, "Local"))))
     }
+
+    @After fun clearDeps() { ReceiverUiDeps.override = null }
 
     private fun switchboard(): FixSwitchboard = Mockito.mock(FixSwitchboard::class.java).also {
         Mockito.`when`(it.currentFix).thenReturn(MutableStateFlow<Fix?>(null))
@@ -118,16 +124,33 @@ class ReceiverSettingsControllerTest {
     private fun activations() = Mockito.mockingDetails(coordinator).invocations
         .count { it.method.name == "activateExternalTcpProvider" }
 
+    private lateinit var host: ControllerHost
+
     private fun showAndConnect(): View {
-        val host = ControllerHost()
-        val controller = ReceiverSettingsController(host.fragment, settings(), switchboard(), coordinator, devices(),
+        host = ControllerHost()
+        val repo = settings()
+        val controller = ReceiverSettingsController(host.fragment, repo, switchboard(), coordinator, devices(),
             mainScope(), refreshCategoriesForSource = {})
+        val sb = switchboard()
+        val dv = devices()
+        ReceiverUiDeps.override = object : ReceiverUiDeps {
+            override val connection = controller.connection
+            override val settings = repo
+            override val fixSwitchboard = sb
+            override val devices = dv
+            override val nmeaLinesPerSecond: kotlinx.coroutines.flow.Flow<Double> = flowOf(0.0)
+        }
         val view = host.show(controller, mainScope())
         shadowOf(Looper.getMainLooper()).idle()
-        view.findViewById<EditText>(R.id.edit_host).setText("127.0.0.1")
-        view.findViewById<EditText>(R.id.edit_port).setText(server.localPort.toString())
-        view.findViewById<Button>(R.id.btn_connect).performClick()
+        view.findViewById<View>(R.id.btn_change_receiver).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        rowTitled(picker().requireView(), "Local").performClick()
         return view
+    }
+
+    private fun picker(): ReceiverPickerSheet {
+        host.fragment.childFragmentManager.executePendingTransactions()
+        return host.fragment.childFragmentManager.findFragmentByTag(ReceiverPickerSheet.TAG) as ReceiverPickerSheet
     }
 
     @Test fun `a probe that finds the receiver activates the external provider through the coordinator`() {
@@ -138,12 +161,12 @@ class ReceiverSettingsControllerTest {
         Mockito.verify(coordinator).activateExternalTcpProvider("127.0.0.1", server.localPort, "settings-connect #1")
     }
 
-    @Test fun `disconnecting during the probe switches to device GNSS and the old attempt never activates External`() {
-        val view = showAndConnect()
+    @Test fun `choosing tablet GNSS during the probe switches to device GNSS and the old attempt never activates External`() {
+        showAndConnect()
         assertTrue("probe connected", pumpUntil(5_000) { accepted.get() >= 1 })
 
-        view.findViewById<Button>(R.id.btn_disconnect_device).performClick()
-        Mockito.verify(coordinator, Mockito.atLeastOnce()).activateInternalProvider("settings")
+        rowTitled(picker().requireView(), "Tablet GNSS").performClick()
+        Mockito.verify(coordinator, Mockito.atLeastOnce()).activateInternalProvider("picker")
 
         respond.countDown()                       // the receiver answers after the user left External
         // Wait until every probe connection really got its NMEA (so the superseded attempt has a result

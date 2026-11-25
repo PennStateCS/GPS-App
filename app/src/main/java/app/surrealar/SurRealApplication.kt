@@ -45,6 +45,8 @@ interface SurRealApplicationEntryPoint {
     fun appDatabase(): app.surrealar.data.local.db.AppDatabase
     fun receiverTiltMonitor(): app.surrealar.receiver.tilt.ReceiverTiltMonitor
     fun coordinateSystemService(): app.surrealar.coords.CoordinateSystemService
+    /** Phase 5 receiver selection core (receiver picker / manual dialog / details sheets). */
+    fun receiverConnectionController(): app.surrealar.receiver.selection.ReceiverConnectionController
 }
 
 /**
