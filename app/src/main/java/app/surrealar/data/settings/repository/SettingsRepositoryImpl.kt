@@ -121,6 +121,36 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         }
     }
 
+    /** One transaction (see [SettingsRepository.saveExternalTcpReceiver]): a failed write changes nothing. */
+    override suspend fun saveExternalTcpReceiver(
+        host: String,
+        port: Int,
+        name: String,
+        profile: app.surrealar.settings.model.ExternalReceiverProfile?,
+        origin: app.surrealar.settings.model.ProfileOrigin,
+        source: LocationSourceType,
+    ) {
+        local.editAll { prefs ->
+            val previousHost = prefs[K.EXTERNAL_TCP_HOST]
+            val previousPort = prefs[K.EXTERNAL_TCP_PORT]
+            val sameEndpoint = previousHost != null && previousHost.trim().equals(host.trim(), ignoreCase = true) &&
+                previousPort == port
+            prefs[K.EXTERNAL_CONN_TYPE] = ExternalConnectionType.TCP.prefKey
+            prefs[K.EXTERNAL_TCP_HOST] = host
+            prefs[K.EXTERNAL_TCP_PORT] = port
+            when {
+                name.isNotBlank() -> prefs[K.EXTERNAL_TCP_NAME] = name
+                // Reconnecting the same receiver keeps its name; another receiver must not show the old one.
+                !sameEndpoint -> prefs[K.EXTERNAL_TCP_NAME] = ""
+            }
+            if (profile != null) {
+                prefs[K.EXTERNAL_RECEIVER_PROFILE] = profile.prefKey
+                prefs[K.EXTERNAL_RECEIVER_PROFILE_ORIGIN] = origin.prefKey
+            }
+            prefs[K.LOCATION_SOURCE] = source.prefKey
+        }
+    }
+
     override suspend fun clearExternalTcp() {
         local.clearExternalTcp()
     }

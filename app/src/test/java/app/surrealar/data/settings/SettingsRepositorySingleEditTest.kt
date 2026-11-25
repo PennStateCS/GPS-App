@@ -82,6 +82,38 @@ class SettingsRepositorySingleEditTest {
     }
 
     @Test
+    fun externalTcpReceiver_savedInOneEdit_nameKeptForTheSameEndpoint() {
+        oneEdit {
+            repo.saveExternalTcpReceiver("192.168.42.7", 9001, "Base", ExternalReceiverProfile.GENERIC_NMEA_TCP,
+                app.surrealar.settings.model.ProfileOrigin.USER, app.surrealar.domain.model.LocationSourceType.EXTERNAL)
+        }
+        runBlocking {
+            assertEquals(ExternalConnectionType.TCP, repo.externalConnType.first())
+            assertEquals("192.168.42.7", repo.externalTcpHost.first())
+            assertEquals(9001, repo.externalTcpPort.first())
+            assertEquals("Base", repo.externalTcpName.first())
+            assertEquals(ExternalReceiverProfile.GENERIC_NMEA_TCP, repo.externalReceiverProfile.first())
+            assertEquals(app.surrealar.settings.model.ProfileOrigin.USER, repo.externalReceiverProfileOrigin.first())
+            assertEquals(app.surrealar.domain.model.LocationSourceType.EXTERNAL, repo.locationSource.first())
+        }
+        // Reconnect without a name and without a profile: the name and the profile stay.
+        oneEdit {
+            repo.saveExternalTcpReceiver(" 192.168.42.7", 9001, "", null,
+                app.surrealar.settings.model.ProfileOrigin.USER, app.surrealar.domain.model.LocationSourceType.EXTERNAL)
+        }
+        runBlocking {
+            assertEquals("Base", repo.externalTcpName.first())
+            assertEquals(ExternalReceiverProfile.GENERIC_NMEA_TCP, repo.externalReceiverProfile.first())
+        }
+        // Another receiver without a name: the old name is cleared.
+        oneEdit {
+            repo.saveExternalTcpReceiver("192.168.42.8", 9001, "", null,
+                app.surrealar.settings.model.ProfileOrigin.USER, app.surrealar.domain.model.LocationSourceType.EXTERNAL)
+        }
+        assertEquals("", runBlocking { repo.externalTcpName.first() })
+    }
+
+    @Test
     fun receiverSettings_legacyValuesAreConvertedOnRead() = runBlocking {
         // Stored before 2026-11: pole height to the phase centre, AR antenna above the camera.
         store.updateData {
