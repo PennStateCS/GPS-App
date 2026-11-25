@@ -1,4 +1,4 @@
-# Phases 1, 2 + 3 — consolidated tablet acceptance checklist
+# Phases 1, 2, 3 + 4 (WP U) — consolidated tablet acceptance checklist
 
 Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK for sections 1–7;
 the Phase 3 build (`survey/phase3`, incl. WP W) for section 8 (sections 1–7 must still pass on it). Do the installation
@@ -95,6 +95,23 @@ results. **A** = also covered by automated tests (named), **D** = device only.
 | 8.13 | JSON backup export + import with the preview on | Unchanged format (raw measurements only; GEOID2022 heights are computed for display, never stored); imports as before | D (no change in code; regression check) |
 | 8.14 | Existing points, Map, AR pins/models, stakeout with the preview on and off | Unchanged (map/AR/stakeout use the stored WGS84 positions; GEOID2022 affects only displayed/exported heights) | D |
 | 8.15 | Capture a throwaway point with the preview on; then change the External receiver datum during an External capture (as in 4.2–4.4) | Capture saves the receiver data exactly as in 4.1 (receiver H keeps "model unknown"; nothing GEOID2022 stored); a datum or source change during the occupation still stops the capture | A (capture tests, unchanged) + D |
+
+## 9. Phase 4 WP U — NSRS 2022 app integration polish
+
+Same rules as section 8 (beta opt-in, labelled, never default). Preview OFF: every existing value and label is
+unchanged; the only additions are the Elevation rows on Details, a third preview line (h / N / H parts) and a
+loading state where a height model is still loading.
+
+| # | Check | Expected result | A/D |
+|---|---|---|---|
+| 9.1 | Preview on: Settings → Coordinates under the switch | Briefly "Loading NSRS 2022 product status…" (catalog read in the background, no freeze), then three groups: "Verified systems" (Systems / Datums / Heights), "Verified NGS beta" (GEOID2022 heights, β BETA badge), "Unsupported / not yet verified" (NATRF2022 … MATRF2022, SPCS2022) each with a one-line "Why: …" | A (`CoordinatesSettingsOffMainTest`, `CoordinatesSettingsControllerTest`, `CoordinateSystemGroupsTest`) + D (look, light/dark) |
+| 9.2 | Tap an unsupported row (e.g. SPCS2022) | Dialog with the full registry reason; nothing is saved or selected | A (`CoordinatesSettingsControllerTest`) + D |
+| 9.3 | State Plane zone search with the preview on | Still only the 118 SPCS83 zones (no SPCS2022 zone is operational in GeoKit); hint ends "SPCS2022: not yet available." | A (`ZoneSelectorOptionsTest`) + D |
+| 9.4 | Point Details, each Height choice | New "Elevation" block: h (with its frame), H (with its reference), N (GEOID18 / EGM / GEOID2022), geoid model + version, vertical reference, epoch (GEOID2022 / ITRF2020), status Verified or Beta. GEOID2022 reads NAPGD2022 (beta), never NAVD88 | A (`ElevationDetailTest`) + D |
+| 9.5 | Settings preview line with a live fix | Third line "h … (frame) · N … (model version) · H … reference"; H matches the first line | A (`ElevationDetailTest`) + D |
+| 9.6 | Toolbar with GEOID2022 | Height label "NAPGD2022β" (all tokens still fit on the SM-X940 in both orientations); long-press help explains it | A (`ToolbarHeightLabelTest`, `ToolbarFitTest`) + D |
+| 9.7 | Cold start (airplane mode) with GEOID18, EGM2008 or GEOID2022 chosen; open Details / preview at once | "… data is loading" (toolbar "loading"), never "outside coverage" or another model's value; it switches to the value by itself when the data has loaded (no need to leave the screen or wait for a new fix) | A (`ElevationDetailTest`, `CoordinatesSettingsControllerTest`, `NonBlockingGeoidModelTest`, `CoordinateSystemServiceGeoidLoadTest`) + D (timing) |
+| 9.8 | Open Settings → Coordinates and immediately pick a Datum (slow device) with preview on and GEOID2022 saved | Only the datum changes; preview stays on and GEOID2022 stays chosen | A (`CoordinatesSettingsControllerTest` save-race tests) + D |
 
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
