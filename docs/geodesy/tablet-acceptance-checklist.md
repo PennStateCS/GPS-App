@@ -293,6 +293,32 @@ and flow: [../receiver-selection.md](../receiver-selection.md).
 | 13.27 | Details with Generic NMEA and with RS4 / RS4 Pro | Compensated-output row only for RS4 / RS4 Pro ("Default" until changed); "Fix quality" row (e.g. "RTK Fix, corrections 1.0 s old") for both | R + H |
 | 13.28 | Manual dialog in light and dark theme | Host, Receiver type (outlined dropdown) and TCP port fields look like the Settings inputs (white boxes in light theme); bottom of the dialog not clipped | — |
 
+## 14. Phase 5 — raw NMEA recording (Developer Tools)
+
+Build: `survey/phase5-rec`. Same **Needs** codes as section 13 (**H** = RS4 / RS4 Pro, **R** = RS2+). Nothing in this
+section has been performed yet. Design, file format and limits: [../raw-nmea-recording.md](../raw-nmea-recording.md).
+Recordings contain precise coordinates: delete test recordings afterwards, share only with people who need them.
+
+| # | Check | Expected | Needs |
+|---|---|---|---|
+| 14.1 | Settings → Developer Tools | Card "GNSS Diagnostics" → "Raw NMEA Recording" with duration 10 s / 30 s (selected) / 60 s / Manual, Start, Stop; nothing new on the Receiver page or in the capture screens | — |
+| 14.2 | Tablet GNSS active, Start for the first time | One-time privacy notice (coordinates, receiver identifiers, stays on the device until shared); Cancel starts nothing; "I understand" starts; the notice does not come back on the next Start (also after an app restart) | — |
+| 14.3 | Tablet GNSS, 10 s | "Recording… 00:0x / 00:10", sentence/byte counters rise; stops by itself at 00:10 with "Finished — duration reached"; row in "Recordings on this device" shows "tablet GNSS · complete" | — |
+| 14.4 | RS4 Pro over TCP, connected, 30 s | Availability says "external receiver over TCP"; GGA, RMC, GST, ETC counters rise, EBP when a base is configured; Bad checksum 0, Dropped 0; file name `GNSS_<date>_<time>_RS4Pro.nmea` | H |
+| 14.5 | During 14.4, Home / map / Field Status | Positions, fix status, tilt status and NMEA rate behave exactly as without recording; no stutter | H |
+| 14.6 | Manual, then Stop after ~1 min | "Finished — stopped by you"; complete | R or H |
+| 14.7 | Manual, unplug / power off the receiver (or walk out of Wi-Fi) | Recording ends "Finished: INCOMPLETE — receiver disconnected"; red line "This recording is incomplete" | R or H |
+| 14.8 | Manual, switch Settings → Receiver to tablet GNSS (or another receiver) during a recording | Recording ends "GNSS source or receiver changed", INCOMPLETE | R or H |
+| 14.9 | Manual, open another Settings category / leave Settings / press Home / screen off | Recording ends "left the Developer page", INCOMPLETE; nothing keeps recording in the background | — |
+| 14.10 | Manual, rotate the tablet | Recording continues (rotation is not leaving the page); timer keeps counting | — |
+| 14.11 | Source = NMEA replay (if a build exposes it) or receiver selected but not connected | Start disabled; "Raw NMEA unavailable: …" explains why | R |
+| 14.12 | Share a finished recording | Android share sheet with two files (`.nmea` + `.json`); e.g. save to Drive / e-mail to yourself; nothing is sent without choosing a target | — |
+| 14.13 | Open the shared `.nmea` on a PC | Only NMEA sentences, one per line, CRLF; no header/comments; `$GNETC`/`$GNEBP` present for RS4 Pro | H |
+| 14.14 | Open the `.json` | `schemaVersion` 1; times in UTC and local with time zone; provider `EXTERNAL_TCP`, profile `reach_rs4_pro`; reported model/firmware/serial filled only if Settings → Receiver details shows them as "Reported by receiver"; compensated output "UNKNOWN" (confirmed false) unless set; counts match the screen; **no IP address, port, host name, NTRIP credentials**; `complete` true | H |
+| 14.15 | Delete a recording | Confirmation, then both files gone from the list | — |
+| 14.16 | Long Manual recording on the RS4 Pro at the highest output rate | Ends at the 10 MB size limit ("10 MB size limit reached", complete); Dropped stays 0 | H |
+| 14.17 | After a recording, Settings → Data → Export JSON backup | The backup contains no recording (recordings are also excluded from Android cloud backup; not checkable on the tablet) | — |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
 offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;
@@ -302,4 +328,5 @@ tablet (toolbar briefly "SPCS2022 zone data is loading" in the system summary), 
 against a project control point or NGS beta tools. Phase 4 WP C: the RS4 Pro stream and every tilt
 transition (section 11, H), pole-tip interpretation on a known mark (11.12–11.15, H + K + E), the capture dialog's
 Restart button and messages on the tablet. Phase 5 UI: sheet sizes on the tablet, mDNS / scan on the SM-X940,
-TalkBack, real Emlid model strings and the mismatch banner (section 13).
+TalkBack, real Emlid model strings and the mismatch banner (section 13). Raw NMEA recording: the real RS4 Pro stream
+and its counters, the share sheet, and the stop-on-leave / screen-off / rotation behaviour (section 14).
