@@ -95,6 +95,7 @@ object GnssModule {
         registry: NmeaRegistry,
         diagnosticsService: DiagnosticsService,
         tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor,
+        rawRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder,
     ): NmeaSource = TcpNmeaSource(
         scope    = appScope,
         // Saved host/port, read once per connection attempt; null when either is missing.
@@ -104,8 +105,13 @@ object GnssModule {
             if (host.isNullOrBlank() || port == null) null else host to port
         },
         registry = registry,
-        // The live NMEA rate/diagnostics counters, and the RS4 tilt status (ETC lines only; status, never a fix).
-        onLine   = { line -> diagnosticsService.recordLine(line); tiltMonitor.onLine(line) },
+        // Developer raw NMEA recording tap (non-blocking queue offer; a no-op unless recording), then the live
+        // NMEA rate/diagnostics counters and the RS4 tilt status (ETC lines only; status, never a fix).
+        onLine   = app.surrealar.gnss.diagnostics.raw.RawNmeaTaps.externalOnLine(
+            recorder = rawRecorder,
+            recordDiagnostics = diagnosticsService::recordLine,
+            tiltMonitor = tiltMonitor::onLine,
+        ),
         linkLog  = DiagnosticsLinkLog,               // shared with ExternalAdapter (same throttle keys)
     )
 
@@ -146,8 +152,12 @@ object GnssModule {
         @ApplicationContext context: Context,
         appScope: CoroutineScope,
         registry: NmeaRegistry,
-        diagnosticsService: DiagnosticsService
-    ): InternalNmeaSource = InternalNmeaSource(context, appScope, registry, diagnosticsService)
+        diagnosticsService: DiagnosticsService,
+        rawRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder,
+    ): InternalNmeaSource = InternalNmeaSource(
+        context, appScope, registry, diagnosticsService,
+        onRawLine = app.surrealar.gnss.diagnostics.raw.RawNmeaTaps.internalOnRawLine(rawRecorder),
+    )
 
     /**
      * Provides a dedicated [SatelliteInventory] for the internal adapter.
@@ -238,6 +248,8 @@ object GnssModule {
         replayAdapter: ReplayAdapter,
         feedDatum: app.surrealar.gnss.source.ReceiverFeedDatum,
         tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor,
+        rawRecorder: app.surrealar.gnss.diagnostics.raw.RawNmeaRecorder,
+        receiverSettings: ExternalReceiverSettingsRepository,
     ): FixSwitchboard {
         return FixSwitchboard(
             scope          = appScope,
@@ -257,6 +269,12 @@ object GnssModule {
             // Tilt status: interpret each external fix; forget ETC state when the link reconnects.
             tiltMonitor.observe(it.fixes)
             tiltMonitor.resetOn(externalAdapter.connectionState)
+            // Raw NMEA recording (Developer Tools): availability, and finalize on source / receiver / link change.
+            rawRecorder.watchSource(
+                providers = sourceSettings.activeProvider,
+                links = externalAdapter.connectionState,
+                profileKeys = receiverSettings.externalReceiverProfile.map { p -> p.prefKey },
+            )
         }
     }
 

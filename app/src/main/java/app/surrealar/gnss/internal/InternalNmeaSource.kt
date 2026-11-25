@@ -39,7 +39,12 @@ class InternalNmeaSource(
     context: Context,
     private val scope: CoroutineScope,
     private val registry: NmeaRegistry,
-    private val diagnostics: DiagnosticsService? = null
+    private val diagnostics: DiagnosticsService? = null,
+    /**
+     * Developer raw NMEA recording tap: gets each listener message exactly as Android delivered it, before
+     * fusion. Must be non-blocking and must not throw (RawNmeaRecorder.offer is both); null = no tap.
+     */
+    private val onRawLine: ((String) -> Unit)? = null,
 ) : NmeaSource, PermissionRetryable {
 
     private companion object {
@@ -297,7 +302,8 @@ class InternalNmeaSource(
             // Runs on the main looper: an exception from an odd sentence anywhere downstream (fusion,
             // fix listeners) would kill the app. Log it (throttled) and drop that one sentence.
             try {
-                // Diagnostics records the raw receiver stream before fusion.
+                // Raw recording tap (Developer Tools; a no-op unless recording), then diagnostics, before fusion.
+                onRawLine?.invoke(message)
                 diagnostics?.recordLine(message)
                 fuser.accept(message)
                 debugSampler.accept(message) { "GnssStatus used=$platformSatsUsed visible=$platformSatsVisible" }
