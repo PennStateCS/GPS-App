@@ -1,0 +1,12 @@
+# NGS beta EPP2022 sources, fetched by libs/geokit-core/tools/nsrs/fetch_epp2022.py
+# retrieved 2026-11-25T01:00:40Z
+# file,url,bytes,sha256
+natrf2022-index.html,https://beta.ngs.noaa.gov/NATRF2022/index.html,20424,e941ada7888bf60a4a7a8b6af022b3f5bd38dec32eecafa8eb2877e647691320
+epp2022-beta-values.csv,https://beta.ngs.noaa.gov/NATRF2022/epp2022-beta-values.csv,181,63d80d642caf2bce1512587e444e3837b2451e7052222f68dfe8a7736c143d52
+equation1a.png,https://beta.ngs.noaa.gov/NATRF2022/images/equation1a.png,25249,33d03ae2aee7635669c49278a1d3a94b95ec709a2564c9cd77de7a9e9419f279
+equation2a.png,https://beta.ngs.noaa.gov/NATRF2022/images/equation2a.png,48031,832a3109ec501aac178d7d9e3ea399b650d8ac3ee319ccc77a59783cd681f011
+# parsed EPP rows (plate,omega_x_mas_per_yr,omega_y_mas_per_yr,omega_z_mas_per_yr)
+#  NATRF2022,0.046,-0.704,-0.047
+#  CATRF2022,-0.056,-0.957,0.589
+#  PATRF2022,-0.409,1.063,-2.188
+#  MATRF2022,-8.089,5.937,2.159
