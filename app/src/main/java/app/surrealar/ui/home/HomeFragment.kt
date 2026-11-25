@@ -115,6 +115,8 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
     @Inject lateinit var lastKnownPositionStore: app.surrealar.gnss.lastknown.LastKnownPositionStore
     @Inject lateinit var modelRepository: ModelRepository
     @Inject lateinit var settingsRepo: SettingsRepository
+    @Inject lateinit var receiverConnection: app.surrealar.receiver.selection.ReceiverConnectionController
+    @Inject lateinit var tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor
 
     // Settings repository reference (still needed for settings)
 
@@ -403,7 +405,16 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                 HomeFieldStatusMapper.Action.RECEIVER_SETTINGS -> R.id.nav_settings
                 HomeFieldStatusMapper.Action.OPEN_MAP -> R.id.nav_render_map
             }
-            try { navigateTopLevel(dest) }
+            try {
+                if (dest == R.id.nav_settings) {
+                    // Straight to Settings → Receiver (not the Settings home).
+                    val nav = findNavController()
+                    nav.navigate(dest, androidx.core.os.bundleOf(
+                        app.surrealar.ui.settings.SettingsFragment.ARG_INITIAL_CATEGORY_ID to
+                            app.surrealar.ui.settings.SettingsFragment.CATEGORY_RECEIVER),
+                        topLevelNavOptions(nav.graph.startDestinationId))
+                } else navigateTopLevel(dest)
+            }
             catch (e: Exception) { logNavFailure("field status action", e) }
         }
 
@@ -416,8 +427,10 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
                         settingsRepo.externalReceiverSettings,
                         viewModel.diagnosticData,
                         viewModel.sky
-                    ) { snapshot, source, receiver, diag, sky ->
-                        buildFieldStatus(snapshot, source, receiver, diag, sky)
+                    ) { snapshot, source, receiver, diag, sky -> FieldInputs(snapshot, source, receiver, diag, sky) }
+                    .combine(receiverConnection.state) { f, conn -> f to conn }
+                    .combine(tiltMonitor.status) { (f, conn), tilt ->
+                        buildFieldStatus(f.snapshot, f.source, f.receiver, f.diag, f.sky, conn, tilt)
                     }.distinctUntilChanged()   // diagnostics tick every second; rebuild the chips only on a real change
                         .collectLatest { status ->
                         val b = _binding ?: return@collectLatest
@@ -431,13 +444,42 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
         }
     }
 
+    /** RS4 / RS4 Pro: a chip naming which point the live positions are (Phase 4 position reference). */
+    private fun positionReferenceChip(
+        source: LocationSourceType, tilt: app.surrealar.receiver.tilt.TiltStatus?,
+    ): HomeFieldStatusMapper.Chip? {
+        if (source == LocationSourceType.INTERNAL || tilt == null || !tilt.applicable) return null
+        return when (tilt.reference) {
+            app.surrealar.receiver.tilt.EpochReference.POLE_TIP -> HomeFieldStatusMapper.Chip("Pole tip", HomeFieldStatusMapper.Severity.GOOD)
+            app.surrealar.receiver.tilt.EpochReference.ANTENNA -> HomeFieldStatusMapper.Chip("Antenna")
+            app.surrealar.receiver.tilt.EpochReference.MAY_BE_COMPENSATED -> HomeFieldStatusMapper.Chip("May be compensated", HomeFieldStatusMapper.Severity.WARNING)
+            app.surrealar.receiver.tilt.EpochReference.ANTENNA_UNCERTAIN -> HomeFieldStatusMapper.Chip("Reference unconfirmed", HomeFieldStatusMapper.Severity.CAUTION)
+            else -> if (tilt.compensatedOutput == app.surrealar.settings.model.CompensatedOutputSetting.UNKNOWN)
+                HomeFieldStatusMapper.Chip("Reference unconfirmed", HomeFieldStatusMapper.Severity.CAUTION) else null
+        }
+    }
+
+    private data class FieldInputs(
+        val snapshot: FixSnapshot,
+        val source: LocationSourceType,
+        val receiver: ExternalReceiverSettings,
+        val diag: app.surrealar.gnss.diagnostics.DiagnosticData,
+        val sky: io.github.pennstatecs.geokit.gnss.model.SkySnapshot,
+    )
+
     private fun buildFieldStatus(
         snapshot: FixSnapshot,
         source: LocationSourceType,
         receiver: ExternalReceiverSettings,
         diag: app.surrealar.gnss.diagnostics.DiagnosticData,
         sky: io.github.pennstatecs.geokit.gnss.model.SkySnapshot,
+        conn: app.surrealar.receiver.selection.ReceiverSelectionState? = null,
+        tilt: app.surrealar.receiver.tilt.TiltStatus? = null,
     ): HomeFieldStatusMapper.FieldStatus {
+        // Receiver-reported identity (Phase 5): name and recognised model, only for the saved receiver's host.
+        val identity = conn?.identity?.takeIf { it.host == receiver.tcpHost }
+        val reportedName = identity?.name?.takeIf { it.isNotBlank() }
+        val model = identity?.recognizedProfile?.takeIf { identity.modelVerified }?.label
         // A usable fix is signalled by valid coordinates — NOT by comparing the fix's GNSS/UTC
         // timestamp to the device wall clock, which can be skewed (or even ahead of) device time
         // and would wrongly report a live position as "waiting". The app elsewhere shows the fix
@@ -448,7 +490,12 @@ class HomeFragment : Fragment(), OnMapReadyCallback {
             HomeFieldStatusMapper.Inputs(
                 isInternal = source == LocationSourceType.INTERNAL,
                 externalLabel = receiver.profile.shortLabel,
-                receiverName = receiver.displayName,
+                receiverName = reportedName ?: receiver.displayName,
+                receiverModel = model,
+                vAccInvalid = snapshot.verticalAccuracyM?.let {
+                    it >= io.github.pennstatecs.geokit.gnss.accuracy.VerticalAccuracyValidity.INVALID_AT_OR_ABOVE_M || it <= 0.0
+                } == true,
+                positionReference = positionReferenceChip(source, tilt),
                 connectionAddress = address,
                 rtkStatus = RtkStatus.fromPrefKey(snapshot.rtkStatus),
                 hAccM = snapshot.horizontalAccuracyM,

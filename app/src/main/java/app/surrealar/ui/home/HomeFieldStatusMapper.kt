@@ -82,6 +82,12 @@ object HomeFieldStatusMapper {
         val nmeaLinesPerSecond: Double?,
         val nmeaParseErrors: Long,
         val hasRecentFix: Boolean,
+        /** Model the receiver itself reported and the app recognised (e.g. "Emlid Reach RS2+"); null = not reported. */
+        val receiverModel: String? = null,
+        /** The vertical accuracy is an invalid marker (e.g. Emlid 999 m when receiver height corrections stop). */
+        val vAccInvalid: Boolean = false,
+        /** RS4 / RS4 Pro only: which point the positions are (antenna / pole tip / unconfirmed); null = not applicable. */
+        val positionReference: Chip? = null,
     )
 
     fun map(i: Inputs): FieldStatus {
@@ -143,26 +149,30 @@ object HomeFieldStatusMapper {
         val parts = mutableListOf(source, GnssStatusFormatter.formatFixStatus(i.rtkStatus, i.isInternal))
         i.hAccM?.let { parts += "H " + GnssStatusFormatter.formatAccuracyMeters(it) }
         // Vertical accuracy is meaningful for external RTK; internal device GPS shows horizontal only.
-        if (!i.isInternal) i.vAccM?.let { parts += "V " + GnssStatusFormatter.formatAccuracyMeters(it) }
+        if (!i.isInternal) {
+            if (i.vAccInvalid) parts += "V invalid"   // never show a 999 m marker as an accuracy
+            else i.vAccM?.let { parts += "V " + GnssStatusFormatter.formatAccuracyMeters(it) }
+        }
         return parts.joinToString(" · ")
     }
 
     private fun buildReceiverDetail(i: Inputs): String {
         // The tablet's own GNSS chip, read directly through the GNSS feed (not Android location services).
         if (i.isInternal) return "Tablet GNSS receiver"
-        val name = i.receiverName?.takeIf { it.isNotBlank() }
         val addr = i.connectionAddress?.takeIf { it.isNotBlank() }
-        return when {
-            name != null && addr != null -> "$name · $addr"
-            addr != null -> addr
-            name != null -> name
-            else -> "External receiver"
+        // A saved name that is just the address (older builds stored the host as the name) is not repeated.
+        val name = i.receiverName?.trim()?.takeIf { n ->
+            n.isNotBlank() && addr?.let { a -> n != a && n != a.substringBeforeLast(':') } != false
         }
+        val parts = listOfNotNull(name, i.receiverModel?.takeIf { it.isNotBlank() && it != name }, addr)
+        return if (parts.isEmpty()) "External receiver" else parts.joinToString(" · ")
     }
 
     // ── Chips ─────────────────────────────────────────────────────────────────────────────────
 
-    private fun buildExternalChips(i: Inputs): List<Chip> =
+    private fun buildExternalChips(i: Inputs): List<Chip> = listOfNotNull(i.positionReference) + buildExternalChipsBase(i)
+
+    private fun buildExternalChipsBase(i: Inputs): List<Chip> =
         listOfNotNull(satsChip(i), dopChip(i), rtkChip(i), baseChip(i), nmeaChip(i), errorsChip(i))
             .ifEmpty { listOf(Chip("--")) }
 

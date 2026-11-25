@@ -240,4 +240,31 @@ class HomeFieldStatusMapperTest {
         val s = HomeFieldStatusMapper.map(inputs(rtkStatus = RtkStatus.FIX, hAccM = 0.02, vAccM = null, satsUsed = 20))
         assertEquals("RS2+ · Fix · H ±0.02 m", s.primaryDetail)
     }
+
+    // ── Phase 4/5 updates ────────────────────────────────────────────────────────────────────
+
+    @Test fun `receiver line - a saved name that is just the address is not repeated, reported model shown`() {
+        val s = HomeFieldStatusMapper.map(inputs(isInternal = false, externalLabel = "RS2+", receiverName = "192.168.2.174",
+            connectionAddress = "192.168.2.174:9000", rtkStatus = RtkStatus.FIX, hasRecentFix = true))
+        assertEquals("192.168.2.174:9000", s.receiverDetail)
+        val named = HomeFieldStatusMapper.map(inputs(isInternal = false, externalLabel = "RS2+", receiverName = "Reach6",
+            connectionAddress = "192.168.2.174:9000", rtkStatus = RtkStatus.FIX, hasRecentFix = true).copy(receiverModel = "Emlid Reach RS2+"))
+        assertEquals("Reach6 · Emlid Reach RS2+ · 192.168.2.174:9000", named.receiverDetail)
+    }
+
+    @Test fun `an invalid vertical accuracy marker reads V invalid, never 999 m`() {
+        val s = HomeFieldStatusMapper.map(inputs(isInternal = false, externalLabel = "RS4", rtkStatus = RtkStatus.FIX,
+            hAccM = 0.02, vAccM = 999.0, hasRecentFix = true).copy(vAccInvalid = true))
+        assertTrue(s.primaryDetail, s.primaryDetail.endsWith("V invalid"))
+        assertTrue(s.primaryDetail, !s.primaryDetail.contains("999"))
+    }
+
+    @Test fun `RS4 position reference chip comes first, none for other receivers`() {
+        val chip = HomeFieldStatusMapper.Chip("Reference unconfirmed", HomeFieldStatusMapper.Severity.CAUTION)
+        val s = HomeFieldStatusMapper.map(inputs(isInternal = false, externalLabel = "RS4", rtkStatus = RtkStatus.FIX,
+            hasRecentFix = true).copy(positionReference = chip))
+        assertEquals("Reference unconfirmed", chipLabels(s).first())
+        val rs2 = HomeFieldStatusMapper.map(inputs(isInternal = false, externalLabel = "RS2+", rtkStatus = RtkStatus.FIX, hasRecentFix = true))
+        assertTrue(chipLabels(rs2).none { it.contains("Reference") || it.contains("Pole") })
+    }
 }
