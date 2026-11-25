@@ -148,6 +148,18 @@ class ReceiverDeviceManagerTest {
         }
     }
 
+    @Test fun `restartDevice restarts the running device on the same host, and is a no-op without one`() {
+        val m = manager()
+        m.restartDevice()
+        assertEquals(listOf("start:192.168.42.1", "stop", "start:192.168.42.1"), created.single().events)
+        assertEquals(1, running())
+
+        external.value = false
+        m.restartDevice()
+        assertEquals(listOf("start:192.168.42.1", "stop", "start:192.168.42.1", "stop"), created.single().events)
+        assertEquals(0, running())
+    }
+
     @Test fun `real Emlid device polls, then stops every loop and socket on switch to Generic`() = runBlocking {
         val api = FakeApi()
         val devices = mutableListOf<EmlidReachDevice>()

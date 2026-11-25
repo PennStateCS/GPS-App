@@ -55,7 +55,8 @@ class GnssSourceCoordinator @Inject constructor(
     private val externalReconnect: ExternalReconnectable
 ) {
     /** host:port the external provider was last activated for (null = not activated this process). */
-    @Volatile private var activeExternalTarget: Pair<String, Int>? = null
+    @Volatile var activeExternalTarget: Pair<String, Int>? = null
+        private set
 
     /**
      * Called once per process at app launch. Restores the live provider from the persisted selected
@@ -143,6 +144,17 @@ class GnssSourceCoordinator @Inject constructor(
         val restore = if (previous == ProviderChoice.REPLAY) ProviderChoice.INTERNAL else previous
         DiagnosticsLogger.i("GNSS", "NMEA replay source ended REPLAY → $restore reason=\"$reason\"")
         if (sourceSettings.activeProvider.value == ProviderChoice.REPLAY) sourceSettings.setActiveProvider(restore)
+    }
+
+    /**
+     * Receiver selection "Reconnect" of the receiver that is already the active External TCP target: makes the
+     * external adapter reconnect now (re-activating the same target deliberately never drops a live stream). A no-op
+     * unless External TCP is the active provider.
+     */
+    fun reconnectExternalTcpProvider(reason: String) {
+        if (sourceSettings.activeProvider.value != ProviderChoice.EXTERNAL_TCP) return
+        DiagnosticsLogger.d("RECEIVER") { "External receiver reconnect requested reason=\"$reason\"" }
+        externalReconnect.reconnectNow(reason)
     }
 
     /**

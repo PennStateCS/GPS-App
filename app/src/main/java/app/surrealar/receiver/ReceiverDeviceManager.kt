@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** A receiver with nothing to report beyond NMEA: no capabilities, every flow null. */
@@ -54,7 +55,11 @@ class ReceiverDeviceManager(
     private val discoveryFor: (ExternalReceiverProfile) -> ReceiverDiscovery?,
     scope: CoroutineScope,
 ) {
-    private data class Target(val external: Boolean, val profile: ExternalReceiverProfile, val host: String?)
+    private data class Target(val external: Boolean, val profile: ExternalReceiverProfile, val host: String?, val restart: Int)
+
+    /** [restartDevice] requests (a counter, so each request is a distinct target). */
+    private val restartRequests = MutableStateFlow(0)
+    private var lastRestart = 0
 
     private val _activeDevice = MutableStateFlow<ReceiverDevice>(GenericNmeaDevice)
     /** The device for the current source/profile ([GenericNmeaDevice] when nothing to poll). */
@@ -96,15 +101,27 @@ class ReceiverDeviceManager(
 
     init {
         scope.launch {
-            combine(externalSourceActive, profile, host) { ext, p, h ->
-                Target(ext, p, h?.trim()?.takeIf { it.isNotEmpty() })
+            combine(externalSourceActive, profile, host, restartRequests) { ext, p, h, r ->
+                Target(ext, p, h?.trim()?.takeIf { it.isNotEmpty() }, r)
             }.distinctUntilChanged().collect(::apply)
         }
         // Diagnostics only: corrections link up/down and station changes (no base position).
         scope.launch { corrections.collect { app.surrealar.util.diagnostics.GnssFeedLogger.onCorrections(it) } }
     }
 
+    /**
+     * Restarts the running device on the same host (its flows are cleared and it polls again at once). Receiver
+     * selection calls this after switching receivers or a link reconnect: several units can share one address (every
+     * Reach hotspot is 192.168.42.1), so the previous unit's device info must not linger until the next poll.
+     * Serialised with the source/profile/host changes; a no-op while no device runs.
+     */
+    fun restartDevice() {
+        restartRequests.update { it + 1 }
+    }
+
     private fun apply(t: Target) {
+        val restartRequested = t.restart != lastRestart
+        lastRestart = t.restart
         _profile.value = t.profile
         app.surrealar.util.DiagnosticsLogger.logOnChange(app.surrealar.util.diagnostics.DiagTags.RECEIVER, "rx.profile", t.profile.label) {
             "External receiver profile changed profile=\"${t.profile.label}\" accuracyClass=${t.profile.accuracyClass}"
@@ -118,6 +135,7 @@ class ReceiverDeviceManager(
         when {
             t.host == null -> if (currentHost != null) { current.stop(); currentHost = null }
             t.host != currentHost -> { current.stop(); current.start(t.host); currentHost = t.host }
+            restartRequested -> { current.stop(); current.start(t.host) }
         }
     }
 
