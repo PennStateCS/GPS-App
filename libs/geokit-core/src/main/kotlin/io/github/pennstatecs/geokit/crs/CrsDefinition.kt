@@ -4,6 +4,7 @@ import io.github.pennstatecs.geokit.datum.ReferenceFrame
 import io.github.pennstatecs.geokit.projection.ProjectionMethod
 import io.github.pennstatecs.geokit.projection.SpcsProjection
 import io.github.pennstatecs.geokit.projection.SpcsZone
+import io.github.pennstatecs.geokit.status.ProductStatus
 
 /**
  * The catalogs of the [CrsRegistry]. [id] is a stable token (never renamed).
@@ -19,7 +20,11 @@ public enum class CrsCatalogId(public val id: String, public val title: String) 
     /** The 118 official SPCS83 zones on NAD83(2011) (metre CRSs, EPSG codes = persisted settings values). */
     SPCS83("spcs83", "SPCS83"),
 
-    /** State Plane Coordinate System of 2022 (NATRF2022 etc.). No zones are bundled yet: unsupported. */
+    /**
+     * State Plane Coordinate System of 2022 (NATRF2022, PATRF2022, CATRF2022, MATRF2022): the 953 NGS beta
+     * zones, generated from the NGS tables. A zone is operational (as [ProductStatus.VERIFIED_BETA]) only
+     * when verified against NGS vectors and its frame is reachable by verified transformations.
+     */
     SPCS2022("spcs2022", "SPCS2022"),
 }
 
@@ -73,6 +78,9 @@ public data class AreaOfUse(val west: Double, val south: Double, val east: Doubl
  * @property catalog the catalog the definition belongs to.
  * @property kind geographic or projected.
  * @property frame reference frame of the coordinates (SPCS83: NAD83(2011); UTM: WGS84 (ITRF2014)).
+ *   Null only for a catalog entry whose frame GeoKit does not define yet (one of
+ *   [CrsCatalogCsv.PENDING_FRAME_IDS], e.g. `patrf2022`); such an entry is never operational.
+ * @property frameId the frame's [ReferenceFrame.id], also when [frame] is null (e.g. `patrf2022`).
  * @property method projection method, null for geographic CRSs.
  * @property parameters defining parameters keyed by [ProjectionMethod.parameterNames] (empty for geographic).
  * @property unit native axis unit.
@@ -81,6 +89,11 @@ public data class AreaOfUse(val west: Double, val south: Double, val east: Doubl
  * @property operational true only for verified definitions that may be used.
  * @property statusNote why a definition is not operational (or a caveat), null if none.
  * @property spcsZone the underlying [SpcsZone] of an SPCS83 definition, null otherwise.
+ * @property declaredStatus status the definition's source claims when it is usable:
+ *   [ProductStatus.VERIFIED_LEGACY] for UTM, SPCS83 and geographic CRSs, the catalog's `status` column
+ *   for catalog entries (SPCS2022: [ProductStatus.VERIFIED_BETA]).
+ * @property aliases extra search terms (catalog `aliases` column, e.g. the SPCS2022 zone abbreviation
+ *   `PA_NE`, the zone type), empty for built-in definitions.
  */
 public class CrsDefinition internal constructor(
     public val id: String,
@@ -89,7 +102,7 @@ public class CrsDefinition internal constructor(
     public val zoneCode: String?,
     public val catalog: CrsCatalogId,
     public val kind: CrsKind,
-    public val frame: ReferenceFrame,
+    public val frame: ReferenceFrame?,
     public val method: ProjectionMethod?,
     public val parameters: Map<String, Double>,
     public val unit: CrsUnit,
@@ -99,11 +112,26 @@ public class CrsDefinition internal constructor(
     public val statusNote: String?,
     public val spcsZone: SpcsZone? = null,
     projectionFactory: (() -> SpcsProjection)? = null,
+    public val declaredStatus: ProductStatus = ProductStatus.VERIFIED_LEGACY,
+    public val aliases: List<String> = emptyList(),
+    frameId: String? = null,
 ) {
+    public val frameId: String = frameId ?: requireNotNull(frame) { "frame or frameId is required" }.id
+
+    /**
+     * How far the definition can be trusted: [ProductStatus.UNAVAILABLE] when not [operational], else
+     * [declaredStatus] (e.g. [ProductStatus.VERIFIED_BETA] for SPCS2022: opt-in, labelled, never a default).
+     */
+    public val status: ProductStatus get() = if (operational) declaredStatus else ProductStatus.UNAVAILABLE
+
+    /** True for an operational beta definition (shown only when the caller opts in to beta products). */
+    public val isBeta: Boolean get() = status == ProductStatus.VERIFIED_BETA
+
     /** The same entry, listed but not operational (no projection), with [note] as the reason. */
     internal fun withoutOperation(note: String): CrsDefinition = CrsDefinition(
         id, epsg, name, zoneCode, catalog, kind, frame, method, parameters, unit, areaOfUse, dataset,
         operational = false, statusNote = note, spcsZone = spcsZone, projectionFactory = null,
+        declaredStatus = declaredStatus, aliases = aliases, frameId = frameId,
     )
 
     private val projectionLazy: Lazy<SpcsProjection>? =
@@ -131,12 +159,25 @@ public class CrsDefinition internal constructor(
         return p.forward(latDeg, lonDeg)
     }
 
-    /** Lower-case text the search matches against. */
-    internal val searchText: String by lazy {
-        listOfNotNull(id, epsg?.toString(), name, zoneCode, catalog.title, frame.displayName).joinToString(" ").lowercase()
+    /**
+     * (Easting, northing) metres → latitude/longitude (degrees, in [frame]).
+     * @throws IllegalStateException for geographic or non-operational definitions, and for methods
+     *   without an inverse in GeoKit (Hotine variant A, SPCS83 Alaska zone 1).
+     */
+    public fun inverse(eastingM: Double, northingM: Double): Pair<Double, Double> {
+        val p = checkNotNull(projection) {
+            if (!operational) "$id is not operational: ${statusNote ?: "unverified"}" else "$id is geographic: no projection"
+        }
+        return checkNotNull(ProjectionMethod.inverse(p, eastingM, northingM)) { "$id: ${p.method.displayName} has no inverse in GeoKit" }
     }
 
-    override fun toString(): String = "CrsDefinition($id, $label, ${catalog.id}${if (operational) "" else ", non-operational"})"
+    /** Lower-case text the search matches against. */
+    internal val searchText: String by lazy {
+        (listOfNotNull(id, epsg?.toString(), name, zoneCode, catalog.title, frame?.displayName ?: frameId) + aliases)
+            .joinToString(" ").lowercase()
+    }
+
+    override fun toString(): String = "CrsDefinition($id, $label, ${catalog.id}, $status)"
 }
 
 /** Result of a [CrsRegistry] lookup. */
@@ -165,4 +206,38 @@ public sealed interface CrsLookup {
 
     /** The definition if [Found], else null. */
     public val definitionOrNull: CrsDefinition? get() = (this as? Found)?.definition
+}
+
+/** What a [CrsZoneLocation] rests on. */
+public enum class CrsLocationBasis {
+    /** Every candidate's NGS zone polygon (generalised to ~50 m) contains the point or lies within the margin. */
+    ZONE_POLYGON,
+
+    /**
+     * At least one candidate comes from its area-of-use envelope only (no polygon bundled): envelopes of
+     * neighbouring zones overlap, so the candidates are possibilities, never an answer.
+     */
+    AREA_OF_USE_BOX,
+
+    /** No zone covers the point. */
+    NONE,
+}
+
+/**
+ * Zones of a catalog at a position ([CrsRegistry.locateSpcs2022]). Never a single confident answer:
+ * SPCS2022 has layered zones (statewide, multizone, special use) that legally overlap, so several
+ * candidates are normal and the user chooses.
+ * @property candidates matching definitions, smallest area of use first.
+ * @property basis what the candidates rest on.
+ * @property nearBoundary the point is within [CrsRegistry.ZONE_BOUNDARY_MARGIN_M] of a zone line (the
+ *   zones on both sides are candidates).
+ */
+public data class CrsZoneLocation(
+    val candidates: List<CrsDefinition>,
+    val basis: CrsLocationBasis,
+    val nearBoundary: Boolean,
+) {
+    /** True unless exactly one candidate rests on polygons, clear of every zone line. */
+    public val isAmbiguous: Boolean
+        get() = candidates.size != 1 || nearBoundary || basis != CrsLocationBasis.ZONE_POLYGON
 }

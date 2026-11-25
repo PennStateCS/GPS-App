@@ -38,12 +38,27 @@ public enum class ProjectionMethod(
      * forward only (see [HomA]).
      */
     HOTINE_OBLIQUE_MERCATOR_A(9812, "Hotine Oblique Mercator (variant A)", "omerc_a",
+        listOf("lat_0", "lonc", "alpha", "gamma", "k_0", "x_0", "y_0")),
+
+    /**
+     * Lambert Conic Conformal (1SP) (EPSG 9801), SPCS2022 "LC1": `lat_0` (natural origin = the standard
+     * parallel), `lon_0`, `k_0`, `x_0`, `y_0`. GRS80 only, forward and inverse (see [Lcc1]).
+     */
+    LAMBERT_CONIC_CONFORMAL_1SP(9801, "Lambert Conic Conformal (1SP)", "lcc1sp",
+        listOf("lat_0", "lon_0", "k_0", "x_0", "y_0")),
+
+    /**
+     * Hotine Oblique Mercator (variant B) (EPSG 9815), SPCS2022 "OMC": `lat_0`, `lonc` (projection
+     * centre), `alpha` (azimuth of the initial line at the centre), `gamma` (rectified to skew), `k_0`,
+     * `x_0`, `y_0` (at the centre). GRS80 only, forward and inverse (see [HomB]).
+     */
+    HOTINE_OBLIQUE_MERCATOR_B(9815, "Hotine Oblique Mercator (variant B)", "omerc_b",
         listOf("lat_0", "lonc", "alpha", "gamma", "k_0", "x_0", "y_0"));
 
     /**
      * Builds the projection from [parameters] (keys from [parameterNames]) on [ellipsoid].
      * @throws IllegalArgumentException if a parameter is missing or not finite, or the method does not
-     *   support [ellipsoid] ([LAMBERT_CONIC_CONFORMAL_2SP] and [HOTINE_OBLIQUE_MERCATOR_A] are GRS80 only).
+     *   support [ellipsoid] (every method except [TRANSVERSE_MERCATOR] is GRS80 only).
      */
     public fun create(parameters: Map<String, Double>, ellipsoid: Ellipsoid = Ellipsoid.GRS80): SpcsProjection {
         val p = parameterNames.map { key ->
@@ -58,10 +73,25 @@ public enum class ProjectionMethod(
             TRANSVERSE_MERCATOR -> Tm(p[0], p[1], p[2], p[3], p[4], ellipsoid)
             LAMBERT_CONIC_CONFORMAL_2SP -> Lcc2(p[0], p[1], p[2], p[3], p[4], p[5])
             HOTINE_OBLIQUE_MERCATOR_A -> HomA(p[0], p[1], p[2], p[3], p[4], p[5], p[6])
+            LAMBERT_CONIC_CONFORMAL_1SP -> Lcc1(p[0], p[1], p[2], p[3], p[4])
+            HOTINE_OBLIQUE_MERCATOR_B -> HomB(p[0], p[1], p[2], p[3], p[4], p[5], p[6])
         }
     }
 
     public companion object {
+        /**
+         * Inverse of [projection] ((easting, northing) metres → (latitude, longitude) degrees), or null
+         * when the method has no inverse in GeoKit ([HOTINE_OBLIQUE_MERCATOR_A], see [HomA]).
+         */
+        public fun inverse(projection: SpcsProjection, eastingM: Double, northingM: Double): Pair<Double, Double>? =
+            when (projection) {
+                is Tm -> projection.inverse(eastingM, northingM)
+                is Lcc2 -> projection.inverse(eastingM, northingM)
+                is Lcc1 -> projection.inverse(eastingM, northingM)
+                is HomB -> projection.inverse(eastingM, northingM)
+                is HomA -> null
+            }
+
         /** The method with this [token] or EPSG code (as text), or null. Case-insensitive. */
         public fun fromToken(token: String): ProjectionMethod? {
             val t = token.trim().lowercase()
