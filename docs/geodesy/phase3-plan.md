@@ -49,3 +49,20 @@ Sources and dataset versions are recorded in docs/geodesy/nsrs2022-sources.md (e
   default as for any unknown token.
 - **geokit-core:** `CrsRegistry` entries now report the weaker of their declared status and their frame path's
   status (`CrsRegistryStatusTest`); the shipped registry is unchanged (0 operational SPCS2022 zones).
+
+## Known limitations after review (Phase 3)
+
+- One coordinate epoch per conversion: with GEOID2022 (or ITRF2020 output) selected, a stored point's
+  recorded `coordinateEpoch` is used for the whole conversion, including the horizontal NAD83/SPCS step;
+  otherwise the capture time is used, as before. For every point the app captures the two are the same
+  number; they can differ only for a backup-imported point whose epoch differs from its capture time.
+- The preview flag is written with every Coordinates save; a pick made before the screen's first bind
+  could write the preview OFF (the same pre-existing race as the other Coordinates fields).
+- The SPCS2022 status line parses the 953-row catalog once on the main thread when the preview is first
+  shown (tens of ms).
+- Screens that showed "GEOID2022 data is loading" refresh on the next update, not when loading finishes
+  (as for EGM).
+- 2022 frames and SPCS2022 stay unavailable until NGS publishes ITRF2020 ⇄ 2022-frame reference values
+  (and confirms the Euler-pole sign: the beta page's literal equation would double plate motion; the code
+  follows the blueprint and matches ITRF2020-PMM plate velocities).
+

@@ -56,6 +56,8 @@ class CoordinateSystemTokensTest {
     @Test fun `beta preview - GEOID2022 is beta, offered only with the preview on, never a default`() {
         assertEquals(listOf(VerticalReference.GEOID2022), VerticalReference.entries.filter { it.isBeta })
         assertEquals(ProductStatus.VERIFIED_BETA, VerticalReference.GEOID2022.status)
+        // The app's status must follow geokit's: if the library ever downgrades GEOID2022, this fails.
+        assertEquals(io.github.pennstatecs.geokit.geoid.Geoid2022Model.INFO.status, VerticalReference.GEOID2022.status)
         assertTrue(VerticalReference.entries.filter { !it.isBeta }.all { it.status == ProductStatus.VERIFIED_LEGACY })
         assertTrue(VerticalReference.entries.none { it.status == ProductStatus.UNAVAILABLE })
         val off = CoordinateSystemSettings()
