@@ -18,8 +18,11 @@ import app.surrealar.ui.settings.saveWhileTyping
 import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputLayout
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /**
  * Settings → Coordinates: the Coordinate System card (system, State Plane zone, datum, units, height,
@@ -33,6 +36,13 @@ internal class CoordinatesSettingsController(
     private val coordinateSystemService: CoordinateSystemService,
     /** Outlives the screen so a change made as the user leaves still saves. */
     private val saveScope: CoroutineScope,
+    /** CRS registry for the SPCS2022 catalog and zone entries (tests inject a stub). */
+    private val crsRegistry: () -> io.github.pennstatecs.geokit.crs.CrsRegistry = { io.github.pennstatecs.geokit.crs.CrsRegistry.DEFAULT },
+    /** NSRS 2022 product list for a registry (tests inject stubs). */
+    private val capabilities: (io.github.pennstatecs.geokit.crs.CrsRegistry) -> List<app.surrealar.coords.Nsrs2022Capability> =
+        { app.surrealar.coords.Nsrs2022Capabilities.all(crs = it) },
+    /** Where the SPCS2022 catalog is parsed: never the main thread. */
+    private val statusDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : SettingsCategoryController {
 
     override fun createView(inflater: LayoutInflater, container: ViewGroup, categoryScope: CoroutineScope): View {
@@ -65,14 +75,13 @@ internal class CoordinatesSettingsController(
                 }
             }
 
-            fun saveSwitch(accuracy: Boolean, autoInc: Boolean) {
+            // Only the switch that changed is written, on top of the stored settings: a switch flipped before
+            // the first bind never writes the other switch's unbound default.
+            fun saveSwitch(edit: (app.surrealar.settings.model.CoordinateDisplaySettings) -> app.surrealar.settings.model.CoordinateDisplaySettings) {
                 saveScope.launch {
                     try {
                         val s = settingsRepo.coordinateDisplaySettings.first()
-                        settingsRepo.setCoordinateDisplaySettings(s.copy(
-                            showAccuracyIndicators = accuracy,
-                            autoIncrementNames     = autoInc
-                        ))
+                        settingsRepo.setCoordinateDisplaySettings(edit(s))
                     } catch (e: Exception) {
                         settingsError("Settings save failed section=coordinateDisplay", e)
                     }
@@ -95,10 +104,10 @@ internal class CoordinatesSettingsController(
             }
 
             switchAccuracy?.setOnCheckedChangeListener { _, v ->
-                if (!isBinding) saveSwitch(v, switchAutoInc?.isChecked ?: true)
+                if (!isBinding) saveSwitch { it.copy(showAccuracyIndicators = v) }
             }
             switchAutoInc?.setOnCheckedChangeListener { _, v ->
-                if (!isBinding) saveSwitch(switchAccuracy?.isChecked ?: true, v)
+                if (!isBinding) saveSwitch { it.copy(autoIncrementNames = v) }
             }
             editPrefix?.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) savePrefix() }
             editPrefix?.setOnEditorActionListener { _, _, _ -> savePrefix(); false }
@@ -112,11 +121,23 @@ internal class CoordinatesSettingsController(
         return view
     }
 
+    /** NSRS 2022 product status and SPCS2022 zone entries, computed once per screen off the main thread. */
+    internal class NsrsStatus(
+        val capabilities: List<app.surrealar.coords.Nsrs2022Capability>,
+        val spcs2022Note: String?,
+        /** Every operational SPCS2022 zone entry (preview ON); empty today. */
+        val spcs2022Zones: List<ZoneOption>,
+    )
+
     /**
      * Settings → Coordinates → Coordinate System: dropdowns for system, State Plane zone (all 118
      * SPCS83 zones, filterable), datum, units, height and external receiver datum, each saved
      * immediately, plus a live preview of the current position in the chosen system. State Plane
      * forces NAD83(2011), so the datum dropdown is disabled then.
+     *
+     * Saves change only the field the user touched, applied to the latest stored settings (never to the
+     * screen's defaults before the first bind), one at a time. The SPCS2022 catalog (product status, zone
+     * entries) is parsed off the main thread and shown when ready.
      */
     private fun setupCoordinateSystemCard(view: View, categoryScope: CoroutineScope) {
         val spinnerH = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal) ?: return
@@ -131,13 +152,15 @@ internal class CoordinatesSettingsController(
         val verticalNote = view.findViewById<android.widget.TextView>(R.id.text_coord_vertical_note)
         val switchPreview = view.findViewById<MaterialSwitch>(R.id.switch_coord_nsrs2022_preview)
         val previewStatus = view.findViewById<android.widget.TextView>(R.id.text_coord_nsrs2022_status)
+        val previewGroups = view.findViewById<android.widget.LinearLayout>(R.id.container_coord_nsrs2022_groups)
         // Zone list from geokit's CRS registry (operational SPCS83 entries; stored values stay EPSG ints).
         val zones = SpcsZoneHints.searchZones("")
         val zoneByLabel = zones.associateBy { it.label }
-        val defaultZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter." +
-            (runCatching { SpcsZoneHints.spcs2022Note() }.getOrNull()?.let { " $it" } ?: "")
+        val baseZoneHint = "All ${zones.size} SPCS83 zones. Type a state name to filter."
+        var defaultZoneHint = baseZoneHint
         var suggestedZoneEpsg: Int? = null
         var suggestion: io.github.pennstatecs.geokit.projection.SpcsZoneSuggestion? = null
+        var zoneNotice: String? = null
 
         // Zone suggestion for the live fix. The fix is WGS84; the zone limits are NAD83 county lines, and
         // the ~1-2 m difference is far below their generalisation. Failure (e.g. missing resource) = no hint.
@@ -165,26 +188,58 @@ internal class CoordinatesSettingsController(
         spinnerU?.setAdapter(adapter(us.map { it.label }))
         spinnerV?.setAdapter(adapter(vs.map { it.label }))
         spinnerR?.setAdapter(adapter(rs.map { it.label }))
-        // Editable so typing filters the zones through CrsRegistry.search ("tex", "north", "3701").
-        spinnerZ?.setAdapter(SearchFilterAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings,
-            zones.map { it.label }) { q -> SpcsZoneHints.searchZones(q).map { it.label } })
 
         var current = app.surrealar.settings.model.CoordinateSystemSettings()
         var bindingPreview = false
-        // Product status from geokit's registries (beta / unavailable + reason), computed once per screen.
-        val previewStatusText by lazy {
-            runCatching { app.surrealar.coords.Nsrs2022Capabilities.statusText() }
-                .onFailure { settingsError("NSRS 2022 status failed", it) }
-                .getOrDefault("NSRS 2022 product status unavailable.")
-        }
+        // Product status from geokit's registries: null until computed off the main thread.
+        var status: NsrsStatus? = null
+        var statusFailed = false
+
+        // Editable so typing filters the zones through CrsRegistry.search ("tex", "north", "3701"). SPCS2022
+        // entries join only with the preview ON and once the registry reports operational zones (none today).
+        // The filter runs on the adapter's worker thread; the SPCS2022 catalog is already parsed by then.
+        spinnerZ?.setAdapter(SearchFilterAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings,
+            zones.map { it.label }) { q ->
+            val st = status
+            val extra = if (current.nsrs2022Preview && st != null && st.spcs2022Zones.isNotEmpty())
+                ZoneSelectorOptions.spcs2022(q, preview = true, registry = crsRegistry()).map { it.label } else emptyList()
+            SpcsZoneHints.searchZones(q).map { it.label } + extra
+        })
 
         fun showPreview() {
             val fix = fixSwitchboard.currentFix.value
             preview?.text = if (fix == null) "Current position: waiting for GNSS" else runCatching {
                 val p = coordinateSystemService.convertFix(fix, current)
+                val elevation = runCatching { coordinateSystemService.elevationOfFix(fix, current) }.getOrNull()
                 "Current position: ${app.surrealar.coords.CoordinateFormat.horizontal(p)} · " +
-                    "${app.surrealar.coords.CoordinateFormat.height(p)}\n${app.surrealar.coords.CoordinateFormat.systemSummary(p)}"
+                    "${app.surrealar.coords.CoordinateFormat.heightOrLoading(p)}\n${app.surrealar.coords.CoordinateFormat.systemSummary(p)}" +
+                    (elevation?.let { "\n" + app.surrealar.coords.ElevationFormat.previewLine(it) } ?: "")
             }.getOrElse { "Current position: conversion unavailable (${it.message})" }
+        }
+
+        var renderedGroupsFor: Pair<Boolean, NsrsStatus?>? = null
+        fun renderStatus() {
+            val on = current.nsrs2022Preview
+            val st = status
+            if (renderedGroupsFor == (on to st)) return
+            renderedGroupsFor = on to st
+            previewGroups?.removeAllViews()
+            when {
+                !on -> {
+                    previewStatus?.visibility = View.GONE
+                    previewGroups?.visibility = View.GONE
+                }
+                st == null -> {
+                    previewStatus?.visibility = View.VISIBLE
+                    previewStatus?.text = if (statusFailed) STATUS_FAILED else STATUS_LOADING
+                    previewGroups?.visibility = View.GONE
+                }
+                else -> {
+                    previewStatus?.visibility = View.GONE
+                    previewGroups?.visibility = View.VISIBLE
+                    previewGroups?.let { renderGroups(it, app.surrealar.coords.CoordinateSystemGroups.build(true, st.capabilities)) }
+                }
+            }
         }
 
         fun bind(s: app.surrealar.settings.model.CoordinateSystemSettings) {
@@ -205,15 +260,14 @@ internal class CoordinatesSettingsController(
             bindingPreview = true
             switchPreview?.isChecked = s.nsrs2022Preview
             bindingPreview = false
-            previewStatus?.visibility = if (s.nsrs2022Preview) View.VISIBLE else View.GONE
-            if (s.nsrs2022Preview) previewStatus?.text = previewStatusText
+            renderStatus()
             spinnerR?.setText(s.externalReceiverDatum.label, false)
             val zone = io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)
             zoneRow?.visibility = if (s.horizontal.isStatePlane) View.VISIBLE else View.GONE
             if (spinnerZ?.hasFocus() != true) spinnerZ?.setText(zone?.label.orEmpty(), false)
             // Hint: suggestion notice, or a warning when the live position is outside the chosen zone.
             val fix = fixSwitchboard.currentFix.value
-            zoneHint?.text = when {
+            zoneHint?.text = zoneNotice ?: when {
                 zone != null && suggestedZoneEpsg == zone.epsg -> SpcsZoneHints.suggestionHint(suggestion)
                 zone != null && fix != null && s.horizontal.isStatePlane ->
                     SpcsZoneHints.mismatchHint(zone, checkZone(zone, fix), locateZone(fix))
@@ -227,17 +281,25 @@ internal class CoordinatesSettingsController(
             showPreview()
         }
 
-        fun save(s: app.surrealar.settings.model.CoordinateSystemSettings) {
-            bind(s)
+        // Saves only the change [edit] makes, applied to the latest stored settings (so a pick made before the
+        // first bind never writes this screen's defaults, e.g. the preview OFF), one save at a time.
+        val saveMutex = kotlinx.coroutines.sync.Mutex()
+        fun save(edit: (app.surrealar.settings.model.CoordinateSystemSettings) -> app.surrealar.settings.model.CoordinateSystemSettings) {
+            zoneNotice = null
+            bind(edit(current))
             saveScope.launch {
-                runCatching { settingsRepo.setCoordinateSystemSettings(s) }
-                    .onFailure { settingsError("Coordinate system save failed", it) }
+                runCatching {
+                    saveMutex.withLock {
+                        val latest = settingsRepo.coordinateSystemSettings.first()
+                        settingsRepo.setCoordinateSystemSettings(edit(latest))
+                    }
+                }.onFailure { settingsError("Coordinate system save failed", it) }
             }
         }
 
         spinnerH.setOnItemClickListener { _, _, pos, _ ->
             val h = hs.getOrNull(pos) ?: return@setOnItemClickListener
-            var next = current.copy(horizontal = h)
+            var proposed: Int? = null
             // Switching to State Plane: if the saved zone certainly doesn't fit the live position, suggest
             // one (county-defined zone limits where they exist, else area-of-use boxes). The user can still pick.
             val fix = fixSwitchboard.currentFix.value
@@ -245,40 +307,155 @@ internal class CoordinatesSettingsController(
                 val found = locateZone(fix)
                 val saved = io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)
                 SpcsZoneHints.proposal(saved, saved?.let { checkZone(it, fix) }, found)?.let {
-                    next = next.copy(spcsZoneEpsg = it.epsg); suggestedZoneEpsg = it.epsg; suggestion = found
+                    proposed = it.epsg; suggestedZoneEpsg = it.epsg; suggestion = found
                 }
             }
-            save(next)
+            val zoneEpsg = proposed
+            save { s -> if (zoneEpsg != null) s.copy(horizontal = h, spcsZoneEpsg = zoneEpsg) else s.copy(horizontal = h) }
         }
         spinnerZ?.setOnItemClickListener { parent, _, pos, _ ->
             // Positions refer to the FILTERED list: resolve by label, not index.
-            val z = zoneByLabel[parent.getItemAtPosition(pos) as? String] ?: return@setOnItemClickListener
+            val label = parent.getItemAtPosition(pos) as? String
+            val z = zoneByLabel[label]
+            if (z == null) {
+                // An SPCS2022 entry (listed only when the registry reports it operational): not storable yet.
+                val option = status?.spcs2022Zones?.firstOrNull { it.label == label } ?: return@setOnItemClickListener
+                spinnerZ.clearFocus()
+                if (!option.selectable) {
+                    zoneNotice = "${option.zoneName} (SPCS2022, ${option.frameLabel}, beta): $SPCS2022_NOT_SELECTABLE"
+                    bind(current)
+                }
+                return@setOnItemClickListener
+            }
             suggestedZoneEpsg = null
             spinnerZ.clearFocus()
-            save(current.copy(spcsZoneEpsg = z.epsg))
+            save { it.copy(spcsZoneEpsg = z.epsg) }
         }
         // Leaving the field without picking restores the saved zone's name.
         spinnerZ?.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) spinnerZ.setText(io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
         }
-        spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { save(current.copy(datum = it)) } }
-        spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { save(current.copy(unit = it)) } }
-        spinnerV?.setOnItemClickListener { _, _, pos, _ -> vs.getOrNull(pos)?.let { save(current.copy(vertical = it)) } }
-        spinnerR?.setOnItemClickListener { _, _, pos, _ -> rs.getOrNull(pos)?.let { save(current.copy(externalReceiverDatum = it)) } }
+        spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { d -> save { it.copy(datum = d) } } }
+        spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { u -> save { it.copy(unit = u) } } }
+        spinnerV?.setOnItemClickListener { _, _, pos, _ -> vs.getOrNull(pos)?.let { v -> save { it.copy(vertical = v) } } }
+        spinnerR?.setOnItemClickListener { _, _, pos, _ -> rs.getOrNull(pos)?.let { r -> save { it.copy(externalReceiverDatum = r) } } }
         // Turning the preview off never rewrites the saved height choice (see CoordinateSystemSettings.effectiveVertical).
         switchPreview?.setOnCheckedChangeListener { _, on ->
-            if (!bindingPreview && on != current.nsrs2022Preview) save(current.copy(nsrs2022Preview = on))
+            if (!bindingPreview && on != current.nsrs2022Preview) save { it.copy(nsrs2022Preview = on) }
         }
 
+        // Stored settings: bound on load and again after every save (the merged value), while the page is open.
         categoryScope.launch {
-            runCatching { bind(settingsRepo.coordinateSystemSettings.first()) }
-                .onFailure { settingsError("Coordinate system load failed", it) }
-        }
-        // Keep the preview live while the page is open.
-        categoryScope.launch {
-            fragment.viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                fixSwitchboard.currentFix.collect { showPreview() }
+            try {
+                settingsRepo.coordinateSystemSettings.distinctUntilChanged().collect { bind(it) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                settingsError("Coordinate system load failed", e)
             }
         }
+        // SPCS2022 catalog (953 rows), 2022 frames and GEOID2022 status: computed off the main thread, shown when ready.
+        categoryScope.launch {
+            val t0 = System.nanoTime()
+            val st = try {
+                withContext(statusDispatcher) { computeStatus() }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                settingsError("NSRS 2022 status failed", e); null
+            }
+            app.surrealar.util.DiagnosticsLogger.d(app.surrealar.util.diagnostics.DiagTags.DATA) {
+                "NSRS 2022 status computed off-main ok=${st != null} durationMs=${(System.nanoTime() - t0) / 1_000_000}"
+            }
+            statusFailed = st == null
+            status = st
+            st?.spcs2022Note?.let { defaultZoneHint = "$baseZoneHint $it" }
+            renderedGroupsFor = null
+            bind(current)
+        }
+        // Keep the preview live while the page is open; also refresh it when a height model finished loading.
+        categoryScope.launch {
+            fragment.viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { fixSwitchboard.currentFix.collect { showPreview() } }
+                launch { coordinateSystemService.heightDataVersion.collect { showPreview() } }
+            }
+        }
+    }
+
+    /** Off the main thread: product status, the SPCS2022 note and zone entries from [crsRegistry]. */
+    private fun computeStatus(): NsrsStatus {
+        val registry = crsRegistry()
+        return NsrsStatus(
+            capabilities = capabilities(registry),
+            spcs2022Note = SpcsZoneHints.spcs2022Note(registry),
+            spcs2022Zones = ZoneSelectorOptions.spcs2022("", preview = true, registry = registry),
+        )
+    }
+
+    /**
+     * The three product groups (verified / verified NGS beta / unsupported) as Material 3 rows: a title and
+     * subtitle per group; per item its name and state (beta badged), a concise one-line reason, and, when the
+     * registry has more to say, an info dialog with the full text.
+     */
+    private fun renderGroups(
+        container: android.widget.LinearLayout,
+        groups: List<Pair<app.surrealar.coords.CoordinateSystemGroup, List<app.surrealar.coords.CoordinateSystemGroupItem>>>,
+    ) {
+        val ctx = container.context
+        fun attr(id: Int): Int = android.util.TypedValue().let { tv -> if (ctx.theme.resolveAttribute(id, tv, true)) tv.resourceId else 0 }
+        fun text(appearance: Int, value: CharSequence, topDp: Int = 0) = android.widget.TextView(ctx).apply {
+            attr(appearance).takeIf { it != 0 }?.let { androidx.core.widget.TextViewCompat.setTextAppearance(this, it) }
+            text = value
+            setPadding(0, (topDp * resources.displayMetrics.density).toInt(), 0, 0)
+        }
+        val betaColor = com.google.android.material.color.MaterialColors.getColor(
+            ctx, com.google.android.material.R.attr.colorTertiary, 0xFF7D5260.toInt())
+        for ((group, items) in groups) {
+            container.addView(text(com.google.android.material.R.attr.textAppearanceTitleSmall, group.title, topDp = 8))
+            container.addView(text(com.google.android.material.R.attr.textAppearanceBodySmall, group.subtitle).apply { alpha = 0.7f })
+            for (item in items) {
+                val title = android.text.SpannableStringBuilder().apply {
+                    append(item.name, android.text.style.StyleSpan(android.graphics.Typeface.BOLD), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    append(": ").append(item.value)
+                    if (item.beta) {
+                        append("  ")
+                        append(BETA_BADGE, android.text.style.ForegroundColorSpan(betaColor), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    }
+                    if (item.fullReason != null) append("  ⓘ")
+                }
+                val row = android.widget.LinearLayout(ctx).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    val pad = (6 * resources.displayMetrics.density).toInt()
+                    setPadding(0, pad, 0, pad)
+                    if (!item.selectable) alpha = 0.75f
+                    addView(text(com.google.android.material.R.attr.textAppearanceBodyMedium, title))
+                    item.shortReason?.let { addView(text(com.google.android.material.R.attr.textAppearanceBodySmall, "Why: $it").apply { alpha = 0.8f }) }
+                    contentDescription = listOfNotNull("${item.name}: ${item.value}", if (item.beta) "beta" else null,
+                        if (!item.selectable) "not selectable" else null, item.shortReason?.let { "why: $it" },
+                        if (item.fullReason != null) "double-tap for details" else null).joinToString(", ")
+                }
+                item.fullReason?.let { full ->
+                    row.isClickable = true
+                    row.isFocusable = true
+                    attr(android.R.attr.selectableItemBackground).takeIf { it != 0 }?.let { row.setBackgroundResource(it) }
+                    row.setOnClickListener {
+                        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+                            .setTitle(item.name)
+                            .setMessage(full)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                }
+                container.addView(row)
+            }
+        }
+    }
+
+    companion object {
+        const val STATUS_LOADING = "Loading NSRS 2022 product status…"
+        const val STATUS_FAILED = "NSRS 2022 product status unavailable."
+        const val BETA_BADGE = "β BETA"
+        const val SPCS2022_NOT_SELECTABLE =
+            "listed from GeoKit, but this app version cannot store or output SPCS2022 coordinates yet."
     }
 }

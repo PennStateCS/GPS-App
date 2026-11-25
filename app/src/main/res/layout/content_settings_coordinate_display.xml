@@ -427,7 +427,8 @@
                         android:contentDescription="Modernized NSRS 2022 beta preview" />
                 </LinearLayout>
 
-                <!-- Status of each NSRS 2022 product (beta / unavailable with the registry's reason); preview on only. -->
+                <!-- Preview on only: "Loading NSRS 2022 product status…" while the SPCS2022 catalog is read off the
+                     main thread, then the grouped product list below (verified / NGS beta / unsupported). -->
                 <TextView
                     android:id="@+id/text_coord_nsrs2022_status"
                     android:layout_width="match_parent"
@@ -436,6 +437,16 @@
                     android:paddingBottom="8dp"
                     android:alpha="0.8"
                     android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:visibility="gone" />
+
+                <!-- Products in three groups; each unsupported item has a one-line reason, the full registry text in an info dialog. -->
+                <LinearLayout
+                    android:id="@+id/container_coord_nsrs2022_groups"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="8dp"
                     android:visibility="gone" />
 
                 <TextView

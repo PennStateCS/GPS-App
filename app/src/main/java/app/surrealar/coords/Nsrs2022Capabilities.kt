@@ -22,6 +22,9 @@ enum class CapabilityUiState(val label: String) {
     UNAVAILABLE("unavailable — awaiting NGS verification"),
 }
 
+/** Product family of a [Nsrs2022Capability]. */
+enum class CapabilityKind { GEOID, FRAME, SPCS, OTHER }
+
 /** The UI state of a geokit [ProductStatus]. */
 fun ProductStatus.toUiState(): CapabilityUiState = when (this) {
     ProductStatus.VERIFIED_LEGACY -> CapabilityUiState.LEGACY
@@ -36,6 +39,7 @@ fun ProductStatus.toUiState(): CapabilityUiState = when (this) {
  * @property selectable true only for a BETA product the app offers as an option (never for UNAVAILABLE).
  * @property reason why it is unavailable, as geokit's registries state it (null when usable).
  * @property note short usage note (dataset version, where to choose it), null if none.
+ * @property kind which product family it is (for the concise one-line reason).
  */
 data class Nsrs2022Capability(
     val name: String,
@@ -43,6 +47,7 @@ data class Nsrs2022Capability(
     val selectable: Boolean,
     val reason: String?,
     val note: String? = null,
+    val kind: CapabilityKind = CapabilityKind.OTHER,
 ) {
     init { require(!(selectable && state == CapabilityUiState.UNAVAILABLE)) { "$name: unavailable products are never selectable" } }
 }
@@ -75,6 +80,7 @@ object Nsrs2022Capabilities {
             name = "GEOID2022 heights (NAPGD2022)", state = state,
             selectable = state == CapabilityUiState.BETA,
             reason = if (state == CapabilityUiState.UNAVAILABLE) "GEOID2022 is not verified in GeoKit" else null,
+            kind = CapabilityKind.GEOID,
             note = "NGS ${Geoid2022Model.NGS_VERSION}; choose “${app.surrealar.settings.model.VerticalReference.GEOID2022.label}” " +
                 "under Height. Data bundled for the lower 48, Alaska, Hawaii, Puerto Rico / Virgin Islands, Guam / CNMI and American Samoa.",
         )
@@ -92,6 +98,7 @@ object Nsrs2022Capabilities {
                 selectable = false,
                 reason = (lookup as? FrameTransformationLookup.Unavailable)?.explanation
                     ?: "verified in GeoKit, but not offered as an output frame in this app version",
+                kind = CapabilityKind.FRAME,
             )
         }
 
@@ -105,7 +112,32 @@ object Nsrs2022Capabilities {
             // Not offered as a State Plane option in this app version (the zone picker stays SPCS83).
             selectable = false,
             reason = c.explanation ?: "${c.operational.size} zones verified in GeoKit, not offered in this app version",
+            kind = CapabilityKind.SPCS,
         )
+    }
+
+    /** Longest concise reason (one line on the 280–600 dp settings card). */
+    const val MAX_SHORT_REASON = 60
+
+    /**
+     * Concise one-line reason why [c] is not selectable (the full registry wording stays in [Nsrs2022Capability.reason],
+     * shown on demand); null for a selectable product.
+     */
+    fun shortReason(c: Nsrs2022Capability): String? {
+        if (c.selectable) return null
+        val unavailable = c.state == CapabilityUiState.UNAVAILABLE
+        return when (c.kind) {
+            CapabilityKind.FRAME -> if (unavailable) "No NGS-verified transformation yet" else "Verified, not yet an output frame here"
+            CapabilityKind.SPCS -> if (unavailable) "Needs a verified 2022 frame; not in EPSG/PROJ" else "Verified zones, not yet offered here"
+            CapabilityKind.GEOID -> if (unavailable) "Not verified in GeoKit" else "Not offered in this app version"
+            CapabilityKind.OTHER -> c.reason?.let { firstClause(it) } ?: "Not offered in this app version"
+        }
+    }
+
+    /** First sentence of [text], cut to [MAX_SHORT_REASON] characters with an ellipsis. */
+    internal fun firstClause(text: String): String {
+        val first = text.substringBefore(". ").substringBefore(": ").trim().removeSuffix(".")
+        return if (first.length <= MAX_SHORT_REASON) first else first.take(MAX_SHORT_REASON - 1).trimEnd() + "…"
     }
 
     /**
