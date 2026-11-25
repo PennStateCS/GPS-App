@@ -49,6 +49,26 @@ interface ExternalReceiverSettingsRepository {
     val compensatedNmeaOutput: Flow<app.surrealar.settings.model.CompensatedOutputSetting>
         get() = kotlinx.coroutines.flow.flowOf(app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT)
     suspend fun setCompensatedNmeaOutput(value: app.surrealar.settings.model.CompensatedOutputSetting) {}
+
+    /**
+     * Phase 5: who chose the stored profile (`external_receiver_profile_origin`; see
+     * [app.surrealar.settings.model.ProfileOrigin.resolve] for installs without the key). The default (test fakes,
+     * older implementations) is USER, the reading that never allows an automatic profile change.
+     */
+    val externalReceiverProfileOrigin: Flow<app.surrealar.settings.model.ProfileOrigin>
+        get() = kotlinx.coroutines.flow.flowOf(app.surrealar.settings.model.ProfileOrigin.USER)
+
+    /** Writes the profile and its origin together. Default: the profile only (implementations without origin). */
+    suspend fun setExternalReceiverProfile(
+        profile: ExternalReceiverProfile,
+        origin: app.surrealar.settings.model.ProfileOrigin,
+    ) { setExternalReceiverProfile(profile) }
+
+    /** Phase 5: receivers that connected successfully (`external_recent_receivers`), newest first. Default: none. */
+    val externalRecentReceivers: Flow<List<app.surrealar.settings.model.RecentReceiver>>
+        get() = kotlinx.coroutines.flow.flowOf(emptyList())
+    suspend fun setExternalRecentReceivers(list: List<app.surrealar.settings.model.RecentReceiver>) {}
+
     suspend fun setExternalReceiverSettings(settings: ExternalReceiverSettings)
     suspend fun setExternalConnType(v: ExternalConnectionType)
     suspend fun setExternalTcp(host: String, port: Int, name: String = "")

@@ -57,8 +57,9 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setLocationSourceString(v.prefKey)
     }
 
+    /** A profile written without an origin is the user's choice (Phase 5: never replaced automatically). */
     override suspend fun setExternalReceiverProfile(profile: app.surrealar.settings.model.ExternalReceiverProfile) {
-        local.setExternalReceiverProfile(profile.prefKey)
+        local.setExternalReceiverProfileWithOrigin(profile.prefKey, app.surrealar.settings.model.ProfileOrigin.USER.prefKey)
     }
 
     override val compensatedNmeaOutput: Flow<app.surrealar.settings.model.CompensatedOutputSetting> =
@@ -68,8 +69,31 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
         local.setExternalCompensatedNmeaOutput(value.prefKey)
     }
 
+    override val externalReceiverProfileOrigin: Flow<app.surrealar.settings.model.ProfileOrigin> =
+        local.externalReceiverProfileOriginRaw.map { (token, profileStored) ->
+            app.surrealar.settings.model.ProfileOrigin.resolve(token, profileStored)
+        }
+
+    override suspend fun setExternalReceiverProfile(
+        profile: app.surrealar.settings.model.ExternalReceiverProfile,
+        origin: app.surrealar.settings.model.ProfileOrigin,
+    ) {
+        local.setExternalReceiverProfileWithOrigin(profile.prefKey, origin.prefKey)
+    }
+
+    override val externalRecentReceivers: Flow<List<app.surrealar.settings.model.RecentReceiver>> =
+        local.externalRecentReceiversRaw.map { app.surrealar.settings.model.RecentReceiversCodec.decode(it) }
+
+    override suspend fun setExternalRecentReceivers(list: List<app.surrealar.settings.model.RecentReceiver>) {
+        local.setExternalRecentReceivers(app.surrealar.settings.model.RecentReceiversCodec.encode(list))
+    }
+
     override suspend fun setExternalReceiverSettings(settings: app.surrealar.settings.model.ExternalReceiverSettings) {
         local.editAll {
+            if (it[K.EXTERNAL_RECEIVER_PROFILE] != settings.profile.prefKey) {
+                // A changed profile written here is the user's choice (Phase 5 origin); an unchanged one keeps its origin.
+                it[K.EXTERNAL_RECEIVER_PROFILE_ORIGIN] = app.surrealar.settings.model.ProfileOrigin.USER.prefKey
+            }
             it[K.EXTERNAL_RECEIVER_PROFILE] = settings.profile.prefKey
             it[K.EXTERNAL_CONN_TYPE] = settings.connectionType.prefKey
             it[K.EXTERNAL_TCP_HOST] = settings.tcpHost

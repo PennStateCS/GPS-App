@@ -42,6 +42,13 @@ object SettingsKeys {
     val EXTERNAL_RECEIVER_PROFILE = stringPreferencesKey("external_receiver_profile")
     /** Phase 4 WP C: Emlid Flow "compensated NMEA output" as declared by the user (RS4 / RS4 Pro). */
     val EXTERNAL_COMPENSATED_NMEA_OUTPUT = stringPreferencesKey("external_compensated_nmea_output")
+    /** Phase 5: receivers that connected successfully, JSON list (newest first, at most 8); see RecentReceiversCodec. */
+    val EXTERNAL_RECENT_RECEIVERS = stringPreferencesKey("external_recent_receivers")
+    /**
+     * Phase 5: who chose [EXTERNAL_RECEIVER_PROFILE]: "user", "receiver" or "default". Absent on installs from
+     * before Phase 5; see ProfileOrigin.resolve (absent + a stored profile = "user").
+     */
+    val EXTERNAL_RECEIVER_PROFILE_ORIGIN = stringPreferencesKey("external_receiver_profile_origin")
 
     // Settings storage schema version (for migrations). Absent = pre-versioning install (treated as 0).
     val SETTINGS_SCHEMA_VERSION = intPreferencesKey("settings_schema_version")
@@ -170,6 +177,15 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val externalTcpName: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_TCP_NAME] }
     val externalReceiverProfileRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] }
     val externalCompensatedNmeaOutputRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_COMPENSATED_NMEA_OUTPUT] }
+    val externalRecentReceiversRaw: Flow<String?> = dataStore.data.map { it[SettingsKeys.EXTERNAL_RECENT_RECEIVERS] }
+    /** The stored origin token and whether a profile is stored at all, from one snapshot. */
+    val externalReceiverProfileOriginRaw: Flow<Pair<String?, Boolean>> = dataStore.data.map {
+        it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE_ORIGIN] to (it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] != null)
+    }
+    suspend fun setExternalRecentReceivers(json: String) { dataStore.edit { it[SettingsKeys.EXTERNAL_RECENT_RECEIVERS] = json } }
+    /** Profile and its origin in one transaction. */
+    suspend fun setExternalReceiverProfileWithOrigin(prefKey: String, origin: String) { dataStore.edit {
+        it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE] = prefKey; it[SettingsKeys.EXTERNAL_RECEIVER_PROFILE_ORIGIN] = origin } }
     val schemaVersion: Flow<Int?> = dataStore.data.map { it[SettingsKeys.SETTINGS_SCHEMA_VERSION] }
     suspend fun setSchemaVersion(v: Int) { dataStore.edit { it[SettingsKeys.SETTINGS_SCHEMA_VERSION] = v } }
 
