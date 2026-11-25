@@ -16,6 +16,8 @@ import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.settings.GnssReceiverSettings
 import app.surrealar.gnss.source.GnssSourceCoordinator
 import app.surrealar.receiver.ReceiverDeviceManager
+import app.surrealar.receiver.selection.ReceiverProbe
+import app.surrealar.receiver.selection.TcpProbeResult
 import app.surrealar.settings.model.ExternalReceiverProfile
 import io.github.pennstatecs.geokit.gnss.model.Fix
 import io.github.pennstatecs.geokit.gnss.model.SkySnapshot
@@ -78,14 +80,18 @@ class ReceiverSettingsLifecycleTest {
     private val deadPort: Int = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { it.localPort }
 
     /** The fake connect probe: counts calls, waits for [probeResult], counts returns/cancellations. */
-    private val probeResult = CompletableDeferred<Pair<ReceiverSettingsController.TcpTestResult, Boolean>>()
+    private val probeResult = CompletableDeferred<TcpProbeResult>()
     private var probeCalls = 0
     private var probeEnded = 0
-    private val probe: suspend (String, Int) -> Pair<ReceiverSettingsController.TcpTestResult, Boolean> = { _, _ ->
-        probeCalls++
-        try { probeResult.await() } finally { probeEnded++ }
+    // Phase 5: the seam is a ReceiverProbe (TCP sniff + Emlid HTTP probe) instead of one lambda returning both.
+    private val probe = object : ReceiverProbe {
+        override suspend fun tcp(host: String, port: Int): TcpProbeResult {
+            probeCalls++
+            try { return probeResult.await() } finally { probeEnded++ }
+        }
+        override suspend fun http(host: String): Boolean = true
     }
-    private val receiverFound = ReceiverSettingsController.TcpTestResult.RECEIVING_NMEA to true
+    private val receiverFound = TcpProbeResult.RECEIVING_NMEA
 
     private fun settings(storedHost: Flow<String?> = flowOf(null), storedPort: Int? = null): SettingsRepository =
         Mockito.mock(SettingsRepository::class.java).also {
@@ -278,7 +284,13 @@ class ReceiverSettingsLifecycleTest {
         assertEquals("old view untouched", shownStatus, statusText(first.view))
     }
 
-    @Test fun `recreating the Settings view while a connection is pending drops the old attempt`() {
+    /**
+     * Phase 5 (intentional change): connect attempts are app-scoped (ReceiverConnectionController), so
+     * recreating the Settings view no longer cancels a pending attempt. It still runs exactly once (no
+     * duplicate connection), activates once when the receiver streams NMEA, never touches the old view, and
+     * its outcome shows on the CURRENT view. Before Phase 5 the attempt was cancelled with the view.
+     */
+    @Test fun `recreating the Settings view while a connection is pending keeps the one attempt and shows it on the new view`() {
         val c = controller()
         val first = visit(c)
         connect(first)
@@ -293,11 +305,12 @@ class ReceiverSettingsLifecycleTest {
         probeResult.complete(receiverFound)
         idle()
 
-        assertEquals("the old attempt was cancelled with its view", 1, probeEnded)
+        assertEquals("the attempt finished", 1, probeEnded)
         assertEquals("no duplicate connection", 1, probeCalls)
-        assertEquals("the superseded attempt changed no provider", 0, activations())
+        assertEquals("activated once", 1, activations())
+        Mockito.verify(coordinator).activateExternalTcpProvider("127.0.0.1", deadPort, "settings-connect #1")
         assertEquals("old view untouched", shownStatus, statusText(first.view))
-        assertNotEquals("Receiver connected", statusText(second.view))
+        assertEquals("the new view shows the outcome", "Receiver connected", statusText(second.view))
         assertTrue(second.view.isAttachedToWindow || second.view.parent != null)
     }
 }

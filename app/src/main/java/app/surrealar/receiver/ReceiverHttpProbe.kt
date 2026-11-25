@@ -7,7 +7,8 @@ import kotlinx.coroutines.withContext
 /**
  * Settings' "is a receiver there?" check: whether the receiver's HTTP status API answers (Emlid
  * `/info`, then `/status`). A 200-range response is enough — the receiver is present even without a
- * GNSS fix. Runs for every profile, as before; receivers without that API simply answer false.
+ * GNSS fix. Phase 5: asked for Emlid profiles only (ReceiverConnectionController); a Generic NMEA receiver
+ * never gets an Emlid HTTP request.
  */
 object ReceiverHttpProbe {
     suspend fun statusApiReachable(host: String): Boolean = withContext(Dispatchers.IO) {

@@ -27,12 +27,15 @@ object ReceiverModule {
 
     @Provides
     @Singleton
+    fun provideEmlidDiscovery(@ApplicationContext context: Context): EmlidDiscovery = EmlidDiscovery(context)
+
+    @Provides
+    @Singleton
     fun provideReceiverDeviceManager(
-        @ApplicationContext context: Context,
+        discovery: EmlidDiscovery,
         sourceSettings: SourceSettings,
         settings: ExternalReceiverSettingsRepository,
     ): ReceiverDeviceManager {
-        val discovery = EmlidDiscovery(context)
         return ReceiverDeviceManager(
             externalSourceActive = sourceSettings.activeProvider.map { it == SourceSettings.ProviderChoice.EXTERNAL_TCP },
             profile = settings.externalReceiverProfile,
@@ -48,6 +51,34 @@ object ReceiverModule {
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineModule.LogUncaught),
         )
     }
+
+    /**
+     * Phase 5: receiver selection core (test before switch, identification, recent receivers). App-scoped: closing a
+     * screen never cancels an attempt. Reuses the coordinator, the external adapter's link state and the device
+     * manager's device info; adds no connection path of its own.
+     */
+    @Provides
+    @Singleton
+    fun provideReceiverConnectionController(
+        appScope: CoroutineScope,
+        settings: app.surrealar.domain.repository.SettingsRepository,
+        coordinator: app.surrealar.gnss.source.GnssSourceCoordinator,
+        sourceSettings: SourceSettings,
+        externalAdapter: app.surrealar.gnss.external.ExternalAdapter,
+        receiverDevices: ReceiverDeviceManager,
+        captureTracker: app.surrealar.ui.capture.ActiveCaptureTracker,
+        discovery: EmlidDiscovery,
+    ): app.surrealar.receiver.selection.ReceiverConnectionController =
+        app.surrealar.receiver.selection.ReceiverConnectionController(
+            settings = settings,
+            coordinator = coordinator,
+            scope = appScope,
+            activeProvider = sourceSettings.activeProvider,
+            externalLink = externalAdapter.connectionState,
+            deviceInfo = receiverDevices.deviceInfo,
+            captureActive = captureTracker.active,
+            discovery = discovery,
+        )
 
     /**
      * Phase 4 WP C: receiver tilt status (RS4 / RS4 Pro ETC) for the active external source. Status only: fed

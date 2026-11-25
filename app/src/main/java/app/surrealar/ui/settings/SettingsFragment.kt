@@ -50,6 +50,9 @@ class SettingsFragment : BaseTwoPaneFragment() {
     lateinit var receiverDevices: ReceiverDeviceManager
     @Inject
     lateinit var tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor
+    /** Phase 5: app-scoped receiver selection core (test before switch, identification). */
+    @Inject
+    lateinit var receiverConnection: app.surrealar.receiver.selection.ReceiverConnectionController
 
     // ─────────────────────────── Preferences / Data ───────────────────────────
     @Inject lateinit var repository: CoordinateRepository
@@ -148,7 +151,7 @@ class SettingsFragment : BaseTwoPaneFragment() {
     }
     private val receiverController by lazy {
         ReceiverSettingsController(this, settingsRepo, fixSwitchboard, gnssSourceCoordinator, receiverDevices, saveScope,
-            ::refreshCategoriesForSource, tiltMonitor = tiltMonitor)
+            ::refreshCategoriesForSource, tiltMonitor = tiltMonitor, receiverConnection = receiverConnection)
     }
 
     private fun controllerFor(categoryId: Int): SettingsCategoryController? = when (categoryId) {

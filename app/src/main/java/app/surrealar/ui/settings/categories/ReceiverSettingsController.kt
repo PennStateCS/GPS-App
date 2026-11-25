@@ -27,7 +27,13 @@ import app.surrealar.gnss.bus.FixSwitchboard
 import app.surrealar.gnss.mock.AndroidMockLocationPublisher
 import app.surrealar.gnss.source.GnssSourceCoordinator
 import app.surrealar.receiver.ReceiverDeviceManager
-import app.surrealar.receiver.ReceiverHttpProbe
+import app.surrealar.receiver.selection.ConnectRequest
+import app.surrealar.receiver.selection.ConnectStart
+import app.surrealar.receiver.selection.ConnectionAttempt
+import app.surrealar.receiver.selection.ReceiverConnectionController
+import app.surrealar.receiver.selection.ReceiverProbe
+import app.surrealar.receiver.selection.SocketReceiverProbe
+import app.surrealar.receiver.selection.TcpProbeResult
 import app.surrealar.service.LocationService
 import app.surrealar.settings.SettingsDefaults
 import app.surrealar.ui.settings.AntennaHeightInput
@@ -47,15 +53,14 @@ import io.github.pennstatecs.geokit.gnss.model.Provider
 import io.github.pennstatecs.geokit.gnss.model.RtkStatus
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
-import java.io.BufferedReader
+import kotlinx.coroutines.flow.map
 import java.io.ByteArrayOutputStream
-import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.nio.charset.StandardCharsets
 import kotlin.math.min
 
 /**
@@ -64,16 +69,16 @@ import kotlin.math.min
  * location publishing.
  *
  * Moved verbatim from SettingsFragment. The fragment keeps ONE instance for its lifetime, so the
- * connection state below (selected device, the single auto-reconnect, the connect attempt id and job)
- * survives a category switch exactly as it did as fragment fields. Scopes are unchanged:
+ * screen state below (selected device, the single auto-reconnect) survives a category switch exactly as
+ * it did as fragment fields. Scopes:
  * - category-bound collectors, the 1 s status refresh, and the stored-settings load / prefill (which
  *   bind this view) run on `categoryScope` (stop when the category is left);
- * - the connect attempt ([tcpConnectJob]) runs on the fragment's viewLifecycleOwner scope, and the
- *   diagnostic probe (name lookup only) on the fragment's lifecycleScope, so they continue after a
- *   category switch (as before). Their UI updates go to the CURRENT Receiver view ([contentView]),
- *   never to a view captured when they started;
+ * - Phase 5: connect / disconnect / device-GNSS switches are delegated to the app-scoped
+ *   [ReceiverConnectionController] (test before switch: nothing is saved or activated unless the probe
+ *   receives NMEA; Emlid HTTP is asked for Emlid profiles only). Its attempts survive this screen; their
+ *   outcome is shown on the CURRENT Receiver view only (collected on `categoryScope`);
+ * - the diagnostic probe (name lookup only) runs on the fragment's lifecycleScope;
  * - writes run on [saveScope]; UI touched after a write checks that its view is still shown ([isShown]).
- * Source changes go through [gnssSourceCoordinator] in the same order as before.
  */
 internal class ReceiverSettingsController(
     private val fragment: Fragment,
@@ -86,13 +91,21 @@ internal class ReceiverSettingsController(
     /** The host's category list refresh when the source changes (SettingsFragment.refreshCategoriesForSource). */
     private val refreshCategoriesForSource: (LocationSourceType) -> Unit,
     /**
-     * Test seam for the connect probe (TCP NMEA read + HTTP reachability, run in parallel); null = the
-     * real probes. Lets tests hold an attempt "in flight" deterministically.
+     * Test seam for the connect probe (TCP NMEA read; HTTP reachability for Emlid profiles) used when no
+     * [receiverConnection] is given; null = the real probes. Lets tests hold an attempt "in flight".
      */
-    private val connectProbeOverride: (suspend (host: String, port: Int) -> Pair<TcpTestResult, Boolean>)? = null,
+    connectProbeOverride: ReceiverProbe? = null,
     /** RS4 / RS4 Pro tilt status (Phase 4 WP C); null = the tilt rows stay hidden (tests that predate it). */
     private val tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor? = null,
+    /**
+     * Phase 5: the app-scoped receiver selection core (Hilt singleton in production). Null (tests) = one
+     * owned by this controller, over [saveScope], with [connectProbeOverride].
+     */
+    receiverConnection: ReceiverConnectionController? = null,
 ) : SettingsCategoryController {
+
+    private val connection: ReceiverConnectionController = receiverConnection
+        ?: ReceiverConnectionController(settingsRepo, gnssSourceCoordinator, saveScope, connectProbeOverride ?: SocketReceiverProbe)
 
     companion object {
         // Connection status timing thresholds (ms)
@@ -114,8 +127,13 @@ internal class ReceiverSettingsController(
     private var currentDeviceInfo: EmlidDeviceInfo? = null
 
     private var deviceStatusJob: Job? = null
-    private var tcpConnectJob: Job? = null
-    private var tcpConnectAttemptId = 0
+    /**
+     * Advanced by Disconnect / selecting device GNSS, so an auto-reconnect whose stored-source read was
+     * in flight then starts nothing.
+     */
+    private var sourceChangeGeneration = 0
+    /** Last connect attempt whose outcome this screen showed (an outcome is shown once, not on every revisit). */
+    private var lastShownAttemptId = 0
     /** True when the receiver's HTTP /info or /status endpoint responded successfully. */
     @Volatile private var receiverHttpReachable = false
     /** Epoch ms of last external fix accepted for status; 0 means none yet. */
@@ -127,13 +145,11 @@ internal class ReceiverSettingsController(
 
     override fun onDestroyView() {
         // The views are gone: drop them. categoryScope (and with it deviceStatusJob) is already
-        // cancelled by the host; the connect attempt is deliberately left running, as before.
+        // cancelled by the host; a connect attempt is app-scoped (ReceiverConnectionController) and keeps running.
         contentView = null
         deviceStatusJob?.cancel()
         deviceStatusJob = null
     }
-
-    internal enum class TcpTestResult { CONNECT_FAILED, CONNECTED_NO_DATA, RECEIVING_NMEA, RECEIVING_RTCM_OR_BIN }
 
     // UI status for external connection
     private enum class ConnectionUiStatus { CONNECTING, REACHABLE, STREAMING, STALE, DISCONNECTED }
@@ -445,13 +461,11 @@ internal class ReceiverSettingsController(
         }
 
         btnDisconnect?.setOnClickListener {
-            // Cancel any in-flight connect attempt before touching settings.
-            ++tcpConnectAttemptId
-            tcpConnectJob?.cancel()
-            tcpConnectJob = null
+            // Cancels any in-flight connect attempt, switches the switchboard to device GNSS immediately
+            // (synchronous) and saves mock off + source Internal + cleared host/port (ReceiverConnectionController).
+            ++sourceChangeGeneration
             resetExternalReceiverStatus()
-            // Switch back to internal in the switchboard immediately (synchronous).
-            gnssSourceCoordinator.activateInternalProvider("settings")
+            connection.disconnect("settings")
             // Clear selected device so the UI shows the TCP entry form again.
             selectedDevice = null
             selectedDeviceLabel = null
@@ -463,14 +477,12 @@ internal class ReceiverSettingsController(
             updateDeviceBox()
             view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_publish_mock_location)
                 ?.let { it.isChecked = false; it.isEnabled = false }
-            saveScope.launch {
-                try {
-                    settingsRepo.setMockLocationEnabled(false)
-                    settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
-                    settingsRepo.clearExternalTcp()
-                } catch (e: Exception) {
-                    settingsError("External receiver disconnect failed", e)
-                }
+        }
+
+        // Phase 5: the outcome of a connect attempt (app-scoped) on THIS view; each outcome is shown once.
+        categoryScope.launch {
+            connection.state.map { it.attempt }.distinctUntilChanged().collect { attempt ->
+                try { showAttempt(attempt) } catch (e: Exception) { settingsWarn("External receiver attempt display failed", e, DiagTags.RECEIVER) }
             }
         }
 
@@ -517,14 +529,14 @@ internal class ReceiverSettingsController(
                     if (!autoReconnectAttempted) {
                         // Disconnect / selecting device GNSS advance the attempt id; if either happens
                         // while the stored source is being read, don't start a new External attempt.
-                        val attemptBefore = tcpConnectAttemptId
+                        val generationBefore = sourceChangeGeneration
                         launch {
                             val locSrc = settingsRepo.locationSource.first()
                             val connType = settingsRepo.externalConnType.firstOrNull()
-                            if (autoReconnectAttempted || attemptBefore != tcpConnectAttemptId) return@launch
+                            if (autoReconnectAttempted || generationBefore != sourceChangeGeneration) return@launch
                             if (locSrc == LocationSourceType.EXTERNAL && connType == ExternalConnectionType.TCP) {
                                 autoReconnectAttempted = true
-                                connectViaTcpFlow(host, port)
+                                connectViaTcpFlow(host, port, userInitiated = false)
                             }
                         }
                     }
@@ -1127,7 +1139,7 @@ internal class ReceiverSettingsController(
             // Attempt single auto reconnect if external source active and we have stored device
             if (source == LocationSourceType.EXTERNAL && storedHost != null && storedPort != null && !autoReconnectAttempted) {
                 autoReconnectAttempted = true
-                connectViaTcpFlow(storedHost, storedPort)
+                connectViaTcpFlow(storedHost, storedPort, userInitiated = false)
             }
             initializing = false
         }
@@ -1140,16 +1152,11 @@ internal class ReceiverSettingsController(
             if (group.findViewById<RadioButton>(checkedId)?.isChecked == false) return@setOnCheckedChangeListener
             when (checkedId) {
                 R.id.radio_internal -> {
-                    DiagnosticsLogger.i(
-                        DiagTags.GNSS, "External receiver connect cancelled: switched to device GNSS attempt=$tcpConnectAttemptId"
-                    )
-                    // Invalidate and cancel any in-progress TCP connection attempt
-                    ++tcpConnectAttemptId
-                    tcpConnectJob?.cancel()
-                    tcpConnectJob = null
+                    // Cancels any in-progress connect attempt, makes device GNSS active now and saves mock off +
+                    // source Internal (ReceiverConnectionController, which logs the switch).
+                    ++sourceChangeGeneration
                     resetExternalReceiverStatus()
-                    // Update switchboard provider to internal
-                    gnssSourceCoordinator.activateInternalProvider("settings")
+                    connection.selectInternal("settings")
                     // Update categories immediately when switching to internal (hide RS2+)
                     refreshCategoriesForSource(LocationSourceType.INTERNAL)
                     updateLocationSourceVisibility(LocationSourceType.INTERNAL, internalGpsGroup)
@@ -1159,12 +1166,6 @@ internal class ReceiverSettingsController(
                     // Immediately disable mock publishing and update its switch UI
                     switchMock?.isChecked = false
                     switchMock?.isEnabled = false
-                    saveScope.launch {
-                        runCatching {
-                            settingsRepo.setMockLocationEnabled(false)
-                            settingsRepo.setLocationSource(LocationSourceType.INTERNAL)
-                        }.onFailure { settingsError("Settings save failed section=locationSource", it) }
-                    }
                     if (!LocationService.isRunning) LocationService.start(fragment.requireContext())
                 }
                 R.id.radio_es2_tcp -> {
@@ -1176,22 +1177,16 @@ internal class ReceiverSettingsController(
                     updateLocationSourceVisibility(LocationSourceType.EXTERNAL, internalGpsGroup)
                     // Show either the device box (if already selected) or options
                     updateDeviceBox()
-                    // Persist source selection asynchronously — does not need to complete
-                    // before the connect attempt starts.
-                    saveScope.launch {
-                        runCatching {
-                            settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
-                            settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
-                        }.onFailure { settingsError("Settings save failed section=locationSource", it) }
-                    }
-                    // Reconnect using the device already loaded from stored settings.
-                    // Calling connectViaTcpFlow directly (not inside a separate launch) ensures
-                    // the attempt ID is incremented synchronously so radio_internal can cancel it.
+                    // Phase 5 (test before switch): with a known receiver, External is saved only when it
+                    // streams NMEA (the attempt saves conn type, host/port and source, then activates).
+                    // Without one, only the source choice is saved so the entry form shows.
                     val dev = selectedDevice
                     if (dev != null) {
                         selectedDeviceName = selectedDeviceName ?: dev.first
                         updateDeviceBox()
                         connectViaTcpFlow(dev.first, dev.second)
+                    } else {
+                        connection.selectExternalWithoutReceiver()
                     }
                     if (!LocationService.isRunning) LocationService.start(fragment.requireContext())
                 }
@@ -1204,169 +1199,97 @@ internal class ReceiverSettingsController(
         internal?.visibility = if (selected == LocationSourceType.INTERNAL) View.VISIBLE else View.GONE
     }
 
-    // ─────────────────────────── TCP connect + read ────────────────────────────
-    private suspend fun connectAndReadTcpNmea(host: String, port: Int): TcpTestResult = withContext(Dispatchers.IO) {
-        var socket: Socket? = null
-        var reader: BufferedReader? = null
-        try {
-            socket = Socket().apply { tcpNoDelay = true; keepAlive = true }
-            try {
-                socket.connect(InetSocketAddress(host, port), 4000)
-            } catch (e: Exception) {
-                // Expected when the receiver is off / unreachable; the caller logs the probe outcome.
-                DevLog.d("SettingsFragment") { "TCP probe connect failed port=$port: ${e.javaClass.simpleName}" }
-                return@withContext TcpTestResult.CONNECT_FAILED
+    // ─────────────────────────── connect (delegated) ────────────────────────────
+    /**
+     * Starts a test-before-switch attempt in the app-scoped [connection] (it survives this screen; its outcome
+     * is shown by [showAttempt]). [userInitiated] = the user asked for it: a running capture is confirmed
+     * first; automatic reconnects never prompt and are skipped instead.
+     */
+    private fun connectViaTcpFlow(host: String, port: Int, userInitiated: Boolean = true) {
+        when (connection.connect(ConnectRequest(host, port))) {
+            ConnectStart.NEEDS_CAPTURE_CONFIRMATION -> if (userInitiated) confirmCaptureStop {
+                connection.connect(ConnectRequest(host, port), confirmCaptureStop = true)
             }
-
-            runCatching { socket.soTimeout = 3000 }
-            reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
-            val deadline = System.currentTimeMillis() + 5000L
-            var sawNonNmea = false
-            while (System.currentTimeMillis() < deadline) {
-                val line = withTimeoutOrNull(1000L) { runCatching { reader.readLine() }.getOrNull() }
-                    ?: continue
-                if (line.startsWith("$")) return@withContext TcpTestResult.RECEIVING_NMEA
-                if (line.isNotEmpty()) sawNonNmea = true
-            }
-            if (sawNonNmea) TcpTestResult.RECEIVING_RTCM_OR_BIN else TcpTestResult.CONNECTED_NO_DATA
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            DevLog.d("SettingsFragment") { "TCP probe error port=$port: ${e.javaClass.simpleName}" }
-            TcpTestResult.CONNECT_FAILED
-        } finally {
-            runCatching { reader?.close() }
-            runCatching { socket?.close() }
+            ConnectStart.INVALID -> if (userInitiated) fragment.showSettingsMessage(fragment.getString(R.string.host_required))
+            ConnectStart.ALREADY_ACTIVE -> provisionalConnectedUntil = 0L
+            else -> Unit
         }
     }
 
-    /**
-     * Checks whether the receiver's HTTP API is reachable. A 200-range response on /info or
-     * /status is sufficient — the receiver is present even if no GNSS fix is available yet.
-     */
-    private suspend fun probeHttpReachable(host: String): Boolean = withContext(Dispatchers.IO) {
-        ReceiverHttpProbe.statusApiReachable(host)
+    /** "Switching receivers stops the current capture" (Phase 5); [onConfirm] runs on Switch. */
+    private fun confirmCaptureStop(onConfirm: () -> Unit) {
+        if (!fragment.isAdded) return
+        AlertDialog.Builder(fragment.requireContext())
+            .setTitle("Stop the current capture?")
+            .setMessage("Switching receivers stops the current capture. Nothing measured so far is saved.")
+            .setPositiveButton("Switch receiver") { _, _ -> onConfirm() }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
-    private fun connectViaTcpFlow(host: String, port: Int) {
-        val attemptId = ++tcpConnectAttemptId
-        tcpConnectJob?.cancel()
-        tcpConnectJob = fragment.viewLifecycleOwner.lifecycleScope.launch {
-            try {
+    /** Shows [attempt] on the current Receiver view; a finished attempt's outcome is shown once. */
+    private fun showAttempt(attempt: ConnectionAttempt) {
+        val root = contentView ?: return
+        val ctx = fragment.context ?: return
+        val statusTv = root.findViewById<TextView>(R.id.text_device_status)
+        val subTv = root.findViewById<TextView>(R.id.text_device_status_sub)
+        fun show(main: String, sub: String?, colorRes: Int) {
+            statusTv?.visibility = View.VISIBLE
+            statusTv?.text = main
+            statusTv?.setTextColor(ContextCompat.getColor(ctx, colorRes))
+            if (sub.isNullOrEmpty()) subTv?.visibility = View.GONE
+            else { subTv?.text = sub; subTv?.visibility = View.VISIBLE }
+        }
+        when (attempt) {
+            is ConnectionAttempt.Testing -> if (attempt.id > lastShownAttemptId) {
                 provisionalConnectedUntil = System.currentTimeMillis() + 8000L
-                contentView?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
-                    tv.visibility = View.VISIBLE
-                    tv.text = "Connecting…"
-                    tv.setTextColor(ContextCompat.getColor(fragment.requireContext(), android.R.color.holo_orange_dark))
-                }
-                contentView?.findViewById<TextView>(R.id.text_device_status_sub)?.visibility = View.GONE
-
-                // Run TCP/NMEA and HTTP probes in parallel.
-                val (tcpResult, httpReachable) = connectProbeOverride?.invoke(host, port) ?: coroutineScope {
-                    val tcp  = async { connectAndReadTcpNmea(host, port) }
-                    val http = async { probeHttpReachable(host) }
-                    tcp.await() to http.await()
-                }
-
-                // Stale-attempt guards — drop results from superseded or invalidated attempts.
-                if (attemptId != tcpConnectAttemptId) return@launch
-                if (!fragment.isAdded || fragment.view == null) return@launch
-                if (settingsRepo.locationSource.first() != LocationSourceType.EXTERNAL) return@launch
-
-                receiverHttpReachable = httpReachable
-
-                val tcpConnected = tcpResult != TcpTestResult.CONNECT_FAILED
-                val receiverPresent = tcpConnected || httpReachable
-
-                if (receiverPresent) {
-                    // Persist connection details BEFORE activating the external provider. The
-                    // external adapter reads host/port from SettingsRepository the moment the
-                    // switchboard rebinds to it, so activating first could let it come up against
-                    // stale or blank TCP settings. Order: conn type → host/port → selected source
-                    // → activate provider.
-                    settingsRepo.setExternalConnType(ExternalConnectionType.TCP)
-                    settingsRepo.setExternalTcp(host, port)
-                    settingsRepo.setLocationSource(LocationSourceType.EXTERNAL)
-                    // No host: the Setting lines already record the saved values.
-                    DiagnosticsLogger.i(
-                        DiagTags.GNSS, "External receiver settings saved port=$port attempt=$attemptId tcp=$tcpResult http=$httpReachable"
-                    )
-
-                    // Final stale-attempt guard before flipping the live provider. If the user
-                    // switched back to Internal while the probe/persist was in flight, the attempt
-                    // id has advanced — abort so this old attempt can't activate External after the
-                    // user already returned to Internal.
-                    if (attemptId != tcpConnectAttemptId) {
-                        DiagnosticsLogger.i(
-                            DiagTags.GNSS, "External receiver connect attempt ignored: superseded before activation attempt=$attemptId"
-                        )
-                        return@launch
-                    }
-
-                    // Activate via the coordinator (the single entry point for source actions).
-                    // Persistence above already completed, so ordering is preserved.
-                    gnssSourceCoordinator.activateExternalTcpProvider(host, port, reason = "settings-connect #$attemptId")
-                    provisionalConnectedUntil = System.currentTimeMillis() + 8000L
+                show("Connecting…", null, android.R.color.holo_orange_dark)
+            }
+            is ConnectionAttempt.Succeeded -> if (attempt.id > lastShownAttemptId) {
+                lastShownAttemptId = attempt.id
+                receiverHttpReachable = attempt.httpReachable == true
+                provisionalConnectedUntil = System.currentTimeMillis() + 8000L
+                selectedDevice = attempt.target.host to attempt.target.port
+                updateDeviceBox()
+                show("Receiver connected", "Receiving NMEA", android.R.color.holo_green_dark)
+                resolveNameAfterConnect(attempt.target.host, attempt.target.port, root)
+            }
+            is ConnectionAttempt.Failed -> if (attempt.id > lastShownAttemptId) {
+                lastShownAttemptId = attempt.id
+                provisionalConnectedUntil = 0L
+                // Nothing was saved: the device box goes back to the saved receiver (if any).
+                val saved = connection.state.value.savedTarget
+                if (selectedDevice != saved?.let { it.host to it.port }) {
+                    selectedDevice = saved?.let { it.host to it.port }
+                    selectedDeviceLabel = saved?.toString()
+                    selectedDeviceName = saved?.host
                     updateDeviceBox()
+                }
+                show("Receiver unavailable", attempt.error.message, android.R.color.holo_red_dark)
+                fragment.showSettingsMessage(attempt.error.message + " Nothing was changed.", Snackbar.LENGTH_LONG)
+            }
+            is ConnectionAttempt.Switching, ConnectionAttempt.Idle -> Unit
+        }
+    }
 
-                    val (statusText, statusSubText, statusColor) = when (tcpResult) {
-                        TcpTestResult.RECEIVING_NMEA ->
-                            Triple("Receiver connected", "Receiving NMEA", android.R.color.holo_green_dark)
-                        TcpTestResult.RECEIVING_RTCM_OR_BIN ->
-                            Triple("Receiver connected", "Stream is not NMEA", android.R.color.holo_orange_dark)
-                        TcpTestResult.CONNECTED_NO_DATA ->
-                            Triple("Receiver reachable", "Waiting for GNSS data", android.R.color.holo_orange_light)
-                        TcpTestResult.CONNECT_FAILED ->
-                            // TCP failed but HTTP succeeded — receiver is present but NMEA port unavailable.
-                            Triple("Receiver reachable", "NMEA stream unavailable", android.R.color.holo_orange_light)
+    /** After a successful connect: the receiver's mDNS name (no HTTP request) as its display name, as before. */
+    private fun resolveNameAfterConnect(host: String, port: Int, view: View) {
+        if (selectedDeviceName != null && selectedDeviceName != host) return
+        fragment.lifecycleScope.launch {
+            try {
+                val resolved = ReachNameResolver.resolveReachName(fragment.requireContext(), host)
+                if (!resolved.isNullOrBlank() && fragment.isAdded && currentDeviceInfo == null && isShown(view)) {
+                    selectedDeviceName = resolved
+                    saveScope.launch {
+                        runCatching { settingsRepo.setExternalTcp(host, port, resolved) }
+                            .onFailure { settingsError("Settings save failed section=receiverName", it) }
                     }
-                    contentView?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
-                        tv.visibility = View.VISIBLE
-                        tv.text = statusText
-                        tv.setTextColor(ContextCompat.getColor(fragment.requireContext(), statusColor))
-                    }
-                    contentView?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
-                        tv.text = statusSubText
-                        tv.visibility = View.VISIBLE
-                    }
-
-                    if (selectedDeviceName == null || selectedDeviceName == host) {
-                        launch {
-                            try {
-                                val resolved = ReachNameResolver.resolveReachName(fragment.requireContext(), host)
-                                if (attemptId != tcpConnectAttemptId) return@launch
-                                if (!resolved.isNullOrBlank() && fragment.isAdded && currentDeviceInfo == null) {
-                                    selectedDeviceName = resolved
-                                    settingsRepo.setExternalTcp(host, port, resolved)
-                                    updateDeviceBox()
-                                }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                settingsWarn("External receiver name lookup failed", e, DiagTags.RECEIVER)
-                            }
-                        }
-                    }
-                } else {
-                    // Both TCP and HTTP failed — receiver unreachable.
-                    DiagnosticsLogger.w(DiagTags.RECEIVER,
-                        "External receiver unavailable: connect probe failed tcp=$tcpResult http=$httpReachable port=$port attempt=$attemptId")
-                    contentView?.findViewById<TextView>(R.id.text_device_status)?.let { tv ->
-                        tv.visibility = View.VISIBLE
-                        tv.text = "Receiver unavailable"
-                        tv.setTextColor(ContextCompat.getColor(fragment.requireContext(), android.R.color.holo_red_dark))
-                    }
-                    contentView?.findViewById<TextView>(R.id.text_device_status_sub)?.let { tv ->
-                        tv.text = "Check IP or Wi-Fi"
-                        tv.visibility = View.VISIBLE
-                    }
+                    updateDeviceBox()
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                if (attemptId == tcpConnectAttemptId) {
-                    settingsWarn("External receiver connect probe failed port=$port attempt=$attemptId", e, DiagTags.RECEIVER)
-                }
+                settingsWarn("External receiver name lookup failed", e, DiagTags.RECEIVER)
             }
         }
     }
@@ -1436,7 +1359,7 @@ internal class ReceiverSettingsController(
         return sb.toString()
     }
 
-    private fun testRs2Tcp(host: String, port: Int): Pair<TcpTestResult, ByteArray?> {
+    private fun testRs2Tcp(host: String, port: Int): Pair<TcpProbeResult, ByteArray?> {
         var socket: Socket? = null
         return try {
             socket = Socket().apply {
@@ -1460,16 +1383,16 @@ internal class ReceiverSettingsController(
                 }
             }
             val data = baos.toByteArray()
-            if (data.isEmpty()) return TcpTestResult.CONNECTED_NO_DATA to null
+            if (data.isEmpty()) return TcpProbeResult.CONNECTED_NO_DATA to null
             // Heuristics: NMEA if an ASCII '$' starts a line
             val ascii = runCatching { data.toString(Charsets.US_ASCII) }.getOrNull()
             if (ascii != null) {
                 val hasNmea = ascii.lineSequence().any { it.startsWith("$") }
-                if (hasNmea) return TcpTestResult.RECEIVING_NMEA to data
+                if (hasNmea) return TcpProbeResult.RECEIVING_NMEA to data
             }
-            TcpTestResult.RECEIVING_RTCM_OR_BIN to data
+            TcpProbeResult.RECEIVING_RTCM_OR_BIN to data
         } catch (_: Exception) {
-            TcpTestResult.CONNECT_FAILED to null
+            TcpProbeResult.CONNECT_FAILED to null
         } finally {
             runCatching { socket?.close() }
         }
