@@ -46,6 +46,35 @@ internal class FakeReceiverSettings(
         write("tcp=$host:$port"); this.host.value = host; this.port.value = port
         if (name.isNotBlank()) this.name.value = name
     }
+    /** [saveExternalTcpReceiver] transactions applied. */
+    var receiverCommits = 0
+    /** Makes the next [saveExternalTcpReceiver] fail (like a DataStore IOException): nothing is applied. */
+    var failNextCommit = false
+
+    /**
+     * One transaction, like SettingsRepositoryImpl: logs the same entries as the separate writes (connType, tcp,
+     * profile, source) and applies them all, or nothing when [failNextCommit].
+     */
+    override suspend fun saveExternalTcpReceiver(
+        host: String, port: Int, name: String, profile: ExternalReceiverProfile?, origin: ProfileOrigin,
+        source: LocationSourceType,
+    ) {
+        if (failNextCommit) {
+            failNextCommit = false
+            throw java.io.IOException("simulated DataStore write failure")
+        }
+        listOfNotNull("connType=TCP", "tcp=$host:$port", profile?.let { "profile=${it.prefKey}/${origin.prefKey}" }, "source=$source")
+            .forEach(::write)
+        val sameEndpoint = this.host.value?.trim().equals(host.trim(), ignoreCase = true) && this.port.value == port
+        connType.value = ExternalConnectionType.TCP
+        this.host.value = host
+        this.port.value = port
+        if (name.isNotBlank()) this.name.value = name else if (!sameEndpoint) this.name.value = ""
+        if (profile != null) { this.profile.value = profile; this.origin.value = origin }
+        this.source.value = source
+        receiverCommits++
+    }
+
     override suspend fun clearExternalTcp() { write("clearTcp"); host.value = null; port.value = null; name.value = null }
     override val externalReceiverProfile: Flow<ExternalReceiverProfile> get() = profile
     override suspend fun setExternalReceiverProfile(profile: ExternalReceiverProfile) =

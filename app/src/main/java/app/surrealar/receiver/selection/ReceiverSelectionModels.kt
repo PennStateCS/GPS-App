@@ -61,6 +61,12 @@ sealed class ConnectError(val message: String) {
     /** The port sends data that is not NMEA (RTCM or binary). */
     data class NotNmea(val port: Int) :
         ConnectError("Port $port sends data that is not NMEA (RTCM or binary). Choose the NMEA output port.")
+    /**
+     * A capture started while the receiver was being tested: nothing was saved or switched. Connect again and confirm
+     * that switching stops the capture.
+     */
+    data object CaptureStarted :
+        ConnectError("A capture started during the test, so the receiver was not switched. Connect again to stop the capture and switch.")
     /** Saving the settings or another unexpected step failed. */
     data class Unexpected(val detail: String) : ConnectError("Couldn't connect: $detail")
 }

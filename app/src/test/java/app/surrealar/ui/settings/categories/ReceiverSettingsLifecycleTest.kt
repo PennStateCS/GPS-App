@@ -258,7 +258,11 @@ class ReceiverSettingsLifecycleTest {
     }
 
     private fun externalSourceWrites(repo: SettingsRepository) = Mockito.mockingDetails(repo).invocations
-        .count { it.method.name == "setLocationSource" && it.arguments.firstOrNull() == LocationSourceType.EXTERNAL }
+        .count {
+            (it.method.name == "setLocationSource" && it.arguments.firstOrNull() == LocationSourceType.EXTERNAL) ||
+                // Phase 5 review fix M5: a switch saves the source inside the one-transaction receiver commit.
+                (it.method.name == "saveExternalTcpReceiver" && LocationSourceType.EXTERNAL in it.arguments)
+        }
 
     @Test fun `selecting tablet GNSS while an External attempt is in progress keeps Internal active`() {
         val c = controller()

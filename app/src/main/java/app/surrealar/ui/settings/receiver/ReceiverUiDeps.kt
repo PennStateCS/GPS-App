@@ -83,5 +83,6 @@ internal object ReceiverUi {
         is ConnectError.NoData -> context.getString(R.string.receiver_reason_no_data, e.port)
         is ConnectError.NotNmea -> context.getString(R.string.receiver_reason_not_nmea, e.port)
         is ConnectError.Unexpected -> context.getString(R.string.receiver_reason_error)
+        ConnectError.CaptureStarted -> context.getString(R.string.receiver_reason_capture_started)
     }
 }

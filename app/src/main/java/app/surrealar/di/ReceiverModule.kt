@@ -78,6 +78,7 @@ object ReceiverModule {
             deviceInfo = receiverDevices.deviceInfo,
             captureActive = captureTracker.active,
             discovery = discovery,
+            restartDevice = receiverDevices::restartDevice,
         )
 
     /**

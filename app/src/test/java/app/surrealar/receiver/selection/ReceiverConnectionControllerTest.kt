@@ -9,7 +9,9 @@ import app.surrealar.gnss.source.SourceSettings.ProviderChoice
 import app.surrealar.settings.model.ExternalReceiverProfile
 import app.surrealar.settings.model.ProfileOrigin
 import io.github.pennstatecs.geokit.gnss.link.ReconnectingNmeaAdapter.ConnectionState
+import io.github.pennstatecs.geokit.gnss.receiver.DiscoveredReceiver
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDeviceInfo
+import io.github.pennstatecs.geokit.gnss.receiver.ReceiverDiscovery
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -63,11 +65,16 @@ class ReceiverConnectionControllerTest {
 
     private val probe = FakeProbe()
 
-    private fun TestScope.controller() = ReceiverConnectionController(
+    /** ReceiverDeviceManager.restartDevice calls (the fake does not clear [deviceInfo]: a slow restart). */
+    private var restarts = 0
+
+    private fun TestScope.newController(discovery: ReceiverDiscovery? = null) = ReceiverConnectionController(
         settings = settings, coordinator = coordinator, scope = backgroundScope, probe = probe,
         activeProvider = sourceSettings.activeProvider, externalLink = link, deviceInfo = deviceInfo,
-        captureActive = capture, clockMs = { 1_000L },
-    ).also { runCurrent() }
+        captureActive = capture, discovery = discovery, clockMs = { 1_000L }, restartDevice = { restarts++ },
+    )
+
+    private fun TestScope.controller(discovery: ReceiverDiscovery? = null) = newController(discovery).also { runCurrent() }
 
     /** A working receiver P (192.168.42.1:9001) saved and active. */
     private fun TestScope.workingExternal() {
@@ -332,7 +339,10 @@ class ReceiverConnectionControllerTest {
 
         assertEquals(ExternalReceiverProfile.REACH_RS4, settings.profile.value)
         assertEquals(ProfileOrigin.RECEIVER, settings.origin.value)
-        assertEquals(listOf("profile=reach_rs4/receiver"), settings.writes.toList())
+        assertEquals(listOf("profile=reach_rs4/receiver"), settings.writes.filter { it.startsWith("profile=") })
+        // Phase 5 fix: the receiver's own name also fills the blank saved name (host/port unchanged).
+        assertEquals(listOf("tcp=192.168.42.1:9001"), settings.writes.filter { it.startsWith("tcp=") })
+        assertEquals("reach-base", settings.name.value)
         assertEquals("192.168.42.1", settings.host.value)
         assertEquals(9001, settings.port.value)
         assertEquals(ReceiverSelectionEvent.ProfileAutoApplied(ExternalReceiverProfile.REACH_RS2_PLUS, ExternalReceiverProfile.REACH_RS4, "Reach RS4"),
@@ -457,5 +467,188 @@ class ReceiverConnectionControllerTest {
         assertEquals("invalid input never probes", 1, probe.tcpCalls)
         assertEquals(emptyList<String>(), settings.writes.toList())
         assertEquals(ProviderChoice.INTERNAL, provider.value)
+    }
+
+    // ── review fixes (M2–M5, L8, L9, saved name) ────────────────────────────────
+
+    @Test fun `a capture that starts during the probe stops the switch until confirmed`() = runTest {
+        workingExternal()
+        val c = controller()
+        val r = probe.next()
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        runCurrent()
+        capture.value = true                     // the user starts a capture while the test runs
+        r.complete(TcpProbeResult.RECEIVING_NMEA)
+        runCurrent()
+
+        assertEquals(ConnectError.CaptureStarted, (c.state.value.attempt as ConnectionAttempt.Failed).error)
+        assertWorkingExternalUnchanged()
+        assertEquals(0, settings.recentWrites)
+
+        assertEquals(ConnectStart.NEEDS_CAPTURE_CONFIRMATION, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001), confirmCaptureStop = true))
+        runCurrent()
+        assertEquals("192.168.42.7", settings.host.value)
+        assertTrue(c.state.value.attempt is ConnectionAttempt.Succeeded)
+    }
+
+    @Test fun `connect reads live values right after construction`() = runTest {
+        workingExternal()
+        capture.value = true
+        val c = newController()                  // no runCurrent: none of the state collectors has run yet
+        assertEquals(ConnectStart.ALREADY_ACTIVE, c.connect(ConnectRequest("192.168.42.1", 9001)))
+        assertEquals(ConnectStart.NEEDS_CAPTURE_CONFIRMATION, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        assertEquals(0, probe.tcpCalls)
+    }
+
+    @Test fun `the previous unit's report at the same address never auto-applies after a switch`() = runTest {
+        settings.origin.value = ProfileOrigin.DEFAULT
+        settings.host.value = "192.168.42.1"; settings.port.value = 9001
+        // Unit A (an RS4) was identified at the hotspot address; its report is still on hand.
+        deviceInfo.value = info("Reach RS4", serial = "SN-A")
+        val c = controller()
+        c.connect(ConnectRequest("192.168.42.1", 9001))     // unit B, same hotspot IP
+        runCurrent()
+
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+        assertEquals(1, restarts)
+        assertNull("the old report identifies nothing", c.state.value.identity)
+        assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
+        assertTrue(settings.writes.none { it.startsWith("profile=") })
+
+        // A link reconnect fences again; still the old report: nothing.
+        link.value = ConnectionState.RECONNECTING; runCurrent()
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertEquals(2, restarts)
+        assertNull(c.state.value.identity)
+        assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
+
+        // B's own fresh report identifies it.
+        deviceInfo.value = info("Reach RS2+", serial = "SN-B")
+        runCurrent()
+        assertEquals("SN-B", c.state.value.identity!!.serial)
+        assertEquals(ExternalReceiverProfile.REACH_RS2_PLUS, settings.profile.value)
+    }
+
+    @Test fun `a link reconnect waits for a fresh report before identifying`() = runTest {
+        workingExternal()
+        settings.origin.value = ProfileOrigin.USER
+        deviceInfo.value = info("Reach RS4 Pro")
+        val c = controller()
+        assertTrue(c.state.value.mismatch != null)
+        link.value = ConnectionState.RECONNECTING; runCurrent()
+        link.value = ConnectionState.CONNECTED; runCurrent()
+        assertNull(c.state.value.identity)
+        assertNull(c.state.value.mismatch)
+        deviceInfo.value = null; runCurrent()             // the restarted device clears and polls again
+        deviceInfo.value = info("Reach RS4 Pro"); runCurrent()
+        assertEquals(ExternalReceiverProfile.REACH_RS4_PRO, c.state.value.mismatch!!.reportedProfile)
+    }
+
+    private class FakeDiscovery : ReceiverDiscovery {
+        var calls = 0
+        override suspend fun discover(timeoutMs: Long): List<DiscoveredReceiver> {
+            calls++
+            return listOf(DiscoveredReceiver("192.168.42.1", "reach-a", nmeaPort = 9001))
+        }
+    }
+
+    @Test fun `the network scan runs only for an Emlid profile or when asked explicitly`() = runTest {
+        settings.profile.value = ExternalReceiverProfile.GENERIC_NMEA_TCP
+        val d = FakeDiscovery()
+        val c = controller(d)
+        assertEquals(false, c.scanNetwork())
+        runCurrent()
+        assertEquals("no implicit Emlid sweep for Generic NMEA", 0, d.calls)
+        assertEquals(NetworkScanState.Idle, c.state.value.scan)
+
+        assertEquals(true, c.scanNetwork(emlidScan = true))   // "Scan for Emlid receivers"
+        runCurrent()
+        assertEquals(1, d.calls)
+        assertEquals(1, (c.state.value.scan as NetworkScanState.Done).results.size)
+
+        settings.profile.value = ExternalReceiverProfile.REACH_RS4
+        runCurrent()
+        assertEquals(true, c.scanNetwork())
+        runCurrent()
+        assertEquals(2, d.calls)
+    }
+
+    @Test fun `a failed settings write leaves the previous receiver saved and active`() = runTest {
+        workingExternal()
+        settings.name.value = "Rover"
+        val c = controller()
+        settings.failNextCommit = true
+        c.connect(ConnectRequest("192.168.42.7", 9002, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP, name = "Other"))
+        runCurrent()
+
+        assertTrue((c.state.value.attempt as ConnectionAttempt.Failed).error is ConnectError.Unexpected)
+        assertWorkingExternalUnchanged()
+        assertEquals("Rover", settings.name.value)
+        assertEquals(ExternalReceiverProfile.DEFAULT, settings.profile.value)
+        assertEquals(0, settings.receiverCommits)
+        assertEquals(0, settings.recentWrites)
+    }
+
+    @Test fun `the settings of a switch are saved in one transaction`() = runTest {
+        val c = controller()
+        c.connect(ConnectRequest("10.0.0.5", 9000, profile = ExternalReceiverProfile.GENERIC_NMEA_TCP))
+        runCurrent()
+        assertEquals(1, settings.receiverCommits)
+    }
+
+    @Test fun `a repeat connect while the new receiver is still connecting does not probe again`() = runTest {
+        val c = controller()
+        assertEquals(ConnectStart.STARTED, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        runCurrent()
+        assertTrue(c.state.value.attempt is ConnectionAttempt.Succeeded)
+        link.value = ConnectionState.CONNECTING
+        runCurrent()
+        assertEquals(ConnectStart.ALREADY_ACTIVE, c.connect(ConnectRequest("192.168.42.7", 9001)))
+        assertEquals(ConnectStart.ALREADY_ACTIVE, c.reconnectSaved())
+        assertEquals(1, probe.tcpCalls)
+        assertEquals(1, settings.receiverCommits)
+    }
+
+    @Test fun `reconnectSaved of the active but dropped receiver makes the adapter reconnect`() = runTest {
+        workingExternal()
+        link.value = ConnectionState.RECONNECTING
+        val c = controller()
+        assertEquals(ConnectStart.STARTED, c.reconnectSaved())
+        runCurrent()
+        assertEquals(1, probe.tcpCalls)
+        assertEquals(listOf("reconnect saved receiver #1"), reconnects)
+        assertEquals(ProviderChoice.EXTERNAL_TCP, provider.value)
+
+        // A plain connect to the same (active) target keeps the stream: no forced reconnect.
+        link.value = ConnectionState.ERROR
+        runCurrent()
+        c.connect(ConnectRequest("192.168.42.1", 9001))
+        runCurrent()
+        assertEquals(1, reconnects.size)
+    }
+
+    @Test fun `a reconnect keeps the saved name and a reported name fills a blank one`() = runTest {
+        workingExternal()
+        settings.name.value = "Base"
+        link.value = ConnectionState.RECONNECTING
+        val c = controller()
+        c.reconnectSaved()                                   // no name in the request
+        runCurrent()
+        assertEquals("Base", settings.name.value)
+
+        // Another receiver without a name: the old name is not carried over.
+        c.connect(ConnectRequest("192.168.42.7", 9001))
+        runCurrent()
+        assertEquals("", settings.name.value)
+        // Its own (fresh) report fills the blank name ...
+        deviceInfo.value = info("Reach RS2+", host = "192.168.42.7", serial = "SN7")
+        runCurrent()
+        assertEquals("reach-base", settings.name.value)
+        // ... but never replaces one the user entered.
+        settings.name.value = "My rover"
+        deviceInfo.value = ReceiverDeviceInfo(host = "192.168.42.7", name = "other-name", model = "Reach RS2+", firmware = "34.10", serial = "SN7")
+        runCurrent()
+        assertEquals("My rover", settings.name.value)
     }
 }

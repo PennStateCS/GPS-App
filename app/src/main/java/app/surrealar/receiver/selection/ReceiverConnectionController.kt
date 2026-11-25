@@ -82,6 +82,8 @@ class ReceiverConnectionController(
     /** Network scan for the picker (Emlid discovery); null = none. */
     private val discovery: ReceiverDiscovery? = null,
     private val clockMs: () -> Long = System::currentTimeMillis,
+    /** ReceiverDeviceManager.restartDevice: re-polls the device info after a switch / reconnect (null: none). */
+    private val restartDevice: (() -> Unit)? = null,
 ) {
     private val _state = MutableStateFlow(ReceiverSelectionState())
     /** Everything receiver selection shows; see [ReceiverSelectionState]. */
@@ -106,6 +108,8 @@ class ReceiverConnectionController(
     private val dismissed = java.util.Collections.synchronizedSet(HashSet<String>())
     /** The identity an automatic profile change was last made (or attempted) for: at most once per report. */
     @Volatile private var autoAppliedKey: String? = null
+    /** host|name the saved name was last filled from (at most once per report). */
+    @Volatile private var nameFillKey: String? = null
 
     init {
         observe("locationSource", { settings.locationSource }) { v -> _state.update { it.copy(selectedSource = v) } }
@@ -116,10 +120,42 @@ class ReceiverConnectionController(
         observe("externalReceiverProfileOrigin", { settings.externalReceiverProfileOrigin }) { v -> _state.update { it.copy(profileOrigin = v) } }
         observe("externalRecentReceivers", { settings.externalRecentReceivers }) { v -> _state.update { it.copy(recent = v) } }
         observe("activeProvider", { activeProvider }) { v -> _state.update { it.copy(activeProvider = v) } }
-        externalLink?.let { link -> observe("externalLink", { link }) { v -> _state.update { it.copy(link = v) } } }
+        externalLink?.let { link ->
+            observe("externalLink", { link }) { v ->
+                val previous = _state.value.link
+                _state.update { it.copy(link = v) }
+                // The link (re)connected: the receiver at that address may be another unit (same hotspot IP).
+                if (v == ReconnectingNmeaAdapter.ConnectionState.CONNECTED && previous != null &&
+                    previous != ReconnectingNmeaAdapter.ConnectionState.CONNECTED) fenceIdentity("link connected")
+            }
+        }
         observe("captureActive", { captureActive }) { v -> _state.update { it.copy(captureActive = v) } }
         observe("deviceInfo", { deviceInfo }) { _ -> }
     }
+
+    /**
+     * The device info that was current at the last switch or link (re)connect: it may describe the previous unit at
+     * the same address (every Reach hotspot is 192.168.42.1), so it never identifies the receiver. Only a report that
+     * arrives afterwards does (the device is restarted at the fence, so a fresh report follows at once).
+     */
+    @Volatile private var staleInfo: ReceiverDeviceInfo? = null
+
+    private fun fenceIdentity(reason: String) {
+        val current = deviceInfo.value
+        staleInfo = current
+        autoAppliedKey = null
+        nameFillKey = null
+        if (current != null) DiagnosticsLogger.d(DiagTags.RECEIVER) { "Receiver identity waits for a fresh device report reason=\"$reason\"" }
+        reevaluateIdentity()
+        try {
+            restartDevice?.invoke()
+        } catch (e: Exception) {
+            DiagnosticsLogger.w(DiagTags.RECEIVER, "Receiver device restart failed", e)
+        }
+    }
+
+    /** [deviceInfo] unless it is the report fenced off by [fenceIdentity]. */
+    private fun trustedInfo(): ReceiverDeviceInfo? = deviceInfo.value?.takeUnless { it === staleInfo }
 
     // Host and port arrive on separate flows.
     @Volatile private var savedHost: String? = null
@@ -158,35 +194,52 @@ class ReceiverConnectionController(
      * KDoc). Returns at once; follow [state] for the outcome. [confirmCaptureStop] = the user confirmed that switching
      * stops the running capture.
      */
-    fun connect(request: ConnectRequest, confirmCaptureStop: Boolean = false): ConnectStart {
+    fun connect(request: ConnectRequest, confirmCaptureStop: Boolean = false): ConnectStart =
+        start(request, confirmCaptureStop, forceReconnect = false)
+
+    /**
+     * True when [target] is the receiver the external provider is streaming from right now. Read live (the active
+     * provider and the coordinator's target), never from [state], whose copies start at defaults until collected.
+     */
+    private fun isActiveExternal(target: ReceiverTarget, request: ConnectRequest): Boolean {
+        if (activeProvider.value != ProviderChoice.EXTERNAL_TCP) return false
+        val active = coordinator.activeExternalTarget
+        val sameTarget = if (active != null) active.first.trim().equals(target.host, ignoreCase = true) && active.second == target.port
+            else _state.value.savedTarget == target
+        return sameTarget && (request.profile == null || request.profile == _state.value.profile)
+    }
+
+    private fun start(request: ConnectRequest, confirmCaptureStop: Boolean, forceReconnect: Boolean): ConnectStart {
         val host = request.host.trim()
         if (host.isEmpty() || request.port !in 1..65535) return ConnectStart.INVALID
         val target = ReceiverTarget(host, request.port)
         synchronized(lock) {
-            val s = _state.value
-            when (val a = s.attempt) {
-                is ConnectionAttempt.Testing -> if (a.target == target && a.profile == request.profile) return ConnectStart.DUPLICATE_IGNORED
-                is ConnectionAttempt.Switching -> if (a.target == target) return ConnectStart.DUPLICATE_IGNORED
+            val attempt = _state.value.attempt
+            when (attempt) {
+                is ConnectionAttempt.Testing -> if (attempt.target == target && attempt.profile == request.profile) return ConnectStart.DUPLICATE_IGNORED
+                is ConnectionAttempt.Switching -> if (attempt.target == target) return ConnectStart.DUPLICATE_IGNORED
                 else -> Unit
             }
-            val externalActive = s.activeProvider == ProviderChoice.EXTERNAL_TCP && s.selectedSource == LocationSourceType.EXTERNAL
-            val sameTarget = s.savedTarget == target && (request.profile == null || request.profile == s.profile)
-            if (s.captureActive && !(externalActive && sameTarget) && !confirmCaptureStop) return ConnectStart.NEEDS_CAPTURE_CONFIRMATION
-            if (externalActive && sameTarget && s.link == ReconnectingNmeaAdapter.ConnectionState.CONNECTED) {
-                return ConnectStart.ALREADY_ACTIVE
-            }
+            val active = isActiveExternal(target, request)
+            val link = externalLink?.value
+            if (captureActive.value && !active && !confirmCaptureStop) return ConnectStart.NEEDS_CAPTURE_CONFIRMATION
+            if (active && link == ReconnectingNmeaAdapter.ConnectionState.CONNECTED) return ConnectStart.ALREADY_ACTIVE
+            // Just switched to it and the adapter is still connecting: a repeat tap must not probe again.
+            if (active && attempt is ConnectionAttempt.Succeeded && attempt.target == target &&
+                (link == null || link == ReconnectingNmeaAdapter.ConnectionState.CONNECTING)) return ConnectStart.ALREADY_ACTIVE
             val id = ++attemptSeq
             job?.cancel()
             _state.update { it.copy(attempt = ConnectionAttempt.Testing(id, target, request.profile)) }
             DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver test started port=${target.port} attempt=$id")
-            job = scope.launch { runAttempt(id, target, request) }
+            job = scope.launch { runAttempt(id, target, request, confirmCaptureStop, forceReconnect) }
         }
         return ConnectStart.STARTED
     }
 
     /**
      * Reconnects the saved External TCP receiver (test before switch, like [connect]); [ConnectStart.NOTHING_SAVED]
-     * when the saved source is not External TCP or no host/port is saved.
+     * when the saved source is not External TCP or no host/port is saved. When that receiver is already the active
+     * target (but not streaming), a successful test also makes the external adapter reconnect now.
      */
     suspend fun reconnectSaved(confirmCaptureStop: Boolean = false): ConnectStart {
         val source = read("locationSource") { settings.locationSource.first() }
@@ -196,12 +249,12 @@ class ReceiverConnectionController(
         if (source != LocationSourceType.EXTERNAL || type != ExternalConnectionType.TCP || host.isNullOrBlank() || port == null) {
             return ConnectStart.NOTHING_SAVED
         }
-        return connect(ConnectRequest(host, port), confirmCaptureStop)
+        return start(ConnectRequest(host, port), confirmCaptureStop, forceReconnect = true)
     }
 
     private fun isCurrent(id: Int) = synchronized(lock) { id == attemptSeq }
 
-    private suspend fun runAttempt(id: Int, target: ReceiverTarget, request: ConnectRequest) {
+    private suspend fun runAttempt(id: Int, target: ReceiverTarget, request: ConnectRequest, confirmed: Boolean, forceReconnect: Boolean) {
         try {
             // The vendor decides whether the Emlid HTTP API may be asked: an unreadable profile asks nothing.
             val storedProfile = read("externalReceiverProfile") { settings.externalReceiverProfile.first() }
@@ -227,7 +280,7 @@ class ReceiverConnectionController(
                 finish(id, ConnectionAttempt.Failed(id, target, error))
                 return
             }
-            commit(id, target, request, storedProfile, http)
+            commit(id, target, request, storedProfile, http, confirmed, forceReconnect)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -278,29 +331,53 @@ class ReceiverConnectionController(
         }
     }
 
-    /** Saves [target] and activates it, unless the attempt was superseded before it got here. */
-    private suspend fun commit(id: Int, target: ReceiverTarget, request: ConnectRequest, storedProfile: ExternalReceiverProfile?, http: Boolean?) {
+    /**
+     * Saves [target] and activates it, unless the attempt was superseded before it got here, or a capture started
+     * during the test that the user has not confirmed stopping ([ConnectError.CaptureStarted]: nothing saved).
+     * The settings are written in one transaction ([SettingsRepository.saveExternalTcpReceiver]): a failed write
+     * leaves the previous receiver saved and active.
+     */
+    private suspend fun commit(
+        id: Int, target: ReceiverTarget, request: ConnectRequest, storedProfile: ExternalReceiverProfile?, http: Boolean?,
+        confirmed: Boolean, forceReconnect: Boolean,
+    ) {
         switchLock.withLock {
             synchronized(lock) {
                 if (id != attemptSeq) {
                     DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver switch ignored: superseded before saving attempt=$id")
                     return
                 }
+                // Re-checked live: a capture may have started while the probe ran.
+                if (captureActive.value && !confirmed && !isActiveExternal(target, request)) {
+                    DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver switch not made: a capture started during the test attempt=$id")
+                    _state.update { it.copy(attempt = ConnectionAttempt.Failed(id, target, ConnectError.CaptureStarted)) }
+                    return
+                }
                 _state.update { it.copy(attempt = ConnectionAttempt.Switching(id, target)) }
             }
             // Committed: finish saving even if a newer request cancels this job meanwhile (no half-saved receiver).
             val activated = withContext(NonCancellable) {
-                // Order (GnssSourceCoordinator): connection type → host/port → selected source → activate. The
-                // profile the user picked for this connection is saved before the source.
-                settings.setExternalConnType(ExternalConnectionType.TCP)
-                settings.setExternalTcp(target.host, target.port, request.name.trim())
+                // One transaction: connection type, host/port/name, the profile picked for this connection (as the
+                // user's), and the selected source; then activate (GnssSourceCoordinator order).
                 val profile = request.profile
-                if (profile != null && profile != storedProfile) settings.setExternalReceiverProfile(profile, ProfileOrigin.USER)
-                settings.setLocationSource(LocationSourceType.EXTERNAL)
+                settings.saveExternalTcpReceiver(
+                    host = target.host, port = target.port, name = request.name.trim(),
+                    profile = profile?.takeIf { it != storedProfile }, origin = ProfileOrigin.USER,
+                    source = LocationSourceType.EXTERNAL,
+                )
                 DiagnosticsLogger.i(DiagTags.GNSS, "External receiver settings saved port=${target.port} attempt=$id http=${http ?: "not asked"}")
                 val activate = synchronized(lock) {
                     if (internalSeq > id) false
-                    else { coordinator.activateExternalTcpProvider(target.host, target.port, reason = "settings-connect #$id"); true }
+                    else {
+                        // The device info on hand may be the previous unit's (same address): wait for a fresh one.
+                        fenceIdentity("receiver switched")
+                        // Reconnect of the receiver that is already the active target: activating it again keeps the
+                        // (dead) stream, so the adapter is told to reconnect.
+                        val sameActive = forceReconnect && isActiveExternal(target, request)
+                        coordinator.activateExternalTcpProvider(target.host, target.port, reason = "settings-connect #$id")
+                        if (sameActive) coordinator.reconnectExternalTcpProvider("reconnect saved receiver #$id")
+                        true
+                    }
                 }
                 if (activate) rememberRecent(target, (profile ?: storedProfile)?.prefKey, request.name)
                 activate
@@ -382,13 +459,14 @@ class ReceiverConnectionController(
     private fun reevaluateIdentity() {
         val s = _state.value
         val identity = ReceiverIdentityRules.identify(
-            deviceInfo.value, s.savedTarget?.host,
-            externalActive = s.activeProvider == ProviderChoice.EXTERNAL_TCP,
+            trustedInfo(), s.savedTarget?.host,
+            externalActive = activeProvider.value == ProviderChoice.EXTERNAL_TCP,
         )
-        val decision = ReceiverIdentityRules.decide(identity, s.profile, s.profileOrigin, s.captureActive, dismissed.toSet())
+        val decision = ReceiverIdentityRules.decide(identity, s.profile, s.profileOrigin, captureActive.value, dismissed.toSet())
         val mismatch = (decision as? ReceiverIdentityRules.Decision.Mismatch)?.mismatch
         if (s.identity != identity || s.mismatch != mismatch) _state.update { it.copy(identity = identity, mismatch = mismatch) }
         if (identity != null && identity != s.identity) updateRecentIdentity(identity, s)
+        if (identity != null && s.savedName.isNullOrBlank()) fillSavedName(identity)
         if (decision is ReceiverIdentityRules.Decision.AutoApply) autoApply(identity!!, decision.profile)
     }
 
@@ -402,8 +480,10 @@ class ReceiverConnectionController(
                 val origin = read("externalReceiverProfileOrigin") { settings.externalReceiverProfileOrigin.first() }
                 val current = read("externalReceiverProfile") { settings.externalReceiverProfile.first() }
                 val host = read("externalTcpHost") { settings.externalTcpHost.first() }
+                // The report must still be a fresh one for the saved host (not fenced off by a switch meanwhile).
+                val fresh = ReceiverIdentityRules.identify(trustedInfo(), host, activeProvider.value == ProviderChoice.EXTERNAL_TCP)
                 val again = if (origin == null || current == null) null else ReceiverIdentityRules.decide(
-                    identity.takeIf { host?.trim().equals(it.host, ignoreCase = true) }, current, origin, captureActive.value)
+                    fresh?.takeIf { it.reportedModel == identity.reportedModel }, current, origin, captureActive.value)
                 if (origin == null || current == null || again != ReceiverIdentityRules.Decision.AutoApply(profile)) {
                     // Not applied now (user choice, capture, other receiver): the next state change decides again.
                     autoAppliedKey = null
@@ -429,7 +509,7 @@ class ReceiverConnectionController(
      */
     fun applyReportedProfile(confirmCaptureStop: Boolean = false): ApplyProfileResult {
         val m = _state.value.mismatch ?: return ApplyProfileResult.NO_MISMATCH
-        if (_state.value.captureActive && !confirmCaptureStop) return ApplyProfileResult.NEEDS_CAPTURE_CONFIRMATION
+        if (captureActive.value && !confirmCaptureStop) return ApplyProfileResult.NEEDS_CAPTURE_CONFIRMATION
         scope.launch {
             switchLock.withLock {
                 try {
@@ -506,6 +586,36 @@ class ReceiverConnectionController(
         }
     }
 
+    /**
+     * The receiver's own name (a fresh, verified report for the saved host) becomes the saved name when none is
+     * stored. A stored name (entered by the user, or reported before) is never overwritten.
+     */
+    private fun fillSavedName(identity: ReceiverIdentity) {
+        val reported = identity.name?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        if (!_state.value.savedName.isNullOrBlank()) return
+        val key = "${identity.host.lowercase(java.util.Locale.ROOT)}|$reported"
+        if (nameFillKey == key) return
+        nameFillKey = key
+        scope.launch {
+            switchLock.withLock {
+                try {
+                    val host = read("externalTcpHost") { settings.externalTcpHost.first() }?.trim() ?: return@withLock
+                    val port = read("externalTcpPort") { settings.externalTcpPort.first() } ?: return@withLock
+                    val stored = read("externalTcpName") { settings.externalTcpName.first() }
+                    if (!stored.isNullOrBlank() || !host.equals(identity.host, ignoreCase = true)) return@withLock
+                    // Still this receiver's report (not fenced off by a switch meanwhile)?
+                    if (trustedInfo()?.name?.trim() != reported) return@withLock
+                    settings.setExternalTcp(host, port, reported)
+                    DiagnosticsLogger.i(DiagTags.RECEIVER, "External receiver name saved from the receiver's report")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    DiagnosticsLogger.w(DiagTags.RECEIVER, "External receiver name not saved", e)
+                }
+            }
+        }
+    }
+
     /** Removes one entry from the recent list (picker "Forget"). */
     suspend fun forgetRecent(receiver: RecentReceiver) {
         switchLock.withLock {
@@ -516,15 +626,24 @@ class ReceiverConnectionController(
 
     // ───────────────────────────── network scan ─────────────────────────────
 
-    /** Starts a network scan (ignored while one runs); results in [ReceiverSelectionState.scan]. */
-    fun scanNetwork(timeoutMs: Long = 10_000L) {
+    /**
+     * Starts a network scan (ignored while one runs); results in [ReceiverSelectionState.scan]. The scan is Emlid
+     * discovery (an HTTP sweep of the subnet plus mDNS), so it runs only for an Emlid profile or when the user asked
+     * for it explicitly ([emlidScan], "Scan for Emlid receivers"): a Generic NMEA user never triggers it implicitly.
+     * Returns false when nothing was started for that reason.
+     */
+    fun scanNetwork(timeoutMs: Long = 10_000L, emlidScan: Boolean = false): Boolean {
+        if (!emlidScan && _state.value.profile.vendor != ReceiverVendor.EMLID) {
+            DiagnosticsLogger.d(DiagTags.RECEIVER) { "Receiver network scan not started: not an Emlid profile and not requested" }
+            return false
+        }
         val d = discovery
         if (d == null) {
             _state.update { it.copy(scan = NetworkScanState.Failed("Network scan is not available.")) }
-            return
+            return true
         }
         synchronized(lock) {
-            if (scanJob?.isActive == true) return
+            if (scanJob?.isActive == true) return true
             _state.update { it.copy(scan = NetworkScanState.Scanning) }
             scanJob = scope.launch {
                 try {
@@ -543,6 +662,7 @@ class ReceiverConnectionController(
                 }
             }
         }
+        return true
     }
 
     /** A settings read that logs and returns null on failure (cancellation is rethrown). */

@@ -114,7 +114,9 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
                 is PickerItem.Scanned -> row(inflater, container, item.receiver.label,
                     "${item.receiver.host}:${item.receiver.port} · ${item.receiver.description}", item.status,
                     R.drawable.ic_satellite_24) {
-                    connect(ConnectRequest(item.receiver.host, item.receiver.port))
+                    connect(ConnectRequest(item.receiver.host, item.receiver.port,
+                        // The discovered name (hostname), not the IP fallback, as the saved name.
+                        name = item.receiver.label.takeIf { it != item.receiver.host }.orEmpty()))
                 }
                 is PickerItem.Recent -> recentRow(inflater, container, item)
                 PickerItem.RecentEmpty -> (inflater.inflate(R.layout.item_receiver_picker_header, container, false) as TextView).apply {
@@ -201,7 +203,7 @@ class ReceiverPickerSheet : BottomSheetDialogFragment() {
                 if (sc.results.isEmpty()) "${getString(R.string.picker_scan_none)}\n$ago" else ago
             }
         }
-        button.setOnClickListener { deps.connection.scanNetwork() }
+        button.setOnClickListener { deps.connection.scanNetwork(emlidScan = true) }
         return v
     }
 

@@ -342,6 +342,7 @@
     <string name="receiver_reason_no_data">no data on port %1$d</string>
     <string name="receiver_reason_not_nmea">not NMEA on port %1$d</string>
     <string name="receiver_reason_error">unexpected error</string>
+    <string name="receiver_reason_capture_started">capture running</string>
     <string name="receiver_state_cd">Connection state: %1$s</string>
     <string name="receiver_announce">Receiver %1$s</string>
     <string name="receiver_fix_none">No fix</string>
