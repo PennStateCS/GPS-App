@@ -24,10 +24,17 @@ fun LinearUnit.toLengthUnit(): LengthUnit = when (this) {
     LinearUnit.INTERNATIONAL_FEET -> LengthUnit.INTERNATIONAL_FOOT
 }
 
+/**
+ * The geokit conversion engine's datum. The NSRS 2022 beta frames have none: [CoordinateConverter] computes
+ * them itself through the beta frame registry, and [CoordinateSystemSettings.forConversion] / [toOutputSystem]
+ * never hand one to the engine, so asking is a programming error (never a silent substitute).
+ */
 fun OutputDatum.toGeodeticDatum(): GeodeticDatum = when (this) {
     OutputDatum.WGS84 -> GeodeticDatum.WGS84_ITRF2014
     OutputDatum.NAD83_2011 -> GeodeticDatum.NAD83_2011
     OutputDatum.ITRF2020 -> GeodeticDatum.ITRF2020
+    OutputDatum.NATRF2022, OutputDatum.PATRF2022, OutputDatum.CATRF2022, OutputDatum.MATRF2022 ->
+        throw IllegalStateException("$label is computed by CoordinateConverter's NSRS 2022 beta path, not the engine")
 }
 
 /**
@@ -61,11 +68,13 @@ fun VerticalReference.appGeoidModel(): GeoidModelId? =
     globalGeoidModel() ?: if (this == VerticalReference.GEOID2022) GeoidModelId.GEOID2022 else null
 
 /**
- * The horizontal system to convert into. State Plane uses the saved zone, or Pennsylvania North
- * ([CoordinateSystemSettings.DEFAULT_SPCS_ZONE_EPSG]) if the saved EPSG is not a known zone.
+ * The horizontal system to convert into ([CoordinateSystemSettings.effectiveHorizontal]). State Plane uses the
+ * saved zone, or Pennsylvania North ([CoordinateSystemSettings.DEFAULT_SPCS_ZONE_EPSG]) if the saved EPSG is
+ * not a known zone. SPCS2022 (beta) is projected by [CoordinateConverter] itself; the engine is asked only for
+ * the geographic position (and heights) it starts from.
  */
-fun CoordinateSystemSettings.toTargetSystem(): TargetSystem = when (horizontal) {
-    HorizontalSystem.GEOGRAPHIC -> TargetSystem.Geographic
+fun CoordinateSystemSettings.toTargetSystem(): TargetSystem = when (effectiveHorizontal) {
+    HorizontalSystem.GEOGRAPHIC, HorizontalSystem.SPCS2022 -> TargetSystem.Geographic
     HorizontalSystem.UTM -> TargetSystem.UtmAuto
     HorizontalSystem.STATE_PLANE -> TargetSystem.StatePlane(
         if (SpcsZones.byEpsg(spcsZoneEpsg) != null) spcsZoneEpsg else CoordinateSystemSettings.DEFAULT_SPCS_ZONE_EPSG)
@@ -74,7 +83,8 @@ fun CoordinateSystemSettings.toTargetSystem(): TargetSystem = when (horizontal) 
 /** The full output system ([OutputSystem.effectiveDatum] agrees with [CoordinateSystemSettings.effectiveDatum]). */
 fun CoordinateSystemSettings.toOutputSystem(): OutputSystem = OutputSystem(
     horizontal = toTargetSystem(),
-    datum = datum.toGeodeticDatum(),
+    // A beta 2022 datum never reaches the engine (CoordinateConverter's beta path starts from WGS84 (ITRF2014)).
+    datum = (if (datum.isBeta) OutputDatum.WGS84 else datum).toGeodeticDatum(),
     unit = unit.toLengthUnit(),
     vertical = vertical.toGeoVerticalReference(),
 )

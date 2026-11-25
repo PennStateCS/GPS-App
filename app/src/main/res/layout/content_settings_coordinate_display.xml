@@ -86,6 +86,16 @@
                             android:alpha="0.7"
                             android:text="Latitude/longitude, UTM, or State Plane (SPCS83). State Plane always uses NAD83(2011)."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                        <!-- Phase 4 WP X: SPCS2022 (beta) in use, or saved while the preview is off. -->
+                        <TextView
+                            android:id="@+id/text_coord_horizontal_note"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="?attr/colorError"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:visibility="gone" />
                     </LinearLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
@@ -192,6 +202,16 @@
                             android:alpha="0.7"
                             android:text="Datum for latitude/longitude and UTM output. ITRF2020 is the 2020 frame at the coordinate epoch of each position (normally its capture time)."
                             android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                        <!-- Phase 4 WP X: a 2022 frame (beta) in use, or saved but not used. -->
+                        <TextView
+                            android:id="@+id/text_coord_datum_note"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="?attr/colorError"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:visibility="gone" />
                     </LinearLayout>
 
                     <com.google.android.material.textfield.TextInputLayout

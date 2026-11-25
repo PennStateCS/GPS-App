@@ -36,11 +36,15 @@ internal class CoordinatesSettingsController(
     private val coordinateSystemService: CoordinateSystemService,
     /** Outlives the screen so a change made as the user leaves still saves. */
     private val saveScope: CoroutineScope,
-    /** CRS registry for the SPCS2022 catalog and zone entries (tests inject a stub). */
-    private val crsRegistry: () -> io.github.pennstatecs.geokit.crs.CrsRegistry = { io.github.pennstatecs.geokit.crs.CrsRegistry.DEFAULT },
-    /** NSRS 2022 product list for a registry (tests inject stubs). */
+    /**
+     * CRS registry for the SPCS2022 catalog and zone entries, by preview state (Phase 4 WP X: geokit's default
+     * with the preview OFF, the NSRS 2022 beta registry with it ON; tests inject a stub).
+     */
+    private val crsRegistry: (preview: Boolean) -> io.github.pennstatecs.geokit.crs.CrsRegistry =
+        { app.surrealar.coords.Nsrs2022Registries.crs(it) },
+    /** NSRS 2022 product list for a registry (frames: the registry's own frame registry; tests inject stubs). */
     private val capabilities: (io.github.pennstatecs.geokit.crs.CrsRegistry) -> List<app.surrealar.coords.Nsrs2022Capability> =
-        { app.surrealar.coords.Nsrs2022Capabilities.all(crs = it) },
+        { app.surrealar.coords.Nsrs2022Capabilities.all(frames = it.frameRegistry, crs = it) },
     /** Where the SPCS2022 catalog is parsed: never the main thread. */
     private val statusDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.Default,
 ) : SettingsCategoryController {
@@ -121,12 +125,16 @@ internal class CoordinatesSettingsController(
         return view
     }
 
-    /** NSRS 2022 product status and SPCS2022 zone entries, computed once per screen off the main thread. */
+    /**
+     * NSRS 2022 product status and SPCS2022 zone entries for one preview state's registry, computed once per
+     * screen and state off the main thread.
+     */
     internal class NsrsStatus(
         val capabilities: List<app.surrealar.coords.Nsrs2022Capability>,
         val spcs2022Note: String?,
-        /** Every operational SPCS2022 zone entry (preview ON); empty today. */
+        /** Every operational SPCS2022 zone entry (preview ON: the beta registry's 953 zones). */
         val spcs2022Zones: List<ZoneOption>,
+        val registry: io.github.pennstatecs.geokit.crs.CrsRegistry,
     )
 
     /**
@@ -150,6 +158,8 @@ internal class CoordinatesSettingsController(
         val spinnerZ = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
         val zoneHint = view.findViewById<android.widget.TextView>(R.id.text_coord_zone_hint)
         val verticalNote = view.findViewById<android.widget.TextView>(R.id.text_coord_vertical_note)
+        val horizontalNote = view.findViewById<android.widget.TextView>(R.id.text_coord_horizontal_note)
+        val datumNote = view.findViewById<android.widget.TextView>(R.id.text_coord_datum_note)
         val switchPreview = view.findViewById<MaterialSwitch>(R.id.switch_coord_nsrs2022_preview)
         val previewStatus = view.findViewById<android.widget.TextView>(R.id.text_coord_nsrs2022_status)
         val previewGroups = view.findViewById<android.widget.LinearLayout>(R.id.container_coord_nsrs2022_groups)
@@ -161,6 +171,8 @@ internal class CoordinatesSettingsController(
         var suggestedZoneEpsg: Int? = null
         var suggestion: io.github.pennstatecs.geokit.projection.SpcsZoneSuggestion? = null
         var zoneNotice: String? = null
+        // SPCS2022 (beta) zones possible at the live position, computed off the main thread when SPCS2022 is chosen.
+        var spcs2022Hint: String? = null
 
         // Zone suggestion for the live fix. The fix is WGS84; the zone limits are NAD83 county lines, and
         // the ~1-2 m difference is far below their generalisation. Failure (e.g. missing resource) = no hint.
@@ -176,8 +188,9 @@ internal class CoordinatesSettingsController(
                 .onFailure { settingsError("SPCS zone check failed", it) }
                 .getOrNull()
 
-        val hs = app.surrealar.settings.model.HorizontalSystem.entries
-        val ds = app.surrealar.settings.model.OutputDatum.entries
+        // Systems and datums: beta ones (SPCS2022, the 2022 frames) only while the NSRS 2022 beta preview is on.
+        var hs = app.surrealar.settings.model.CoordinateSystemSettings().selectableHorizontals
+        var ds = app.surrealar.settings.model.CoordinateSystemSettings().selectableDatums
         val us = app.surrealar.settings.model.LinearUnit.entries
         // Height choices: beta ones (GEOID2022) only while the NSRS 2022 beta preview is on.
         var vs = app.surrealar.settings.model.CoordinateSystemSettings().selectableVerticals
@@ -191,18 +204,31 @@ internal class CoordinatesSettingsController(
 
         var current = app.surrealar.settings.model.CoordinateSystemSettings()
         var bindingPreview = false
-        // Product status from geokit's registries: null until computed off the main thread.
-        var status: NsrsStatus? = null
-        var statusFailed = false
+        // Product status from geokit's registries, per preview state: absent until computed off the main thread.
+        val statuses = java.util.concurrent.ConcurrentHashMap<Boolean, NsrsStatus>()
+        val statusFailed = java.util.concurrent.ConcurrentHashMap<Boolean, Boolean>()
+        val status: () -> NsrsStatus? = { statuses[current.nsrs2022Preview] }
+
+        // The system shown: a beta system saved while the preview is off shows the default it is replaced by.
+        fun shownHorizontal(s: app.surrealar.settings.model.CoordinateSystemSettings) =
+            if (s.horizontal.isBeta && !s.nsrs2022Preview) app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC else s.horizontal
+
+        // The chosen SPCS2022 zone's entry (null until the status is computed, or for an unknown id).
+        fun chosenSpcs2022(s: app.surrealar.settings.model.CoordinateSystemSettings): ZoneOption? =
+            s.spcs2022Zone?.let { id -> status()?.spcs2022Zones?.firstOrNull { it.definition?.id.equals(id, ignoreCase = true) } }
+
+        fun zoneText(s: app.surrealar.settings.model.CoordinateSystemSettings): String =
+            if (shownHorizontal(s) == app.surrealar.settings.model.HorizontalSystem.SPCS2022) chosenSpcs2022(s)?.label ?: s.spcs2022Zone.orEmpty()
+            else io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)?.label.orEmpty()
 
         // Editable so typing filters the zones through CrsRegistry.search ("tex", "north", "3701"). SPCS2022
-        // entries join only with the preview ON and once the registry reports operational zones (none today).
+        // entries join only with the preview ON and once the registry reports operational zones (the beta registry).
         // The filter runs on the adapter's worker thread; the SPCS2022 catalog is already parsed by then.
         spinnerZ?.setAdapter(SearchFilterAdapter(fragment.requireContext(), R.layout.list_item_dropdown_settings,
             zones.map { it.label }) { q ->
-            val st = status
+            val st = status()
             val extra = if (current.nsrs2022Preview && st != null && st.spcs2022Zones.isNotEmpty())
-                ZoneSelectorOptions.spcs2022(q, preview = true, registry = crsRegistry()).map { it.label } else emptyList()
+                ZoneSelectorOptions.spcs2022(q, preview = true, registry = st.registry).map { it.label } else emptyList()
             SpcsZoneHints.searchZones(q).map { it.label } + extra
         })
 
@@ -220,7 +246,7 @@ internal class CoordinatesSettingsController(
         var renderedGroupsFor: Pair<Boolean, NsrsStatus?>? = null
         fun renderStatus() {
             val on = current.nsrs2022Preview
-            val st = status
+            val st = status()
             if (renderedGroupsFor == (on to st)) return
             renderedGroupsFor = on to st
             previewGroups?.removeAllViews()
@@ -231,7 +257,7 @@ internal class CoordinatesSettingsController(
                 }
                 st == null -> {
                     previewStatus?.visibility = View.VISIBLE
-                    previewStatus?.text = if (statusFailed) STATUS_FAILED else STATUS_LOADING
+                    previewStatus?.text = if (statusFailed[on] == true) STATUS_FAILED else STATUS_LOADING
                     previewGroups?.visibility = View.GONE
                 }
                 else -> {
@@ -242,10 +268,31 @@ internal class CoordinatesSettingsController(
             }
         }
 
+        var ensureStatus: (Boolean) -> Unit = {}
+
         fun bind(s: app.surrealar.settings.model.CoordinateSystemSettings) {
             current = s
-            spinnerH.setText(s.horizontal.label, false)
-            spinnerD?.setText(s.effectiveDatum.label, false)
+            ensureStatus(s.nsrs2022Preview)
+            if (s.selectableHorizontals != hs) {
+                hs = s.selectableHorizontals
+                spinnerH.setAdapter(adapter(hs.map { it.label }))
+            }
+            if (s.selectableDatums != ds) {
+                ds = s.selectableDatums
+                spinnerD?.setAdapter(adapter(ds.map { it.label }))
+            }
+            val shownH = shownHorizontal(s)
+            val spcs2022 = shownH == app.surrealar.settings.model.HorizontalSystem.SPCS2022
+            spinnerH.setText(shownH.label, false)
+            val hNote = app.surrealar.coords.Nsrs2022OutputNotes.horizontalNote(s, chosenSpcs2022(s)?.definition)
+            horizontalNote?.text = hNote.orEmpty()
+            horizontalNote?.visibility = if (hNote == null) View.GONE else View.VISIBLE
+            // SPCS2022: the zone's own 2022 frame (shown, not chosen); otherwise the datum used.
+            spinnerD?.setText(if (spcs2022) chosenSpcs2022(s)?.frameLabel?.let { "$it (zone frame, beta)" } ?: SPCS2022_ZONE_FRAME
+                else s.effectiveDatum.label, false)
+            val dNote = if (spcs2022) null else app.surrealar.coords.Nsrs2022OutputNotes.datumNote(s)
+            datumNote?.text = dNote.orEmpty()
+            datumNote?.visibility = if (dNote == null) View.GONE else View.VISIBLE
             spinnerU?.setText(s.unit.label, false)
             val selectable = s.selectableVerticals
             if (selectable != vs) {
@@ -263,22 +310,41 @@ internal class CoordinatesSettingsController(
             renderStatus()
             spinnerR?.setText(s.externalReceiverDatum.label, false)
             val zone = io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(s.spcsZoneEpsg)
-            zoneRow?.visibility = if (s.horizontal.isStatePlane) View.VISIBLE else View.GONE
-            if (spinnerZ?.hasFocus() != true) spinnerZ?.setText(zone?.label.orEmpty(), false)
+            zoneRow?.visibility = if (s.horizontal.isStatePlane || spcs2022) View.VISIBLE else View.GONE
+            if (spinnerZ?.hasFocus() != true) spinnerZ?.setText(zoneText(s), false)
             // Hint: suggestion notice, or a warning when the live position is outside the chosen zone.
             val fix = fixSwitchboard.currentFix.value
             zoneHint?.text = zoneNotice ?: when {
+                spcs2022 -> spcs2022Hint ?: (status()?.spcs2022Zones?.size?.takeIf { it > 0 }
+                    ?.let { "All $it SPCS2022 beta zones (NGS). Type a state, zone name or code to filter." } ?: defaultZoneHint)
                 zone != null && suggestedZoneEpsg == zone.epsg -> SpcsZoneHints.suggestionHint(suggestion)
                 zone != null && fix != null && s.horizontal.isStatePlane ->
                     SpcsZoneHints.mismatchHint(zone, checkZone(zone, fix), locateZone(fix))
                         ?: defaultZoneHint
                 else -> defaultZoneHint
             }
-            // State Plane is defined on NAD83(2011): the datum choice does not apply.
-            spinnerD?.isEnabled = !s.horizontal.isStatePlane
-            (spinnerD?.parent?.parent as? TextInputLayout)?.alpha =
-                if (s.horizontal.isStatePlane) 0.5f else 1f
+            // State Plane is defined on NAD83(2011), SPCS2022 on the zone's 2022 frame: the datum choice does not apply.
+            val fixedFrame = s.horizontal.isStatePlane || spcs2022
+            spinnerD?.isEnabled = !fixedFrame
+            (spinnerD?.parent?.parent as? TextInputLayout)?.alpha = if (fixedFrame) 0.5f else 1f
             showPreview()
+        }
+
+        // SPCS2022 zones possible at the live position (off the main thread: polygons and catalog), as a hint only.
+        fun suggestSpcs2022() {
+            val fix = fixSwitchboard.currentFix.value ?: return
+            val registry = statuses[true]?.registry ?: return
+            categoryScope.launch {
+                val hint = runCatching {
+                    withContext(statusDispatcher) {
+                        val (options, loc) = ZoneSelectorOptions.locate(fix.latDeg, fix.lonDeg, registry)
+                        ZoneSelectorOptions.suggestionHint(options, loc)
+                    }
+                }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; settingsError("SPCS2022 zone suggestion failed", it) }
+                    .getOrNull()
+                spcs2022Hint = hint
+                bind(current)
+            }
         }
 
         // Saves only the change [edit] makes, applied to the latest stored settings (so a pick made before the
@@ -312,28 +378,38 @@ internal class CoordinatesSettingsController(
             }
             val zoneEpsg = proposed
             save { s -> if (zoneEpsg != null) s.copy(horizontal = h, spcsZoneEpsg = zoneEpsg) else s.copy(horizontal = h) }
+            // SPCS2022: name the zones possible here (never picked automatically: layered zones overlap legally).
+            if (h == app.surrealar.settings.model.HorizontalSystem.SPCS2022) suggestSpcs2022()
         }
         spinnerZ?.setOnItemClickListener { parent, _, pos, _ ->
             // Positions refer to the FILTERED list: resolve by label, not index.
             val label = parent.getItemAtPosition(pos) as? String
             val z = zoneByLabel[label]
             if (z == null) {
-                // An SPCS2022 entry (listed only when the registry reports it operational): not storable yet.
-                val option = status?.spcs2022Zones?.firstOrNull { it.label == label } ?: return@setOnItemClickListener
+                // An SPCS2022 entry (listed only with the preview ON, when the registry reports it operational).
+                val option = status()?.spcs2022Zones?.firstOrNull { it.label == label } ?: return@setOnItemClickListener
                 spinnerZ.clearFocus()
-                if (!option.selectable) {
+                val id = option.definition?.id
+                if (!option.selectable || id == null) {
                     zoneNotice = "${option.zoneName} (SPCS2022, ${option.frameLabel}, beta): $SPCS2022_NOT_SELECTABLE"
                     bind(current)
+                    return@setOnItemClickListener
                 }
+                save { it.copy(horizontal = app.surrealar.settings.model.HorizontalSystem.SPCS2022, spcs2022Zone = id) }
                 return@setOnItemClickListener
             }
             suggestedZoneEpsg = null
             spinnerZ.clearFocus()
-            save { it.copy(spcsZoneEpsg = z.epsg) }
+            // An SPCS83 zone picked while SPCS2022 is the system switches back to State Plane (SPCS83).
+            save {
+                if (it.horizontal == app.surrealar.settings.model.HorizontalSystem.SPCS2022)
+                    it.copy(horizontal = app.surrealar.settings.model.HorizontalSystem.STATE_PLANE, spcsZoneEpsg = z.epsg)
+                else it.copy(spcsZoneEpsg = z.epsg)
+            }
         }
         // Leaving the field without picking restores the saved zone's name.
         spinnerZ?.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) spinnerZ.setText(io.github.pennstatecs.geokit.projection.SpcsZones.byEpsg(current.spcsZoneEpsg)?.label.orEmpty(), false)
+            if (!hasFocus) spinnerZ.setText(zoneText(current), false)
         }
         spinnerD?.setOnItemClickListener { _, _, pos, _ -> ds.getOrNull(pos)?.let { d -> save { it.copy(datum = d) } } }
         spinnerU?.setOnItemClickListener { _, _, pos, _ -> us.getOrNull(pos)?.let { u -> save { it.copy(unit = u) } } }
@@ -354,25 +430,34 @@ internal class CoordinatesSettingsController(
                 settingsError("Coordinate system load failed", e)
             }
         }
-        // SPCS2022 catalog (953 rows), 2022 frames and GEOID2022 status: computed off the main thread, shown when ready.
-        categoryScope.launch {
-            val t0 = System.nanoTime()
-            val st = try {
-                withContext(statusDispatcher) { computeStatus() }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                settingsError("NSRS 2022 status failed", e); null
+        // SPCS2022 catalog (953 rows), 2022 frames and GEOID2022 status for the preview state's registry: computed
+        // off the main thread (once per state and screen), shown when ready.
+        val statusStarted = HashSet<Boolean>()
+        ensureStatus = { preview ->
+            if (statusStarted.add(preview)) categoryScope.launch {
+                val t0 = System.nanoTime()
+                val st = try {
+                    withContext(statusDispatcher) { computeStatus(preview) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    settingsError("NSRS 2022 status failed", e); null
+                }
+                app.surrealar.util.DiagnosticsLogger.d(app.surrealar.util.diagnostics.DiagTags.DATA) {
+                    "NSRS 2022 status computed off-main preview=$preview ok=${st != null} durationMs=${(System.nanoTime() - t0) / 1_000_000}"
+                }
+                statusFailed[preview] = st == null
+                if (st != null) statuses[preview] = st
+                if (preview == current.nsrs2022Preview) {
+                    defaultZoneHint = st?.spcs2022Note?.let { "$baseZoneHint $it" } ?: baseZoneHint
+                    renderedGroupsFor = null
+                    bind(current)
+                    if (preview && shownHorizontal(current) == app.surrealar.settings.model.HorizontalSystem.SPCS2022 &&
+                        current.spcs2022Zone == null && spcs2022Hint == null) suggestSpcs2022()
+                }
             }
-            app.surrealar.util.DiagnosticsLogger.d(app.surrealar.util.diagnostics.DiagTags.DATA) {
-                "NSRS 2022 status computed off-main ok=${st != null} durationMs=${(System.nanoTime() - t0) / 1_000_000}"
-            }
-            statusFailed = st == null
-            status = st
-            st?.spcs2022Note?.let { defaultZoneHint = "$baseZoneHint $it" }
-            renderedGroupsFor = null
-            bind(current)
         }
+        ensureStatus(current.nsrs2022Preview)
         // Keep the preview live while the page is open; also refresh it when a height model finished loading.
         categoryScope.launch {
             fragment.viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -382,13 +467,14 @@ internal class CoordinatesSettingsController(
         }
     }
 
-    /** Off the main thread: product status, the SPCS2022 note and zone entries from [crsRegistry]. */
-    private fun computeStatus(): NsrsStatus {
-        val registry = crsRegistry()
+    /** Off the main thread: product status, the SPCS2022 note and zone entries from [crsRegistry] for [preview]. */
+    private fun computeStatus(preview: Boolean): NsrsStatus {
+        val registry = crsRegistry(preview)
         return NsrsStatus(
             capabilities = capabilities(registry),
             spcs2022Note = SpcsZoneHints.spcs2022Note(registry),
             spcs2022Zones = ZoneSelectorOptions.spcs2022("", preview = true, registry = registry),
+            registry = registry,
         )
     }
 
@@ -457,5 +543,7 @@ internal class CoordinatesSettingsController(
         const val BETA_BADGE = "β BETA"
         const val SPCS2022_NOT_SELECTABLE =
             "listed from GeoKit, but this app version cannot store or output SPCS2022 coordinates yet."
+        /** Datum field text for SPCS2022 before the zone entry is known. */
+        const val SPCS2022_ZONE_FRAME = "Zone's 2022 frame (beta)"
     }
 }

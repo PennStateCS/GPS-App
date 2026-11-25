@@ -40,12 +40,17 @@ data class ZoneOption(
  *   only on a 2022 frame (NATRF2022, PATRF2022, CATRF2022, MATRF2022: never NAD83). Each is labelled with its
  *   own frame, the frame's epoch, projection, native unit and "β beta".
  *
- * Choosing an SPCS2022 zone also needs a stored value and an output path in the converter, which this app
- * version does not have: [SPCS2022_OUTPUT_SUPPORTED] is false, so such an entry is listed but not selectable.
+ * Phase 4 WP X: the app stores the chosen zone (CoordinateSystemSettings.spcs2022Zone, the registry id) and
+ * converts into it ([SPCS2022_OUTPUT_SUPPORTED] is true), so listed SPCS2022 zones are selectable. The app
+ * passes the beta CRS registry (Nsrs2022Registries.betaCrs) with the preview ON; with geokit's default registry
+ * nothing is operational, so nothing is listed.
  */
 internal object ZoneSelectorOptions {
-    /** The app can store and output an SPCS2022 zone (false in this version: listing only). */
-    const val SPCS2022_OUTPUT_SUPPORTED = false
+    /** The app can store and output an SPCS2022 zone (Phase 4 WP X). */
+    const val SPCS2022_OUTPUT_SUPPORTED = true
+
+    /** Most alternatives named in a suggestion hint. */
+    private const val MAX_SUGGESTED = 4
 
     private const val SEARCH_LIMIT = 2000
     private val NON_ALPHANUMERIC = Regex("[^\\p{L}\\p{N}]+")
@@ -72,6 +77,36 @@ internal object ZoneSelectorOptions {
         val defs = if (q.isEmpty()) catalog.operational.sortedBy { it.label }
             else registry.search(q, CrsCatalogId.SPCS2022, includeNonOperational = false, limit = SEARCH_LIMIT, includeBeta = true)
         return defs.filter { it.operational && it.frameId in Nsrs2022Capabilities.FRAME_IDS }.map { d -> option(d, outputSupported) }
+    }
+
+    /** The SPCS2022 entry for a stored zone id ("spcs2022:<code>"), null if the registry has no operational zone with it. */
+    fun spcs2022ById(id: String?, registry: CrsRegistry): ZoneOption? =
+        app.surrealar.coords.Nsrs2022Registries.spcs2022Zone(id, registry)?.let { option(it, SPCS2022_OUTPUT_SUPPORTED) }
+
+    /**
+     * SPCS2022 zones possible at a position (degrees; the live WGS84 fix is fine: 1-2 m frame differences are far
+     * below the zone-line generalisation) from [CrsRegistry.locateSpcs2022]: every candidate, smallest first, and
+     * whether the answer is ambiguous (several zones, near a zone line, or envelopes only). Never one confident
+     * answer from envelopes: the user chooses. Off the main thread (parses the catalog and polygons on first use).
+     */
+    fun locate(latDeg: Double, lonDeg: Double, registry: CrsRegistry): Pair<List<ZoneOption>, io.github.pennstatecs.geokit.crs.CrsZoneLocation> {
+        val loc = registry.locateSpcs2022(latDeg, lonDeg, includeBeta = true)
+        val options = loc.candidates.filter { it.operational && it.frameId in Nsrs2022Capabilities.FRAME_IDS }
+            .map { option(it, SPCS2022_OUTPUT_SUPPORTED) }
+        return options to loc
+    }
+
+    /** Hint naming the SPCS2022 zones possible at the live position (or null when there are none). Pure. */
+    fun suggestionHint(options: List<ZoneOption>, location: io.github.pennstatecs.geokit.crs.CrsZoneLocation): String? {
+        if (options.isEmpty()) return null
+        val names = options.take(MAX_SUGGESTED).joinToString(", ") { it.zoneName } + if (options.size > MAX_SUGGESTED) ", …" else ""
+        val why = when {
+            location.basis == io.github.pennstatecs.geokit.crs.CrsLocationBasis.AREA_OF_USE_BOX -> " Zone limits are approximate here (envelopes)."
+            location.nearBoundary -> " You are near a zone line."
+            else -> ""
+        }
+        return if (!location.isAmbiguous) "SPCS2022 zone at your position: $names. Check it before use."
+        else "SPCS2022 zones possible at your position: $names.$why Choose the zone your project uses."
     }
 
     /** SPCS83 entries followed by the SPCS2022 ones. */

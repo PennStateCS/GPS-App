@@ -624,9 +624,12 @@ class CoordinateDetailFragment : Fragment() {
         // The separate UTM rows were removed: the rows above show the point in the system chosen
         // under Settings → Coordinates (UTM included), so the card never shows two disagreeing grids.
         // The grid copy button copies that grid; it is hidden for latitude/longitude output.
+        // The system actually shown (a beta system saved while the NSRS 2022 preview is off shows lat/lon).
+        val shownSystem = coordSystemSettings.effectiveHorizontal
         btnCopyUtm?.visibility =
-            if (coordSystemSettings.horizontal == app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC) View.GONE else View.VISIBLE
-        (btnCopyUtm as? TextView)?.text = if (coordSystemSettings.horizontal.isStatePlane) "Copy N/E" else "Copy UTM"
+            if (shownSystem == app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC) View.GONE else View.VISIBLE
+        (btnCopyUtm as? TextView)?.text = if (shownSystem.isStatePlane || shownSystem == app.surrealar.settings.model.HorizontalSystem.SPCS2022)
+            "Copy N/E" else "Copy UTM"
 
         // Altitude details are supporting values (in the chosen units). Only shown when present.
         val altRows = mutableListOf<DetailRow>()

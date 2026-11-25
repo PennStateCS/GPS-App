@@ -114,6 +114,57 @@ class CoordinatesSettingsControllerTest {
         assertTrue(repo.savedSystem.isEmpty())
     }
 
+    @Test fun `SPCS2022 saved - preview ON shows the zone, its frame and the beta note, OFF shows the default with a note`() {
+        val saved = CoordinateSystemSettings(horizontal = HorizontalSystem.SPCS2022, spcs2022Zone = "spcs2022:421001", nsrs2022Preview = true)
+        val repo = FakeRepo(CoordinateDisplaySettings(), saved)
+        val view = show(repo)
+        val h = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal)
+        val d = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum)
+        val z = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_spcs_zone)
+        val note = view.findViewById<TextView>(R.id.text_coord_horizontal_note)
+        assertEquals(HorizontalSystem.SPCS2022.label, h.text.toString())
+        assertEquals(View.VISIBLE, view.findViewById<View>(R.id.row_coord_spcs_zone).visibility)
+        assertTrue(z.text.toString(), z.text.startsWith("SPCS2022 Pennsylvania North East (421001) · NATRF2022"))
+        assertEquals("NATRF2022 (zone frame, beta)", d.text.toString())
+        assertFalse("the zone fixes the frame", d.isEnabled)
+        assertEquals(View.VISIBLE, note.visibility)
+        assertTrue(note.text.toString(), note.text.contains("Beta: SPCS2022") && note.text.contains("not authoritative"))
+        // Preview off: stored value kept, default shown, note says why.
+        view.findViewById<MaterialSwitch>(R.id.switch_coord_nsrs2022_preview).isChecked = false
+        assertEquals(saved.copy(nsrs2022Preview = false), repo.savedSystem.last())
+        assertEquals(HorizontalSystem.GEOGRAPHIC.label, h.text.toString())
+        assertEquals(View.GONE, view.findViewById<View>(R.id.row_coord_spcs_zone).visibility)
+        assertTrue(note.text.toString(), note.text.contains("preview is off"))
+        assertEquals(OutputDatum.WGS84.label, d.text.toString())
+        assertTrue(d.isEnabled)
+    }
+
+    @Test fun `2022 datum saved - preview ON shows it with the caveat, OFF shows WGS84 with a note, preview OFF hides beta options`() {
+        val saved = CoordinateSystemSettings(datum = OutputDatum.PATRF2022, nsrs2022Preview = true)
+        val repo = FakeRepo(CoordinateDisplaySettings(), saved)
+        val view = show(repo)
+        val d = view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum)
+        val note = view.findViewById<TextView>(R.id.text_coord_datum_note)
+        assertEquals("PATRF2022 (beta)", d.text.toString())
+        assertTrue(note.text.toString(), note.text.contains("Hawaii") && note.text.contains("EPP2022 beta") && note.text.contains("undocumented"))
+        assertEquals(OutputDatum.entries.size, d.adapter.count)
+        assertEquals(HorizontalSystem.entries.size, view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal).adapter.count)
+        view.findViewById<MaterialSwitch>(R.id.switch_coord_nsrs2022_preview).isChecked = false
+        assertEquals(OutputDatum.WGS84.label, d.text.toString())
+        assertTrue(note.text.toString(), note.text.contains("preview is off"))
+        assertEquals(OutputDatum.PATRF2022, repo.savedSystem.last().datum)
+        assertEquals(3, d.adapter.count)
+        assertEquals(3, view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal).adapter.count)
+    }
+
+    @Test fun `preview OFF with legacy settings - no beta note, no beta option`() {
+        val view = show(FakeRepo(CoordinateDisplaySettings(), CoordinateSystemSettings()))
+        assertEquals(View.GONE, view.findViewById<View>(R.id.text_coord_horizontal_note).visibility)
+        assertEquals(View.GONE, view.findViewById<View>(R.id.text_coord_datum_note).visibility)
+        assertEquals(3, view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum).adapter.count)
+        assertEquals(3, view.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal).adapter.count)
+    }
+
     @Test fun `a name prefix over 20 characters is rejected, a valid one saves`() {
         val repo = FakeRepo(CoordinateDisplaySettings(), CoordinateSystemSettings())
         val view = show(repo)
@@ -188,26 +239,28 @@ class CoordinatesSettingsControllerTest {
         assertEquals(VerticalReference.GEOID2022.label, height.text.toString())
     }
 
-    @Test fun `preview ON - three groups with concise reasons, unsupported rows not selectable, OFF - hidden`() {
+    @Test fun `preview ON - verified and Verified NGS beta groups (frames, SPCS2022 from the beta registry), OFF - hidden`() {
         val repo = FakeRepo(CoordinateDisplaySettings(), stored)
         val view = show(repo)
         val groups = view.findViewById<LinearLayout>(R.id.container_coord_nsrs2022_groups)
         assertEquals(View.VISIBLE, groups.visibility)
         assertEquals(View.GONE, view.findViewById<View>(R.id.text_coord_nsrs2022_status).visibility)
         val texts = allTexts(groups)
-        for (t in listOf("Verified systems", "Verified NGS beta", "Unsupported / not yet verified",
-                "Why: No NGS-verified transformation yet", "Why: Needs a verified 2022 frame; not in EPSG/PROJ")) {
+        for (t in listOf("Verified systems", "Verified NGS beta")) {
             assertTrue("$t in $texts", texts.any { it == t })
         }
+        // Phase 4 WP X: with the preview ON the app uses NSRS2022_BETA: nothing is left unsupported.
+        assertFalse(texts.toString(), texts.any { it == "Unsupported / not yet verified" })
         assertTrue(texts.any { it.startsWith("GEOID2022 heights (NAPGD2022): beta") && it.contains(CoordinatesSettingsController.BETA_BADGE) })
-        assertTrue(texts.any { it.startsWith("NATRF2022: unavailable") })
-        // The long registry text is not on the card (it is behind the info dialog).
-        assertFalse(texts.any { it.contains(io.github.pennstatecs.geokit.crs.CrsRegistry.SPCS2022_UNSUPPORTED) })
-        // Unsupported rows: dimmed, described as not selectable, tap opens details only.
+        for (n in listOf("NATRF2022", "PATRF2022", "CATRF2022", "MATRF2022", "SPCS2022 (953 NGS beta zones)")) {
+            assertTrue("$n in $texts", texts.any { it.startsWith("$n: beta") && it.contains(CoordinatesSettingsController.BETA_BADGE) })
+        }
+        assertFalse(texts.any { it.contains("awaiting") })
+        // Beta rows: selectable, the caveat behind the info dialog; a tap opens details only.
         val rows = (0 until groups.childCount).map { groups.getChildAt(it) }.filterIsInstance<LinearLayout>()
         val natrf = rows.first { it.contentDescription?.startsWith("NATRF2022") == true }
-        assertTrue(natrf.contentDescription.toString(), natrf.contentDescription.contains("not selectable"))
-        assertTrue(natrf.alpha < 1f)
+        assertFalse(natrf.contentDescription.toString(), natrf.contentDescription.contains("not selectable"))
+        assertTrue(natrf.contentDescription.toString(), natrf.contentDescription.contains("beta"))
         assertTrue(natrf.performClick())
         assertTrue("no save from an info tap", repo.savedSystem.isEmpty())
 

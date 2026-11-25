@@ -158,6 +158,17 @@ class SettingsLocalDataSourceTest {
         ds.setCoordinateSystem("geographic", "wgs84", "m", "geoid2022_beta", "itrf2014", nsrs2022Preview = false)
         assertEquals(false, ds.coordNsrs2022Preview.first())
         assertEquals("geoid2022_beta", ds.coordVerticalReference.first())   // turning the preview off keeps the stored choice
+        // Phase 4 WP X: SPCS2022 zone key, absent = null; untouched by writes that do not ask for it; null removes it.
+        assertEquals(null, ds.coordSpcs2022Zone.first())
+        ds.setCoordinateSystem("spcs2022_beta", "wgs84", "m", "receiver_msl", "itrf2014", nsrs2022Preview = true,
+            spcs2022Zone = "spcs2022:421001", writeSpcs2022Zone = true)
+        assertEquals("spcs2022_beta", ds.coordHorizontalSystem.first())
+        assertEquals("spcs2022:421001", ds.coordSpcs2022Zone.first())
+        ds.setCoordinateSystem("geographic", "natrf2022_beta", "m", "receiver_msl", "itrf2014")
+        assertEquals("spcs2022:421001", ds.coordSpcs2022Zone.first())
+        assertEquals("natrf2022_beta", ds.coordOutputDatum.first())
+        ds.setCoordinateSystem("geographic", "wgs84", "m", "receiver_msl", "itrf2014", spcs2022Zone = null, writeSpcs2022Zone = true)
+        assertEquals(null, ds.coordSpcs2022Zone.first())
     }
 
     @Test fun `gnss capture setters round trip`() = runBlocking {

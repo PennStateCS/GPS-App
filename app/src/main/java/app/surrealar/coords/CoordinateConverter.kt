@@ -147,6 +147,17 @@ data class ConvertedPosition(
      * substituted value, and refresh when [CoordinateSystemService.heightDataVersion] changes.
      */
     val heightLoading: Boolean = false,
+    /**
+     * Provenance of an NSRS 2022 beta horizontal output (Phase 4 WP X), null otherwise (legacy outputs unchanged):
+     * the frame dataset ("EPP2022 beta 2025-06-16") and for SPCS2022 the zone dataset. Shown at the end of the
+     * system summary and so in the CSV System column.
+     */
+    val frameNote: String? = null,
+    /**
+     * Why the configured beta system is not shown (e.g. "SPCS2022 zone data is loading"), null otherwise; the
+     * position is then the labelled default it falls back to.
+     */
+    val systemNote: String? = null,
 )
 
 /**
@@ -176,13 +187,28 @@ data class ConvertedPosition(
  * @param geoidN GEOID18 undulation at a NAD83(2011) position (unchanged path).
  * @param globalGeoid the shared EGM2008/EGM96 instances (default [AppGeoidModels]); tests inject models.
  * @param geoid2022 the GEOID2022 (beta) lookup, resolved on first use (default [AppGeoidModels.geoid2022]).
- * @param frames verified frame transformations for the ITRF2020 step of GEOID2022 heights.
+ * NSRS 2022 beta horizontal outputs (Phase 4 WP X, preview ON only): a 2022 output datum
+ * ([OutputDatum.NATRF2022] … [OutputDatum.MATRF2022], Latitude / Longitude) or SPCS2022
+ * ([HorizontalSystem.SPCS2022]). The source is transformed to the target frame (the datum's frame, or the
+ * zone's own frame, never NAD83) at its coordinate epoch through [betaFrames]; SPCS2022 then projects that
+ * frame position with the zone's [io.github.pennstatecs.geokit.crs.CrsDefinition.forward] (metres; shown in the
+ * chosen unit, US survey feet as international feet). Heights are those of the vertical choice as for the
+ * legacy outputs; only the ellipsoidal height is the target frame's. Preview OFF never reaches this path.
+ *
+ * @param frames verified frame transformations used with the preview OFF (geokit's default registry).
+ * @param betaFrames the opt-in NSRS 2022 beta registry, used for everything with the preview ON (the GEOID2022
+ *   ITRF2020 step gives the same numbers in both: legacy chains are preferred).
+ * @param spcs2022Zone resolves a saved SPCS2022 zone id (the service guards the main thread).
  */
 class CoordinateConverter(
     geoidN: (latDeg: Double, lonDeg: Double) -> Double?,
     private val globalGeoid: (GeoidModelId) -> GeoidModel?,
     geoid2022: () -> TimeDependentGeoid?,
     private val frames: FrameTransformationRegistry,
+    private val betaFrames: FrameTransformationRegistry = FrameTransformationRegistry.NSRS2022_BETA,
+    private val spcs2022Zone: (String) -> Spcs2022ZoneLookup = { id ->
+        Nsrs2022Registries.spcs2022Zone(id)?.let { Spcs2022ZoneLookup.Found(it) } ?: Spcs2022ZoneLookup.Unknown
+    },
 ) {
     private val geoid2022Lookup: TimeDependentGeoid? by lazy(geoid2022)
 
@@ -203,8 +229,58 @@ class CoordinateConverter(
     private val engine = GeoConverter(GeoidLookup { lat, lon -> geoidN(lat, lon) })
 
     fun convert(src: SourcePosition, settings: CoordinateSystemSettings): ConvertedPosition {
-        // A beta height saved while the preview is OFF is not used (identity for every other setting).
+        // A beta choice saved while the preview is OFF is not used (identity for every other setting).
         val s = settings.forConversion()
+        if (s.nsrs2022Preview && (s.horizontal == HorizontalSystem.SPCS2022 || s.datum.isBeta)) return convertNsrs2022(src, s)
+        return convertLegacy(src, s)
+    }
+
+    /** The registry for these settings: the beta one with the preview ON, the default one otherwise. */
+    private fun framesFor(s: CoordinateSystemSettings): FrameTransformationRegistry = if (s.nsrs2022Preview) betaFrames else frames
+
+    /**
+     * NSRS 2022 beta horizontal output: heights from the legacy path (Latitude / Longitude in WGS84 (ITRF2014),
+     * same vertical choice), the position transformed to the 2022 frame at the source's coordinate epoch, and
+     * for SPCS2022 projected in the zone.
+     */
+    private fun convertNsrs2022(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition {
+        val legacy = s.copy(horizontal = HorizontalSystem.GEOGRAPHIC, datum = OutputDatum.WGS84)
+        val base = convertLegacy(src, legacy)
+        val zone = if (s.horizontal == HorizontalSystem.SPCS2022) {
+            when (val z = spcs2022Zone(s.spcs2022Zone.orEmpty())) {
+                is Spcs2022ZoneLookup.Found -> z.definition
+                Spcs2022ZoneLookup.Loading -> return base.copy(systemNote = SPCS2022_LOADING)
+                Spcs2022ZoneLookup.Unknown -> return base.copy(systemNote = "SPCS2022 zone ${s.spcs2022Zone} is not available")
+            }
+        } else null
+        val target = zone?.frame ?: checkNotNull(s.datum.frame2022) { "${s.datum} is not a 2022 frame" }
+        check(Nsrs2022Registries.isFrame2022(target)) { "SPCS2022 zone ${zone?.id} is not on a 2022 frame" }
+        val epoch = CoordinateEpoch(src.epochYear)
+        val t = when (val l = framesFor(s).find(src.datum.frame, target, epoch)) {
+            is FrameTransformationLookup.Available -> l
+            // Never an identity or ballpark result: the conversion fails (the screens show it as unavailable).
+            is FrameTransformationLookup.Unavailable -> throw IllegalStateException("no verified transformation to ${target.displayName}: ${l.explanation}")
+        }
+        val h = src.ellipsoidalHeightM
+        val p = t.apply(GeodeticPosition(src.latDeg, src.lonDeg, h ?: 0.0))
+        // SPCS2022 is defined in metres; NGS supports metres and international feet only.
+        val unit = if (zone != null && s.unit == LinearUnit.US_SURVEY_FEET) LinearUnit.INTERNATIONAL_FEET else s.unit
+        val grid = zone?.forward(p.latDeg, p.lonDeg)
+        val height = if (s.vertical == VerticalReference.ELLIPSOIDAL) h?.let { unit.fromMeters(p.heightM) }
+            else if (unit == s.unit) base.height else base.height?.let { unit.fromMeters(it * s.unit.metersPerUnit) }
+        return base.copy(
+            horizontal = s.horizontal, datum = checkNotNull(outputDatumOf2022(target)), unit = unit,
+            latDeg = p.latDeg, lonDeg = p.lonDeg,
+            easting = grid?.first?.let { unit.fromMeters(it) }, northing = grid?.second?.let { unit.fromMeters(it) },
+            zoneLabel = zone?.let { Nsrs2022FrameLabels.zoneLabel(it) },
+            height = height,
+            outsideZone = zone != null && !zone.areaOfUse.contains(p.latDeg, p.lonDeg),
+            epochYear = src.epochYear,
+            frameNote = Nsrs2022FrameLabels.note(spcs2022 = zone != null),
+        )
+    }
+
+    private fun convertLegacy(src: SourcePosition, s: CoordinateSystemSettings): ConvertedPosition {
         val geoSrc = src.toGeoSource()
         val r = engine.convert(geoSrc, s.toOutputSystem())
         val unit = s.unit
@@ -284,7 +360,8 @@ class CoordinateConverter(
             ?: return GlobalHeight(null, HeightUnavailableReason.NO_ELLIPSOIDAL_HEIGHT.description, label)
         val model = geoid2022Lookup ?: return GlobalHeight(null, "GEOID2022 (beta) not available in this app", label)
         val epoch = CoordinateEpoch(src.epochYear)
-        val itrf2020 = when (val t = frames.find(src.datum.frame, ReferenceFrame.ITRF2020, epoch)) {
+        // GEOID2022 is offered only with the preview ON, so this is the beta registry (same ITRF2020 chain as DEFAULT).
+        val itrf2020 = when (val t = betaFrames.find(src.datum.frame, ReferenceFrame.ITRF2020, epoch)) {
             is FrameTransformationLookup.Available -> t.apply(GeodeticPosition(src.latDeg, src.lonDeg, h))
             is FrameTransformationLookup.Unavailable ->
                 return GlobalHeight(null, "no verified transformation to ITRF2020 (${t.explanation})", label)
@@ -362,6 +439,8 @@ class CoordinateConverter(
     }
 
     private companion object {
+        const val SPCS2022_LOADING = "SPCS2022 zone data is loading"
+
         /** The source as WGS84 (ITRF2014) lat/lon/ellipsoidal height, metres (identity for WGS84 sources). */
         val WGS84_ELLIPSOIDAL = OutputSystem(
             horizontal = TargetSystem.Geographic, datum = GeodeticDatum.WGS84_ITRF2014,
@@ -410,23 +489,36 @@ object CoordinateFormat {
 
     /**
      * The output frame for display: the datum label ("WGS84 (ITRF2014)", "NAD83(2011)"), or for
-     * ITRF2020 the frame with its coordinate epoch, "ITRF2020 epoch 2026.886".
+     * ITRF2020 the frame with its coordinate epoch, "ITRF2020 epoch 2026.886", and for a 2022 beta frame
+     * "NATRF2022 (beta) epoch 2026.886".
      */
     fun datumLabel(p: ConvertedPosition): String {
         val epoch = p.epochYear
-        return if (p.datum == OutputDatum.ITRF2020 && epoch != null)
-            String.format(Locale.US, "ITRF2020 epoch %.3f", epoch)
-        else p.datum.label
+        val f2022 = p.datum.frame2022
+        return when {
+            p.datum == OutputDatum.ITRF2020 && epoch != null -> String.format(Locale.US, "ITRF2020 epoch %.3f", epoch)
+            f2022 != null && epoch != null -> Nsrs2022FrameLabels.datumLabel(f2022, epoch)
+            else -> p.datum.label
+        }
     }
 
     /**
      * Short system description: "NAD83(2011) · SPCS 3701 · ftUS · NAVD88" (+ an outside-zone warning). A beta
      * height adds its provenance after the vertical label:
-     * "WGS84 (ITRF2014) · m · NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886".
+     * "WGS84 (ITRF2014) · m · NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886". A 2022 beta frame adds
+     * its dataset at the end ("NATRF2022 (beta) epoch 2026.886 · m · H rcvr · EPP2022 beta 2025-06-16"); SPCS2022
+     * starts with the zone: "SPCS2022 421001 (beta) · NATRF2022 epoch 2026.886 · m · H rcvr · EPP2022 beta … · NGS
+     * beta zones 2026-05-14". A fallback note ([ConvertedPosition.systemNote]) comes last.
      */
-    fun systemSummary(p: ConvertedPosition): String =
-        listOfNotNull(datumLabel(p), p.zoneLabel, p.unit.suffix, p.verticalLabel, p.heightModelNote,
-            if (p.outsideZone) "outside zone" else null).joinToString(" · ")
+    fun systemSummary(p: ConvertedPosition): String {
+        val f2022 = p.datum.frame2022
+        val epoch = p.epochYear
+        val head = if (p.horizontal == HorizontalSystem.SPCS2022 && p.zoneLabel != null && f2022 != null && epoch != null)
+            listOf(p.zoneLabel, Nsrs2022FrameLabels.frameEpoch(f2022, epoch))
+        else listOfNotNull(datumLabel(p), p.zoneLabel)
+        return (head + listOfNotNull(p.unit.suffix, p.verticalLabel, p.heightModelNote,
+            if (p.outsideZone) "outside zone" else null, p.frameNote, p.systemNote)).joinToString(" · ")
+    }
 
     /** Copyable text: "N 435037.47, E 2442754.19 ftUS (NAD83(2011) SPCS 3701)" or "lat, lon". No grouping commas. */
     fun copyText(p: ConvertedPosition): String =

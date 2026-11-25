@@ -43,7 +43,8 @@ import io.github.pennstatecs.geokit.projection.Utm
  * @param spcs2022BoundaryResource classpath resource with the SPCS2022 zone polygons (null = envelopes only).
  */
 public class CrsRegistry(
-    private val frameRegistry: FrameTransformationRegistry = FrameTransformationRegistry.DEFAULT,
+    /** The frame registry this CRS registry decides operational status with (read-only). */
+    public val frameRegistry: FrameTransformationRegistry = FrameTransformationRegistry.DEFAULT,
     private val spcs2022Source: () -> CrsCatalogLoadResult = { CrsCatalogCsv.fromClasspath(SPCS2022_RESOURCE, CrsCatalogId.SPCS2022) },
     private val spcs83Locator: SpcsZoneLocator = SpcsZoneLocator.SPCS83,
     private val spcs2022BoundaryResource: String? = SPCS2022_BOUNDARY_RESOURCE,

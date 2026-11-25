@@ -41,12 +41,12 @@ data class CoordinateSystemGroupItem(
  */
 object CoordinateSystemGroups {
 
-    /** The verified (legacy) options the app offers, from the settings enums (beta heights excluded). */
+    /** The verified (legacy) options the app offers, from the settings enums (beta systems, datums and heights excluded). */
     fun verified(): List<CoordinateSystemGroupItem> = listOf(
         CoordinateSystemGroupItem("Systems", CoordinateSystemGroup.VERIFIED,
-            HorizontalSystem.entries.joinToString(", ") { it.label }, selectable = true),
+            HorizontalSystem.entries.filter { !it.isBeta }.joinToString(", ") { it.label }, selectable = true),
         CoordinateSystemGroupItem("Datums", CoordinateSystemGroup.VERIFIED,
-            OutputDatum.entries.joinToString(", ") { it.label }, selectable = true),
+            OutputDatum.entries.filter { !it.isBeta }.joinToString(", ") { it.label }, selectable = true),
         CoordinateSystemGroupItem("Heights", CoordinateSystemGroup.VERIFIED,
             VerticalReference.entries.filter { !it.isBeta }.joinToString(", ") { it.shortLabel }, selectable = true),
     )

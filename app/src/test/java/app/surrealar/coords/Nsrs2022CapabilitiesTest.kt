@@ -27,7 +27,8 @@ class Nsrs2022CapabilitiesTest {
         assertEquals(CapabilityUiState.LEGACY, ProductStatus.VERIFIED_LEGACY.toUiState())
         assertEquals(CapabilityUiState.BETA, ProductStatus.VERIFIED_BETA.toUiState())
         assertEquals(CapabilityUiState.UNAVAILABLE, ProductStatus.UNAVAILABLE.toUiState())
-        assertEquals("unavailable — awaiting NGS verification", CapabilityUiState.UNAVAILABLE.label)
+        // Phase 4 WP X: the stale "awaiting NGS verification" wording is gone (NGS-computed values now verify the frames).
+        assertEquals("unavailable", CapabilityUiState.UNAVAILABLE.label)
     }
 
     @Test fun `an unavailable product can never be selectable`() {
@@ -45,7 +46,7 @@ class Nsrs2022CapabilitiesTest {
         assertTrue(g.note!!.contains(VerticalReference.GEOID2022.label))
     }
 
-    @Test fun `the four 2022 frames are unavailable, with the registry's reason, never selectable`() {
+    @Test fun `default registry - the four 2022 frames are unavailable, with the registry's reason, never selectable`() {
         val frames = Nsrs2022Capabilities.frames()
         assertEquals(listOf("NATRF2022", "PATRF2022", "CATRF2022", "MATRF2022"), frames.map { it.name })
         for ((c, id) in frames.zip(Nsrs2022Capabilities.FRAME_IDS)) {
@@ -57,7 +58,7 @@ class Nsrs2022CapabilitiesTest {
         }
     }
 
-    @Test fun `a frame that became verified is still not selectable (no 2022 output in this app)`() {
+    @Test fun `a frame verified as beta is offered as an output datum (Phase 4 WP X)`() {
         val stub = FrameTransformationRegistry(
             FrameTransformationRegistry.DEFAULT.registeredEdges + FrameEdge(
                 ReferenceFrame.ITRF2020, ReferenceFrame.NATRF2022, "TEST STUB identity", null, "test only",
@@ -67,7 +68,39 @@ class Nsrs2022CapabilitiesTest {
         )
         val natrf = Nsrs2022Capabilities.frames(stub).first()
         assertEquals(CapabilityUiState.BETA, natrf.state)
-        assertFalse(natrf.selectable)
+        assertTrue(natrf.selectable)
+        assertNull(natrf.reason)
+    }
+
+    @Test fun `beta registry - NATRF, PATRF, CATRF, MATRF2022 are Verified NGS beta, selectable, with caveat and dataset`() {
+        val frames = Nsrs2022Capabilities.frames(FrameTransformationRegistry.NSRS2022_BETA)
+        assertEquals(listOf("NATRF2022", "PATRF2022", "CATRF2022", "MATRF2022"), frames.map { it.name })
+        for (c in frames) {
+            assertEquals(c.name, CapabilityUiState.BETA, c.state)
+            assertTrue(c.selectable)
+            assertNull(c.reason)
+            val note = c.note!!
+            assertTrue(note, note.contains("${c.name} (beta)") && note.contains(Nsrs2022FrameLabels.DATASET))
+            assertTrue(note, note.contains("NGS beta Geodetic Station Page") && note.contains("undocumented") && note.contains("not authoritative"))
+            assertTrue(note, note.contains("Area: "))
+            assertFalse(note, note.contains("awaiting"))
+        }
+        assertTrue(frames[1].note!!.contains("Hawaii")); assertTrue(frames[2].note!!.contains("Puerto Rico")); assertTrue(frames[3].note!!.contains("Guam"))
+        val groups = CoordinateSystemGroups.build(true, Nsrs2022Capabilities.all(FrameTransformationRegistry.NSRS2022_BETA, Nsrs2022Registries.betaCrs)).toMap()
+        assertEquals(listOf("GEOID2022 heights (NAPGD2022)", "NATRF2022", "PATRF2022", "CATRF2022", "MATRF2022", "SPCS2022 (953 NGS beta zones)"),
+            groups.getValue(CoordinateSystemGroup.BETA).map { it.name })
+        assertTrue(groups.getValue(CoordinateSystemGroup.BETA).all { it.selectable && it.beta })
+        assertFalse(groups.containsKey(CoordinateSystemGroup.UNSUPPORTED))
+    }
+
+    @Test fun `beta CRS registry - SPCS2022 is beta and selectable for all 953 zones`() {
+        val s = Nsrs2022Capabilities.spcs2022(Nsrs2022Registries.betaCrs)
+        assertEquals(CapabilityUiState.BETA, s.state)
+        assertTrue(s.selectable)
+        assertNull(s.reason)
+        assertTrue(s.note!!, s.note!!.startsWith("953 zones on NATRF2022, PATRF2022, CATRF2022, MATRF2022"))
+        assertTrue(s.note!!.contains(app.surrealar.settings.model.HorizontalSystem.SPCS2022.label))
+        assertTrue(s.note!!.contains(Nsrs2022FrameLabels.CAVEAT))
     }
 
     @Test fun `SPCS2022 is unavailable with the catalog's reason, never selectable`() {
@@ -85,7 +118,7 @@ class Nsrs2022CapabilitiesTest {
         val text = Nsrs2022Capabilities.statusText(all)
         assertTrue(text, text.contains("• GEOID2022 heights (NAPGD2022): beta"))
         for (n in listOf("NATRF2022", "PATRF2022", "CATRF2022", "MATRF2022", "SPCS2022 (953 NGS beta zones)")) {
-            assertTrue(n, text.contains("• $n: unavailable — awaiting NGS verification"))
+            assertTrue(n, text.contains("• $n: unavailable"))
         }
         assertTrue(text, text.contains("Why: "))
         assertTrue(text, text.contains("SPCS2022 is not available"))
