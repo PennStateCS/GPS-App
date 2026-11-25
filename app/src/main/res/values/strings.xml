@@ -379,12 +379,12 @@
     <string name="picker_section_tablet">Tablet GNSS</string>
     <string name="picker_tablet_subtitle">Built-in GNSS of this device</string>
     <string name="picker_section_network">On this network</string>
-    <string name="picker_scan">Scan for Emlid receivers</string>
+    <string name="picker_scan">Scan for receivers</string>
     <string name="picker_rescan">Rescan</string>
-    <string name="picker_scanning">Scanning for Emlid receivers…</string>
+    <string name="picker_scanning">Scanning for receivers…</string>
     <string name="picker_last_scanned">Last scanned %1$s</string>
-    <string name="picker_scan_none">No Emlid receivers found. Check that the tablet and the receiver are on the same Wi-Fi network.</string>
-    <string name="picker_scan_hint">Finds Emlid Reach receivers on this Wi-Fi network. Other receivers: connect manually.</string>
+    <string name="picker_scan_none">No receivers found. Check that the tablet and the receiver are on the same Wi-Fi network, or connect manually.</string>
+    <string name="picker_scan_hint">Finds supported receivers on this Wi-Fi network (currently Emlid Reach). Other receivers: connect manually.</string>
     <string name="picker_section_recent">Previously connected</string>
     <string name="picker_recent_none">No receivers connected yet.</string>
     <string name="picker_recent_model">%1$s (reported by receiver)</string>

@@ -33,6 +33,17 @@ class EmlidReachModelTest {
             assertEquals(s, EmlidReachModel.RS2_PLUS, EmlidReachModel.fromReportedModel(s))
     }
 
+    @Test fun `the Reach web service's own device type strings (family name glued to the model)`() {
+        // Observed: an RS2+ on firmware 33.1 reports /info device.type = "ReachRS2+" (2026-11-25).
+        assertEquals(EmlidReachModel.RS2_PLUS, EmlidReachModel.fromReportedModel("ReachRS2+"))
+        // Same pattern for the other models (not yet observed on hardware).
+        assertEquals(EmlidReachModel.RS4, EmlidReachModel.fromReportedModel("ReachRS4"))
+        assertEquals(EmlidReachModel.RS4_PRO, EmlidReachModel.fromReportedModel("ReachRS4Pro"))
+        assertEquals(EmlidReachModel.RS4_PRO, EmlidReachModel.fromReportedModel("ReachRS4 Pro"))
+        assertNull("plain RS2 stays ambiguous", EmlidReachModel.fromReportedModel("ReachRS2"))
+        assertNull("other Reach models are not these profiles", EmlidReachModel.fromReportedModel("ReachM2"))
+    }
+
     @Test fun `a plain RS2 is ambiguous and matches nothing`() {
         for (s in listOf("Reach RS2", "RS2", "reach_rs2"))
             assertNull(s, EmlidReachModel.fromReportedModel(s))

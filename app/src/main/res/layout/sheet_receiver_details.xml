@@ -32,44 +32,59 @@
             android:layout_height="wrap_content"
             android:orientation="vertical" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_details_copy_summary"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="wrap_content"
+        <!-- Actions on one row; scrolls sideways on narrow phones. -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp"
             android:layout_marginTop="16dp"
-            android:minHeight="48dp"
-            android:text="@string/details_copy_summary" />
+            android:paddingHorizontal="24dp"
+            android:clipToPadding="false"
+            android:scrollbars="none">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_details_copy_address"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp"
-            android:minHeight="48dp"
-            android:text="@string/details_copy_address" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_details_diagnostics"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp"
-            android:minHeight="48dp"
-            android:text="@string/details_open_diagnostics" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_details_copy_summary"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:minHeight="48dp"
+                android:text="@string/details_copy_summary" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_details_disconnect"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="24dp"
-            android:layout_marginTop="8dp"
-            android:minHeight="48dp"
-            android:text="@string/details_disconnect"
-            android:textColor="?attr/colorError"
-            app:strokeColor="?attr/colorError" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_details_copy_address"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:minHeight="48dp"
+                android:text="@string/details_copy_address" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_details_diagnostics"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:minHeight="48dp"
+                android:text="@string/details_open_diagnostics" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_details_disconnect"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:minHeight="48dp"
+                android:text="@string/details_disconnect"
+                android:textColor="?attr/colorError"
+                app:strokeColor="?attr/colorError" />
+            </LinearLayout>
+        </HorizontalScrollView>
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

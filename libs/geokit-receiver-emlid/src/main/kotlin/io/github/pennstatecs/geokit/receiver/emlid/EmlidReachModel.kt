@@ -42,6 +42,9 @@ public enum class EmlidReachModel(public val label: String, public val phaseCent
         public fun fromReportedModel(reported: String?): EmlidReachModel? {
             if (reported.isNullOrBlank()) return null
             val tokens = reported.lowercase(java.util.Locale.ROOT)
+                // The Reach web service glues the family name to the model: /info device.type = "ReachRS2+"
+                // (RS2+ firmware 33.1, observed 2026-11-25). Split "reach" from a following "rs".
+                .replace(Regex("reach(?=rs)"), "reach ")
                 .replace("+", " plus ")
                 .split(SEPARATORS)
                 .filter { it.isNotEmpty() }

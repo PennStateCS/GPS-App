@@ -84,7 +84,9 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
         val d = dialog as? BottomSheetDialog ?: return
         val sheet = d.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet) ?: return
         BottomSheetBehavior.from(sheet).apply {
-            maxWidth = (ReceiverPickerSheet.MAX_WIDTH_DP * resources.displayMetrics.density).toInt()
+            // Tablets: a wide sheet with two columns, so the details fit with little or no scrolling.
+            val widthDp = if (twoColumns()) WIDE_MAX_WIDTH_DP else ReceiverPickerSheet.MAX_WIDTH_DP
+            maxWidth = (widthDp * resources.displayMetrics.density).toInt()
             skipCollapsed = true
             state = BottomSheetBehavior.STATE_EXPANDED
         }
@@ -137,9 +139,28 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
         rebuild(container, sections)
     }
 
+    /** Two columns from [ReceiverPickerSheet.EXPANDED_FROM_DP] (tablets); one column on phones. */
+    private fun twoColumns(): Boolean = resources.configuration.screenWidthDp >= ReceiverPickerSheet.EXPANDED_FROM_DP
+
     private fun rebuild(container: LinearLayout, sections: List<DetailSection>) {
         val ctx = container.context
         container.removeAllViews()
+        if (!twoColumns()) { buildSections(container, sections); return }
+        // Two balanced columns: whole sections, in order, each placed in the shorter column so far.
+        val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        val cols = List(2) {
+            LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+                .also { row.addView(it, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)) }
+        }
+        val split = ReceiverDetailsColumns.split(sections.map { sec ->
+            1 + if (!sec.collapsible || sec.title in expanded) sec.rows.size else 0
+        })
+        cols.forEachIndexed { c, col -> buildSections(col, sections.filterIndexed { i, _ -> split[i] == c }) }
+        container.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
+
+    private fun buildSections(container: LinearLayout, sections: List<DetailSection>) {
+        val ctx = container.context
         val inflater = LayoutInflater.from(ctx)
         for (sec in sections) {
             val open = !sec.collapsible || sec.title in expanded
@@ -152,7 +173,7 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
                         if (open) R.string.details_section_collapse_cd else R.string.details_section_expand_cd, title)
                     it.setOnClickListener {
                         if (!expanded.remove(sec.title)) expanded += sec.title
-                        rebuild(container, lastSections)
+                        rows?.let { rebuild(it, lastSections) }
                     }
                 } else it.text = title
                 container.addView(it)
@@ -207,5 +228,19 @@ class ReceiverDetailsSheet : BottomSheetDialogFragment() {
     companion object {
         const val TAG = "ReceiverDetailsSheet"
         private const val KEY_EXPANDED = "expanded_sections"
+        /** Maximum sheet width with two columns (tablets). */
+        const val WIDE_MAX_WIDTH_DP = 1200
+    }
+}
+
+/** Pure column assignment for the two-column details layout (tablets). */
+internal object ReceiverDetailsColumns {
+    /**
+     * Column (0 or 1) for each section, given its height in rows ([weights], header included). Sections stay whole
+     * and in order within each column; each goes to the column that is shorter so far (ties: the left one).
+     */
+    fun split(weights: List<Int>): List<Int> {
+        val h = intArrayOf(0, 0)
+        return weights.map { w -> (if (h[1] < h[0]) 1 else 0).also { h[it] += w } }
     }
 }
