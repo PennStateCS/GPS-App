@@ -29,6 +29,7 @@ data class RecentReceiver(
  * - newest first, at most [MAX] entries;
  * - one entry per receiver: by [RecentReceiver.serial] when the receiver reported one, else by host:port; an entry
  *   with a serial also replaces a serial-less entry at the same host:port (the same receiver before it reported);
+ *   a serial-less entry replaces only the newest entry at its host:port and never merges entries of different serials;
  * - unknown JSON fields are ignored, invalid entries (blank host, port outside 1..65535) are dropped, and corrupt
  *   JSON reads as an empty list (never an exception).
  */
@@ -82,7 +83,14 @@ object RecentReceiversCodec {
      * does not know (e.g. the reported model after a reconnect that has not been identified yet).
      */
     fun upsert(list: List<RecentReceiver>, entry: RecentReceiver): List<RecentReceiver> {
-        val same = list.filter { sameReceiver(it, entry) }
+        val same = if (entry.serial != null) {
+            // By serial; a serial-less entry at the same host:port is this receiver before it reported.
+            list.filter { (it.serial != null && it.serial == entry.serial) || (it.serial == null && it.endpointKey == entry.endpointKey) }
+        } else {
+            // No serial: several receivers can share one address (every Reach hotspot is 192.168.42.1). Replace only
+            // the newest entry at this host:port; entries with other serials there are never merged into it.
+            listOfNotNull(list.firstOrNull { it.endpointKey == entry.endpointKey })
+        }
         val previous = same.firstOrNull { it.serial != null && it.serial == entry.serial } ?: same.firstOrNull()
         val merged = if (previous == null) entry else entry.copy(
             profileKey = entry.profileKey ?: previous.profileKey,
@@ -94,16 +102,19 @@ object RecentReceiversCodec {
         return normalize(listOf(merged) + (list - same.toSet()))
     }
 
-    private fun sameReceiver(a: RecentReceiver, b: RecentReceiver): Boolean = when {
-        a.serial != null && b.serial != null -> a.serial == b.serial
+    private fun duplicate(a: RecentReceiver, b: RecentReceiver): Boolean = when {
+        a.serial != null || b.serial != null -> a.serial == b.serial
         else -> a.endpointKey == b.endpointKey
     }
 
-    /** Dedupe (first wins), cap at [MAX]. */
+    /**
+     * Dedupe (first wins), cap at [MAX]. Two entries with different serials are never duplicates, even at the same
+     * host:port; a serial-less entry is dropped only after another serial-less one at the same host:port.
+     */
     private fun normalize(list: List<RecentReceiver>): List<RecentReceiver> {
         val out = ArrayList<RecentReceiver>()
         for (r in list) {
-            if (out.none { sameReceiver(it, r) }) out += r
+            if (out.none { duplicate(it, r) }) out += r
             if (out.size == MAX) break
         }
         return out

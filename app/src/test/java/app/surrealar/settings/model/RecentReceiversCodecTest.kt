@@ -53,6 +53,25 @@ class RecentReceiversCodecTest {
         assertEquals(5L, list.single().lastConnectedMs)
     }
 
+    @Test fun `a serial-less entry replaces only the newest entry at its address and never merges serials`() {
+        // Two Reach units seen on the same hotspot address (every Reach hotspot is 192.168.42.1).
+        var list = RecentReceiversCodec.upsert(emptyList(), r("192.168.42.1", serial = "SN-A", model = "Reach RS4", ms = 1))
+        list = RecentReceiversCodec.upsert(list, r("192.168.42.1", serial = "SN-B", model = "Reach RS2+", ms = 2))
+        assertEquals(listOf("SN-B", "SN-A"), list.map { it.serial })
+
+        // A reconnect before the receiver reports: only the newest entry there (SN-B) is refreshed.
+        list = RecentReceiversCodec.upsert(list, RecentReceiver("192.168.42.1", 9001, "reach_rs2_plus", null, lastConnectedMs = 3))
+        assertEquals(2, list.size)
+        assertEquals(listOf("SN-B", "SN-A"), list.map { it.serial })
+        assertEquals(3L, list[0].lastConnectedMs)
+        assertEquals("Reach RS2+", list[0].model)
+        val a = list[1]
+        assertEquals("SN-A kept as it was", "Reach RS4", a.model)
+        assertEquals(1L, a.lastConnectedMs)
+        // And it survives an encode/decode round trip.
+        assertEquals(list, RecentReceiversCodec.decode(RecentReceiversCodec.encode(list)))
+    }
+
     @Test fun `at most eight entries, the oldest dropped`() {
         var list = emptyList<RecentReceiver>()
         for (i in 1..12) list = RecentReceiversCodec.upsert(list, r("10.0.0.$i", ms = i.toLong()))
