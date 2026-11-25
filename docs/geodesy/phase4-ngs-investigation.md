@@ -208,3 +208,12 @@ What NGS should still publish: the promised developer test dataset (GitHub), doc
   modernized NSRS becomes official "sometime around March 2027". OPUS sample reports name "GEOID2022v1.0.0",
   and a third-party PROJ repository has a file named `sgeoid2022_na_v1a`. No such NGS download exists, so
   **`beta_v0a` remains current and nothing changes.**
+
+## Review note (2026-11-25): derived paths through the NATRF2022 edge
+
+Only the single ITRF2020 ⇄ NATRF2022 edge was verified against NGS coordinates. A request such as
+NAD83(2011) → NATRF2022 resolves through NAD83(2011) → ITRF2014 → ITRF2020 → NATRF2022 and inherits the beta
+status, but NGS never verified that chain end to end: NGS's own NAD83(2011) → NATRF2022 path uses NADCON 6 grids
+plus IFDM2022 with output at epoch 2020.00, while the chain keeps the input epoch. An independent check at
+40° N 80° W (epoch 2010) agreed with the NCAT value to ~5 mm, but regional NADCON distortion and the epoch
+difference are not covered. Treat such derived results as beta-derived, not NGS-equivalent.

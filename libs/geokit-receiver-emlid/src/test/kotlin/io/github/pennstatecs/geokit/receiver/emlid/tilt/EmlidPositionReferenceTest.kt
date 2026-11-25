@@ -125,4 +125,36 @@ class EmlidPositionReferenceTest {
         assertTrue(EmlidPositionReference.firmwareAtLeast("34.7", 34 to 7))
         assertTrue(EmlidPositionReference.firmwareAtLeast("34.10", 34 to 7))
     }
+
+    @Test
+    fun `an unclassifiable epoch under declared compensated output is flagged mayBeCompensated`() {
+        // Review MEDIUM: such an epoch may already be the pole tip; the app must not reduce it again.
+        for (tilt in listOf(unmatched(TiltMatch.NOT_MATCHED), unmatched(TiltMatch.ETC_STREAM_STALE), matched(EmlidTiltState.ALIGNING))) {
+            val r = ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.ENABLED, "34.10", tilt)
+            assertEquals(PositionReference.UNKNOWN, r.reference)
+            assertTrue("$tilt", r.mayBeCompensated)
+        }
+        assertTrue(ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.ENABLED, "34.3", matched(EmlidTiltState.ACTIVE)).mayBeCompensated)
+        // Not flagged when output is declared off or unknown, or when the epoch is classified.
+        assertFalse(ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.DISABLED, "34.10", unmatched(TiltMatch.ETC_STREAM_STALE)).mayBeCompensated)
+        assertFalse(ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.UNKNOWN, "34.10", unmatched(TiltMatch.ETC_STREAM_STALE)).mayBeCompensated)
+        assertFalse(ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.ENABLED, "34.10", matched(EmlidTiltState.ACTIVE)).mayBeCompensated)
+    }
+
+    @Test
+    fun `pole tip carries the receiver warning through`() {
+        fun active(n: io.github.pennstatecs.geokit.receiver.emlid.nmea.EtcNotification) = EmlidTiltAssociation(
+            EmlidTiltState.ACTIVE,
+            EmlidTiltReading(EmlidTiltState.ACTIVE, n, 0.0, null, null, null, null, null, null, null),
+            TiltMatch.MATCHED,
+        )
+        val warn = ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.ENABLED, "34.10",
+            active(io.github.pennstatecs.geokit.receiver.emlid.nmea.EtcNotification.FAST_MOTION))
+        assertEquals(PositionReference.RECEIVER_COMPENSATED_POLE_TIP, warn.reference)
+        assertTrue(warn.hasWarning)
+        val ok = ref(EmlidReachModel.RS4_PRO, CompensatedNmeaOutput.ENABLED, "34.10",
+            active(io.github.pennstatecs.geokit.receiver.emlid.nmea.EtcNotification.NONE))
+        assertFalse(ok.hasWarning)
+    }
 }
+

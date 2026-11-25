@@ -55,7 +55,7 @@ public data class EmlidTiltAssociation(
  *
  * Defaults, from the stream rate: ETC runs at the GGA rate (5 Hz default; Emlid Flow does not let the
  * ETC rate be changed), i.e. epochs 200 ms apart (100 ms at 10 Hz). Times have 0.01 s resolution, so
- * [DEFAULT_TIME_TOLERANCE_S] = 0.05 s is well under half an epoch at 10 Hz and can only match the same
+ * [DEFAULT_TIME_TOLERANCE_S] = 0.005 s (half the 0.01 s NMEA time resolution) can only match the same
  * epoch. [DEFAULT_MAX_RECEIPT_SKEW_MS] = 1000 ms (5 epochs at 5 Hz) absorbs TCP batching. The stream is
  * called stale after [DEFAULT_STREAM_TIMEOUT_MS] = 2000 ms (10 missed epochs) without an ETC.
  *
@@ -159,8 +159,12 @@ public class EmlidTiltTracker(
         }
 
     public companion object {
-        /** 0.05 s: under half an epoch at 10 Hz; NMEA times have 0.01 s resolution. */
-        public const val DEFAULT_TIME_TOLERANCE_S: Double = 0.05
+        /**
+         * 0.005 s: an ETC carries its GGA's own time and NMEA times have 0.01 s resolution, so a true match is
+         * exact; half the resolution absorbs floating-point rounding and can never reach a neighbouring epoch,
+         * even at 20 Hz (0.05 s apart).
+         */
+        public const val DEFAULT_TIME_TOLERANCE_S: Double = 0.005
         /** 1 s: five 5 Hz epochs of receive-time slack for TCP batching. */
         public const val DEFAULT_MAX_RECEIPT_SKEW_MS: Long = 1_000L
         /** 2 s: ten missed 5 Hz ETC epochs. */

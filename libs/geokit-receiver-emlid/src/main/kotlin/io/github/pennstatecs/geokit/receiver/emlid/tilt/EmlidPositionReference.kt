@@ -87,11 +87,19 @@ public object EmlidPositionReference {
      * @property reason why.
      * @property antennaMayBeTilted true when the position is the antenna but the pole may not be plumb
      *   (tilt engine on, or its state unknown): warn the user to level the pole.
+     * @property mayBeCompensated true when compensated output is declared ENABLED but this epoch could not
+     *   be classified (reference UNKNOWN): the GGA may already be the pole tip. The app must NOT apply its own
+     *   pole-height reduction to such an epoch (that would double-correct by ≈ the pole height) — exclude or
+     *   refuse it, and never average it with epochs of another reference.
+     * @property hasWarning the matched ETC carries a receiver notification (e.g. fast motion, poor GNSS):
+     *   the reference is known but the compensation quality is degraded — warn or block.
      */
     public data class Result(
         val reference: PositionReference,
         val reason: Reason,
         val antennaMayBeTilted: Boolean = false,
+        val mayBeCompensated: Boolean = false,
+        val hasWarning: Boolean = false,
     )
 
     /**
@@ -124,11 +132,12 @@ public object EmlidPositionReference {
             CompensatedNmeaOutput.UNKNOWN -> Result(PositionReference.UNKNOWN, Reason.OUTPUT_SETTING_UNKNOWN)
             CompensatedNmeaOutput.ENABLED -> when {
                 !firmwareAtLeast(firmware, MIN_COMPENSATED_FIRMWARE) ->
-                    Result(PositionReference.UNKNOWN, Reason.FIRMWARE_UNKNOWN_OR_TOO_OLD)
-                !matched -> Result(PositionReference.UNKNOWN, Reason.TILT_STATE_UNKNOWN)
+                    Result(PositionReference.UNKNOWN, Reason.FIRMWARE_UNKNOWN_OR_TOO_OLD, mayBeCompensated = true)
+                !matched -> Result(PositionReference.UNKNOWN, Reason.TILT_STATE_UNKNOWN, mayBeCompensated = true)
                 tilt.state == EmlidTiltState.ACTIVE ->
-                    Result(PositionReference.RECEIVER_COMPENSATED_POLE_TIP, Reason.RECEIVER_COMPENSATING)
-                else -> Result(PositionReference.UNKNOWN, Reason.TILT_NOT_COMPENSATING)
+                    Result(PositionReference.RECEIVER_COMPENSATED_POLE_TIP, Reason.RECEIVER_COMPENSATING,
+                        hasWarning = tilt.reading?.hasWarning == true)
+                else -> Result(PositionReference.UNKNOWN, Reason.TILT_NOT_COMPENSATING, mayBeCompensated = true)
             }
         }
     }

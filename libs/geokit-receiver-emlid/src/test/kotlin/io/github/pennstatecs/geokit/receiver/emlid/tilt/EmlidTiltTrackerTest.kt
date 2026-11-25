@@ -80,10 +80,15 @@ class EmlidTiltTrackerTest {
     }
 
     @Test
-    fun `time tolerance is 50 ms`() {
+    fun `time tolerance is 5 ms - the ETC must carry its GGA's own time`() {
+        // Tightened from 50 ms after review: an ETC carries the GGA's time (0.01 s resolution), so only the
+        // same epoch matches; rounding within half the resolution still matches.
         val t = EmlidTiltTracker()
         t.onEtc(comp("120000.20"), 1_000)
-        assertEquals(TiltMatch.MATCHED, t.associate(tod("120000.24"), 1_000).match)
+        assertEquals(TiltMatch.MATCHED, t.associate(tod("120000.20"), 1_000).match)
+        assertEquals(TiltMatch.MATCHED, t.associate(tod("120000.20") + 0.004, 1_000).match)
+        assertEquals(TiltMatch.NOT_MATCHED, t.associate(tod("120000.21"), 1_000).match)
+        assertEquals(TiltMatch.NOT_MATCHED, t.associate(tod("120000.24"), 1_000).match)
         assertEquals(TiltMatch.NOT_MATCHED, t.associate(tod("120000.30"), 1_000).match)
         assertEquals(TiltMatch.NOT_MATCHED, t.associate(tod("120000.40"), 1_000).match)
     }
@@ -140,8 +145,13 @@ class EmlidTiltTrackerTest {
     @Test
     fun `midnight wrap`() {
         val t = EmlidTiltTracker()
-        t.onEtc(comp("235959.99"), 1_000)
-        assertEquals(TiltMatch.MATCHED, t.associate(tod("000000.01"), 1_010).match)
+        // The same instant on either side of midnight (2 ms apart across 24 h) matches through the wrap ...
+        t.onEtc(comp("000000.00"), 1_000)
+        assertEquals(TiltMatch.MATCHED, t.associate(86_400.0 - 0.002, 1_010).match)
+        // ... but two different epochs across midnight (0.02 s apart) do not.
+        val u = EmlidTiltTracker()
+        u.onEtc(comp("235959.99"), 1_000)
+        assertEquals(TiltMatch.NOT_MATCHED, u.associate(tod("000000.01"), 1_010).match)
     }
 
     @Test
@@ -268,4 +278,20 @@ class EmlidTiltTrackerTest {
             )
         }
     }
+
+    @Test
+    fun `20 Hz neighbouring epochs match exactly, never each other`() {
+        // Review LOW: with the old 0.05 s tolerance epochs 0.05 s apart could both match (AMBIGUOUS).
+        val t = EmlidTiltTracker()
+        t.onEtc(comp("120000.00", tilt = "1.000"), 1_000)
+        t.onEtc(comp("120000.05", tilt = "2.000"), 1_050)
+        val a = t.associate(tod("120000.00"), 1_060)
+        val b = t.associate(tod("120000.05"), 1_060)
+        assertEquals(TiltMatch.MATCHED, a.match)
+        assertEquals(TiltMatch.MATCHED, b.match)
+        assertEquals(1.0, a.reading!!.tiltDeg!!, 1e-9)
+        assertEquals(2.0, b.reading!!.tiltDeg!!, 1e-9)
+        assertEquals(TiltMatch.NOT_MATCHED, t.associate(tod("120000.02"), 1_060).match)
+    }
 }
+
