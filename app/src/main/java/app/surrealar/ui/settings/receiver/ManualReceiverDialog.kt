@@ -6,7 +6,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.ArrayAdapter
-import android.widget.AutoCompleteTextView
 import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
@@ -19,6 +18,7 @@ import app.surrealar.receiver.selection.ReceiverTestResult
 import app.surrealar.settings.model.ExternalReceiverProfile
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textfield.TextInputLayout
 import io.github.pennstatecs.geokit.gnss.receiver.ReceiverVendor
 import kotlinx.coroutines.Job
@@ -64,7 +64,7 @@ class ManualReceiverDialog : DialogFragment() {
     private val portLayout get() = content.findViewById<TextInputLayout>(R.id.input_manual_port)
     private val hostEdit get() = content.findViewById<EditText>(R.id.edit_manual_host)
     private val portEdit get() = content.findViewById<EditText>(R.id.edit_manual_port)
-    private val typeDropdown get() = content.findViewById<AutoCompleteTextView>(R.id.dropdown_manual_type)
+    private val typeDropdown get() = content.findViewById<MaterialAutoCompleteTextView>(R.id.dropdown_manual_type)
     private val hint get() = content.findViewById<TextView>(R.id.text_manual_hint)
     private val result get() = content.findViewById<TextView>(R.id.text_manual_result)
 
@@ -81,7 +81,9 @@ class ManualReceiverDialog : DialogFragment() {
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        content = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_manual_receiver, null, false)
+        // Inflated with the dialog builder's themed context so the outlined fields match the Settings inputs.
+        val builder = MaterialAlertDialogBuilder(requireContext())
+        content = LayoutInflater.from(builder.context).inflate(R.layout.dialog_manual_receiver, null, false)
         val types = ManualReceiverInput.types
         typeDropdown.setAdapter(ArrayAdapter(requireContext(), R.layout.list_item_dropdown_settings, types.map { it.label }))
         typeDropdown.setText(selected.label, false)
@@ -99,7 +101,7 @@ class ManualReceiverDialog : DialogFragment() {
             updateHint()
             clearResult()
         }
-        return MaterialAlertDialogBuilder(requireContext())
+        return builder
             .setTitle(R.string.manual_title)
             .setView(content)
             .setPositiveButton(R.string.manual_save, null)
@@ -165,7 +167,7 @@ class ManualReceiverDialog : DialogFragment() {
     private fun onSave() {
         val req = readRequest() ?: return
         testJob?.cancel()
-        ReceiverPickerSheet.startConnect(this, deps, req) { dismissAllowingStateLoss() }
+        ReceiverPickerSheet.startConnect(this, deps, req, dismissAfterConfirm = true) { dismissAllowingStateLoss() }
     }
 
     companion object {
