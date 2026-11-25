@@ -19,7 +19,7 @@ enum class CapabilityUiState(val label: String) {
     BETA("beta"),
 
     /** Not verified or no coverage: listed for information only, never selectable. */
-    UNAVAILABLE("unavailable — awaiting NGS verification"),
+    UNAVAILABLE("unavailable"),
 }
 
 /** Product family of a [Nsrs2022Capability]. */
@@ -57,10 +57,13 @@ data class Nsrs2022Capability(
  * offer, read from geokit's status and registries (never hard-coded as available):
  * - GEOID2022 heights: [Geoid2022Model.INFO] status (VERIFIED_BETA, dataset beta_v0a) → the height option
  *   "Orthometric height H (NAPGD2022, GEOID2022 beta)" with the preview ON;
- * - NATRF2022 / PATRF2022 / CATRF2022 / MATRF2022: the verified frame registry's lookup from the app's
- *   stored frame (UNAVAILABLE today, NGS reference coordinates missing) → listed, not selectable;
- * - SPCS2022: the CRS registry's catalog (953 NGS beta zones, 0 operational while their frames are
- *   unreachable) → listed, not selectable.
+ * - NATRF2022 / PATRF2022 / CATRF2022 / MATRF2022: the frame registry's lookup from the app's stored frame.
+ *   Phase 4 WP X: with the preview ON the app passes [Nsrs2022Registries.frames] (NSRS2022_BETA): VERIFIED_BETA
+ *   ("Verified NGS beta", verified against NGS beta Geodetic Station Page coordinates) → selectable as output
+ *   datums; with geokit's DEFAULT registry they stay UNAVAILABLE with its reason;
+ * - SPCS2022: the CRS registry's catalog (953 NGS beta zones): with the beta CRS registry every zone whose frame
+ *   is reachable is operational beta → selectable as "State Plane (SPCS2022, beta)"; with the default one
+ *   0 zones → listed, not selectable.
  */
 object Nsrs2022Capabilities {
     const val PREVIEW_TITLE: String = "Modernized NSRS 2022 (beta preview)"
@@ -86,32 +89,52 @@ object Nsrs2022Capabilities {
         )
     }
 
-    /** The four 2022 frames as reachable (or not) from the app's stored frame, WGS84 (ITRF2014). */
+    /**
+     * The four 2022 frames as reachable (or not) from the app's stored frame, WGS84 (ITRF2014). A frame reached
+     * only through a verified beta edge is offered as an output datum (Latitude / Longitude, preview ON), labelled
+     * with the dataset version, its area and the evidence caveat. A frame reachable through a legacy-only chain
+     * would not be a beta product: it is listed, not offered (no such frame exists).
+     */
     fun frames(registry: FrameTransformationRegistry = FrameTransformationRegistry.DEFAULT): List<Nsrs2022Capability> =
         FRAME_IDS.map { id ->
             val lookup = registry.find(ReferenceFrame.WGS84_AS_ITRF2014.id, id, CoordinateEpoch(PlateFrame2022.REFERENCE_EPOCH))
             val name = PlateFrame2022.fromId(id)?.displayName ?: id.uppercase()
+            val state = lookup.status.toUiState()
+            val frame = ReferenceFrame.fromId(id)
+            val datum = frame?.let { outputDatumOf2022(it) }
+            val offered = state == CapabilityUiState.BETA && datum != null
             Nsrs2022Capability(
                 name = name,
-                state = lookup.status.toUiState(),
-                // The app has no 2022-frame output yet: never selectable, even once a frame becomes verified.
-                selectable = false,
-                reason = (lookup as? FrameTransformationLookup.Unavailable)?.explanation
-                    ?: "verified in GeoKit, but not offered as an output frame in this app version",
+                state = state,
+                selectable = offered,
+                reason = when {
+                    lookup is FrameTransformationLookup.Unavailable -> lookup.explanation
+                    offered -> null
+                    else -> "verified in GeoKit, but not offered as an output frame in this app version"
+                },
+                note = if (offered) "Choose “${datum!!.label}” under Datum (${app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC.label}); " +
+                    "position at each point's coordinate epoch. ${Nsrs2022FrameLabels.DATASET}." +
+                    (frame.let { Nsrs2022FrameLabels.areaNote(it) }?.let { " Area: $it." } ?: "") + " " + Nsrs2022FrameLabels.CAVEAT
+                    else null,
                 kind = CapabilityKind.FRAME,
             )
         }
 
-    /** SPCS2022 from the CRS registry: operational zones only once their frames are reachable. */
+    /** SPCS2022 from the CRS registry: operational (beta) zones once their frames are reachable. */
     fun spcs2022(registry: CrsRegistry = CrsRegistry.DEFAULT): Nsrs2022Capability {
         val c = registry.catalog(CrsCatalogId.SPCS2022)
         val state = if (c.operational.isEmpty()) CapabilityUiState.UNAVAILABLE else CapabilityUiState.BETA
+        val offered = state == CapabilityUiState.BETA
+        val frames = c.operational.mapNotNull { it.frame }.distinct().sortedBy { it.ordinal }.map { it.displayName }
         return Nsrs2022Capability(
             name = "SPCS2022 (${c.entries.size} NGS beta zones)",
             state = state,
-            // Not offered as a State Plane option in this app version (the zone picker stays SPCS83).
-            selectable = false,
-            reason = c.explanation ?: "${c.operational.size} zones verified in GeoKit, not offered in this app version",
+            selectable = offered,
+            reason = c.explanation,
+            note = if (offered) "${c.operational.size} zones on ${frames.joinToString(", ")}; choose " +
+                "“${app.surrealar.settings.model.HorizontalSystem.SPCS2022.label}” under System and a zone. Each zone uses its own " +
+                "2022 frame at each point's coordinate epoch (${Nsrs2022FrameLabels.DATASET}; ${Nsrs2022FrameLabels.SPCS2022_DATASET}). " +
+                Nsrs2022FrameLabels.CAVEAT else null,
             kind = CapabilityKind.SPCS,
         )
     }
@@ -127,7 +150,7 @@ object Nsrs2022Capabilities {
         if (c.selectable) return null
         val unavailable = c.state == CapabilityUiState.UNAVAILABLE
         return when (c.kind) {
-            CapabilityKind.FRAME -> if (unavailable) "No NGS-verified transformation yet" else "Verified, not yet an output frame here"
+            CapabilityKind.FRAME -> if (unavailable) "Not enabled in the default registry" else "Verified, not an output frame here"
             CapabilityKind.SPCS -> if (unavailable) "Needs a verified 2022 frame; not in EPSG/PROJ" else "Verified zones, not yet offered here"
             CapabilityKind.GEOID -> if (unavailable) "Not verified in GeoKit" else "Not offered in this app version"
             CapabilityKind.OTHER -> c.reason?.let { firstClause(it) } ?: "Not offered in this app version"

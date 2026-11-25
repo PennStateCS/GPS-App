@@ -55,6 +55,26 @@ class CoordinateHeightDropdownFitTest {
         }
     }
 
+    @Test fun `every system label fits the single-line 280dp system field (incl SPCS2022 beta)`() {
+        val host = FrameLayout(ctx)
+        val root = LayoutInflater.from(ctx).inflate(R.layout.content_settings_coordinate_display, host, false)
+        host.addView(root)
+        val field = root.findViewById<AutoCompleteTextView>(R.id.spinner_coord_horizontal)
+        val widthPx = (1480 * ctx.resources.displayMetrics.density).toInt()
+        assertTrue(app.surrealar.settings.model.HorizontalSystem.entries.contains(app.surrealar.settings.model.HorizontalSystem.SPCS2022))
+        // Datum field texts shown for SPCS2022 (the zone's frame) are measured in the datum field below.
+        for (h in app.surrealar.settings.model.HorizontalSystem.entries) {
+            field.setText(h.label, false)
+            root.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            root.layout(0, 0, widthPx, root.measuredHeight)
+            val available = field.width - field.totalPaddingLeft - field.totalPaddingRight
+            val textPx = field.paint.measureText(h.label)
+            println("${h.label}: ${textPx}px of ${available}px")
+            assertTrue("${h.label} needs ${textPx}px, field has ${available}px", textPx <= available)
+        }
+    }
+
     @Test fun `every datum label fits the single-line 280dp datum field`() {
         val host = FrameLayout(ctx)
         val root = LayoutInflater.from(ctx).inflate(R.layout.content_settings_coordinate_display, host, false)
@@ -62,7 +82,12 @@ class CoordinateHeightDropdownFitTest {
         val field = root.findViewById<AutoCompleteTextView>(R.id.spinner_coord_datum)
         val widthPx = (1480 * ctx.resources.displayMetrics.density).toInt()
         assertTrue(OutputDatum.entries.contains(OutputDatum.ITRF2020))
-        for (d in OutputDatum.entries) {
+        // Phase 4 WP X: the 2022 beta datums are entries; SPCS2022 shows its zone's frame in this field.
+        assertTrue(OutputDatum.entries.contains(OutputDatum.NATRF2022) && OutputDatum.entries.contains(OutputDatum.MATRF2022))
+        val texts = OutputDatum.entries.map { it.label } + CoordinatesSettingsController.SPCS2022_ZONE_FRAME +
+            listOf("NATRF2022", "PATRF2022", "CATRF2022", "MATRF2022").map { "$it (zone frame, beta)" }
+        for (label in texts) {
+            val d = object { val label = label }
             field.setText(d.label, false)
             root.measure(View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))

@@ -427,7 +427,7 @@ def main():
         "# Status: NGS beta (finalized beta designs, 2026-05-14). Never authoritative; opt-in only (ProductStatus.VERIFIED_BETA).",
         f"# verified_by = {VECTORS}: PROJ reproduced NGS's example point when generated; CrsSpcs2022Test checks GeoKit's",
         "# own maths against the same NGS vectors. Area of use = NGS zone envelope (outward to 0.01 deg).",
-        "# Frames patrf2022 / catrf2022 / matrf2022 load as non-operational until GeoKit defines them.",
+        "# A zone is operational only when CrsRegistry reaches its frame through verified transformations.",
         "zone_code,epsg,name,frame,method,parameters,unit,west,south,east,north,dataset,verified_by,status,aliases",
     ]
     w("src/main/resources/crs/spcs2022_catalog.csv", "\n".join(header + catalog) + "\n")

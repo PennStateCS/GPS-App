@@ -29,11 +29,59 @@ data class CoordinateSystemSettings(
     val externalReceiverDatum: ReceiverDatum = ReceiverDatum.ITRF2014,
     /**
      * "Modernized NSRS 2022 (beta preview)" (Phase 3), default OFF. When ON, the beta options appear
-     * (today: [VerticalReference.GEOID2022]); when OFF the app behaves exactly as before. NGS beta
-     * products are preliminary and never authoritative, so nothing beta is ever a default.
+     * ([VerticalReference.GEOID2022]; Phase 4 WP X: the 2022 output datums and [HorizontalSystem.SPCS2022]);
+     * when OFF the app behaves exactly as before. NGS beta products are preliminary and never authoritative,
+     * so nothing beta is ever a default.
      */
     val nsrs2022Preview: Boolean = false,
+    /**
+     * SPCS2022 zone used when [horizontal] is [HorizontalSystem.SPCS2022] (Phase 4 WP X, BETA): the geokit
+     * CrsRegistry id `spcs2022:<NGS zone code>`, e.g. "spcs2022:421001". Null = none chosen (default).
+     * Persisted in its own key; SPCS83's [spcsZoneEpsg] is separate.
+     */
+    val spcs2022Zone: String? = null,
 ) {
+    /**
+     * The horizontal system actually used. A beta system saved while the preview is OFF, or SPCS2022 without a
+     * zone, is not used (the stored value is kept, never rewritten): the existing default
+     * ([HorizontalSystem.GEOGRAPHIC]) is shown instead, with a note ([betaHorizontalSuspended]).
+     */
+    val effectiveHorizontal: HorizontalSystem
+        get() = if (horizontal.isBeta && (!nsrs2022Preview || spcs2022Zone.isNullOrBlank())) HorizontalSystem.GEOGRAPHIC else horizontal
+
+    /** True when the saved horizontal system is a beta option that is not used (preview OFF, or no zone chosen). */
+    val betaHorizontalSuspended: Boolean
+        get() = horizontal.isBeta && effectiveHorizontal != horizontal
+
+    /**
+     * True when the saved output datum is a beta 2022 frame that is not used: the preview is OFF, or the system
+     * is UTM (no UTM on a 2022 frame is offered). The default WGS84 (ITRF2014) is used instead; the stored value
+     * is kept. Not flagged for State Plane systems, whose frame is fixed by the system (as for legacy datums).
+     */
+    val betaDatumSuspended: Boolean
+        get() = datum.isBeta && !(nsrs2022Preview && effectiveHorizontal == HorizontalSystem.GEOGRAPHIC) &&
+            !effectiveHorizontal.isStatePlane && effectiveHorizontal != HorizontalSystem.SPCS2022
+
+    /** The datum the conversion engine sees: a beta 2022 datum is used only for Latitude / Longitude with the preview ON. */
+    private val conversionDatum: OutputDatum
+        get() = if (datum.isBeta && !(nsrs2022Preview && effectiveHorizontal == HorizontalSystem.GEOGRAPHIC)) OutputDatum.WGS84 else datum
+
+    /** Horizontal systems offered in the dropdown: beta ones only with the preview ON. */
+    val selectableHorizontals: List<HorizontalSystem>
+        get() = HorizontalSystem.entries.filter { nsrs2022Preview || !it.isBeta }
+
+    /** Output datums offered in the dropdown: the 2022 frames (beta) only with the preview ON and Latitude / Longitude. */
+    val selectableDatums: List<OutputDatum>
+        get() = OutputDatum.entries.filter { !it.isBeta || (nsrs2022Preview && effectiveHorizontal == HorizontalSystem.GEOGRAPHIC) }
+
+    /**
+     * True when the output is expressed at each position's coordinate epoch (time-dependent frame): ITRF2020, a
+     * beta 2022 frame (geographic or SPCS2022) or a GEOID2022 height.
+     */
+    val usesCoordinateEpoch: Boolean
+        get() = effectiveDatum == OutputDatum.ITRF2020 || effectiveDatum.isBeta ||
+            effectiveHorizontal == HorizontalSystem.SPCS2022 || effectiveVertical == VerticalReference.GEOID2022
+
     /**
      * The height reference actually used for display and export. A beta choice saved while the preview
      * is OFF is not used (the stored value is kept, never rewritten): the existing default
@@ -46,19 +94,34 @@ data class CoordinateSystemSettings(
     val betaVerticalSuspended: Boolean
         get() = vertical.isBeta && !nsrs2022Preview
 
-    /** These settings as used for conversions: [vertical] replaced by [effectiveVertical]. */
-    fun forConversion(): CoordinateSystemSettings =
-        if (betaVerticalSuspended) copy(vertical = effectiveVertical) else this
+    /**
+     * These settings as used for conversions: [vertical] replaced by [effectiveVertical], [horizontal] by
+     * [effectiveHorizontal] and a beta datum that does not apply by WGS84 (ITRF2014). The same instance when
+     * nothing is replaced (every legacy setting).
+     */
+    fun forConversion(): CoordinateSystemSettings {
+        val h = effectiveHorizontal
+        val d = conversionDatum
+        val v = effectiveVertical
+        return if (h == horizontal && d == datum && v == vertical) this else copy(horizontal = h, datum = d, vertical = v)
+    }
 
     /** Height references offered in the dropdown: beta ones only with the preview ON. */
     val selectableVerticals: List<VerticalReference>
         get() = VerticalReference.entries.filter { nsrs2022Preview || !it.isBeta }
 
-    /** Datum the horizontal output is expressed in (State Plane forces NAD83(2011)). */
+    /**
+     * Datum the horizontal output is expressed in (State Plane forces NAD83(2011); a beta datum that does not
+     * apply reads WGS84 (ITRF2014)). For [HorizontalSystem.SPCS2022] the output frame is the zone's own 2022
+     * frame, which only the zone definition knows: the converter reports it in ConvertedPosition.datum.
+     */
     val effectiveDatum: OutputDatum
-        get() = if (horizontal.isStatePlane) OutputDatum.NAD83_2011 else datum
+        get() = if (effectiveHorizontal.isStatePlane) OutputDatum.NAD83_2011 else conversionDatum
 
-    /** Persisted form of the horizontal system: "geographic", "utm", or "spcs83:<zone EPSG>". */
+    /**
+     * Persisted form of the horizontal system: "geographic", "utm", "spcs83:<zone EPSG>" or "spcs2022_beta"
+     * (the SPCS2022 zone is stored in its own key, [spcs2022Zone]).
+     */
     val horizontalPrefValue: String
         get() = if (horizontal == HorizontalSystem.STATE_PLANE) "$SPCS_PREFIX$spcsZoneEpsg" else horizontal.prefKey
 
@@ -78,10 +141,34 @@ data class CoordinateSystemSettings(
     }
 }
 
-enum class HorizontalSystem(val prefKey: String, val label: String, val isStatePlane: Boolean = false) {
+/**
+ * Horizontal output system. [isStatePlane] means SPCS83 on NAD83(2011) (it forces that datum); SPCS2022
+ * (Phase 4 WP X, BETA, NSRS 2022 preview only) is a separate system on the zone's own 2022 frame. New entries
+ * are only ever appended.
+ */
+enum class HorizontalSystem(
+    val prefKey: String,
+    val label: String,
+    val isStatePlane: Boolean = false,
+    /** [ProductStatus.VERIFIED_BETA] systems are offered only with the NSRS 2022 preview ON and always labelled beta. */
+    val status: ProductStatus = ProductStatus.VERIFIED_LEGACY,
+) {
     GEOGRAPHIC("geographic", "Latitude / Longitude"),
     UTM("utm", "UTM (auto zone)"),
-    STATE_PLANE("spcs83", "State Plane (SPCS83)", isStatePlane = true);
+    STATE_PLANE("spcs83", "State Plane (SPCS83)", isStatePlane = true),
+
+    /**
+     * BETA: SPCS2022 zone ([CoordinateSystemSettings.spcs2022Zone]) on its own frame (NATRF2022, PATRF2022,
+     * CATRF2022 or MATRF2022, never NAD83) at each position's coordinate epoch: NGS finalized beta zone designs,
+     * frames by the NGS beta EPP2022 rotation.
+     */
+    SPCS2022("spcs2022_beta", "State Plane (SPCS2022, beta)", status = ProductStatus.VERIFIED_BETA);
+
+    /** True for an NGS beta option (shown only with the beta preview ON). */
+    val isBeta: Boolean get() = status == ProductStatus.VERIFIED_BETA
+
+    /** True for a grid (easting/northing) system. */
+    val isGrid: Boolean get() = this != GEOGRAPHIC
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: GEOGRAPHIC }
 }
@@ -92,11 +179,28 @@ enum class HorizontalSystem(val prefKey: String, val label: String, val isStateP
  * coordinate epoch, or the capture time when none was recorded; live fixes use the fix time. It is
  * reached from the stored WGS84 (ITRF2014) coordinates by the verified EPSG ITRF2014 → ITRF2020
  * transformation (geokit FrameTransformationRegistry). New entries are only ever appended.
+ *
+ * Phase 4 WP X: the four NSRS 2022 plate-fixed frames (BETA, NSRS 2022 preview ON, Latitude / Longitude only),
+ * each at the coordinate epoch like [ITRF2020], reached through geokit's opt-in NSRS2022_BETA registry (NGS beta
+ * EPP2022 rotation of ITRF2020). Regional frames: each one is meaningful on its plate only (area notes in
+ * Settings); no UTM is offered on them.
  */
-enum class OutputDatum(val prefKey: String, val label: String) {
+enum class OutputDatum(
+    val prefKey: String,
+    val label: String,
+    /** [ProductStatus.VERIFIED_BETA] datums are offered only with the NSRS 2022 preview ON and always labelled beta. */
+    val status: ProductStatus = ProductStatus.VERIFIED_LEGACY,
+) {
     WGS84("wgs84", "WGS84 (ITRF2014)"),
     NAD83_2011("nad83_2011", "NAD83(2011)"),
-    ITRF2020("itrf2020", "ITRF2020");
+    ITRF2020("itrf2020", "ITRF2020"),
+    NATRF2022("natrf2022_beta", "NATRF2022 (beta)", ProductStatus.VERIFIED_BETA),
+    PATRF2022("patrf2022_beta", "PATRF2022 (beta)", ProductStatus.VERIFIED_BETA),
+    CATRF2022("catrf2022_beta", "CATRF2022 (beta)", ProductStatus.VERIFIED_BETA),
+    MATRF2022("matrf2022_beta", "MATRF2022 (beta)", ProductStatus.VERIFIED_BETA);
+
+    /** True for an NGS beta frame (shown only with the beta preview ON). */
+    val isBeta: Boolean get() = status == ProductStatus.VERIFIED_BETA
 
     companion object { fun fromPrefKey(k: String?) = entries.firstOrNull { it.prefKey == k } ?: WGS84 }
 }

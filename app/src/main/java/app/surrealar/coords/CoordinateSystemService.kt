@@ -54,6 +54,14 @@ class CoordinateSystemService @Inject constructor(
     /** True while the GEOID18 grid load has not finished (loaded or failed). */
     @Volatile private var geoid18Loading = true
 
+    /**
+     * True once the beta CRS registry's SPCS2022 catalog (953 zones) is parsed (Phase 4 WP X). Before that, a
+     * main-thread SPCS2022 conversion reads "SPCS2022 zone data is loading" (labelled default position) instead of
+     * parsing on the UI thread; [spcs2022Events] then refreshes the screens through [heightDataVersion].
+     */
+    @Volatile private var spcs2022Ready = false
+    private val spcs2022Events = kotlinx.coroutines.flow.MutableStateFlow(0L)
+
     /** Incremented when the GEOID18 grid load ends (loaded or failed). */
     private val geoid18Events = kotlinx.coroutines.flow.MutableStateFlow(0L)
 
@@ -64,7 +72,7 @@ class CoordinateSystemService @Inject constructor(
      * The toolbar needs no signal: it re-converts on its one-second tick.
      */
     val heightDataVersion: kotlinx.coroutines.flow.StateFlow<Long> =
-        kotlinx.coroutines.flow.combine(geoid18Events, AppGeoidModels.loadEvents) { a, b -> a + b }
+        kotlinx.coroutines.flow.combine(geoid18Events, AppGeoidModels.loadEvents, spcs2022Events) { a, b, c -> a + b + c }
             .stateIn(appScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, 0L)
 
     init {
@@ -102,7 +110,40 @@ class CoordinateSystemService @Inject constructor(
         }
     }
 
-    private val converter = CoordinateConverter({ lat, lon -> geoid?.undulation(lat, lon) })
+    init {
+        // SPCS2022 (beta): parse the zone catalog off the main thread once the system is in use (preview ON).
+        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            settingsFlow.map { it.effectiveHorizontal == app.surrealar.settings.model.HorizontalSystem.SPCS2022 }
+                .distinctUntilChanged().collect { needed -> if (needed) warmUpSpcs2022() }
+        }
+    }
+
+    private fun warmUpSpcs2022() {
+        if (spcs2022Ready) return
+        val t0 = System.nanoTime()
+        runCatching { Nsrs2022Registries.betaCrs.catalog(io.github.pennstatecs.geokit.crs.CrsCatalogId.SPCS2022).operational.size }
+            .onSuccess {
+                spcs2022Ready = true
+                spcs2022Events.value = spcs2022Events.value + 1
+                DiagnosticsLogger.i(DiagTags.DATA, "SPCS2022 beta catalog loaded zones=$it durationMs=${(System.nanoTime() - t0) / 1_000_000}")
+            }
+            .onFailure { DiagnosticsLogger.e(DiagTags.DATA, "SPCS2022 beta catalog load failed: SPCS2022 output unavailable", it) }
+    }
+
+    /** The saved SPCS2022 zone: never parses the catalog on the main thread (loads synchronously elsewhere). */
+    private fun lookupSpcs2022Zone(id: String): Spcs2022ZoneLookup {
+        if (!spcs2022Ready && android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return Spcs2022ZoneLookup.Loading
+        spcs2022Ready = true
+        return Nsrs2022Registries.spcs2022Zone(id)?.let { Spcs2022ZoneLookup.Found(it) } ?: Spcs2022ZoneLookup.Unknown
+    }
+
+    // Preview OFF: geokit's default frame registry exactly as before; preview ON: the NSRS 2022 beta registry.
+    private val converter = CoordinateConverter(
+        { lat, lon -> geoid?.undulation(lat, lon) }, AppGeoidModels::model, { AppGeoidModels.geoid2022 },
+        io.github.pennstatecs.geokit.datum.FrameTransformationRegistry.DEFAULT,
+        io.github.pennstatecs.geokit.datum.FrameTransformationRegistry.NSRS2022_BETA,
+        ::lookupSpcs2022Zone,
+    )
 
     /**
      * EPSG code to store in Coordinate.crsEpsg for a capture. Fixes on the GNSS feed are always
@@ -229,8 +270,8 @@ internal fun markGeoid18Loading(p: ConvertedPosition, s: CoordinateSystemSetting
 internal const val GEOID18_LOADING = "GEOID18 data is loading"
 
 internal fun storedEpochYear(c: Coordinate, s: CoordinateSystemSettings): Double =
-    (if (s.effectiveDatum == app.surrealar.settings.model.OutputDatum.ITRF2020 || StoredDatum.isItrf2020(c.crsEpsg) ||
-        s.effectiveVertical == app.surrealar.settings.model.VerticalReference.GEOID2022)
+    // usesCoordinateEpoch: ITRF2020, a 2022 beta frame / SPCS2022 (Phase 4 WP X) or a GEOID2022 height.
+    (if (s.usesCoordinateEpoch || StoredDatum.isItrf2020(c.crsEpsg))
         app.surrealar.domain.model.validCoordinateEpochOrNull(c.coordinateEpoch) else null)
         ?: Itrf2014ToNad83.decimalYear(c.timestamp)
 

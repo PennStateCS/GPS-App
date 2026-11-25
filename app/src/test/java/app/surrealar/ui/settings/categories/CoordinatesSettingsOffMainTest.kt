@@ -123,10 +123,11 @@ class CoordinatesSettingsOffMainTest {
         assertEquals(View.VISIBLE, groups.visibility)
         val rows = (0 until groups.childCount).map { groups.getChildAt(it) }.filterIsInstance<LinearLayout>()
         val spcs = rows.first { it.contentDescription?.startsWith("SPCS2022") == true }
-        assertTrue(spcs.contentDescription.toString(), spcs.contentDescription.contains("not offered") &&
-            spcs.contentDescription.contains("beta") && spcs.contentDescription.contains("not selectable"))
-        // The zone selector's SPCS2022 entry for this registry (what the dropdown would add with the preview ON).
+        // Phase 4 WP X: SPCS2022 with operational zones is offered (beta group, selectable).
+        assertTrue(spcs.contentDescription.toString(), spcs.contentDescription.contains("beta") &&
+            !spcs.contentDescription.contains("not selectable"))
+        // The zone selector's SPCS2022 entry for this registry (what the dropdown adds with the preview ON).
         val z = ZoneSelectorOptions.spcs2022("", preview = true, registry = crs).single()
-        assertTrue(z.label, z.label.contains("NATRF2022") && z.label.contains("β beta") && !z.selectable)
+        assertTrue(z.label, z.label.contains("NATRF2022") && z.label.contains("β beta") && z.selectable)
     }
 }

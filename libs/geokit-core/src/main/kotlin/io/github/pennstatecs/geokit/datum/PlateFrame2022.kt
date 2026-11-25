@@ -24,18 +24,18 @@ public enum class TectonicPlate(public val displayName: String, public val areaN
  * (2026-11-25, [VERIFICATION]; docs/geodesy/phase4-ngs-investigation.md): it reproduces NGS's numbers to
  * 1e-9 m, and the sign is the one NOAA TR NOS NGS 62 (2021) eq. 60 defines. [status] still reports the
  * frame's status in the *default* [FrameTransformationRegistry], which has no 2022-frame edge
- * ([ProductStatus.UNAVAILABLE]); NATRF2022 is available as [ProductStatus.VERIFIED_BETA] through the
- * opt-in [FrameTransformationRegistry.NSRS2022_BETA].
+ * ([ProductStatus.UNAVAILABLE]); all four frames are available as [ProductStatus.VERIFIED_BETA] through the
+ * opt-in [FrameTransformationRegistry.NSRS2022_BETA] (NATRF2022 since WP N, the other three since Phase 4 WP X).
  *
- * [id] values are reserved stable tokens (same rules as [ReferenceFrame.id]). Only NATRF2022 is a
- * [ReferenceFrame] entry so far ([referenceFrame]); the others become entries when they become usable.
+ * [id] values are stable tokens (same rules as [ReferenceFrame.id]). Every entry is a [ReferenceFrame]
+ * ([referenceFrame]; PATRF2022 / CATRF2022 / MATRF2022 since Phase 4 WP X).
  *
  * @property id stable persistable token.
  * @property displayName NGS name.
  * @property plate the tectonic plate the frame follows.
  * @property epp NGS beta EPP2022 parameters relative to ITRF2020.
  * @property epsg3d EPSG geographic 3D CRS code, null if EPSG has none (EPSG v12.029 has NATRF2022 only).
- * @property referenceFrame the matching [ReferenceFrame], null if not yet modelled as one.
+ * @property referenceFrame the matching [ReferenceFrame] (null was used before a frame was modelled; none is now).
  */
 public enum class PlateFrame2022(
     public val id: String,
@@ -46,9 +46,9 @@ public enum class PlateFrame2022(
     public val referenceFrame: ReferenceFrame?,
 ) {
     NATRF2022("natrf2022", "NATRF2022", TectonicPlate.NORTH_AMERICA, EulerPoleParameters(0.046, -0.704, -0.047), 10967, ReferenceFrame.NATRF2022),
-    PATRF2022("patrf2022", "PATRF2022", TectonicPlate.PACIFIC, EulerPoleParameters(-0.409, 1.063, -2.188), null, null),
-    CATRF2022("catrf2022", "CATRF2022", TectonicPlate.CARIBBEAN, EulerPoleParameters(-0.056, -0.957, 0.589), null, null),
-    MATRF2022("matrf2022", "MATRF2022", TectonicPlate.MARIANA, EulerPoleParameters(-8.089, 5.937, 2.159), null, null);
+    PATRF2022("patrf2022", "PATRF2022", TectonicPlate.PACIFIC, EulerPoleParameters(-0.409, 1.063, -2.188), null, ReferenceFrame.PATRF2022),
+    CATRF2022("catrf2022", "CATRF2022", TectonicPlate.CARIBBEAN, EulerPoleParameters(-0.056, -0.957, 0.589), null, ReferenceFrame.CATRF2022),
+    MATRF2022("matrf2022", "MATRF2022", TectonicPlate.MARIANA, EulerPoleParameters(-8.089, 5.937, 2.159), null, ReferenceFrame.MATRF2022);
 
     /** NGS reference epoch at which the frame equals ITRF2020 (decimal year). */
     public val referenceEpoch: Double get() = REFERENCE_EPOCH
@@ -83,7 +83,7 @@ public enum class PlateFrame2022(
         public const val UNAVAILABLE_REASON: String =
             "the NGS beta EPP2022 transformation from ITRF2020 is verified against NGS-computed coordinates, " +
                 "but it is a beta product and is not enabled in GeoKit's default registry (opt in with " +
-                "FrameTransformationRegistry.NSRS2022_BETA; only NATRF2022 is a GeoKit frame so far); PROJ 9.8.1 " +
+                "FrameTransformationRegistry.NSRS2022_BETA); PROJ 9.8.1 " +
                 "offers only ballpark no-op operations, which are not used."
 
         /** The frame with this stable [id], or null. */

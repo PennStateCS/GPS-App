@@ -206,12 +206,14 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             externalReceiverDatum = app.surrealar.settings.model.ReceiverDatum.fromPrefKey(rx),
         )
     }.combine(local.coordNsrs2022Preview) { s, preview -> s.copy(nsrs2022Preview = preview) }
+        .combine(local.coordSpcs2022Zone) { s, zone -> if (zone == null) s else s.copy(spcs2022Zone = zone) }
 
     override suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {
         local.setCoordinateSystem(
             settings.horizontalPrefValue, settings.datum.prefKey, settings.unit.prefKey,
             settings.vertical.prefKey, settings.externalReceiverDatum.prefKey,
             nsrs2022Preview = settings.nsrs2022Preview,
+            spcs2022Zone = settings.spcs2022Zone, writeSpcs2022Zone = true,
         )
     }
 

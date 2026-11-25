@@ -46,7 +46,7 @@ class CoordinateSystemGroupsTest {
             assertEquals(shipped.first { it.name == u.name }.reason, u.fullReason)
             assertTrue(u.fullReason!!.length > u.shortReason!!.length)
         }
-        assertEquals("No NGS-verified transformation yet", unsupported.first().shortReason)
+        assertEquals("Not enabled in the default registry", unsupported.first().shortReason)
         assertEquals("Needs a verified 2022 frame; not in EPSG/PROJ", unsupported.last().shortReason)
         assertEquals(CrsRegistry.SPCS2022_UNSUPPORTED, unsupported.last().fullReason)
     }
@@ -91,20 +91,28 @@ class CoordinateSystemGroupsTest {
         assertNull(Nsrs2022Capabilities.shortReason(Nsrs2022Capabilities.geoid2022()))
     }
 
-    @Test fun `stub registry with NATRF2022 reachable - SPCS2022 is verified but not offered, listed as such`() {
+    @Test fun `stub registry with NATRF2022 reachable - SPCS2022 and NATRF2022 are offered as beta (Phase 4 WP X)`() {
         val crs = stubCrs()
         val caps = Nsrs2022Capabilities.all(frames = stubFrames(), crs = crs)
         val spcs = caps.first { it.kind == CapabilityKind.SPCS }
         assertEquals(CapabilityUiState.BETA, spcs.state)
-        assertFalse(spcs.selectable)
-        val item = CoordinateSystemGroups.build(true, caps).toMap().getValue(CoordinateSystemGroup.UNSUPPORTED)
-            .first { it.name.startsWith("SPCS2022") }
-        assertEquals("not offered", item.value)
-        assertEquals("Verified zones, not yet offered here", item.shortReason)
-        assertTrue(item.beta)
+        assertTrue(spcs.selectable)
+        val beta = CoordinateSystemGroups.build(true, caps).toMap().getValue(CoordinateSystemGroup.BETA)
+        val item = beta.first { it.name.startsWith("SPCS2022") }
+        assertEquals("beta", item.value)
+        assertTrue(item.beta && item.selectable)
+        assertNull(Nsrs2022Capabilities.shortReason(spcs))
         val natrf = caps.first { it.name == "NATRF2022" }
         assertEquals(CapabilityUiState.BETA, natrf.state)
-        assertEquals("Verified, not yet an output frame here", Nsrs2022Capabilities.shortReason(natrf))
+        assertTrue(natrf.selectable)
+        assertNull(Nsrs2022Capabilities.shortReason(natrf))
+        assertTrue(beta.any { it.name == "NATRF2022" })
+    }
+
+    @Test fun `verified group never lists a beta system or datum`() {
+        val v = CoordinateSystemGroups.verified()
+        assertEquals("Latitude / Longitude, UTM (auto zone), State Plane (SPCS83)", v.first { it.name == "Systems" }.value)
+        assertEquals("WGS84 (ITRF2014), NAD83(2011), ITRF2020", v.first { it.name == "Datums" }.value)
     }
 
     companion object {

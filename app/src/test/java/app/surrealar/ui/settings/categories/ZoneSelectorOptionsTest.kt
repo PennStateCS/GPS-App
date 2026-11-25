@@ -40,7 +40,7 @@ class ZoneSelectorOptionsTest {
         assertEquals("LCC 1SP", z.projection)
         assertEquals("m", z.unit)
         assertTrue(z.beta)
-        assertFalse("no output path in this app version", z.selectable)
+        assertTrue("Phase 4 WP X: the app stores and outputs SPCS2022 zones", z.selectable)
         assertNull(z.spcs83)
         assertFalse("never NAD83", z.label.contains("NAD83"))
         // The NAD83-frame row of the stub catalog is not an SPCS2022 zone: never listed.
@@ -59,6 +59,49 @@ class ZoneSelectorOptionsTest {
         }
         assertTrue(ZoneSelectorOptions.spcs2022("Texas", preview = true, registry = crs).isEmpty())
         assertTrue(ZoneSelectorOptions.spcs2022("", preview = true, registry = crs, outputSupported = true).single().selectable)
+    }
+
+    @Test fun `beta registry (preview ON) - all 953 SPCS2022 zones, selectable, own frame, never NAD83, preview OFF none`() {
+        val crs = app.surrealar.coords.Nsrs2022Registries.betaCrs
+        assertTrue(ZoneSelectorOptions.spcs2022("", preview = false, registry = crs).isEmpty())
+        val all = ZoneSelectorOptions.spcs2022("", preview = true, registry = crs)
+        assertEquals(953, all.size)
+        assertTrue(all.all { it.selectable && it.beta && it.catalog == CrsCatalogId.SPCS2022 && it.spcs83 == null })
+        assertTrue(all.none { it.label.contains("NAD83") })
+        assertEquals(mapOf("NATRF2022" to 949, "PATRF2022" to 2, "CATRF2022" to 1, "MATRF2022" to 1), all.groupingBy { it.frameLabel }.eachCount())
+        assertEquals(all.size, all.map { it.label }.toSet().size)
+        val hi = ZoneSelectorOptions.spcs2022("Hawaii", preview = true, registry = crs).single()
+        assertEquals("SPCS2022 Hawaii (150001) · PATRF2022 epoch 2020.0 · Oblique Mercator · m · β beta", hi.label)
+        assertEquals("CATRF2022", ZoneSelectorOptions.spcs2022("720001", preview = true, registry = crs).single().frameLabel)
+        assertEquals("MATRF2022", ZoneSelectorOptions.spcs2022("GUMP", preview = true, registry = crs).single().frameLabel)
+        assertEquals(5, ZoneSelectorOptions.spcs2022("Pennsylvania", preview = true, registry = crs).size)
+        // The SPCS83 list is unchanged, SPCS2022 entries come after it.
+        val both = ZoneSelectorOptions.options("Pennsylvania", preview = true, registry = crs)
+        assertEquals(SpcsZoneHints.searchZones("Pennsylvania").map { it.label }, both.take(2).map { it.label })
+        assertTrue(both.drop(2).all { it.catalog == CrsCatalogId.SPCS2022 })
+        // Stored id → entry.
+        assertEquals("421001", ZoneSelectorOptions.spcs2022ById("spcs2022:421001", crs)!!.definition!!.zoneCode)
+        assertNull(ZoneSelectorOptions.spcs2022ById("spcs2022:421001", CrsRegistry.DEFAULT))
+        assertNull(ZoneSelectorOptions.spcs2022ById("EPSG:6562", crs))
+    }
+
+    @Test fun `SPCS2022 zone suggestion - candidates from locateSpcs2022, never one confident answer from envelopes`() {
+        val crs = app.surrealar.coords.Nsrs2022Registries.betaCrs
+        // State College, PA: statewide + multizone layers overlap legally.
+        val (options, loc) = ZoneSelectorOptions.locate(40.7934, -77.86, crs)
+        assertEquals(loc.candidates.map { it.id }, options.map { it.definition!!.id })
+        assertTrue(options.size >= 2)
+        assertTrue(options.any { it.definition!!.zoneCode == "420001" })
+        assertTrue(loc.isAmbiguous)
+        val hint = ZoneSelectorOptions.suggestionHint(options, loc)!!
+        assertTrue(hint, hint.startsWith("SPCS2022 zones possible at your position: ") && hint.contains("Choose the zone your project uses"))
+        // Offshore / no zone: no hint.
+        val (none, nloc) = ZoneSelectorOptions.locate(0.0, -30.0, crs)
+        assertTrue(none.isEmpty()); assertNull(ZoneSelectorOptions.suggestionHint(none, nloc))
+        // Envelope-only answer is worded as approximate.
+        val box = io.github.pennstatecs.geokit.crs.CrsZoneLocation(options.take(1).map { it.definition!! },
+            io.github.pennstatecs.geokit.crs.CrsLocationBasis.AREA_OF_USE_BOX, false)
+        assertTrue(ZoneSelectorOptions.suggestionHint(options.take(1), box)!!.contains("approximate"))
     }
 
     @Test fun `stub registry without a reachable frame - nothing listed`() {

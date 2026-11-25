@@ -64,6 +64,8 @@ object SettingsKeys {
     val COORD_EXTERNAL_RX_DATUM   = stringPreferencesKey("coord_external_receiver_datum")
     /** Phase 3: "Modernized NSRS 2022 (beta preview)" opt-in; absent = OFF. */
     val COORD_NSRS2022_PREVIEW    = booleanPreferencesKey("coord_nsrs2022_beta_preview")
+    /** Phase 4 WP X: SPCS2022 (beta) zone as the CRS registry id "spcs2022:<zone code>"; absent = none chosen. */
+    val COORD_SPCS2022_ZONE       = stringPreferencesKey("coord_spcs2022_zone")
     val GNSS_CAPTURE_PRESET            = stringPreferencesKey("gnss_capture_preset")
     /** Custom precision-based stop target (m); absent or <= 0 = off. */
     val GNSS_CAPTURE_PRECISION_TARGET_M = doublePreferencesKey("gnss_capture_precision_target_m")
@@ -182,6 +184,7 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val coordVerticalReference: Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_VERTICAL_REFERENCE] }
     val coordExternalRxDatum:   Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_EXTERNAL_RX_DATUM] }
     val coordNsrs2022Preview:   Flow<Boolean> = dataStore.data.map { it[SettingsKeys.COORD_NSRS2022_PREVIEW] ?: false }
+    val coordSpcs2022Zone:      Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_SPCS2022_ZONE] }
     val gnssCapturePrecisionTargetM: Flow<Double?> = dataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M]?.takeIf { v -> v > 0.0 } }
 
     // AR Display settings flows (defaults centralized in SettingsDefaults.arDisplay)
@@ -258,9 +261,12 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     suspend fun setGnssCaptureMaxFixAgeSec(v: Int)      { dataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_FIX_AGE_SEC]   = v } }
     suspend fun setGnssCaptureMaxDiffAgeSec(v: Int)     { dataStore.edit { it[SettingsKeys.GNSS_CAPTURE_MAX_DIFF_AGE_SEC]  = v } }
     suspend fun setGnssCapturePreset(v: String)         { dataStore.edit { it[SettingsKeys.GNSS_CAPTURE_PRESET]           = v } }
-    /** Writes the coordinate system in one edit; [nsrs2022Preview] null leaves the preview key untouched. */
+    /**
+     * Writes the coordinate system in one edit; [nsrs2022Preview] null leaves the preview key untouched. The
+     * SPCS2022 zone key is written only with [writeSpcs2022Zone] (null [spcs2022Zone] then removes it).
+     */
     suspend fun setCoordinateSystem(horizontal: String, datum: String, unit: String, vertical: String, externalRxDatum: String,
-                                    nsrs2022Preview: Boolean? = null) {
+                                    nsrs2022Preview: Boolean? = null, spcs2022Zone: String? = null, writeSpcs2022Zone: Boolean = false) {
         dataStore.edit {
             it[SettingsKeys.COORD_HORIZONTAL_SYSTEM] = horizontal
             it[SettingsKeys.COORD_OUTPUT_DATUM] = datum
@@ -268,6 +274,10 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
             it[SettingsKeys.COORD_VERTICAL_REFERENCE] = vertical
             it[SettingsKeys.COORD_EXTERNAL_RX_DATUM] = externalRxDatum
             if (nsrs2022Preview != null) it[SettingsKeys.COORD_NSRS2022_PREVIEW] = nsrs2022Preview
+            if (writeSpcs2022Zone) {
+                if (spcs2022Zone.isNullOrBlank()) it.remove(SettingsKeys.COORD_SPCS2022_ZONE)
+                else it[SettingsKeys.COORD_SPCS2022_ZONE] = spcs2022Zone
+            }
         }
     }
     suspend fun setGnssCapturePrecisionTargetM(v: Double?) { dataStore.edit { prefs -> if (v != null && v > 0.0) { prefs[SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M] = v } else { prefs.remove(SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M) } } }

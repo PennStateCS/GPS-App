@@ -151,7 +151,7 @@ class Geoid2022HeightTest {
     }
 
     @Test fun `preview ON changes nothing for the existing height choices`() {
-        for (v in VerticalReference.entries.filter { !it.isBeta }) for (h in HorizontalSystem.entries) for (d in OutputDatum.entries) {
+        for (v in VerticalReference.entries.filter { !it.isBeta }) for (h in HorizontalSystem.entries.filter { !it.isBeta }) for (d in OutputDatum.entries.filter { !it.isBeta }) {   // existing (non-beta) choices; Phase 4 WP X beta ones: Nsrs2022OutputTest
             val s = CoordinateSystemSettings(horizontal = h, datum = d, vertical = v)
             for ((lat, lon, hh) in samples.take(2).map { Triple(it[0], it[1], it[2]) }) {
                 assertEquals("$v $h $d", converter.convert(src(lat, lon, hh), s), converter.convert(src(lat, lon, hh), s.copy(nsrs2022Preview = true)))

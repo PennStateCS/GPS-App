@@ -1,4 +1,4 @@
-# Phases 1, 2, 3 + 4 (WP U) — consolidated tablet acceptance checklist
+# Phases 1, 2, 3 + 4 (WP U, WP X) — consolidated tablet acceptance checklist
 
 Device: Samsung SM-X940 (debug build, `app.surrealar`). Build: `survey/phase2` debug APK for sections 1–7;
 the Phase 3 build (`survey/phase3`, incl. WP W) for section 8 (sections 1–7 must still pass on it). Do the installation
@@ -113,8 +113,32 @@ loading state where a height model is still loading.
 | 9.7 | Cold start (airplane mode) with GEOID18, EGM2008 or GEOID2022 chosen; open Details / preview at once | "… data is loading" (toolbar "loading"), never "outside coverage" or another model's value; it switches to the value by itself when the data has loaded (no need to leave the screen or wait for a new fix) | A (`ElevationDetailTest`, `CoordinatesSettingsControllerTest`, `NonBlockingGeoidModelTest`, `CoordinateSystemServiceGeoidLoadTest`) + D (timing) |
 | 9.8 | Open Settings → Coordinates and immediately pick a Datum (slow device) with preview on and GEOID2022 saved | Only the datum changes; preview stays on and GEOID2022 stays chosen | A (`CoordinatesSettingsControllerTest` save-race tests) + D |
 
+## 10. Phase 4 WP X — NATRF2022 / PATRF2022 / CATRF2022 / MATRF2022 and SPCS2022 output (beta)
+
+Build: `survey/phase4-x`. Same rules as sections 8–9: beta opt-in, always labelled beta with the dataset version
+("EPP2022 beta 2025-06-16"; SPCS2022 also "NGS beta zones 2026-05-14") and the caveat ("Verified against NGS beta
+Geodetic Station Page coordinates; the NGS endpoints are undocumented; not authoritative"), never a default.
+**Preview OFF: everything in sections 1–9 must be exactly as before** (no new option, no new note; the zone hint still
+ends "SPCS2022: not yet available."). With the preview ON, 9.1 and 9.3 change as in 10.1 and 10.5.
+
+| # | Check | Expected result | A/D |
+|---|---|---|---|
+| 10.1 | Preview on: Settings → Coordinates groups | "Verified NGS beta" lists GEOID2022 heights, NATRF2022, PATRF2022, CATRF2022, MATRF2022 and "SPCS2022 (953 NGS beta zones)", each with a β BETA badge; no "Unsupported" group; no "awaiting NGS verification" anywhere. Tap a frame row: dialog with dataset, area and caveat; nothing saved | A (`CoordinatesSettingsControllerTest`, `Nsrs2022CapabilitiesTest`) + D (look) |
+| 10.2 | Preview on, System = Latitude / Longitude: Datum dropdown | Adds "NATRF2022 (beta)", "PATRF2022 (beta)", "CATRF2022 (beta)", "MATRF2022 (beta)" after ITRF2020 (labels fit on one line). Choose NATRF2022: note under Datum "Beta: NATRF2022 at each point's coordinate epoch (EPP2022 beta 2025-06-16). Area: North American plate … caveat" | A (`CoordinateSystemTokensTest`, `CoordinateHeightDropdownFitTest`) + D |
+| 10.3 | Hazleton point (or any PA point), NATRF2022 chosen: Details and Settings preview | System "NATRF2022 (beta) epoch 2026.xxx · m · <height> · EPP2022 beta 2025-06-16"; the epoch is the point's coordinate epoch (capture time for older points); lat/lon differ from ITRF2020 at the same epoch by about 10–15 cm (plate motion since 2020.0) and from NAD83(2011) by about 1–1.5 m | A (`Nsrs2022OutputTest`) + D (plausibility) |
+| 10.4 | Preview on, System = UTM with NATRF2022 saved | Datum dropdown offers no 2022 frame; field shows WGS84 (ITRF2014) with the note "… no UTM on a 2022 frame …"; UTM values = WGS84 UTM exactly | A (`Nsrs2022OutputTest`) + D |
+| 10.5 | Preview on: System dropdown → "State Plane (SPCS2022, beta)" in Hazleton / State College | Zone row appears with all 953 SPCS2022 beta zones (search "Penn", "421001", "PA_NE"); hint names the zones possible here (statewide 420001 and the multizone zone(s)), "Choose the zone your project uses" — never picked for you. Each entry shows zone, frame (NATRF2022), epoch 2020.0, projection, unit m, β beta | A (`ZoneSelectorOptionsTest`) + D |
+| 10.6 | Pick "Pennsylvania" (420001), then "Pennsylvania North East" (421001) / your project zone | Datum field (disabled) "NATRF2022 (zone frame, beta)"; note "Beta: SPCS2022 … on NATRF2022 … caveat"; Details / preview / CSV System "SPCS2022 420001 (beta) · NATRF2022 epoch 2026.xxx · m · … · EPP2022 beta 2025-06-16 · NGS beta zones 2026-05-14"; Northing/Easting change with the zone; heights unchanged by the zone (vertical choice separate) | A (`Nsrs2022OutputTest`) + D |
+| 10.7 | Units with SPCS2022: m, then International feet, then US survey feet | m and ft (international) as chosen; US survey feet show as "ft" (international feet, note says NGS does not support the US survey foot) | A (`Nsrs2022OutputTest`) + D |
+| 10.8 | Consistency at one point: Latitude / Longitude on NATRF2022 vs SPCS2022 PA zone vs UTM (WGS84) | SPCS2022 is the zone projection of the NATRF2022 lat/lon at the same epoch (independent check: NGS beta NCAT/SPCS page for the NATRF2022 lat/lon, ≤ 1 mm); UTM stays WGS84 (ITRF2014) and differs from NATRF2022 by the frame difference only | A (`Nsrs2022OutputTest` vs NGS example points) + D |
+| 10.9 | Turn the preview off with SPCS2022 or a 2022 datum saved | System shows Latitude / Longitude (or Datum WGS84 (ITRF2014)) with a note "… is saved, but the NSRS 2022 beta preview is off …"; toolbar, Details, CSV show the legacy default; turning it on again restores the saved choice and zone | A (`CoordinatesSettingsControllerTest`, `Nsrs2022OutputTest`) + D |
+| 10.10 | Map, AR, stakeout, capture with SPCS2022 / NATRF2022 chosen | Unchanged (they use the stored WGS84 positions; nothing 2022 is stored); a captured throwaway point stores exactly what 4.1 stores | A (unchanged tests) + D |
+| 10.11 | Hawaii / Puerto Rico / Guam (only if a test point exists there, else skip) | PATRF2022 / CATRF2022 / MATRF2022 (beta) outputs and zones 150001 / 720001 / 660001 work with their own frame; off-plate use is allowed but the area note says where each frame is meant for | A (`Nsrs2022OutputTest`) |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
 offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;
 Phase 3: the preview row and status list layout, GEOID2022 offline first-load time, plausibility of NAPGD2022
-heights against local knowledge.
+heights against local knowledge. Phase 4 WP X: the new notes' layout, the SPCS2022 catalog first-load time on the
+tablet (toolbar briefly "SPCS2022 zone data is loading" in the system summary), plausibility of SPCS2022 values
+against a project control point or NGS beta tools.

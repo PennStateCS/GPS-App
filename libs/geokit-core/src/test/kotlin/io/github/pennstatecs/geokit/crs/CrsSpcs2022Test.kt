@@ -69,12 +69,13 @@ class CrsSpcs2022Test {
         assertTrue(load.entries.all { it.dataset.contains("2026-05-14") })
         // Verified projections on NATRF2022 parse as operational; frame reachability is the registry's job.
         assertTrue(load.entries.filter { it.frameId == "natrf2022" }.all { it.operational && it.statusNote!!.contains("ngs_example_coordinates") })
+        // Phase 4 WP X: PATRF/CATRF/MATRF2022 are GeoKit frames, so these four zones parse like the others
+        // (frame reachability is still the registry's job: CrsRegistry.DEFAULT keeps them unsupported).
         for (code in listOf("150001", "600001", "720001", "660001")) {
             val d = byCode.getValue(code)
-            assertNull(d.frame)
-            assertFalse(d.operational)
-            assertEquals(ProductStatus.UNAVAILABLE, d.status)
-            assertTrue(d.statusNote, d.statusNote!!.contains("frame ${d.frameId} is not defined in GeoKit yet"))
+            assertEquals(ReferenceFrame.fromId(d.frameId), d.frame)
+            assertTrue(d.statusNote, d.operational && d.statusNote!!.contains("ngs_example_coordinates"))
+            assertEquals(ProductStatus.VERIFIED_BETA, d.status)
         }
     }
 
@@ -218,7 +219,7 @@ class CrsSpcs2022Test {
         assertEquals(ProductStatus.UNAVAILABLE, pa.definition!!.status)
         assertTrue(pa.explanation, pa.explanation.contains("frame natrf2022 has no verified transformation"))
         val hi = r.byId("SPCS2022:150001") as CrsLookup.Unsupported
-        assertTrue(hi.explanation, hi.explanation.contains("frame patrf2022 is not defined in GeoKit yet"))
+        assertTrue(hi.explanation, hi.explanation.contains("frame patrf2022 has no verified transformation"))
         assertTrue(r.search("Pennsylvania", includeBeta = true).none { it.catalog == CrsCatalogId.SPCS2022 })
         assertEquals(5, r.search("Pennsylvania", CrsCatalogId.SPCS2022, includeNonOperational = true).size)
         assertTrue(r.atPosition(40.79, -77.86, CrsCatalogId.SPCS2022, includeBeta = true).isEmpty())
@@ -227,7 +228,7 @@ class CrsSpcs2022Test {
     @Test fun `with a reachable frame, zones are VERIFIED_BETA and opt-in only`() {
         val r = CrsRegistry(frameRegistry = reachable)
         val c = r.catalog(CrsCatalogId.SPCS2022)
-        assertEquals(949, c.operational.size)          // NATRF2022 zones; PATRF/CATRF/MATRF still pending
+        assertEquals(949, c.operational.size)          // NATRF2022 zones; this stub leaves PATRF/CATRF/MATRF blocked
         val pa = (r.byId("spcs2022:420001") as CrsLookup.Found).definition
         assertEquals(ProductStatus.VERIFIED_BETA, pa.status)
         assertTrue(pa.isBeta)
@@ -313,9 +314,10 @@ class CrsSpcs2022Test {
         assertEquals(listOf("X_Y", "Statewide"), by.getValue("B1").aliases)
         assertEquals(ProductStatus.VERIFIED_LEGACY, by.getValue("B2").status)
         assertEquals(ReferenceFrame.NAD83_2011, by.getValue("B2").frame)
-        assertNull(by.getValue("B3").frame)
+        // Phase 4 WP X: catrf2022 is a GeoKit frame now (was a pending id that loaded non-operational).
+        assertEquals(ReferenceFrame.CATRF2022, by.getValue("B3").frame)
         assertEquals("catrf2022", by.getValue("B3").frameId)
-        assertEquals(ProductStatus.UNAVAILABLE, by.getValue("B3").status)
+        assertEquals(ProductStatus.VERIFIED_BETA, by.getValue("B3").status)
         assertTrue(by.getValue("B4").statusNote!!.contains("unknown status"))
         assertTrue(by.getValue("B5").statusNote!!.contains("unavailable"))
         // Version-1 files still load and default to VERIFIED_LEGACY.

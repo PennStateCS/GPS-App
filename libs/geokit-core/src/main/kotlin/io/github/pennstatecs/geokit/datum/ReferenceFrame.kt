@@ -30,7 +30,7 @@ public enum class FrameKind {
  * ([coordinatesFrame] = [ITRF2014]); it only keeps the WGS 84 EPSG codes (4979/4326) the app stores.
  *
  * Reference epochs: for ITRF and WGS 84 realisations they are the EPSG frame reference epochs; EPSG
- * records none for NAD83(2011) and NATRF2022, so the NGS-defined epochs (2010.0, 2020.0) are given.
+ * records none for NAD83(2011) and the 2022 frames, so the NGS-defined epochs (2010.0, 2020.0) are given.
  * A frame's reference epoch is metadata only; transformations use the coordinate epoch
  * ([CoordinateEpoch]) of the position.
  *
@@ -82,10 +82,23 @@ public enum class ReferenceFrame(
 
     /**
      * NATRF2022 (EPSG 10966 / 10967 / 10968), North American plate, epoch 2020.0. Defined by NGS (beta
-     * EPP2022, see [PlateFrame2022]), but no verified transformation exists yet (see
-     * [FrameTransformationRegistry]).
+     * EPP2022, see [PlateFrame2022]). Its ITRF2020 edge is verified against NGS-computed coordinates but is a
+     * beta product: it exists only in the opt-in [FrameTransformationRegistry.NSRS2022_BETA], never in
+     * [FrameTransformationRegistry.DEFAULT].
      */
-    NATRF2022("natrf2022", "NATRF2022", Ellipsoid.GRS80, 10966, 10967, 10968, 2020.0, FrameKind.PLATE_FIXED);
+    NATRF2022("natrf2022", "NATRF2022", Ellipsoid.GRS80, 10966, 10967, 10968, 2020.0, FrameKind.PLATE_FIXED),
+
+    /**
+     * PATRF2022, Pacific plate, epoch 2020.0 (Phase 4 WP X). EPSG v12.029 has no CRS for it (codes null).
+     * Same status rules as [NATRF2022]: beta edge in [FrameTransformationRegistry.NSRS2022_BETA] only.
+     */
+    PATRF2022("patrf2022", "PATRF2022", Ellipsoid.GRS80, null, null, null, 2020.0, FrameKind.PLATE_FIXED),
+
+    /** CATRF2022, Caribbean plate, epoch 2020.0 (Phase 4 WP X); no EPSG codes; as [PATRF2022]. */
+    CATRF2022("catrf2022", "CATRF2022", Ellipsoid.GRS80, null, null, null, 2020.0, FrameKind.PLATE_FIXED),
+
+    /** MATRF2022, Mariana plate, epoch 2020.0 (Phase 4 WP X); no EPSG codes; as [PATRF2022]. */
+    MATRF2022("matrf2022", "MATRF2022", Ellipsoid.GRS80, null, null, null, 2020.0, FrameKind.PLATE_FIXED);
 
     /**
      * The frame whose coordinates this frame's numbers are: [ITRF2014] for [WGS84_AS_ITRF2014] (a
@@ -102,6 +115,9 @@ public enum class ReferenceFrame(
     public val plate: TectonicPlate?
         get() = when (this) {
             NAD83_2011, NATRF2022 -> TectonicPlate.NORTH_AMERICA
+            PATRF2022 -> TectonicPlate.PACIFIC
+            CATRF2022 -> TectonicPlate.CARIBBEAN
+            MATRF2022 -> TectonicPlate.MARIANA
             else -> null
         }
 

@@ -25,8 +25,9 @@ import io.github.pennstatecs.geokit.projection.Utm
  * against NGS's published example point. A zone is operational only if its frame (NATRF2022, PATRF2022,
  * CATRF2022, MATRF2022) is reachable from "WGS84 (ITRF2014)" through verified transformations; it then
  * reports [io.github.pennstatecs.geokit.status.ProductStatus.VERIFIED_BETA] and is returned by [search] /
- * [atPosition] only with `includeBeta = true`. As of this catalog no 2022 frame is reachable, so every
- * SPCS2022 lookup is [CrsLookup.Unsupported] (with the entry and its reason).
+ * [atPosition] only with `includeBeta = true`. In the default frame registry no 2022 frame is reachable, so
+ * every SPCS2022 lookup is [CrsLookup.Unsupported] (with the entry and its reason); with
+ * `CrsRegistry(frameRegistry = FrameTransformationRegistry.NSRS2022_BETA)` all 953 zones are operational beta.
  *
  * Status of an operational entry ([CrsDefinition.status]) is the weaker of its declared status (catalog
  * `status` column; legacy for the built-in catalogs) and the status of the frame path from
@@ -42,7 +43,8 @@ import io.github.pennstatecs.geokit.projection.Utm
  * @param spcs2022BoundaryResource classpath resource with the SPCS2022 zone polygons (null = envelopes only).
  */
 public class CrsRegistry(
-    private val frameRegistry: FrameTransformationRegistry = FrameTransformationRegistry.DEFAULT,
+    /** The frame registry this CRS registry decides operational status with (read-only). */
+    public val frameRegistry: FrameTransformationRegistry = FrameTransformationRegistry.DEFAULT,
     private val spcs2022Source: () -> CrsCatalogLoadResult = { CrsCatalogCsv.fromClasspath(SPCS2022_RESOURCE, CrsCatalogId.SPCS2022) },
     private val spcs83Locator: SpcsZoneLocator = SpcsZoneLocator.SPCS83,
     private val spcs2022BoundaryResource: String? = SPCS2022_BOUNDARY_RESOURCE,
@@ -338,6 +340,11 @@ public class CrsRegistry(
         private fun geographicArea(frame: ReferenceFrame): AreaOfUse = when (frame) {
             ReferenceFrame.NAD83_2011 -> AreaOfUse(167.65, 14.92, -63.88, 74.71)
             ReferenceFrame.NATRF2022 -> AreaOfUse(167.65, 23.81, -40.73, 86.46)
+            // EPSG v12.029 has no CRS for these frames: GeoKit boxes around the U.S. areas NGS names for each
+            // plate (TectonicPlate.areaNote), from the SPCS2022 zone envelopes plus margin. Information only.
+            ReferenceFrame.PATRF2022 -> AreaOfUse(-180.0, -15.0, -154.0, 29.0)   // Hawaii (incl. NW islands), American Samoa
+            ReferenceFrame.CATRF2022 -> AreaOfUse(-68.5, 17.0, -64.0, 19.0)      // Puerto Rico, U.S. Virgin Islands
+            ReferenceFrame.MATRF2022 -> AreaOfUse(144.0, 13.0, 147.0, 21.0)      // Guam, CNMI
             ReferenceFrame.ITRF2014, ReferenceFrame.ITRF2020, ReferenceFrame.WGS84_AS_ITRF2014, ReferenceFrame.WGS84,
             ReferenceFrame.WGS84_G1762, ReferenceFrame.WGS84_G2139, ReferenceFrame.WGS84_G2296 -> AreaOfUse.WORLD
         }

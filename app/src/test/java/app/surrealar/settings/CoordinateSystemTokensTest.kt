@@ -11,6 +11,7 @@ import io.github.pennstatecs.geokit.convert.GeodeticDatum
 import io.github.pennstatecs.geokit.geoid.GeoidModelId
 import io.github.pennstatecs.geokit.status.ProductStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -24,7 +25,10 @@ import org.junit.Test
 class CoordinateSystemTokensTest {
 
     @Test fun `existing tokens and order are unchanged, new ones are appended`() {
-        assertEquals(listOf("wgs84", "nad83_2011", "itrf2020"), OutputDatum.entries.map { it.prefKey })
+        // Phase 4 WP X appended the four 2022 frames (beta) after the Phase 2 datums.
+        assertEquals(listOf("wgs84", "nad83_2011", "itrf2020", "natrf2022_beta", "patrf2022_beta", "catrf2022_beta", "matrf2022_beta"),
+            OutputDatum.entries.map { it.prefKey })
+        assertEquals(listOf("geographic", "utm", "spcs83", "spcs2022_beta"), app.surrealar.settings.model.HorizontalSystem.entries.map { it.prefKey })
         assertEquals(listOf("ellipsoidal", "navd88_geoid18", "receiver_msl", "egm2008", "egm96", "geoid2022_beta"),
             VerticalReference.entries.map { it.prefKey })
         // No new receiver frames: the receiver stays ITRF2014 or NAD83(2011).
@@ -93,9 +97,12 @@ class CoordinateSystemTokensTest {
         assertEquals("H GEOID2022 beta", VerticalReference.GEOID2022.shortLabel)
     }
 
-    @Test fun `new values map to the geokit frame and models, never NATRF2022`() {
+    @Test fun `new values map to the geokit frame and models, never NATRF2022 for a legacy datum`() {
         assertEquals(GeodeticDatum.ITRF2020, OutputDatum.ITRF2020.toGeodeticDatum())
-        assertTrue(OutputDatum.entries.none { it.prefKey.contains("natrf") || it.label.contains("NATRF") })
+        // Phase 4 WP X: the 2022 frames exist only as beta datums; no legacy datum names one.
+        val legacy = OutputDatum.entries.filter { !it.isBeta }
+        assertTrue(legacy.none { it.prefKey.contains("natrf") || it.label.contains("NATRF") })
+        assertTrue(OutputDatum.entries.filter { it.prefKey.contains("2022") }.all { it.isBeta && it.label.contains("(beta)") })
         assertEquals(GeoidModelId.EGM2008, VerticalReference.EGM2008.globalGeoidModel())
         assertEquals(GeoidModelId.EGM96, VerticalReference.EGM96.globalGeoidModel())
         assertNull(VerticalReference.NAVD88_GEOID18.globalGeoidModel())
@@ -106,6 +113,48 @@ class CoordinateSystemTokensTest {
         assertEquals(GeoidModelId.GEOID2022, VerticalReference.GEOID2022.appGeoidModel())
         assertEquals(GeoidModelId.EGM2008, VerticalReference.EGM2008.appGeoidModel())
         assertNull(VerticalReference.NAVD88_GEOID18.appGeoidModel())
-        assertTrue(OutputDatum.entries.none { it.prefKey.contains("2022") })
+        assertTrue(legacy.none { it.prefKey.contains("2022") })
+    }
+
+    @Test fun `Phase 4 WP X - beta datums and SPCS2022, offered only with the preview on, never a default`() {
+        val beta = OutputDatum.entries.filter { it.isBeta }
+        assertEquals(listOf(OutputDatum.NATRF2022, OutputDatum.PATRF2022, OutputDatum.CATRF2022, OutputDatum.MATRF2022), beta)
+        assertTrue(beta.all { it.status == ProductStatus.VERIFIED_BETA })
+        assertEquals(listOf(app.surrealar.settings.model.HorizontalSystem.SPCS2022),
+            app.surrealar.settings.model.HorizontalSystem.entries.filter { it.isBeta })
+        beta.forEach { assertEquals(it, OutputDatum.fromPrefKey(it.prefKey)) }
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.SPCS2022,
+            CoordinateSystemSettings.parseHorizontal("spcs2022_beta").first)
+        // Unknown / near-miss tokens fall back to the existing defaults.
+        assertEquals(OutputDatum.WGS84, OutputDatum.fromPrefKey("natrf2022"))
+        assertEquals(OutputDatum.WGS84, OutputDatum.fromPrefKey("PATRF2022_beta"))
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC, app.surrealar.settings.model.HorizontalSystem.fromPrefKey("spcs2022"))
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC, CoordinateSystemSettings.parseHorizontal("spcs2022:421001").first)
+        val d = CoordinateSystemSettings()
+        assertNull("no SPCS2022 zone by default", d.spcs2022Zone)
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC, d.horizontal)
+        // Offered only with the preview on; 2022 datums only for Latitude / Longitude.
+        assertTrue(d.selectableDatums.none { it.isBeta }); assertTrue(d.selectableHorizontals.none { it.isBeta })
+        val on = d.copy(nsrs2022Preview = true)
+        assertEquals(OutputDatum.entries, on.selectableDatums)
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.entries, on.selectableHorizontals)
+        assertTrue(on.copy(horizontal = app.surrealar.settings.model.HorizontalSystem.UTM).selectableDatums.none { it.isBeta })
+        // Saved with the preview off: default used, stored value kept.
+        for (b in beta) {
+            val s = CoordinateSystemSettings(datum = b)
+            assertEquals(b, s.datum); assertEquals(OutputDatum.WGS84, s.effectiveDatum); assertTrue(s.betaDatumSuspended)
+            assertEquals(OutputDatum.WGS84, s.forConversion().datum)
+            val active = s.copy(nsrs2022Preview = true)
+            assertEquals(b, active.effectiveDatum); assertFalse(active.betaDatumSuspended); assertSame(active, active.forConversion())
+            // State Plane (SPCS83) keeps NAD83(2011) whatever datum is saved.
+            assertEquals(OutputDatum.NAD83_2011, active.copy(horizontal = app.surrealar.settings.model.HorizontalSystem.STATE_PLANE).effectiveDatum)
+        }
+        val spcs = CoordinateSystemSettings(app.surrealar.settings.model.HorizontalSystem.SPCS2022, spcs2022Zone = "spcs2022:421001")
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.GEOGRAPHIC, spcs.effectiveHorizontal)
+        assertTrue(spcs.betaHorizontalSuspended)
+        assertEquals("spcs2022_beta", spcs.horizontalPrefValue)
+        assertEquals(app.surrealar.settings.model.HorizontalSystem.SPCS2022, spcs.copy(nsrs2022Preview = true).effectiveHorizontal)
+        assertEquals("State Plane (SPCS2022, beta)", app.surrealar.settings.model.HorizontalSystem.SPCS2022.label)
+        assertEquals("NATRF2022 (beta)", OutputDatum.NATRF2022.label)
     }
 }
