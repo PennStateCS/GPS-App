@@ -34,6 +34,7 @@ computed by the receiver with **Emlid Flow's** pole height, not the app's. See [
 | **Capture, external, antenna epochs** (RS2+, RS4 tilt off / output disabled) | Averaged WGS84 fixes | APC → stored altitude = h − (pole + PCO) = mark; `antennaHeightM` = pole + PCO | none (unchanged maths) |
 | **Capture, external, receiver pole-tip epochs** (RS4 / RS4 Pro, output ENABLED, firmware ≥ 34.7, ETC compensating) | Averaged WGS84 fixes | Mark (receiver-compensated) → stored as streamed; `antennaHeightM` null; `captureMethod` = `EXTERNAL_GNSS_POLE_TIP` | **new**: the app never subtracts pole height / PCO from these |
 | **Capture, possibly compensated epochs** | — | Unknown (APC or pole tip) | **new**: never averaged; the occupation stops if nothing else arrives (10 s) |
+| **Capture, unconfirmed reference** (RS4 / RS4 Pro, output Unknown, or profile unreadable; no ETC showing tilt on) | Averaged WGS84 fixes | Treated as APC → same reduction as antenna epochs; `antennaHeightM` = pole + PCO; `captureMethod` = `EXTERNAL_GNSS_REFERENCE_UNCONFIRMED` | **Stabilization WP A**: saved only after "Save as unconfirmed" (per occupation); Details / CSV / JSON say "Unconfirmed — may be reduced twice" |
 | **Capture, internal** | Device GNSS | Tablet antenna → stored h − internalAntennaHeightM | none |
 | **Live toolbar / Details preview** | Live fix | APC (or pole tip with compensated output) — never reduced | none (documented) |
 | **AR mock location** (`AndroidMockLocationPublisher`) | Live external fix | Altitude = h_APC − antennaAboveCamera = camera; lat/lon = antenna | **new**: altitude withheld while the receiver's positions are (or may be) the pole tip (lat/lon still published) |
@@ -58,6 +59,15 @@ that other code matches; the v14 provenance columns describe frames, not the phy
 - `provider` stays `external-tcp`, so list badges, filters and exports treat it as any external capture.
 Details shows "External GNSS (receiver tilt-compensated pole tip; app pole height not applied)". An older app
 version reading such a backup sees an unknown capture method (data-health warning) and keeps the value.
+
+The unconfirmed case (stabilization WP A) uses the same mechanism: `captureMethod = "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED"`
+(appended `CaptureMethod` value; antenna reduction applied, reference unconfirmed), `antennaHeightM` = pole + PCO,
+provider `external-tcp`. `PositionReferenceKind.of(captureMethod, externalProvider)` derives the display / export
+value (antenna / receiver pole tip / unconfirmed); readers that only check the provider (badges, list, filters,
+stakeout, AR, map) are unaffected. Point Details shows a compact **Position reference** row first under Provenance
+(with the coordinate epoch next to it and the beta height model above), the CSV appends a "Position reference" column
+when the file contains an external capture (files without one are byte-identical to before), and the JSON backup
+writes an export-only `positionReference` key (captureMethod stays the restored source).
 
 ## Capture rules (CaptureViewModel)
 

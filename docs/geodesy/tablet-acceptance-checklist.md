@@ -211,6 +211,20 @@ unit tests (named), D = device check.
 | 11.28 | RS4 / RS4 Pro profile, "Compensated NMEA output" Unknown: start a capture | Dialog shows "⚠ RS4: set 'Compensated NMEA output' in Settings → Receiver — if Emlid Flow streams compensated positions, heights would be reduced twice." for the whole occupation (no dismiss); saving still allowed (antenna reduction); captures.log has "Capture saved with unconfirmed position reference id=…". Not shown for RS2+ / Generic or with Enabled / Disabled | — (RS4 profile, any receiver) | A (`outputUnknownWarning_onlyForRs4AndRs4Pro…`) + D |
 | 11.29 | Mock location / AR with tilt active and output Enabled | Injected location has neither altitude nor vertical accuracy | H | A (`omitted altitude also omits the vertical accuracy`) + D |
 
+**Unconfirmed position reference: acknowledgment on Save** (Phase 4 stabilization WP A, build `survey/phase4-sa`)
+
+| # | Check | Expected result | Needs | A/D |
+|---|---|---|---|---|
+| 11.30 | RS4 / RS4 Pro profile, output Unknown, tilt off: complete a capture, tap Save | Dialog "Position reference not confirmed" explains the antenna reduction and the possible double reduction; buttons Save as unconfirmed / Open receiver settings / Cancel; nothing saved until a choice | — (RS4 profile, any receiver) | A (`unknownOutput_saveIsRefusedUntilAcknowledged…`) + D |
+| 11.31 | In 11.30 tap Cancel, then Save again; then Save as unconfirmed | Cancel keeps the dialog and the completed result; Save asks again; Save as unconfirmed saves once and closes; captures.log "Capture saved with unconfirmed position reference … acknowledged=true" | — | A + D |
+| 11.32 | Open the point from 11.31 | Capture method "External GNSS (position reference unconfirmed; antenna reduction applied)"; Provenance starts with "Position reference: Unconfirmed — may be reduced twice …"; antenna height = pole + PCO; coordinates / height display otherwise unchanged | — | A (`positionReference_distinguishes…`) + D |
+| 11.33 | 11.30 again, tap Open receiver settings | Capture dialog closes without saving; Settings → Receiver opens; set Disabled (or Enabled), capture again: Save does not ask | — | A (`verifiedSettings_andOtherReceivers_neverAsk`) + D |
+| 11.34 | Save as unconfirmed, then capture the next point (or Restart) with the setting still Unknown | Asked again (acknowledgment is per occupation) | — | A (`acknowledgment_isRememberedForTheOccupationOnly`) + D |
+| 11.35 | RS2+ / Generic, and RS4 with Enabled (pole tip) / Disabled | Save never asks; Enabled pole tip: Position reference "Receiver pole tip (compensated, no pole height applied) …", no antenna height; RS2+: "Antenna (pole height applied)" | — (H for the pole tip) | A + D |
+| 11.36 | Export CSV with an unconfirmed, a pole-tip and an antenna point (plus an internal one) | Last column "Position reference": "UNCONFIRMED: antenna reduction applied; …", "receiver pole tip …", "antenna …", blank; all other columns as before; a CSV of internal / manual points only has no extra column | — | A (`external captures append a Position reference column…`) + D |
+| 11.37 | Backup (JSON) export → restore on a clean install | Unconfirmed point restored with the same capture method and Details row; backup JSON carries `"positionReference": "unconfirmed"` | — | A (`positionReference_captureMethodsRoundTrip…`) + D |
+| 11.38 | During an RS4 occupation change in turn: receiver datum, profile, host, "Compensated NMEA output"; and switch the NTRIP base | Each stops with its own "Capture stopped: …" message and Restart capture; Restart completes and saves; a change after the capture completed never discards the result | — (RTK base for the base change) | A (`eachSetupChange_midOccupation…`, `completedResult_isNeverDiscarded…`, `correctionBaseChange…`, `firmwareLost…`) + D |
+
 ## Verified only on the device (not by unit tests)
 Real screen layout/themes; the real migration of this device's database; RS2+ TCP behaviour; AR placement;
 offline first-load timing of the geoid packs; Android save/open (SAF) dialogs; capture interruption UX;
