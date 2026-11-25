@@ -274,3 +274,13 @@ the maths is unchanged (antenna reduction once, never a second pole-height subtr
 - With it on, during ALIGNING or after a FIX loss: what does GGA contain?
 - With it off: is GGA the APC or the ARP (compare with pole + 95 mm)?
 - How long do alignment and recovery take? Does "temporarily lost" show up as state 20 in ETC?
+
+## Update 2026-11-25: acknowledgment scope and CSV option
+
+- The save acknowledgment is required only for genuine uncertainty: RS4 / RS4 Pro with the output setting Unknown
+  when an averaged epoch was "antenna (uncertain)" (ETC "tilt off" counts as antenna, no question), or an unreadable
+  profile whose stream carried ETC. An unreadable profile with a conventional stream (no ETC, e.g. RS2+) is a normal
+  capture again. HTTP receiver identification is never a condition.
+- The CSV "Position reference" column is an explicit export option (default off); see
+  [phase4-position-references.md](phase4-position-references.md).
+- Model or firmware never implies that tilt compensation or orthometric streaming is enabled.

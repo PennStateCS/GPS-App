@@ -15,6 +15,8 @@ import app.surrealar.receiver.tilt.EpochReference
 import app.surrealar.receiver.tilt.ReceiverTiltMonitor
 import app.surrealar.receiver.tilt.TiltTestNmea
 import app.surrealar.receiver.tilt.TiltTestNmea.etcActive
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import app.surrealar.receiver.tilt.TiltTestNmea.etcAligning
 import app.surrealar.receiver.tilt.TiltTestNmea.etcOff
 import app.surrealar.settings.model.CompensatedOutputSetting
@@ -411,17 +413,29 @@ class CaptureTiltRulesJvmTest {
         assertEquals(CaptureViewModel.PROFILE_UNREADABLE_WARNING, vm.referenceWarning.value)
     }
 
-    @Test fun unreadableProfile_withoutEtc_keepsTodaysReduction_withTheWarning() = runBlocking {
+    @Test fun unreadableProfile_withoutEtc_isAConventionalCapture_noWarning_noAcknowledgment() = runBlocking {
+        // Product decision 2026-11-25: a conventional (RS2+-like) stream with no ETC is not uncertain merely because
+        // the profile could not be read: today's reduction, no warning, saved without acknowledgment.
         val vm = unreadableProfileVm()
         vm.start(policy(2))
         repeat(2) { epoch(null) }
         assertTrue((vm.state.value as ObservationSession.State.Complete).requirementsMet)
-        assertEquals(CaptureViewModel.PROFILE_UNREADABLE_WARNING, vm.referenceWarning.value)
-        vm.acknowledgeUnconfirmedReference()
+        assertNull(vm.referenceWarning.value)
+        assertFalse(vm.referenceAcknowledgmentNeeded())
         vm.save("P", null, 0, "ic_pin")
         val c = repo.store.single()
-        assertEquals(CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED.storageValue, c.captureMethod)
+        assertNotEquals(CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED.storageValue, c.captureMethod)
+        assertNotEquals(CaptureMethod.EXTERNAL_GNSS_POLE_TIP.storageValue, c.captureMethod)
         assertTrue("an antenna reduction was applied", c.altitude < 100.0)
+    }
+
+    @Test fun unreadableProfile_withEtcTiltOff_isAntenna_noAcknowledgment() = runBlocking {
+        // The receiver reports its tilt engine OFF: it is not compensating, so the antenna reference is certain.
+        val vm = unreadableProfileVm()
+        vm.start(policy(2))
+        repeat(2) { epoch(::etcOff) }
+        assertTrue((vm.state.value as ObservationSession.State.Complete).requirementsMet)
+        assertFalse(vm.referenceAcknowledgmentNeeded())
     }
 
     @Test fun outputUnknownWarning_onlyForRs4AndRs4Pro_withTheSettingUnknown() = runBlocking {

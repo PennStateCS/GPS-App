@@ -256,7 +256,6 @@ class CaptureViewModelTest {
 
         val genericVm = vm(settings(tcpName = null, tcpHost = null, profile = null))
         completeCapture(genericVm)
-        genericVm.acknowledgeUnconfirmedReference()   // unreadable profile: unconfirmed reference (Phase 4 stabilization WP A)
         genericVm.save("B", null, 0, "ic_pin")
         assertEquals("External GNSS", repo.store.last().sourceDevice)
     }

@@ -42,6 +42,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -51,8 +52,8 @@ import java.util.Locale
 
 /**
  * Phase 4 stabilization WP A (plain JVM, same set-up as [CaptureTiltRulesJvmTest]):
- *  - a capture with an unconfirmed position reference (RS4 / RS4 Pro with "Compensated NMEA output" Unknown, or an
- *    unreadable profile) is never saved without an explicit acknowledgment; once acknowledged (for that occupation
+ *  - a capture with a genuinely unconfirmed position reference (RS4 / RS4 Pro with "Compensated NMEA output" Unknown
+ *    and an averaged epoch of uncertain reference, or an unreadable profile whose stream carried ETC) is never saved without an explicit acknowledgment; once acknowledged (for that occupation
  *    only) it is saved as EXTERNAL_GNSS_REFERENCE_UNCONFIRMED with today's antenna reduction (no second reduction,
  *    no maths change);
  *  - verified settings (Enabled / Disabled) and RS2+ / generic / internal captures never ask;
@@ -155,6 +156,22 @@ class CaptureReferenceAcknowledgmentJvmTest {
             "Emlid Reach RS4", c.sourceDevice)
         assertEquals(PositionReferenceKind.UNCONFIRMED,
             PositionReferenceKind.of(c.captureMethod, app.surrealar.data.local.db.ProviderTokens.isExternal(c.provider)))
+    }
+
+    @Test fun unknownOutput_butReceiverReportsTiltOff_isAntenna_noAcknowledgment() = runBlocking {
+        // Product decision 2026-11-25: only genuine uncertainty asks. ETC "tilt off" means the receiver is not
+        // compensating, so the epochs are the antenna (today's reduction) and the standing setting hint stays.
+        val vm = vm()
+        vm.start(policy(2))
+        repeat(2) { epoch(::etcOff) }
+        assertTrue(completed(vm))
+        assertNull(vm.unconfirmedReferenceWarning())
+        assertFalse(vm.referenceAcknowledgmentNeeded())
+        assertEquals(CaptureViewModel.RS4_OUTPUT_UNKNOWN_WARNING, vm.referenceWarning.value)
+        vm.save("P", null, 0, "ic_pin")
+        val c = repo.store.single()
+        assertNotEquals(CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED.storageValue, c.captureMethod)
+        assertEquals("today's antenna reduction, applied once", 100.0 - rs4Offset, c.altitude, 1e-9)
     }
 
     @Test fun acknowledgment_isRememberedForTheOccupationOnly() = runBlocking {

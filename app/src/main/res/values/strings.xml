@@ -166,6 +166,8 @@
     <string name="hint_port">Port</string>
     <string name="connect">Connect</string>
     <string name="host_required">Host is required</string>
+    <!-- Points CSV export option (default off: the original six-column file). -->
+    <string name="export_csv_position_reference_option">Include a \"Position reference\" column (antenna / receiver pole tip / unconfirmed) in every CSV export</string>
     <!-- Unconfirmed position reference: acknowledgment dialog buttons. -->
     <string name="capture_reference_save_unconfirmed">Save as unconfirmed</string>
     <string name="capture_reference_open_settings">Open receiver settings</string>
