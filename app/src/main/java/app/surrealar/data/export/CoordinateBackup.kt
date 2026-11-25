@@ -23,6 +23,9 @@ object CoordinateBackup {
     const val FORMAT_ID = "surreal-coordinate-backup"
     const val SCHEMA_VERSION = 1
 
+    /** Export-only key naming an external capture's position reference ([app.surrealar.domain.model.PositionReferenceKind.token]). */
+    const val POSITION_REFERENCE_KEY = "positionReference"
+
     /** Stateless; the single place that decides whether a coordinate may be persisted. */
     private val saveGate = ValidateCoordinateForSaveUseCase()
 
@@ -85,6 +88,10 @@ object CoordinateBackup {
         // provenance / quality
         put("provider", c.provider)
         putN("captureMethod", c.captureMethod)
+        // Export-only, derived from captureMethod (Phase 4 stabilization WP A): "antenna" / "receiver_pole_tip" /
+        // "unconfirmed" for external captures, absent otherwise. Never read back (captureMethod is the source).
+        app.surrealar.domain.model.PositionReferenceKind.of(c.captureMethod,
+            app.surrealar.data.local.db.ProviderTokens.isExternal(c.provider))?.let { put(POSITION_REFERENCE_KEY, it.token) }
         putN("rtkStatus", c.rtkStatus)
         putN("hdop", c.hdop)
         putN("vDop", c.vDop)

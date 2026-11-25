@@ -22,7 +22,16 @@ enum class CaptureMethod {
      * (Reach RS4 / RS4 Pro with compensated NMEA output, Phase 4 WP C). The receiver applied its pole height
      * (set in Emlid Flow); the app subtracted no pole height / phase-centre offset (antennaHeightM is null).
      */
-    EXTERNAL_GNSS_POLE_TIP;
+    EXTERNAL_GNSS_POLE_TIP,
+    /**
+     * External receiver capture whose position reference could not be confirmed (Phase 4 stabilization WP A):
+     * a Reach RS4 / RS4 Pro with "Compensated NMEA output" still Unknown, or a receiver profile that could not be
+     * read when the capture started. Today's antenna reduction WAS applied (pole height + phase-centre offset,
+     * antennaHeightM set), but if the receiver was streaming tilt-compensated pole-tip positions the height has
+     * been reduced twice. Saved only after the user acknowledged this. Appended: stored by enum name like the
+     * others; no schema change.
+     */
+    EXTERNAL_GNSS_REFERENCE_UNCONFIRMED;
 
     /** User-friendly label for UI/export. */
     val displayName: String
@@ -34,6 +43,7 @@ enum class CaptureMethod {
             MODEL_EMBEDDED -> "Model location"
             SIMULATOR      -> "Simulator"
             EXTERNAL_GNSS_POLE_TIP -> "External GNSS (receiver pole tip)"
+            EXTERNAL_GNSS_REFERENCE_UNCONFIRMED -> "External GNSS (reference unconfirmed)"
         }
 
     /** Canonical storage token (enum name). */
@@ -56,5 +66,35 @@ enum class CaptureMethod {
                 else -> runCatching { valueOf(v.uppercase(Locale.US)) }.getOrNull()
             }
         }
+    }
+}
+
+/**
+ * Which physical point a saved external capture refers to, derived from its stored captureMethod (Phase 4
+ * stabilization WP A). Display / export only: nothing here changes a stored value.
+ *
+ * @property token stable lower-case token written to exports (CSV column, JSON backup key `positionReference`).
+ */
+enum class PositionReferenceKind(val token: String) {
+    /** The receiver antenna: the app subtracted its pole height + phase-centre offset (today's maths). */
+    ANTENNA("antenna"),
+    /** The receiver's own tilt-compensated pole tip: the app subtracted no pole height. */
+    RECEIVER_POLE_TIP("receiver_pole_tip"),
+    /** Antenna reduction applied, but the receiver may have streamed compensated positions (reduced twice). */
+    UNCONFIRMED("unconfirmed");
+
+    companion object {
+        /**
+         * The reference of a point with [captureMethod]; [externalProvider] = its provider is an external receiver
+         * (an "external_gnss" / legacy "averaged" method only means the antenna when the provider is external, so
+         * simulator rows stay unlabelled). Null for internal, manual, imported, model or unknown points.
+         */
+        fun of(captureMethod: String?, externalProvider: Boolean): PositionReferenceKind? =
+            when (CaptureMethod.fromStorage(captureMethod)) {
+                CaptureMethod.EXTERNAL_GNSS_POLE_TIP -> RECEIVER_POLE_TIP
+                CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED -> UNCONFIRMED
+                CaptureMethod.EXTERNAL_GNSS -> if (externalProvider) ANTENNA else null
+                else -> null
+            }
     }
 }

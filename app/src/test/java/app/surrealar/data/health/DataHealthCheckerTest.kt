@@ -100,6 +100,13 @@ class DataHealthCheckerTest {
         assertTrue("expected no issues, got ${report.issues}", report.issues.isEmpty())
     }
 
+    @Test fun phase4CaptureMethods_areRecognised_notFlagged() {
+        for (m in listOf("EXTERNAL_GNSS_POLE_TIP", "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED", "external_gnss")) {
+            val report = analyze(listOf(coord(provider = Provider.EXTERNAL_TCP, captureMethod = m)))
+            assertTrue("$m: ${report.issues}", report.issues.isEmpty())
+        }
+    }
+
     @Test fun v14Provenance_setOrNull_doesNotChangeTheReport() {
         val legacy = coord()
         val captured = legacy.copy(

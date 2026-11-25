@@ -90,4 +90,37 @@ class PointsCsvExporterTest {
             convert(CoordinateSystemSettings(vertical = VerticalReference.RECEIVER_MSL))).lines()[0]
         assertEquals("Point,Latitude,Longitude,Elevation (m H rcvr),Description,System", rcvr)
     }
+
+    // ── Position reference column (Phase 4 stabilization WP A) ─────────────────────
+
+    @Test fun `external captures append a Position reference column - existing columns and values unchanged`() {
+        val s = CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, unit = LinearUnit.US_SURVEY_FEET,
+            vertical = VerticalReference.NAVD88_GEOID18)
+        val plain = point("CP1", "iron pin, found")
+        val ext = { name: String, method: String -> point(name).copy(provider = "external-tcp", captureMethod = method) }
+        val points = listOf(plain, ext("ANT", "external_gnss"), ext("TIP", "EXTERNAL_GNSS_POLE_TIP"),
+            ext("UNC", "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED"))
+        val before = PointsCsvExporter.build(listOf(plain), convert(s)).trim().lines()
+        val lines = PointsCsvExporter.build(points, convert(s)).trim().lines()
+        assertEquals(before[0] + ",Position reference", lines[0])
+        assertEquals("non-external row: same fields + an empty cell", before[1] + ",", lines[1])
+        assertTrue(lines[2], lines[2].endsWith(",antenna (pole height applied)"))
+        assertTrue(lines[3], lines[3].endsWith(",receiver pole tip (compensated; no pole height applied)"))
+        assertTrue(lines[4], lines[4].endsWith("," + PointsCsvExporter.UNCONFIRMED_CELL))
+        assertTrue(PointsCsvExporter.UNCONFIRMED_CELL.contains("reduced twice"))
+        // The first six fields of an external row are exactly as without the column.
+        val antOnly = PointsCsvExporter.build(listOf(point("ANT")), convert(s)).trim().lines()[1]
+        assertEquals(antOnly, lines[2].substringBeforeLast(','))
+        lines.drop(2).forEach { assertEquals(it, 7, it.split(",").size) }
+    }
+
+    @Test fun `files without external captures are unchanged - no extra column`() {
+        val internal = point("I1").copy(provider = "fused", captureMethod = "internal_gps")
+        val lines = PointsCsvExporter.build(listOf(internal, point("M1").copy(captureMethod = "manual")),
+            convert(CoordinateSystemSettings())).trim().lines()
+        assertEquals("Point,Latitude,Longitude,Elevation (m h),Description,System".substringBefore("Elevation"),
+            lines[0].substringBefore("Elevation"))
+        assertTrue(lines[0], lines[0].endsWith(",Description,System"))
+        lines.forEach { assertEquals(it, 6, it.split(",").size) }
+    }
 }
