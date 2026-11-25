@@ -1,7 +1,6 @@
 package app.surrealar.di
 
 import android.content.Context
-import app.surrealar.coords.toFixDatum
 import app.surrealar.domain.repository.ExternalReceiverSettingsRepository
 import app.surrealar.domain.repository.LocationSourceSettingsRepository
 import app.surrealar.domain.model.LocationSourceType
@@ -210,6 +209,22 @@ object GnssModule {
     fun provideExternalReconnectable(externalAdapter: ExternalAdapter): app.surrealar.gnss.source.ExternalReconnectable =
         externalAdapter
 
+    /**
+     * Settings → Coordinates → External Receiver Datum as the feed applies it, plus which datum
+     * normalised each published fix (captures accept only fixes normalised under their occupation's
+     * datum). Internal GNSS is always WGS84.
+     */
+    @Provides
+    @Singleton
+    fun provideReceiverFeedDatum(
+        appScope: CoroutineScope,
+        coordinateSettings: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository,
+    ): app.surrealar.gnss.source.ReceiverFeedDatum = app.surrealar.gnss.source.ReceiverFeedDatum(
+        coordinateSettings.coordinateSystemSettings
+            .map { it.externalReceiverDatum }
+            .stateIn(appScope, SharingStarted.Eagerly, app.surrealar.settings.model.ReceiverDatum.ITRF2014)
+    )
+
     // --- Switchboard (single point to select/internal/external and expose flows) ---
     @Provides
     @Singleton
@@ -219,12 +234,8 @@ object GnssModule {
         internalAdapter: InternalAdapter,
         externalAdapter: ExternalAdapter,
         replayAdapter: ReplayAdapter,
-        coordinateSettings: app.surrealar.domain.repository.CoordinateDisplaySettingsRepository,
+        feedDatum: app.surrealar.gnss.source.ReceiverFeedDatum,
     ): FixSwitchboard {
-        // Settings → Coordinates → External Receiver Datum. Internal GNSS is always WGS84.
-        val rxDatum = coordinateSettings.coordinateSystemSettings
-            .map { it.externalReceiverDatum }
-            .stateIn(appScope, SharingStarted.Eagerly, app.surrealar.settings.model.ReceiverDatum.ITRF2014)
         return FixSwitchboard(
             scope          = appScope,
             sourceSettings = sourceSettings,
@@ -233,11 +244,9 @@ object GnssModule {
                 ProviderChoice.EXTERNAL_TCP to externalAdapter,
                 ProviderChoice.REPLAY       to replayAdapter,
             ),
-            fixTransform   = { fix ->
-                if (fix.provider != io.github.pennstatecs.geokit.gnss.model.Provider.INTERNAL)
-                    io.github.pennstatecs.geokit.gnss.datum.FixDatumNormalizer.toWgs84(fix, rxDatum.value.toFixDatum())
-                else fix
-            },
+            // Non-internal fixes: FixDatumNormalizer.toWgs84 with the current receiver datum (unchanged
+            // maths), recording the datum used per fix.
+            fixTransform   = feedDatum::normalise,
         ).also { it.start() }
     }
 

@@ -300,6 +300,19 @@ class AddCoordinateDialogFragment(
             }
         }
 
+        // Capture stopped by the app (receiver datum or GNSS source changed mid-occupation): say so.
+        // Nothing from it can be saved; the message stays until a new capture starts.
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                captureVm.interruption.collect { message ->
+                    if (message == null) return@collect
+                    tvSamplingStatus?.text = message
+                    btnSave?.isEnabled = false
+                    if (isAdded) Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
         // Live fix quality + waiting reasons. Driven by currentFix (current-provider-only, cleared on
         // switch / lost signal). Only fixes from the selected mode's provider are shown — a null or
         // other-provider fix shows "Waiting for … GNSS data", never the other source's coordinates.
@@ -329,7 +342,7 @@ class AddCoordinateDialogFragment(
     private fun showExternalWaiting() {
         if (captureVm.state.value is ObservationSession.State.Complete) return
         lastLiveFix = null
-        tvSamplingStatus?.text = "Waiting for $modeWord GNSS data"
+        tvSamplingStatus?.text = captureVm.interruption.value ?: "Waiting for $modeWord GNSS data"
         tvFixStatus?.text = "—"
         clearPositionQuality()
     }
@@ -553,6 +566,8 @@ class AddCoordinateDialogFragment(
      * Complete and Paused own their own status text and are left untouched.
      */
     private fun refreshExternalStatus() {
+        // A stopped capture keeps its "Capture stopped: ..." message.
+        captureVm.interruption.value?.let { tvSamplingStatus?.text = it; return }
         val policy = capturePolicy ?: return
         val fix = lastLiveFix
         val reason: String = when (val state = captureVm.state.value) {
@@ -726,9 +741,10 @@ class AddCoordinateDialogFragment(
                     iconKey       = builtinIconKey,
                     antennaHeightM = antennaHeightM,
                     crsEpsg       = datumEpsg,
-                    // Provenance only (the feed already normalised to WGS84): the receiver datum setting
-                    // at capture start; null when it couldn't be read or not an external receiver.
-                    receiverFrame = if (isExternalMode) snap?.coordinateSystemSettings?.externalReceiverDatum?.frameToken() else null
+                    // Provenance only (the feed already normalised to WGS84): the receiver datum that
+                    // normalised every averaged fix (a datum change mid-occupation stops the capture);
+                    // null when not an external receiver capture.
+                    receiverFrame = if (isExternalMode) captureVm.occupationReceiverDatum()?.frameToken() else null
                 )
                 if (persistIfValid(coordinate)) dismissAllowingStateLoss()
             }
