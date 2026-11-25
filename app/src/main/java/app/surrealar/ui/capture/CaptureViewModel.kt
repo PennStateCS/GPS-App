@@ -39,6 +39,11 @@ class CaptureViewModel @Inject constructor(
      * that predate it) = no reference gating, exactly as before.
      */
     private val tiltMonitor: app.surrealar.receiver.tilt.ReceiverTiltMonitor? = null,
+    /**
+     * Phase 5: app-wide "capture running" flag for receiver selection (confirmation before switching receivers, no
+     * automatic profile change during a capture). Null (tests that predate it) = not reported.
+     */
+    private val captureTracker: ActiveCaptureTracker? = null,
 ) : ViewModel() {
 
     private var session: ObservationSession? = null
@@ -59,6 +64,8 @@ class CaptureViewModel @Inject constructor(
         val externalProfile: app.surrealar.settings.model.ExternalReceiverProfile? = null,
         /** "Compensated NMEA output (Emlid Flow)": read only for RS4 / RS4 Pro profiles; null otherwise or unreadable. */
         val compensatedOutput: app.surrealar.settings.model.CompensatedOutputSetting? = null,
+        /** Phase 5: the receiver TCP port (null when not stored or unreadable: then the port is not watched). */
+        val externalTcpPort: Int? = null,
     )
 
     private var startSnapshot: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>? = null
@@ -85,6 +92,7 @@ class CaptureViewModel @Inject constructor(
             externalProfile = profile,
             compensatedOutput = if (app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile))
                 readOrNull("compensatedOutput") { settingsRepository.compensatedNmeaOutput.first() } else null,
+            externalTcpPort = readOrNull("externalTcpPort") { settingsRepository.externalTcpPort.first() },
         )
     }
 
@@ -137,7 +145,7 @@ class CaptureViewModel @Inject constructor(
     private var referenceGate: app.surrealar.receiver.tilt.CaptureReferenceGate? = null
     /** How long only possibly-compensated epochs may arrive before the occupation stops (tests shorten it). */
     internal var referenceNoValidEpochsMs: Long = app.surrealar.receiver.tilt.CaptureReferenceGate.DEFAULT_NO_VALID_EPOCHS_MS
-    /** Watches settings that change how an external occupation is interpreted (profile, host, compensated output). */
+    /** Watches settings that change how an external occupation is interpreted (profile, host, port, compensated output). */
     private var setupWatchJob: Job? = null
     /** Correction base station id the current external occupation is bound to (null: none reported yet). */
     private var occupationStation: String? = null
@@ -394,8 +402,11 @@ class CaptureViewModel @Inject constructor(
                 diag.onState(st)
                 // One outcome line (completed / timed out) is written by captureFinished.
                 if (st is ObservationSession.State.Complete) captureFinished(diag, st)
+                // The occupation is over (complete or timed out): switching receivers no longer affects it.
+                if (st is ObservationSession.State.Complete || st is ObservationSession.State.Paused) captureTracker?.end(this@CaptureViewModel)
             }
         }
+        captureTracker?.begin(this)
         s.start()
     }
 
@@ -573,8 +584,8 @@ class CaptureViewModel @Inject constructor(
 
     /**
      * Stops [owner]'s external occupation (before it completes) when a setting that changes how its epochs are
-     * interpreted changes: the receiver profile (antenna offset, tilt rules), the receiver host (another
-     * receiver), or "Compensated NMEA output". Antenna / pole-height edits do NOT stop it: the reduction is bound
+     * interpreted changes: the receiver profile (antenna offset, tilt rules), the receiver host or port (another
+     * receiver or stream), or "Compensated NMEA output". Antenna / pole-height edits do NOT stop it: the reduction is bound
      * to the start snapshot and the streamed epochs do not change; they are logged only.
      */
     private suspend fun watchExternalSetup(snap: kotlinx.coroutines.Deferred<CaptureSettingsSnapshot>?, owner: ObservationSession) {
@@ -597,6 +608,16 @@ class CaptureViewModel @Inject constructor(
                     safeWatch("host") {
                         settingsRepository.externalTcpHost.distinctUntilChanged().collect { h ->
                             if (h != null && h != h0 && running()) interrupt(INTERRUPT_RECEIVER, RECEIVER_CHANGED_MESSAGE, "receiver host changed")
+                        }
+                    }
+                }
+            }
+            // Phase 5: the receiver port (another stream, or another receiver behind the same host).
+            start.externalTcpPort?.let { p0 ->
+                launch {
+                    safeWatch("port") {
+                        settingsRepository.externalTcpPort.distinctUntilChanged().collect { p ->
+                            if (p != null && p != p0 && running()) interrupt(INTERRUPT_RECEIVER, RECEIVER_CHANGED_MESSAGE, "receiver port changed")
                         }
                     }
                 }
@@ -727,11 +748,13 @@ class CaptureViewModel @Inject constructor(
         sessionForwardJob = null
         session?.cancel()
         session = null
+        captureTracker?.end(this)
     }
 
     override fun onCleared() {
         super.onCleared()
         sessionForwardJob?.cancel()
+        captureTracker?.end(this)
     }
 
     suspend fun save(name: String, note: String?, color: Int, iconId: String) {
