@@ -153,7 +153,8 @@ public sealed interface FrameTransformationLookup {
  * - ITRF2014 ⇄ ITRF2020: [Itrf2014ToItrf2020] (EPSG "ITRF2014 to ITRF2020 (1)");
  * so ITRF2020 ⇄ NAD83(2011) is the chain through ITRF2014. Both edges are [ProductStatus.VERIFIED_LEGACY].
  * NATRF2022 (and the other [PlateFrame2022] frames, by id), the WGS 84 ensemble and the WGS 84
- * realisations are [FrameUnavailableReason.NOT_VERIFIED].
+ * realisations are [FrameUnavailableReason.NOT_VERIFIED]. [NSRS2022_BETA] adds the NGS-verified beta
+ * edge ITRF2020 ⇄ NATRF2022 for callers that opt in.
  *
  * Path search prefers verified-legacy edges: a chain uses a [ProductStatus.VERIFIED_BETA] edge only when
  * no legacy-only chain exists, and the result then reports [FrameTransformation.status] beta.
@@ -300,6 +301,30 @@ public class FrameTransformationRegistry(
         /** The registry GeoKit uses by default (see the class documentation). */
         public val DEFAULT: FrameTransformationRegistry = FrameTransformationRegistry(
             listOf(ITRF2014_TO_NAD83_2011, ITRF2014_TO_ITRF2020), DEFAULT_UNAVAILABLE,
+        )
+
+        /**
+         * NGS beta "ITRF2020 to NATRF2022": the EPP2022 plate rotation ([PlateFrame2022.NATRF2022]
+         * `.rotation`, NOAA TR NOS NGS 62 (2021) eq. 60), [ProductStatus.VERIFIED_BETA]. Verified against
+         * NGS-computed coordinates ([PlateFrame2022.VERIFICATION]). Not part of [DEFAULT]; see [NSRS2022_BETA].
+         */
+        public val ITRF2020_TO_NATRF2022: FrameEdge = PlateFrame2022.NATRF2022.rotation.let { rot ->
+            FrameEdge(
+                ReferenceFrame.ITRF2020, ReferenceFrame.NATRF2022, "ITRF2020 to NATRF2022 (NGS EPP2022 beta)", null,
+                PlateFrame2022.VERIFICATION, ProductStatus.VERIFIED_BETA, PlateFrame2022.DATASET_VERSION,
+                rot::forward, rot::inverse,
+            )
+        }
+
+        /**
+         * Opt-in registry: [DEFAULT] plus [ITRF2020_TO_NATRF2022] (NATRF2022 is not blocked). Paths that
+         * exist in [DEFAULT] are unchanged (legacy-only chains are preferred); any chain to or from NATRF2022
+         * reports [ProductStatus.VERIFIED_BETA]. PATRF2022 / CATRF2022 / MATRF2022 are verified numerically
+         * ([PlateFrame2022.rotation]) but are not [ReferenceFrame] entries yet, so they stay unavailable here.
+         * [DEFAULT] is kept as it was until the app's capability model and its tests adopt the beta frames.
+         */
+        public val NSRS2022_BETA: FrameTransformationRegistry = FrameTransformationRegistry(
+            DEFAULT.registeredEdges + ITRF2020_TO_NATRF2022, DEFAULT_UNAVAILABLE - ReferenceFrame.NATRF2022,
         )
     }
 }

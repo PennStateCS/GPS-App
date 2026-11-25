@@ -31,12 +31,13 @@ public data class EulerPoleParameters(
  *     X_plate(t) = X_global(t) − K·Δt·(Ω × X_global(t))
  *
  * i.e. ΔX = K·Δt·(Ω_y·Z − Ω_z·Y), ΔY = K·Δt·(Ω_z·X − Ω_x·Z), ΔZ = K·Δt·(Ω_x·Y − Ω_y·X), X_plate = X − ΔX.
- * This is the first-order (small-angle) form NGS publishes, and the sign that makes the plate-fixed
- * coordinates of a point riding the rigid plate (global velocity Ω × X) constant in time, as NOAA TR NOS
- * NGS 62 (Blueprint Part 1, eqs. 17–19) requires. **Caution:** read literally, the beta NGS web page
- * writes the skew matrix with the opposite sign (it would add the plate motion instead of removing it);
- * the sign has not been confirmed against NGS reference coordinates, which is one reason no registry
- * edge uses this class yet (see [PlateFrame2022]).
+ * This is NGS's official definitional relationship, NOAA TR NOS NGS 62 (Blueprint Part 1, revision of
+ * 2021-04-20) eqs. 58–60: X_N(t) = {I + (t − t0)·[[0, ω̇Z, −ω̇Y], [−ω̇Z, 0, ω̇X], [ω̇Y, −ω̇X, 0]]}·X_I(t),
+ * with ω̇ the plate's rotation rates about the ITRF axes (eqs. 64–66) — the sign that keeps the
+ * plate-fixed coordinates of a point riding the rigid plate constant (Condition 1). NGS-computed
+ * coordinates from the beta Geodetic Station Pages service agree to 1e-9 m for all four frames
+ * ([PlateFrame2022.VERIFICATION]). The beta NATRF2022 web page's first equation, X_f = X_g − ΔX with the
+ * same matrix, has the opposite sign; it disagrees with both TR 62 and NGS's own computed coordinates.
  *
  * The frames coincide at [referenceEpoch]. [inverse] is the exact inverse of [forward] (closed-form
  * inverse of I − [ω]×), not a sign-flipped approximation. Thread-safe and immutable.
