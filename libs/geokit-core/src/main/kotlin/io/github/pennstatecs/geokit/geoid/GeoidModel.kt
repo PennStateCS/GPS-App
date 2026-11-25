@@ -1,5 +1,7 @@
 package io.github.pennstatecs.geokit.geoid
 
+import io.github.pennstatecs.geokit.status.ProductStatus
+
 /**
  * A geoid model: undulation N (metres) such that orthometric height H = h − N, where h is the
  * ellipsoidal height in the model's [GeoidModelInfo.horizontalFrame].
@@ -32,7 +34,8 @@ public interface GeoidModel {
 
     /**
      * Name of the vertical datum an orthometric height from this model belongs to, for labels:
-     * GEOID18 → "NAVD88" / "PRVD02" / "VIVD09" (by location); EGM2008 → "EGM2008"; EGM96 → "EGM96".
+     * GEOID18 → "NAVD88" / "PRVD02" / "VIVD09" (by location); EGM2008 → "EGM2008"; EGM96 → "EGM96";
+     * GEOID2022 (beta) → "NAPGD2022".
      * A global model's heights are never NAVD88.
      */
     public fun verticalDatumName(latDeg: Double, lonDeg: Double): String
@@ -50,7 +53,13 @@ public enum class GeoidModelId(public val token: String) {
     EGM2008("EGM2008"),
 
     /** NGA EGM96, on WGS84. Coarse fallback only; always labelled as EGM96. */
-    EGM96("EGM96");
+    EGM96("EGM96"),
+
+    /**
+     * NGS GEOID2022 (NAPGD2022), BETA: positions in ITRF2020, GRS80 ellipsoid, tide-free. Pre-release
+     * ([io.github.pennstatecs.geokit.status.ProductStatus.VERIFIED_BETA]); never a default. See [Geoid2022Model].
+     */
+    GEOID2022("GEOID2022");
 
     public companion object {
         /** The id stored as [token], or null for an unknown token. */
@@ -62,6 +71,13 @@ public enum class GeoidModelId(public val token: String) {
 public enum class GeoidInterpolation {
     /** Bilinear over the four surrounding nodes (as NGS's tools and PROJ `vgridshift`). */
     BILINEAR,
+
+    /**
+     * Local 4×4 bicubic as NGS specifies for NAPGD2022 grids: the Numerical Recipes bicubic patch whose
+     * corner derivatives are centred differences of the 4×4 neighbourhood (equivalently, the tensor product of
+     * 1-D Catmull-Rom cubics); beyond an official grid edge the window is padded by linear extrapolation.
+     */
+    BICUBIC,
 }
 
 /** Data state of a model. */
@@ -161,6 +177,13 @@ public data class GeoidProvenance(
  * @property resolutionArcMinutes grid spacing.
  * @property coverage human-readable area of definition and, for tiled models, which tiles are bundled.
  * @property isFallback true for a model used only as an explicitly labelled fallback (EGM96).
+ * @property status how far the model can be trusted: [ProductStatus.VERIFIED_LEGACY] for GEOID18 / EGM2008 /
+ *   EGM96, [ProductStatus.VERIFIED_BETA] for GEOID2022 (label it "beta", never a default).
+ * @property horizontalFrameId machine-readable id of the frame the caller must supply positions in
+ *   ("itrf2020" for GEOID2022), so the app can transform first; the model never transforms coordinates.
+ *   Null for the legacy models (their [horizontalFrame] text applies).
+ * @property referenceEpoch epoch (decimal year) of the static grid when the model is time-dependent
+ *   (GEOID2022: 2020.0); null for static models.
  */
 public data class GeoidModelInfo(
     public val id: GeoidModelId,
@@ -174,6 +197,9 @@ public data class GeoidModelInfo(
     public val coverage: String,
     public val provenance: GeoidProvenance,
     public val isFallback: Boolean,
+    public val status: ProductStatus = ProductStatus.VERIFIED_LEGACY,
+    public val horizontalFrameId: String? = null,
+    public val referenceEpoch: Double? = null,
 )
 
 /**

@@ -65,3 +65,38 @@ identical edge nodes and a bilinear cell never spans two tiles. Storage rounding
 corners/edges/nodes, the antimeridian (±180, 179.99…), near both poles, Greenwich/equator and the world
 (EGM96 only for points without an EGM2008 tile). NGA's own EGM2008 test values were not used: the PROJ-data
 README contains none and they were not found in a search (2026-11-24).
+
+## GEOID2022 (NAPGD2022 beta_v0a)
+
+Sources, status, frame and validation: `docs/geodesy/nsrs2022-sources-geoid2022.md`. Download into a new,
+empty directory `<dir>` from https://beta.ngs.noaa.gov/NAPGD2022/data/geoid2022/ the official `.bin` grids
+`SGEOID2022.{NA,AS,GC}.N.beta_v0a.bin` and `DGEOID2022.GL.Ndot.beta_v0a.bin`, and the NGS test cases
+https://beta.ngs.noaa.gov/NAPGD2022/files/NAPGD2022TestCases.beta_v0a.csv. NGS publishes no checksums; the
+generators refuse files whose SHA-256 differs from the digests recorded on download (`geoid2022_common.py`).
+Only Python + numpy are needed (no GeoTIFF / NetCDF readers).
+
+```
+python -I libs/geokit-core/tools/geoid/pack_geoid2022.py <dir> libs/geokit-core/src/main/resources/geoid libs/geokit-core/src/test/resources/geoid
+python -I libs/geokit-core/tools/geoid/geoid2022_reference_vectors.py <dir> libs/geokit-core/src/test/resources/geoid/geoid2022_vectors.csv
+```
+
+The packer writes SRGP v2 (v1 + grid region, quantity and units-per-value header fields; layout in
+`pack_geoid2022.py`) and prints each pack's SHA-256; update `Geoid2022Model.BUNDLED_PACKS` (and
+`TEST_PACK_SHA256` in `Geoid2022ModelTest`). The vector script first re-checks the bicubic interpolation
+against every NGS test value (aborts above NGS's rounding), then writes 256 independent reference points
+(random, nodes, tile corners/edges, windows spanning four tiles, pack boundaries, the antimeridian and the
+official grid edges / corners of the test-only packs).
+
+| Resource | Tiles | Bytes |
+|---|---|---|
+| `geoid2022_conus.srgp` (NA grid, 24–50 °N, 125–66 °W) | 1 534 | 3 193 628 |
+| `geoid2022_alaska.srgp` (NA, 51–72 °N, 172 °E–129 °W) | 1 239 | 2 379 964 |
+| `geoid2022_hawaii.srgp` (NA, 18–23 °N, 161–154 °W) | 35 | 75 008 |
+| `geoid2022_prvi.srgp` (NA, 17–19 °N, 68–64 °W) | 8 | 20 148 |
+| `geoid2022_guam_cnmi.srgp` (GC grid, 13–21 °N, 144–146 °E) | 16 | 37 824 |
+| `geoid2022_american_samoa.srgp` (AS grid, 15–11 °S, 172–168 °W) | 16 | 33 076 |
+| `geoid2022_dgeoid.srgp` (GL 15′ rate grid, 5° tiles around the packs above) | 202 | 42 487 |
+| test: `geoid2022_testtiles_{NA,AS,GC}.srgp` (official grid edges/corners) | 6 | 13 057 |
+
+Bundled GEOID2022 total 5 782 135 B. Storing 0.1 mm instead of 1 mm would roughly double it (≈ 11.4 MB
+measured for the six SGEOID packs) for a ≤ 0.8 mm gain.

@@ -88,7 +88,9 @@ public class CompositeGeoidTileSource(private val sources: List<GeoidTileSource>
 }
 
 /**
- * Reader of an "SRGP" v1 tile pack (generator and byte layout: libs/geokit-core/tools/geoid/pack_geoid_tiles.py).
+ * Reader of an "SRGP" tile pack (generator and byte layout: libs/geokit-core/tools/geoid/pack_geoid_tiles.py
+ * for v1, pack_geoid2022.py for v2). v2 adds three header fields — [gridRegion], [quantity], [unitsPerValue] —
+ * and is otherwise identical; v1 packs read exactly as before (geoid height in integer millimetres).
  * The header and index are validated on open (input is treated as untrusted); tiles are inflated on
  * demand, never all at once. Thread-safe.
  */
@@ -100,7 +102,17 @@ public class GeoidTilePack private constructor(
     /** SHA-256 of the original grid, as recorded by the generator. */
     public val sourceSha256: String,
     private val index: Map<GeoidTileKey, LongArray>,
+    /** SRGP format version (1 or 2). */
+    public val formatVersion: Int,
+    /** Official grid the tiles were cut from (v2, e.g. GEOID2022 "NA" / "AS" / "GC" / "GL"); "" for v1. */
+    public val gridRegion: String,
+    /** Stored quantity (v2: GGXF parameter name "geoidHeight" or "geoidVelocity"); v1: "geoidHeight". */
+    public val quantity: String,
+    /** A stored integer is value × [unitsPerValue] (1000: millimetres; 1 000 000: micrometres/yr); v1: 1000. */
+    public val unitsPerValue: Int,
 ) : GeoidTileSource, java.io.Closeable {
+
+    private val maxAbsStored: Int = if (formatVersion == 1) MAX_ABS_N_MM else MAX_ABS_VALUE * unitsPerValue
 
     override val tileCount: Int get() = index.size
 
@@ -145,7 +157,9 @@ public class GeoidTilePack private constructor(
                 else -> v[i * s + j - 1] + v[(i - 1) * s + j] - v[(i - 1) * s + j - 1]
             }
             val value = pred + b.short
-            check(value in -MAX_ABS_N_MM..MAX_ABS_N_MM) { "geoid tile $key: implausible N $value mm" }
+            check(value in -maxAbsStored..maxAbsStored) {
+                if (formatVersion == 1) "geoid tile $key: implausible N $value mm" else "geoid tile $key: implausible $quantity $value/$unitsPerValue"
+            }
             v[i * s + j] = value
         }
         return v
@@ -176,7 +190,11 @@ public class GeoidTilePack private constructor(
     public companion object {
         /** |N| on Earth is below ~110 m; anything beyond 200 m is a corrupt tile. */
         private const val MAX_ABS_N_MM = 200_000
+        /** v2: |value| above 200 units (m, m/yr) is a corrupt tile. */
+        private const val MAX_ABS_VALUE = 200
         private const val MAX_TILE_BYTES = 1 shl 22
+        /** v2 [unitsPerValue] limit (keeps 200 × units inside Int). */
+        private const val MAX_UNITS_PER_VALUE = 1_000_000
 
         /**
          * Opens a pack held in memory (e.g. a classpath resource). If [expectedSha256] is given, the bytes
@@ -237,7 +255,7 @@ public class GeoidTilePack private constructor(
                 fromFile(File(directory, name), sha)
             }.toList()
 
-        private const val MAX_HEADER_BYTES = 16 + 3 * (2 + 65535) + 4 + 12 * 64800
+        private const val MAX_HEADER_BYTES = 16 + 5 * (2 + 65535) + 4 + 4 + 12 * 64800
         private val MANIFEST_LINE = Regex("([0-9a-fA-F]{64})\\s+\\*?(\\S+)")
 
         private fun parse(data: RandomData, head: ByteArray): GeoidTilePack {
@@ -246,7 +264,7 @@ public class GeoidTilePack private constructor(
                 val magic = ByteArray(4).also { b.get(it) }
                 require(String(magic, Charsets.US_ASCII) == "SRGP") { "not an SRGP geoid tile pack" }
                 val version = b.int
-                require(version == 1) { "unsupported SRGP version $version" }
+                require(version == 1 || version == 2) { "unsupported SRGP version $version" }
                 val nodesPerDegree = b.int
                 val tileDegrees = b.int
                 fun utf(): String { val n = b.short.toInt() and 0xFFFF; return String(ByteArray(n).also { b.get(it) }, Charsets.UTF_8) }
@@ -254,6 +272,16 @@ public class GeoidTilePack private constructor(
                 val model = requireNotNull(GeoidModelId.fromToken(modelToken)) { "unknown geoid model '$modelToken'" }
                 val sourceFile = utf()
                 val sourceSha = utf()
+                var gridRegion = ""
+                var quantity = "geoidHeight"
+                var units = 1000
+                if (version == 2) {
+                    gridRegion = utf()
+                    quantity = utf()
+                    units = b.int
+                    require(gridRegion.isNotEmpty() && quantity.isNotEmpty()) { "SRGP v2 without grid region / quantity" }
+                    require(units in 1..MAX_UNITS_PER_VALUE) { "bad SRGP units per value $units" }
+                }
                 val spec = GeoidGridSpec(model, nodesPerDegree, tileDegrees)
                 val count = b.int
                 require(count in 0..spec.tileRows * spec.tileCols) { "bad tile count $count" }
@@ -266,7 +294,7 @@ public class GeoidTilePack private constructor(
                     require(length in 1..MAX_TILE_BYTES && offset + length <= data.size) { "tile $key outside the pack" }
                     require(index.put(key, longArrayOf(offset, length.toLong())) == null) { "duplicate tile $key" }
                 }
-                return GeoidTilePack(data, spec, sourceFile, sourceSha, index)
+                return GeoidTilePack(data, spec, sourceFile, sourceSha, index, version, gridRegion, quantity, units)
             } catch (e: java.nio.BufferUnderflowException) {
                 throw IllegalArgumentException("truncated SRGP geoid tile pack", e)
             }
