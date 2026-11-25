@@ -29,6 +29,36 @@ class CoordinateDetailFormatterTest {
     }
 
     @Test
+    fun positionReference_distinguishesAntennaPoleTipAndUnconfirmed() {
+        val ext = "external-tcp"
+        assertEquals("Antenna (pole height applied)", CoordinateDetailFormatter.positionReferenceText("external_gnss", ext))
+        val tip = CoordinateDetailFormatter.positionReferenceText("EXTERNAL_GNSS_POLE_TIP", ext)!!
+        assertTrue(tip, tip.startsWith("Receiver pole tip (compensated, no pole height applied)"))
+        val unc = CoordinateDetailFormatter.positionReferenceText("EXTERNAL_GNSS_REFERENCE_UNCONFIRMED", ext)!!
+        assertTrue(unc, unc.startsWith("Unconfirmed — may be reduced twice"))
+        assertTrue(unc, unc.contains("antenna reduction applied"))
+        // Not external captures: no row.
+        assertNull(CoordinateDetailFormatter.positionReferenceText("internal_gps", "fused"))
+        assertNull(CoordinateDetailFormatter.positionReferenceText("manual", "other"))
+        assertNull(CoordinateDetailFormatter.positionReferenceText("averaged", "other"))
+        assertNull(CoordinateDetailFormatter.positionReferenceText(null, ext))
+        assertEquals("External GNSS (position reference unconfirmed; antenna reduction applied)",
+            CoordinateDetailFormatter.captureMethodLabel("EXTERNAL_GNSS_REFERENCE_UNCONFIRMED"))
+    }
+
+    @Test
+    fun provenanceRowsWithReference_prependsTheRowOnlyForExternalCaptures() {
+        val base = app.surrealar.domain.model.Coordinate(id = "a", name = "A", latitude = 41.0, longitude = -76.0,
+            altitude = 100.0, timestamp = 1L, icon = "", color = 0, provider = "external-tcp",
+            captureMethod = "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED")
+        val rows = CoordinateDetailFormatter.provenanceRowsWithReference(base)
+        assertEquals(CoordinateDetailFormatter.POSITION_REFERENCE, rows.first().label)
+        assertEquals(CoordinateDetailFormatter.provenanceRows(base), rows.drop(1))
+        val internal = base.copy(provider = "fused", captureMethod = "internal_gps")
+        assertEquals(CoordinateDetailFormatter.provenanceRows(internal), CoordinateDetailFormatter.provenanceRowsWithReference(internal))
+    }
+
+    @Test
     fun captureMethodLabel_mapsKnownMethods_andNullsOnBlank() {
         assertEquals("Internal GPS", CoordinateDetailFormatter.captureMethodLabel("internal_gps"))
         assertEquals("Model embedded location", CoordinateDetailFormatter.captureMethodLabel("model_embedded"))

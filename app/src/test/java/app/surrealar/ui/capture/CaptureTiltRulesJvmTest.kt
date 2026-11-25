@@ -417,9 +417,10 @@ class CaptureTiltRulesJvmTest {
         repeat(2) { epoch(null) }
         assertTrue((vm.state.value as ObservationSession.State.Complete).requirementsMet)
         assertEquals(CaptureViewModel.PROFILE_UNREADABLE_WARNING, vm.referenceWarning.value)
+        vm.acknowledgeUnconfirmedReference()
         vm.save("P", null, 0, "ic_pin")
         val c = repo.store.single()
-        assertEquals("external_gnss", c.captureMethod)
+        assertEquals(CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED.storageValue, c.captureMethod)
         assertTrue("an antenna reduction was applied", c.altitude < 100.0)
     }
 
@@ -431,6 +432,7 @@ class CaptureTiltRulesJvmTest {
         repeat(2) { epoch(null) }                      // no ETC: antenna (uncertain), today's maths, saving allowed
         assertTrue((rs4.state.value as ObservationSession.State.Complete).requirementsMet)
         assertEquals("the warning stays with the completed result", CaptureViewModel.RS4_OUTPUT_UNKNOWN_WARNING, rs4.referenceWarning.value)
+        rs4.acknowledgeUnconfirmedReference()   // saving needs the acknowledgment (Phase 4 stabilization WP A)
         rs4.save("P", null, 0, "ic_pin")
         assertEquals(100.0 - (1.8 + ExternalReceiverProfile.REACH_RS4.phaseCenterOffsetM!!), repo.store.single().altitude, 1e-9)
 

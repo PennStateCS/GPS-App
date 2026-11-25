@@ -102,6 +102,28 @@ class CoordinateBackupProvenanceTest {
         assertEquals(2100.0, epochOf("2100.0")!!, 0.0)
     }
 
+    /** Phase 4 stabilization WP A: the position-reference capture methods round-trip; the derived key is export-only. */
+    @Test
+    fun positionReference_captureMethodsRoundTrip_andTheDerivedKeyIsExportOnly() {
+        val unconfirmed = captured().copy(id = "u", captureMethod = "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED", antennaHeightM = 1.895)
+        val tip = captured().copy(id = "t", captureMethod = "EXTERNAL_GNSS_POLE_TIP", antennaHeightM = null)
+        val antenna = captured().copy(id = "a", captureMethod = "external_gnss", antennaHeightM = 1.934)
+        val internal = captured().copy(id = "i", provider = "fused", captureMethod = "internal_gps")
+        val json = CoordinateBackup.export(listOf(unconfirmed, tip, antenna, internal), emptyList(), "9.9")
+        val arr = JSONObject(json).getJSONArray("coordinates")
+        assertEquals("unconfirmed", arr.getJSONObject(0).getString(CoordinateBackup.POSITION_REFERENCE_KEY))
+        assertEquals("receiver_pole_tip", arr.getJSONObject(1).getString(CoordinateBackup.POSITION_REFERENCE_KEY))
+        assertEquals("antenna", arr.getJSONObject(2).getString(CoordinateBackup.POSITION_REFERENCE_KEY))
+        assertTrue("absent for non-external points", !arr.getJSONObject(3).has(CoordinateBackup.POSITION_REFERENCE_KEY))
+        val back = CoordinateBackup.parse(json)
+        assertTrue(back.skippedInvalid.isEmpty())
+        assertEquals(listOf(unconfirmed, tip, antenna, internal), back.coordinates)
+        // A backup from before WP A (no key) and a hand-edited key that contradicts captureMethod: captureMethod wins.
+        val edited = json.replace("\"unconfirmed\"", "\"antenna\"")
+        assertEquals("EXTERNAL_GNSS_REFERENCE_UNCONFIRMED", CoordinateBackup.parse(edited).coordinates.first().captureMethod)
+        assertNull(CoordinateBackup.parse(oldBackup).coordinates.single().captureMethod)
+    }
+
     @Test
     fun explicitNulls_andUnknownFutureKeys_areAccepted() {
         val json = """{"format":"surreal-coordinate-backup","schemaVersion":3,"futureRootKey":{"x":1},"coordinates":[

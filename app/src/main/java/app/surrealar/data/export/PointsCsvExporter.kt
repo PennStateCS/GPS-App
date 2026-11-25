@@ -19,7 +19,13 @@ import java.util.Locale
  * (with its coordinate epoch for ITRF2020, e.g. "ITRF2020 epoch 2026.886") and vertical datum
  * ("NAVD88", "EGM2008", "EGM96"). GEOID2022 heights (NSRS 2022 beta preview only) read "H GEOID2022 beta"
  * in the header and "NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886" in the System column (model,
- * NGS dataset version and the coordinate epoch of N). The column count and order never change.
+ * NGS dataset version and the coordinate epoch of N). The column count and order never change with the settings.
+ *
+ * Position reference (Phase 4 stabilization WP A): when the file contains at least one external receiver capture,
+ * one column "Position reference" is APPENDED after System (the PNEZD + System columns are unchanged), saying
+ * whether each external capture is the antenna (pole height applied), the receiver's compensated pole tip, or
+ * UNCONFIRMED (antenna reduction applied; height reduced twice if the receiver streamed compensated positions);
+ * blank for other points. Files without external captures are exactly as before.
  *
  * This is an interchange export; the JSON backup remains the lossless format (raw measurements).
  */
@@ -32,12 +38,16 @@ object PointsCsvExporter {
         val grid = first?.easting != null
         val unit = first?.unit?.suffix ?: "m"
         val heightRef = first?.vertical?.shortLabel ?: ""
+        val refs = points.map { positionReferenceCell(it) }
+        val withReference = refs.any { it.isNotEmpty() }
+        val refHeader = if (withReference) ",$POSITION_REFERENCE_HEADER" else ""
         if (grid) {
-            sb.append("Point,Northing ($unit),Easting ($unit),Elevation ($unit $heightRef),Description,System\n")
+            sb.append("Point,Northing ($unit),Easting ($unit),Elevation ($unit $heightRef),Description,System$refHeader\n")
         } else {
-            sb.append("Point,Latitude,Longitude,Elevation ($unit $heightRef),Description,System\n")
+            sb.append("Point,Latitude,Longitude,Elevation ($unit $heightRef),Description,System$refHeader\n")
         }
-        for ((c, p) in converted) {
+        for ((i, cp) in converted.withIndex()) {
+            val (c, p) = cp
             val d = CoordinateFormat.linearDecimals(p.unit)
             val elev = p.height?.let { String.format(Locale.US, "%.${d}f", it) } ?: ""
             val xy = if (p.easting != null && p.northing != null)
@@ -48,10 +58,32 @@ object PointsCsvExporter {
             // crosses a zone line must not carry the first point's zone onto every row.
             val system = CoordinateFormat.systemSummary(p)
             sb.append(csv(c.name)).append(',').append(xy).append(',').append(elev).append(',')
-                .append(csv(c.note.orEmpty())).append(',').append(csv(system)).append('\n')
+                .append(csv(c.note.orEmpty())).append(',').append(csv(system))
+            if (withReference) sb.append(',').append(csv(refs[i]))
+            sb.append('\n')
         }
         return sb.toString()
     }
+
+    /** Header of the appended (last) column: which physical point an external capture is. */
+    const val POSITION_REFERENCE_HEADER = "Position reference"
+
+    /**
+     * The [POSITION_REFERENCE_HEADER] cell (Phase 4 stabilization WP A): "antenna", "receiver pole tip (compensated)",
+     * or the unconfirmed warning for an external capture; blank for internal, manual, imported and model points.
+     * No commas, so the column count stays fixed even for naive splitters.
+     */
+    internal fun positionReferenceCell(c: Coordinate): String =
+        when (app.surrealar.domain.model.PositionReferenceKind.of(
+            c.captureMethod, app.surrealar.data.local.db.ProviderTokens.isExternal(c.provider))) {
+            app.surrealar.domain.model.PositionReferenceKind.ANTENNA -> "antenna (pole height applied)"
+            app.surrealar.domain.model.PositionReferenceKind.RECEIVER_POLE_TIP -> "receiver pole tip (compensated; no pole height applied)"
+            app.surrealar.domain.model.PositionReferenceKind.UNCONFIRMED -> UNCONFIRMED_CELL
+            null -> ""
+        }
+
+    /** Cell for an unconfirmed position reference. */
+    const val UNCONFIRMED_CELL = "UNCONFIRMED: antenna reduction applied; height reduced twice if the receiver streamed compensated positions"
 
     /**
      * One CSV text field. A value a spreadsheet would run as a formula (starts with = + - @, tab or CR)

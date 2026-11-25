@@ -655,7 +655,8 @@ class CoordinateDetailFragment : Fragment() {
         // Provenance of the stored numbers (frame, epoch, receiver frame, height source/model). Unknown
         // (legacy / manual / imported points) reads "unknown"; nothing is inferred.
         addCardSubheading(container, "Provenance")
-        renderStackedColumns(container, CoordinateDetailFormatter.provenanceRows(c).map { DetailRow(it.label, it.value) })
+        // Position reference first (antenna / receiver pole tip / unconfirmed), next to the coordinate epoch.
+        renderStackedColumns(container, CoordinateDetailFormatter.provenanceRowsWithReference(c).map { DetailRow(it.label, it.value) })
 
         cardLocation?.visibility = View.VISIBLE
     }

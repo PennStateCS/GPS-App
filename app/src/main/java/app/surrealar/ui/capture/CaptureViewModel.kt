@@ -187,10 +187,46 @@ class CaptureViewModel @Inject constructor(
 
     /**
      * Capture method to store for an external capture: [CAPTURE_METHOD_POLE_TIP] for a receiver-compensated
-     * pole-tip occupation (provenance; no schema change), else [default].
+     * pole-tip occupation, [CAPTURE_METHOD_REFERENCE_UNCONFIRMED] when the occupation's position reference is
+     * unconfirmed ([unconfirmedReferenceWarning]; antenna reduction applied), else [default] (provenance; no
+     * schema change).
      */
-    fun externalCaptureMethod(default: String): String =
-        if (occupationPositionReference() == app.surrealar.receiver.tilt.EpochReference.POLE_TIP) CAPTURE_METHOD_POLE_TIP else default
+    suspend fun externalCaptureMethod(default: String): String = when {
+        occupationPositionReference() == app.surrealar.receiver.tilt.EpochReference.POLE_TIP -> CAPTURE_METHOD_POLE_TIP
+        unconfirmedReferenceWarning() != null -> CAPTURE_METHOD_REFERENCE_UNCONFIRMED
+        else -> default
+    }
+
+    /**
+     * Unconfirmed position reference (Phase 4 stabilization WP A): the [referenceWarning] of the current / completed
+     * external occupation when its reference is not confirmed — RS4 / RS4 Pro with "Compensated NMEA output"
+     * Unknown, or a receiver profile that could not be read at the start — and the occupation is not a confirmed
+     * receiver pole tip. Null for internal captures, RS2+ / generic profiles, and RS4 captures with the setting
+     * Enabled or Disabled. Read from the start snapshot (not the live settings): the epochs were classified with it.
+     */
+    suspend fun unconfirmedReferenceWarning(): String? {
+        if (referenceGate == null) return null
+        if (occupationPositionReference() == app.surrealar.receiver.tilt.EpochReference.POLE_TIP) return null
+        return referenceWarningFor(settingsAtStart())
+    }
+
+    /**
+     * Acknowledgment of an unconfirmed reference, remembered for the current occupation only: [start] (a new
+     * capture or Restart) clears it. A verified setting (Enabled / Disabled) never needs one; any change of
+     * profile, host, firmware or the setting needs a new occupation, so a stale acknowledgment can never carry over.
+     */
+    private var referenceAcknowledged = false
+
+    /** True when saving the completed capture first needs the user's explicit acknowledgment ([acknowledgeUnconfirmedReference]). */
+    suspend fun referenceAcknowledgmentNeeded(): Boolean = !referenceAcknowledged && unconfirmedReferenceWarning() != null
+
+    /** The user chose "Save as unconfirmed" for the current occupation. */
+    fun acknowledgeUnconfirmedReference() {
+        if (!referenceAcknowledged) DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture unconfirmed position reference acknowledged" +
+            (captureDiag?.let { " capture=${it.id}" } ?: ""))
+        referenceAcknowledged = true
+        if (_saveError.value == REFERENCE_ACK_REQUIRED_ERROR) _saveError.value = null
+    }
 
     /**
      * The receiver datum that normalised every fix of the current/completed external capture: the
@@ -301,6 +337,7 @@ class CaptureViewModel @Inject constructor(
         occupationFirmware = if (internal) null else tiltMonitor?.currentFirmware()
         _positionReference.value = null
         _referenceWarning.value = null
+        referenceAcknowledged = false
         if (!internal) viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             val snap = try { snapForDatum?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
             if (startSnapshot !== snapForDatum) return@launch   // a newer capture started meanwhile
@@ -642,7 +679,8 @@ class CaptureViewModel @Inject constructor(
         val warning = _referenceWarning.value ?: return
         val why = if (warning == PROFILE_UNREADABLE_WARNING) "receiver profile unreadable" else "RS4 Compensated NMEA output unknown"
         val line = "Capture saved with unconfirmed position reference id=$pointId" +
-            (captureDiag?.let { " capture=${it.id}" } ?: "") + " reason=\"$why\" heights=antenna reduction applied"
+            (captureDiag?.let { " capture=${it.id}" } ?: "") + " reason=\"$why\" heights=antenna reduction applied" +
+            " acknowledged=$referenceAcknowledged captureMethod=$CAPTURE_METHOD_REFERENCE_UNCONFIRMED"
         DiagnosticsLogger.w(DiagTags.CAPTURE, line)
         app.surrealar.util.diagnostics.CaptureLog.append(line)
     }
@@ -686,6 +724,13 @@ class CaptureViewModel @Inject constructor(
         if (!completed.requirementsMet) {
             DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: requirements not met, capture timed out" +
                 (captureDiag?.let { " capture=${it.id}" } ?: ""))
+            return
+        }
+        // Unconfirmed position reference: never saved without the user's explicit acknowledgment (the dialog asks).
+        if (referenceAcknowledgmentNeeded()) {
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture save blocked: unconfirmed position reference not acknowledged" +
+                (captureDiag?.let { " capture=${it.id}" } ?: ""))
+            _saveError.value = REFERENCE_ACK_REQUIRED_ERROR
             return
         }
         _saveError.value = null
@@ -834,6 +879,38 @@ class CaptureViewModel @Inject constructor(
          * [app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_POLE_TIP].
          */
         val CAPTURE_METHOD_POLE_TIP: String get() = app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_POLE_TIP.storageValue
+
+        /**
+         * captureMethod stored for an external capture saved with an unconfirmed position reference (Phase 4
+         * stabilization WP A): antenna reduction applied, reference unconfirmed.
+         * [app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED].
+         */
+        val CAPTURE_METHOD_REFERENCE_UNCONFIRMED: String
+            get() = app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED.storageValue
+
+        /** [saveError] when [save] was called for an unconfirmed reference that was not acknowledged. */
+        const val REFERENCE_ACK_REQUIRED_ERROR = "Can't save yet: confirm how to save this point (position reference not confirmed)."
+
+        /** Title of the acknowledgment dialog shown on Save for an unconfirmed reference. */
+        const val REFERENCE_ACK_TITLE = "Position reference not confirmed"
+
+        /**
+         * Body of the acknowledgment dialog for [warning] (one of [RS4_OUTPUT_UNKNOWN_WARNING] /
+         * [PROFILE_UNREADABLE_WARNING]). States what was applied, what could be wrong, how the point is marked, and
+         * that a verified setting needs a new capture. Claims nothing about accuracy.
+         */
+        fun referenceAckMessage(warning: String): String {
+            val why = if (warning == PROFILE_UNREADABLE_WARNING)
+                "The receiver profile couldn't be read when this capture started, so the app can't confirm which point the receiver streamed."
+            else
+                "\"Compensated NMEA output\" is set to Unknown for this RS4 receiver, so the app can't confirm which point the receiver streamed."
+            return why + "\n\n" +
+                "This point is saved with the antenna reduction (pole height + antenna offset subtracted). " +
+                "If Emlid Flow was streaming tilt-compensated positions, the position is the pole tip and the height " +
+                "has been reduced twice (too low by about the pole height).\n\n" +
+                "It will be marked \"Unconfirmed\" in Point Details and exports. To confirm, set \"Compensated NMEA output\" " +
+                "in Settings → Receiver and capture again (opening the settings discards this result)."
+        }
 
         // Interruption codes (diagnostics counts).
         const val INTERRUPT_SOURCE = "source_changed"

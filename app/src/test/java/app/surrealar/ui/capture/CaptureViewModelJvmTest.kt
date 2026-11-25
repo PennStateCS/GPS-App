@@ -308,8 +308,13 @@ class CaptureViewModelJvmTest {
     @Test fun save_external_unreadableProfile_usesGenericDeviceAndDefaultProfile() = runBlocking {
         val vm = vm(settings(profile = flow { throw java.io.IOException("profile") }))
         complete(vm)
+        // Phase 4 stabilization WP A: an unreadable profile is an unconfirmed reference, saved only after acknowledgment.
+        vm.save("P", null, 0, "ic_pin")
+        assertTrue("not saved without acknowledgment", repo.store.isEmpty())
+        vm.acknowledgeUnconfirmedReference()
         vm.save("P", null, 0, "ic_pin")
         val c = repo.store.single()
+        assertEquals(app.surrealar.domain.model.CaptureMethod.EXTERNAL_GNSS_REFERENCE_UNCONFIRMED.storageValue, c.captureMethod)
         assertEquals("External GNSS", c.sourceDevice)
         val expected = 100.0 - app.surrealar.settings.model.AntennaSetup.resolve(
             GnssReceiverSettings(poleHeightM = 1.8, internalAntennaHeightM = 0.5),

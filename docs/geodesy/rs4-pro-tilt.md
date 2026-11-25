@@ -241,6 +241,31 @@ Items 1–6 above are implemented (app `receiver/tilt/`, `CaptureViewModel`), wi
   (never a pole tip; excluded when the ETC shows the tilt engine on; otherwise today's maths), with a warning.
 - Mock location: when the altitude is withheld (possible pole tip), the vertical accuracy is withheld too.
 
+### Phase 4 stabilization WP A: unconfirmed reference workflow (2026-11-25)
+
+Supersedes the "no schema change, so Details does not show it" note above. Exploratory captures are still allowed;
+the maths is unchanged (antenna reduction once, never a second pole-height subtraction).
+
+- **Acknowledgment on Save.** A completed RS4 / RS4 Pro capture with "Compensated NMEA output" Unknown (or an
+  unreadable receiver profile) is not saved until the user answers "Position reference not confirmed": the dialog says
+  the antenna reduction was applied and that, if Emlid Flow streamed compensated positions, the position is the pole tip
+  and the height is reduced twice. Buttons: **Save as unconfirmed** / **Open receiver settings** (discards the result:
+  it was classified under Unknown, so it must be captured again) / **Cancel** (keeps the result). Both save paths ask:
+  the capture dialog shows the dialog, and `CaptureViewModel.save` refuses (`REFERENCE_ACK_REQUIRED_ERROR`, logged)
+  without `acknowledgeUnconfirmedReference()`.
+- **Remembered for the occupation only** (simplest safe choice): Restart / the next capture asks again. A verified
+  setting (Enabled or Disabled) never asks; RS2+ / generic / internal captures never ask. Any change of profile, host,
+  firmware or the setting needs a new occupation (running ones stop), so an acknowledgment never carries over to
+  another configuration. A completed result keeps the settings it was captured with.
+- **Persisted** as `captureMethod = EXTERNAL_GNSS_REFERENCE_UNCONFIRMED` (appended enum value, stored by name like
+  `EXTERNAL_GNSS_POLE_TIP`; `antennaHeightM` = pole + PCO; no Room schema change). Point Details: Capture method
+  "External GNSS (position reference unconfirmed; antenna reduction applied)" and a **Position reference** row first
+  under Provenance (next to the coordinate epoch): "Antenna (pole height applied)" / "Receiver pole tip (compensated,
+  no pole height applied) …" / "Unconfirmed — may be reduced twice …". CSV: a "Position reference" column is appended
+  when the file has an external capture; JSON backup: export-only `positionReference` = `antenna` /
+  `receiver_pole_tip` / `unconfirmed`. Older app versions read the new value as an unknown capture method (data-health
+  warning) and keep it.
+
 ### Needs a receiver test (RS4 / RS4 Pro, firmware ≥ 34.7, on a known mark)
 
 - Does the TCP position output offer "compensated NMEA"? Does ETC keep streaming when it is on?

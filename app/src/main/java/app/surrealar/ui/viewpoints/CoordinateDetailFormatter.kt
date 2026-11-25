@@ -31,6 +31,7 @@ object CoordinateDetailFormatter {
         "internal_gps"   -> "Internal GPS"
         "external_gnss"  -> "External GNSS"
         "external_gnss_pole_tip" -> "External GNSS (receiver tilt-compensated pole tip; app pole height not applied)"
+        "external_gnss_reference_unconfirmed" -> "External GNSS (position reference unconfirmed; antenna reduction applied)"
         "rtk_receiver"   -> "RTK Receiver"
         "model_embedded" -> "Model embedded location"
         "map_tap"        -> "Map tap"
@@ -228,6 +229,31 @@ object CoordinateDetailFormatter {
 
     /** One provenance row (label, value). */
     data class ProvenanceRow(val label: String, val value: String)
+
+    /** Label of the Point Details "Position reference" row. */
+    const val POSITION_REFERENCE = "Position reference"
+
+    /**
+     * Compact "Position reference" value for an external capture (Phase 4 stabilization WP A), or null when the
+     * point is not an external receiver capture (internal, manual, imported, model, simulator). States which
+     * physical point the stored position is and what the app applied, plus the receiver's compensation status
+     * where it is known. Never claims a verified pole tip or survey-grade accuracy.
+     */
+    fun positionReferenceText(captureMethod: String?, provider: String?): String? =
+        when (app.surrealar.domain.model.PositionReferenceKind.of(
+            captureMethod, app.surrealar.data.local.db.ProviderTokens.isExternal(provider))) {
+            app.surrealar.domain.model.PositionReferenceKind.ANTENNA -> "Antenna (pole height applied)"
+            app.surrealar.domain.model.PositionReferenceKind.RECEIVER_POLE_TIP ->
+                "Receiver pole tip (compensated, no pole height applied) · receiver tilt compensation was active; pole height from Emlid Flow"
+            app.surrealar.domain.model.PositionReferenceKind.UNCONFIRMED ->
+                "Unconfirmed — may be reduced twice · antenna reduction applied; receiver compensated output not confirmed"
+            null -> null
+        }
+
+    /** [provenanceRows] preceded by the [POSITION_REFERENCE] row when the point has one. */
+    fun provenanceRowsWithReference(c: Coordinate): List<ProvenanceRow> =
+        listOfNotNull(positionReferenceText(c.captureMethod, c.provider)?.let { ProvenanceRow(POSITION_REFERENCE, it) }) +
+            provenanceRows(c)
 
     /**
      * Provenance rows for the detail screen: source frame, coordinate epoch, receiver frame, orthometric
