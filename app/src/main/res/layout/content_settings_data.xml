@@ -142,6 +142,16 @@
                         android:layout_marginStart="16dp"
                         android:text="Export Points CSV" />
                 </LinearLayout>
+
+                <!-- CSV export option: "Position reference" column in every export (off = original six columns) -->
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/switch_csv_position_reference"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="56dp"
+                    android:paddingHorizontal="20dp"
+                    android:text="@string/export_csv_position_reference_option"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

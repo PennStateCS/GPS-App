@@ -91,17 +91,17 @@ class PointsCsvExporterTest {
         assertEquals("Point,Latitude,Longitude,Elevation (m H rcvr),Description,System", rcvr)
     }
 
-    // ── Position reference column (Phase 4 stabilization WP A) ─────────────────────
+    // ── Position reference column: explicit export option (product decision 2026-11-25) ────────────
 
-    @Test fun `external captures append a Position reference column - existing columns and values unchanged`() {
+    @Test fun `option ON appends a Position reference column - existing columns and values unchanged`() {
         val s = CoordinateSystemSettings(HorizontalSystem.STATE_PLANE, unit = LinearUnit.US_SURVEY_FEET,
             vertical = VerticalReference.NAVD88_GEOID18)
         val plain = point("CP1", "iron pin, found")
         val ext = { name: String, method: String -> point(name).copy(provider = "external-tcp", captureMethod = method) }
         val points = listOf(plain, ext("ANT", "external_gnss"), ext("TIP", "EXTERNAL_GNSS_POLE_TIP"),
             ext("UNC", "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED"))
-        val before = PointsCsvExporter.build(listOf(plain), convert(s)).trim().lines()
-        val lines = PointsCsvExporter.build(points, convert(s)).trim().lines()
+        val before = PointsCsvExporter.build(listOf(plain), convert = convert(s)).trim().lines()
+        val lines = PointsCsvExporter.build(points, includePositionReference = true, convert = convert(s)).trim().lines()
         assertEquals(before[0] + ",Position reference", lines[0])
         assertEquals("non-external row: same fields + an empty cell", before[1] + ",", lines[1])
         assertTrue(lines[2], lines[2].endsWith(",antenna (pole height applied)"))
@@ -109,18 +109,29 @@ class PointsCsvExporterTest {
         assertTrue(lines[4], lines[4].endsWith("," + PointsCsvExporter.UNCONFIRMED_CELL))
         assertTrue(PointsCsvExporter.UNCONFIRMED_CELL.contains("reduced twice"))
         // The first six fields of an external row are exactly as without the column.
-        val antOnly = PointsCsvExporter.build(listOf(point("ANT")), convert(s)).trim().lines()[1]
+        val antOnly = PointsCsvExporter.build(listOf(point("ANT")), convert = convert(s)).trim().lines()[1]
         assertEquals(antOnly, lines[2].substringBeforeLast(','))
         lines.drop(2).forEach { assertEquals(it, 7, it.split(",").size) }
     }
 
-    @Test fun `files without external captures are unchanged - no extra column`() {
+    @Test fun `option ON - the column is present even when no point has a reference (count never depends on points)`() {
         val internal = point("I1").copy(provider = "fused", captureMethod = "internal_gps")
         val lines = PointsCsvExporter.build(listOf(internal, point("M1").copy(captureMethod = "manual")),
-            convert(CoordinateSystemSettings())).trim().lines()
-        assertEquals("Point,Latitude,Longitude,Elevation (m h),Description,System".substringBefore("Elevation"),
-            lines[0].substringBefore("Elevation"))
-        assertTrue(lines[0], lines[0].endsWith(",Description,System"))
-        lines.forEach { assertEquals(it, 6, it.split(",").size) }
+            includePositionReference = true, convert = convert(CoordinateSystemSettings())).trim().lines()
+        assertTrue(lines[0], lines[0].endsWith(",Description,System,Position reference"))
+        lines.drop(1).forEach { assertTrue(it, it.endsWith(",")); assertEquals(it, 7, it.split(",").size) }
+        val empty = PointsCsvExporter.build(emptyList(), includePositionReference = true, convert = convert(CoordinateSystemSettings()))
+        assertTrue(empty, empty.trim().endsWith(",Position reference"))
+    }
+
+    @Test fun `option OFF (default) - always the original six columns, even with external captures`() {
+        val ext = point("UNC").copy(provider = "external-tcp", captureMethod = "EXTERNAL_GNSS_REFERENCE_UNCONFIRMED")
+        val internal = point("I1").copy(provider = "fused", captureMethod = "internal_gps")
+        val withExt = PointsCsvExporter.build(listOf(internal, ext), convert = convert(CoordinateSystemSettings())).trim().lines()
+        assertTrue(withExt[0], withExt[0].endsWith(",Description,System"))
+        withExt.forEach { assertEquals(it, 6, it.split(",").size) }
+        assertEquals("same bytes as a file of the same points without any external capture",
+            PointsCsvExporter.build(listOf(internal, point("UNC")), convert = convert(CoordinateSystemSettings())).lines()[0],
+            withExt[0])
     }
 }

@@ -101,6 +101,18 @@ internal class DataSettingsController(
                     exportPointsCsvLauncher.launch("survey_points_${System.currentTimeMillis()}.csv")
                 } catch (e: Exception) { settingsError("CSV export launch failed", e) }
             }
+            // Export option: "Position reference" column in every CSV (off = the original six columns).
+            view.findViewById<com.google.android.material.materialswitch.MaterialSwitch>(R.id.switch_csv_position_reference)?.let { sw ->
+                categoryScope.launch {
+                    runCatching { settingsRepo.exportCsvPositionReference.first() }.onSuccess { sw.isChecked = it }
+                    sw.setOnCheckedChangeListener { _, checked ->
+                        categoryScope.launch {
+                            runCatching { settingsRepo.setExportCsvPositionReference(checked) }
+                                .onFailure { settingsError("CSV export option save failed", it) }
+                        }
+                    }
+                }
+            }
             view.findViewById<Button>(R.id.btn_import_coordinates)?.setOnClickListener {
                 try {
                     // Most providers label .json as application/json; the broader types are a
@@ -174,10 +186,12 @@ internal class DataSettingsController(
                 // DataOpLog: start / done rows=n / failed (E, with the exception) lines.
                 app.surrealar.util.diagnostics.DataOpLog.run("CSV export", "csv", { n: Int -> n }) {
                     val coordSettings = settingsRepo.coordinateSystemSettings.first()
+                    // Unreadable option → the default six-column file.
+                    val withReference = runCatching { settingsRepo.exportCsvPositionReference.first() }.getOrDefault(false)
                     val points = withContext(Dispatchers.IO) { repository.getAllCoordinatesList() }
                     // Per-point datum/projection/geoid conversion is CPU work: keep it off the main thread.
                     val csv = withContext(Dispatchers.Default) {
-                        app.surrealar.data.export.PointsCsvExporter.build(points) {
+                        app.surrealar.data.export.PointsCsvExporter.build(points, includePositionReference = withReference) {
                             coordinateSystemService.convertCoordinate(it, coordSettings)
                         }
                     }

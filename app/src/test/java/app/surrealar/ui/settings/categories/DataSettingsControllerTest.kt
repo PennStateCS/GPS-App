@@ -82,7 +82,11 @@ class DataSettingsControllerTest {
         data.onExportPointsCsvResult(null)
         data.onImportResult(null)
 
-        Mockito.verifyNoInteractions(repository, settings, service, exportBackup, importBackup)
+        // Building the view reads the CSV export option once to show its switch (Phase 4 stabilization); a cancelled
+        // picker must cause nothing else.
+        Mockito.verify(settings, Mockito.atMost(1)).exportCsvPositionReference
+        Mockito.verifyNoMoreInteractions(settings)
+        Mockito.verifyNoInteractions(repository, service, exportBackup, importBackup)
     }
 
     @Test fun `a backup result still runs the export after the category view is destroyed`() {

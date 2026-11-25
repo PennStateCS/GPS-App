@@ -213,10 +213,20 @@ class CaptureViewModel @Inject constructor(
      * Enabled or Disabled. Read from the start snapshot (not the live settings): the epochs were classified with it.
      */
     suspend fun unconfirmedReferenceWarning(): String? {
-        if (referenceGate == null) return null
+        val gate = referenceGate ?: return null
         if (occupationPositionReference() == app.surrealar.receiver.tilt.EpochReference.POLE_TIP) return null
-        return referenceWarningFor(settingsAtStart())
+        val snap = settingsAtStart()
+        // Product decision (2026-11-25): only genuine uncertainty needs an acknowledgment. An unreadable profile counts
+        // only once the stream itself showed an IMU receiver (Emlid ETC seen); a conventional RS2+ stream (no ETC)
+        // keeps its usual capture behaviour. RS4 / RS4 Pro with the output setting Unknown stays uncertain.
+        val warning = if (snap?.externalProfile == null) PROFILE_UNREADABLE_WARNING.takeIf { unknownProfileEtcSeen }
+            else referenceWarningFor(snap)
+        // …and only when an epoch of uncertain reference was actually averaged.
+        return warning?.takeIf { gate.uncertainAdmitted }
     }
+
+    /** An unreadable-profile occupation whose stream carried Emlid ETC sentences (an IMU receiver): genuinely uncertain. */
+    @Volatile private var unknownProfileEtcSeen = false
 
     /**
      * Acknowledgment of an unconfirmed reference, remembered for the current occupation only: [start] (a new
@@ -355,6 +365,7 @@ class CaptureViewModel @Inject constructor(
         _positionReference.value = null
         _referenceWarning.value = null
         referenceAcknowledged = false
+        unknownProfileEtcSeen = false
         if (!internal) viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             val snap = try { snapForDatum?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
             if (startSnapshot !== snapForDatum) return@launch   // a newer capture started meanwhile
@@ -537,6 +548,14 @@ class CaptureViewModel @Inject constructor(
         val c = monitor.classify(fix, profile, output, firmware = occupationFirmware ?: monitor.currentFirmware(),
             profileKnown = profileKnown, waitOnlyWhenNeeded = true)
         if (owner == null || owner !== session) return false
+        // Unreadable profile: an ETC in the stream shows an IMU receiver, so the reference is genuinely uncertain.
+        if (!profileKnown && !unknownProfileEtcSeen &&
+            c.tilt?.match?.let { it != io.github.pennstatecs.geokit.receiver.emlid.tilt.TiltMatch.NO_ETC_SEEN &&
+                it != io.github.pennstatecs.geokit.receiver.emlid.tilt.TiltMatch.NO_FIX_TIME } == true) {
+            unknownProfileEtcSeen = true
+            _referenceWarning.value = PROFILE_UNREADABLE_WARNING
+            DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture position reference unconfirmed: receiver profile unreadable and ETC seen")
+        }
         // A finished occupation keeps the reference it was bound to (saving reads it): late epochs never rebind it.
         val st = owner.state.value
         if (st is ObservationSession.State.Complete || st is ObservationSession.State.Paused) return false
@@ -884,7 +903,9 @@ class CaptureViewModel @Inject constructor(
 
         /** The [referenceWarning] for an external capture started with [snap] (null snapshot = profile unreadable). */
         internal fun referenceWarningFor(snap: CaptureSettingsSnapshot?): String? {
-            val profile = snap?.externalProfile ?: return PROFILE_UNREADABLE_WARNING
+            // Unreadable profile: no standing warning up front (RS2+ streams carry no ETC); admitReference raises
+            // PROFILE_UNREADABLE_WARNING once ETC shows an IMU receiver.
+            val profile = snap?.externalProfile ?: return null
             if (!app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile)) return null
             val output = snap.compensatedOutput ?: app.surrealar.settings.model.CompensatedOutputSetting.UNKNOWN
             return if (output == app.surrealar.settings.model.CompensatedOutputSetting.UNKNOWN) RS4_OUTPUT_UNKNOWN_WARNING else null

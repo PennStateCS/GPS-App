@@ -21,25 +21,31 @@ import java.util.Locale
  * in the header and "NAPGD2022 beta · GEOID2022 (beta beta_v0a) epoch 2026.886" in the System column (model,
  * NGS dataset version and the coordinate epoch of N). The column count and order never change with the settings.
  *
- * Position reference (Phase 4 stabilization WP A): when the file contains at least one external receiver capture,
- * one column "Position reference" is APPENDED after System (the PNEZD + System columns are unchanged), saying
- * whether each external capture is the antenna (pole height applied), the receiver's compensated pole tip, or
- * UNCONFIRMED (antenna reduction applied; height reduced twice if the receiver streamed compensated positions);
- * blank for other points. Files without external captures are exactly as before.
+ * Position reference (export option, default OFF; product decision 2026-11-25): with [build]'s
+ * `includePositionReference` the column "Position reference" is APPENDED after System in EVERY export, whatever
+ * points the file holds, saying whether each external capture is the antenna (pole height applied), the receiver's
+ * compensated pole tip, or UNCONFIRMED (antenna reduction applied; height reduced twice if the receiver streamed
+ * compensated positions); blank for other points. With the option OFF the file is the original six columns. The
+ * column count never depends on the points.
  *
  * This is an interchange export; the JSON backup remains the lossless format (raw measurements).
  */
 object PointsCsvExporter {
 
-    fun build(points: List<Coordinate>, convert: (Coordinate) -> ConvertedPosition): String {
+    /** The original six-column export (option OFF). */
+    fun build(points: List<Coordinate>, convert: (Coordinate) -> ConvertedPosition): String =
+        build(points, includePositionReference = false, convert = convert)
+
+    /** [includePositionReference]: append the "Position reference" column to every row (the export option). */
+    fun build(points: List<Coordinate>, includePositionReference: Boolean, convert: (Coordinate) -> ConvertedPosition): String {
         val sb = StringBuilder()
         val converted = points.map { it to convert(it) }
         val first = converted.firstOrNull()?.second
         val grid = first?.easting != null
         val unit = first?.unit?.suffix ?: "m"
         val heightRef = first?.vertical?.shortLabel ?: ""
-        val refs = points.map { positionReferenceCell(it) }
-        val withReference = refs.any { it.isNotEmpty() }
+        val withReference = includePositionReference
+        val refs = if (withReference) points.map { positionReferenceCell(it) } else emptyList()
         val refHeader = if (withReference) ",$POSITION_REFERENCE_HEADER" else ""
         if (grid) {
             sb.append("Point,Northing ($unit),Easting ($unit),Elevation ($unit $heightRef),Description,System$refHeader\n")

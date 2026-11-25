@@ -120,10 +120,18 @@ checklist covers the same on the device.
 - What the RS4 Pro's TCP output really contains with compensation on (and during alignment) still needs a receiver
   test on a known mark — see the tablet checklist section 11.
 
-## CSV "Position reference" column — open decision
+## CSV "Position reference" column — export option (decided 2026-11-25)
 
-The points CSV gains a last column "Position reference" only when the file contains an external capture; files
-without one are byte-identical to before. A survey package that imports by column position with a saved template
-could therefore see 6 columns in one file and 7 in another from the same app. Alternatives: always write the column
-(blank when not applicable; changes every export), or make it an export option. Left unchanged pending the
-product owner's choice. The unconfirmed state is also shown in the point list ("… · reference unconfirmed").
+Settings → Data → "Include a Position reference column" (key `export_csv_position_reference`, default OFF).
+OFF: the original six-column CSV for every export (backward compatible). ON: the seventh column is written in every
+export, whatever points the file holds, blank where a point has no receiver position reference. The column count
+never depends on the points. The unconfirmed state is also shown in the point list ("… · reference unconfirmed").
+
+## Acknowledgment only for genuine uncertainty (decided 2026-11-25)
+
+Saving asks "Position reference not confirmed" only when an averaged epoch's reference was genuinely uncertain:
+- RS4 / RS4 Pro with "Compensated NMEA output" Unknown and no ETC proof that the tilt engine was off
+  (ETC "tilt off" → antenna, no question);
+- a receiver profile that could not be read **and** an Emlid ETC sentence in the stream (an IMU receiver).
+A conventional stream without ETC (RS2+, generic) is never asked merely because the profile or HTTP receiver
+identification is unavailable: it keeps the usual capture behaviour (antenna reduction, usual capture method).

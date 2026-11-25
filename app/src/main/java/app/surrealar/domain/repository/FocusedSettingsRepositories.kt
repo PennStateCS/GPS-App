@@ -76,6 +76,14 @@ interface CoordinateDisplaySettingsRepository {
     val coordinateSystemSettings: Flow<app.surrealar.settings.model.CoordinateSystemSettings>
         get() = kotlinx.coroutines.flow.flowOf(app.surrealar.settings.model.CoordinateSystemSettings())
     suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {}
+
+    /**
+     * Points CSV export option: append the "Position reference" column to EVERY export (blank where not applicable).
+     * Default false = the original six-column file.
+     */
+    val exportCsvPositionReference: Flow<Boolean>
+        get() = kotlinx.coroutines.flow.flowOf(false)
+    suspend fun setExportCsvPositionReference(enabled: Boolean) {}
 }
 
 /** Mock-location publishing toggle. */

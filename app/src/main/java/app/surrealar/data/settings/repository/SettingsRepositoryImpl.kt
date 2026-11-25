@@ -220,6 +220,9 @@ class SettingsRepositoryImpl(private val local: SettingsLocalDataSource) : Setti
             if (zone == null || s.horizontal == app.surrealar.settings.model.HorizontalSystem.STATE_PLANE) s else s.copy(spcsZoneEpsg = zone)
         }
 
+    override val exportCsvPositionReference: Flow<Boolean> = local.exportCsvPositionReference
+    override suspend fun setExportCsvPositionReference(enabled: Boolean) { local.setExportCsvPositionReference(enabled) }
+
     override suspend fun setCoordinateSystemSettings(settings: app.surrealar.settings.model.CoordinateSystemSettings) {
         local.setCoordinateSystem(
             settings.horizontalPrefValue, settings.datum.prefKey, settings.unit.prefKey,

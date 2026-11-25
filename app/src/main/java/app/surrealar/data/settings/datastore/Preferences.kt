@@ -74,6 +74,8 @@ object SettingsKeys {
      * while State Plane is selected; absent = none remembered (the model default).
      */
     val COORD_SPCS83_ZONE_EPSG    = intPreferencesKey("coord_spcs83_zone_epsg")
+    /** Points CSV export option: include the "Position reference" column in every export; absent = false (six columns). */
+    val EXPORT_CSV_POSITION_REFERENCE = booleanPreferencesKey("export_csv_position_reference")
     val GNSS_CAPTURE_PRESET            = stringPreferencesKey("gnss_capture_preset")
     /** Custom precision-based stop target (m); absent or <= 0 = off. */
     val GNSS_CAPTURE_PRECISION_TARGET_M = doublePreferencesKey("gnss_capture_precision_target_m")
@@ -195,6 +197,8 @@ class SettingsLocalDataSource(private val dataStore: DataStore<Preferences>) {
     val coordNsrs2022Preview:   Flow<Boolean> = dataStore.data.map { it[SettingsKeys.COORD_NSRS2022_PREVIEW] ?: false }
     val coordSpcs2022Zone:      Flow<String?> = dataStore.data.map { it[SettingsKeys.COORD_SPCS2022_ZONE] }
     val coordSpcs83ZoneEpsg:    Flow<Int?>    = dataStore.data.map { it[SettingsKeys.COORD_SPCS83_ZONE_EPSG] }
+    val exportCsvPositionReference: Flow<Boolean> = dataStore.data.map { it[SettingsKeys.EXPORT_CSV_POSITION_REFERENCE] ?: false }
+    suspend fun setExportCsvPositionReference(v: Boolean) { dataStore.edit { it[SettingsKeys.EXPORT_CSV_POSITION_REFERENCE] = v } }
     val gnssCapturePrecisionTargetM: Flow<Double?> = dataStore.data.map { it[SettingsKeys.GNSS_CAPTURE_PRECISION_TARGET_M]?.takeIf { v -> v > 0.0 } }
 
     // AR Display settings flows (defaults centralized in SettingsDefaults.arDisplay)
