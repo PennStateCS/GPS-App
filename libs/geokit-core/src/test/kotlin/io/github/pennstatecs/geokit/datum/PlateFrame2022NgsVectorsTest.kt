@@ -153,12 +153,56 @@ class PlateFrame2022NgsVectorsTest {
         assertEquals(3, fromNad.transformation.steps.size)
     }
 
+    @Test fun `NSRS2022_BETA registers PATRF, CATRF and MATRF2022 as verified beta, matching NGS (WP X)`() {
+        val reg = FrameTransformationRegistry.NSRS2022_BETA
+        val edges = mapOf(
+            PlateFrame2022.PATRF2022 to FrameTransformationRegistry.ITRF2020_TO_PATRF2022,
+            PlateFrame2022.CATRF2022 to FrameTransformationRegistry.ITRF2020_TO_CATRF2022,
+            PlateFrame2022.MATRF2022 to FrameTransformationRegistry.ITRF2020_TO_MATRF2022,
+        )
+        for ((pf, edge) in edges) {
+            val frame = requireNotNull(pf.referenceFrame)
+            assertEquals(ProductStatus.VERIFIED_BETA, edge.status)
+            assertEquals(PlateFrame2022.DATASET_VERSION, edge.datasetVersion)
+            assertEquals(PlateFrame2022.VERIFICATION, edge.verification)
+            assertSame(ReferenceFrame.ITRF2020, edge.from); assertSame(frame, edge.to)
+            val frameRows = rows.filter { it.frame == pf }
+            assertEquals(39, frameRows.size)   // 13 CORS x 3 epochs, also off the frame's own plate
+            for (r in frameRows) {
+                val ep = CoordinateEpoch(r.epoch)
+                val fwd = reg.find(ReferenceFrame.ITRF2020, frame, ep) as FrameTransformationLookup.Available
+                assertEquals(listOf(edge), fwd.transformation.steps)
+                assertEquals(ProductStatus.VERIFIED_BETA, fwd.status)
+                assertEquals(listOf(PlateFrame2022.DATASET_VERSION), fwd.transformation.datasetVersions)
+                val g = fwd.apply(r.itrfGeo)
+                assertEquals(r.outGeo.latDeg, g.latDeg, 1e-11); assertEquals(r.outGeo.lonDeg, g.lonDeg, 1e-11)
+                assertEquals(r.outGeo.heightM, g.heightM, 1e-6)
+                val inv = (reg.find(frame.id, "itrf2020", ep) as FrameTransformationLookup.Available).apply(r.outGeo)
+                assertEquals(r.itrfGeo.latDeg, inv.latDeg, 1e-11); assertEquals(r.itrfGeo.lonDeg, inv.lonDeg, 1e-11)
+                assertEquals(r.itrfGeo.heightM, inv.heightM, 1e-6)
+            }
+            // The app's stored frame reaches it through ITRF2014 → ITRF2020 → frame, beta.
+            val chain = reg.find(ReferenceFrame.WGS84_AS_ITRF2014, frame, e) as FrameTransformationLookup.Available
+            assertEquals(ProductStatus.VERIFIED_BETA, chain.status)
+            assertEquals(listOf(FrameTransformationRegistry.ITRF2014_TO_ITRF2020, edge), chain.transformation.steps)
+            // 2022 frame → 2022 frame goes through ITRF2020 (two beta edges), never a shortcut.
+            val cross = reg.find(ReferenceFrame.NATRF2022, frame, e) as FrameTransformationLookup.Available
+            assertEquals(listOf(FrameTransformationRegistry.ITRF2020_TO_NATRF2022, edge), cross.transformation.steps)
+            // DEFAULT has no edge and refuses the frame.
+            val u = FrameTransformationRegistry.DEFAULT.find(ReferenceFrame.WGS84_AS_ITRF2014, frame, e)
+                as FrameTransformationLookup.Unavailable
+            assertEquals(FrameUnavailableReason.NOT_VERIFIED, u.reason)
+            assertEquals(ProductStatus.UNAVAILABLE, u.status)
+        }
+    }
+
     @Test fun `NSRS2022_BETA leaves every legacy path and every other frame as in DEFAULT`() {
         val beta = FrameTransformationRegistry.NSRS2022_BETA
         val def = FrameTransformationRegistry.DEFAULT
         val p = GeodeticPosition(40.8, -77.86, 350.0)
+        val frames2022 = PlateFrame2022.entries.map { requireNotNull(it.referenceFrame) }.toSet()
         for (s in ReferenceFrame.entries) for (t in ReferenceFrame.entries) {
-            if (s == ReferenceFrame.NATRF2022 || t == ReferenceFrame.NATRF2022) continue
+            if (s in frames2022 || t in frames2022) continue
             val a = def.find(s, t, e); val b = beta.find(s, t, e)
             assertEquals("$s→$t", a.status, b.status)
             if (a is FrameTransformationLookup.Available) {
@@ -169,22 +213,37 @@ class PlateFrame2022NgsVectorsTest {
                 assertEquals((a as FrameTransformationLookup.Unavailable).reason, (b as FrameTransformationLookup.Unavailable).reason)
             }
         }
+        // Phase 4 WP X: PATRF/CATRF/MATRF2022 are frames with beta edges in NSRS2022_BETA, still refused by DEFAULT.
         for (id in listOf("patrf2022", "catrf2022", "matrf2022")) {
-            assertTrue(beta.find("itrf2020", id, e) is FrameTransformationLookup.Unavailable)
+            val l = beta.find("itrf2020", id, e) as FrameTransformationLookup.Available
+            assertEquals(ProductStatus.VERIFIED_BETA, l.status)
+            val u = def.find("itrf2020", id, e) as FrameTransformationLookup.Unavailable
+            assertEquals(FrameUnavailableReason.NOT_VERIFIED, u.reason)
         }
         // DEFAULT itself is unchanged: no 2022-frame edge.
         assertTrue(def.registeredEdges.none { it.to == ReferenceFrame.NATRF2022 || it.from == ReferenceFrame.NATRF2022 })
-        assertSame(FrameTransformationRegistry.ITRF2020_TO_NATRF2022, beta.registeredEdges.last())
+        assertTrue(def.registeredEdges.none { it.to in frames2022 || it.from in frames2022 })
+        assertEquals(listOf(FrameTransformationRegistry.ITRF2014_TO_NAD83_2011, FrameTransformationRegistry.ITRF2014_TO_ITRF2020),
+            def.registeredEdges)
+        assertEquals(def.registeredEdges + FrameTransformationRegistry.NSRS2022_BETA_EDGES, beta.registeredEdges)
+        assertSame(FrameTransformationRegistry.ITRF2020_TO_NATRF2022, beta.registeredEdges[def.registeredEdges.size])
     }
 
     @Test fun `with NSRS2022_BETA the NATRF2022 SPCS2022 zones become operational beta`() {
         val r = CrsRegistry(frameRegistry = FrameTransformationRegistry.NSRS2022_BETA)
         val c = r.catalog(CrsCatalogId.SPCS2022)
-        assertEquals(949, c.operational.size)
-        assertTrue(c.operational.all { it.status == ProductStatus.VERIFIED_BETA && it.frame == ReferenceFrame.NATRF2022 })
+        // Phase 4 WP X: all 953 zones (949 NATRF2022 + 4 on PATRF/CATRF/MATRF2022) are operational beta.
+        assertEquals(953, c.operational.size)
+        assertEquals(949, c.operational.count { it.frame == ReferenceFrame.NATRF2022 })
+        assertTrue(c.operational.all { it.status == ProductStatus.VERIFIED_BETA && it.frame?.plate != null })
         val pa = (r.byId("spcs2022:420001") as CrsLookup.Found).definition
         assertEquals(ProductStatus.VERIFIED_BETA, pa.status)
-        assertTrue(r.byId("SPCS2022:150001") is CrsLookup.Unsupported)   // Hawaii is on PATRF2022, not a GeoKit frame yet
+        for ((code, frame) in listOf("150001" to ReferenceFrame.PATRF2022, "600001" to ReferenceFrame.PATRF2022,
+            "720001" to ReferenceFrame.CATRF2022, "660001" to ReferenceFrame.MATRF2022)) {
+            val z = (r.byId("SPCS2022:$code") as CrsLookup.Found).definition
+            assertSame(frame, z.frame); assertEquals(ProductStatus.VERIFIED_BETA, z.status)
+            assertTrue(r.geographic(frame).operational); assertEquals(ProductStatus.VERIFIED_BETA, r.geographic(frame).status)
+        }
         assertEquals(ProductStatus.VERIFIED_BETA, r.geographic(ReferenceFrame.NATRF2022).status)
         assertTrue(r.geographic(ReferenceFrame.NATRF2022).operational)
         // The default registry is unchanged.

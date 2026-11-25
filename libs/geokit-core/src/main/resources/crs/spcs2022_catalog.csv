@@ -5,7 +5,7 @@
 # Status: NGS beta (finalized beta designs, 2026-05-14). Never authoritative; opt-in only (ProductStatus.VERIFIED_BETA).
 # verified_by = crs/spcs2022/ngs_example_coordinates.csv: PROJ reproduced NGS's example point when generated; CrsSpcs2022Test checks GeoKit's
 # own maths against the same NGS vectors. Area of use = NGS zone envelope (outward to 0.01 deg).
-# Frames patrf2022 / catrf2022 / matrf2022 load as non-operational until GeoKit defines them.
+# A zone is operational only when CrsRegistry reaches its frame through verified transformations.
 zone_code,epsg,name,frame,method,parameters,unit,west,south,east,north,dataset,verified_by,status,aliases
 001001,,Gulf,natrf2022,lcc1sp,lat_0=28.0;lon_0=-90.0;k_0=0.9996;x_0=1600200.0;y_0=533400.0,metre,-97.33,23.82,-81.17,30.25,NGS SPCS2022 finalized beta zone designs 2026-05-14 (zone tables 2026-06-01),crs/spcs2022/ngs_example_coordinates.csv,verified_beta,GULF;Special use;designed by NGS;LC1
 001002,,Navajo Nation,natrf2022,lcc1sp,lat_0=36.0;lon_0=-109.5;k_0=1.0002;x_0=762000.0;y_0=228600.0,metre,-113.29,34.3,-106.94,37.47,NGS SPCS2022 finalized beta zone designs 2026-05-14 (zone tables 2026-06-01),crs/spcs2022/ngs_example_coordinates.csv,verified_beta,NAVA;Special use;designed by NGS;LC1

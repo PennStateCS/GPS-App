@@ -58,7 +58,8 @@ public object CrsCatalogCsv {
 
     /**
      * Ids of NGS 2022 reference frames that catalog entries may name before GeoKit defines them
-     * ([ReferenceFrame.fromId] returns null): entries on them load, but never operational.
+     * ([ReferenceFrame.fromId] returns null): entries on them load, but never operational. Since Phase 4 WP X
+     * all three are [ReferenceFrame]s, so these ids resolve to frames and the set no longer affects parsing.
      */
     public val PENDING_FRAME_IDS: Set<String> = setOf("patrf2022", "catrf2022", "matrf2022")
 

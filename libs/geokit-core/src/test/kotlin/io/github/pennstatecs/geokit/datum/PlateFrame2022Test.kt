@@ -82,8 +82,14 @@ class PlateFrame2022Test {
         assertEquals(ReferenceFrame.NATRF2022.epsg3d, PlateFrame2022.NATRF2022.epsg3d)
         assertEquals(ReferenceFrame.NATRF2022.id, PlateFrame2022.NATRF2022.id)
         assertEquals(ReferenceFrame.NATRF2022.referenceEpoch!!, PlateFrame2022.NATRF2022.referenceEpoch, 0.0)
+        // Phase 4 WP X: the other three frames are ReferenceFrame entries (same id, plate, epoch); EPSG has none.
         for (f in listOf(PlateFrame2022.PATRF2022, PlateFrame2022.CATRF2022, PlateFrame2022.MATRF2022)) {
-            assertNull(f.referenceFrame); assertNull(f.epsg3d); assertNull(ReferenceFrame.fromId(f.id))
+            val rf = requireNotNull(f.referenceFrame)
+            assertNull(f.epsg3d); assertSame(rf, ReferenceFrame.fromId(f.id))
+            assertEquals(f.id, rf.id); assertEquals(f.displayName, rf.displayName); assertEquals(f.plate, rf.plate)
+            assertEquals(f.referenceEpoch, rf.referenceEpoch!!, 0.0)
+            assertNull(rf.epsgGeocentric); assertNull(rf.epsg3d); assertNull(rf.epsg2d)
+            assertEquals(FrameKind.PLATE_FIXED, rf.kind); assertSame(Ellipsoid.GRS80, rf.ellipsoid)
         }
         assertEquals(TectonicPlate.PACIFIC, PlateFrame2022.PATRF2022.plate)
         assertEquals(TectonicPlate.CARIBBEAN, PlateFrame2022.CATRF2022.plate)

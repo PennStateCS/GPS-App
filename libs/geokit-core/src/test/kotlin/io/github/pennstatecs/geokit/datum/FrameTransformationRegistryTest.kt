@@ -75,6 +75,9 @@ class FrameTransformationRegistryTest {
             ReferenceFrame.WGS84_G1762 to "wgs84-g1762", ReferenceFrame.WGS84_G2139 to "wgs84-g2139",
             ReferenceFrame.WGS84_G2296 to "wgs84-g2296", ReferenceFrame.NAD83_2011 to "nad83-2011",
             ReferenceFrame.NATRF2022 to "natrf2022",
+            // Phase 4 WP X (appended): the other three NSRS 2022 plate-fixed frames.
+            ReferenceFrame.PATRF2022 to "patrf2022", ReferenceFrame.CATRF2022 to "catrf2022",
+            ReferenceFrame.MATRF2022 to "matrf2022",
         )
         assertEquals(expected.keys, ReferenceFrame.entries.toSet())
         for ((f, id) in expected) { assertEquals(id, f.id); assertSame(f, ReferenceFrame.fromId(id)) }
@@ -92,6 +95,15 @@ class FrameTransformationRegistryTest {
             assertEquals(FrameKind.PLATE_FIXED, kind)
         }
         with(ReferenceFrame.NAD83_2011) { assertEquals(6319, epsg3d); assertEquals(FrameKind.PLATE_FIXED, kind) }
+        // EPSG v12.029 has no CRS for PATRF/CATRF/MATRF2022: no codes, NGS epoch 2020.0, plate-fixed on GRS80.
+        for (f in listOf(ReferenceFrame.PATRF2022, ReferenceFrame.CATRF2022, ReferenceFrame.MATRF2022)) {
+            assertNull(f.epsgGeocentric); assertNull(f.epsg3d); assertNull(f.epsg2d)
+            assertEquals(2020.0, f.referenceEpoch!!, 0.0); assertEquals(FrameKind.PLATE_FIXED, f.kind)
+            assertSame(Ellipsoid.GRS80, f.ellipsoid); assertSame(f, f.coordinatesFrame)
+        }
+        // The frame order is append-only: the Phase 2 frames keep their positions.
+        assertEquals(listOf("itrf2014", "itrf2020", "wgs84-as-itrf2014", "wgs84", "wgs84-g1762", "wgs84-g2139", "wgs84-g2296",
+            "nad83-2011", "natrf2022", "patrf2022", "catrf2022", "matrf2022"), ReferenceFrame.entries.map { it.id })
         assertEquals(4979, ReferenceFrame.WGS84_AS_ITRF2014.epsg3d)
         assertSame(ReferenceFrame.ITRF2014, ReferenceFrame.WGS84_AS_ITRF2014.coordinatesFrame)
         assertSame(ReferenceFrame.WGS84, ReferenceFrame.WGS84.coordinatesFrame)
