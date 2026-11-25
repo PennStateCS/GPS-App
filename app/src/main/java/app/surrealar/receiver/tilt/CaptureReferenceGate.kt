@@ -18,8 +18,9 @@ import io.github.pennstatecs.geokit.receiver.emlid.tilt.TiltMatch
  *   Mixed references are never averaged.
  * - [EpochReference.MAY_BE_COMPENSATED]: never admitted.
  *   - In a pole-tip occupation, tilt state lost (the matched ETC is no longer compensating) or the ETC stream
- *     gone stale → [Decision.Stop] ([StopReason.TILT_LOST]); a single unmatched epoch (one ETC late/dropped) is
- *     only excluded.
+ *     gone stale → [Decision.Stop] ([StopReason.TILT_LOST]); firmware no longer known ≥ 34.7 → stop
+ *     ([StopReason.FIRMWARE_UNKNOWN], not reported as a tilt loss); a single unmatched epoch (one ETC late/dropped)
+ *     is only excluded.
  *   - In an antenna occupation, a matched ETC that now makes the position possibly compensated (tilt switched on)
  *     → stop ([StopReason.REFERENCE_CHANGED]); unmatched → excluded.
  *   - Before anything was averaged: excluded; when no admissible epoch arrived for [noValidEpochsMs] while such
@@ -34,6 +35,11 @@ class CaptureReferenceGate(private val noValidEpochsMs: Long = DEFAULT_NO_VALID_
         REFERENCE_CHANGED("position_reference_changed"),
         TILT_LOST("tilt_state_lost"),
         MAY_BE_COMPENSATED("may_be_compensated"),
+        /**
+         * Pole-tip occupation, but the receiver firmware is no longer known to be ≥ 34.7 (device info lost / changed):
+         * the epochs can't be confirmed as pole tip. Tilt itself was not necessarily lost — the message says so.
+         */
+        FIRMWARE_UNKNOWN("firmware_unknown"),
     }
 
     sealed class Decision {
@@ -86,9 +92,11 @@ class CaptureReferenceGate(private val noValidEpochsMs: Long = DEFAULT_NO_VALID_
         val matched = match == TiltMatch.MATCHED
         if (occupied) {
             when (bound) {
-                EpochReference.POLE_TIP -> if (matched || match == TiltMatch.ETC_STREAM_STALE ||
-                    c.result?.reason == EmlidPositionReference.Reason.FIRMWARE_UNKNOWN_OR_TOO_OLD) {
-                    return Decision.Stop(StopReason.TILT_LOST, "${c.result?.reason ?: "unknown"} match=${match ?: "none"}")
+                EpochReference.POLE_TIP -> when {
+                    c.result?.reason == EmlidPositionReference.Reason.FIRMWARE_UNKNOWN_OR_TOO_OLD ->
+                        return Decision.Stop(StopReason.FIRMWARE_UNKNOWN, "firmware unknown or < 34.7 match=${match ?: "none"}")
+                    matched || match == TiltMatch.ETC_STREAM_STALE ->
+                        return Decision.Stop(StopReason.TILT_LOST, "${c.result?.reason ?: "unknown"} match=${match ?: "none"}")
                 }
                 EpochReference.ANTENNA -> if (matched) {
                     return Decision.Stop(StopReason.REFERENCE_CHANGED, "antenna → may be compensated (${c.result?.reason})")

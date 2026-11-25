@@ -65,6 +65,14 @@ class CaptureReferenceGateTest {
         assertTrue(lost is Decision.Stop && lost.reason == StopReason.TILT_LOST)
     }
 
+    @Test fun poleTipOccupation_firmwareUnknown_stopsWithItsOwnReason_notTiltLost() {
+        val g = CaptureReferenceGate()
+        g.decide(poleTip, 0, 0)
+        val fw = g.decide(c(EpochReference.MAY_BE_COMPENSATED, TiltMatch.MATCHED, Reason.FIRMWARE_UNKNOWN_OR_TOO_OLD), 3, 600)
+        assertTrue(fw is Decision.Stop && fw.reason == StopReason.FIRMWARE_UNKNOWN)
+        assertEquals("firmware_unknown", StopReason.FIRMWARE_UNKNOWN.code)
+    }
+
     @Test fun poleTipOccupation_singleUnmatchedEpoch_isExcluded_staleStreamStops() {
         val g = CaptureReferenceGate()
         g.decide(poleTip, 0, 0)

@@ -139,8 +139,23 @@ class CaptureViewModel @Inject constructor(
     internal var referenceNoValidEpochsMs: Long = app.surrealar.receiver.tilt.CaptureReferenceGate.DEFAULT_NO_VALID_EPOCHS_MS
     /** Watches settings that change how an external occupation is interpreted (profile, host, compensated output). */
     private var setupWatchJob: Job? = null
-    /** First non-null correction base station id of the current external occupation (null: none reported yet). */
+    /** Correction base station id the current external occupation is bound to (null: none reported yet). */
     private var occupationStation: String? = null
+    /** A different base station id seen since the last epoch of [occupationStation], not yet persistent. */
+    private var pendingStation: String? = null
+    private var pendingStationEpochs = 0
+    private var pendingStationFirstMs = 0L
+    /** Receiver firmware when the occupation started (null: unknown then); the tilt rules prefer it over the live value. */
+    private var occupationFirmware: String? = null
+
+    private val _referenceWarning = MutableStateFlow<String?>(null)
+    /**
+     * A warning the capture dialog shows for the whole occupation (no dismiss), and that is noted in diagnostics
+     * when the point is saved ([noteSavedPoint]): set for an RS4 / RS4 Pro external capture whose "Compensated NMEA
+     * output" setting is Unknown ([RS4_OUTPUT_UNKNOWN_WARNING]), or when the receiver profile could not be read
+     * ([PROFILE_UNREADABLE_WARNING]). The maths is unchanged (today's antenna reduction for antenna epochs).
+     */
+    val referenceWarning: StateFlow<String?> = _referenceWarning.asStateFlow()
 
     private val _positionReference = MutableStateFlow<app.surrealar.receiver.tilt.EpochReference?>(null)
     /**
@@ -278,7 +293,20 @@ class CaptureViewModel @Inject constructor(
         val gate = if (internal) null else app.surrealar.receiver.tilt.CaptureReferenceGate(referenceNoValidEpochsMs)
         referenceGate = gate
         occupationStation = null
+        pendingStation = null
+        pendingStationEpochs = 0
+        occupationFirmware = if (internal) null else tiltMonitor?.currentFirmware()
         _positionReference.value = null
+        _referenceWarning.value = null
+        if (!internal) viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            val snap = try { snapForDatum?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+            if (startSnapshot !== snapForDatum) return@launch   // a newer capture started meanwhile
+            val warning = referenceWarningFor(snap)
+            _referenceWarning.value = warning
+            if (warning != null) DiagnosticsLogger.w(DiagTags.CAPTURE, "Capture position reference unconfirmed: " +
+                (snap?.externalProfile?.let { "profile=${it.prefKey} output=unknown" } ?: "receiver profile unreadable") +
+                "; antenna epochs use today's reduction")
+        }
         var sessionRef: ObservationSession? = null
         val sessionFixes = if (datum == null) modeFixes
             else modeFixes
@@ -377,17 +405,51 @@ class CaptureViewModel @Inject constructor(
     private var lastReferenceExcludeLogMs = 0L
 
     /**
-     * Correction base gate for an external occupation: once epochs were averaged, a fix whose differential base
-     * station id differs from the occupation's (both reported) means the RTK solution now refers to another base,
-     * so the occupation is stopped (a different base can shift every coordinate by its own coordinate error).
-     * Fixes without a station id never stop it.
+     * Correction base gate for an external occupation (all receivers, RS2+ included): a differential base station
+     * id that differs from the occupation's means the RTK solution may now refer to another base (a different base
+     * can shift every coordinate by its own coordinate error).
+     *
+     * - Empty and all-zero ids ("0", "0000": what receivers send when they report no station) are ignored, as are
+     *   fixes without an id.
+     * - A different id must persist for [STATION_CHANGE_MIN_EPOCHS] epochs carrying it, or for
+     *   [STATION_CHANGE_MIN_MS] of GNSS time, before it counts as a change; until then its epochs are excluded (never
+     *   averaged) and an epoch with the bound id again clears it (a transient id, logged).
+     * - A persistent change before anything was averaged rebinds the occupation; after epochs were averaged it
+     *   stops the occupation.
      */
     private fun admitSetup(fix: Fix, owner: ObservationSession?): Boolean {
-        val station = fix.correctionStationId?.trim()?.takeIf { it.isNotEmpty() } ?: return true
+        val station = normalizedStationId(fix.correctionStationId) ?: return true
         val bound = occupationStation
-        if (bound == null || bound == station) { occupationStation = station; return true }
+        if (bound == null || bound == station) {
+            if (pendingStation != null) {
+                DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture correction base id changed briefly and returned: ignored " +
+                    "epochs=$pendingStationEpochs")
+                pendingStation = null
+                pendingStationEpochs = 0
+            }
+            occupationStation = station
+            return true
+        }
+        val atMs = fix.timeUtc.toEpochMilli()
+        if (station != pendingStation) {
+            if (pendingStation != null) DiagnosticsLogger.i(DiagTags.CAPTURE,
+                "Capture correction base id changed briefly: ignored epochs=$pendingStationEpochs")
+            pendingStation = station
+            pendingStationEpochs = 0
+            pendingStationFirstMs = atMs
+        }
+        pendingStationEpochs++
+        val persistent = pendingStationEpochs >= STATION_CHANGE_MIN_EPOCHS ||
+            atMs - pendingStationFirstMs >= STATION_CHANGE_MIN_MS
+        if (!persistent) return false   // not averaged while it might be another base
+        pendingStation = null
+        pendingStationEpochs = 0
         val averaged = (owner?.state?.value as? ObservationSession.State.Capturing)?.samples ?: 0
-        if (averaged == 0 || owner !== session) { occupationStation = station; return true }
+        if (averaged == 0 || owner !== session) {
+            DiagnosticsLogger.i(DiagTags.CAPTURE, "Capture correction base changed before averaging: occupation rebound")
+            occupationStation = station
+            return true
+        }
         interrupt(INTERRUPT_CORRECTION_BASE, CORRECTION_BASE_CHANGED_MESSAGE, "correction base station changed")
         return false
     }
@@ -408,9 +470,15 @@ class CaptureViewModel @Inject constructor(
         val monitor = tiltMonitor ?: return true
         val startSettings = try { snap?.await() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
         val profile = startSettings?.externalProfile
-        if (!app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile)) return true
+        // Unreadable profile: the conservative UNKNOWN-output rules (never a pole tip), not a pass-through.
+        val profileKnown = profile != null
+        if (profileKnown && !app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile)) return true
         val output = startSettings?.compensatedOutput ?: app.surrealar.settings.model.CompensatedOutputSetting.DEFAULT
-        val c = monitor.classify(fix, profile, output)
+        // The fix's arrival time (recorded by the feed) pairs it with its ETC, so this chain's processing lag never
+        // accumulates; no wait where the ETC cannot change the reference. Firmware: as at the occupation start
+        // (a failed device-info poll mid-occupation must not change the interpretation), else the live value.
+        val c = monitor.classify(fix, profile, output, firmware = occupationFirmware ?: monitor.currentFirmware(),
+            profileKnown = profileKnown, waitOnlyWhenNeeded = true)
         if (owner == null || owner !== session) return false
         // A finished occupation keeps the reference it was bound to (saving reads it): late epochs never rebind it.
         val st = owner.state.value
@@ -438,6 +506,7 @@ class CaptureViewModel @Inject constructor(
                     app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.REFERENCE_CHANGED -> REFERENCE_CHANGED_MESSAGE
                     app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.TILT_LOST -> TILT_LOST_MESSAGE
                     app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.MAY_BE_COMPENSATED -> MAY_BE_COMPENSATED_MESSAGE
+                    app.surrealar.receiver.tilt.CaptureReferenceGate.StopReason.FIRMWARE_UNKNOWN -> FIRMWARE_UNKNOWN_MESSAGE
                 }
                 interrupt(d.reason.code, message, d.detail)
                 false
@@ -562,6 +631,19 @@ class CaptureViewModel @Inject constructor(
         captureDiag = null; captureOutcomeLogged = false; completedNotSavedLine = null
     }
 
+    /**
+     * Notes in diagnostics (event log + captures.log, no coordinates) that point [pointId] was saved while
+     * [referenceWarning] was shown, so its unconfirmed position reference can be traced later. No-op otherwise.
+     */
+    fun noteSavedPoint(pointId: Any) {
+        val warning = _referenceWarning.value ?: return
+        val why = if (warning == PROFILE_UNREADABLE_WARNING) "receiver profile unreadable" else "RS4 Compensated NMEA output unknown"
+        val line = "Capture saved with unconfirmed position reference id=$pointId" +
+            (captureDiag?.let { " capture=${it.id}" } ?: "") + " reason=\"$why\" heights=antenna reduction applied"
+        DiagnosticsLogger.w(DiagTags.CAPTURE, line)
+        app.surrealar.util.diagnostics.CaptureLog.append(line)
+    }
+
     /** Clears a shown interruption message (e.g. the user switched to another way of saving). */
     fun clearInterruption() { _interruption.value = null }
 
@@ -680,6 +762,7 @@ class CaptureViewModel @Inject constructor(
                 java.time.Duration.between(finished.startedAt, finished.endedAt).seconds, finished.rtkStatus,
                 finished.hAccM, finished.vAccM, pointId = saved.id))
         }
+        noteSavedPoint(saved.id)
         resetCaptureDiag()
     }
 
@@ -713,6 +796,34 @@ class CaptureViewModel @Inject constructor(
 
         /** The correction base station changed during an external occupation. */
         const val CORRECTION_BASE_CHANGED_MESSAGE = "Capture stopped: the correction base station changed during the occupation. Restart the capture."
+
+        /** RS4 / RS4 Pro pole-tip occupation: the firmware is no longer known to support compensated output (not a tilt loss). */
+        const val FIRMWARE_UNKNOWN_MESSAGE = "Capture stopped: the receiver firmware could not be confirmed (34.7 or later is needed for compensated positions). Check the receiver connection, then restart the capture."
+
+        /** [referenceWarning]: RS4 / RS4 Pro with "Compensated NMEA output" Unknown (heights keep today's reduction). */
+        const val RS4_OUTPUT_UNKNOWN_WARNING = "RS4: set 'Compensated NMEA output' in Settings → Receiver — if Emlid Flow streams compensated positions, heights would be reduced twice."
+
+        /** [referenceWarning]: the receiver profile could not be read at the start. */
+        const val PROFILE_UNREADABLE_WARNING = "Receiver profile couldn't be read: heights use the antenna reduction. For an RS4, set 'Compensated NMEA output' in Settings → Receiver — if Emlid Flow streams compensated positions, heights would be reduced twice."
+
+        /** A different correction base id must be carried by this many epochs before it counts as a base change. */
+        const val STATION_CHANGE_MIN_EPOCHS = 3
+        /** … or persist for this long (GNSS time), whichever comes first (1 Hz streams). */
+        const val STATION_CHANGE_MIN_MS = 1_000L
+
+        /** Trimmed station id; null for missing, empty or all-zero ids ("0", "0000": no station reported). */
+        internal fun normalizedStationId(raw: String?): String? {
+            val s = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return if (s.all { it == '0' }) null else s
+        }
+
+        /** The [referenceWarning] for an external capture started with [snap] (null snapshot = profile unreadable). */
+        internal fun referenceWarningFor(snap: CaptureSettingsSnapshot?): String? {
+            val profile = snap?.externalProfile ?: return PROFILE_UNREADABLE_WARNING
+            if (!app.surrealar.receiver.tilt.PositionReferencePolicy.appliesTo(profile)) return null
+            val output = snap.compensatedOutput ?: app.surrealar.settings.model.CompensatedOutputSetting.UNKNOWN
+            return if (output == app.surrealar.settings.model.CompensatedOutputSetting.UNKNOWN) RS4_OUTPUT_UNKNOWN_WARNING else null
+        }
 
         /**
          * captureMethod stored for an external capture whose epochs were receiver-compensated pole-tip positions

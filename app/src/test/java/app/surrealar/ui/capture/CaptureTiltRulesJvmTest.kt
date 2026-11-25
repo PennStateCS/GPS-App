@@ -110,8 +110,8 @@ class CaptureTiltRulesJvmTest {
     )
 
     /** One epoch: its ETC line (if any) arrives, then the fix is published through the feed. */
-    private suspend fun epoch(etc: ((Double) -> String)?, station: String? = null) {
-        sod += 0.2; now += 200
+    private suspend fun epoch(etc: ((Double) -> String)?, station: String? = null, stepS: Double = 0.2) {
+        sod += stepS; now += Math.round(stepS * 1000)
         etc?.let { monitor.onLine(it(sod)) }
         fixes.emit(feedDatum.normalise(TiltTestNmea.fix(sod, station = station)))
     }
@@ -266,12 +266,75 @@ class CaptureTiltRulesJvmTest {
 
     @Test fun correctionBaseChange_stops_missingStationIdDoesNot() = runBlocking {
         val vm = vm()
-        vm.start(policy(5))
+        vm.start(policy(8))
         epoch(::etcActive, station = "0101")
         epoch(::etcActive, station = null)
         assertNull(vm.interruption.value)
         epoch(::etcActive, station = "0202")
+        epoch(::etcActive, station = "0202")
+        assertNull("a new id must persist before it counts as a base change", vm.interruption.value)
+        assertEquals("its epochs are not averaged meanwhile", 2, samples(vm))
+        epoch(::etcActive, station = "0202")   // third consecutive epoch with the new id
         assertEquals(CaptureViewModel.CORRECTION_BASE_CHANGED_MESSAGE, vm.interruption.value)
+    }
+
+    // ── correction base id flicker (all receivers; RS2+ shown) ──────────────
+
+    @Test fun rs2Plus_emptyAndAllZeroStationIds_neverStop() = runBlocking {
+        profile.value = ExternalReceiverProfile.REACH_RS2_PLUS
+        val vm = vm()
+        vm.start(policy(6))
+        epoch(null, station = "0101")
+        epoch(null, station = "0000"); epoch(null, station = "0"); epoch(null, station = "")
+        epoch(null, station = "  "); epoch(null, station = "0000")
+        assertNull(vm.interruption.value)
+        assertTrue((vm.state.value as ObservationSession.State.Complete).requirementsMet)
+    }
+
+    @Test fun rs2Plus_transientStationId_isIgnored_andItsEpochsAreNotAveraged() = runBlocking {
+        profile.value = ExternalReceiverProfile.REACH_RS2_PLUS
+        val vm = vm()
+        vm.start(policy(10))
+        epoch(null, station = "0101"); epoch(null, station = "0101")
+        epoch(null, station = "0202"); epoch(null, station = "0202")   // two epochs of another id, then back
+        epoch(null, station = "0101")
+        epoch(null, station = "0303")                                  // a different one-epoch flicker
+        epoch(null, station = "0101")
+        assertNull(vm.interruption.value)
+        assertEquals(4, samples(vm))
+    }
+
+    @Test fun rs2Plus_realBaseChange_stillStops() = runBlocking {
+        profile.value = ExternalReceiverProfile.REACH_RS2_PLUS
+        val vm = vm()
+        vm.start(policy(10))
+        repeat(2) { epoch(null, station = "0101") }
+        repeat(2) { epoch(null, station = "0202") }
+        assertNull(vm.interruption.value)
+        epoch(null, station = "0202")
+        assertEquals(CaptureViewModel.CORRECTION_BASE_CHANGED_MESSAGE, vm.interruption.value)
+        vm.save("P", null, 0, "ic_pin")
+        assertTrue(repo.store.isEmpty())
+    }
+
+    @Test fun rs2Plus_baseChangeAt1Hz_stopsAfterOneSecond() = runBlocking {
+        profile.value = ExternalReceiverProfile.REACH_RS2_PLUS
+        val vm = vm()
+        vm.start(policy(10))
+        epoch(null, station = "0101", stepS = 1.0)
+        epoch(null, station = "0202", stepS = 1.0)
+        assertNull(vm.interruption.value)
+        epoch(null, station = "0202", stepS = 1.0)   // the new id has now lasted 1 s
+        assertEquals(CaptureViewModel.CORRECTION_BASE_CHANGED_MESSAGE, vm.interruption.value)
+    }
+
+    @Test fun stationIdNormalisation_ignoresEmptyAndAllZero() {
+        assertNull(CaptureViewModel.normalizedStationId(null))
+        assertNull(CaptureViewModel.normalizedStationId("0"))
+        assertNull(CaptureViewModel.normalizedStationId("0000"))
+        assertNull(CaptureViewModel.normalizedStationId(" "))
+        assertEquals("0101", CaptureViewModel.normalizedStationId(" 0101 "))
+        assertEquals("1000", CaptureViewModel.normalizedStationId("1000"))
     }
 
     @Test fun restart_afterAnInterruption_startsClean() = runBlocking {
@@ -298,6 +361,113 @@ class CaptureTiltRulesJvmTest {
         assertTrue(vm.state.value is ObservationSession.State.Complete)
         vm.save("P", null, 0, "ic_pin")
         assertEquals(CaptureMethod.EXTERNAL_GNSS_POLE_TIP.storageValue, repo.store.single().captureMethod)
+    }
+
+    // ── no needless ETC waits ────────────────────────────────────────────────
+
+    /** A monitor that waits up to 1 s for an epoch's ETC (as in the app); the test dispatchers never advance time. */
+    private fun waitingMonitor() {
+        monitor = ReceiverTiltMonitor(monitorScope, profile, output, firmware, MutableStateFlow(0), { now },
+            etcWaitMs = 1_000, tickMs = null)
+    }
+
+    @Test fun rs2Plus_andOutputDisabled_neverWaitForAnEtc() = runBlocking {
+        waitingMonitor()
+        monitor.onLine(etcOff(sod))                    // ETC stream live, but the epochs below have none (NOT_MATCHED)
+        profile.value = ExternalReceiverProfile.REACH_RS2_PLUS
+        val rs2 = vm()
+        rs2.start(policy(2))
+        repeat(2) { epoch(null) }
+        assertTrue("RS2+ epochs are admitted at once", (rs2.state.value as ObservationSession.State.Complete).requirementsMet)
+
+        profile.value = ExternalReceiverProfile.REACH_RS4
+        output.value = CompensatedOutputSetting.DISABLED
+        monitor.onLine(etcOff(sod))
+        val rs4 = vm()
+        rs4.start(policy(2))
+        repeat(2) { epoch(null) }
+        assertTrue("output Disabled is the antenna whatever the ETC: no wait", (rs4.state.value as ObservationSession.State.Complete).requirementsMet)
+        assertEquals(EpochReference.ANTENNA, rs4.positionReference.value)
+    }
+
+    // ── unreadable profile, RS4 output-unknown warning ───────────────────────
+
+    private fun unreadableProfileVm(): CaptureViewModel {
+        val s = settings()
+        Mockito.`when`(s.externalReceiverProfile).thenReturn(kotlinx.coroutines.flow.flow { throw java.io.IOException("datastore") })
+        return CaptureViewModel(
+            fixSwitchboard = Mockito.mock(FixSwitchboard::class.java).also { Mockito.`when`(it.fixes).thenReturn(fixes) },
+            captureCoordinate = CaptureCoordinateUseCase(repo, ValidateCoordinateForSaveUseCase()),
+            sourceSettings = sourceSettings, settingsRepository = s, feedDatum = feedDatum, tiltMonitor = monitor,
+        )
+    }
+
+    @Test fun unreadableProfile_withTiltOn_isNeverAveraged_orPoleTip() = runBlocking {
+        val vm = unreadableProfileVm()
+        vm.start(policy(2))
+        repeat(3) { epoch(::etcActive) }
+        assertEquals("possibly compensated epochs are excluded, not passed through", 0, samples(vm))
+        assertNull("never a pole tip", vm.positionReference.value)
+        assertEquals(CaptureViewModel.PROFILE_UNREADABLE_WARNING, vm.referenceWarning.value)
+    }
+
+    @Test fun unreadableProfile_withoutEtc_keepsTodaysReduction_withTheWarning() = runBlocking {
+        val vm = unreadableProfileVm()
+        vm.start(policy(2))
+        repeat(2) { epoch(null) }
+        assertTrue((vm.state.value as ObservationSession.State.Complete).requirementsMet)
+        assertEquals(CaptureViewModel.PROFILE_UNREADABLE_WARNING, vm.referenceWarning.value)
+        vm.save("P", null, 0, "ic_pin")
+        val c = repo.store.single()
+        assertEquals("external_gnss", c.captureMethod)
+        assertTrue("an antenna reduction was applied", c.altitude < 100.0)
+    }
+
+    @Test fun outputUnknownWarning_onlyForRs4AndRs4Pro_withTheSettingUnknown() = runBlocking {
+        output.value = CompensatedOutputSetting.UNKNOWN
+        val rs4 = vm()
+        rs4.start(policy(2))
+        assertEquals(CaptureViewModel.RS4_OUTPUT_UNKNOWN_WARNING, rs4.referenceWarning.value)
+        repeat(2) { epoch(null) }                      // no ETC: antenna (uncertain), today's maths, saving allowed
+        assertTrue((rs4.state.value as ObservationSession.State.Complete).requirementsMet)
+        assertEquals("the warning stays with the completed result", CaptureViewModel.RS4_OUTPUT_UNKNOWN_WARNING, rs4.referenceWarning.value)
+        rs4.save("P", null, 0, "ic_pin")
+        assertEquals(100.0 - (1.8 + ExternalReceiverProfile.REACH_RS4.phaseCenterOffsetM!!), repo.store.single().altitude, 1e-9)
+
+        profile.value = ExternalReceiverProfile.REACH_RS4_PRO
+        val pro = vm()
+        pro.start(policy(2))
+        assertEquals(CaptureViewModel.RS4_OUTPUT_UNKNOWN_WARNING, pro.referenceWarning.value)
+
+        output.value = CompensatedOutputSetting.ENABLED
+        val enabled = vm(); enabled.start(policy(2))
+        assertNull(enabled.referenceWarning.value)
+        output.value = CompensatedOutputSetting.DISABLED
+        val disabled = vm(); disabled.start(policy(2))
+        assertNull(disabled.referenceWarning.value)
+
+        output.value = CompensatedOutputSetting.UNKNOWN
+        profile.value = ExternalReceiverProfile.REACH_RS2_PLUS
+        val rs2 = vm(); rs2.start(policy(2))
+        assertNull(rs2.referenceWarning.value)
+        profile.value = ExternalReceiverProfile.GENERIC_NMEA_TCP
+        val generic = vm(); generic.start(policy(2))
+        assertNull(generic.referenceWarning.value)
+        val internal = vm(); internal.start(policy(2), internal = true)
+        assertNull(internal.referenceWarning.value)
+    }
+
+    // ── firmware flicker ─────────────────────────────────────────────────────
+
+    @Test fun firmwareUnknownMidOccupation_doesNotStopAPoleTipOccupation() = runBlocking {
+        val vm = vm()
+        vm.start(policy(4))
+        repeat(2) { epoch(::etcActive) }
+        firmware.value = null                          // a device-info poll failed
+        repeat(2) { epoch(::etcActive) }
+        assertNull(vm.interruption.value)
+        assertTrue((vm.state.value as ObservationSession.State.Complete).requirementsMet)
+        assertEquals(EpochReference.POLE_TIP, vm.positionReference.value)
     }
 
     // ── RS2+ unchanged ───────────────────────────────────────────────────────

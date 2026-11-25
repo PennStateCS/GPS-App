@@ -216,6 +216,31 @@ Items 1–6 above are implemented (app `receiver/tilt/`, `CaptureViewModel`), wi
 6. ETC tilt values are never applied to any position. Mixed references, tilt loss and interpretation-changing setting
    changes stop the occupation (table in [phase4-position-references.md](phase4-position-references.md)).
 
+### Phase 4 WP C review follow-ups (2026-11-25)
+
+- **ETC pairing uses the fix's arrival time.** The switchboard's fix transform stamps every published fix with its
+  arrival time (`ReceiverTiltMonitor.recordArrival`, identity-keyed, last 128 fixes; the fix itself is unchanged).
+  The capture and the status path pair a fix with its ETC by that time and wait for a missing ETC only until
+  arrival + 1 s, so a fix processed late never waits. Before, pairing used the processing time: after two dropped
+  ETCs every later fix looked later than its ETC, waited again, and the capture never recovered. Captures do not wait
+  at all where the ETC cannot change the reference (RS2+ / generic, output Disabled).
+- **Firmware is the last known value** per receiver host + profile (`FirmwareMemory`): a failed 30 s device-info poll
+  (firmware null) no longer turns pole-tip epochs into "firmware unknown". A capture also uses the firmware read at
+  its start. If a pole-tip occupation still loses the firmware it stops with "the receiver firmware could not be
+  confirmed …" (`firmware_unknown`), not with a tilt-loss message.
+- **Correction base id (all receivers, RS2+ included):** empty and all-zero ids ("0", "0000") are ignored; a different
+  id must be carried by 3 consecutive epochs (or last 1 s of GNSS time) before it counts. Until then its epochs are not
+  averaged; if the old id returns the change is logged as transient. A persistent change stops an occupation that has
+  averaged epochs (before that it rebinds).
+- **RS4 / RS4 Pro with "Compensated NMEA output" Unknown** keeps today's reduction for antenna epochs (unchanged by
+  request), but the capture dialog shows, for the whole occupation and without a dismiss: "RS4: set 'Compensated
+  NMEA output' in Settings → Receiver — if Emlid Flow streams compensated positions, heights would be reduced
+  twice." Saving such a point writes a diagnostics line (event log + captures.log: "Capture saved with unconfirmed
+  position reference id=…"). No schema change, so the point's Details screen does not show it.
+- **Unreadable receiver profile** at capture start: treated as an IMU-capable receiver with the output Unknown
+  (never a pole tip; excluded when the ETC shows the tilt engine on; otherwise today's maths), with a warning.
+- Mock location: when the altitude is withheld (possible pole tip), the vertical accuracy is withheld too.
+
 ### Needs a receiver test (RS4 / RS4 Pro, firmware ≥ 34.7, on a known mark)
 
 - Does the TCP position output offer "compensated NMEA"? Does ETC keep streaming when it is on?
